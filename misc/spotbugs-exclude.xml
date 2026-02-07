@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+    <!--
+        Exclude EI_EXPOSE_REP* warnings for Lombok-generated code.
+        Spring beans are immutable by contract after dependency injection,
+        and defensive copying would be unnecessary overhead.
+    -->
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2" />
+        <Class name="~me\.golemcore\.bot\..*" />
+    </Match>
+
+    <!-- But keep EI_EXPOSE_REP for public API models that users interact with -->
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2" />
+        <Not>
+            <Or>
+                <Class name="~me\.golemcore\.bot\.domain\.model\..*" />
+                <Class name="~me\.golemcore\.bot\.port\..*" />
+            </Or>
+        </Not>
+    </Match>
+    <!--
+        Broad catch(Exception) is intentional in pipeline systems to prevent
+        one system's failure from crashing the entire agent loop.
+    -->
+    <Match>
+        <Bug pattern="REC_CATCH_EXCEPTION" />
+        <Class name="~me\.golemcore\.bot\.domain\.system\..*" />
+    </Match>
+</FindBugsFilter>

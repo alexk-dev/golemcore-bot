@@ -1,0 +1,565 @@
+/*
+ * Copyright 2026 Aleksei Kuleshov
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * Contact: alex@kuleshov.tech
+ */
+
+package me.golemcore.bot.adapter.outbound.llm;
+
+import me.golemcore.bot.domain.component.LlmComponent;
+import me.golemcore.bot.domain.model.*;
+import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.infrastructure.config.ModelConfigService;
+import me.golemcore.bot.port.outbound.LlmPort;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.langchain4j.agent.tool.JsonSchemaProperty;
+import dev.langchain4j.agent.tool.ToolExecutionRequest;
+import dev.langchain4j.agent.tool.ToolSpecification;
+import dev.langchain4j.data.message.*;
+import dev.langchain4j.model.anthropic.AnthropicChatModel;
+import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.model.chat.request.ChatRequest;
+import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.model.openai.OpenAiChatModel;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
+import reactor.core.publisher.Flux;
+
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.concurrent.CompletableFuture;
+
+/**
+ * LLM adapter using the langchain4j library.
+ *
+ * <p>
+ * This adapter provides integration with multiple LLM providers through the
+ * langchain4j library, supporting:
+ * <ul>
+ * <li>OpenAI (including reasoning models like o1, o3)
+ * <li>Anthropic (Claude models)
+ * <li>Any OpenAI-compatible API endpoint
+ * </ul>
+ *
+ * <p>
+ * Features:
+ * <ul>
+ * <li>Model routing by tier (fast/default/smart/coding)
+ * <li>Function calling (tool use) support
+ * <li>Reasoning effort control for o-series models
+ * <li>Automatic retry with exponential backoff for rate limits
+ * <li>Model-specific capability detection (temperature, reasoning)
+ * </ul>
+ *
+ * <p>
+ * Provider ID: {@code "langchain4j"}
+ *
+ * <p>
+ * Configuration via {@code bot.llm.langchain4j.providers.*} and
+ * {@code models.json} for model capabilities.
+ *
+ * @see LlmProviderAdapter
+ * @see me.golemcore.bot.infrastructure.config.ModelConfigService
+ */
+@Component
+@RequiredArgsConstructor
+@Slf4j
+public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
+
+    /**
+     * Max retry attempts for rate limit / transient errors (exponential backoff).
+     */
+    private static final int MAX_RETRIES = 5;
+    private static final long INITIAL_BACKOFF_MS = 5_000;
+    private static final double BACKOFF_MULTIPLIER = 2.0;
+
+    private final BotProperties properties;
+    private final ModelConfigService modelConfig;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    private ChatLanguageModel chatModel;
+    private String currentModel;
+    private volatile boolean initialized = false;
+
+    @Override
+    public synchronized void initialize() {
+        if (initialized)
+            return;
+
+        // Use default model from router config
+        String model = properties.getRouter().getDefaultModel();
+        String reasoning = properties.getRouter().getDefaultModelReasoning();
+        this.currentModel = model;
+
+        try {
+            this.chatModel = createModel(model, reasoning);
+            initialized = true;
+            log.info("Langchain4j adapter initialized with model: {}, reasoning: {}", model, reasoning);
+        } catch (Exception e) {
+            log.warn("Failed to initialize Langchain4j adapter: {}", e.getMessage());
+        }
+    }
+
+    private String getProvider(String model) {
+        return modelConfig.getProvider(model);
+    }
+
+    private boolean isReasoningRequired(String model) {
+        return modelConfig.isReasoningRequired(model);
+    }
+
+    private boolean supportsTemperature(String model) {
+        return modelConfig.supportsTemperature(model);
+    }
+
+    private void ensureInitialized() {
+        if (!initialized) {
+            initialize();
+        }
+    }
+
+    private BotProperties.ProviderProperties getProviderConfig(String providerName) {
+        var config = properties.getLlm().getLangchain4j().getProviders().get(providerName);
+        if (config == null) {
+            throw new IllegalStateException("Provider not configured: " + providerName
+                    + ". Add bot.llm.langchain4j.providers." + providerName + ".api-key");
+        }
+        return config;
+    }
+
+    private String stripProviderPrefix(String model) {
+        return model.contains("/") ? model.substring(model.indexOf('/') + 1) : model;
+    }
+
+    /**
+     * Create a model instance based on configuration.
+     */
+    private ChatLanguageModel createModel(String model, String reasoningEffort) {
+        String provider = getProvider(model);
+        BotProperties.ProviderProperties config = getProviderConfig(provider);
+        String modelName = stripProviderPrefix(model);
+
+        if ("anthropic".equals(provider)) {
+            return createAnthropicModel(modelName, config);
+        } else {
+            // All non-Anthropic providers use OpenAI-compatible API
+            return createOpenAiModel(modelName, model, reasoningEffort, config);
+        }
+    }
+
+    private ChatLanguageModel createAnthropicModel(String modelName, BotProperties.ProviderProperties config) {
+        var builder = AnthropicChatModel.builder()
+                .apiKey(config.getApiKey())
+                .modelName(modelName)
+                .maxRetries(0) // Retry handled by our backoff logic
+                .maxTokens(4096);
+
+        if (config.getBaseUrl() != null) {
+            builder.baseUrl(config.getBaseUrl());
+        }
+
+        if (supportsTemperature(modelName)) {
+            builder.temperature(properties.getRouter().getTemperature());
+        }
+
+        return builder.build();
+    }
+
+    private ChatLanguageModel createOpenAiModel(String modelName, String fullModel,
+            String reasoningEffort, BotProperties.ProviderProperties config) {
+        var builder = OpenAiChatModel.builder()
+                .apiKey(config.getApiKey())
+                .modelName(modelName)
+                .maxRetries(0); // Retry handled by our backoff logic
+
+        if (config.getBaseUrl() != null) {
+            builder.baseUrl(config.getBaseUrl());
+        }
+
+        if (supportsTemperature(fullModel)) {
+            builder.temperature(properties.getRouter().getTemperature());
+        } else {
+            log.debug("Using reasoning model: {}, effort: {}", modelName,
+                    reasoningEffort != null ? reasoningEffort : "default");
+        }
+
+        // TODO: Pass reasoningEffort to API when langchain4j supports it
+        // builder.reasoningEffort(reasoningEffort);
+
+        return builder.build();
+    }
+
+    @Override
+    public String getProviderId() {
+        return "langchain4j";
+    }
+
+    @Override
+    public CompletableFuture<LlmResponse> chat(LlmRequest request) {
+        return CompletableFuture.supplyAsync(() -> {
+            ensureInitialized();
+            if (chatModel == null) {
+                throw new RuntimeException("Langchain4j adapter not available");
+            }
+
+            // Handle per-request model/reasoning override
+            ChatLanguageModel modelToUse = getModelForRequest(request);
+            List<ChatMessage> messages = convertMessages(request);
+            List<ToolSpecification> tools = convertTools(request);
+
+            for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+                try {
+                    ChatResponse response;
+                    if (tools != null && !tools.isEmpty()) {
+                        log.trace("Calling LLM with {} tools", tools.size());
+                        ChatRequest chatRequest = ChatRequest.builder()
+                                .messages(messages)
+                                .toolSpecifications(tools)
+                                .build();
+                        response = modelToUse.chat(chatRequest);
+                    } else {
+                        response = modelToUse.chat(messages);
+                    }
+
+                    return convertResponse(response);
+                } catch (Exception e) {
+                    if (isRateLimitError(e) && attempt < MAX_RETRIES) {
+                        long backoffMs = (long) (INITIAL_BACKOFF_MS * Math.pow(BACKOFF_MULTIPLIER, attempt));
+                        log.warn("[LLM] Rate limit hit (attempt {}/{}), retrying in {}ms...",
+                                attempt + 1, MAX_RETRIES, backoffMs);
+                        try {
+                            Thread.sleep(backoffMs);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            throw new RuntimeException("LLM chat interrupted during retry backoff", ie);
+                        }
+                    } else {
+                        log.error("LLM chat failed", e);
+                        throw new RuntimeException("LLM chat failed: " + e.getMessage(), e);
+                    }
+                }
+            }
+            throw new RuntimeException("LLM chat failed: max retries exhausted");
+        });
+    }
+
+    private boolean isRateLimitError(Throwable e) {
+        // Walk the cause chain looking for rate limit indicators
+        Throwable current = e;
+        while (current != null) {
+            String msg = current.getMessage();
+            if (msg != null && (msg.contains("rate_limit") || msg.contains("token_quota_exceeded")
+                    || msg.contains("too_many_tokens") || msg.contains("Too Many Requests")
+                    || msg.contains("429"))) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private ChatLanguageModel getModelForRequest(LlmRequest request) {
+        String requestModel = request.getModel();
+        String reasoningEffort = request.getReasoningEffort();
+
+        // If request specifies a different model, create one-off
+        if (requestModel != null && !requestModel.equals(currentModel)) {
+            log.trace("Creating one-off model for request: {}, reasoning: {}", requestModel, reasoningEffort);
+            return createModel(requestModel, reasoningEffort);
+        }
+
+        // If request specifies different reasoning for current model
+        if (reasoningEffort != null && isReasoningRequired(currentModel)) {
+            log.debug("Using reasoning effort: {} for model: {}", reasoningEffort, currentModel);
+            return createModel(currentModel, reasoningEffort);
+        }
+
+        return chatModel;
+    }
+
+    @Override
+    public Flux<LlmChunk> chatStream(LlmRequest request) {
+        ensureInitialized();
+        // Basic implementation - langchain4j streaming support varies by model
+        return Flux.create(sink -> {
+            chat(request).whenComplete((response, error) -> {
+                if (error != null) {
+                    sink.error(error);
+                } else {
+                    sink.next(LlmChunk.builder()
+                            .text(response.getContent())
+                            .done(true)
+                            .usage(response.getUsage())
+                            .build());
+                    sink.complete();
+                }
+            });
+        });
+    }
+
+    @Override
+    public boolean supportsStreaming() {
+        return true;
+    }
+
+    @Override
+    public List<String> getSupportedModels() {
+        // Build from models.json — provider/modelName for each configured provider
+        List<String> models = new ArrayList<>();
+        var providers = properties.getLlm().getLangchain4j().getProviders();
+        var modelsConfig = modelConfig.getAllModels();
+
+        if (modelsConfig != null) {
+            for (var entry : modelsConfig.entrySet()) {
+                String modelName = entry.getKey();
+                String provider = entry.getValue().getProvider();
+                if (providers.containsKey(provider)) {
+                    models.add(provider + "/" + modelName);
+                }
+            }
+        }
+        return models;
+    }
+
+    @Override
+    public String getCurrentModel() {
+        return currentModel;
+    }
+
+    @Override
+    public boolean isAvailable() {
+        return properties.getLlm().getLangchain4j().getProviders().values().stream()
+                .anyMatch(p -> p.getApiKey() != null && !p.getApiKey().isBlank());
+    }
+
+    @Override
+    public LlmPort getLlmPort() {
+        return this;
+    }
+
+    private static final int MAX_TOOL_CALL_ID_LENGTH = 40;
+    private static final java.util.regex.Pattern VALID_FUNCTION_NAME = java.util.regex.Pattern
+            .compile("^[a-zA-Z0-9_-]+$");
+
+    private List<ChatMessage> convertMessages(LlmRequest request) {
+        List<ChatMessage> messages = new ArrayList<>();
+
+        // Build consistent ID remapping for tool call IDs that exceed provider limits
+        // or contain invalid characters (e.g. dots from non-OpenAI providers).
+        // This ensures assistant tool_calls[].id and tool result toolCallId always
+        // match.
+        Map<String, String> idRemap = new HashMap<>();
+        for (Message msg : request.getMessages()) {
+            if (msg.hasToolCalls()) {
+                for (var tc : msg.getToolCalls()) {
+                    if (tc.getId() != null && (tc.getId().length() > MAX_TOOL_CALL_ID_LENGTH
+                            || !VALID_FUNCTION_NAME.matcher(tc.getId()).matches())) {
+                        idRemap.computeIfAbsent(tc.getId(),
+                                k -> "call_" + UUID.randomUUID().toString().replace("-", "").substring(0, 24));
+                    }
+                }
+            }
+        }
+
+        // Add system message
+        if (request.getSystemPrompt() != null && !request.getSystemPrompt().isBlank()) {
+            messages.add(SystemMessage.from(request.getSystemPrompt()));
+        }
+
+        // Convert conversation messages
+        for (Message msg : request.getMessages()) {
+            switch (msg.getRole()) {
+            case "user" -> messages.add(UserMessage.from(msg.getContent()));
+            case "assistant" -> {
+                if (msg.hasToolCalls()) {
+                    List<ToolExecutionRequest> toolRequests = msg.getToolCalls().stream()
+                            .map(tc -> ToolExecutionRequest.builder()
+                                    .id(idRemap.getOrDefault(tc.getId(), tc.getId()))
+                                    .name(sanitizeFunctionName(tc.getName()))
+                                    .arguments(convertArgsToJson(tc.getArguments()))
+                                    .build())
+                            .toList();
+                    messages.add(AiMessage.from(toolRequests));
+                } else {
+                    messages.add(AiMessage.from(msg.getContent()));
+                }
+            }
+            case "tool" -> {
+                messages.add(ToolExecutionResultMessage.from(
+                        idRemap.getOrDefault(msg.getToolCallId(), msg.getToolCallId()),
+                        sanitizeFunctionName(msg.getToolName()),
+                        msg.getContent()));
+            }
+            case "system" -> messages.add(SystemMessage.from(msg.getContent()));
+            default -> log.warn("Unknown message role: {}, treating as user message", msg.getRole());
+            }
+        }
+
+        return messages;
+    }
+
+    /**
+     * Sanitize function/tool names to match OpenAI's required pattern:
+     * ^[a-zA-Z0-9_-]+$ Non-OpenAI providers (e.g. deepinfra) may generate names
+     * with dots or other characters that get stored in conversation history. When
+     * the model switches mid-conversation, the new provider may reject these names.
+     */
+    private String sanitizeFunctionName(String name) {
+        if (name == null) {
+            return "unknown";
+        }
+        if (VALID_FUNCTION_NAME.matcher(name).matches()) {
+            return name;
+        }
+        String sanitized = name.replaceAll("[^a-zA-Z0-9_-]", "_");
+        if (sanitized.isEmpty()) {
+            return "unknown";
+        }
+        return sanitized;
+    }
+
+    private List<ToolSpecification> convertTools(LlmRequest request) {
+        if (request.getTools() == null || request.getTools().isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        return request.getTools().stream()
+                .map(this::convertToolDefinition)
+                .collect(Collectors.toList());
+    }
+
+    @SuppressWarnings("unchecked")
+    private ToolSpecification convertToolDefinition(ToolDefinition tool) {
+        var builder = ToolSpecification.builder()
+                .name(tool.getName())
+                .description(tool.getDescription());
+
+        // Convert input schema to tool parameters
+        if (tool.getInputSchema() != null) {
+            Map<String, Object> schema = tool.getInputSchema();
+            Map<String, Object> properties = (Map<String, Object>) schema.get("properties");
+            List<String> required = (List<String>) schema.get("required");
+
+            if (properties != null) {
+                for (Map.Entry<String, Object> entry : properties.entrySet()) {
+                    String paramName = entry.getKey();
+                    Map<String, Object> paramSchema = (Map<String, Object>) entry.getValue();
+                    boolean isRequired = required != null && required.contains(paramName);
+
+                    builder.addParameter(paramName, toJsonSchemaProperties(paramSchema, isRequired));
+                }
+            }
+        }
+
+        return builder.build();
+    }
+
+    @SuppressWarnings("unchecked")
+    private JsonSchemaProperty[] toJsonSchemaProperties(Map<String, Object> paramSchema, boolean required) {
+        List<JsonSchemaProperty> props = new ArrayList<>();
+
+        String type = (String) paramSchema.get("type");
+        String description = (String) paramSchema.get("description");
+        List<String> enumValues = (List<String>) paramSchema.get("enum");
+
+        // Add type property
+        props.add(JsonSchemaProperty.type(type != null ? type : "string"));
+
+        // Add description
+        if (description != null && !description.isBlank()) {
+            props.add(JsonSchemaProperty.description(description));
+        }
+
+        // Add enum values if present
+        if (enumValues != null && !enumValues.isEmpty()) {
+            props.add(JsonSchemaProperty.from("enum", new ArrayList<>(enumValues)));
+        }
+
+        // Handle array items
+        if ("array".equals(type) && paramSchema.containsKey("items")) {
+            Map<String, Object> items = (Map<String, Object>) paramSchema.get("items");
+            props.add(JsonSchemaProperty.from("items", new HashMap<>(items)));
+        }
+
+        // Handle nested object properties
+        if ("object".equals(type) && paramSchema.containsKey("properties")) {
+            Map<String, Object> nestedProps = (Map<String, Object>) paramSchema.get("properties");
+            props.add(JsonSchemaProperty.from("properties", new HashMap<>(nestedProps)));
+        }
+
+        return props.toArray(new JsonSchemaProperty[0]);
+    }
+
+    private LlmResponse convertResponse(ChatResponse response) {
+        AiMessage aiMessage = response.aiMessage();
+
+        // Convert tool calls if present
+        List<Message.ToolCall> toolCalls = null;
+        if (aiMessage.hasToolExecutionRequests()) {
+            toolCalls = aiMessage.toolExecutionRequests().stream()
+                    .map(ter -> Message.ToolCall.builder()
+                            .id(ter.id())
+                            .name(ter.name())
+                            .arguments(parseJsonArgs(ter.arguments()))
+                            .build())
+                    .toList();
+            log.trace("Parsed {} tool calls from response", toolCalls.size());
+        }
+
+        LlmUsage usage = null;
+        if (response.tokenUsage() != null) {
+            usage = LlmUsage.builder()
+                    .inputTokens(response.tokenUsage().inputTokenCount())
+                    .outputTokens(response.tokenUsage().outputTokenCount())
+                    .totalTokens(response.tokenUsage().totalTokenCount())
+                    .build();
+        }
+
+        return LlmResponse.builder()
+                .content(aiMessage.text())
+                .toolCalls(toolCalls)
+                .usage(usage)
+                .model(currentModel)
+                .finishReason(response.finishReason() != null ? response.finishReason().name() : "stop")
+                .build();
+    }
+
+    private String convertArgsToJson(Map<String, Object> args) {
+        if (args == null || args.isEmpty()) {
+            return "{}";
+        }
+        try {
+            return objectMapper.writeValueAsString(args);
+        } catch (Exception e) {
+            log.warn("Failed to serialize tool arguments: {}", e.getMessage());
+            return "{}";
+        }
+    }
+
+    private Map<String, Object> parseJsonArgs(String json) {
+        if (json == null || json.isBlank()) {
+            return Collections.emptyMap();
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<Map<String, Object>>() {
+            });
+        } catch (Exception e) {
+            log.warn("Failed to parse tool arguments: {}", e.getMessage());
+            return Collections.emptyMap();
+        }
+    }
+}

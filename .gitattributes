@@ -1,0 +1,6 @@
+/mvnw text eol=lf
+*.cmd text eol=crlf
+
+# License files
+LICENSE text eol=lf
+NOTICE text eol=lf

@@ -1,0 +1,94 @@
+GolemCore Bot
+Copyright 2026 GolemCore Bot Contributors
+
+This product includes software developed by:
+- The Apache Software Foundation (http://www.apache.org/)
+- Spring Framework contributors (https://spring.io/)
+- LangChain4j contributors (https://github.com/langchain4j/langchain4j)
+- OpenFeign contributors (https://github.com/OpenFeign/feign)
+- Square, Inc. (OkHttp - https://square.github.io/okhttp/)
+- Microsoft Corporation (Playwright - https://playwright.dev/)
+
+================================================================================
+
+This software uses the following third-party libraries:
+
+Spring Boot (Apache License 2.0)
+  https://spring.io/projects/spring-boot
+
+LangChain4j (Apache License 2.0)
+  https://github.com/langchain4j/langchain4j
+
+Telegram Bots (MIT License)
+  https://github.com/rubenlagus/TelegramBots
+
+Project Lombok (MIT License)
+  https://projectlombok.org/
+
+OkHttp (Apache License 2.0)
+  https://square.github.io/okhttp/
+
+Feign (Apache License 2.0)
+  https://github.com/OpenFeign/feign
+
+Jackson (Apache License 2.0)
+  https://github.com/FasterXML/jackson
+
+Playwright (Apache License 2.0)
+  https://playwright.dev/
+
+MinIO Java SDK (Apache License 2.0)
+  https://min.io/
+
+Jaffree (Apache License 2.0)
+  https://github.com/kokorin/Jaffree
+
+================================================================================
+
+DISCLAIMER
+
+This software is provided "AS IS" without warranty of any kind, express or
+implied, including but not limited to the warranties of merchantability,
+fitness for a particular purpose and noninfringement.
+
+This is an experimental AI assistant. The authors make no warranties about:
+- Accuracy, reliability, or safety of AI-generated responses
+- Suitability for production use or critical systems
+- Data privacy and security
+
+DO NOT USE THIS SOFTWARE FOR:
+- Medical, legal, or financial advice
+- Critical safety systems
+- Processing highly sensitive personal data without additional safeguards
+- Production environments without thorough security review and testing
+
+Users are solely responsible for:
+- Validating all AI-generated content before use
+- Implementing appropriate security measures
+- Complying with applicable laws and regulations (GDPR, CCPA, etc.)
+- Reviewing privacy policies of third-party LLM providers (OpenAI, Anthropic)
+
+By using this software, you acknowledge and accept these limitations and
+assume all risks associated with its use.
+
+================================================================================
+
+PATENT NOTICE
+
+This project is licensed under the Apache License 2.0, which includes an
+explicit patent grant from contributors. See Section 3 of the LICENSE file
+for details.
+
+If you contribute to this project, you automatically grant a patent license
+for any patents that would be infringed by your contributions.
+
+================================================================================
+
+TRADEMARK NOTICE
+
+"GolemCore Bot" is not a registered trademark. This notice is provided to
+clarify trademark usage under Apache License 2.0, Section 6.
+
+The license does not grant permission to use the project name, trademarks,
+or service marks for promotional purposes, except as required for reasonable
+and customary use in describing the origin of the software.

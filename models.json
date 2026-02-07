@@ -1,0 +1,194 @@
+{
+  "models": {
+    "gpt-5.1": {
+      "provider": "openai",
+      "reasoningRequired": true,
+      "supportsTemperature": false,
+      "maxInputTokens": 1000000
+    },
+    "gpt-5.2": {
+      "provider": "openai",
+      "reasoningRequired": true,
+      "supportsTemperature": false,
+      "maxInputTokens": 1000000
+    },
+    "gpt-5-mini": {
+      "provider": "openai",
+      "reasoningRequired": true,
+      "supportsTemperature": false,
+      "maxInputTokens": 1000000
+    },
+    "gpt-4o": {
+      "provider": "openai",
+      "reasoningRequired": false,
+      "supportsTemperature": true,
+      "maxInputTokens": 128000
+    },
+    "gpt-4-turbo": {
+      "provider": "openai",
+      "reasoningRequired": false,
+      "supportsTemperature": true,
+      "maxInputTokens": 128000
+    },
+    "o1": {
+      "provider": "openai",
+      "reasoningRequired": true,
+      "supportsTemperature": false,
+      "maxInputTokens": 200000
+    },
+    "o3": {
+      "provider": "openai",
+      "reasoningRequired": true,
+      "supportsTemperature": false,
+      "maxInputTokens": 200000
+    },
+    "o3-mini": {
+      "provider": "openai",
+      "reasoningRequired": true,
+      "supportsTemperature": false,
+      "maxInputTokens": 128000
+    },
+    "claude-sonnet-4-20250514": {
+      "provider": "anthropic",
+      "reasoningRequired": false,
+      "supportsTemperature": true,
+      "maxInputTokens": 200000
+    },
+    "claude-3-5-sonnet": {
+      "provider": "anthropic",
+      "reasoningRequired": false,
+      "supportsTemperature": true,
+      "maxInputTokens": 200000
+    },
+    "claude-3-opus": {
+      "provider": "anthropic",
+      "reasoningRequired": false,
+      "supportsTemperature": true,
+      "maxInputTokens": 200000
+    },
+    "claude-3-haiku": {
+      "provider": "anthropic",
+      "reasoningRequired": false,
+      "supportsTemperature": true,
+      "maxInputTokens": 200000
+    },
+
+    "glm-4-plus": {
+      "provider": "zhipu",
+      "reasoningRequired": false,
+      "supportsTemperature": true,
+      "maxInputTokens": 128000
+    },
+    "glm-4": {
+      "provider": "zhipu",
+      "reasoningRequired": false,
+      "supportsTemperature": true,
+      "maxInputTokens": 128000
+    },
+    "glm-4-air": {
+      "provider": "zhipu",
+      "reasoningRequired": false,
+      "supportsTemperature": true,
+      "maxInputTokens": 128000
+    },
+    "glm-4-flash": {
+      "provider": "zhipu",
+      "reasoningRequired": false,
+      "supportsTemperature": true,
+      "maxInputTokens": 128000
+    },
+    "glm-4-long": {
+      "provider": "zhipu",
+      "reasoningRequired": false,
+      "supportsTemperature": true,
+      "maxInputTokens": 1000000
+    },
+
+    "qwen-max": {
+      "provider": "qwen",
+      "reasoningRequired": false,
+      "supportsTemperature": true,
+      "maxInputTokens": 32000
+    },
+    "qwen-plus": {
+      "provider": "qwen",
+      "reasoningRequired": false,
+      "supportsTemperature": true,
+      "maxInputTokens": 131072
+    },
+    "qwen-turbo": {
+      "provider": "qwen",
+      "reasoningRequired": false,
+      "supportsTemperature": true,
+      "maxInputTokens": 131072
+    },
+    "qwen2.5-72b-instruct": {
+      "provider": "qwen",
+      "reasoningRequired": false,
+      "supportsTemperature": true,
+      "maxInputTokens": 131072
+    },
+    "qwen2.5-32b-instruct": {
+      "provider": "qwen",
+      "reasoningRequired": false,
+      "supportsTemperature": true,
+      "maxInputTokens": 131072
+    },
+    "qwen-3-32b": {
+      "provider": "qwen",
+      "reasoningRequired": false,
+      "supportsTemperature": true,
+      "maxInputTokens": 131072
+    },
+    "qwen2.5-14b-instruct": {
+      "provider": "qwen",
+      "reasoningRequired": false,
+      "supportsTemperature": true,
+      "maxInputTokens": 131072
+    },
+    "qwen2.5-7b-instruct": {
+      "provider": "qwen",
+      "reasoningRequired": false,
+      "supportsTemperature": true,
+      "maxInputTokens": 131072
+    },
+    "qwq-32b": {
+      "provider": "qwen",
+      "reasoningRequired": true,
+      "supportsTemperature": true,
+      "maxInputTokens": 131072
+    },
+
+    "gpt-oss-120b": {
+      "provider": "cerebras",
+      "reasoningRequired": false,
+      "supportsTemperature": true,
+      "maxInputTokens": 131072
+    },
+    "zai-glm-4.7": {
+      "provider": "cerebras",
+      "reasoningRequired": false,
+      "supportsTemperature": true,
+      "maxInputTokens": 131072
+    },
+    "llama-3.3-70b": {
+      "provider": "cerebras",
+      "reasoningRequired": false,
+      "supportsTemperature": true,
+      "maxInputTokens": 131072
+    },
+
+    "deepinfra/openai/gpt-oss-120b": {
+      "provider": "deepinfra",
+      "reasoningRequired": false,
+      "supportsTemperature": true,
+      "maxInputTokens": 131072
+    }
+  },
+  "defaults": {
+    "provider": "openai",
+    "reasoningRequired": false,
+    "supportsTemperature": true,
+    "maxInputTokens": 128000
+  }
+}

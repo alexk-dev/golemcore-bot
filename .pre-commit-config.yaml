@@ -1,0 +1,52 @@
+# Pre-commit hooks configuration
+# Install: pip install pre-commit && pre-commit install
+# Run manually: pre-commit run --all-files
+# Update hooks: pre-commit autoupdate
+
+repos:
+  # Standard hooks (fast, language-agnostic)
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: detect-private-key
+
+  # Java code formatter (revelc/formatter-maven-plugin, Eclipse config)
+  - repo: local
+    hooks:
+      - id: java-formatter
+        name: Java code formatter
+        entry: ./mvnw formatter:format -q
+        language: system
+        pass_filenames: false
+        files: '\.java$'
+        stages: [pre-commit]
+
+  # PMD static analysis (on staged Java files)
+  - repo: local
+    hooks:
+      - id: pmd
+        name: PMD static analysis
+        entry: ./mvnw pmd:check -q
+        language: system
+        pass_filenames: false
+        files: '\.java$'
+        stages: [pre-commit]
+
+  # SpotBugs static analysis
+  - repo: local
+    hooks:
+      - id: spotbugs
+        name: SpotBugs bug detection
+        entry: ./mvnw compile spotbugs:check -q -DskipTests
+        language: system
+        pass_filenames: false
+        files: '\.java$'
+        stages: [pre-commit]

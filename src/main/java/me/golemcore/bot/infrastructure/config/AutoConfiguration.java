@@ -1,0 +1,82 @@
+package me.golemcore.bot.infrastructure.config;
+
+/*
+ * Copyright 2026 Aleksei Kuleshov
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * Contact: alex@kuleshov.tech
+ */
+
+import me.golemcore.bot.port.inbound.ChannelPort;
+import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import java.time.Clock;
+import java.util.List;
+
+/**
+ * Spring auto-configuration that initializes and starts the bot on application
+ * startup.
+ *
+ * <p>
+ * This configuration:
+ * <ul>
+ * <li>Logs startup information (model, provider, storage location)</li>
+ * <li>Auto-starts all enabled input channels (Telegram, etc.)</li>
+ * <li>Performs initialization via {@code @PostConstruct}</li>
+ * </ul>
+ *
+ * <p>
+ * Channels are discovered via dependency injection and started if their
+ * corresponding {@code bot.channels.<type>.enabled} property is true.
+ *
+ * @since 1.0
+ */
+@Configuration
+@RequiredArgsConstructor
+@Slf4j
+public class AutoConfiguration {
+
+    private final BotProperties properties;
+    private final List<ChannelPort> channelPorts;
+
+    @Bean
+    public static Clock clock() {
+        return Clock.systemDefaultZone();
+    }
+
+    @PostConstruct
+    public void init() {
+        log.info("Java AI Bot starting...");
+        log.info("Default Model: {}", properties.getRouter().getDefaultModel());
+        log.info("LLM Provider: {}", properties.getLlm().getProvider());
+        log.info("Storage Path: {}", properties.getStorage().getLocal().getBasePath());
+
+        // Auto-start enabled channels
+        for (ChannelPort channel : channelPorts) {
+            String channelType = channel.getChannelType();
+            BotProperties.ChannelProperties channelProps = properties.getChannels().get(channelType);
+
+            if (channelProps != null && channelProps.isEnabled()) {
+                log.info("Starting channel: {}", channelType);
+                channel.start();
+            }
+        }
+
+        log.info("Java AI Bot started successfully");
+    }
+}

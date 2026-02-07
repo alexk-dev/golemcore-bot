@@ -1,0 +1,283 @@
+package me.golemcore.bot.domain.system;
+
+/*
+ * Copyright 2026 Aleksei Kuleshov
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * Contact: alex@kuleshov.tech
+ */
+
+import me.golemcore.bot.domain.component.MemoryComponent;
+import me.golemcore.bot.domain.component.SkillComponent;
+import me.golemcore.bot.domain.component.ToolComponent;
+import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.PromptSection;
+import me.golemcore.bot.domain.model.ToolDefinition;
+import me.golemcore.bot.domain.model.UserPreferences;
+import me.golemcore.bot.domain.service.AutoModeService;
+import me.golemcore.bot.domain.service.PromptSectionService;
+import me.golemcore.bot.domain.service.SkillTemplateEngine;
+import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.port.outbound.McpPort;
+import me.golemcore.bot.port.outbound.RagPort;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * System for assembling the complete LLM system prompt with memory, skills,
+ * tools, and RAG context (order=20). Constructs prompt from modular sections
+ * (identity, rules) via {@link service.PromptSectionService}, adds active skill
+ * content or skills summary, injects memory and RAG-retrieved context, lists
+ * available tools, and starts MCP servers for skills with MCP configuration.
+ * Sets systemPrompt and availableTools in context.
+ */
+@Component
+@RequiredArgsConstructor
+@Slf4j
+public class ContextBuildingSystem implements AgentSystem {
+
+    private final MemoryComponent memoryComponent;
+    private final SkillComponent skillComponent;
+    private final List<ToolComponent> toolComponents;
+    private final SkillTemplateEngine templateEngine;
+    private final McpPort mcpPort;
+    private final ToolExecutionSystem toolExecutionSystem;
+    private final RagPort ragPort;
+    private final BotProperties properties;
+    private final AutoModeService autoModeService;
+    private final PromptSectionService promptSectionService;
+    private final UserPreferencesService userPreferencesService;
+
+    @Override
+    public String getName() {
+        return "ContextBuildingSystem";
+    }
+
+    @Override
+    public int getOrder() {
+        return 20; // After sanitization
+    }
+
+    @Override
+    public AgentContext process(AgentContext context) {
+        log.debug("[Context] Building context...");
+
+        // Handle skill transitions (from SkillTransitionTool or SkillPipelineSystem)
+        String transitionTarget = context.getAttribute("skill.transition.target");
+        if (transitionTarget != null) {
+            skillComponent.findByName(transitionTarget).ifPresent(skill -> {
+                context.setActiveSkill(skill);
+                log.info("[Context] Skill transition: → {}", skill.getName());
+            });
+            context.setAttribute("skill.transition.target", null);
+        }
+
+        // Build memory context
+        String memoryContext = memoryComponent.getMemoryContext();
+        context.setMemoryContext(memoryContext);
+        log.debug("[Context] Memory context: {} chars",
+                memoryContext != null ? memoryContext.length() : 0);
+
+        // Build skills summary
+        String skillsSummary = skillComponent.getSkillsSummary();
+        context.setSkillsSummary(skillsSummary);
+        log.debug("[Context] Skills summary: {} chars",
+                skillsSummary != null ? skillsSummary.length() : 0);
+
+        // Collect tool definitions (native + MCP)
+        List<ToolDefinition> tools = new ArrayList<>(toolComponents.stream()
+                .filter(ToolComponent::isEnabled)
+                .map(ToolComponent::getDefinition)
+                .toList());
+
+        // Start MCP server and register tools if active skill has MCP config
+        if (context.getActiveSkill() != null && context.getActiveSkill().hasMcp()) {
+            List<ToolDefinition> mcpTools = mcpPort.getOrStartClient(context.getActiveSkill());
+            if (!mcpTools.isEmpty()) {
+                for (ToolDefinition mcpTool : mcpTools) {
+                    ToolComponent adapter = mcpPort.createToolAdapter(
+                            context.getActiveSkill().getName(), mcpTool);
+                    toolExecutionSystem.registerTool(adapter);
+                    tools.add(mcpTool);
+                }
+                log.info("[Context] Registered {} MCP tools from skill '{}'",
+                        mcpTools.size(), context.getActiveSkill().getName());
+            }
+        }
+
+        context.setAvailableTools(tools);
+        log.trace("[Context] Available tools: {}", tools.stream().map(ToolDefinition::getName).toList());
+
+        // Check if skill was selected by routing
+        if (context.getActiveSkill() != null) {
+            log.debug("[Context] Active skill: {} ({} chars)",
+                    context.getActiveSkill().getName(),
+                    context.getActiveSkill().getContent() != null ? context.getActiveSkill().getContent().length() : 0);
+        } else {
+            log.debug("[Context] No active skill selected");
+        }
+
+        // Retrieve RAG context if available
+        if (ragPort.isAvailable()) {
+            String userQuery = getLastUserMessageText(context);
+            if (userQuery != null && !userQuery.isBlank()) {
+                try {
+                    String ragContext = ragPort.query(userQuery, properties.getRag().getQueryMode()).join();
+                    if (ragContext != null && !ragContext.isBlank()) {
+                        context.setAttribute("rag.context", ragContext);
+                        log.debug("[Context] RAG context: {} chars", ragContext.length());
+                    }
+                } catch (Exception e) {
+                    log.warn("[Context] RAG query failed: {}", e.getMessage());
+                }
+            }
+        }
+
+        // Set model tier for auto-mode messages
+        if (isAutoModeMessage(context) && context.getModelTier() == null) {
+            context.setModelTier(properties.getAuto().getModelTier());
+        }
+
+        // Build system prompt
+        String systemPrompt = buildSystemPrompt(context);
+        context.setSystemPrompt(systemPrompt);
+
+        log.info("[Context] Built context: {} tools, memory={}, skills={}, systemPrompt={} chars",
+                tools.size(),
+                memoryContext != null && !memoryContext.isBlank(),
+                skillsSummary != null && !skillsSummary.isBlank(),
+                systemPrompt.length());
+
+        return context;
+    }
+
+    private String buildSystemPrompt(AgentContext context) {
+        StringBuilder sb = new StringBuilder();
+
+        // 1. Render file-based prompt sections (identity, rules, etc.)
+        if (promptSectionService.isEnabled()) {
+            UserPreferences prefs = resolveUserPreferences(context);
+            Map<String, String> vars = promptSectionService.buildTemplateVariables(prefs);
+            for (PromptSection section : promptSectionService.getEnabledSections()) {
+                String rendered = promptSectionService.renderSection(section, vars);
+                if (rendered != null && !rendered.isBlank()) {
+                    sb.append(rendered).append("\n\n");
+                }
+            }
+        }
+
+        // 2. Fallback if no sections loaded
+        if (sb.isEmpty()) {
+            sb.append("You are a helpful AI assistant.\n\n");
+        }
+
+        if (context.getMemoryContext() != null && !context.getMemoryContext().isBlank()) {
+            sb.append("# Memory\n");
+            sb.append(context.getMemoryContext());
+            sb.append("\n\n");
+        }
+
+        String ragContext = context.getAttribute("rag.context");
+        if (ragContext != null && !ragContext.isBlank()) {
+            sb.append("# Relevant Memory\n");
+            sb.append(ragContext);
+            sb.append("\n\n");
+        }
+
+        // If a specific skill was selected by routing, inject its full content
+        if (context.getActiveSkill() != null) {
+            sb.append("# Active Skill: ").append(context.getActiveSkill().getName()).append("\n");
+            String skillContent = context.getActiveSkill().getContent();
+            Map<String, String> vars = context.getActiveSkill().getResolvedVariables();
+            if (vars != null && !vars.isEmpty()) {
+                skillContent = templateEngine.render(skillContent, vars);
+            }
+            sb.append(skillContent);
+            sb.append("\n\n");
+
+            // Add pipeline info if skill has transitions
+            if (context.getActiveSkill().hasPipeline()) {
+                sb.append("# Skill Pipeline\n");
+                sb.append("You can transition to the next skill using the skill_transition tool.\n");
+                if (context.getActiveSkill().getNextSkill() != null) {
+                    sb.append("Default next: ").append(context.getActiveSkill().getNextSkill()).append("\n");
+                }
+                Map<String, String> conditional = context.getActiveSkill().getConditionalNextSkills();
+                if (conditional != null && !conditional.isEmpty()) {
+                    sb.append("Conditional transitions:\n");
+                    for (Map.Entry<String, String> entry : conditional.entrySet()) {
+                        sb.append("- ").append(entry.getKey()).append(" → ").append(entry.getValue()).append("\n");
+                    }
+                }
+                sb.append("\n");
+            }
+        } else if (context.getSkillsSummary() != null && !context.getSkillsSummary().isBlank()) {
+            // Otherwise show skills summary for progressive loading
+            sb.append("# Available Skills\n");
+            sb.append(context.getSkillsSummary());
+            sb.append("\n\n");
+        }
+
+        if (context.getAvailableTools() != null && !context.getAvailableTools().isEmpty()) {
+            sb.append("# Available Tools\n");
+            sb.append("You have access to the following tools:\n");
+            for (ToolDefinition tool : context.getAvailableTools()) {
+                sb.append("- **").append(tool.getName()).append("**: ");
+                sb.append(tool.getDescription()).append("\n");
+            }
+            sb.append("\n");
+        }
+
+        // Inject auto-mode context (goals, tasks, diary)
+        if (isAutoModeMessage(context)) {
+            String autoContext = autoModeService.buildAutoContext();
+            if (autoContext != null && !autoContext.isBlank()) {
+                sb.append("\n").append(autoContext).append("\n");
+            }
+        }
+
+        return sb.toString().trim();
+    }
+
+    private UserPreferences resolveUserPreferences(AgentContext context) {
+        return userPreferencesService.getPreferences();
+    }
+
+    private boolean isAutoModeMessage(AgentContext context) {
+        if (context.getMessages() == null || context.getMessages().isEmpty())
+            return false;
+        Message last = context.getMessages().get(context.getMessages().size() - 1);
+        return last.getMetadata() != null && Boolean.TRUE.equals(last.getMetadata().get("auto.mode"));
+    }
+
+    private String getLastUserMessageText(AgentContext context) {
+        if (context.getMessages() == null || context.getMessages().isEmpty()) {
+            return null;
+        }
+        for (int i = context.getMessages().size() - 1; i >= 0; i--) {
+            Message msg = context.getMessages().get(i);
+            if (msg.isUserMessage()) {
+                return msg.getContent();
+            }
+        }
+        return null;
+    }
+}

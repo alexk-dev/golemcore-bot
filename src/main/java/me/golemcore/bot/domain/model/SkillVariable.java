@@ -1,0 +1,42 @@
+package me.golemcore.bot.domain.model;
+
+/*
+ * Copyright 2026 Aleksei Kuleshov
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * Contact: alex@kuleshov.tech
+ */
+
+import lombok.Builder;
+import lombok.Data;
+
+/**
+ * Defines a variable that can be used in skill content with template
+ * substitution. Variables are declared in SKILL.md frontmatter and resolved
+ * from environment or config.
+ */
+@Data
+@Builder
+public class SkillVariable {
+
+    private String name;
+    private String description;
+    private String defaultValue;
+
+    @Builder.Default
+    private boolean required = false;
+
+    @Builder.Default
+    private boolean secret = false;
+}
