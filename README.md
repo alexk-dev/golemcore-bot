@@ -6,7 +6,7 @@
 [![Java](https://img.shields.io/badge/Java-17+-orange.svg)](https://www.oracle.com/java/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.4.2-brightgreen.svg)](https://spring.io/projects/spring-boot)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-475%20passing-success.svg)](https://github.com/your-org/golemcore-bot/actions)
+[![Tests](https://img.shields.io/badge/tests-775%20passing-success.svg)](https://github.com/your-org/golemcore-bot/actions)
 
 ---
 
@@ -37,7 +37,7 @@
 - **Streaming** — Real-time response streaming with typing indicators
 
 ### 🔒 Enterprise Security
-- 5 Security Layers: OWASP HTML sanitizer, injection detection, allowlists, sandboxing, content policy
+- 5 Security Layers: Unicode normalization, injection detection, allowlists, sandboxing, content policy
 - Rate limiting: per-user (20/min, 100/hr, 500/day), per-channel, per-LLM
 - Tool confirmation with 60s timeout
 
@@ -451,7 +451,7 @@ src/main/java/me/golemcore/bot/
 ### Running Tests
 
 ```bash
-# All tests (475 tests)
+# All tests (775 tests)
 mvn test
 
 # Specific test class
@@ -518,7 +518,7 @@ The bot processes messages through ordered pipeline stages:
 | **HTTP Client** | Feign + OkHttp | 13.5 + 4.12 |
 | **Messaging** | Telegram Bots | 8.2.0 |
 | **Browser** | Playwright | 1.49.0 |
-| **Security** | OWASP Sanitizer | 20240325.1 |
+| **Security** | Custom (Unicode normalization, injection guard) | — |
 | **Voice** | Jaffree (FFmpeg) | 2023.09.10 |
 | **Testing** | JUnit 5 + Mockito | — |
 | **Code Quality** | SpotBugs + PMD + JaCoCo | — |
@@ -588,7 +588,7 @@ See [LICENSE](LICENSE) for full text and [NOTICE](NOTICE) for attributions.
 
 | Library | License |
 |---------|---------|
-| Spring Boot, LangChain4j, OkHttp, Playwright, Jackson, MinIO, Jaffree | Apache 2.0 |
+| Spring Boot, LangChain4j, OkHttp, Playwright, Jackson, Jaffree | Apache 2.0 |
 | Telegram Bots, Lombok | MIT |
 
 ---
@@ -600,8 +600,6 @@ Built with:
 - [LangChain4j](https://github.com/langchain4j/langchain4j) — LLM integration
 - [Telegram Bots](https://github.com/rubenlagus/TelegramBots) — Telegram API
 - [Playwright](https://playwright.dev/) — Headless browser
-- [OWASP Java HTML Sanitizer](https://github.com/OWASP/java-html-sanitizer) — Security
-
 Special thanks to the Model Context Protocol community for MCP tooling.
 
 ---

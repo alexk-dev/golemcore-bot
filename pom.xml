@@ -30,8 +30,7 @@
         <telegram.version>8.2.0</telegram.version>
         <langchain4j.version>1.0.0-beta1</langchain4j.version>
         <playwright.version>1.49.0</playwright.version>
-        <minio.version>8.5.14</minio.version>
-        <testcontainers.version>1.20.4</testcontainers.version>
+
         <spotbugs.version>4.8.6.6</spotbugs.version>
         <pmd.version>3.26.0</pmd.version>
         <jacoco.version>0.8.12</jacoco.version>
@@ -134,13 +133,6 @@
             <version>${playwright.version}</version>
         </dependency>
 
-        <!-- MinIO Client (S3-compatible) -->
-        <dependency>
-            <groupId>io.minio</groupId>
-            <artifactId>minio</artifactId>
-            <version>${minio.version}</version>
-        </dependency>
-
         <!-- Voice Processing - Jaffree (FFmpeg wrapper) -->
         <dependency>
             <groupId>com.github.kokorin.jaffree</groupId>
@@ -163,24 +155,6 @@
         <dependency>
             <groupId>io.projectreactor</groupId>
             <artifactId>reactor-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.testcontainers</groupId>
-            <artifactId>testcontainers</artifactId>
-            <version>${testcontainers.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.testcontainers</groupId>
-            <artifactId>localstack</artifactId>
-            <version>${testcontainers.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.testcontainers</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <version>${testcontainers.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
