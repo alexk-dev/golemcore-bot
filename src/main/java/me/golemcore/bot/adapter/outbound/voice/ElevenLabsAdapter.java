@@ -30,6 +30,8 @@ import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
 import org.springframework.stereotype.Component;
 
+import jakarta.annotation.PostConstruct;
+
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Collections;
@@ -54,6 +56,20 @@ public class ElevenLabsAdapter implements VoicePort {
     private final OkHttpClient okHttpClient;
     private final BotProperties properties;
     private final ObjectMapper objectMapper;
+
+    @PostConstruct
+    void init() {
+        BotProperties.VoiceProperties voice = properties.getVoice();
+        boolean hasApiKey = voice.getApiKey() != null && !voice.getApiKey().isBlank();
+        if (voice.isEnabled() && !hasApiKey) {
+            log.warn("[ElevenLabs] Voice is ENABLED but API key is NOT configured — "
+                    + "STT/TTS will not work. Set ELEVENLABS_API_KEY env var.");
+        }
+        log.info("[ElevenLabs] Adapter initialized: enabled={}, apiKeyConfigured={}, voiceId={}, "
+                + "sttModel={}, ttsModel={}",
+                voice.isEnabled(), hasApiKey, voice.getVoiceId(),
+                voice.getSttModelId(), voice.getTtsModelId());
+    }
 
     @Override
     public CompletableFuture<TranscriptionResult> transcribe(byte[] audioData, AudioFormat format) {

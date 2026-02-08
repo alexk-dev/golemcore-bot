@@ -136,8 +136,7 @@ public class ResponseRoutingSystem implements AgentSystem {
             return context;
         }
 
-        log.debug("[Response] Routing response to channel '{}', chat '{}'", channelType, chatId);
-        log.trace("[Response] Content preview: '{}'", truncate(response.getContent(), 150));
+        log.info("[Response] Routing {} chars to {}/{}", response.getContent().length(), channelType, chatId);
 
         try {
             // Send the response (with timeout to prevent indefinite blocking)
@@ -165,7 +164,7 @@ public class ResponseRoutingSystem implements AgentSystem {
                         .build());
             }
 
-            log.debug("[Response] Successfully sent to channel '{}', chat '{}'", channelType, chatId);
+            log.info("[Response] Sent text to {}/{}", channelType, chatId);
 
         } catch (Exception e) {
             log.error("[Response] FAILED to send: {}", e.getMessage(), e);
@@ -179,12 +178,23 @@ public class ResponseRoutingSystem implements AgentSystem {
     }
 
     private void sendVoiceIfRequested(AgentContext context, String responseText) {
-        if (!voicePort.isAvailable()) {
-            log.debug("[Response] Voice skipped: voice service not available");
+        boolean available = voicePort.isAvailable();
+        Boolean voiceRequested = context.getAttribute("voiceRequested");
+        boolean incomingVoice = hasIncomingVoice(context);
+        boolean autoRespond = properties.getVoice().getTelegram().isRespondWithVoice();
+
+        log.info("[Response] Voice check: available={}, toolRequested={}, incomingVoice={}, autoRespond={}",
+                available, Boolean.TRUE.equals(voiceRequested), incomingVoice, autoRespond);
+
+        if (!available) {
+            if (properties.getVoice().isEnabled()) {
+                log.warn("[Response] Voice ENABLED but not available — check ELEVENLABS_API_KEY");
+            }
             return;
         }
 
         if (!shouldRespondWithVoice(context)) {
+            log.info("[Response] Voice not triggered (no tool request, no incoming voice)");
             return;
         }
 
