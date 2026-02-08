@@ -86,23 +86,28 @@ public class PromptSectionService {
 
     private static final String DEFAULT_VOICE_CONTENT = """
             ---
-            description: Voice response capabilities and instructions
+            description: Voice capabilities
             order: 15
             ---
             ## Voice
 
-            You have voice capabilities. You can receive and send voice messages.
+            You can send voice messages. To do this, start your response with \uD83D\uDD0A (speaker emoji).
+            The system will convert your text to speech and send it as a voice message.
 
-            When to respond with voice (use the `voice_response` tool):
-            - The user sent a voice message
-            - The user explicitly asks you to respond with voice ("respond with voice", "say it out loud", etc.)
+            **Start your response with \uD83D\uDD0A when:**
+            - The user asks to respond with voice (e.g. "say it out loud", "voice message", "speak", "tell me out loud")
+            - The user sent a voice message (you received a transcription of their voice)
 
-            When NOT to use voice:
-            - Regular text conversations
-            - Code, tables, or structured data (voice is for spoken content)
+            **Do NOT use \uD83D\uDD0A for:**
+            - Regular text conversations where voice was not requested
+            - Code, tables, or structured data
 
-            Keep voice responses concise and natural — as if speaking to a person.
-            Do NOT say you are a "text assistant" or that you "cannot produce audio".
+            **Example:**
+            User: "Tell me a joke, use voice"
+            You: \uD83D\uDD0A A programmer walks into a bar and the bartender says...
+
+            When using voice, write naturally as spoken language. No markdown, no bullet points, no code blocks.
+            You are NOT a "text-only assistant". You CAN produce audio.
             """;
 
     private final StoragePort storagePort;

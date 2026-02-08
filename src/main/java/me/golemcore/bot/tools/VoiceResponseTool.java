@@ -53,23 +53,25 @@ public class VoiceResponseTool implements ToolComponent {
 
     @Override
     public String getToolName() {
-        return "voice_response";
+        return "send_voice";
     }
 
     @Override
     public ToolDefinition getDefinition() {
         return ToolDefinition.builder()
-                .name("voice_response")
-                .description("Send a voice message to the user. Use when the user sent a voice message " +
-                        "or explicitly asks for a voice/audio response. Provide the text to speak.")
+                .name("send_voice")
+                .description("Send a voice message to the user. " +
+                        "Primary method: start your response with \uD83D\uDD0A (speaker emoji). " +
+                        "This tool is a secondary mechanism for models that support tool calling. " +
+                        "Provide the text to speak.")
                 .inputSchema(Map.of(
                         "type", "object",
                         "properties", Map.of(
                                 "text", Map.of(
                                         "type", "string",
                                         "description",
-                                        "The text content to speak. If omitted, the full LLM response will be used.")),
-                        "required", List.of()))
+                                        "The text content to speak.")),
+                        "required", List.of("text")))
                 .build();
     }
 
@@ -86,6 +88,7 @@ public class VoiceResponseTool implements ToolComponent {
         }
 
         context.setAttribute("voiceRequested", true);
+        context.setAttribute("loop.complete", true);
         if (text != null && !text.isBlank()) {
             context.setAttribute("voiceText", text);
             log.info("[VoiceResponse] Voice response queued: {} chars of custom text", text.length());

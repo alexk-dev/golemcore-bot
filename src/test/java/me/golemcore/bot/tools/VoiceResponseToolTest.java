@@ -11,6 +11,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
@@ -47,16 +48,20 @@ class VoiceResponseToolTest {
     }
 
     @Test
-    void toolNameIsVoiceResponse() {
-        assertEquals("voice_response", tool.getToolName());
+    void toolNameIsSendVoice() {
+        assertEquals("send_voice", tool.getToolName());
     }
 
+    @SuppressWarnings("unchecked")
     @Test
     void definitionHasCorrectName() {
         ToolDefinition def = tool.getDefinition();
-        assertEquals("voice_response", def.getName());
+        assertEquals("send_voice", def.getName());
         assertNotNull(def.getDescription());
         assertNotNull(def.getInputSchema());
+        // text is required
+        List<String> required = (List<String>) def.getInputSchema().get("required");
+        assertTrue(required.contains("text"));
     }
 
     @Test
@@ -71,6 +76,7 @@ class VoiceResponseToolTest {
         assertEquals("Voice response queued", result.getOutput());
         assertTrue((Boolean) context.getAttribute("voiceRequested"));
         assertEquals("Hello world", context.getAttribute("voiceText"));
+        assertTrue((Boolean) context.getAttribute("loop.complete"));
     }
 
     @Test

@@ -111,6 +111,16 @@ public class ResponseRoutingSystem implements AgentSystem {
             return context;
         }
 
+        // Voice-only response: send_voice tool provided text, LLM had no text content
+        Boolean voiceRequested = context.getAttribute("voiceRequested");
+        String voiceText = context.getAttribute("voiceText");
+        if (Boolean.TRUE.equals(voiceRequested) && voiceText != null && !voiceText.isBlank()
+                && (response == null || response.getContent() == null || response.getContent().isBlank())) {
+            sendVoiceOnly(context, voiceText);
+            sendPendingAttachments(context);
+            return context;
+        }
+
         if (response == null || response.getContent() == null || response.getContent().isBlank()) {
             log.debug("[Response] No response content to route (response={}, content={})",
                     response != null ? "present" : "null",
@@ -138,16 +148,37 @@ public class ResponseRoutingSystem implements AgentSystem {
 
         log.info("[Response] Routing {} chars to {}/{}", response.getContent().length(), channelType, chatId);
 
+        String content = response.getContent();
+
+        // Voice prefix detection: if response starts with 🔊, send voice instead of
+        // text
+        if (voicePort.isAvailable() && hasVoicePrefix(content)) {
+            // Prefer voiceText from send_voice tool if set (has the real content)
+            String prefixVoiceText = context.getAttribute("voiceText");
+            String textToSpeak = (prefixVoiceText != null && !prefixVoiceText.isBlank())
+                    ? prefixVoiceText
+                    : stripVoicePrefix(content);
+            log.info("[Response] Voice prefix detected, sending voice: {} chars (from {})",
+                    textToSpeak.length(), prefixVoiceText != null ? "tool" : "prefix");
+            if (sendVoiceInsteadOfText(context, channel, chatId, textToSpeak, toolsExecuted)) {
+                sendPendingAttachments(context);
+                return context;
+            }
+            // TTS failed — fall through to send text without prefix
+            content = textToSpeak;
+            log.info("[Response] TTS failed, falling back to text: {} chars", content.length());
+        }
+
         try {
             // Send the response (with timeout to prevent indefinite blocking)
-            channel.sendMessage(chatId, response.getContent()).get(30, TimeUnit.SECONDS);
+            channel.sendMessage(chatId, content).get(30, TimeUnit.SECONDS);
 
             // Add assistant message to session only if NOT a continuation after tool calls
             // (ToolExecutionSystem already adds assistant message with tool calls)
             if (!Boolean.TRUE.equals(toolsExecuted)) {
                 session.addMessage(Message.builder()
                         .role("assistant")
-                        .content(response.getContent())
+                        .content(content)
                         .channelType(channelType)
                         .chatId(chatId)
                         .timestamp(Instant.now())
@@ -157,7 +188,7 @@ public class ResponseRoutingSystem implements AgentSystem {
                 // After tool execution, add the final assistant message
                 session.addMessage(Message.builder()
                         .role("assistant")
-                        .content(response.getContent())
+                        .content(content)
                         .channelType(channelType)
                         .chatId(chatId)
                         .timestamp(Instant.now())
@@ -172,9 +203,53 @@ public class ResponseRoutingSystem implements AgentSystem {
         }
 
         sendPendingAttachments(context);
-        sendVoiceIfRequested(context, response.getContent());
+        sendVoiceIfRequested(context, content);
 
         return context;
+    }
+
+    static final String VOICE_PREFIX = "\uD83D\uDD0A";
+
+    boolean hasVoicePrefix(String content) {
+        return content != null && content.trim().startsWith(VOICE_PREFIX);
+    }
+
+    String stripVoicePrefix(String content) {
+        if (content == null)
+            return "";
+        String trimmed = content.trim();
+        if (trimmed.startsWith(VOICE_PREFIX)) {
+            return trimmed.substring(VOICE_PREFIX.length()).trim();
+        }
+        return trimmed;
+    }
+
+    /**
+     * Synthesize TTS and send voice message instead of text. Returns true if
+     * successful.
+     */
+    private boolean sendVoiceInsteadOfText(AgentContext context, ChannelPort channel,
+            String chatId, String textToSpeak, Boolean toolsExecuted) {
+        AgentSession session = context.getSession();
+        try {
+            byte[] audioData = voiceHandler.synthesizeForTelegram(textToSpeak).get(60, TimeUnit.SECONDS);
+            channel.sendVoice(chatId, audioData).get(30, TimeUnit.SECONDS);
+
+            // Add clean text (without prefix) to session history
+            session.addMessage(Message.builder()
+                    .role("assistant")
+                    .content(textToSpeak)
+                    .channelType(session.getChannelType())
+                    .chatId(chatId)
+                    .timestamp(Instant.now())
+                    .build());
+
+            log.info("[Response] Voice sent: {} bytes audio, chatId={}", audioData.length, chatId);
+            return true;
+        } catch (Exception e) {
+            log.error("[Response] Voice prefix TTS failed, will fall back to text: {}", e.getMessage(), e);
+            return false;
+        }
     }
 
     private void sendVoiceIfRequested(AgentContext context, String responseText) {
@@ -194,7 +269,7 @@ public class ResponseRoutingSystem implements AgentSystem {
         }
 
         if (!shouldRespondWithVoice(context)) {
-            log.info("[Response] Voice not triggered (no tool request, no incoming voice)");
+            log.info("[Response] Voice not triggered");
             return;
         }
 
@@ -223,17 +298,63 @@ public class ResponseRoutingSystem implements AgentSystem {
         }
     }
 
+    private void sendVoiceOnly(AgentContext context, String textToSpeak) {
+        AgentSession session = context.getSession();
+        String chatId = session.getChatId();
+        ChannelPort channel = channelRegistry.get(session.getChannelType());
+        if (channel == null) {
+            log.warn("[Response] Voice-only skipped: no channel for '{}'", session.getChannelType());
+            return;
+        }
+
+        if (!voicePort.isAvailable()) {
+            log.warn("[Response] Voice-only fallback to text: voice not available");
+            try {
+                channel.sendMessage(chatId, textToSpeak).get(30, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                log.error("[Response] Failed to send fallback text: {}", e.getMessage());
+            }
+            addAssistantMessage(session, textToSpeak);
+            return;
+        }
+
+        log.info("[Response] Voice-only: synthesizing {} chars", textToSpeak.length());
+        try {
+            byte[] audioData = voiceHandler.synthesizeForTelegram(textToSpeak).get(60, TimeUnit.SECONDS);
+            channel.sendVoice(chatId, audioData).get(30, TimeUnit.SECONDS);
+            log.info("[Response] Voice-only sent: {} bytes audio", audioData.length);
+        } catch (Exception e) {
+            log.error("[Response] Voice-only TTS failed, falling back to text: {}", e.getMessage());
+            try {
+                channel.sendMessage(chatId, textToSpeak).get(30, TimeUnit.SECONDS);
+            } catch (Exception e2) {
+                log.error("[Response] Fallback text also failed: {}", e2.getMessage());
+            }
+        }
+        addAssistantMessage(session, textToSpeak);
+    }
+
+    private void addAssistantMessage(AgentSession session, String content) {
+        session.addMessage(Message.builder()
+                .role("assistant")
+                .content(content)
+                .channelType(session.getChannelType())
+                .chatId(session.getChatId())
+                .timestamp(Instant.now())
+                .build());
+    }
+
     boolean shouldRespondWithVoice(AgentContext context) {
         // Explicitly requested by VoiceResponseTool
         Boolean voiceRequested = context.getAttribute("voiceRequested");
         if (Boolean.TRUE.equals(voiceRequested)) {
-            log.debug("[Response] Voice requested explicitly via VoiceResponseTool");
+            log.info("[Response] Voice triggered: VoiceResponseTool");
             return true;
         }
 
         // Incoming voice message + config allows auto-respond
         if (properties.getVoice().getTelegram().isRespondWithVoice() && hasIncomingVoice(context)) {
-            log.debug("[Response] Voice auto-response triggered by incoming voice message");
+            log.info("[Response] Voice triggered: incoming voice message");
             return true;
         }
 
@@ -324,7 +445,9 @@ public class ResponseRoutingSystem implements AgentSystem {
         LlmResponse response = context.getAttribute("llm.response");
         String llmError = context.getAttribute("llm.error");
         List<?> pending = context.getAttribute("pendingAttachments");
-        return response != null || llmError != null || (pending != null && !pending.isEmpty());
+        Boolean voiceRequested = context.getAttribute("voiceRequested");
+        return response != null || llmError != null || (pending != null && !pending.isEmpty())
+                || Boolean.TRUE.equals(voiceRequested);
     }
 
     public void registerChannel(ChannelPort channel) {

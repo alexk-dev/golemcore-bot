@@ -244,6 +244,11 @@ public class AgentLoop {
     }
 
     private boolean shouldContinueLoop(AgentContext context) {
+        Boolean loopComplete = context.getAttribute("loop.complete");
+        if (Boolean.TRUE.equals(loopComplete)) {
+            return false;
+        }
+
         Boolean toolsExecuted = context.getAttribute("tools.executed");
         if (Boolean.TRUE.equals(toolsExecuted)) {
             LlmResponse response = context.getAttribute("llm.response");

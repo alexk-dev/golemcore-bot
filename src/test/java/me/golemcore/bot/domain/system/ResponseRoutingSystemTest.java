@@ -476,4 +476,199 @@ class ResponseRoutingSystemTest {
         assertDoesNotThrow(() -> system.process(context));
         verify(channelPort).sendMessage(eq("chat1"), eq("response text"));
     }
+
+    // ===== Voice Prefix Detection Tests =====
+
+    @Test
+    void voicePrefixSendsVoiceInsteadOfText() {
+        when(voicePort.isAvailable()).thenReturn(true);
+        when(voiceHandler.synthesizeForTelegram(anyString()))
+                .thenReturn(CompletableFuture.completedFuture(new byte[] { 10, 20, 30 }));
+
+        AgentContext context = createContext();
+        LlmResponse response = LlmResponse.builder().content("\uD83D\uDD0A Hello, this is voice").build();
+        context.setAttribute("llm.response", response);
+
+        system.process(context);
+
+        // Voice should be sent
+        verify(voiceHandler).synthesizeForTelegram("Hello, this is voice");
+        verify(channelPort).sendVoice(eq("chat1"), eq(new byte[] { 10, 20, 30 }));
+        // Text should NOT be sent
+        verify(channelPort, never()).sendMessage(anyString(), anyString());
+        // Session should have clean text (without prefix)
+        assertFalse(context.getSession().getMessages().isEmpty());
+        assertEquals("Hello, this is voice", context.getSession().getMessages().get(0).getContent());
+    }
+
+    @Test
+    void voicePrefixWithTtsFailureFallsBackToText() {
+        when(voicePort.isAvailable()).thenReturn(true);
+        when(voiceHandler.synthesizeForTelegram(anyString()))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("TTS failed")));
+
+        AgentContext context = createContext();
+        LlmResponse response = LlmResponse.builder().content("\uD83D\uDD0A Fallback text").build();
+        context.setAttribute("llm.response", response);
+
+        system.process(context);
+
+        // Text sent as fallback — without prefix
+        verify(channelPort).sendMessage(eq("chat1"), eq("Fallback text"));
+        // Voice send should NOT have been called (synthesis failed before send)
+        verify(channelPort, never()).sendVoice(anyString(), any(byte[].class));
+    }
+
+    @Test
+    void noPrefixSendsNormalText() {
+        when(voicePort.isAvailable()).thenReturn(true);
+
+        AgentContext context = createContext();
+        LlmResponse response = LlmResponse.builder().content("Normal response").build();
+        context.setAttribute("llm.response", response);
+
+        system.process(context);
+
+        // Normal text flow
+        verify(channelPort).sendMessage(eq("chat1"), eq("Normal response"));
+        // No voice
+        verify(voiceHandler, never()).synthesizeForTelegram(anyString());
+        verify(channelPort, never()).sendVoice(anyString(), any(byte[].class));
+    }
+
+    @Test
+    void voicePrefixIgnoredWhenVoiceNotAvailable() {
+        when(voicePort.isAvailable()).thenReturn(false);
+
+        AgentContext context = createContext();
+        LlmResponse response = LlmResponse.builder().content("\uD83D\uDD0A Should be text").build();
+        context.setAttribute("llm.response", response);
+
+        system.process(context);
+
+        // Sent as normal text (with prefix intact since voice not available)
+        verify(channelPort).sendMessage(eq("chat1"), eq("\uD83D\uDD0A Should be text"));
+        verify(voiceHandler, never()).synthesizeForTelegram(anyString());
+    }
+
+    @Test
+    void voicePrefixPrefersToolVoiceText() {
+        when(voicePort.isAvailable()).thenReturn(true);
+        when(voiceHandler.synthesizeForTelegram(anyString()))
+                .thenReturn(CompletableFuture.completedFuture(new byte[] { 11, 22, 33 }));
+
+        AgentContext context = createContext();
+        // LLM responds with prefix + short confirmation, but tool already queued the
+        // real content
+        LlmResponse response = LlmResponse.builder().content("\uD83D\uDD0A сообщение отправлено").build();
+        context.setAttribute("llm.response", response);
+        context.setAttribute("voiceRequested", true);
+        context.setAttribute("voiceText", "This is the actual joke that should be spoken");
+
+        system.process(context);
+
+        // Should synthesize the tool's text, NOT the prefix text
+        verify(voiceHandler).synthesizeForTelegram("This is the actual joke that should be spoken");
+        verify(channelPort).sendVoice(eq("chat1"), eq(new byte[] { 11, 22, 33 }));
+        // Text should NOT be sent (voice succeeded)
+        verify(channelPort, never()).sendMessage(anyString(), anyString());
+    }
+
+    // ===== Voice-Only Response Tests (send_voice tool with blank LLM content)
+    // =====
+
+    @Test
+    void voiceOnlyResponseSendsVoiceWhenNoLlmContent() {
+        when(voicePort.isAvailable()).thenReturn(true);
+        when(voiceHandler.synthesizeForTelegram(anyString()))
+                .thenReturn(CompletableFuture.completedFuture(new byte[] { 99, 88, 77 }));
+
+        AgentContext context = createContext();
+        // LLM response has blank content (only tool calls, no text)
+        LlmResponse response = LlmResponse.builder()
+                .content("")
+                .toolCalls(List.of(Message.ToolCall.builder().id("tc1").name("send_voice").build()))
+                .build();
+        context.setAttribute("llm.response", response);
+        context.setAttribute("voiceRequested", true);
+        context.setAttribute("voiceText", "Here is a joke for you");
+
+        system.process(context);
+
+        verify(voiceHandler).synthesizeForTelegram("Here is a joke for you");
+        verify(channelPort).sendVoice(eq("chat1"), eq(new byte[] { 99, 88, 77 }));
+        verify(channelPort, never()).sendMessage(anyString(), anyString());
+        // Assistant message should be added to session
+        assertFalse(context.getSession().getMessages().isEmpty());
+        assertEquals("Here is a joke for you", context.getSession().getMessages().get(0).getContent());
+    }
+
+    @Test
+    void voiceOnlyFallsBackToTextWhenVoiceNotAvailable() {
+        when(voicePort.isAvailable()).thenReturn(false);
+
+        AgentContext context = createContext();
+        LlmResponse response = LlmResponse.builder().content("").build();
+        context.setAttribute("llm.response", response);
+        context.setAttribute("voiceRequested", true);
+        context.setAttribute("voiceText", "Fallback joke text");
+
+        system.process(context);
+
+        verify(channelPort).sendMessage(eq("chat1"), eq("Fallback joke text"));
+        verify(channelPort, never()).sendVoice(anyString(), any(byte[].class));
+        verify(voiceHandler, never()).synthesizeForTelegram(anyString());
+        // Assistant message should be added to session
+        assertFalse(context.getSession().getMessages().isEmpty());
+        assertEquals("Fallback joke text", context.getSession().getMessages().get(0).getContent());
+    }
+
+    @Test
+    void voiceOnlyFallsBackToTextOnTtsFailure() {
+        when(voicePort.isAvailable()).thenReturn(true);
+        when(voiceHandler.synthesizeForTelegram(anyString()))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("TTS error")));
+
+        AgentContext context = createContext();
+        LlmResponse response = LlmResponse.builder().content(null).build();
+        context.setAttribute("llm.response", response);
+        context.setAttribute("voiceRequested", true);
+        context.setAttribute("voiceText", "Joke that fails TTS");
+
+        system.process(context);
+
+        verify(voiceHandler).synthesizeForTelegram("Joke that fails TTS");
+        verify(channelPort).sendMessage(eq("chat1"), eq("Joke that fails TTS"));
+        verify(channelPort, never()).sendVoice(anyString(), any(byte[].class));
+        // Assistant message should still be added
+        assertFalse(context.getSession().getMessages().isEmpty());
+        assertEquals("Joke that fails TTS", context.getSession().getMessages().get(0).getContent());
+    }
+
+    @Test
+    void shouldProcessWithVoiceRequestedOnly() {
+        AgentContext context = createContext();
+        // No llm.response, no llm.error, no pending attachments, but voiceRequested
+        context.setAttribute("voiceRequested", true);
+
+        assertTrue(system.shouldProcess(context));
+    }
+
+    @Test
+    void hasVoicePrefixDetectsPrefix() {
+        assertTrue(system.hasVoicePrefix("\uD83D\uDD0A Hello"));
+        assertTrue(system.hasVoicePrefix("  \uD83D\uDD0A Hello with leading spaces"));
+        assertFalse(system.hasVoicePrefix("Normal text"));
+        assertFalse(system.hasVoicePrefix("Hello \uD83D\uDD0A not at start"));
+        assertFalse(system.hasVoicePrefix(null));
+        assertFalse(system.hasVoicePrefix(""));
+    }
+
+    @Test
+    void stripVoicePrefixRemovesPrefix() {
+        assertEquals("Hello", system.stripVoicePrefix("\uD83D\uDD0A Hello"));
+        assertEquals("Hello", system.stripVoicePrefix("  \uD83D\uDD0A Hello"));
+        assertEquals("", system.stripVoicePrefix("\uD83D\uDD0A"));
+        assertEquals("Normal text", system.stripVoicePrefix("Normal text"));
+    }
 }
