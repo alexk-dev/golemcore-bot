@@ -31,7 +31,7 @@
         <langchain4j.version>1.0.0-beta1</langchain4j.version>
         <playwright.version>1.49.0</playwright.version>
 
-        <spotbugs.version>4.8.6.6</spotbugs.version>
+        <spotbugs.version>4.9.8.2</spotbugs.version>
         <pmd.version>3.26.0</pmd.version>
         <jacoco.version>0.8.12</jacoco.version>
         <jib.version>3.4.4</jib.version>
