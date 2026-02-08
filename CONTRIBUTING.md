@@ -94,21 +94,23 @@ git add <files>
 git commit -m "Brief description of changes"
 ```
 
-**Commit messages:**
-- Use imperative mood ("Add feature" not "Added feature")
-- First line: brief summary (50 chars max)
-- Blank line, then detailed description if needed
-- Reference issues: "Fixes #123" or "Closes #456"
+**Commit messages** follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
+
+```
+<type>[scope]: <description>
+```
 
 **Example:**
 ```
-Add skill pipeline auto-transition feature
+feat(skills): add pipeline auto-transition
 
 Implements automatic skill transitions based on nextSkill field.
 Adds SkillPipelineSystem (order=55) that runs after tool execution.
 
 Fixes #123
 ```
+
+See **[Coding Guide](docs/CODING_GUIDE.md#commit-messages)** for all types and scopes.
 
 ### 5. Push and Create PR
 
@@ -124,37 +126,14 @@ Then create a Pull Request on GitHub.
 
 ### Code Style
 
-- **Java conventions:** Follow standard Java naming conventions
-- **Indentation:** 4 spaces (no tabs)
-- **Line length:** Max 120 characters
-- **Imports:** No wildcards, organize logically
-- **Lombok:** Use `@Data`, `@Builder`, `@Slf4j` where appropriate
-- **JavaDoc:** Public APIs must have JavaDoc
+See **[Coding Guide](docs/CODING_GUIDE.md)** for the full reference. Key rules:
 
-**Example:**
-```java
-/**
- * Service for managing conversation sessions.
- */
-@Slf4j
-@Service
-public class SessionService {
-
-    private final StoragePort storage;
-    private final MemoryComponent memory;
-
-    /**
-     * Creates a new session for the given channel.
-     *
-     * @param chatId the chat identifier
-     * @return the created session
-     */
-    public AgentSession createSession(String chatId) {
-        log.info("Creating new session for chat: {}", chatId);
-        // ...
-    }
-}
-```
+- **Conventional Commits** — `feat:`, `fix:`, `refactor:`, `chore:`, etc.
+- **Explicit types** — No `var`, always declare the type
+- **Constructor injection** — `@RequiredArgsConstructor` + `private final` fields, never `@Autowired`
+- **Imports** — No wildcards, organize logically
+- **Lombok** — `@Data`, `@Builder`, `@Slf4j`, `@RequiredArgsConstructor`
+- **Logging** — Parametrized messages only, no string concatenation
 
 ### Static Analysis
 

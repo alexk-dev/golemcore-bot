@@ -60,6 +60,7 @@
 ## 📚 Documentation
 
 - **[Quick Start Guide](docs/QUICKSTART.md)** — Get running in 5 minutes
+- **[Coding Guide](docs/CODING_GUIDE.md)** — Code style, conventions, commit messages
 - **[Configuration Guide](docs/CONFIGURATION.md)** — All settings and environment variables
 - **[Model Routing Guide](docs/MODEL_ROUTING.md)** — Tier selection, hybrid routing, dynamic upgrades, context overflow
 - **[Auto Mode Guide](docs/AUTO_MODE.md)** — Goals, tasks, tick cycle, diary
