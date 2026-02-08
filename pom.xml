@@ -146,7 +146,7 @@
         <dependency>
             <groupId>com.github.kokorin.jaffree</groupId>
             <artifactId>jaffree</artifactId>
-            <version>2023.09.10</version>
+            <version>2024.08.29</version>
         </dependency>
 
         <!-- Testing -->
