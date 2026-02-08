@@ -75,20 +75,23 @@ public class VoiceResponseTool implements ToolComponent {
 
     @Override
     public CompletableFuture<ToolResult> execute(Map<String, Object> parameters) {
+        log.debug("[VoiceResponse] Execute called with parameters: {}", parameters);
+
         String text = (String) parameters.get("text");
 
         AgentContext context = AgentContextHolder.get();
         if (context == null) {
+            log.warn("[VoiceResponse] No agent context available — cannot queue voice response");
             return CompletableFuture.completedFuture(ToolResult.failure("No agent context available"));
         }
 
         context.setAttribute("voiceRequested", true);
         if (text != null && !text.isBlank()) {
             context.setAttribute("voiceText", text);
+            log.info("[VoiceResponse] Voice response queued: {} chars of custom text", text.length());
+        } else {
+            log.info("[VoiceResponse] Voice response queued: will use full LLM response");
         }
-
-        log.info("[VoiceResponse] Voice response queued (text={} chars)",
-                text != null ? text.length() : "full response");
 
         return CompletableFuture.completedFuture(ToolResult.success("Voice response queued"));
     }

@@ -180,6 +180,7 @@ public class ResponseRoutingSystem implements AgentSystem {
 
     private void sendVoiceIfRequested(AgentContext context, String responseText) {
         if (!voicePort.isAvailable()) {
+            log.debug("[Response] Voice skipped: voice service not available");
             return;
         }
 
@@ -191,6 +192,7 @@ public class ResponseRoutingSystem implements AgentSystem {
         String chatId = session.getChatId();
         ChannelPort channel = channelRegistry.get(session.getChannelType());
         if (channel == null) {
+            log.warn("[Response] Voice skipped: no channel for type '{}'", session.getChannelType());
             return;
         }
 
@@ -199,12 +201,15 @@ public class ResponseRoutingSystem implements AgentSystem {
         String voiceText = context.getAttribute("voiceText");
         String textToSpeak = (voiceText != null && !voiceText.isBlank()) ? voiceText : responseText;
 
+        log.info("[Response] Sending voice response: {} chars to synthesize, chatId={}",
+                textToSpeak.length(), chatId);
+
         try {
             byte[] audioData = voiceHandler.synthesizeForTelegram(textToSpeak).get(60, TimeUnit.SECONDS);
             channel.sendVoice(chatId, audioData).get(30, TimeUnit.SECONDS);
-            log.debug("[Response] Sent voice response: {} bytes", audioData.length);
+            log.info("[Response] Voice response sent: {} bytes MP3, chatId={}", audioData.length, chatId);
         } catch (Exception e) {
-            log.error("[Response] Failed to send voice response: {}", e.getMessage());
+            log.error("[Response] Failed to send voice response to chatId={}: {}", chatId, e.getMessage(), e);
         }
     }
 
@@ -212,11 +217,13 @@ public class ResponseRoutingSystem implements AgentSystem {
         // Explicitly requested by VoiceResponseTool
         Boolean voiceRequested = context.getAttribute("voiceRequested");
         if (Boolean.TRUE.equals(voiceRequested)) {
+            log.debug("[Response] Voice requested explicitly via VoiceResponseTool");
             return true;
         }
 
         // Incoming voice message + config allows auto-respond
         if (properties.getVoice().getTelegram().isRespondWithVoice() && hasIncomingVoice(context)) {
+            log.debug("[Response] Voice auto-response triggered by incoming voice message");
             return true;
         }
 
