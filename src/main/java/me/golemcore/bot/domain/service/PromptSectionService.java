@@ -84,6 +84,27 @@ public class PromptSectionService {
             6. Reference memory context when relevant to the conversation.
             """;
 
+    private static final String DEFAULT_VOICE_CONTENT = """
+            ---
+            description: Voice response capabilities and instructions
+            order: 15
+            ---
+            ## Voice
+
+            You have voice capabilities. You can receive and send voice messages.
+
+            When to respond with voice (use the `voice_response` tool):
+            - The user sent a voice message
+            - The user explicitly asks you to respond with voice ("respond with voice", "say it out loud", etc.)
+
+            When NOT to use voice:
+            - Regular text conversations
+            - Code, tables, or structured data (voice is for spoken content)
+
+            Keep voice responses concise and natural — as if speaking to a person.
+            Do NOT say you are a "text assistant" or that you "cannot produce audio".
+            """;
+
     private final StoragePort storagePort;
     private final BotProperties properties;
     private final SkillTemplateEngine templateEngine;
@@ -200,6 +221,9 @@ public class PromptSectionService {
     void ensureDefaults() {
         ensureDefault("IDENTITY.md", DEFAULT_IDENTITY_CONTENT);
         ensureDefault("RULES.md", DEFAULT_RULES_CONTENT);
+        if (properties.getVoice().isEnabled()) {
+            ensureDefault("VOICE.md", DEFAULT_VOICE_CONTENT);
+        }
     }
 
     private void ensureDefault(String filename, String content) {

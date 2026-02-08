@@ -337,31 +337,22 @@ Bot works autonomously every 15 minutes.
 
 ---
 
-## Voice (Experimental)
-
-### Speech-to-Text (Whisper)
+## Voice (ElevenLabs STT + TTS)
 
 ```bash
 export VOICE_ENABLED=true
-export BOT_VOICE_STT_PROVIDER=whisper
-export BOT_VOICE_STT_MODEL=whisper-1
-export BOT_VOICE_STT_LANGUAGE=auto
-```
-
-### Text-to-Speech (ElevenLabs)
-
-```bash
-export BOT_VOICE_TTS_PROVIDER=elevenlabs
-export BOT_VOICE_TTS_VOICE_ID=21m00Tcm4TlvDq8ikWAM
-export BOT_VOICE_TTS_SPEED=1.0
-export BOT_VOICE_OUTPUT_FORMAT=OGG_OPUS
+export ELEVENLABS_API_KEY=your-key-here
+export ELEVENLABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM        # Default voice
+export ELEVENLABS_TTS_MODEL=eleven_multilingual_v2       # TTS model
+export ELEVENLABS_STT_MODEL=scribe_v1                    # STT model
+export ELEVENLABS_SPEED=1.0                              # Speech speed
 ```
 
 ### Telegram Voice
 
 ```bash
-export BOT_VOICE_TELEGRAM_RESPOND_WITH_VOICE=true
-export BOT_VOICE_TELEGRAM_TRANSCRIBE_INCOMING=true
+export BOT_VOICE_TELEGRAM_RESPOND_WITH_VOICE=true   # Auto-reply with voice to voice messages
+export BOT_VOICE_TELEGRAM_TRANSCRIBE_INCOMING=true   # Transcribe incoming voice messages
 ```
 
 ---

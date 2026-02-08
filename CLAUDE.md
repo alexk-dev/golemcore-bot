@@ -10,7 +10,7 @@ Extensible AI assistant built with **Spring Boot 3.4.2** (Java 17). Processes me
 # Build
 ./mvnw clean package -DskipTests
 
-# Run tests (255 tests)
+# Run tests (801 tests)
 ./mvnw test
 
 # Run (requires env vars)
@@ -36,7 +36,7 @@ OPENAI_API_KEY=sk-... TELEGRAM_BOT_TOKEN=... TELEGRAM_ENABLED=true ./mvnw spring
 │  LlmPort │ StoragePort │ EmbeddingPort │ BrowserPort │ VoicePort │
 ├─────────────────────────────────────────────────────────────┤
 │                   Service Implementations                   │
-│  Langchain4jAdapter │ LocalStorageAdapter │ PlaywrightAdapter │
+│  Langchain4jAdapter │ LocalStorageAdapter │ PlaywrightAdapter │ ElevenLabsAdapter │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -53,7 +53,8 @@ me.golemcore.bot
 │       ├── embedding/      Langchain4jEmbeddingAdapter
 │       ├── llm/            Langchain4jAdapter, CustomLlmAdapter, NoOpLlmAdapter, LlmAdapterFactory
 │       ├── mcp/            McpClient, McpClientManager, McpToolAdapter (MCP over stdio)
-│       └── storage/        LocalStorageAdapter (filesystem storage)
+│       ├── storage/        LocalStorageAdapter (filesystem storage)
+│       └── voice/          ElevenLabsAdapter (STT + TTS via ElevenLabs API)
 ├── domain/
 │   ├── component/          Components: SkillComponent, ToolComponent, MemoryComponent, LlmComponent, etc.
 │   ├── loop/               AgentLoop, AgentLoopConfig
@@ -71,9 +72,9 @@ me.golemcore.bot
 ├── ratelimit/              TokenBucketRateLimiter (per-user, per-channel, per-LLM)
 ├── routing/                HybridSkillMatcher, LlmSkillClassifier, SkillEmbeddingStore, MessageContextAggregator
 ├── security/               InjectionGuard, InputSanitizer, AllowlistValidator, ContentPolicy
-├── tools/                  FileSystemTool, ShellTool, SkillManagementTool, DateTimeTool, BrowserTool, WeatherTool, EchoTool
+├── tools/                  FileSystemTool, ShellTool, SkillManagementTool, DateTimeTool, BrowserTool, WeatherTool, VoiceResponseTool, EchoTool
 ├── usage/                  LlmUsageTracker (token/cost tracking, JSONL files)
-└── voice/                  WhisperSttAdapter, JaffreeVoiceProcessor, TelegramVoiceHandler
+└── voice/                  TelegramVoiceHandler
 ```
 
 ## Agent Loop Pipeline
@@ -182,6 +183,7 @@ All tools implement `ToolComponent` with `getDefinition()` (JSON Schema), `execu
 | `GoalManagementTool` | create/list goals, plan tasks, write diary | — |
 | `SkillTransitionTool` | explicit skill-to-skill transitions | — |
 | `WeatherTool` | weather data via Open-Meteo (free, no API key) | — |
+| `VoiceResponseTool` | LLM requests voice output for response | — |
 
 **Security:** Path traversal blocked by `InjectionGuard`. Shell commands filtered against blocklist (rm -rf /, sudo su, etc.).
 
@@ -262,13 +264,13 @@ All config in `src/main/resources/application.properties` under `bot.*` prefix. 
 - `bot.mcp.*` — MCP client settings (enabled, startup/idle timeouts)
 - `bot.security.*` — sanitization, injection detection, allowlist
 - `bot.rate-limit.*` — per-user/channel/LLM limits
-- `bot.voice.*` — STT/TTS settings
+- `bot.voice.*` — ElevenLabs STT/TTS settings (API key, voice ID, models)
 
 Model definitions live in `models.json` in working directory.
 
 ## Testing
 
-**255 tests**, all unit tests, run with `./mvnw test`.
+**801 tests**, all unit tests, run with `./mvnw test`.
 
 - Tests in `src/test/java/` mirror the main source structure
 - `LlmPort` mocked in classifier tests (use custom `Answer` on mock creation for varargs)
@@ -287,7 +289,6 @@ Model definitions live in `models.json` in working directory.
 | Jackson YAML | — | Skill frontmatter parsing |
 | OWASP Sanitizer | 20240325.1 | HTML sanitization |
 | Feign + OkHttp | 13.5 / 4.12.0 | HTTP client |
-| Jaffree | 2023.09.10 | FFmpeg wrapper for voice |
 
 ## Common Tasks
 

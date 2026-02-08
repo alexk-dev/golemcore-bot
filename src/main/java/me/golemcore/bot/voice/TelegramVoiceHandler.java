@@ -35,25 +35,18 @@ import java.util.concurrent.CompletableFuture;
  * <p>
  * Provides two main operations:
  * <ul>
- * <li><b>Incoming voice</b> - Transcribe OGG Opus voice messages to text via
- * Whisper</li>
- * <li><b>Outgoing voice</b> - Synthesize text to OGG Opus voice messages
- * (TTS)</li>
+ * <li><b>Incoming voice</b> — Transcribe OGG Opus voice messages via ElevenLabs
+ * STT</li>
+ * <li><b>Outgoing voice</b> — Synthesize text to MP3 via ElevenLabs TTS</li>
  * </ul>
  *
  * <p>
- * Telegram uses OGG Opus format for voice messages. This handler manages the
- * integration between Telegram's format and the underlying {@link VoicePort}
- * implementations (Whisper STT, TTS providers).
+ * ElevenLabs accepts OGG natively and returns MP3, so no FFmpeg conversion is
+ * needed. Telegram {@code sendVoice()} accepts MP3.
  *
  * <p>
  * Gracefully degrades when voice processing is disabled or unavailable,
  * returning placeholder text instead of failing.
- *
- * <p>
- * Always available as a Spring bean, but checks {@code bot.voice.enabled}.
- *
- * @since 1.0
  */
 @Component
 @RequiredArgsConstructor
@@ -64,7 +57,7 @@ public class TelegramVoiceHandler {
     private final BotProperties properties;
 
     /**
-     * Process incoming voice message and return text transcription.
+     * Transcribe incoming OGG Opus voice message to text.
      */
     public CompletableFuture<String> handleIncomingVoice(byte[] voiceData) {
         if (!properties.getVoice().isEnabled()) {
@@ -88,7 +81,7 @@ public class TelegramVoiceHandler {
     }
 
     /**
-     * Synthesize text to voice for sending.
+     * Synthesize text to MP3 audio for sending via Telegram.
      */
     public CompletableFuture<byte[]> synthesizeForTelegram(String text) {
         if (!properties.getVoice().isEnabled()) {
@@ -96,11 +89,10 @@ public class TelegramVoiceHandler {
         }
 
         VoicePort.VoiceConfig config = new VoicePort.VoiceConfig(
-                properties.getVoice().getTts().getVoiceId(),
-                "en",
-                properties.getVoice().getTts().getSpeed(),
-                0f,
-                AudioFormat.OGG_OPUS);
+                properties.getVoice().getVoiceId(),
+                properties.getVoice().getTtsModelId(),
+                properties.getVoice().getSpeed(),
+                AudioFormat.MP3);
 
         return voicePort.synthesize(text, config);
     }

@@ -2,13 +2,17 @@ package me.golemcore.bot.domain.system;
 
 import me.golemcore.bot.domain.model.*;
 import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.VoicePort;
+import me.golemcore.bot.voice.TelegramVoiceHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -20,6 +24,9 @@ class ResponseRoutingSystemTest {
     private ResponseRoutingSystem system;
     private ChannelPort channelPort;
     private UserPreferencesService preferencesService;
+    private VoicePort voicePort;
+    private TelegramVoiceHandler voiceHandler;
+    private BotProperties properties;
 
     @BeforeEach
     void setUp() {
@@ -30,11 +37,21 @@ class ResponseRoutingSystemTest {
                 .thenReturn(CompletableFuture.completedFuture(null));
         when(channelPort.sendDocument(anyString(), any(byte[].class), anyString(), any()))
                 .thenReturn(CompletableFuture.completedFuture(null));
+        when(channelPort.sendVoice(anyString(), any(byte[].class)))
+                .thenReturn(CompletableFuture.completedFuture(null));
 
         preferencesService = mock(UserPreferencesService.class);
         when(preferencesService.getMessage(anyString())).thenReturn("Error occurred");
 
-        system = new ResponseRoutingSystem(List.of(channelPort), preferencesService);
+        voicePort = mock(VoicePort.class);
+        when(voicePort.isAvailable()).thenReturn(false);
+
+        voiceHandler = mock(TelegramVoiceHandler.class);
+
+        properties = new BotProperties();
+
+        system = new ResponseRoutingSystem(List.of(channelPort), preferencesService,
+                voicePort, voiceHandler, properties);
     }
 
     private AgentContext createContext() {
@@ -246,7 +263,7 @@ class ResponseRoutingSystemTest {
                 .role("user")
                 .content("auto task")
                 .timestamp(Instant.now())
-                .metadata(java.util.Map.of("auto.mode", true))
+                .metadata(Map.of("auto.mode", true))
                 .build();
         context.getMessages().add(autoMsg);
 
@@ -343,5 +360,120 @@ class ResponseRoutingSystemTest {
         system.process(context);
 
         verify(channelPort, never()).sendMessage(anyString(), anyString());
+    }
+
+    // ===== Voice Response Tests =====
+
+    @Test
+    void sendsVoiceWhenVoiceRequested() {
+        when(voicePort.isAvailable()).thenReturn(true);
+        when(voiceHandler.synthesizeForTelegram(anyString()))
+                .thenReturn(CompletableFuture.completedFuture(new byte[] { 1, 2, 3 }));
+
+        AgentContext context = createContext();
+        LlmResponse response = LlmResponse.builder().content("Hello there").build();
+        context.setAttribute("llm.response", response);
+        context.setAttribute("voiceRequested", true);
+
+        system.process(context);
+
+        verify(channelPort).sendMessage(eq("chat1"), eq("Hello there"));
+        verify(voiceHandler).synthesizeForTelegram("Hello there");
+        verify(channelPort).sendVoice(eq("chat1"), eq(new byte[] { 1, 2, 3 }));
+    }
+
+    @Test
+    void sendsVoiceWithCustomTextFromTool() {
+        when(voicePort.isAvailable()).thenReturn(true);
+        when(voiceHandler.synthesizeForTelegram(anyString()))
+                .thenReturn(CompletableFuture.completedFuture(new byte[] { 4, 5, 6 }));
+
+        AgentContext context = createContext();
+        LlmResponse response = LlmResponse.builder().content("Full response with details").build();
+        context.setAttribute("llm.response", response);
+        context.setAttribute("voiceRequested", true);
+        context.setAttribute("voiceText", "Short spoken version");
+
+        system.process(context);
+
+        verify(voiceHandler).synthesizeForTelegram("Short spoken version");
+        verify(channelPort).sendVoice(eq("chat1"), any(byte[].class));
+    }
+
+    @Test
+    void sendsVoiceForIncomingVoiceMessage() {
+        when(voicePort.isAvailable()).thenReturn(true);
+        properties.getVoice().getTelegram().setRespondWithVoice(true);
+        when(voiceHandler.synthesizeForTelegram(anyString()))
+                .thenReturn(CompletableFuture.completedFuture(new byte[] { 7, 8 }));
+
+        AgentContext context = createContext();
+        LlmResponse response = LlmResponse.builder().content("Voice reply").build();
+        context.setAttribute("llm.response", response);
+
+        // Add a user message with voice data
+        context.getMessages().add(Message.builder()
+                .role("user")
+                .content("transcribed text")
+                .voiceData(new byte[] { 10, 20 })
+                .audioFormat(AudioFormat.OGG_OPUS)
+                .timestamp(Instant.now())
+                .build());
+
+        system.process(context);
+
+        verify(voiceHandler).synthesizeForTelegram("Voice reply");
+        verify(channelPort).sendVoice(eq("chat1"), any(byte[].class));
+    }
+
+    @Test
+    void doesNotSendVoiceWhenNotAvailable() {
+        when(voicePort.isAvailable()).thenReturn(false);
+
+        AgentContext context = createContext();
+        LlmResponse response = LlmResponse.builder().content("response").build();
+        context.setAttribute("llm.response", response);
+        context.setAttribute("voiceRequested", true);
+
+        system.process(context);
+
+        verify(voiceHandler, never()).synthesizeForTelegram(anyString());
+        verify(channelPort, never()).sendVoice(anyString(), any(byte[].class));
+    }
+
+    @Test
+    void doesNotSendVoiceForNormalTextMessage() {
+        when(voicePort.isAvailable()).thenReturn(true);
+
+        AgentContext context = createContext();
+        LlmResponse response = LlmResponse.builder().content("normal response").build();
+        context.setAttribute("llm.response", response);
+
+        // Add normal text message (no voice)
+        context.getMessages().add(Message.builder()
+                .role("user")
+                .content("hello")
+                .timestamp(Instant.now())
+                .build());
+
+        system.process(context);
+
+        verify(voiceHandler, never()).synthesizeForTelegram(anyString());
+        verify(channelPort, never()).sendVoice(anyString(), any(byte[].class));
+    }
+
+    @Test
+    void voiceSynthesisFailureDoesNotBreakResponse() {
+        when(voicePort.isAvailable()).thenReturn(true);
+        when(voiceHandler.synthesizeForTelegram(anyString()))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("TTS failed")));
+
+        AgentContext context = createContext();
+        LlmResponse response = LlmResponse.builder().content("response text").build();
+        context.setAttribute("llm.response", response);
+        context.setAttribute("voiceRequested", true);
+
+        assertDoesNotThrow(() -> system.process(context));
+        verify(channelPort).sendMessage(eq("chat1"), eq("response text"));
     }
 }

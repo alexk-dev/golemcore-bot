@@ -24,7 +24,10 @@ import me.golemcore.bot.domain.model.Attachment;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.VoicePort;
+import me.golemcore.bot.voice.TelegramVoiceHandler;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -37,10 +40,10 @@ import java.util.concurrent.TimeUnit;
 /**
  * System for routing final responses back to the originating channel (order=60,
  * last in pipeline). Looks up channel port by type, sends LLM response or error
- * messages with i18n via {@link service.UserPreferencesService}, sends pending
- * attachments (screenshots, files) queued by ToolExecutionSystem, adds
- * assistant message to session, and marks context as complete. Handles both
- * success and error paths.
+ * messages with i18n via {@link UserPreferencesService}, sends pending
+ * attachments (screenshots, files) queued by ToolExecutionSystem, optionally
+ * sends voice response via TTS, adds assistant message to session, and marks
+ * context as complete. Handles both success and error paths.
  */
 @Component
 @Slf4j
@@ -48,9 +51,16 @@ public class ResponseRoutingSystem implements AgentSystem {
 
     private final Map<String, ChannelPort> channelRegistry = new ConcurrentHashMap<>();
     private final UserPreferencesService preferencesService;
+    private final VoicePort voicePort;
+    private final TelegramVoiceHandler voiceHandler;
+    private final BotProperties properties;
 
-    public ResponseRoutingSystem(List<ChannelPort> channelPorts, UserPreferencesService preferencesService) {
+    public ResponseRoutingSystem(List<ChannelPort> channelPorts, UserPreferencesService preferencesService,
+            VoicePort voicePort, TelegramVoiceHandler voiceHandler, BotProperties properties) {
         this.preferencesService = preferencesService;
+        this.voicePort = voicePort;
+        this.voiceHandler = voiceHandler;
+        this.properties = properties;
         for (ChannelPort port : channelPorts) {
             channelRegistry.put(port.getChannelType(), port);
         }
@@ -163,8 +173,68 @@ public class ResponseRoutingSystem implements AgentSystem {
         }
 
         sendPendingAttachments(context);
+        sendVoiceIfRequested(context, response.getContent());
 
         return context;
+    }
+
+    private void sendVoiceIfRequested(AgentContext context, String responseText) {
+        if (!voicePort.isAvailable()) {
+            return;
+        }
+
+        if (!shouldRespondWithVoice(context)) {
+            return;
+        }
+
+        AgentSession session = context.getSession();
+        String chatId = session.getChatId();
+        ChannelPort channel = channelRegistry.get(session.getChannelType());
+        if (channel == null) {
+            return;
+        }
+
+        // Use specific voice text if set by VoiceResponseTool, otherwise use full
+        // response
+        String voiceText = context.getAttribute("voiceText");
+        String textToSpeak = (voiceText != null && !voiceText.isBlank()) ? voiceText : responseText;
+
+        try {
+            byte[] audioData = voiceHandler.synthesizeForTelegram(textToSpeak).get(60, TimeUnit.SECONDS);
+            channel.sendVoice(chatId, audioData).get(30, TimeUnit.SECONDS);
+            log.debug("[Response] Sent voice response: {} bytes", audioData.length);
+        } catch (Exception e) {
+            log.error("[Response] Failed to send voice response: {}", e.getMessage());
+        }
+    }
+
+    boolean shouldRespondWithVoice(AgentContext context) {
+        // Explicitly requested by VoiceResponseTool
+        Boolean voiceRequested = context.getAttribute("voiceRequested");
+        if (Boolean.TRUE.equals(voiceRequested)) {
+            return true;
+        }
+
+        // Incoming voice message + config allows auto-respond
+        if (properties.getVoice().getTelegram().isRespondWithVoice() && hasIncomingVoice(context)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private boolean hasIncomingVoice(AgentContext context) {
+        if (context.getMessages() == null || context.getMessages().isEmpty()) {
+            return false;
+        }
+        // Check the last user message for voice data
+        for (int i = context.getMessages().size() - 1; i >= 0; i--) {
+            Message msg = context.getMessages().get(i);
+            if (msg.isUserMessage()) {
+                return msg.hasVoice();
+            }
+        }
+        return false;
     }
 
     @SuppressWarnings("unchecked")

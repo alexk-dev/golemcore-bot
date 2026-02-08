@@ -177,6 +177,10 @@ public class ContextBuildingSystem implements AgentSystem {
             UserPreferences prefs = resolveUserPreferences(context);
             Map<String, String> vars = promptSectionService.buildTemplateVariables(prefs);
             for (PromptSection section : promptSectionService.getEnabledSections()) {
+                // Skip voice section when voice feature is disabled
+                if ("voice".equals(section.getName()) && !properties.getVoice().isEnabled()) {
+                    continue;
+                }
                 String rendered = promptSectionService.renderSection(section, vars);
                 if (rendered != null && !rendered.isBlank()) {
                     sb.append(rendered).append("\n\n");
