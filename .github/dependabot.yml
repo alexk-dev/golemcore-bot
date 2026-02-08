@@ -1,0 +1,29 @@
+version: 2
+updates:
+  - package-ecosystem: "maven"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+    groups:
+      spring-boot:
+        patterns:
+          - "org.springframework.boot*"
+      langchain4j:
+        patterns:
+          - "dev.langchain4j*"
+      testing:
+        patterns:
+          - "org.mockito*"
+          - "org.junit*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "ci"
