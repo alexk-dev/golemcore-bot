@@ -109,10 +109,6 @@ public class SecurityService {
      * Check if a sender is in the allowlist.
      */
     public boolean isAllowed(String channelType, String senderId) {
-        if (!properties.getSecurity().getAllowlist().isEnabled()) {
-            return true;
-        }
-
         BotProperties.ChannelProperties channelProps = properties.getChannels().get(channelType);
         if (channelProps == null) {
             return false;

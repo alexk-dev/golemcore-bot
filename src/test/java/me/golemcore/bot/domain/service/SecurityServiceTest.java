@@ -210,23 +210,12 @@ class SecurityServiceTest {
     // ==================== isAllowed ====================
 
     @Test
-    void isAllowedReturnsTrueWhenAllowlistDisabled() {
-        properties.getSecurity().getAllowlist().setEnabled(false);
-
-        assertTrue(service.isAllowed("telegram", "user123"));
-    }
-
-    @Test
     void isAllowedReturnsFalseWhenChannelNotConfigured() {
-        properties.getSecurity().getAllowlist().setEnabled(true);
-        // No channel properties configured
-
         assertFalse(service.isAllowed("unknown_channel", "user123"));
     }
 
     @Test
     void isAllowedReturnsTrueWhenNoAllowFromList() {
-        properties.getSecurity().getAllowlist().setEnabled(true);
         var channelProps = new BotProperties.ChannelProperties();
         channelProps.setAllowFrom(null);
         properties.getChannels().put("telegram", channelProps);
@@ -236,7 +225,6 @@ class SecurityServiceTest {
 
     @Test
     void isAllowedReturnsTrueWhenEmptyAllowFromList() {
-        properties.getSecurity().getAllowlist().setEnabled(true);
         var channelProps = new BotProperties.ChannelProperties();
         channelProps.setAllowFrom(List.of());
         properties.getChannels().put("telegram", channelProps);
@@ -246,7 +234,6 @@ class SecurityServiceTest {
 
     @Test
     void isAllowedReturnsTrueWhenUserInList() {
-        properties.getSecurity().getAllowlist().setEnabled(true);
         var channelProps = new BotProperties.ChannelProperties();
         channelProps.setAllowFrom(List.of("user123", "user456"));
         properties.getChannels().put("telegram", channelProps);
@@ -256,7 +243,6 @@ class SecurityServiceTest {
 
     @Test
     void isAllowedReturnsFalseWhenUserNotInList() {
-        properties.getSecurity().getAllowlist().setEnabled(true);
         var channelProps = new BotProperties.ChannelProperties();
         channelProps.setAllowFrom(List.of("user123"));
         properties.getChannels().put("telegram", channelProps);
