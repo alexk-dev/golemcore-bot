@@ -32,7 +32,7 @@
         <playwright.version>1.49.0</playwright.version>
 
         <spotbugs.version>4.8.6.6</spotbugs.version>
-        <pmd.version>3.26.0</pmd.version>
+        <pmd.version>3.28.0</pmd.version>
         <jacoco.version>0.8.14</jacoco.version>
         <jib.version>3.4.4</jib.version>
         <jib.target.image>ghcr.io/${env.GITHUB_REPOSITORY}</jib.target.image>
