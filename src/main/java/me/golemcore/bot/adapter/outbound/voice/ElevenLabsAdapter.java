@@ -30,6 +30,7 @@ import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
@@ -97,7 +98,7 @@ public class ElevenLabsAdapter implements VoicePort {
                             Duration.ZERO,
                             Collections.emptyList());
                 }
-            } catch (Exception e) {
+            } catch (IOException e) {
                 log.error("ElevenLabs STT failed", e);
                 throw new RuntimeException("Transcription failed: " + e.getMessage(), e);
             }
@@ -140,7 +141,7 @@ public class ElevenLabsAdapter implements VoicePort {
                     log.debug("ElevenLabs TTS: {} chars → {} bytes MP3", text.length(), audioBytes.length);
                     return audioBytes;
                 }
-            } catch (Exception e) {
+            } catch (IOException e) {
                 log.error("ElevenLabs TTS failed", e);
                 throw new RuntimeException("Synthesis failed: " + e.getMessage(), e);
             }
