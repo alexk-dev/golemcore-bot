@@ -35,6 +35,9 @@ build/
 ### local workspace ###
 workspace/
 
+### Wiki (separate git repo) ###
+wiki/
+
 ### Code quality tools ###
 # PMD
 .pmd
