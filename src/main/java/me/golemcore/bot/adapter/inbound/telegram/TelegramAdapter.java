@@ -298,6 +298,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
         // Check authorization
         if (!isAuthorized(userId)) {
             log.warn("Unauthorized user: {} in chat: {}", userId, chatId);
+            sendMessage(chatId, messageService.getMessage("security.unauthorized"));
             return;
         }
 
