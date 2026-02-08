@@ -21,6 +21,7 @@ package me.golemcore.bot.tools;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.loop.AgentContextHolder;
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.infrastructure.config.BotProperties;
@@ -79,7 +80,8 @@ public class VoiceResponseTool implements ToolComponent {
     public CompletableFuture<ToolResult> execute(Map<String, Object> parameters) {
         log.debug("[VoiceResponse] Execute called with parameters: {}", parameters);
 
-        String text = (String) parameters.get("text");
+        Object rawText = parameters.get("text");
+        String text = rawText != null ? String.valueOf(rawText) : null;
 
         AgentContext context = AgentContextHolder.get();
         if (context == null) {
@@ -87,10 +89,10 @@ public class VoiceResponseTool implements ToolComponent {
             return CompletableFuture.completedFuture(ToolResult.failure("No agent context available"));
         }
 
-        context.setAttribute("voiceRequested", true);
-        context.setAttribute("loop.complete", true);
+        context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
+        context.setAttribute(ContextAttributes.LOOP_COMPLETE, true);
         if (text != null && !text.isBlank()) {
-            context.setAttribute("voiceText", text);
+            context.setAttribute(ContextAttributes.VOICE_TEXT, text);
             log.info("[VoiceResponse] Voice response queued: {} chars of custom text", text.length());
         } else {
             log.info("[VoiceResponse] Voice response queued: will use full LLM response");

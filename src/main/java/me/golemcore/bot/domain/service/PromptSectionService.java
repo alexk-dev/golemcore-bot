@@ -155,8 +155,10 @@ public class PromptSectionService {
      * @return ordered list of enabled prompt sections
      */
     public List<PromptSection> getEnabledSections() {
+        boolean voiceEnabled = properties.getVoice().isEnabled();
         return sectionRegistry.values().stream()
                 .filter(PromptSection::isEnabled)
+                .filter(s -> voiceEnabled || !"voice".equals(s.getName()))
                 .sorted(Comparator.comparingInt(PromptSection::getOrder)
                         .thenComparing(PromptSection::getName))
                 .toList();

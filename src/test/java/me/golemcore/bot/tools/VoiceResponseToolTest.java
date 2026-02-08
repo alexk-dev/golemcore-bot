@@ -3,6 +3,7 @@ package me.golemcore.bot.tools;
 import me.golemcore.bot.domain.loop.AgentContextHolder;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.infrastructure.config.BotProperties;
@@ -74,9 +75,9 @@ class VoiceResponseToolTest {
 
         assertTrue(result.isSuccess());
         assertEquals("Voice response queued", result.getOutput());
-        assertTrue((Boolean) context.getAttribute("voiceRequested"));
-        assertEquals("Hello world", context.getAttribute("voiceText"));
-        assertTrue((Boolean) context.getAttribute("loop.complete"));
+        assertTrue((Boolean) context.getAttribute(ContextAttributes.VOICE_REQUESTED));
+        assertEquals("Hello world", context.getAttribute(ContextAttributes.VOICE_TEXT));
+        assertTrue((Boolean) context.getAttribute(ContextAttributes.LOOP_COMPLETE));
     }
 
     @Test
@@ -88,8 +89,8 @@ class VoiceResponseToolTest {
         ToolResult result = future.get();
 
         assertTrue(result.isSuccess());
-        assertTrue((Boolean) context.getAttribute("voiceRequested"));
-        assertNull(context.getAttribute("voiceText"));
+        assertTrue((Boolean) context.getAttribute(ContextAttributes.VOICE_REQUESTED));
+        assertNull(context.getAttribute(ContextAttributes.VOICE_TEXT));
     }
 
     @Test
@@ -101,7 +102,7 @@ class VoiceResponseToolTest {
         ToolResult result = future.get();
 
         assertTrue(result.isSuccess());
-        assertNull(context.getAttribute("voiceText"));
+        assertNull(context.getAttribute(ContextAttributes.VOICE_TEXT));
     }
 
     @Test
@@ -125,5 +126,51 @@ class VoiceResponseToolTest {
     void isDisabledWhenVoiceDisabled() {
         properties.getVoice().setEnabled(false);
         assertFalse(tool.isEnabled());
+    }
+
+    // ===== Edge cases =====
+
+    @Test
+    void executeWithNumericTextConvertsToString() throws Exception {
+        AgentContext context = createContext();
+        AgentContextHolder.set(context);
+
+        // text parameter as Integer — String.valueOf should handle it
+        CompletableFuture<ToolResult> future = tool.execute(Map.of("text", 42));
+        ToolResult result = future.get();
+
+        assertTrue(result.isSuccess());
+        assertEquals("42", context.getAttribute(ContextAttributes.VOICE_TEXT));
+    }
+
+    @Test
+    void executeWithVeryLongTextStillQueues() throws Exception {
+        AgentContext context = createContext();
+        AgentContextHolder.set(context);
+
+        String longText = "A".repeat(50_000);
+        CompletableFuture<ToolResult> future = tool.execute(Map.of("text", longText));
+        ToolResult result = future.get();
+
+        assertTrue(result.isSuccess());
+        assertEquals(longText, context.getAttribute(ContextAttributes.VOICE_TEXT));
+    }
+
+    @Test
+    void definitionHasDescription() {
+        ToolDefinition def = tool.getDefinition();
+        assertNotNull(def.getDescription());
+        assertFalse(def.getDescription().isBlank());
+    }
+
+    @Test
+    void executeSetsLoopComplete() throws Exception {
+        AgentContext context = createContext();
+        AgentContextHolder.set(context);
+
+        tool.execute(Map.of("text", "test")).get();
+
+        // LOOP_COMPLETE must be set to stop the agent loop after voice tool
+        assertTrue((Boolean) context.getAttribute(ContextAttributes.LOOP_COMPLETE));
     }
 }

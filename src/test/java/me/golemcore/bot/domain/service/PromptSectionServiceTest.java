@@ -282,6 +282,80 @@ class PromptSectionServiceTest {
         assertFalse(service.isEnabled());
     }
 
+    // ===== Voice section filtering =====
+
+    @Test
+    void getEnabledSections_filtersVoiceWhenDisabled() {
+        String voiceSection = "---\ndescription: Voice\norder: 15\n---\nVoice instructions.";
+        String identitySection = "---\ndescription: Identity\norder: 10\n---\nYou are a bot.";
+
+        when(storagePort.listObjects("prompts", ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of("IDENTITY.md", "VOICE.md")));
+        when(storagePort.getText("prompts", "IDENTITY.md"))
+                .thenReturn(CompletableFuture.completedFuture(identitySection));
+        when(storagePort.getText("prompts", "VOICE.md"))
+                .thenReturn(CompletableFuture.completedFuture(voiceSection));
+
+        properties.getVoice().setEnabled(false);
+        service.reload();
+
+        List<PromptSection> sections = service.getEnabledSections();
+        assertEquals(1, sections.size());
+        assertEquals("identity", sections.get(0).getName());
+    }
+
+    @Test
+    void getEnabledSections_includesVoiceWhenEnabled() {
+        String voiceSection = "---\ndescription: Voice\norder: 15\n---\nVoice instructions.";
+        String identitySection = "---\ndescription: Identity\norder: 10\n---\nYou are a bot.";
+
+        when(storagePort.listObjects("prompts", ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of("IDENTITY.md", "VOICE.md")));
+        when(storagePort.getText("prompts", "IDENTITY.md"))
+                .thenReturn(CompletableFuture.completedFuture(identitySection));
+        when(storagePort.getText("prompts", "VOICE.md"))
+                .thenReturn(CompletableFuture.completedFuture(voiceSection));
+
+        properties.getVoice().setEnabled(true);
+        service.reload();
+
+        List<PromptSection> sections = service.getEnabledSections();
+        assertEquals(2, sections.size());
+        assertEquals("identity", sections.get(0).getName());
+        assertEquals("voice", sections.get(1).getName());
+    }
+
+    @Test
+    void ensureDefaults_createsVoiceMdWhenVoiceEnabled() {
+        properties.getVoice().setEnabled(true);
+        when(storagePort.exists("prompts", "IDENTITY.md"))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(storagePort.exists("prompts", "RULES.md"))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(storagePort.exists("prompts", "VOICE.md"))
+                .thenReturn(CompletableFuture.completedFuture(false));
+        when(storagePort.putText(eq("prompts"), anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        service.ensureDefaults();
+
+        verify(storagePort).putText(eq("prompts"), eq("VOICE.md"), contains("Voice"));
+    }
+
+    @Test
+    void ensureDefaults_skipsVoiceMdWhenVoiceDisabled() {
+        properties.getVoice().setEnabled(false);
+        when(storagePort.exists("prompts", "IDENTITY.md"))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(storagePort.exists("prompts", "RULES.md"))
+                .thenReturn(CompletableFuture.completedFuture(true));
+
+        service.ensureDefaults();
+
+        verify(storagePort, never()).exists(eq("prompts"), eq("VOICE.md"));
+        verify(storagePort, never()).putText(eq("prompts"), eq("VOICE.md"), anyString());
+    }
+
     @Test
     void buildTemplateVariables_invalidTimezone() {
         UserPreferences prefs = UserPreferences.builder()

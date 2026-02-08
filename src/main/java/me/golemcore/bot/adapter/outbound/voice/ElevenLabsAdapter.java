@@ -50,8 +50,8 @@ import java.util.concurrent.CompletableFuture;
 @Slf4j
 public class ElevenLabsAdapter implements VoicePort {
 
-    private static final String STT_URL = "https://api.elevenlabs.io/v1/speech-to-text";
-    private static final String TTS_URL_TEMPLATE = "https://api.elevenlabs.io/v1/text-to-speech/%s";
+    private static final String DEFAULT_STT_URL = "https://api.elevenlabs.io/v1/speech-to-text";
+    private static final String DEFAULT_TTS_URL_TEMPLATE = "https://api.elevenlabs.io/v1/text-to-speech/%s";
 
     private final OkHttpClient okHttpClient;
     private final BotProperties properties;
@@ -97,7 +97,7 @@ public class ElevenLabsAdapter implements VoicePort {
                         .build();
 
                 Request request = new Request.Builder()
-                        .url(STT_URL)
+                        .url(getSttUrl())
                         .header("xi-api-key", apiKey)
                         .post(requestBody)
                         .build();
@@ -155,7 +155,7 @@ public class ElevenLabsAdapter implements VoicePort {
                 log.info("[ElevenLabs] TTS request: {} chars, voice={}, model={}, speed={}",
                         text.length(), voiceId, modelId, speed);
 
-                String url = String.format(TTS_URL_TEMPLATE, voiceId) + "?output_format=mp3_44100_128";
+                String url = getTtsUrl(voiceId) + "?output_format=mp3_44100_128";
 
                 String jsonBody = objectMapper.writeValueAsString(new TtsRequest(text, modelId, speed));
 
@@ -194,6 +194,14 @@ public class ElevenLabsAdapter implements VoicePort {
     public boolean isAvailable() {
         String apiKey = properties.getVoice().getApiKey();
         return properties.getVoice().isEnabled() && apiKey != null && !apiKey.isBlank();
+    }
+
+    protected String getSttUrl() {
+        return DEFAULT_STT_URL;
+    }
+
+    protected String getTtsUrl(String voiceId) {
+        return String.format(DEFAULT_TTS_URL_TEMPLATE, voiceId);
     }
 
     @Data

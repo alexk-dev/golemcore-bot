@@ -40,8 +40,18 @@ class ElevenLabsAdapterTest {
         properties.getVoice().setTtsModelId("eleven_multilingual_v2");
         properties.getVoice().setSttModelId("scribe_v1");
 
-        adapter = new TestableElevenLabsAdapter(client, properties, new ObjectMapper(),
-                mockServer.url("/").toString());
+        String baseUrl = mockServer.url("/").toString();
+        adapter = new ElevenLabsAdapter(client, properties, new ObjectMapper()) {
+            @Override
+            protected String getSttUrl() {
+                return baseUrl + "v1/speech-to-text";
+            }
+
+            @Override
+            protected String getTtsUrl(String voiceId) {
+                return baseUrl + "v1/text-to-speech/" + voiceId;
+            }
+        };
     }
 
     @AfterEach
@@ -152,137 +162,122 @@ class ElevenLabsAdapterTest {
         assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
     }
 
-    /**
-     * Testable subclass that overrides the API URLs to point to MockWebServer.
-     */
-    static class TestableElevenLabsAdapter extends ElevenLabsAdapter {
-        private final String baseUrl;
+    @Test
+    void synthesizeFailsWithoutApiKey() {
+        properties.getVoice().setApiKey("");
+        var future = adapter.synthesize("Hello", VoicePort.VoiceConfig.defaultConfig());
+        assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
+    }
 
-        TestableElevenLabsAdapter(OkHttpClient client, BotProperties properties,
-                ObjectMapper mapper, String baseUrl) {
-            super(client, properties, mapper);
-            this.baseUrl = baseUrl;
-        }
+    // ===== Edge cases =====
 
-        @Override
-        public java.util.concurrent.CompletableFuture<VoicePort.TranscriptionResult> transcribe(
-                byte[] audioData, AudioFormat format) {
-            // Redirect to mock server
-            return java.util.concurrent.CompletableFuture.supplyAsync(() -> {
-                try {
-                    BotProperties props = getProperties();
-                    String apiKey = props.getVoice().getApiKey();
-                    if (apiKey == null || apiKey.isBlank()) {
-                        throw new RuntimeException("ElevenLabs API key not configured");
-                    }
+    @Test
+    void transcribeEmptyResponseText() throws Exception {
+        mockServer.enqueue(new MockResponse()
+                .setBody("{\"text\":\"\",\"language_code\":\"en\"}")
+                .addHeader("Content-Type", "application/json"));
 
-                    String mimeType = format != null ? format.getMimeType() : "audio/ogg";
-                    String extension = format != null ? format.getExtension() : "ogg";
+        VoicePort.TranscriptionResult result = adapter.transcribe(
+                new byte[] { 1 }, AudioFormat.OGG_OPUS).get(5, TimeUnit.SECONDS);
 
-                    okhttp3.RequestBody fileBody = okhttp3.RequestBody.create(audioData,
-                            okhttp3.MediaType.parse(mimeType));
+        assertEquals("", result.text());
+        assertEquals("en", result.language());
+    }
 
-                    okhttp3.MultipartBody requestBody = new okhttp3.MultipartBody.Builder()
-                            .setType(okhttp3.MultipartBody.FORM)
-                            .addFormDataPart("file", "audio." + extension, fileBody)
-                            .addFormDataPart("model_id", props.getVoice().getSttModelId())
-                            .build();
+    @Test
+    void transcribeNullLanguageCode() throws Exception {
+        mockServer.enqueue(new MockResponse()
+                .setBody("{\"text\":\"Hello\"}")
+                .addHeader("Content-Type", "application/json"));
 
-                    okhttp3.Request request = new okhttp3.Request.Builder()
-                            .url(baseUrl + "v1/speech-to-text")
-                            .header("xi-api-key", apiKey)
-                            .post(requestBody)
-                            .build();
+        VoicePort.TranscriptionResult result = adapter.transcribe(
+                new byte[] { 1 }, AudioFormat.OGG_OPUS).get(5, TimeUnit.SECONDS);
 
-                    try (okhttp3.Response response = getClient().newCall(request).execute()) {
-                        if (!response.isSuccessful()) {
-                            String error = response.body() != null ? response.body().string() : "Unknown error";
-                            throw new RuntimeException(
-                                    "ElevenLabs STT error (" + response.code() + "): " + error);
-                        }
-                        String responseBody = response.body().string();
-                        ElevenLabsAdapter.SttResponse sttResponse = getMapper().readValue(responseBody,
-                                ElevenLabsAdapter.SttResponse.class);
-                        return new VoicePort.TranscriptionResult(
-                                sttResponse.getText(),
-                                sttResponse.getLanguageCode() != null ? sttResponse.getLanguageCode() : "unknown",
-                                1.0f, java.time.Duration.ZERO, java.util.Collections.emptyList());
-                    }
-                } catch (Exception e) {
-                    throw new RuntimeException("Transcription failed: " + e.getMessage(), e);
-                }
-            });
-        }
+        assertEquals("Hello", result.text());
+        assertEquals("unknown", result.language());
+    }
 
-        @Override
-        public java.util.concurrent.CompletableFuture<byte[]> synthesize(String text,
-                VoicePort.VoiceConfig config) {
-            return java.util.concurrent.CompletableFuture.supplyAsync(() -> {
-                try {
-                    BotProperties props = getProperties();
-                    String apiKey = props.getVoice().getApiKey();
-                    if (apiKey == null || apiKey.isBlank()) {
-                        throw new RuntimeException("ElevenLabs API key not configured");
-                    }
-                    String voiceId = config.voiceId() != null ? config.voiceId() : props.getVoice().getVoiceId();
-                    String modelId = config.modelId() != null ? config.modelId() : props.getVoice().getTtsModelId();
-                    float speed = config.speed() > 0 ? config.speed() : props.getVoice().getSpeed();
+    @Test
+    void transcribeMalformedJson() {
+        mockServer.enqueue(new MockResponse()
+                .setBody("not valid json at all")
+                .addHeader("Content-Type", "application/json"));
 
-                    String url = baseUrl + "v1/text-to-speech/" + voiceId + "?output_format=mp3_44100_128";
-                    String jsonBody = getMapper()
-                            .writeValueAsString(new ElevenLabsAdapter.TtsRequest(text, modelId, speed));
+        var future = adapter.transcribe(new byte[] { 1 }, AudioFormat.OGG_OPUS);
+        var ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
+        assertTrue(ex.getMessage().contains("Transcription failed")
+                || ex.getCause().getMessage().contains("Transcription failed"));
+    }
 
-                    okhttp3.Request request = new okhttp3.Request.Builder()
-                            .url(url)
-                            .header("xi-api-key", apiKey)
-                            .header("Accept", "audio/mpeg")
-                            .header("Content-Type", "application/json")
-                            .post(okhttp3.RequestBody.create(jsonBody,
-                                    okhttp3.MediaType.parse("application/json")))
-                            .build();
+    @Test
+    void transcribeNullFormat() throws Exception {
+        mockServer.enqueue(new MockResponse()
+                .setBody("{\"text\":\"Hello\",\"language_code\":\"en\"}")
+                .addHeader("Content-Type", "application/json"));
 
-                    try (okhttp3.Response response = getClient().newCall(request).execute()) {
-                        if (!response.isSuccessful()) {
-                            String error = response.body() != null ? response.body().string() : "Unknown error";
-                            throw new RuntimeException(
-                                    "ElevenLabs TTS error (" + response.code() + "): " + error);
-                        }
-                        return response.body().bytes();
-                    }
-                } catch (Exception e) {
-                    throw new RuntimeException("Synthesis failed: " + e.getMessage(), e);
-                }
-            });
-        }
+        VoicePort.TranscriptionResult result = adapter.transcribe(
+                new byte[] { 1 }, null).get(5, TimeUnit.SECONDS);
 
-        OkHttpClient getClient() {
-            try {
-                var field = ElevenLabsAdapter.class.getDeclaredField("okHttpClient");
-                field.setAccessible(true);
-                return (OkHttpClient) field.get(this);
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        }
+        assertEquals("Hello", result.text());
 
-        BotProperties getProperties() {
-            try {
-                var field = ElevenLabsAdapter.class.getDeclaredField("properties");
-                field.setAccessible(true);
-                return (BotProperties) field.get(this);
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        }
+        RecordedRequest request = mockServer.takeRequest(1, TimeUnit.SECONDS);
+        assertNotNull(request);
+        // Should use "audio/ogg" fallback
+        String body = request.getBody().readUtf8();
+        assertTrue(body.contains("audio.ogg"));
+    }
 
-        com.fasterxml.jackson.databind.ObjectMapper getMapper() {
-            try {
-                var field = ElevenLabsAdapter.class.getDeclaredField("objectMapper");
-                field.setAccessible(true);
-                return (com.fasterxml.jackson.databind.ObjectMapper) field.get(this);
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        }
+    @Test
+    void synthesizeEmptyAudioResponse() throws Exception {
+        mockServer.enqueue(new MockResponse()
+                .setBody(new okio.Buffer())
+                .addHeader("Content-Type", "audio/mpeg"));
+
+        byte[] result = adapter.synthesize("Test",
+                VoicePort.VoiceConfig.defaultConfig()).get(5, TimeUnit.SECONDS);
+
+        assertEquals(0, result.length);
+    }
+
+    @Test
+    void synthesizeRateLimited() {
+        mockServer.enqueue(new MockResponse()
+                .setResponseCode(429)
+                .setBody("{\"detail\":\"Rate limit exceeded\"}"));
+
+        var future = adapter.synthesize("Test", VoicePort.VoiceConfig.defaultConfig());
+        var ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
+        assertTrue(ex.getMessage().contains("429") || ex.getCause().getMessage().contains("429"));
+    }
+
+    @Test
+    void synthesizeCustomSpeed() throws Exception {
+        mockServer.enqueue(new MockResponse()
+                .setBody(new okio.Buffer().write(new byte[] { 1 }))
+                .addHeader("Content-Type", "audio/mpeg"));
+
+        VoicePort.VoiceConfig config = new VoicePort.VoiceConfig(
+                "voice1", "model1", 1.5f, AudioFormat.MP3);
+
+        adapter.synthesize("Test", config).get(5, TimeUnit.SECONDS);
+
+        RecordedRequest request = mockServer.takeRequest(1, TimeUnit.SECONDS);
+        assertNotNull(request);
+        String body = request.getBody().readUtf8();
+        assertTrue(body.contains("1.5"));
+    }
+
+    @Test
+    void transcribeWithDifferentFormats() throws Exception {
+        mockServer.enqueue(new MockResponse()
+                .setBody("{\"text\":\"Hello\",\"language_code\":\"en\"}")
+                .addHeader("Content-Type", "application/json"));
+
+        adapter.transcribe(new byte[] { 1 }, AudioFormat.MP3).get(5, TimeUnit.SECONDS);
+
+        RecordedRequest request = mockServer.takeRequest(1, TimeUnit.SECONDS);
+        assertNotNull(request);
+        String body = request.getBody().readUtf8();
+        assertTrue(body.contains("audio.mp3"));
     }
 }
