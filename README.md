@@ -6,7 +6,7 @@
 [![Java](https://img.shields.io/badge/Java-17+-orange.svg)](https://www.oracle.com/java/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.4.2-brightgreen.svg)](https://spring.io/projects/spring-boot)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-775%20passing-success.svg)](https://github.com/alexk-dev/golemcore-bot/actions)
+[![Tests](https://img.shields.io/badge/tests-777%20passing-success.svg)](https://github.com/alexk-dev/golemcore-bot/actions)
 
 ---
 
@@ -32,12 +32,11 @@
 - **Modular System Prompt** — File-based prompt sections (IDENTITY.md, RULES.md)
 
 ### 🌐 Multi-LLM & Channels
-- **LLM Providers** — OpenAI, Anthropic (Claude), Google (Gemini), custom OpenAI-compatible endpoints
+- **LLM Providers** — OpenAI, Anthropic (Claude), custom OpenAI-compatible endpoints
 - **Channels** — Telegram (long-polling, voice, file uploads), extensible for Discord/Slack
-- **Streaming** — Real-time response streaming with typing indicators
 
-### 🔒 Enterprise Security
-- 5 Security Layers: Unicode normalization, injection detection, allowlists, sandboxing, content policy
+### 🔒 Security
+- 5 layers: Unicode normalization, injection detection, allowlists, sandboxing, content policy
 - Rate limiting: per-user (20/min, 100/hr, 500/day), per-channel, per-LLM
 - Tool confirmation with 60s timeout
 
@@ -78,14 +77,14 @@
 
 ```
 Docker (recommended) OR Java 17+ with Maven 3.x
-At least one LLM API key (OpenAI, Anthropic, or Google)
+At least one LLM API key (OpenAI or Anthropic)
 ```
 
 ### Docker (Recommended)
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/golemcore-bot.git
+git clone https://github.com/alexk-dev/golemcore-bot.git
 cd golemcore-bot
 
 # Build Docker image with Jib (no Docker daemon needed)
@@ -94,7 +93,6 @@ cd golemcore-bot
 # Configure LLM provider (choose one)
 export OPENAI_API_KEY=sk-proj-...          # OpenAI (GPT-5.1, GPT-5.2, o1, o3)
 export ANTHROPIC_API_KEY=sk-ant-...        # Anthropic (Claude Opus/Sonnet)
-export GOOGLE_API_KEY=...                  # Google (Gemini)
 
 # Run container
 docker run -d \
@@ -148,7 +146,7 @@ docker-compose up -d
 ./mvnw clean package -DskipTests
 
 # Configure LLM provider
-export OPENAI_API_KEY=sk-proj-...     # or ANTHROPIC_API_KEY or GOOGLE_API_KEY
+export OPENAI_API_KEY=sk-proj-...     # or ANTHROPIC_API_KEY
 
 # Run
 java -jar target/golemcore-bot-0.1.0-SNAPSHOT.jar
@@ -216,7 +214,6 @@ See the [Tools & Integrations](#-tools--integrations) section below for configur
 |----------|-------------|---------|
 | `OPENAI_API_KEY` | OpenAI API key (GPT-5.x, o1, o3) | `sk-proj-...` |
 | `ANTHROPIC_API_KEY` | Anthropic API key (Claude Opus/Sonnet) | `sk-ant-...` |
-| `GOOGLE_API_KEY` | Google API key (Gemini) | `...` |
 
 ### Telegram Channel
 
@@ -452,7 +449,7 @@ src/main/java/me/golemcore/bot/
 ### Running Tests
 
 ```bash
-# All tests (775 tests)
+# All tests
 mvn test
 
 # Specific test class
@@ -607,8 +604,8 @@ Special thanks to the Model Context Protocol community for MCP tooling.
 
 ## 📞 Support
 
-- 🐛 **Issues:** [GitHub Issues](https://github.com/your-org/golemcore-bot/issues)
-- 💬 **Discussions:** [GitHub Discussions](https://github.com/your-org/golemcore-bot/discussions)
+- 🐛 **Issues:** [GitHub Issues](https://github.com/alexk-dev/golemcore-bot/issues)
+- 💬 **Discussions:** [GitHub Discussions](https://github.com/alexk-dev/golemcore-bot/discussions)
 - 📧 **Security:** Report vulnerabilities via email (not public issues)
 
 ---

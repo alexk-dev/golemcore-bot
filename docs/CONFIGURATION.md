@@ -201,11 +201,10 @@ export BOT_SECURITY_DETECT_COMMAND_INJECTION=true
 ### User Allowlist (Telegram)
 
 ```bash
-export BOT_SECURITY_ALLOWLIST_ENABLED=true
 export TELEGRAM_ALLOWED_USERS=123456789,987654321
 ```
 
-Only these Telegram user IDs can use the bot.
+Only these Telegram user IDs can use the bot. The allowlist is enforced automatically when set.
 
 ### Tool Confirmation
 
@@ -417,7 +416,6 @@ export BOT_AGENT_MAX_ITERATIONS=20  # max tool call loops
 
 ```bash
 # Lenient settings
-export BOT_SECURITY_ALLOWLIST_ENABLED=false
 export BOT_RATE_LIMIT_ENABLED=false
 export LOGGING_LEVEL_ME_GOLEMCORE_BOT=DEBUG
 ```
@@ -426,7 +424,6 @@ export LOGGING_LEVEL_ME_GOLEMCORE_BOT=DEBUG
 
 ```bash
 # Strict settings
-export BOT_SECURITY_ALLOWLIST_ENABLED=true
 export BOT_RATE_LIMIT_ENABLED=true
 export TOOL_CONFIRMATION_ENABLED=true
 export LOGGING_LEVEL_ME_GOLEMCORE_BOT=INFO

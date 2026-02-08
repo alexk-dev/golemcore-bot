@@ -4,7 +4,7 @@
 
 ### What is GolemCore Bot?
 
-GolemCore Bot is an enterprise-grade AI assistant framework with intelligent skill routing, multi-LLM support, and autonomous execution capabilities. It's built with Spring Boot and designed for extensibility and production use.
+GolemCore Bot is an AI assistant framework with intelligent skill routing, multi-LLM support, and autonomous execution capabilities. It's built with Spring Boot and designed for extensibility.
 
 ### Who is this for?
 
@@ -52,7 +52,6 @@ With Jib, you can build Docker images **without Docker daemon installed**:
 **Supported providers:**
 - **OpenAI** — GPT-5.1, GPT-5.2, o1, o3, GPT-4
 - **Anthropic** — Claude Opus, Claude Sonnet
-- **Google** — Gemini models via LangChain4j
 - **Custom endpoints** — Any OpenAI-compatible API
 
 All providers have similar capabilities. Choose based on your preferences:
@@ -90,7 +89,6 @@ No Telegram token needed.
 - **LLM API calls** — Pay-per-token (varies by provider and model)
   - OpenAI: Check [pricing page](https://openai.com/pricing)
   - Anthropic: Check [pricing page](https://www.anthropic.com/pricing)
-  - Google: Check [pricing page](https://ai.google.dev/pricing)
 - **Optional: Brave Search** — Free tier: 2000 queries/month, paid plans available
 - **Optional: ElevenLabs TTS** — If voice enabled
 
@@ -517,7 +515,6 @@ docker run --env-file .env golemcore-bot:latest
 
 **Telegram:**
 ```bash
-export BOT_SECURITY_ALLOWLIST_ENABLED=true
 export TELEGRAM_ALLOWED_USERS=123456789,987654321
 ```
 
@@ -700,6 +697,6 @@ See [LICENSE](LICENSE) Section 3.
 ## Still have questions?
 
 - 📚 **Docs:** [docs/](docs/)
-- 💬 **Discussions:** [GitHub Discussions](https://github.com/your-org/golemcore-bot/discussions)
-- 🐛 **Issues:** [GitHub Issues](https://github.com/your-org/golemcore-bot/issues)
+- 💬 **Discussions:** [GitHub Discussions](https://github.com/alexk-dev/golemcore-bot/discussions)
+- 🐛 **Issues:** [GitHub Issues](https://github.com/alexk-dev/golemcore-bot/issues)
 - 📧 **Security:** Email maintainers directly
