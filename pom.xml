@@ -38,9 +38,9 @@
         <jib.target.image>ghcr.io/${env.GITHUB_REPOSITORY}</jib.target.image>
 
         <!-- SonarCloud -->
-        <sonar.organization>${env.SONAR_ORGANIZATION}</sonar.organization>
+        <sonar.organization>alexk-dev</sonar.organization>
         <sonar.host.url>https://sonarcloud.io</sonar.host.url>
-        <sonar.projectKey>${env.SONAR_PROJECT_KEY}</sonar.projectKey>
+        <sonar.projectKey>alexk-dev_golemcore-bot</sonar.projectKey>
         <sonar.java.coveragePlugin>jacoco</sonar.java.coveragePlugin>
         <sonar.coverage.jacoco.xmlReportPaths>${project.build.directory}/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
         <sonar.java.pmd.reportPaths>${project.build.directory}/pmd.xml</sonar.java.pmd.reportPaths>
