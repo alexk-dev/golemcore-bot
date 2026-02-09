@@ -7,22 +7,31 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.springframework.test.util.ReflectionTestUtils;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class WeatherToolTest {
+
+    private static final String PARAM_LOCATION = "location";
+    private static final String LOCATION_LONDON = "London";
+    private static final String LOCATION_TOKYO = "Tokyo";
 
     private FeignClientFactory feignClientFactory;
     private WeatherTool tool;
 
     @BeforeEach
-    void setUp() throws Exception {
+    void setUp() {
         feignClientFactory = mock(FeignClientFactory.class);
         tool = new WeatherTool(feignClientFactory);
     }
@@ -45,7 +54,7 @@ class WeatherToolTest {
         Map<String, Object> schema = def.getInputSchema();
         @SuppressWarnings("unchecked")
         List<String> required = (List<String>) schema.get("required");
-        assertTrue(required.contains("location"));
+        assertTrue(required.contains(PARAM_LOCATION));
     }
 
     // ===== isEnabled =====
@@ -66,7 +75,7 @@ class WeatherToolTest {
 
     @Test
     void shouldFailWhenLocationIsBlank() {
-        ToolResult result = tool.execute(Map.of("location", "  ")).join();
+        ToolResult result = tool.execute(Map.of(PARAM_LOCATION, "  ")).join();
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("Location is required"));
     }
@@ -74,20 +83,20 @@ class WeatherToolTest {
     // ===== Successful weather fetch =====
 
     @Test
-    void shouldReturnWeatherDataForValidLocation() throws Exception {
+    void shouldReturnWeatherDataForValidLocation() {
         WeatherTool.GeocodingApi geocodingApi = mock(WeatherTool.GeocodingApi.class);
         WeatherTool.WeatherApi weatherApi = mock(WeatherTool.WeatherApi.class);
         injectApis(geocodingApi, weatherApi);
 
         WeatherTool.GeoResult geoResult = new WeatherTool.GeoResult();
-        geoResult.setName("London");
+        geoResult.setName(LOCATION_LONDON);
         geoResult.setCountry("United Kingdom");
         geoResult.setLatitude(51.5074);
         geoResult.setLongitude(-0.1278);
 
         WeatherTool.GeocodingResponse geoResponse = new WeatherTool.GeocodingResponse();
         geoResponse.setResults(List.of(geoResult));
-        when(geocodingApi.search("London", 1)).thenReturn(geoResponse);
+        when(geocodingApi.search(LOCATION_LONDON, 1)).thenReturn(geoResponse);
 
         WeatherTool.CurrentWeather currentWeather = new WeatherTool.CurrentWeather();
         currentWeather.setTemperature(15.3);
@@ -99,10 +108,10 @@ class WeatherToolTest {
         weatherResponse.setCurrentWeather(currentWeather);
         when(weatherApi.getCurrentWeather(eq(51.5074), eq(-0.1278), anyString())).thenReturn(weatherResponse);
 
-        ToolResult result = tool.execute(Map.of("location", "London")).join();
+        ToolResult result = tool.execute(Map.of(PARAM_LOCATION, LOCATION_LONDON)).join();
 
         assertTrue(result.isSuccess());
-        assertTrue(result.getOutput().contains("London"));
+        assertTrue(result.getOutput().contains(LOCATION_LONDON));
         assertTrue(result.getOutput().contains("United Kingdom"));
         assertTrue(result.getOutput().contains("15.3"));
         assertTrue(result.getOutput().contains("Clear sky"));
@@ -112,7 +121,7 @@ class WeatherToolTest {
     // ===== Location not found =====
 
     @Test
-    void shouldFailWhenLocationNotFound() throws Exception {
+    void shouldFailWhenLocationNotFound() {
         WeatherTool.GeocodingApi geocodingApi = mock(WeatherTool.GeocodingApi.class);
         WeatherTool.WeatherApi weatherApi = mock(WeatherTool.WeatherApi.class);
         injectApis(geocodingApi, weatherApi);
@@ -121,14 +130,14 @@ class WeatherToolTest {
         emptyResponse.setResults(null);
         when(geocodingApi.search("Nonexistent", 1)).thenReturn(emptyResponse);
 
-        ToolResult result = tool.execute(Map.of("location", "Nonexistent")).join();
+        ToolResult result = tool.execute(Map.of(PARAM_LOCATION, "Nonexistent")).join();
 
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("Location not found"));
     }
 
     @Test
-    void shouldFailWhenGeocodingReturnsEmptyList() throws Exception {
+    void shouldFailWhenGeocodingReturnsEmptyList() {
         WeatherTool.GeocodingApi geocodingApi = mock(WeatherTool.GeocodingApi.class);
         WeatherTool.WeatherApi weatherApi = mock(WeatherTool.WeatherApi.class);
         injectApis(geocodingApi, weatherApi);
@@ -137,7 +146,7 @@ class WeatherToolTest {
         emptyResponse.setResults(List.of());
         when(geocodingApi.search("Empty", 1)).thenReturn(emptyResponse);
 
-        ToolResult result = tool.execute(Map.of("location", "Empty")).join();
+        ToolResult result = tool.execute(Map.of(PARAM_LOCATION, "Empty")).join();
 
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("Location not found"));
@@ -146,7 +155,7 @@ class WeatherToolTest {
     // ===== Weather data not available =====
 
     @Test
-    void shouldFailWhenWeatherDataNotAvailable() throws Exception {
+    void shouldFailWhenWeatherDataNotAvailable() {
         WeatherTool.GeocodingApi geocodingApi = mock(WeatherTool.GeocodingApi.class);
         WeatherTool.WeatherApi weatherApi = mock(WeatherTool.WeatherApi.class);
         injectApis(geocodingApi, weatherApi);
@@ -165,7 +174,7 @@ class WeatherToolTest {
         weatherResponse.setCurrentWeather(null);
         when(weatherApi.getCurrentWeather(eq(0.0), eq(0.0), anyString())).thenReturn(weatherResponse);
 
-        ToolResult result = tool.execute(Map.of("location", "Test")).join();
+        ToolResult result = tool.execute(Map.of(PARAM_LOCATION, "Test")).join();
 
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("Weather data not available"));
@@ -174,14 +183,14 @@ class WeatherToolTest {
     // ===== API error =====
 
     @Test
-    void shouldHandleApiException() throws Exception {
+    void shouldHandleApiException() {
         WeatherTool.GeocodingApi geocodingApi = mock(WeatherTool.GeocodingApi.class);
         WeatherTool.WeatherApi weatherApi = mock(WeatherTool.WeatherApi.class);
         injectApis(geocodingApi, weatherApi);
 
         when(geocodingApi.search("Error", 1)).thenThrow(new RuntimeException("Connection refused"));
 
-        ToolResult result = tool.execute(Map.of("location", "Error")).join();
+        ToolResult result = tool.execute(Map.of(PARAM_LOCATION, "Error")).join();
 
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("Failed to get weather"));
@@ -215,30 +224,28 @@ class WeatherToolTest {
             "99, Thunderstorm with hail",
             "100, Unknown"
     })
-    void shouldReturnCorrectWeatherDescription(int code, String expected) throws Exception {
-        Method method = WeatherTool.class.getDeclaredMethod("getWeatherDescription", int.class);
-        method.setAccessible(true);
-        String description = (String) method.invoke(tool, code);
+    void shouldReturnCorrectWeatherDescription(int code, String expected) {
+        String description = ReflectionTestUtils.invokeMethod(tool, "getWeatherDescription", code);
         assertEquals(expected, description);
     }
 
     // ===== Weather data in result metadata =====
 
     @Test
-    void shouldIncludeMetadataInSuccessfulResult() throws Exception {
+    void shouldIncludeMetadataInSuccessfulResult() {
         WeatherTool.GeocodingApi geocodingApi = mock(WeatherTool.GeocodingApi.class);
         WeatherTool.WeatherApi weatherApi = mock(WeatherTool.WeatherApi.class);
         injectApis(geocodingApi, weatherApi);
 
         WeatherTool.GeoResult geoResult = new WeatherTool.GeoResult();
-        geoResult.setName("Tokyo");
+        geoResult.setName(LOCATION_TOKYO);
         geoResult.setCountry("Japan");
         geoResult.setLatitude(35.6762);
         geoResult.setLongitude(139.6503);
 
         WeatherTool.GeocodingResponse geoResponse = new WeatherTool.GeocodingResponse();
         geoResponse.setResults(List.of(geoResult));
-        when(geocodingApi.search("Tokyo", 1)).thenReturn(geoResponse);
+        when(geocodingApi.search(LOCATION_TOKYO, 1)).thenReturn(geoResponse);
 
         WeatherTool.CurrentWeather currentWeather = new WeatherTool.CurrentWeather();
         currentWeather.setTemperature(25.0);
@@ -250,12 +257,12 @@ class WeatherToolTest {
         weatherResponse.setCurrentWeather(currentWeather);
         when(weatherApi.getCurrentWeather(eq(35.6762), eq(139.6503), anyString())).thenReturn(weatherResponse);
 
-        ToolResult result = tool.execute(Map.of("location", "Tokyo")).join();
+        ToolResult result = tool.execute(Map.of(PARAM_LOCATION, LOCATION_TOKYO)).join();
 
         assertTrue(result.isSuccess());
         @SuppressWarnings("unchecked")
         Map<String, Object> data = (Map<String, Object>) result.getData();
-        assertEquals("Tokyo", data.get("location"));
+        assertEquals(LOCATION_TOKYO, data.get(PARAM_LOCATION));
         assertEquals("Japan", data.get("country"));
         assertEquals(25.0, data.get("temperature_celsius"));
         assertEquals(65.0, data.get("humidity_percent"));
@@ -266,13 +273,8 @@ class WeatherToolTest {
 
     // ===== Helper =====
 
-    private void injectApis(WeatherTool.GeocodingApi geocodingApi, WeatherTool.WeatherApi weatherApi) throws Exception {
-        Field geocodingField = WeatherTool.class.getDeclaredField("geocodingApi");
-        geocodingField.setAccessible(true);
-        geocodingField.set(tool, geocodingApi);
-
-        Field weatherField = WeatherTool.class.getDeclaredField("weatherApi");
-        weatherField.setAccessible(true);
-        weatherField.set(tool, weatherApi);
+    private void injectApis(WeatherTool.GeocodingApi geocodingApi, WeatherTool.WeatherApi weatherApi) {
+        ReflectionTestUtils.setField(tool, "geocodingApi", geocodingApi);
+        ReflectionTestUtils.setField(tool, "weatherApi", weatherApi);
     }
 }

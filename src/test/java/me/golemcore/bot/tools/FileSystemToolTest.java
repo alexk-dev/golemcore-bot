@@ -16,6 +16,20 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class FileSystemToolTest {
 
+    private static final String OPERATION = "operation";
+    private static final String PATH = "path";
+    private static final String CONTENT = "content";
+    private static final String READ_FILE = "read_file";
+    private static final String WRITE_FILE = "write_file";
+    private static final String SEND_FILE = "send_file";
+    private static final String NOT_FOUND = "not found";
+    private static final String TEST_TXT = "test.txt";
+    private static final String MIME_TYPE = "mime_type";
+    private static final String TYPE = "type";
+    private static final String ADIR = "adir";
+    private static final String IMAGE_PNG = "image.png";
+    private static final String SUPPRESS_UNCHECKED = "unchecked";
+
     @TempDir
     Path tempDir;
 
@@ -38,9 +52,9 @@ class FileSystemToolTest {
     void writeAndReadFile() throws Exception {
         // Write file
         Map<String, Object> writeParams = Map.of(
-                "operation", "write_file",
-                "path", "test.txt",
-                "content", "Hello, World!");
+                OPERATION, WRITE_FILE,
+                PATH, TEST_TXT,
+                CONTENT, "Hello, World!");
 
         ToolResult writeResult = tool.execute(writeParams).get();
         assertTrue(writeResult.isSuccess());
@@ -48,8 +62,8 @@ class FileSystemToolTest {
 
         // Read file
         Map<String, Object> readParams = Map.of(
-                "operation", "read_file",
-                "path", "test.txt");
+                OPERATION, READ_FILE,
+                PATH, TEST_TXT);
 
         ToolResult readResult = tool.execute(readParams).get();
         assertTrue(readResult.isSuccess());
@@ -60,23 +74,23 @@ class FileSystemToolTest {
     void appendToFile() throws Exception {
         // Write initial content
         tool.execute(Map.of(
-                "operation", "write_file",
-                "path", "append.txt",
-                "content", "Line 1\n")).get();
+                OPERATION, WRITE_FILE,
+                PATH, "append.txt",
+                CONTENT, "Line 1\n")).get();
 
         // Append content
         ToolResult appendResult = tool.execute(Map.of(
-                "operation", "write_file",
-                "path", "append.txt",
-                "content", "Line 2\n",
+                OPERATION, WRITE_FILE,
+                PATH, "append.txt",
+                CONTENT, "Line 2\n",
                 "append", true)).get();
 
         assertTrue(appendResult.isSuccess());
 
         // Read and verify
         ToolResult readResult = tool.execute(Map.of(
-                "operation", "read_file",
-                "path", "append.txt")).get();
+                OPERATION, READ_FILE,
+                PATH, "append.txt")).get();
 
         assertEquals("Line 1\nLine 2\n", readResult.getOutput());
     }
@@ -89,8 +103,8 @@ class FileSystemToolTest {
         Files.createDirectory(tempDir.resolve("subdir"));
 
         Map<String, Object> params = Map.of(
-                "operation", "list_directory",
-                "path", ".");
+                OPERATION, "list_directory",
+                PATH, ".");
 
         ToolResult result = tool.execute(params).get();
         assertTrue(result.isSuccess());
@@ -102,8 +116,8 @@ class FileSystemToolTest {
     @Test
     void createDirectory() throws Exception {
         Map<String, Object> params = Map.of(
-                "operation", "create_directory",
-                "path", "new/nested/dir");
+                OPERATION, "create_directory",
+                PATH, "new/nested/dir");
 
         ToolResult result = tool.execute(params).get();
         assertTrue(result.isSuccess());
@@ -116,8 +130,8 @@ class FileSystemToolTest {
         Files.writeString(tempDir.resolve("to_delete.txt"), "delete me");
 
         Map<String, Object> params = Map.of(
-                "operation", "delete",
-                "path", "to_delete.txt");
+                OPERATION, "delete",
+                PATH, "to_delete.txt");
 
         ToolResult result = tool.execute(params).get();
         assertTrue(result.isSuccess());
@@ -129,12 +143,12 @@ class FileSystemToolTest {
         // Create directory with contents
         Path dir = tempDir.resolve("to_delete_dir");
         Files.createDirectories(dir.resolve("sub"));
-        Files.writeString(dir.resolve("file.txt"), "content");
+        Files.writeString(dir.resolve("file.txt"), CONTENT);
         Files.writeString(dir.resolve("sub/nested.txt"), "nested");
 
         Map<String, Object> params = Map.of(
-                "operation", "delete",
-                "path", "to_delete_dir");
+                OPERATION, "delete",
+                PATH, "to_delete_dir");
 
         ToolResult result = tool.execute(params).get();
         assertTrue(result.isSuccess());
@@ -146,8 +160,8 @@ class FileSystemToolTest {
         Files.writeString(tempDir.resolve("info.txt"), "test content");
 
         Map<String, Object> params = Map.of(
-                "operation", "file_info",
-                "path", "info.txt");
+                OPERATION, "file_info",
+                PATH, "info.txt");
 
         ToolResult result = tool.execute(params).get();
         assertTrue(result.isSuccess());
@@ -158,8 +172,8 @@ class FileSystemToolTest {
     @Test
     void pathTraversalBlocked() throws Exception {
         Map<String, Object> params = Map.of(
-                "operation", "read_file",
-                "path", "../../../etc/passwd");
+                OPERATION, READ_FILE,
+                PATH, "../../../etc/passwd");
 
         ToolResult result = tool.execute(params).get();
         assertFalse(result.isSuccess());
@@ -170,22 +184,22 @@ class FileSystemToolTest {
     @Test
     void readNonExistentFile() throws Exception {
         Map<String, Object> params = Map.of(
-                "operation", "read_file",
-                "path", "nonexistent.txt");
+                OPERATION, READ_FILE,
+                PATH, "nonexistent.txt");
 
         ToolResult result = tool.execute(params).get();
         assertFalse(result.isSuccess());
-        assertTrue(result.getError().contains("not found"));
+        assertTrue(result.getError().contains(NOT_FOUND));
     }
 
     @Test
     void missingParameters() throws Exception {
         // Missing operation
-        ToolResult result1 = tool.execute(Map.of("path", "test.txt")).get();
+        ToolResult result1 = tool.execute(Map.of(PATH, TEST_TXT)).get();
         assertFalse(result1.isSuccess());
 
         // Missing path
-        ToolResult result2 = tool.execute(Map.of("operation", "read_file")).get();
+        ToolResult result2 = tool.execute(Map.of(OPERATION, READ_FILE)).get();
         assertFalse(result2.isSuccess());
     }
 
@@ -196,8 +210,8 @@ class FileSystemToolTest {
         FileSystemTool disabledTool = new FileSystemTool(disabledProps, new InjectionGuard());
 
         ToolResult result = disabledTool.execute(Map.of(
-                "operation", "read_file",
-                "path", "test.txt")).get();
+                OPERATION, READ_FILE,
+                PATH, TEST_TXT)).get();
 
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("disabled"));
@@ -208,21 +222,21 @@ class FileSystemToolTest {
     @Test
     void sendFileWithImage() throws Exception {
         byte[] pngBytes = new byte[] { (byte) 0x89, 0x50, 0x4E, 0x47 };
-        Files.write(tempDir.resolve("image.png"), pngBytes);
+        Files.write(tempDir.resolve(IMAGE_PNG), pngBytes);
 
         ToolResult result = tool.execute(Map.of(
-                "operation", "send_file",
-                "path", "image.png")).get();
+                OPERATION, SEND_FILE,
+                PATH, IMAGE_PNG)).get();
 
         assertTrue(result.isSuccess());
-        assertTrue(result.getOutput().contains("image.png"));
+        assertTrue(result.getOutput().contains(IMAGE_PNG));
 
-        @SuppressWarnings("unchecked")
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
         Map<String, Object> data = (Map<String, Object>) result.getData();
         assertArrayEquals(pngBytes, (byte[]) data.get("file_bytes"));
-        assertEquals("image.png", data.get("filename"));
-        assertEquals("image/png", data.get("mime_type"));
-        assertEquals(Attachment.Type.IMAGE, data.get("type"));
+        assertEquals(IMAGE_PNG, data.get("filename"));
+        assertEquals("image/png", data.get(MIME_TYPE));
+        assertEquals(Attachment.Type.IMAGE, data.get(TYPE));
     }
 
     @Test
@@ -231,34 +245,34 @@ class FileSystemToolTest {
         Files.write(tempDir.resolve("report.pdf"), pdfBytes);
 
         ToolResult result = tool.execute(Map.of(
-                "operation", "send_file",
-                "path", "report.pdf")).get();
+                OPERATION, SEND_FILE,
+                PATH, "report.pdf")).get();
 
         assertTrue(result.isSuccess());
 
-        @SuppressWarnings("unchecked")
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
         Map<String, Object> data = (Map<String, Object>) result.getData();
-        assertEquals("application/pdf", data.get("mime_type"));
-        assertEquals(Attachment.Type.DOCUMENT, data.get("type"));
+        assertEquals("application/pdf", data.get(MIME_TYPE));
+        assertEquals(Attachment.Type.DOCUMENT, data.get(TYPE));
     }
 
     @Test
     void sendFileNonExistent() throws Exception {
         ToolResult result = tool.execute(Map.of(
-                "operation", "send_file",
-                "path", "does_not_exist.txt")).get();
+                OPERATION, SEND_FILE,
+                PATH, "does_not_exist.txt")).get();
 
         assertFalse(result.isSuccess());
-        assertTrue(result.getError().contains("not found"));
+        assertTrue(result.getError().contains(NOT_FOUND));
     }
 
     @Test
     void sendFileDirectory() throws Exception {
-        Files.createDirectory(tempDir.resolve("adir"));
+        Files.createDirectory(tempDir.resolve(ADIR));
 
         ToolResult result = tool.execute(Map.of(
-                "operation", "send_file",
-                "path", "adir")).get();
+                OPERATION, SEND_FILE,
+                PATH, ADIR)).get();
 
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("Not a file"));
@@ -269,15 +283,15 @@ class FileSystemToolTest {
         Files.write(tempDir.resolve("data.xyz"), new byte[] { 1, 2 });
 
         ToolResult result = tool.execute(Map.of(
-                "operation", "send_file",
-                "path", "data.xyz")).get();
+                OPERATION, SEND_FILE,
+                PATH, "data.xyz")).get();
 
         assertTrue(result.isSuccess());
 
-        @SuppressWarnings("unchecked")
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
         Map<String, Object> data = (Map<String, Object>) result.getData();
-        assertEquals("application/octet-stream", data.get("mime_type"));
-        assertEquals(Attachment.Type.DOCUMENT, data.get("type"));
+        assertEquals("application/octet-stream", data.get(MIME_TYPE));
+        assertEquals(Attachment.Type.DOCUMENT, data.get(TYPE));
     }
 
     @Test
@@ -299,15 +313,15 @@ class FileSystemToolTest {
         Files.write(tempDir.resolve("audio.mp3"), new byte[] { 0x49, 0x44 });
 
         ToolResult result = tool.execute(Map.of(
-                "operation", "send_file",
-                "path", "audio.mp3")).get();
+                OPERATION, SEND_FILE,
+                PATH, "audio.mp3")).get();
 
         assertTrue(result.isSuccess());
 
-        @SuppressWarnings("unchecked")
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
         Map<String, Object> data = (Map<String, Object>) result.getData();
-        assertEquals("audio/mpeg", data.get("mime_type"));
-        assertEquals(Attachment.Type.DOCUMENT, data.get("type"));
+        assertEquals("audio/mpeg", data.get(MIME_TYPE));
+        assertEquals(Attachment.Type.DOCUMENT, data.get(TYPE));
     }
 
     // ===== write_file edge cases =====
@@ -315,8 +329,8 @@ class FileSystemToolTest {
     @Test
     void shouldFailWriteWithoutContent() throws Exception {
         ToolResult result = tool.execute(Map.of(
-                "operation", "write_file",
-                "path", "test.txt")).get();
+                OPERATION, WRITE_FILE,
+                PATH, TEST_TXT)).get();
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("Missing content"));
     }
@@ -324,9 +338,9 @@ class FileSystemToolTest {
     @Test
     void shouldCreateParentDirectoriesOnWrite() throws Exception {
         ToolResult result = tool.execute(Map.of(
-                "operation", "write_file",
-                "path", "deep/nested/dir/file.txt",
-                "content", "hello")).get();
+                OPERATION, WRITE_FILE,
+                PATH, "deep/nested/dir/file.txt",
+                CONTENT, "hello")).get();
         assertTrue(result.isSuccess());
         assertTrue(Files.exists(tempDir.resolve("deep/nested/dir/file.txt")));
     }
@@ -335,10 +349,10 @@ class FileSystemToolTest {
 
     @Test
     void shouldFailReadOnDirectory() throws Exception {
-        Files.createDirectory(tempDir.resolve("adir"));
+        Files.createDirectory(tempDir.resolve(ADIR));
         ToolResult result = tool.execute(Map.of(
-                "operation", "read_file",
-                "path", "adir")).get();
+                OPERATION, READ_FILE,
+                PATH, ADIR)).get();
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("Not a file"));
     }
@@ -348,18 +362,18 @@ class FileSystemToolTest {
     @Test
     void shouldFailListOnNonExistentDir() throws Exception {
         ToolResult result = tool.execute(Map.of(
-                "operation", "list_directory",
-                "path", "nonexistent")).get();
+                OPERATION, "list_directory",
+                PATH, "nonexistent")).get();
         assertFalse(result.isSuccess());
-        assertTrue(result.getError().contains("not found"));
+        assertTrue(result.getError().contains(NOT_FOUND));
     }
 
     @Test
     void shouldFailListOnFile() throws Exception {
         Files.writeString(tempDir.resolve("file.txt"), "hello");
         ToolResult result = tool.execute(Map.of(
-                "operation", "list_directory",
-                "path", "file.txt")).get();
+                OPERATION, "list_directory",
+                PATH, "file.txt")).get();
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("Not a directory"));
     }
@@ -370,18 +384,18 @@ class FileSystemToolTest {
     void shouldSucceedWhenDirectoryAlreadyExists() throws Exception {
         Files.createDirectory(tempDir.resolve("existing"));
         ToolResult result = tool.execute(Map.of(
-                "operation", "create_directory",
-                "path", "existing")).get();
+                OPERATION, "create_directory",
+                PATH, "existing")).get();
         assertTrue(result.isSuccess());
         assertTrue(result.getOutput().contains("already exists"));
     }
 
     @Test
     void shouldFailCreateDirWhenFileExists() throws Exception {
-        Files.writeString(tempDir.resolve("afile"), "content");
+        Files.writeString(tempDir.resolve("afile"), CONTENT);
         ToolResult result = tool.execute(Map.of(
-                "operation", "create_directory",
-                "path", "afile")).get();
+                OPERATION, "create_directory",
+                PATH, "afile")).get();
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("not a directory"));
     }
@@ -391,10 +405,10 @@ class FileSystemToolTest {
     @Test
     void shouldFailDeleteNonExistent() throws Exception {
         ToolResult result = tool.execute(Map.of(
-                "operation", "delete",
-                "path", "nonexistent")).get();
+                OPERATION, "delete",
+                PATH, "nonexistent")).get();
         assertFalse(result.isSuccess());
-        assertTrue(result.getError().contains("not found"));
+        assertTrue(result.getError().contains(NOT_FOUND));
     }
 
     // ===== file_info edge cases =====
@@ -403,8 +417,8 @@ class FileSystemToolTest {
     void shouldReturnDirectoryInfo() throws Exception {
         Files.createDirectory(tempDir.resolve("infodir"));
         ToolResult result = tool.execute(Map.of(
-                "operation", "file_info",
-                "path", "infodir")).get();
+                OPERATION, "file_info",
+                PATH, "infodir")).get();
         assertTrue(result.isSuccess());
         assertTrue(result.getOutput().contains("Directory"));
     }
@@ -412,10 +426,10 @@ class FileSystemToolTest {
     @Test
     void shouldFailInfoOnNonExistent() throws Exception {
         ToolResult result = tool.execute(Map.of(
-                "operation", "file_info",
-                "path", "nonexistent")).get();
+                OPERATION, "file_info",
+                PATH, "nonexistent")).get();
         assertFalse(result.isSuccess());
-        assertTrue(result.getError().contains("not found"));
+        assertTrue(result.getError().contains(NOT_FOUND));
     }
 
     // ===== unknown operation =====
@@ -423,8 +437,8 @@ class FileSystemToolTest {
     @Test
     void shouldFailOnUnknownOperation() throws Exception {
         ToolResult result = tool.execute(Map.of(
-                "operation", "unknown_op",
-                "path", "test.txt")).get();
+                OPERATION, "unknown_op",
+                PATH, TEST_TXT)).get();
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("Unknown operation"));
     }
@@ -485,13 +499,13 @@ class FileSystemToolTest {
         String desc = tool.getDefinition().getDescription();
         assertTrue(desc.contains("send_file"));
 
-        @SuppressWarnings("unchecked")
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
         Map<String, Object> schema = (Map<String, Object>) tool.getDefinition().getInputSchema();
-        @SuppressWarnings("unchecked")
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
         Map<String, Object> props = (Map<String, Object>) schema.get("properties");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> opProp = (Map<String, Object>) props.get("operation");
-        @SuppressWarnings("unchecked")
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        Map<String, Object> opProp = (Map<String, Object>) props.get(OPERATION);
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
         java.util.List<String> enumValues = (java.util.List<String>) opProp.get("enum");
         assertTrue(enumValues.contains("send_file"));
     }

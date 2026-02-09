@@ -44,6 +44,34 @@
     -->
     <Match>
         <Bug pattern="RCN_REDUNDANT_NULLCHECK_OF_NONNULL_VALUE" />
-        <Class name="me.golemcore.bot.adapter.outbound.voice.ElevenLabsAdapter" />
+        <Or>
+            <Class name="me.golemcore.bot.adapter.outbound.voice.ElevenLabsAdapter" />
+            <Class name="me.golemcore.bot.adapter.outbound.rag.LightRagAdapter" />
+        </Or>
+    </Match>
+    <!--
+        Adapters, systems, and tools intentionally wrap checked exceptions as
+        RuntimeException because port interfaces don't declare checked exceptions.
+        This is a standard adapter-layer pattern in hexagonal architecture.
+    -->
+    <Match>
+        <Bug pattern="THROWS_METHOD_THROWS_RUNTIMEEXCEPTION" />
+        <Or>
+            <Class name="~me\.golemcore\.bot\.adapter\..*" />
+            <Class name="~me\.golemcore\.bot\.domain\.system\..*" />
+        </Or>
+    </Match>
+    <!--
+        Methods that declare 'throws Exception' due to framework callback interfaces
+        (OkHttp Callback, TelegramBots LongPollingBot, MCP lifecycle, etc.)
+        or catch-all error handling in pipeline systems.
+    -->
+    <Match>
+        <Bug pattern="THROWS_METHOD_THROWS_CLAUSE_BASIC_EXCEPTION" />
+        <Or>
+            <Class name="~me\.golemcore\.bot\.adapter\..*" />
+            <Class name="~me\.golemcore\.bot\.domain\.system\..*" />
+            <Class name="~me\.golemcore\.bot\.tools\..*" />
+        </Or>
     </Match>
 </FindBugsFilter>

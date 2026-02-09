@@ -20,6 +20,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class VoiceResponseToolTest {
 
+    private static final String TEXT = "text";
+
     private VoiceResponseTool tool;
     private BotProperties properties;
 
@@ -62,7 +64,7 @@ class VoiceResponseToolTest {
         assertNotNull(def.getInputSchema());
         // text is required
         List<String> required = (List<String>) def.getInputSchema().get("required");
-        assertTrue(required.contains("text"));
+        assertTrue(required.contains(TEXT));
     }
 
     @Test
@@ -70,7 +72,7 @@ class VoiceResponseToolTest {
         AgentContext context = createContext();
         AgentContextHolder.set(context);
 
-        CompletableFuture<ToolResult> future = tool.execute(Map.of("text", "Hello world"));
+        CompletableFuture<ToolResult> future = tool.execute(Map.of(TEXT, "Hello world"));
         ToolResult result = future.get();
 
         assertTrue(result.isSuccess());
@@ -98,7 +100,7 @@ class VoiceResponseToolTest {
         AgentContext context = createContext();
         AgentContextHolder.set(context);
 
-        CompletableFuture<ToolResult> future = tool.execute(Map.of("text", "   "));
+        CompletableFuture<ToolResult> future = tool.execute(Map.of(TEXT, "   "));
         ToolResult result = future.get();
 
         assertTrue(result.isSuccess());
@@ -109,7 +111,7 @@ class VoiceResponseToolTest {
     void executeFailsWithoutContext() throws Exception {
         AgentContextHolder.clear();
 
-        CompletableFuture<ToolResult> future = tool.execute(Map.of("text", "Hello"));
+        CompletableFuture<ToolResult> future = tool.execute(Map.of(TEXT, "Hello"));
         ToolResult result = future.get();
 
         assertFalse(result.isSuccess());
@@ -136,7 +138,7 @@ class VoiceResponseToolTest {
         AgentContextHolder.set(context);
 
         // text parameter as Integer — String.valueOf should handle it
-        CompletableFuture<ToolResult> future = tool.execute(Map.of("text", 42));
+        CompletableFuture<ToolResult> future = tool.execute(Map.of(TEXT, 42));
         ToolResult result = future.get();
 
         assertTrue(result.isSuccess());
@@ -149,7 +151,7 @@ class VoiceResponseToolTest {
         AgentContextHolder.set(context);
 
         String longText = "A".repeat(50_000);
-        CompletableFuture<ToolResult> future = tool.execute(Map.of("text", longText));
+        CompletableFuture<ToolResult> future = tool.execute(Map.of(TEXT, longText));
         ToolResult result = future.get();
 
         assertTrue(result.isSuccess());
@@ -168,7 +170,7 @@ class VoiceResponseToolTest {
         AgentContext context = createContext();
         AgentContextHolder.set(context);
 
-        tool.execute(Map.of("text", "test")).get();
+        tool.execute(Map.of(TEXT, "test")).get();
 
         // LOOP_COMPLETE must be set to stop the agent loop after voice tool
         assertTrue((Boolean) context.getAttribute(ContextAttributes.LOOP_COMPLETE));

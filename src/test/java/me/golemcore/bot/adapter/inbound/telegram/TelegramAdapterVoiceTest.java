@@ -18,11 +18,18 @@ import org.telegram.telegrambots.meta.generics.TelegramClient;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class TelegramAdapterVoiceTest {
+
+    private static final String CHAT_ID = "123";
 
     private TelegramAdapter adapter;
     private TelegramClient telegramClient;
@@ -52,12 +59,12 @@ class TelegramAdapterVoiceTest {
     void sendVoice_success() throws Exception {
         when(telegramClient.execute(any(SendVoice.class))).thenReturn(null);
 
-        CompletableFuture<Void> future = adapter.sendVoice("123", new byte[] { 1, 2, 3 });
+        CompletableFuture<Void> future = adapter.sendVoice(CHAT_ID, new byte[] { 1, 2, 3 });
         future.get();
 
         ArgumentCaptor<SendVoice> captor = ArgumentCaptor.forClass(SendVoice.class);
         verify(telegramClient).execute(captor.capture());
-        assertEquals("123", captor.getValue().getChatId());
+        assertEquals(CHAT_ID, captor.getValue().getChatId());
     }
 
     @Test
@@ -65,7 +72,7 @@ class TelegramAdapterVoiceTest {
         when(telegramClient.execute(any(SendVoice.class)))
                 .thenThrow(new RuntimeException("network error"));
 
-        CompletableFuture<Void> future = adapter.sendVoice("123", new byte[] { 1 });
+        CompletableFuture<Void> future = adapter.sendVoice(CHAT_ID, new byte[] { 1 });
         ExecutionException ex = assertThrows(ExecutionException.class, future::get);
         assertTrue(ex.getCause().getMessage().contains("Failed to send voice"));
     }
@@ -78,7 +85,7 @@ class TelegramAdapterVoiceTest {
         when(telegramClient.execute(any(SendVoice.class))).thenThrow(forbiddenEx);
         when(telegramClient.execute(any(SendAudio.class))).thenReturn(null);
 
-        CompletableFuture<Void> future = adapter.sendVoice("123", new byte[] { 1, 2 });
+        CompletableFuture<Void> future = adapter.sendVoice(CHAT_ID, new byte[] { 1, 2 });
         future.get();
 
         verify(telegramClient).execute(any(SendVoice.class));
@@ -94,7 +101,7 @@ class TelegramAdapterVoiceTest {
         when(telegramClient.execute(any(SendVoice.class))).thenThrow(wrapper);
         when(telegramClient.execute(any(SendAudio.class))).thenReturn(null);
 
-        CompletableFuture<Void> future = adapter.sendVoice("123", new byte[] { 1 });
+        CompletableFuture<Void> future = adapter.sendVoice(CHAT_ID, new byte[] { 1 });
         future.get();
 
         verify(telegramClient).execute(any(SendAudio.class));
@@ -109,7 +116,7 @@ class TelegramAdapterVoiceTest {
         when(telegramClient.execute(any(SendAudio.class)))
                 .thenThrow(new RuntimeException("audio also failed"));
 
-        CompletableFuture<Void> future = adapter.sendVoice("123", new byte[] { 1 });
+        CompletableFuture<Void> future = adapter.sendVoice(CHAT_ID, new byte[] { 1 });
         ExecutionException ex = assertThrows(ExecutionException.class, future::get);
         assertTrue(ex.getCause().getMessage().contains("Failed to send audio"));
     }
@@ -121,7 +128,7 @@ class TelegramAdapterVoiceTest {
 
         when(telegramClient.execute(any(SendVoice.class))).thenThrow(apiEx);
 
-        CompletableFuture<Void> future = adapter.sendVoice("123", new byte[] { 1 });
+        CompletableFuture<Void> future = adapter.sendVoice(CHAT_ID, new byte[] { 1 });
         ExecutionException ex = assertThrows(ExecutionException.class, future::get);
         assertTrue(ex.getCause().getMessage().contains("Failed to send voice"));
 
@@ -135,7 +142,7 @@ class TelegramAdapterVoiceTest {
 
         when(telegramClient.execute(any(SendVoice.class))).thenThrow(apiEx);
 
-        CompletableFuture<Void> future = adapter.sendVoice("123", new byte[] { 1 });
+        CompletableFuture<Void> future = adapter.sendVoice(CHAT_ID, new byte[] { 1 });
         ExecutionException ex = assertThrows(ExecutionException.class, future::get);
         assertTrue(ex.getCause().getMessage().contains("Failed to send voice"));
 

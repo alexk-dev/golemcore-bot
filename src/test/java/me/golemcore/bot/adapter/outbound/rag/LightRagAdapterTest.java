@@ -16,6 +16,11 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class LightRagAdapterTest {
 
+    private static final String QUERY_MODE_HYBRID = "hybrid";
+    private static final String CONTENT_TYPE = "Content-Type";
+    private static final String APPLICATION_JSON = "application/json";
+    private static final String TEST_QUERY = "test";
+
     private MockWebServer mockServer;
     private LightRagAdapter adapter;
     private BotProperties properties;
@@ -43,9 +48,9 @@ class LightRagAdapterTest {
     void queryReturnsResponse() throws Exception {
         mockServer.enqueue(new MockResponse.Builder()
                 .body("{\"response\": \"LightRAG found relevant info\"}")
-                .setHeader("Content-Type", "application/json").build());
+                .setHeader(CONTENT_TYPE, APPLICATION_JSON).build());
 
-        String result = adapter.query("test query", "hybrid").get();
+        String result = adapter.query("test query", QUERY_MODE_HYBRID).get();
         assertEquals("LightRAG found relevant info", result);
 
         RecordedRequest request = mockServer.takeRequest();
@@ -60,14 +65,14 @@ class LightRagAdapterTest {
     void queryReturnsEmptyOnError() throws Exception {
         mockServer.enqueue(new MockResponse.Builder().code(500).build());
 
-        String result = adapter.query("test", "hybrid").get();
+        String result = adapter.query(TEST_QUERY, QUERY_MODE_HYBRID).get();
         assertEquals("", result);
     }
 
     @Test
     void queryReturnsEmptyWhenDisabled() throws Exception {
         properties.getRag().setEnabled(false);
-        String result = adapter.query("test", "hybrid").get();
+        String result = adapter.query(TEST_QUERY, QUERY_MODE_HYBRID).get();
         assertEquals("", result);
     }
 
@@ -75,9 +80,9 @@ class LightRagAdapterTest {
     void queryHandlesPlainTextResponse() throws Exception {
         mockServer.enqueue(new MockResponse.Builder()
                 .body("plain text response")
-                .setHeader("Content-Type", "text/plain").build());
+                .setHeader(CONTENT_TYPE, "text/plain").build());
 
-        String result = adapter.query("test", "hybrid").get();
+        String result = adapter.query(TEST_QUERY, QUERY_MODE_HYBRID).get();
         assertEquals("plain text response", result);
     }
 
@@ -99,7 +104,7 @@ class LightRagAdapterTest {
     void indexDoesNothingWhenDisabled() throws Exception {
         properties.getRag().setEnabled(false);
         // Should complete without making any request
-        adapter.index("test").get();
+        adapter.index(TEST_QUERY).get();
         assertEquals(0, mockServer.getRequestCount());
     }
 
@@ -139,9 +144,9 @@ class LightRagAdapterTest {
 
         mockServer.enqueue(new MockResponse.Builder()
                 .body("{\"response\": \"ok\"}")
-                .setHeader("Content-Type", "application/json").build());
+                .setHeader(CONTENT_TYPE, APPLICATION_JSON).build());
 
-        adapter.query("test", "hybrid").get();
+        adapter.query(TEST_QUERY, QUERY_MODE_HYBRID).get();
 
         RecordedRequest request = mockServer.takeRequest();
         assertEquals("Bearer test-api-key", request.getHeaders().get("Authorization"));
@@ -153,9 +158,9 @@ class LightRagAdapterTest {
 
         mockServer.enqueue(new MockResponse.Builder()
                 .body("{\"response\": \"ok\"}")
-                .setHeader("Content-Type", "application/json").build());
+                .setHeader(CONTENT_TYPE, APPLICATION_JSON).build());
 
-        adapter.query("test", "hybrid").get();
+        adapter.query(TEST_QUERY, QUERY_MODE_HYBRID).get();
 
         RecordedRequest request = mockServer.takeRequest();
         assertNull(request.getHeaders().get("Authorization"));

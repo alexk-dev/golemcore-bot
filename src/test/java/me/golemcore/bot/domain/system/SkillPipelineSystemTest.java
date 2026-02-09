@@ -1,7 +1,11 @@
 package me.golemcore.bot.domain.system;
 
 import me.golemcore.bot.domain.component.SkillComponent;
-import me.golemcore.bot.domain.model.*;
+import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.LlmResponse;
+import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.Skill;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -13,6 +17,13 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class SkillPipelineSystemTest {
+
+    private static final String CONTENT_RESULT = "result";
+    private static final String ATTR_LLM_RESPONSE = "llm.response";
+    private static final String ATTR_TRANSITION_TARGET = "skill.transition.target";
+    private static final String ATTR_PIPELINE_DEPTH = "skill.pipeline.depth";
+    private static final String ATTR_TOOLS_EXECUTED = "tools.executed";
+    private static final String SKILL_EXECUTOR = "executor";
 
     private SkillComponent skillComponent;
     private SkillPipelineSystem system;
@@ -33,7 +44,7 @@ class SkillPipelineSystemTest {
                 .activeSkill(activeSkill)
                 .build();
         if (response != null) {
-            context.setAttribute("llm.response", response);
+            context.setAttribute(ATTR_LLM_RESPONSE, response);
         }
         return context;
     }
@@ -60,7 +71,7 @@ class SkillPipelineSystemTest {
     void shouldProcess_responseWithToolCalls() {
         Skill skill = Skill.builder().name("a").nextSkill("b").build();
         LlmResponse response = LlmResponse.builder()
-                .content("result")
+                .content(CONTENT_RESULT)
                 .toolCalls(List.of(Message.ToolCall.builder()
                         .id("tc1").name("shell").build()))
                 .build();
@@ -71,7 +82,7 @@ class SkillPipelineSystemTest {
 
     @Test
     void shouldProcess_noActiveSkill() {
-        LlmResponse response = LlmResponse.builder().content("result").build();
+        LlmResponse response = LlmResponse.builder().content(CONTENT_RESULT).build();
         AgentContext ctx = createContext(null, response);
 
         assertFalse(system.shouldProcess(ctx));
@@ -80,7 +91,7 @@ class SkillPipelineSystemTest {
     @Test
     void shouldProcess_noNextSkill() {
         Skill skill = Skill.builder().name("a").build();
-        LlmResponse response = LlmResponse.builder().content("result").build();
+        LlmResponse response = LlmResponse.builder().content(CONTENT_RESULT).build();
         AgentContext ctx = createContext(skill, response);
 
         assertFalse(system.shouldProcess(ctx));
@@ -89,9 +100,9 @@ class SkillPipelineSystemTest {
     @Test
     void shouldProcess_explicitTransitionAlreadySet() {
         Skill skill = Skill.builder().name("a").nextSkill("b").build();
-        LlmResponse response = LlmResponse.builder().content("result").build();
+        LlmResponse response = LlmResponse.builder().content(CONTENT_RESULT).build();
         AgentContext ctx = createContext(skill, response);
-        ctx.setAttribute("skill.transition.target", "c");
+        ctx.setAttribute(ATTR_TRANSITION_TARGET, "c");
 
         assertFalse(system.shouldProcess(ctx));
     }
@@ -99,7 +110,7 @@ class SkillPipelineSystemTest {
     @Test
     void shouldProcess_validAutoTransition() {
         Skill skill = Skill.builder().name("a").nextSkill("b").build();
-        LlmResponse response = LlmResponse.builder().content("result").build();
+        LlmResponse response = LlmResponse.builder().content(CONTENT_RESULT).build();
         AgentContext ctx = createContext(skill, response);
 
         assertTrue(system.shouldProcess(ctx));
@@ -107,23 +118,23 @@ class SkillPipelineSystemTest {
 
     @Test
     void process_autoTransition() {
-        Skill activeSkill = Skill.builder().name("analyzer").nextSkill("executor").build();
-        Skill nextSkill = Skill.builder().name("executor").available(true).build();
+        Skill activeSkill = Skill.builder().name("analyzer").nextSkill(SKILL_EXECUTOR).build();
+        Skill nextSkill = Skill.builder().name(SKILL_EXECUTOR).available(true).build();
         LlmResponse response = LlmResponse.builder().content("Analysis complete").build();
 
-        when(skillComponent.findByName("executor")).thenReturn(Optional.of(nextSkill));
+        when(skillComponent.findByName(SKILL_EXECUTOR)).thenReturn(Optional.of(nextSkill));
 
         AgentContext ctx = createContext(activeSkill, response);
         system.process(ctx);
 
         // Transition target should be set
-        assertEquals("executor", ctx.getAttribute("skill.transition.target"));
+        assertEquals(SKILL_EXECUTOR, ctx.getAttribute(ATTR_TRANSITION_TARGET));
         // Pipeline depth incremented
-        assertEquals(1, (int) ctx.getAttribute("skill.pipeline.depth"));
+        assertEquals(1, (int) ctx.getAttribute(ATTR_PIPELINE_DEPTH));
         // Loop continuation forced
-        assertEquals(true, ctx.getAttribute("tools.executed"));
+        assertEquals(true, ctx.getAttribute(ATTR_TOOLS_EXECUTED));
         // Response cleared
-        assertNull(ctx.getAttribute("llm.response"));
+        assertNull(ctx.getAttribute(ATTR_LLM_RESPONSE));
         // Intermediate response stored in session
         assertEquals(1, ctx.getSession().getMessages().size());
         assertEquals("assistant", ctx.getSession().getMessages().get(0).getRole());
@@ -133,23 +144,23 @@ class SkillPipelineSystemTest {
     @Test
     void process_maxDepthReached() {
         Skill activeSkill = Skill.builder().name("a").nextSkill("b").build();
-        LlmResponse response = LlmResponse.builder().content("result").build();
+        LlmResponse response = LlmResponse.builder().content(CONTENT_RESULT).build();
 
         AgentContext ctx = createContext(activeSkill, response);
-        ctx.setAttribute("skill.pipeline.depth", 5);
+        ctx.setAttribute(ATTR_PIPELINE_DEPTH, 5);
 
         system.process(ctx);
 
         // Should NOT set transition
-        assertNull(ctx.getAttribute("skill.transition.target"));
+        assertNull(ctx.getAttribute(ATTR_TRANSITION_TARGET));
         // Response should still be present
-        assertNotNull(ctx.getAttribute("llm.response"));
+        assertNotNull(ctx.getAttribute(ATTR_LLM_RESPONSE));
     }
 
     @Test
     void process_nextSkillNotFound() {
         Skill activeSkill = Skill.builder().name("a").nextSkill("nonexistent").build();
-        LlmResponse response = LlmResponse.builder().content("result").build();
+        LlmResponse response = LlmResponse.builder().content(CONTENT_RESULT).build();
 
         when(skillComponent.findByName("nonexistent")).thenReturn(Optional.empty());
 
@@ -157,37 +168,37 @@ class SkillPipelineSystemTest {
         system.process(ctx);
 
         // Should NOT set transition
-        assertNull(ctx.getAttribute("skill.transition.target"));
+        assertNull(ctx.getAttribute(ATTR_TRANSITION_TARGET));
     }
 
     @Test
     void process_nextSkillUnavailable() {
         Skill activeSkill = Skill.builder().name("a").nextSkill("broken").build();
         Skill brokenSkill = Skill.builder().name("broken").available(false).build();
-        LlmResponse response = LlmResponse.builder().content("result").build();
+        LlmResponse response = LlmResponse.builder().content(CONTENT_RESULT).build();
 
         when(skillComponent.findByName("broken")).thenReturn(Optional.of(brokenSkill));
 
         AgentContext ctx = createContext(activeSkill, response);
         system.process(ctx);
 
-        assertNull(ctx.getAttribute("skill.transition.target"));
+        assertNull(ctx.getAttribute(ATTR_TRANSITION_TARGET));
     }
 
     @Test
     void process_incrementsDepth() {
         Skill activeSkill = Skill.builder().name("a").nextSkill("b").build();
         Skill nextSkill = Skill.builder().name("b").available(true).build();
-        LlmResponse response = LlmResponse.builder().content("result").build();
+        LlmResponse response = LlmResponse.builder().content(CONTENT_RESULT).build();
 
         when(skillComponent.findByName("b")).thenReturn(Optional.of(nextSkill));
 
         AgentContext ctx = createContext(activeSkill, response);
-        ctx.setAttribute("skill.pipeline.depth", 3);
+        ctx.setAttribute(ATTR_PIPELINE_DEPTH, 3);
 
         system.process(ctx);
 
-        assertEquals(4, (int) ctx.getAttribute("skill.pipeline.depth"));
+        assertEquals(4, (int) ctx.getAttribute(ATTR_PIPELINE_DEPTH));
     }
 
     @Test
@@ -204,6 +215,6 @@ class SkillPipelineSystemTest {
         // Blank content should not be stored
         assertEquals(0, ctx.getSession().getMessages().size());
         // But transition should still happen
-        assertEquals("b", ctx.getAttribute("skill.transition.target"));
+        assertEquals("b", ctx.getAttribute(ATTR_TRANSITION_TARGET));
     }
 }

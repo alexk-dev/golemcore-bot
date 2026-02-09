@@ -1,158 +1,143 @@
 package me.golemcore.bot.adapter.outbound.llm;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
-import java.lang.reflect.Method;
-
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for rate limit detection logic in Langchain4jAdapter.
  */
 class Langchain4jAdapterRetryTest {
 
-    @Test
-    void isRateLimitError_detectsTokenQuotaExceeded() throws Exception {
-        var adapter = createMinimalAdapter();
-        var method = getIsRateLimitErrorMethod();
+    private static final String IS_RATE_LIMIT_ERROR = "isRateLimitError";
+    private static final String SANITIZE_FUNCTION_NAME = "sanitizeFunctionName";
 
-        var ex = new RuntimeException("LLM chat failed: {\"message\":\"Tokens per minute limit exceeded\","
+    @Test
+    void isRateLimitError_detectsTokenQuotaExceeded() {
+        Langchain4jAdapter adapter = createMinimalAdapter();
+
+        RuntimeException ex = new RuntimeException("LLM chat failed: {\"message\":\"Tokens per minute limit exceeded\","
                 + "\"type\":\"too_many_tokens_error\",\"code\":\"token_quota_exceeded\"}");
 
-        assertTrue((boolean) method.invoke(adapter, ex));
+        assertTrue((boolean) ReflectionTestUtils.invokeMethod(adapter, IS_RATE_LIMIT_ERROR, ex));
     }
 
     @Test
-    void isRateLimitError_detectsRateLimitInMessage() throws Exception {
-        var adapter = createMinimalAdapter();
-        var method = getIsRateLimitErrorMethod();
+    void isRateLimitError_detectsRateLimitInMessage() {
+        Langchain4jAdapter adapter = createMinimalAdapter();
 
-        var ex = new RuntimeException("rate_limit_exceeded");
-        assertTrue((boolean) method.invoke(adapter, ex));
+        RuntimeException ex = new RuntimeException("rate_limit_exceeded");
+        assertTrue((boolean) ReflectionTestUtils.invokeMethod(adapter, IS_RATE_LIMIT_ERROR, ex));
     }
 
     @Test
-    void isRateLimitError_detects429() throws Exception {
-        var adapter = createMinimalAdapter();
-        var method = getIsRateLimitErrorMethod();
+    void isRateLimitError_detects429() {
+        Langchain4jAdapter adapter = createMinimalAdapter();
 
-        var ex = new RuntimeException("HTTP 429 Too Many Requests");
-        assertTrue((boolean) method.invoke(adapter, ex));
+        RuntimeException ex = new RuntimeException("HTTP 429 Too Many Requests");
+        assertTrue((boolean) ReflectionTestUtils.invokeMethod(adapter, IS_RATE_LIMIT_ERROR, ex));
     }
 
     @Test
-    void isRateLimitError_detectsTooManyRequests() throws Exception {
-        var adapter = createMinimalAdapter();
-        var method = getIsRateLimitErrorMethod();
+    void isRateLimitError_detectsTooManyRequests() {
+        Langchain4jAdapter adapter = createMinimalAdapter();
 
-        var ex = new RuntimeException("Too Many Requests");
-        assertTrue((boolean) method.invoke(adapter, ex));
+        RuntimeException ex = new RuntimeException("Too Many Requests");
+        assertTrue((boolean) ReflectionTestUtils.invokeMethod(adapter, IS_RATE_LIMIT_ERROR, ex));
     }
 
     @Test
-    void isRateLimitError_detectsNestedCause() throws Exception {
-        var adapter = createMinimalAdapter();
-        var method = getIsRateLimitErrorMethod();
+    void isRateLimitError_detectsNestedCause() {
+        Langchain4jAdapter adapter = createMinimalAdapter();
 
-        var cause = new RuntimeException("token_quota_exceeded");
-        var ex = new RuntimeException("LLM failed", cause);
+        RuntimeException cause = new RuntimeException("token_quota_exceeded");
+        RuntimeException ex = new RuntimeException("LLM failed", cause);
 
-        assertTrue((boolean) method.invoke(adapter, ex));
+        assertTrue((boolean) ReflectionTestUtils.invokeMethod(adapter, IS_RATE_LIMIT_ERROR, ex));
     }
 
     @Test
-    void isRateLimitError_returnsFalseForOtherErrors() throws Exception {
-        var adapter = createMinimalAdapter();
-        var method = getIsRateLimitErrorMethod();
+    void isRateLimitError_returnsFalseForOtherErrors() {
+        Langchain4jAdapter adapter = createMinimalAdapter();
 
-        var ex = new RuntimeException("Connection refused");
-        assertFalse((boolean) method.invoke(adapter, ex));
+        RuntimeException ex = new RuntimeException("Connection refused");
+        assertFalse((boolean) ReflectionTestUtils.invokeMethod(adapter, IS_RATE_LIMIT_ERROR, ex));
     }
 
     @Test
-    void isRateLimitError_returnsFalseForNullMessage() throws Exception {
-        var adapter = createMinimalAdapter();
-        var method = getIsRateLimitErrorMethod();
+    void isRateLimitError_returnsFalseForNullMessage() {
+        Langchain4jAdapter adapter = createMinimalAdapter();
 
-        var ex = new RuntimeException((String) null);
-        assertFalse((boolean) method.invoke(adapter, ex));
+        RuntimeException ex = new RuntimeException((String) null);
+        assertFalse((boolean) ReflectionTestUtils.invokeMethod(adapter, IS_RATE_LIMIT_ERROR, ex));
     }
 
     // ===== sanitizeFunctionName =====
 
     @Test
-    void sanitizeFunctionName_validName() throws Exception {
-        var adapter = createMinimalAdapter();
-        var method = getSanitizeFunctionNameMethod();
-        assertEquals("my_tool", method.invoke(adapter, "my_tool"));
+    void sanitizeFunctionName_validName() {
+        Langchain4jAdapter adapter = createMinimalAdapter();
+        String result = ReflectionTestUtils.invokeMethod(adapter, SANITIZE_FUNCTION_NAME, "my_tool");
+        assertEquals("my_tool", result);
     }
 
     @Test
-    void sanitizeFunctionName_validNameWithDash() throws Exception {
-        var adapter = createMinimalAdapter();
-        var method = getSanitizeFunctionNameMethod();
-        assertEquals("my-tool", method.invoke(adapter, "my-tool"));
+    void sanitizeFunctionName_validNameWithDash() {
+        Langchain4jAdapter adapter = createMinimalAdapter();
+        String result = ReflectionTestUtils.invokeMethod(adapter, SANITIZE_FUNCTION_NAME, "my-tool");
+        assertEquals("my-tool", result);
     }
 
     @Test
-    void sanitizeFunctionName_replacesDotsWithUnderscore() throws Exception {
-        var adapter = createMinimalAdapter();
-        var method = getSanitizeFunctionNameMethod();
-        assertEquals("tools_read_file", method.invoke(adapter, "tools.read_file"));
+    void sanitizeFunctionName_replacesDotsWithUnderscore() {
+        Langchain4jAdapter adapter = createMinimalAdapter();
+        String result = ReflectionTestUtils.invokeMethod(adapter, SANITIZE_FUNCTION_NAME, "tools.read_file");
+        assertEquals("tools_read_file", result);
     }
 
     @Test
-    void sanitizeFunctionName_replacesSpacesAndSpecialChars() throws Exception {
-        var adapter = createMinimalAdapter();
-        var method = getSanitizeFunctionNameMethod();
-        assertEquals("my_tool_v2_", method.invoke(adapter, "my tool/v2!"));
+    void sanitizeFunctionName_replacesSpacesAndSpecialChars() {
+        Langchain4jAdapter adapter = createMinimalAdapter();
+        String result = ReflectionTestUtils.invokeMethod(adapter, SANITIZE_FUNCTION_NAME, "my tool/v2!");
+        assertEquals("my_tool_v2_", result);
     }
 
     @Test
-    void sanitizeFunctionName_nullReturnsUnknown() throws Exception {
-        var adapter = createMinimalAdapter();
-        var method = getSanitizeFunctionNameMethod();
-        assertEquals("unknown", method.invoke(adapter, (String) null));
+    void sanitizeFunctionName_nullReturnsUnknown() {
+        Langchain4jAdapter adapter = createMinimalAdapter();
+        String result = ReflectionTestUtils.invokeMethod(adapter, SANITIZE_FUNCTION_NAME, (String) null);
+        assertEquals("unknown", result);
     }
 
     @Test
-    void sanitizeFunctionName_allInvalidCharsReplacedWithUnderscore() throws Exception {
-        var adapter = createMinimalAdapter();
-        var method = getSanitizeFunctionNameMethod();
-        // Dots → underscores, result is "___" (not empty)
-        assertEquals("___", method.invoke(adapter, "..."));
+    void sanitizeFunctionName_allInvalidCharsReplacedWithUnderscore() {
+        Langchain4jAdapter adapter = createMinimalAdapter();
+        // Dots -> underscores, result is "___" (not empty)
+        String result = ReflectionTestUtils.invokeMethod(adapter, SANITIZE_FUNCTION_NAME, "...");
+        assertEquals("___", result);
     }
 
     @Test
-    void sanitizeFunctionName_alreadyValid() throws Exception {
-        var adapter = createMinimalAdapter();
-        var method = getSanitizeFunctionNameMethod();
-        assertEquals("filesystem_read", method.invoke(adapter, "filesystem_read"));
+    void sanitizeFunctionName_alreadyValid() {
+        Langchain4jAdapter adapter = createMinimalAdapter();
+        String result = ReflectionTestUtils.invokeMethod(adapter, SANITIZE_FUNCTION_NAME, "filesystem_read");
+        assertEquals("filesystem_read", result);
     }
 
     @Test
-    void sanitizeFunctionName_unicodeReplaced() throws Exception {
-        var adapter = createMinimalAdapter();
-        var method = getSanitizeFunctionNameMethod();
-        String result = (String) method.invoke(adapter, "tool_фыва");
+    void sanitizeFunctionName_unicodeReplaced() {
+        Langchain4jAdapter adapter = createMinimalAdapter();
+        String result = ReflectionTestUtils.invokeMethod(adapter, SANITIZE_FUNCTION_NAME,
+                "tool_\u0444\u044B\u0432\u0430");
         assertTrue(result.matches("^[a-zA-Z0-9_-]+$"));
     }
 
     private Langchain4jAdapter createMinimalAdapter() {
-        // Create with nulls — only testing isRateLimitError/sanitize which don't use
+        // Create with nulls -- only testing isRateLimitError/sanitize which don't use
         // fields
         return new Langchain4jAdapter(null, null);
-    }
-
-    private Method getIsRateLimitErrorMethod() throws NoSuchMethodException {
-        Method method = Langchain4jAdapter.class.getDeclaredMethod("isRateLimitError", Throwable.class);
-        method.setAccessible(true);
-        return method;
-    }
-
-    private Method getSanitizeFunctionNameMethod() throws NoSuchMethodException {
-        Method method = Langchain4jAdapter.class.getDeclaredMethod("sanitizeFunctionName", String.class);
-        method.setAccessible(true);
-        return method;
     }
 }

@@ -18,6 +18,15 @@ import static org.mockito.Mockito.*;
 
 class PromptSectionServiceTest {
 
+    private static final String PROMPTS_DIR = "prompts";
+    private static final String IDENTITY_FILE = "IDENTITY.md";
+    private static final String RULES_FILE = "RULES.md";
+    private static final String VOICE_FILE = "VOICE.md";
+    private static final String IDENTITY_NAME = "identity";
+    private static final String VAR_BOT_NAME = "BOT_NAME";
+    private static final String VAR_DATE = "DATE";
+    private static final String BAD_FILE = "BAD.md";
+
     private StoragePort storagePort;
     private BotProperties properties;
     private SkillTemplateEngine templateEngine;
@@ -30,7 +39,7 @@ class PromptSectionServiceTest {
         templateEngine = new SkillTemplateEngine();
 
         // Default: both files exist (skip ensureDefaults writes)
-        when(storagePort.exists(eq("prompts"), anyString()))
+        when(storagePort.exists(eq(PROMPTS_DIR), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(true));
 
         service = new PromptSectionService(storagePort, properties, templateEngine);
@@ -41,11 +50,11 @@ class PromptSectionServiceTest {
         String identity = "---\ndescription: Identity\norder: 10\n---\nYou are a bot.";
         String rules = "---\ndescription: Rules\norder: 20\n---\nBe nice.";
 
-        when(storagePort.listObjects("prompts", ""))
-                .thenReturn(CompletableFuture.completedFuture(List.of("IDENTITY.md", "RULES.md")));
-        when(storagePort.getText("prompts", "IDENTITY.md"))
+        when(storagePort.listObjects(PROMPTS_DIR, ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of(IDENTITY_FILE, RULES_FILE)));
+        when(storagePort.getText(PROMPTS_DIR, IDENTITY_FILE))
                 .thenReturn(CompletableFuture.completedFuture(identity));
-        when(storagePort.getText("prompts", "RULES.md"))
+        when(storagePort.getText(PROMPTS_DIR, RULES_FILE))
                 .thenReturn(CompletableFuture.completedFuture(rules));
 
         service.reload();
@@ -55,29 +64,29 @@ class PromptSectionServiceTest {
 
     @Test
     void reload_ignoresNonMdFiles() {
-        when(storagePort.listObjects("prompts", ""))
-                .thenReturn(CompletableFuture.completedFuture(List.of("IDENTITY.md", "notes.txt")));
-        when(storagePort.getText("prompts", "IDENTITY.md"))
+        when(storagePort.listObjects(PROMPTS_DIR, ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of(IDENTITY_FILE, "notes.txt")));
+        when(storagePort.getText(PROMPTS_DIR, IDENTITY_FILE))
                 .thenReturn(CompletableFuture.completedFuture("Hello"));
 
         service.reload();
 
         assertEquals(1, service.getEnabledSections().size());
-        assertEquals("identity", service.getEnabledSections().get(0).getName());
+        assertEquals(IDENTITY_NAME, service.getEnabledSections().get(0).getName());
     }
 
     @Test
     void reload_parsesFrontmatter() {
         String content = "---\ndescription: Bot ID\norder: 10\n---\nYou are a bot.";
 
-        when(storagePort.listObjects("prompts", ""))
-                .thenReturn(CompletableFuture.completedFuture(List.of("IDENTITY.md")));
-        when(storagePort.getText("prompts", "IDENTITY.md"))
+        when(storagePort.listObjects(PROMPTS_DIR, ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of(IDENTITY_FILE)));
+        when(storagePort.getText(PROMPTS_DIR, IDENTITY_FILE))
                 .thenReturn(CompletableFuture.completedFuture(content));
 
         service.reload();
 
-        PromptSection section = service.getSection("identity").orElseThrow();
+        PromptSection section = service.getSection(IDENTITY_NAME).orElseThrow();
         assertEquals(10, section.getOrder());
         assertEquals("Bot ID", section.getDescription());
         assertEquals("You are a bot.", section.getContent());
@@ -85,9 +94,9 @@ class PromptSectionServiceTest {
 
     @Test
     void reload_noFrontmatter() {
-        when(storagePort.listObjects("prompts", ""))
+        when(storagePort.listObjects(PROMPTS_DIR, ""))
                 .thenReturn(CompletableFuture.completedFuture(List.of("CUSTOM.md")));
-        when(storagePort.getText("prompts", "CUSTOM.md"))
+        when(storagePort.getText(PROMPTS_DIR, "CUSTOM.md"))
                 .thenReturn(CompletableFuture.completedFuture("Just plain markdown."));
 
         service.reload();
@@ -102,9 +111,9 @@ class PromptSectionServiceTest {
     void reload_disabledSection() {
         String content = "---\nenabled: false\norder: 10\n---\nDisabled content.";
 
-        when(storagePort.listObjects("prompts", ""))
+        when(storagePort.listObjects(PROMPTS_DIR, ""))
                 .thenReturn(CompletableFuture.completedFuture(List.of("DISABLED.md")));
-        when(storagePort.getText("prompts", "DISABLED.md"))
+        when(storagePort.getText(PROMPTS_DIR, "DISABLED.md"))
                 .thenReturn(CompletableFuture.completedFuture(content));
 
         service.reload();
@@ -117,7 +126,7 @@ class PromptSectionServiceTest {
 
     @Test
     void reload_emptyDirectory() {
-        when(storagePort.listObjects("prompts", ""))
+        when(storagePort.listObjects(PROMPTS_DIR, ""))
                 .thenReturn(CompletableFuture.completedFuture(List.of()));
 
         service.reload();
@@ -131,11 +140,11 @@ class PromptSectionServiceTest {
         String s2 = "---\norder: 10\n---\nFirst";
         String s3 = "---\norder: 30\n---\nThird";
 
-        when(storagePort.listObjects("prompts", ""))
+        when(storagePort.listObjects(PROMPTS_DIR, ""))
                 .thenReturn(CompletableFuture.completedFuture(List.of("B.md", "A.md", "C.md")));
-        when(storagePort.getText("prompts", "B.md")).thenReturn(CompletableFuture.completedFuture(s1));
-        when(storagePort.getText("prompts", "A.md")).thenReturn(CompletableFuture.completedFuture(s2));
-        when(storagePort.getText("prompts", "C.md")).thenReturn(CompletableFuture.completedFuture(s3));
+        when(storagePort.getText(PROMPTS_DIR, "B.md")).thenReturn(CompletableFuture.completedFuture(s1));
+        when(storagePort.getText(PROMPTS_DIR, "A.md")).thenReturn(CompletableFuture.completedFuture(s2));
+        when(storagePort.getText(PROMPTS_DIR, "C.md")).thenReturn(CompletableFuture.completedFuture(s3));
 
         service.reload();
 
@@ -150,15 +159,15 @@ class PromptSectionServiceTest {
     void getSection_byName() {
         String content = "---\norder: 10\n---\nIdentity content";
 
-        when(storagePort.listObjects("prompts", ""))
-                .thenReturn(CompletableFuture.completedFuture(List.of("IDENTITY.md")));
-        when(storagePort.getText("prompts", "IDENTITY.md"))
+        when(storagePort.listObjects(PROMPTS_DIR, ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of(IDENTITY_FILE)));
+        when(storagePort.getText(PROMPTS_DIR, IDENTITY_FILE))
                 .thenReturn(CompletableFuture.completedFuture(content));
 
         service.reload();
 
         // Lowercase lookup
-        Optional<PromptSection> section = service.getSection("identity");
+        Optional<PromptSection> section = service.getSection(IDENTITY_NAME);
         assertTrue(section.isPresent());
         assertEquals("Identity content", section.get().getContent());
 
@@ -173,7 +182,7 @@ class PromptSectionServiceTest {
                 .content("Hello {{BOT_NAME}}, today is {{DATE}}")
                 .build();
 
-        Map<String, String> vars = Map.of("BOT_NAME", "TestBot", "DATE", "2026-02-05");
+        Map<String, String> vars = Map.of(VAR_BOT_NAME, "TestBot", VAR_DATE, "2026-02-05");
 
         String rendered = service.renderSection(section, vars);
 
@@ -206,10 +215,10 @@ class PromptSectionServiceTest {
 
         Map<String, String> vars = service.buildTemplateVariables(prefs);
 
-        assertEquals("AI Assistant", vars.get("BOT_NAME"));
+        assertEquals("AI Assistant", vars.get(VAR_BOT_NAME));
         assertEquals("ru", vars.get("USER_LANG"));
         assertEquals("Europe/Moscow", vars.get("USER_TIMEZONE"));
-        assertNotNull(vars.get("DATE"));
+        assertNotNull(vars.get(VAR_DATE));
         assertNotNull(vars.get("TIME"));
     }
 
@@ -217,10 +226,10 @@ class PromptSectionServiceTest {
     void buildTemplateVariables_nullPrefs() {
         Map<String, String> vars = service.buildTemplateVariables(null);
 
-        assertEquals("AI Assistant", vars.get("BOT_NAME"));
+        assertEquals("AI Assistant", vars.get(VAR_BOT_NAME));
         assertEquals("en", vars.get("USER_LANG"));
         assertEquals("UTC", vars.get("USER_TIMEZONE"));
-        assertNotNull(vars.get("DATE"));
+        assertNotNull(vars.get(VAR_DATE));
         assertNotNull(vars.get("TIME"));
     }
 
@@ -243,35 +252,35 @@ class PromptSectionServiceTest {
 
         Map<String, String> vars = service.buildTemplateVariables(null);
 
-        assertEquals("MyBot", vars.get("BOT_NAME"));
+        assertEquals("MyBot", vars.get(VAR_BOT_NAME));
     }
 
     @Test
     void ensureDefaults_createsWhenMissing() {
-        when(storagePort.exists("prompts", "IDENTITY.md"))
+        when(storagePort.exists(PROMPTS_DIR, IDENTITY_FILE))
                 .thenReturn(CompletableFuture.completedFuture(false));
-        when(storagePort.exists("prompts", "RULES.md"))
+        when(storagePort.exists(PROMPTS_DIR, RULES_FILE))
                 .thenReturn(CompletableFuture.completedFuture(false));
-        when(storagePort.putText(eq("prompts"), anyString(), anyString()))
+        when(storagePort.putText(eq(PROMPTS_DIR), anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
         service.ensureDefaults();
 
-        verify(storagePort).putText(eq("prompts"), eq("IDENTITY.md"), contains("BOT_NAME"));
-        verify(storagePort).putText(eq("prompts"), eq("RULES.md"), contains("Rules"));
+        verify(storagePort).putText(eq(PROMPTS_DIR), eq(IDENTITY_FILE), contains(VAR_BOT_NAME));
+        verify(storagePort).putText(eq(PROMPTS_DIR), eq(RULES_FILE), contains("Rules"));
     }
 
     @Test
     void ensureDefaults_skipsExisting() {
-        when(storagePort.exists("prompts", "IDENTITY.md"))
+        when(storagePort.exists(PROMPTS_DIR, IDENTITY_FILE))
                 .thenReturn(CompletableFuture.completedFuture(true));
-        when(storagePort.exists("prompts", "RULES.md"))
+        when(storagePort.exists(PROMPTS_DIR, RULES_FILE))
                 .thenReturn(CompletableFuture.completedFuture(true));
 
         service.ensureDefaults();
 
-        verify(storagePort, never()).putText(eq("prompts"), eq("IDENTITY.md"), anyString());
-        verify(storagePort, never()).putText(eq("prompts"), eq("RULES.md"), anyString());
+        verify(storagePort, never()).putText(eq(PROMPTS_DIR), eq(IDENTITY_FILE), anyString());
+        verify(storagePort, never()).putText(eq(PROMPTS_DIR), eq(RULES_FILE), anyString());
     }
 
     @Test
@@ -289,11 +298,11 @@ class PromptSectionServiceTest {
         String voiceSection = "---\ndescription: Voice\norder: 15\n---\nVoice instructions.";
         String identitySection = "---\ndescription: Identity\norder: 10\n---\nYou are a bot.";
 
-        when(storagePort.listObjects("prompts", ""))
-                .thenReturn(CompletableFuture.completedFuture(List.of("IDENTITY.md", "VOICE.md")));
-        when(storagePort.getText("prompts", "IDENTITY.md"))
+        when(storagePort.listObjects(PROMPTS_DIR, ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of(IDENTITY_FILE, VOICE_FILE)));
+        when(storagePort.getText(PROMPTS_DIR, IDENTITY_FILE))
                 .thenReturn(CompletableFuture.completedFuture(identitySection));
-        when(storagePort.getText("prompts", "VOICE.md"))
+        when(storagePort.getText(PROMPTS_DIR, VOICE_FILE))
                 .thenReturn(CompletableFuture.completedFuture(voiceSection));
 
         properties.getVoice().setEnabled(false);
@@ -301,7 +310,7 @@ class PromptSectionServiceTest {
 
         List<PromptSection> sections = service.getEnabledSections();
         assertEquals(1, sections.size());
-        assertEquals("identity", sections.get(0).getName());
+        assertEquals(IDENTITY_NAME, sections.get(0).getName());
     }
 
     @Test
@@ -309,11 +318,11 @@ class PromptSectionServiceTest {
         String voiceSection = "---\ndescription: Voice\norder: 15\n---\nVoice instructions.";
         String identitySection = "---\ndescription: Identity\norder: 10\n---\nYou are a bot.";
 
-        when(storagePort.listObjects("prompts", ""))
-                .thenReturn(CompletableFuture.completedFuture(List.of("IDENTITY.md", "VOICE.md")));
-        when(storagePort.getText("prompts", "IDENTITY.md"))
+        when(storagePort.listObjects(PROMPTS_DIR, ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of(IDENTITY_FILE, VOICE_FILE)));
+        when(storagePort.getText(PROMPTS_DIR, IDENTITY_FILE))
                 .thenReturn(CompletableFuture.completedFuture(identitySection));
-        when(storagePort.getText("prompts", "VOICE.md"))
+        when(storagePort.getText(PROMPTS_DIR, VOICE_FILE))
                 .thenReturn(CompletableFuture.completedFuture(voiceSection));
 
         properties.getVoice().setEnabled(true);
@@ -321,39 +330,39 @@ class PromptSectionServiceTest {
 
         List<PromptSection> sections = service.getEnabledSections();
         assertEquals(2, sections.size());
-        assertEquals("identity", sections.get(0).getName());
+        assertEquals(IDENTITY_NAME, sections.get(0).getName());
         assertEquals("voice", sections.get(1).getName());
     }
 
     @Test
     void ensureDefaults_createsVoiceMdWhenVoiceEnabled() {
         properties.getVoice().setEnabled(true);
-        when(storagePort.exists("prompts", "IDENTITY.md"))
+        when(storagePort.exists(PROMPTS_DIR, IDENTITY_FILE))
                 .thenReturn(CompletableFuture.completedFuture(true));
-        when(storagePort.exists("prompts", "RULES.md"))
+        when(storagePort.exists(PROMPTS_DIR, RULES_FILE))
                 .thenReturn(CompletableFuture.completedFuture(true));
-        when(storagePort.exists("prompts", "VOICE.md"))
+        when(storagePort.exists(PROMPTS_DIR, VOICE_FILE))
                 .thenReturn(CompletableFuture.completedFuture(false));
-        when(storagePort.putText(eq("prompts"), anyString(), anyString()))
+        when(storagePort.putText(eq(PROMPTS_DIR), anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
         service.ensureDefaults();
 
-        verify(storagePort).putText(eq("prompts"), eq("VOICE.md"), contains("Voice"));
+        verify(storagePort).putText(eq(PROMPTS_DIR), eq(VOICE_FILE), contains("Voice"));
     }
 
     @Test
     void ensureDefaults_skipsVoiceMdWhenVoiceDisabled() {
         properties.getVoice().setEnabled(false);
-        when(storagePort.exists("prompts", "IDENTITY.md"))
+        when(storagePort.exists(PROMPTS_DIR, IDENTITY_FILE))
                 .thenReturn(CompletableFuture.completedFuture(true));
-        when(storagePort.exists("prompts", "RULES.md"))
+        when(storagePort.exists(PROMPTS_DIR, RULES_FILE))
                 .thenReturn(CompletableFuture.completedFuture(true));
 
         service.ensureDefaults();
 
-        verify(storagePort, never()).exists(eq("prompts"), eq("VOICE.md"));
-        verify(storagePort, never()).putText(eq("prompts"), eq("VOICE.md"), anyString());
+        verify(storagePort, never()).exists(eq(PROMPTS_DIR), eq(VOICE_FILE));
+        verify(storagePort, never()).putText(eq(PROMPTS_DIR), eq(VOICE_FILE), anyString());
     }
 
     @Test
@@ -366,16 +375,16 @@ class PromptSectionServiceTest {
 
         // Should fall back to UTC
         assertEquals("UTC", vars.get("USER_TIMEZONE"));
-        assertNotNull(vars.get("DATE"));
+        assertNotNull(vars.get(VAR_DATE));
     }
 
     // ===== Edge cases for loadSection null guard =====
 
     @Test
     void reload_skipsNullContentFromStorage() {
-        when(storagePort.listObjects("prompts", ""))
-                .thenReturn(CompletableFuture.completedFuture(List.of("BAD.md")));
-        when(storagePort.getText("prompts", "BAD.md"))
+        when(storagePort.listObjects(PROMPTS_DIR, ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of(BAD_FILE)));
+        when(storagePort.getText(PROMPTS_DIR, BAD_FILE))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
         service.reload();
@@ -385,9 +394,9 @@ class PromptSectionServiceTest {
 
     @Test
     void reload_skipsBlankContentFromStorage() {
-        when(storagePort.listObjects("prompts", ""))
+        when(storagePort.listObjects(PROMPTS_DIR, ""))
                 .thenReturn(CompletableFuture.completedFuture(List.of("EMPTY.md")));
-        when(storagePort.getText("prompts", "EMPTY.md"))
+        when(storagePort.getText(PROMPTS_DIR, "EMPTY.md"))
                 .thenReturn(CompletableFuture.completedFuture("   "));
 
         service.reload();
@@ -397,9 +406,9 @@ class PromptSectionServiceTest {
 
     @Test
     void reload_handlesGetTextException() {
-        when(storagePort.listObjects("prompts", ""))
+        when(storagePort.listObjects(PROMPTS_DIR, ""))
                 .thenReturn(CompletableFuture.completedFuture(List.of("CRASH.md")));
-        when(storagePort.getText("prompts", "CRASH.md"))
+        when(storagePort.getText(PROMPTS_DIR, "CRASH.md"))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("storage read error")));
 
         assertDoesNotThrow(() -> service.reload());
@@ -410,9 +419,9 @@ class PromptSectionServiceTest {
     void reload_malformedFrontmatterStillCreatesSection() {
         String content = "---\norder: [bad yaml!!!\n---\nContent body after bad yaml";
 
-        when(storagePort.listObjects("prompts", ""))
+        when(storagePort.listObjects(PROMPTS_DIR, ""))
                 .thenReturn(CompletableFuture.completedFuture(List.of("MALFORMED.md")));
-        when(storagePort.getText("prompts", "MALFORMED.md"))
+        when(storagePort.getText(PROMPTS_DIR, "MALFORMED.md"))
                 .thenReturn(CompletableFuture.completedFuture(content));
 
         service.reload();
@@ -428,11 +437,11 @@ class PromptSectionServiceTest {
     void reload_continuesAfterSingleFileFailure() {
         String goodContent = "---\norder: 10\n---\nGood content";
 
-        when(storagePort.listObjects("prompts", ""))
-                .thenReturn(CompletableFuture.completedFuture(List.of("BAD.md", "GOOD.md")));
-        when(storagePort.getText("prompts", "BAD.md"))
+        when(storagePort.listObjects(PROMPTS_DIR, ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of(BAD_FILE, "GOOD.md")));
+        when(storagePort.getText(PROMPTS_DIR, BAD_FILE))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("read error")));
-        when(storagePort.getText("prompts", "GOOD.md"))
+        when(storagePort.getText(PROMPTS_DIR, "GOOD.md"))
                 .thenReturn(CompletableFuture.completedFuture(goodContent));
 
         service.reload();
@@ -455,9 +464,9 @@ class PromptSectionServiceTest {
     void reload_extractsNameFromSubdirectoryPath() {
         String content = "---\norder: 10\n---\nContent";
 
-        when(storagePort.listObjects("prompts", ""))
+        when(storagePort.listObjects(PROMPTS_DIR, ""))
                 .thenReturn(CompletableFuture.completedFuture(List.of("subdir/CUSTOM.md")));
-        when(storagePort.getText("prompts", "subdir/CUSTOM.md"))
+        when(storagePort.getText(PROMPTS_DIR, "subdir/CUSTOM.md"))
                 .thenReturn(CompletableFuture.completedFuture(content));
 
         service.reload();
@@ -467,7 +476,7 @@ class PromptSectionServiceTest {
 
     @Test
     void reload_handlesListObjectsFailure() {
-        when(storagePort.listObjects("prompts", ""))
+        when(storagePort.listObjects(PROMPTS_DIR, ""))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("list failed")));
 
         assertDoesNotThrow(() -> service.reload());

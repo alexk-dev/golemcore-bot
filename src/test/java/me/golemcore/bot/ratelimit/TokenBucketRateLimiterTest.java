@@ -10,6 +10,9 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class TokenBucketRateLimiterTest {
 
+    private static final String CHANNEL_TELEGRAM = "telegram";
+    private static final String PROVIDER_OPENAI = "openai";
+
     private BotProperties properties;
     private TokenBucketRateLimiter rateLimiter;
 
@@ -43,7 +46,7 @@ class TokenBucketRateLimiterTest {
         properties.getRateLimit().setEnabled(false);
         rateLimiter = new TokenBucketRateLimiter(properties);
 
-        RateLimitResult result = rateLimiter.tryConsumeChannel("telegram");
+        RateLimitResult result = rateLimiter.tryConsumeChannel(CHANNEL_TELEGRAM);
         assertTrue(result.isAllowed());
         assertEquals(Long.MAX_VALUE, result.getRemainingTokens());
     }
@@ -53,7 +56,7 @@ class TokenBucketRateLimiterTest {
         properties.getRateLimit().setEnabled(false);
         rateLimiter = new TokenBucketRateLimiter(properties);
 
-        RateLimitResult result = rateLimiter.tryConsumeLlm("openai");
+        RateLimitResult result = rateLimiter.tryConsumeLlm(PROVIDER_OPENAI);
         assertTrue(result.isAllowed());
         assertEquals(Long.MAX_VALUE, result.getRemainingTokens());
     }
@@ -85,7 +88,7 @@ class TokenBucketRateLimiterTest {
     @Test
     void shouldTrackChannelRateLimitsSeparately() {
         // Each channel gets its own bucket
-        RateLimitResult telegram = rateLimiter.tryConsumeChannel("telegram");
+        RateLimitResult telegram = rateLimiter.tryConsumeChannel(CHANNEL_TELEGRAM);
         RateLimitResult discord = rateLimiter.tryConsumeChannel("discord");
 
         assertTrue(telegram.isAllowed());
@@ -95,10 +98,10 @@ class TokenBucketRateLimiterTest {
     @Test
     void shouldDenyChannelRequestsExceedingLimit() {
         for (int i = 0; i < 10; i++) {
-            rateLimiter.tryConsumeChannel("telegram");
+            rateLimiter.tryConsumeChannel(CHANNEL_TELEGRAM);
         }
 
-        RateLimitResult result = rateLimiter.tryConsumeChannel("telegram");
+        RateLimitResult result = rateLimiter.tryConsumeChannel(CHANNEL_TELEGRAM);
         assertFalse(result.isAllowed());
     }
 
@@ -106,7 +109,7 @@ class TokenBucketRateLimiterTest {
 
     @Test
     void shouldTrackLlmRateLimitsSeparately() {
-        RateLimitResult openai = rateLimiter.tryConsumeLlm("openai");
+        RateLimitResult openai = rateLimiter.tryConsumeLlm(PROVIDER_OPENAI);
         RateLimitResult anthropic = rateLimiter.tryConsumeLlm("anthropic");
 
         assertTrue(openai.isAllowed());
@@ -116,10 +119,10 @@ class TokenBucketRateLimiterTest {
     @Test
     void shouldDenyLlmRequestsExceedingLimit() {
         for (int i = 0; i < 20; i++) {
-            rateLimiter.tryConsumeLlm("openai");
+            rateLimiter.tryConsumeLlm(PROVIDER_OPENAI);
         }
 
-        RateLimitResult result = rateLimiter.tryConsumeLlm("openai");
+        RateLimitResult result = rateLimiter.tryConsumeLlm(PROVIDER_OPENAI);
         assertFalse(result.isAllowed());
     }
 
@@ -134,7 +137,7 @@ class TokenBucketRateLimiterTest {
         assertFalse(rateLimiter.tryConsume().isAllowed());
 
         // Channel limit should still be available
-        assertTrue(rateLimiter.tryConsumeChannel("telegram").isAllowed());
+        assertTrue(rateLimiter.tryConsumeChannel(CHANNEL_TELEGRAM).isAllowed());
     }
 
     @Test
@@ -146,7 +149,7 @@ class TokenBucketRateLimiterTest {
         assertFalse(rateLimiter.tryConsume().isAllowed());
 
         // LLM limit should still be available
-        assertTrue(rateLimiter.tryConsumeLlm("openai").isAllowed());
+        assertTrue(rateLimiter.tryConsumeLlm(PROVIDER_OPENAI).isAllowed());
     }
 
     // ===== getBucketState =====
@@ -169,7 +172,7 @@ class TokenBucketRateLimiterTest {
 
     @Test
     void shouldReturnChannelBucketState() {
-        rateLimiter.tryConsumeChannel("telegram");
+        rateLimiter.tryConsumeChannel(CHANNEL_TELEGRAM);
 
         BucketState state = rateLimiter.getBucketState("channel:telegram");
         assertNotNull(state);
@@ -178,7 +181,7 @@ class TokenBucketRateLimiterTest {
 
     @Test
     void shouldReturnLlmBucketState() {
-        rateLimiter.tryConsumeLlm("openai");
+        rateLimiter.tryConsumeLlm(PROVIDER_OPENAI);
 
         BucketState state = rateLimiter.getBucketState("llm:openai");
         assertNotNull(state);

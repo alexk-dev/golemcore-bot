@@ -26,6 +26,14 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ElevenLabsAdapterTest {
 
+    private static final String CONTENT_TYPE = "Content-Type";
+    private static final String AUDIO_MPEG = "audio/mpeg";
+    private static final String APPLICATION_JSON = "application/json";
+    private static final String OPERATION_SYNTHESIZE = "synthesize";
+    private static final String XI_API_KEY = "xi-api-key";
+    private static final String TTS_TEXT = "Test";
+    private static final String STT_TEXT = "Hello";
+
     private MockWebServer mockServer;
     private ElevenLabsAdapter adapter;
     private BotProperties properties;
@@ -86,7 +94,7 @@ class ElevenLabsAdapterTest {
     }
 
     private void assertSynthesizeThrows(int expectedCode) {
-        CompletableFuture<byte[]> future = adapter.synthesize("Test", VoicePort.VoiceConfig.defaultConfig());
+        CompletableFuture<byte[]> future = adapter.synthesize(TTS_TEXT, VoicePort.VoiceConfig.defaultConfig());
         Exception ex = assertThrows(Exception.class, () -> future.get(15, TimeUnit.SECONDS));
         String message = ex.getCause() != null ? ex.getCause().getMessage() : ex.getMessage();
         assertTrue(message != null && message.contains(String.valueOf(expectedCode)));
@@ -99,7 +107,7 @@ class ElevenLabsAdapterTest {
     }
 
     private void assertSynthesizeThrowsAny() {
-        CompletableFuture<byte[]> future = adapter.synthesize("Test", VoicePort.VoiceConfig.defaultConfig());
+        CompletableFuture<byte[]> future = adapter.synthesize(TTS_TEXT, VoicePort.VoiceConfig.defaultConfig());
         assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
     }
 
@@ -107,7 +115,7 @@ class ElevenLabsAdapterTest {
     void transcribeSuccess() throws Exception {
         mockServer.enqueue(new MockResponse.Builder()
                 .body("{\"text\":\"Hello world\",\"language_code\":\"en\"}")
-                .addHeader("Content-Type", "application/json").build());
+                .addHeader(CONTENT_TYPE, APPLICATION_JSON).build());
 
         VoicePort.TranscriptionResult result = adapter.transcribe(
                 new byte[] { 1, 2, 3 }, AudioFormat.OGG_OPUS).get(5, TimeUnit.SECONDS);
@@ -117,8 +125,8 @@ class ElevenLabsAdapterTest {
 
         RecordedRequest request = mockServer.takeRequest(1, TimeUnit.SECONDS);
         assertNotNull(request);
-        assertEquals("test-api-key", request.getHeaders().get("xi-api-key"));
-        assertTrue(request.getHeaders().get("Content-Type").contains("multipart/form-data"));
+        assertEquals("test-api-key", request.getHeaders().get(XI_API_KEY));
+        assertTrue(request.getHeaders().get(CONTENT_TYPE).contains("multipart/form-data"));
     }
 
     @Test
@@ -142,18 +150,18 @@ class ElevenLabsAdapterTest {
         byte[] mp3Bytes = new byte[] { 0x49, 0x44, 0x33, 1, 2, 3 }; // fake MP3
         mockServer.enqueue(new MockResponse.Builder()
                 .body(new okio.Buffer().write(mp3Bytes))
-                .addHeader("Content-Type", "audio/mpeg").build());
+                .addHeader(CONTENT_TYPE, AUDIO_MPEG).build());
 
         VoicePort.VoiceConfig config = new VoicePort.VoiceConfig(
                 "custom-voice", "eleven_multilingual_v2", 1.0f, AudioFormat.MP3);
 
-        byte[] result = adapter.synthesize("Hello", config).get(5, TimeUnit.SECONDS);
+        byte[] result = adapter.synthesize(STT_TEXT, config).get(5, TimeUnit.SECONDS);
         assertArrayEquals(mp3Bytes, result);
 
         RecordedRequest request = mockServer.takeRequest(1, TimeUnit.SECONDS);
         assertNotNull(request);
-        assertEquals("test-api-key", request.getHeaders().get("xi-api-key"));
-        assertEquals("audio/mpeg", request.getHeaders().get("Accept"));
+        assertEquals("test-api-key", request.getHeaders().get(XI_API_KEY));
+        assertEquals(AUDIO_MPEG, request.getHeaders().get("Accept"));
         assertTrue(request.getTarget() != null && request.getTarget().contains("custom-voice"));
         assertTrue(request.getTarget() != null && request.getTarget().contains("output_format=mp3_44100_128"));
     }
@@ -162,12 +170,12 @@ class ElevenLabsAdapterTest {
     void synthesizeUsesDefaultVoiceId() throws Exception {
         mockServer.enqueue(new MockResponse.Builder()
                 .body(new okio.Buffer().write(new byte[] { 1 }))
-                .addHeader("Content-Type", "audio/mpeg")
+                .addHeader(CONTENT_TYPE, AUDIO_MPEG)
                 .build());
 
         VoicePort.VoiceConfig config = new VoicePort.VoiceConfig(null, null, 0f, AudioFormat.MP3);
 
-        adapter.synthesize("Test", config).get(5, TimeUnit.SECONDS);
+        adapter.synthesize(TTS_TEXT, config).get(5, TimeUnit.SECONDS);
 
         RecordedRequest request = mockServer.takeRequest(1, TimeUnit.SECONDS);
         assertNotNull(request);
@@ -191,7 +199,7 @@ class ElevenLabsAdapterTest {
         mockServer.close();
 
         VoicePort.VoiceConfig config = VoicePort.VoiceConfig.defaultConfig();
-        CompletableFuture<byte[]> future = adapter.synthesize("Test", config);
+        CompletableFuture<byte[]> future = adapter.synthesize(TTS_TEXT, config);
         Exception ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
         assertTrue(ex.getMessage().contains("Synthesis failed") || ex.getCause() instanceof IOException);
     }
@@ -228,7 +236,7 @@ class ElevenLabsAdapterTest {
     @Test
     void synthesizeFailsWithoutApiKey() {
         properties.getVoice().setApiKey("");
-        CompletableFuture<byte[]> future = adapter.synthesize("Hello", VoicePort.VoiceConfig.defaultConfig());
+        CompletableFuture<byte[]> future = adapter.synthesize(STT_TEXT, VoicePort.VoiceConfig.defaultConfig());
         assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
     }
 
@@ -238,7 +246,7 @@ class ElevenLabsAdapterTest {
     void transcribeEmptyResponseText() throws Exception {
         mockServer.enqueue(new MockResponse.Builder()
                 .body("{\"text\":\"\",\"language_code\":\"en\"}")
-                .addHeader("Content-Type", "application/json").build());
+                .addHeader(CONTENT_TYPE, APPLICATION_JSON).build());
 
         VoicePort.TranscriptionResult result = adapter.transcribe(
                 new byte[] { 1 }, AudioFormat.OGG_OPUS).get(5, TimeUnit.SECONDS);
@@ -251,12 +259,12 @@ class ElevenLabsAdapterTest {
     void transcribeNullLanguageCode() throws Exception {
         mockServer.enqueue(new MockResponse.Builder()
                 .body("{\"text\":\"Hello\"}")
-                .addHeader("Content-Type", "application/json").build());
+                .addHeader(CONTENT_TYPE, APPLICATION_JSON).build());
 
         VoicePort.TranscriptionResult result = adapter.transcribe(
                 new byte[] { 1 }, AudioFormat.OGG_OPUS).get(5, TimeUnit.SECONDS);
 
-        assertEquals("Hello", result.text());
+        assertEquals(STT_TEXT, result.text());
         assertEquals("unknown", result.language());
     }
 
@@ -264,7 +272,7 @@ class ElevenLabsAdapterTest {
     void transcribeMalformedJson() {
         mockServer.enqueue(new MockResponse.Builder()
                 .body("not valid json at all")
-                .addHeader("Content-Type", "application/json").build());
+                .addHeader(CONTENT_TYPE, APPLICATION_JSON).build());
         assertTranscribeThrowsAny();
     }
 
@@ -272,12 +280,12 @@ class ElevenLabsAdapterTest {
     void transcribeNullFormat() throws Exception {
         mockServer.enqueue(new MockResponse.Builder()
                 .body("{\"text\":\"Hello\",\"language_code\":\"en\"}")
-                .addHeader("Content-Type", "application/json").build());
+                .addHeader(CONTENT_TYPE, APPLICATION_JSON).build());
 
         VoicePort.TranscriptionResult result = adapter.transcribe(
                 new byte[] { 1 }, null).get(5, TimeUnit.SECONDS);
 
-        assertEquals("Hello", result.text());
+        assertEquals(STT_TEXT, result.text());
 
         RecordedRequest request = mockServer.takeRequest(1, TimeUnit.SECONDS);
         assertNotNull(request);
@@ -290,9 +298,9 @@ class ElevenLabsAdapterTest {
     void synthesizeEmptyAudioResponse() throws Exception {
         mockServer.enqueue(new MockResponse.Builder()
                 .body(new okio.Buffer())
-                .addHeader("Content-Type", "audio/mpeg").build());
+                .addHeader(CONTENT_TYPE, AUDIO_MPEG).build());
 
-        byte[] result = adapter.synthesize("Test",
+        byte[] result = adapter.synthesize(TTS_TEXT,
                 VoicePort.VoiceConfig.defaultConfig()).get(5, TimeUnit.SECONDS);
 
         assertEquals(0, result.length);
@@ -310,13 +318,13 @@ class ElevenLabsAdapterTest {
     void synthesizeCustomSpeed() throws Exception {
         mockServer.enqueue(new MockResponse.Builder()
                 .body(new okio.Buffer().write(new byte[] { 1 }))
-                .addHeader("Content-Type", "audio/mpeg")
+                .addHeader(CONTENT_TYPE, AUDIO_MPEG)
                 .build());
 
         VoicePort.VoiceConfig config = new VoicePort.VoiceConfig(
                 "voice1", "model1", 1.5f, AudioFormat.MP3);
 
-        adapter.synthesize("Test", config).get(5, TimeUnit.SECONDS);
+        adapter.synthesize(TTS_TEXT, config).get(5, TimeUnit.SECONDS);
 
         RecordedRequest request = mockServer.takeRequest(1, TimeUnit.SECONDS);
         assertNotNull(request);
@@ -328,7 +336,7 @@ class ElevenLabsAdapterTest {
     void transcribeWithDifferentFormats() throws Exception {
         mockServer.enqueue(new MockResponse.Builder()
                 .body("{\"text\":\"Hello\",\"language_code\":\"en\"}")
-                .addHeader("Content-Type", "application/json").build());
+                .addHeader(CONTENT_TYPE, APPLICATION_JSON).build());
 
         adapter.transcribe(new byte[] { 1 }, AudioFormat.MP3).get(5, TimeUnit.SECONDS);
 
@@ -342,7 +350,7 @@ class ElevenLabsAdapterTest {
     void transcribeNullText() throws Exception {
         mockServer.enqueue(new MockResponse.Builder()
                 .body("{\"text\":null,\"language_code\":\"en\"}")
-                .addHeader("Content-Type", "application/json")
+                .addHeader(CONTENT_TYPE, APPLICATION_JSON)
                 .build());
 
         VoicePort.TranscriptionResult result = adapter.transcribe(
@@ -357,7 +365,7 @@ class ElevenLabsAdapterTest {
         String longText = "A".repeat(300);
         mockServer.enqueue(new MockResponse.Builder()
                 .body("{\"text\":\"" + longText + "\",\"language_code\":\"en\"}")
-                .addHeader("Content-Type", "application/json")
+                .addHeader(CONTENT_TYPE, APPLICATION_JSON)
                 .build());
 
         VoicePort.TranscriptionResult result = adapter.transcribe(
@@ -376,12 +384,12 @@ class ElevenLabsAdapterTest {
     void synthesizeUsesDefaultModelAndSpeed() throws Exception {
         mockServer.enqueue(new MockResponse.Builder()
                 .body(new okio.Buffer().write(new byte[] { 1 }))
-                .addHeader("Content-Type", "audio/mpeg")
+                .addHeader(CONTENT_TYPE, AUDIO_MPEG)
                 .build());
 
         VoicePort.VoiceConfig config = new VoicePort.VoiceConfig(null, null, 0f, AudioFormat.MP3);
 
-        adapter.synthesize("Test", config).get(5, TimeUnit.SECONDS);
+        adapter.synthesize(TTS_TEXT, config).get(5, TimeUnit.SECONDS);
 
         RecordedRequest request = mockServer.takeRequest(1, TimeUnit.SECONDS);
         assertNotNull(request);
@@ -442,7 +450,7 @@ class ElevenLabsAdapterTest {
     @Test
     void synthesize402QuotaExceeded() {
         enqueueErrorResponse(402, "{\"detail\":{\"status\":\"quota_exceeded\",\"message\":\"Quota exceeded\"}}");
-        CompletableFuture<byte[]> future = adapter.synthesize("Test", VoicePort.VoiceConfig.defaultConfig());
+        CompletableFuture<byte[]> future = adapter.synthesize(TTS_TEXT, VoicePort.VoiceConfig.defaultConfig());
         Exception ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
         Throwable cause = ex.getCause();
         assertTrue(cause instanceof ElevenLabsAdapter.QuotaExceededException
@@ -474,24 +482,24 @@ class ElevenLabsAdapterTest {
                 : "{\"message\":\"Server error\"}";
         mockServer.enqueue(new MockResponse.Builder().code(errorCode).body(errorBody).build());
 
-        if ("synthesize".equals(operation)) {
+        if (OPERATION_SYNTHESIZE.equals(operation)) {
             byte[] response = new byte[expectedBytes];
             for (int i = 0; i < expectedBytes; i++) {
                 response[i] = (byte) (i + 1);
             }
             mockServer.enqueue(new MockResponse.Builder()
                     .body(new okio.Buffer().write(response))
-                    .addHeader("Content-Type", "audio/mpeg").build());
-            byte[] result = adapter.synthesize("Test", VoicePort.VoiceConfig.defaultConfig()).get(10,
+                    .addHeader(CONTENT_TYPE, AUDIO_MPEG).build());
+            byte[] result = adapter.synthesize(TTS_TEXT, VoicePort.VoiceConfig.defaultConfig()).get(10,
                     TimeUnit.SECONDS);
             assertEquals(expectedBytes, result.length);
         } else {
             mockServer.enqueue(new MockResponse.Builder()
                     .body("{\"text\":\"Hello\",\"language_code\":\"en\"}")
-                    .addHeader("Content-Type", "application/json").build());
+                    .addHeader(CONTENT_TYPE, APPLICATION_JSON).build());
             VoicePort.TranscriptionResult result = adapter.transcribe(new byte[] { 1 },
                     AudioFormat.OGG_OPUS).get(10, TimeUnit.SECONDS);
-            assertEquals("Hello", result.text());
+            assertEquals(STT_TEXT, result.text());
         }
         assertEquals(2, mockServer.getRequestCount());
     }
@@ -502,8 +510,8 @@ class ElevenLabsAdapterTest {
         String errorBody = "{\"detail\":{\"message\":\"Error\"}}";
         enqueueErrorResponseMultiple(errorCode, errorBody, 3);
 
-        if ("synthesize".equals(operation)) {
-            CompletableFuture<byte[]> future = adapter.synthesize("Test", VoicePort.VoiceConfig.defaultConfig());
+        if (OPERATION_SYNTHESIZE.equals(operation)) {
+            CompletableFuture<byte[]> future = adapter.synthesize(TTS_TEXT, VoicePort.VoiceConfig.defaultConfig());
             Exception ex = assertThrows(Exception.class, () -> future.get(15, TimeUnit.SECONDS));
             String message = ex.getCause() != null ? ex.getCause().getMessage() : ex.getMessage();
             assertTrue(message != null && message.contains(String.valueOf(errorCode)));
@@ -546,8 +554,8 @@ class ElevenLabsAdapterTest {
         Thread testThread = new Thread(() -> {
             try {
                 adapter.transcribe(new byte[] { 1 }, AudioFormat.OGG_OPUS).get(10, TimeUnit.SECONDS);
-            } catch (Exception e) {
-                // Expected
+            } catch (Exception expected) {
+                Thread.currentThread().interrupt();
             }
         });
 

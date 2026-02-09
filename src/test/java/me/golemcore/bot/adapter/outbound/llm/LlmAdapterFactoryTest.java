@@ -5,7 +5,7 @@ import me.golemcore.bot.domain.model.LlmChunk;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.infrastructure.config.BotProperties;
-import me.golemcore.bot.port.outbound.LlmPort;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -14,10 +14,22 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class LlmAdapterFactoryTest {
+
+    private static final String LANGCHAIN4J = "langchain4j";
+    private static final String NONEXISTENT = "nonexistent";
+    private static final String CUSTOM = "custom";
+    private static final String NONE = "none";
+    private static final String TEST = "test";
 
     private BotProperties properties;
 
@@ -30,103 +42,103 @@ class LlmAdapterFactoryTest {
 
     @Test
     void shouldSelectConfiguredProvider() {
-        properties.getLlm().setProvider("langchain4j");
-        LlmProviderAdapter langchain4j = createMockAdapter("langchain4j", true);
-        LlmProviderAdapter noop = createMockAdapter("none", false);
+        properties.getLlm().setProvider(LANGCHAIN4J);
+        LlmProviderAdapter langchain4j = createMockAdapter(LANGCHAIN4J, true);
+        LlmProviderAdapter noop = createMockAdapter(NONE, false);
 
         LlmAdapterFactory factory = new LlmAdapterFactory(properties, List.of(langchain4j, noop));
         factory.init();
 
-        assertEquals("langchain4j", factory.getProviderId());
+        assertEquals(LANGCHAIN4J, factory.getProviderId());
         assertSame(langchain4j, factory.getActiveAdapter());
     }
 
     @Test
     void shouldFallbackToNoopWhenProviderNotFound() {
-        properties.getLlm().setProvider("nonexistent");
-        LlmProviderAdapter noop = createMockAdapter("none", false);
+        properties.getLlm().setProvider(NONEXISTENT);
+        LlmProviderAdapter noop = createMockAdapter(NONE, false);
 
         LlmAdapterFactory factory = new LlmAdapterFactory(properties, List.of(noop));
         factory.init();
 
-        assertEquals("none", factory.getProviderId());
+        assertEquals(NONE, factory.getProviderId());
     }
 
     @Test
     void shouldFallbackToFirstAdapterWhenNoopNotFound() {
-        properties.getLlm().setProvider("nonexistent");
-        LlmProviderAdapter custom = createMockAdapter("custom", true);
+        properties.getLlm().setProvider(NONEXISTENT);
+        LlmProviderAdapter custom = createMockAdapter(CUSTOM, true);
 
         LlmAdapterFactory factory = new LlmAdapterFactory(properties, List.of(custom));
         factory.init();
 
-        assertEquals("custom", factory.getProviderId());
+        assertEquals(CUSTOM, factory.getProviderId());
     }
 
     @Test
     void shouldReturnNoneWhenNoAdapters() {
-        properties.getLlm().setProvider("nonexistent");
+        properties.getLlm().setProvider(NONEXISTENT);
 
         LlmAdapterFactory factory = new LlmAdapterFactory(properties, List.of());
         factory.init();
 
-        assertEquals("none", factory.getProviderId());
+        assertEquals(NONE, factory.getProviderId());
     }
 
     // ===== getAdapter() =====
 
     @Test
     void shouldReturnAdapterByProviderId() {
-        properties.getLlm().setProvider("langchain4j");
-        LlmProviderAdapter langchain4j = createMockAdapter("langchain4j", true);
-        LlmProviderAdapter custom = createMockAdapter("custom", true);
+        properties.getLlm().setProvider(LANGCHAIN4J);
+        LlmProviderAdapter langchain4j = createMockAdapter(LANGCHAIN4J, true);
+        LlmProviderAdapter custom = createMockAdapter(CUSTOM, true);
 
         LlmAdapterFactory factory = new LlmAdapterFactory(properties, List.of(langchain4j, custom));
         factory.init();
 
-        assertSame(langchain4j, factory.getAdapter("langchain4j"));
-        assertSame(custom, factory.getAdapter("custom"));
-        assertNull(factory.getAdapter("nonexistent"));
+        assertSame(langchain4j, factory.getAdapter(LANGCHAIN4J));
+        assertSame(custom, factory.getAdapter(CUSTOM));
+        assertNull(factory.getAdapter(NONEXISTENT));
     }
 
     // ===== isProviderAvailable() =====
 
     @Test
     void shouldCheckProviderAvailability() {
-        properties.getLlm().setProvider("langchain4j");
-        LlmProviderAdapter langchain4j = createMockAdapter("langchain4j", true);
-        LlmProviderAdapter custom = createMockAdapter("custom", false);
+        properties.getLlm().setProvider(LANGCHAIN4J);
+        LlmProviderAdapter langchain4j = createMockAdapter(LANGCHAIN4J, true);
+        LlmProviderAdapter custom = createMockAdapter(CUSTOM, false);
 
         LlmAdapterFactory factory = new LlmAdapterFactory(properties, List.of(langchain4j, custom));
         factory.init();
 
-        assertTrue(factory.isProviderAvailable("langchain4j"));
-        assertFalse(factory.isProviderAvailable("custom"));
-        assertFalse(factory.isProviderAvailable("nonexistent"));
+        assertTrue(factory.isProviderAvailable(LANGCHAIN4J));
+        assertFalse(factory.isProviderAvailable(CUSTOM));
+        assertFalse(factory.isProviderAvailable(NONEXISTENT));
     }
 
     // ===== getAllAdapters() =====
 
     @Test
     void shouldReturnAllAdapters() {
-        properties.getLlm().setProvider("langchain4j");
-        LlmProviderAdapter langchain4j = createMockAdapter("langchain4j", true);
-        LlmProviderAdapter custom = createMockAdapter("custom", true);
+        properties.getLlm().setProvider(LANGCHAIN4J);
+        LlmProviderAdapter langchain4j = createMockAdapter(LANGCHAIN4J, true);
+        LlmProviderAdapter custom = createMockAdapter(CUSTOM, true);
 
         LlmAdapterFactory factory = new LlmAdapterFactory(properties, List.of(langchain4j, custom));
         factory.init();
 
         Map<String, LlmProviderAdapter> all = factory.getAllAdapters();
         assertEquals(2, all.size());
-        assertTrue(all.containsKey("langchain4j"));
-        assertTrue(all.containsKey("custom"));
+        assertTrue(all.containsKey(LANGCHAIN4J));
+        assertTrue(all.containsKey(CUSTOM));
     }
 
     // ===== getActiveLlmComponent() =====
 
     @Test
     void shouldReturnLlmComponentWhenActiveAdapterIsLlmComponent() {
-        properties.getLlm().setProvider("none");
+        properties.getLlm().setProvider(NONE);
         NoOpLlmAdapter noop = new NoOpLlmAdapter();
 
         LlmAdapterFactory factory = new LlmAdapterFactory(properties, List.of(noop));
@@ -153,8 +165,8 @@ class LlmAdapterFactoryTest {
 
     @Test
     void shouldDelegateChatToActiveAdapter() {
-        properties.getLlm().setProvider("test");
-        LlmProviderAdapter adapter = createMockAdapter("test", true);
+        properties.getLlm().setProvider(TEST);
+        LlmProviderAdapter adapter = createMockAdapter(TEST, true);
         LlmRequest request = LlmRequest.builder().build();
         LlmResponse expectedResponse = LlmResponse.builder().content("hello").build();
         when(adapter.chat(request)).thenReturn(CompletableFuture.completedFuture(expectedResponse));
@@ -168,8 +180,8 @@ class LlmAdapterFactoryTest {
 
     @Test
     void shouldDelegateSupportsStreamingToActiveAdapter() {
-        properties.getLlm().setProvider("test");
-        LlmProviderAdapter adapter = createMockAdapter("test", true);
+        properties.getLlm().setProvider(TEST);
+        LlmProviderAdapter adapter = createMockAdapter(TEST, true);
         when(adapter.supportsStreaming()).thenReturn(true);
 
         LlmAdapterFactory factory = new LlmAdapterFactory(properties, List.of(adapter));
@@ -180,7 +192,7 @@ class LlmAdapterFactoryTest {
 
     @Test
     void shouldReturnFalseForStreamingWhenNoActiveAdapter() {
-        properties.getLlm().setProvider("nonexistent");
+        properties.getLlm().setProvider(NONEXISTENT);
 
         LlmAdapterFactory factory = new LlmAdapterFactory(properties, List.of());
         factory.init();
@@ -190,8 +202,8 @@ class LlmAdapterFactoryTest {
 
     @Test
     void shouldDelegateGetSupportedModels() {
-        properties.getLlm().setProvider("test");
-        LlmProviderAdapter adapter = createMockAdapter("test", true);
+        properties.getLlm().setProvider(TEST);
+        LlmProviderAdapter adapter = createMockAdapter(TEST, true);
         when(adapter.getSupportedModels()).thenReturn(List.of("model-a", "model-b"));
 
         LlmAdapterFactory factory = new LlmAdapterFactory(properties, List.of(adapter));
@@ -202,7 +214,7 @@ class LlmAdapterFactoryTest {
 
     @Test
     void shouldReturnEmptyModelsWhenNoActiveAdapter() {
-        properties.getLlm().setProvider("nonexistent");
+        properties.getLlm().setProvider(NONEXISTENT);
 
         LlmAdapterFactory factory = new LlmAdapterFactory(properties, List.of());
         factory.init();
@@ -212,8 +224,8 @@ class LlmAdapterFactoryTest {
 
     @Test
     void shouldDelegateGetCurrentModel() {
-        properties.getLlm().setProvider("test");
-        LlmProviderAdapter adapter = createMockAdapter("test", true);
+        properties.getLlm().setProvider(TEST);
+        LlmProviderAdapter adapter = createMockAdapter(TEST, true);
         when(adapter.getCurrentModel()).thenReturn("gpt-4o");
 
         LlmAdapterFactory factory = new LlmAdapterFactory(properties, List.of(adapter));
@@ -224,18 +236,18 @@ class LlmAdapterFactoryTest {
 
     @Test
     void shouldReturnNoneModelWhenNoActiveAdapter() {
-        properties.getLlm().setProvider("nonexistent");
+        properties.getLlm().setProvider(NONEXISTENT);
 
         LlmAdapterFactory factory = new LlmAdapterFactory(properties, List.of());
         factory.init();
 
-        assertEquals("none", factory.getCurrentModel());
+        assertEquals(NONE, factory.getCurrentModel());
     }
 
     @Test
     void shouldDelegateIsAvailable() {
-        properties.getLlm().setProvider("test");
-        LlmProviderAdapter adapter = createMockAdapter("test", true);
+        properties.getLlm().setProvider(TEST);
+        LlmProviderAdapter adapter = createMockAdapter(TEST, true);
 
         LlmAdapterFactory factory = new LlmAdapterFactory(properties, List.of(adapter));
         factory.init();
@@ -245,7 +257,7 @@ class LlmAdapterFactoryTest {
 
     @Test
     void shouldReturnNotAvailableWhenNoActiveAdapter() {
-        properties.getLlm().setProvider("nonexistent");
+        properties.getLlm().setProvider(NONEXISTENT);
 
         LlmAdapterFactory factory = new LlmAdapterFactory(properties, List.of());
         factory.init();
@@ -255,8 +267,8 @@ class LlmAdapterFactoryTest {
 
     @Test
     void shouldDelegateChatStream() {
-        properties.getLlm().setProvider("test");
-        LlmProviderAdapter adapter = createMockAdapter("test", true);
+        properties.getLlm().setProvider(TEST);
+        LlmProviderAdapter adapter = createMockAdapter(TEST, true);
         LlmRequest request = LlmRequest.builder().build();
         Flux<LlmChunk> expectedFlux = Flux.just(LlmChunk.builder().text("hi").done(true).build());
         when(adapter.chatStream(request)).thenReturn(expectedFlux);

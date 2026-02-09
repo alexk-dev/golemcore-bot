@@ -4,16 +4,33 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.io.IOException;
-import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ModelConfigServiceTest {
+
+    private static final String PROVIDER_OPENAI = "openai";
+    private static final String PROVIDER_ANTHROPIC = "anthropic";
+    private static final String MODEL_GPT_5_1 = "gpt-5.1";
+    private static final String MODEL_GPT_4O = "gpt-4o";
+    private static final String MODEL_CLAUDE_SONNET_4 = "claude-sonnet-4-20250514";
+    private static final String MODEL_CLAUDE_3_HAIKU = "claude-3-haiku";
+    private static final String MODEL_O3 = "o3";
+    private static final String MODEL_TEST = "test-model";
+    private static final String MODEL_CUSTOM = "custom-model";
+    private static final String PROVIDER_CUSTOM = "custom";
+    private static final String METHOD_CREATE_DEFAULT_CONFIG = "createDefaultConfig";
 
     private ModelConfigService service;
 
@@ -29,18 +46,18 @@ class ModelConfigServiceTest {
     @Test
     void exactMatchReturnsCorrectProvider() {
         // Default config has "gpt-5.1" → openai
-        assertEquals("openai", service.getProvider("gpt-5.1"));
+        assertEquals(PROVIDER_OPENAI, service.getProvider(MODEL_GPT_5_1));
     }
 
     @Test
     void exactMatchReturnsReasoningRequired() {
-        assertTrue(service.isReasoningRequired("gpt-5.1"));
+        assertTrue(service.isReasoningRequired(MODEL_GPT_5_1));
     }
 
     @Test
     void exactMatchReturnsSupportTemperature() {
-        assertTrue(service.supportsTemperature("gpt-4o"));
-        assertFalse(service.supportsTemperature("gpt-5.1"));
+        assertTrue(service.supportsTemperature(MODEL_GPT_4O));
+        assertFalse(service.supportsTemperature(MODEL_GPT_5_1));
     }
 
     // ===== Provider prefix stripping =====
@@ -48,13 +65,13 @@ class ModelConfigServiceTest {
     @Test
     void stripsProviderPrefix() {
         // "openai/gpt-5.1" → strips to "gpt-5.1" → exact match
-        assertEquals("openai", service.getProvider("openai/gpt-5.1"));
-        assertTrue(service.isReasoningRequired("openai/gpt-5.1"));
+        assertEquals(PROVIDER_OPENAI, service.getProvider("openai/" + MODEL_GPT_5_1));
+        assertTrue(service.isReasoningRequired("openai/" + MODEL_GPT_5_1));
     }
 
     @Test
     void shouldStripProviderPrefixForAnthropicModels() {
-        assertEquals("anthropic", service.getProvider("anthropic/claude-3-haiku"));
+        assertEquals(PROVIDER_ANTHROPIC, service.getProvider(PROVIDER_ANTHROPIC + "/" + MODEL_CLAUDE_3_HAIKU));
     }
 
     // ===== Prefix match =====
@@ -62,22 +79,22 @@ class ModelConfigServiceTest {
     @Test
     void prefixMatchWorks() {
         // "gpt-5.1-preview" should match "gpt-5.1" prefix
-        ModelConfigService.ModelSettings settings = service.getModelSettings("gpt-5.1-preview");
-        assertEquals("openai", settings.getProvider());
+        ModelConfigService.ModelSettings settings = service.getModelSettings(MODEL_GPT_5_1 + "-preview");
+        assertEquals(PROVIDER_OPENAI, settings.getProvider());
         assertTrue(settings.isReasoningRequired());
     }
 
     @Test
     void longestPrefixWins() {
         // "gpt-5.1" is longer prefix than "gpt-4" for "gpt-5.1-preview"
-        assertEquals("openai", service.getProvider("gpt-5.1-preview-2026"));
+        assertEquals(PROVIDER_OPENAI, service.getProvider(MODEL_GPT_5_1 + "-preview-2026"));
     }
 
     @Test
     void shouldMatchO3MiniByPrefix() {
         // "o3-mini-2025" should match "o3-mini" (longer) not "o3"
         ModelConfigService.ModelSettings settings = service.getModelSettings("o3-mini-2025");
-        assertEquals("openai", settings.getProvider());
+        assertEquals(PROVIDER_OPENAI, settings.getProvider());
         assertTrue(settings.isReasoningRequired());
     }
 
@@ -87,7 +104,7 @@ class ModelConfigServiceTest {
     void unknownModelReturnDefaults() {
         ModelConfigService.ModelSettings settings = service.getModelSettings("totally-unknown-model");
         assertNotNull(settings);
-        assertEquals("openai", settings.getProvider()); // default provider
+        assertEquals(PROVIDER_OPENAI, settings.getProvider()); // default provider
     }
 
     @Test
@@ -101,7 +118,7 @@ class ModelConfigServiceTest {
     @Test
     void modelMaxInputTokensFromFile() {
         // models.json in working dir has gpt-5.1 with 1M tokens
-        int tokens = service.getMaxInputTokens("gpt-5.1");
+        int tokens = service.getMaxInputTokens(MODEL_GPT_5_1);
         assertTrue(tokens > 0);
     }
 
@@ -122,26 +139,26 @@ class ModelConfigServiceTest {
 
     @Test
     void shouldReturnAllKnownModels() {
-        var models = service.getAllModels();
+        Map<String, ModelConfigService.ModelSettings> models = service.getAllModels();
         assertNotNull(models);
         assertFalse(models.isEmpty());
-        assertTrue(models.containsKey("gpt-5.1"));
-        assertTrue(models.containsKey("claude-sonnet-4-20250514"));
+        assertTrue(models.containsKey(MODEL_GPT_5_1));
+        assertTrue(models.containsKey(MODEL_CLAUDE_SONNET_4));
     }
 
     // ===== Anthropic models =====
 
     @Test
     void anthropicModelsConfigured() {
-        assertEquals("anthropic", service.getProvider("claude-sonnet-4-20250514"));
-        assertTrue(service.supportsTemperature("claude-sonnet-4-20250514"));
-        assertFalse(service.isReasoningRequired("claude-sonnet-4-20250514"));
+        assertEquals(PROVIDER_ANTHROPIC, service.getProvider(MODEL_CLAUDE_SONNET_4));
+        assertTrue(service.supportsTemperature(MODEL_CLAUDE_SONNET_4));
+        assertFalse(service.isReasoningRequired(MODEL_CLAUDE_SONNET_4));
     }
 
     @Test
     void shouldReturnCorrectAnthropicHaikuSettings() {
-        ModelConfigService.ModelSettings settings = service.getModelSettings("claude-3-haiku");
-        assertEquals("anthropic", settings.getProvider());
+        ModelConfigService.ModelSettings settings = service.getModelSettings(MODEL_CLAUDE_3_HAIKU);
+        assertEquals(PROVIDER_ANTHROPIC, settings.getProvider());
         assertTrue(settings.isSupportsTemperature());
     }
 
@@ -158,7 +175,7 @@ class ModelConfigServiceTest {
     @Test
     void shouldCreateModelSettingsWithDefaults() {
         ModelConfigService.ModelSettings settings = new ModelConfigService.ModelSettings();
-        assertEquals("openai", settings.getProvider());
+        assertEquals(PROVIDER_OPENAI, settings.getProvider());
         assertFalse(settings.isReasoningRequired());
         assertTrue(settings.isSupportsTemperature());
         assertEquals(128000, settings.getMaxInputTokens());
@@ -166,8 +183,9 @@ class ModelConfigServiceTest {
 
     @Test
     void shouldCreateModelSettingsWithThreeArgConstructor() {
-        ModelConfigService.ModelSettings settings = new ModelConfigService.ModelSettings("anthropic", true, false);
-        assertEquals("anthropic", settings.getProvider());
+        ModelConfigService.ModelSettings settings = new ModelConfigService.ModelSettings(PROVIDER_ANTHROPIC, true,
+                false);
+        assertEquals(PROVIDER_ANTHROPIC, settings.getProvider());
         assertTrue(settings.isReasoningRequired());
         assertFalse(settings.isSupportsTemperature());
         assertEquals(128000, settings.getMaxInputTokens());
@@ -175,8 +193,9 @@ class ModelConfigServiceTest {
 
     @Test
     void shouldCreateModelSettingsWithFourArgConstructor() {
-        ModelConfigService.ModelSettings settings = new ModelConfigService.ModelSettings("custom", false, true, 64000);
-        assertEquals("custom", settings.getProvider());
+        ModelConfigService.ModelSettings settings = new ModelConfigService.ModelSettings(PROVIDER_CUSTOM, false, true,
+                64000);
+        assertEquals(PROVIDER_CUSTOM, settings.getProvider());
         assertFalse(settings.isReasoningRequired());
         assertTrue(settings.isSupportsTemperature());
         assertEquals(64000, settings.getMaxInputTokens());
@@ -209,9 +228,9 @@ class ModelConfigServiceTest {
         ModelConfigService.ModelsConfig config = mapper.readValue(json, ModelConfigService.ModelsConfig.class);
 
         assertEquals(1, config.getModels().size());
-        assertTrue(config.getModels().containsKey("test-model"));
+        assertTrue(config.getModels().containsKey(MODEL_TEST));
 
-        ModelConfigService.ModelSettings testModel = config.getModels().get("test-model");
+        ModelConfigService.ModelSettings testModel = config.getModels().get(MODEL_TEST);
         assertEquals("test-provider", testModel.getProvider());
         assertTrue(testModel.isReasoningRequired());
         assertFalse(testModel.isSupportsTemperature());
@@ -238,7 +257,7 @@ class ModelConfigServiceTest {
         ObjectMapper mapper = new ObjectMapper();
         ModelConfigService.ModelsConfig config = mapper.readValue(json, ModelConfigService.ModelsConfig.class);
         assertNotNull(config);
-        assertEquals("openai", config.getDefaults().getProvider());
+        assertEquals(PROVIDER_OPENAI, config.getDefaults().getProvider());
     }
 
     // ===== OpenAI reasoning models =====
@@ -264,105 +283,86 @@ class ModelConfigServiceTest {
     // ===== createDefaultConfig =====
 
     @Test
-    void shouldCreateDefaultConfigWithAllModels() throws Exception {
-        Method method = ModelConfigService.class.getDeclaredMethod("createDefaultConfig");
-        method.setAccessible(true);
-
-        ModelConfigService.ModelsConfig config = (ModelConfigService.ModelsConfig) method.invoke(service);
+    void shouldCreateDefaultConfigWithAllModels() {
+        ModelConfigService.ModelsConfig config = ReflectionTestUtils.invokeMethod(service,
+                METHOD_CREATE_DEFAULT_CONFIG);
 
         assertNotNull(config);
         assertNotNull(config.getModels());
         assertFalse(config.getModels().isEmpty());
 
         // Verify specific models exist
-        assertTrue(config.getModels().containsKey("gpt-5.1"));
+        assertTrue(config.getModels().containsKey(MODEL_GPT_5_1));
         assertTrue(config.getModels().containsKey("gpt-5.2"));
         assertTrue(config.getModels().containsKey("o1"));
-        assertTrue(config.getModels().containsKey("o3"));
+        assertTrue(config.getModels().containsKey(MODEL_O3));
         assertTrue(config.getModels().containsKey("o3-mini"));
-        assertTrue(config.getModels().containsKey("gpt-4o"));
+        assertTrue(config.getModels().containsKey(MODEL_GPT_4O));
         assertTrue(config.getModels().containsKey("gpt-4-turbo"));
-        assertTrue(config.getModels().containsKey("claude-sonnet-4-20250514"));
+        assertTrue(config.getModels().containsKey(MODEL_CLAUDE_SONNET_4));
         assertTrue(config.getModels().containsKey("claude-3-5-sonnet"));
         assertTrue(config.getModels().containsKey("claude-3-opus"));
-        assertTrue(config.getModels().containsKey("claude-3-haiku"));
+        assertTrue(config.getModels().containsKey(MODEL_CLAUDE_3_HAIKU));
 
         // Verify defaults
         assertNotNull(config.getDefaults());
-        assertEquals("openai", config.getDefaults().getProvider());
+        assertEquals(PROVIDER_OPENAI, config.getDefaults().getProvider());
     }
 
     @Test
-    void shouldCreateDefaultConfigWithCorrectProviders() throws Exception {
-        Method method = ModelConfigService.class.getDeclaredMethod("createDefaultConfig");
-        method.setAccessible(true);
-
-        ModelConfigService.ModelsConfig config = (ModelConfigService.ModelsConfig) method.invoke(service);
+    void shouldCreateDefaultConfigWithCorrectProviders() {
+        ModelConfigService.ModelsConfig config = ReflectionTestUtils.invokeMethod(service,
+                METHOD_CREATE_DEFAULT_CONFIG);
 
         // OpenAI reasoning models
-        assertEquals("openai", config.getModels().get("gpt-5.1").getProvider());
-        assertTrue(config.getModels().get("gpt-5.1").isReasoningRequired());
-        assertFalse(config.getModels().get("gpt-5.1").isSupportsTemperature());
+        assertEquals(PROVIDER_OPENAI, config.getModels().get(MODEL_GPT_5_1).getProvider());
+        assertTrue(config.getModels().get(MODEL_GPT_5_1).isReasoningRequired());
+        assertFalse(config.getModels().get(MODEL_GPT_5_1).isSupportsTemperature());
 
         // OpenAI standard models
-        assertEquals("openai", config.getModels().get("gpt-4o").getProvider());
-        assertFalse(config.getModels().get("gpt-4o").isReasoningRequired());
-        assertTrue(config.getModels().get("gpt-4o").isSupportsTemperature());
+        assertEquals(PROVIDER_OPENAI, config.getModels().get(MODEL_GPT_4O).getProvider());
+        assertFalse(config.getModels().get(MODEL_GPT_4O).isReasoningRequired());
+        assertTrue(config.getModels().get(MODEL_GPT_4O).isSupportsTemperature());
 
         // Anthropic models
-        assertEquals("anthropic", config.getModels().get("claude-3-haiku").getProvider());
-        assertFalse(config.getModels().get("claude-3-haiku").isReasoningRequired());
-        assertTrue(config.getModels().get("claude-3-haiku").isSupportsTemperature());
+        assertEquals(PROVIDER_ANTHROPIC, config.getModels().get(MODEL_CLAUDE_3_HAIKU).getProvider());
+        assertFalse(config.getModels().get(MODEL_CLAUDE_3_HAIKU).isReasoningRequired());
+        assertTrue(config.getModels().get(MODEL_CLAUDE_3_HAIKU).isSupportsTemperature());
     }
 
     // ===== writeDefaultConfig =====
 
     @Test
-    void shouldWriteDefaultConfig(@TempDir Path tempDir) throws Exception {
-        Method createDefaultMethod = ModelConfigService.class.getDeclaredMethod("createDefaultConfig");
-        createDefaultMethod.setAccessible(true);
-
+    void shouldWriteDefaultConfig(@TempDir Path tempDir) {
         // Set the config field first
-        java.lang.reflect.Field configField = ModelConfigService.class.getDeclaredField("config");
-        configField.setAccessible(true);
-        configField.set(service, createDefaultMethod.invoke(service));
-
-        Method writeMethod = ModelConfigService.class.getDeclaredMethod("writeDefaultConfig", Path.class);
-        writeMethod.setAccessible(true);
+        ModelConfigService.ModelsConfig defaultConfig = ReflectionTestUtils.invokeMethod(service,
+                METHOD_CREATE_DEFAULT_CONFIG);
+        ReflectionTestUtils.setField(service, "config", defaultConfig);
 
         Path configFile = tempDir.resolve("models.json");
-        writeMethod.invoke(service, configFile);
+        ReflectionTestUtils.invokeMethod(service, "writeDefaultConfig", configFile);
 
         assertTrue(Files.exists(configFile));
-        String content = Files.readString(configFile);
-        assertTrue(content.contains("gpt-5.1"));
-        assertTrue(content.contains("openai"));
-        assertTrue(content.contains("anthropic"));
+        String content;
+        try {
+            content = Files.readString(configFile);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        assertTrue(content.contains(MODEL_GPT_5_1));
+        assertTrue(content.contains(PROVIDER_OPENAI));
+        assertTrue(content.contains(PROVIDER_ANTHROPIC));
     }
 
     @Test
-    void shouldHandleWriteFailureGracefully() throws Exception {
-        Method createDefaultMethod = ModelConfigService.class.getDeclaredMethod("createDefaultConfig");
-        createDefaultMethod.setAccessible(true);
-
-        java.lang.reflect.Field configField = ModelConfigService.class.getDeclaredField("config");
-        configField.setAccessible(true);
-        configField.set(service, createDefaultMethod.invoke(service));
-
-        Method writeMethod = ModelConfigService.class.getDeclaredMethod("writeDefaultConfig", Path.class);
-        writeMethod.setAccessible(true);
+    void shouldHandleWriteFailureGracefully() {
+        ModelConfigService.ModelsConfig defaultConfig = ReflectionTestUtils.invokeMethod(service,
+                METHOD_CREATE_DEFAULT_CONFIG);
+        ReflectionTestUtils.setField(service, "config", defaultConfig);
 
         // Write to a non-existent directory should fail gracefully
         Path badPath = Path.of("/nonexistent/dir/models.json");
-        assertDoesNotThrow(() -> {
-            try {
-                writeMethod.invoke(service, badPath);
-            } catch (Exception e) {
-                if (!(e.getCause() instanceof IOException)) {
-                    throw e;
-                }
-            }
-        });
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(service, "writeDefaultConfig", badPath));
     }
 
     // ===== loadConfig with custom file =====
@@ -398,10 +398,10 @@ class ModelConfigServiceTest {
         ModelConfigService.ModelsConfig config = mapper.readValue(customJson, ModelConfigService.ModelsConfig.class);
 
         assertEquals(1, config.getModels().size());
-        assertTrue(config.getModels().containsKey("custom-model"));
-        assertEquals("custom-provider", config.getModels().get("custom-model").getProvider());
-        assertTrue(config.getModels().get("custom-model").isReasoningRequired());
-        assertEquals(32000, config.getModels().get("custom-model").getMaxInputTokens());
+        assertTrue(config.getModels().containsKey(MODEL_CUSTOM));
+        assertEquals("custom-provider", config.getModels().get(MODEL_CUSTOM).getProvider());
+        assertTrue(config.getModels().get(MODEL_CUSTOM).isReasoningRequired());
+        assertEquals(32000, config.getModels().get(MODEL_CUSTOM).getMaxInputTokens());
         assertEquals("custom-default", config.getDefaults().getProvider());
         assertEquals(16000, config.getDefaults().getMaxInputTokens());
     }
@@ -420,14 +420,14 @@ class ModelConfigServiceTest {
         ModelConfigService.ModelSettings settings = service.getModelSettings("unknown-provider/unknown-model");
         assertNotNull(settings);
         // Falls back to defaults
-        assertEquals("openai", settings.getProvider());
+        assertEquals(PROVIDER_OPENAI, settings.getProvider());
     }
 
     @Test
     void shouldReturnExactMatchOverPrefixMatch() {
         // "gpt-4o" should return exact match, not prefix match with "gpt-4"
-        ModelConfigService.ModelSettings settings = service.getModelSettings("gpt-4o");
-        assertEquals("openai", settings.getProvider());
+        ModelConfigService.ModelSettings settings = service.getModelSettings(MODEL_GPT_4O);
+        assertEquals(PROVIDER_OPENAI, settings.getProvider());
         assertFalse(settings.isReasoningRequired());
         assertTrue(settings.isSupportsTemperature());
     }
@@ -443,25 +443,25 @@ class ModelConfigServiceTest {
 
     @Test
     void getProviderDelegatesToGetModelSettings() {
-        assertEquals("openai", service.getProvider("gpt-4o"));
-        assertEquals("anthropic", service.getProvider("claude-3-opus"));
+        assertEquals(PROVIDER_OPENAI, service.getProvider(MODEL_GPT_4O));
+        assertEquals(PROVIDER_ANTHROPIC, service.getProvider("claude-3-opus"));
     }
 
     @Test
     void isReasoningRequiredDelegatesToGetModelSettings() {
-        assertTrue(service.isReasoningRequired("o3"));
-        assertFalse(service.isReasoningRequired("gpt-4o"));
+        assertTrue(service.isReasoningRequired(MODEL_O3));
+        assertFalse(service.isReasoningRequired(MODEL_GPT_4O));
     }
 
     @Test
     void supportsTemperatureDelegatesToGetModelSettings() {
-        assertTrue(service.supportsTemperature("gpt-4o"));
-        assertFalse(service.supportsTemperature("o3"));
+        assertTrue(service.supportsTemperature(MODEL_GPT_4O));
+        assertFalse(service.supportsTemperature(MODEL_O3));
     }
 
     @Test
     void getMaxInputTokensDelegatesToGetModelSettings() {
-        int tokens = service.getMaxInputTokens("gpt-4o");
+        int tokens = service.getMaxInputTokens(MODEL_GPT_4O);
         assertTrue(tokens > 0);
     }
 
@@ -473,12 +473,12 @@ class ModelConfigServiceTest {
         ModelConfigService.ModelSettings defaults = new ModelConfigService.ModelSettings("test", false, true);
         config.setDefaults(defaults);
         Map<String, ModelConfigService.ModelSettings> models = new java.util.HashMap<>();
-        models.put("test-model", new ModelConfigService.ModelSettings("test", true, false));
+        models.put(MODEL_TEST, new ModelConfigService.ModelSettings("test", true, false));
         config.setModels(models);
 
         assertEquals("test", config.getDefaults().getProvider());
         assertEquals(1, config.getModels().size());
-        assertTrue(config.getModels().get("test-model").isReasoningRequired());
+        assertTrue(config.getModels().get(MODEL_TEST).isReasoningRequired());
     }
 
     // ===== ModelSettings data class =====
@@ -486,12 +486,12 @@ class ModelConfigServiceTest {
     @Test
     void modelSettingsSettersWork() {
         ModelConfigService.ModelSettings settings = new ModelConfigService.ModelSettings();
-        settings.setProvider("custom");
+        settings.setProvider(PROVIDER_CUSTOM);
         settings.setReasoningRequired(true);
         settings.setSupportsTemperature(false);
         settings.setMaxInputTokens(64000);
 
-        assertEquals("custom", settings.getProvider());
+        assertEquals(PROVIDER_CUSTOM, settings.getProvider());
         assertTrue(settings.isReasoningRequired());
         assertFalse(settings.isSupportsTemperature());
         assertEquals(64000, settings.getMaxInputTokens());

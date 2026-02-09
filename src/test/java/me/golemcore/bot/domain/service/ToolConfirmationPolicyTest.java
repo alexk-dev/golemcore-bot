@@ -11,6 +11,15 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ToolConfirmationPolicyTest {
 
+    private static final String TOOL_CALL_ID = "1";
+    private static final String TOOL_FILESYSTEM = "filesystem";
+    private static final String TOOL_SHELL = "shell";
+    private static final String TOOL_SKILL_MGMT = "skill_management";
+    private static final String ARG_OPERATION = "operation";
+    private static final String ARG_COMMAND = "command";
+    private static final String ARG_PATH = "path";
+    private static final String TEST_FILE = "test.txt";
+
     private ToolConfirmationPolicy policy;
 
     @BeforeEach
@@ -23,9 +32,9 @@ class ToolConfirmationPolicyTest {
     @Test
     void filesystemDeleteRequiresConfirmation() {
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("1")
-                .name("filesystem")
-                .arguments(Map.of("operation", "delete", "path", "test.txt"))
+                .id(TOOL_CALL_ID)
+                .name(TOOL_FILESYSTEM)
+                .arguments(Map.of(ARG_OPERATION, "delete", ARG_PATH, TEST_FILE))
                 .build();
         assertTrue(policy.requiresConfirmation(toolCall));
     }
@@ -33,9 +42,9 @@ class ToolConfirmationPolicyTest {
     @Test
     void filesystemReadDoesNotRequireConfirmation() {
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("1")
-                .name("filesystem")
-                .arguments(Map.of("operation", "read_file", "path", "test.txt"))
+                .id(TOOL_CALL_ID)
+                .name(TOOL_FILESYSTEM)
+                .arguments(Map.of(ARG_OPERATION, "read_file", ARG_PATH, TEST_FILE))
                 .build();
         assertFalse(policy.requiresConfirmation(toolCall));
     }
@@ -43,9 +52,9 @@ class ToolConfirmationPolicyTest {
     @Test
     void filesystemWriteDoesNotRequireConfirmation() {
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("1")
-                .name("filesystem")
-                .arguments(Map.of("operation", "write_file", "path", "test.txt", "content", "hello"))
+                .id(TOOL_CALL_ID)
+                .name(TOOL_FILESYSTEM)
+                .arguments(Map.of(ARG_OPERATION, "write_file", ARG_PATH, TEST_FILE, "content", "hello"))
                 .build();
         assertFalse(policy.requiresConfirmation(toolCall));
     }
@@ -53,9 +62,9 @@ class ToolConfirmationPolicyTest {
     @Test
     void shellAlwaysRequiresConfirmation() {
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("1")
-                .name("shell")
-                .arguments(Map.of("command", "ls -la"))
+                .id(TOOL_CALL_ID)
+                .name(TOOL_SHELL)
+                .arguments(Map.of(ARG_COMMAND, "ls -la"))
                 .build();
         assertTrue(policy.requiresConfirmation(toolCall));
     }
@@ -63,9 +72,9 @@ class ToolConfirmationPolicyTest {
     @Test
     void skillManagementDeleteRequiresConfirmation() {
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("1")
-                .name("skill_management")
-                .arguments(Map.of("operation", "delete_skill", "name", "test"))
+                .id(TOOL_CALL_ID)
+                .name(TOOL_SKILL_MGMT)
+                .arguments(Map.of(ARG_OPERATION, "delete_skill", "name", "test"))
                 .build();
         assertTrue(policy.requiresConfirmation(toolCall));
     }
@@ -73,9 +82,9 @@ class ToolConfirmationPolicyTest {
     @Test
     void skillManagementListDoesNotRequireConfirmation() {
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("1")
-                .name("skill_management")
-                .arguments(Map.of("operation", "list_skills"))
+                .id(TOOL_CALL_ID)
+                .name(TOOL_SKILL_MGMT)
+                .arguments(Map.of(ARG_OPERATION, "list_skills"))
                 .build();
         assertFalse(policy.requiresConfirmation(toolCall));
     }
@@ -83,9 +92,9 @@ class ToolConfirmationPolicyTest {
     @Test
     void unknownToolDoesNotRequireConfirmation() {
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("1")
+                .id(TOOL_CALL_ID)
                 .name("datetime")
-                .arguments(Map.of("operation", "now"))
+                .arguments(Map.of(ARG_OPERATION, "now"))
                 .build();
         assertFalse(policy.requiresConfirmation(toolCall));
     }
@@ -97,9 +106,9 @@ class ToolConfirmationPolicyTest {
         ToolConfirmationPolicy disabledPolicy = new ToolConfirmationPolicy(props);
 
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("1")
-                .name("shell")
-                .arguments(Map.of("command", "rm -rf test"))
+                .id(TOOL_CALL_ID)
+                .name(TOOL_SHELL)
+                .arguments(Map.of(ARG_COMMAND, "rm -rf test"))
                 .build();
         assertFalse(disabledPolicy.requiresConfirmation(toolCall));
     }
@@ -107,21 +116,21 @@ class ToolConfirmationPolicyTest {
     @Test
     void describeActionForFilesystemDelete() {
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("1")
-                .name("filesystem")
-                .arguments(Map.of("operation", "delete", "path", "test.txt"))
+                .id(TOOL_CALL_ID)
+                .name(TOOL_FILESYSTEM)
+                .arguments(Map.of(ARG_OPERATION, "delete", ARG_PATH, TEST_FILE))
                 .build();
         String description = policy.describeAction(toolCall);
         assertTrue(description.contains("Delete file"));
-        assertTrue(description.contains("test.txt"));
+        assertTrue(description.contains(TEST_FILE));
     }
 
     @Test
     void describeActionForShellCommand() {
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("1")
-                .name("shell")
-                .arguments(Map.of("command", "echo hello"))
+                .id(TOOL_CALL_ID)
+                .name(TOOL_SHELL)
+                .arguments(Map.of(ARG_COMMAND, "echo hello"))
                 .build();
         String description = policy.describeAction(toolCall);
         assertTrue(description.contains("Run command"));
@@ -132,9 +141,9 @@ class ToolConfirmationPolicyTest {
     void describeActionForShellTruncatesLongCommand() {
         String longCommand = "a".repeat(100);
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("1")
-                .name("shell")
-                .arguments(Map.of("command", longCommand))
+                .id(TOOL_CALL_ID)
+                .name(TOOL_SHELL)
+                .arguments(Map.of(ARG_COMMAND, longCommand))
                 .build();
         String description = policy.describeAction(toolCall);
         assertTrue(description.contains("..."));
@@ -144,9 +153,9 @@ class ToolConfirmationPolicyTest {
     @Test
     void describeActionForSkillDelete() {
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("1")
-                .name("skill_management")
-                .arguments(Map.of("operation", "delete_skill", "name", "my-skill"))
+                .id(TOOL_CALL_ID)
+                .name(TOOL_SKILL_MGMT)
+                .arguments(Map.of(ARG_OPERATION, "delete_skill", "name", "my-skill"))
                 .build();
         String description = policy.describeAction(toolCall);
         assertTrue(description.contains("Delete skill"));
@@ -160,9 +169,9 @@ class ToolConfirmationPolicyTest {
         ToolConfirmationPolicy disabledPolicy = new ToolConfirmationPolicy(props);
 
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("1")
-                .name("shell")
-                .arguments(Map.of("command", "echo hello"))
+                .id(TOOL_CALL_ID)
+                .name(TOOL_SHELL)
+                .arguments(Map.of(ARG_COMMAND, "echo hello"))
                 .build();
 
         assertFalse(disabledPolicy.requiresConfirmation(toolCall));
@@ -172,9 +181,9 @@ class ToolConfirmationPolicyTest {
     @Test
     void isNotableActionReturnsFalseForDatetime() {
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("1")
+                .id(TOOL_CALL_ID)
                 .name("datetime")
-                .arguments(Map.of("operation", "now"))
+                .arguments(Map.of(ARG_OPERATION, "now"))
                 .build();
         assertFalse(policy.isNotableAction(toolCall));
     }

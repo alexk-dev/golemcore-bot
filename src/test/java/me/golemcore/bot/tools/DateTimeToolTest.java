@@ -12,6 +12,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class DateTimeToolTest {
 
+    private static final String TIMEZONE = "timezone";
+
     private DateTimeTool dateTimeTool;
 
     @BeforeEach
@@ -46,7 +48,7 @@ class DateTimeToolTest {
 
     @Test
     void execute_withTimezone() throws ExecutionException, InterruptedException {
-        Map<String, Object> params = Map.of("timezone", "UTC");
+        Map<String, Object> params = Map.of(TIMEZONE, "UTC");
 
         ToolResult result = dateTimeTool.execute(params).get();
 
@@ -55,12 +57,12 @@ class DateTimeToolTest {
 
         @SuppressWarnings("unchecked")
         Map<String, Object> data = (Map<String, Object>) result.getData();
-        assertEquals("UTC", data.get("timezone"));
+        assertEquals("UTC", data.get(TIMEZONE));
     }
 
     @Test
     void execute_withInvalidTimezone() throws ExecutionException, InterruptedException {
-        Map<String, Object> params = Map.of("timezone", "Invalid/Timezone");
+        Map<String, Object> params = Map.of(TIMEZONE, "Invalid/Timezone");
 
         ToolResult result = dateTimeTool.execute(params).get();
 
@@ -73,7 +75,7 @@ class DateTimeToolTest {
         String[] timezones = { "America/New_York", "Europe/London", "Asia/Tokyo" };
 
         for (String tz : timezones) {
-            Map<String, Object> params = Map.of("timezone", tz);
+            Map<String, Object> params = Map.of(TIMEZONE, tz);
             ToolResult result = dateTimeTool.execute(params).get();
 
             assertTrue(result.isSuccess(), "Should work for timezone: " + tz);

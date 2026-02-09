@@ -13,6 +13,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class LocalStorageAdapterTest {
 
+    private static final String TEST_DIR = "test-dir";
+
     @TempDir
     Path tempDir;
 
@@ -29,7 +31,7 @@ class LocalStorageAdapterTest {
 
     @Test
     void putAndGetText() throws ExecutionException, InterruptedException {
-        String directory = "test-dir";
+        String directory = TEST_DIR;
         String path = "test-file.txt";
         String content = "Hello, World!";
 
@@ -41,7 +43,7 @@ class LocalStorageAdapterTest {
 
     @Test
     void putAndGetObject() throws ExecutionException, InterruptedException {
-        String directory = "test-dir";
+        String directory = TEST_DIR;
         String path = "test-file.bin";
         byte[] content = new byte[] { 1, 2, 3, 4, 5 };
 
@@ -53,7 +55,7 @@ class LocalStorageAdapterTest {
 
     @Test
     void exists_returnsTrueForExistingFile() throws ExecutionException, InterruptedException {
-        String directory = "test-dir";
+        String directory = TEST_DIR;
         String path = "existing.txt";
 
         storageAdapter.putText(directory, path, "content").get();
@@ -63,12 +65,12 @@ class LocalStorageAdapterTest {
 
     @Test
     void exists_returnsFalseForNonExisting() throws ExecutionException, InterruptedException {
-        assertFalse(storageAdapter.exists("test-dir", "non-existing.txt").get());
+        assertFalse(storageAdapter.exists(TEST_DIR, "non-existing.txt").get());
     }
 
     @Test
     void deleteObject_removesFile() throws ExecutionException, InterruptedException {
-        String directory = "test-dir";
+        String directory = TEST_DIR;
         String path = "to-delete.txt";
 
         storageAdapter.putText(directory, path, "content").get();
@@ -80,7 +82,7 @@ class LocalStorageAdapterTest {
 
     @Test
     void listObjects_returnsAllFiles() throws ExecutionException, InterruptedException {
-        String directory = "test-dir";
+        String directory = TEST_DIR;
 
         storageAdapter.putText(directory, "file1.txt", "content1").get();
         storageAdapter.putText(directory, "file2.txt", "content2").get();
@@ -95,7 +97,7 @@ class LocalStorageAdapterTest {
 
     @Test
     void appendText_appendsToFile() throws ExecutionException, InterruptedException {
-        String directory = "test-dir";
+        String directory = TEST_DIR;
         String path = "append.txt";
 
         storageAdapter.appendText(directory, path, "Line 1\n").get();

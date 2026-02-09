@@ -20,6 +20,10 @@ import static org.mockito.Mockito.*;
 
 class SkillTransitionToolTest {
 
+    private static final String TARGET_SKILL = "target_skill";
+    private static final String CODE_WRITER = "code-writer";
+    private static final String ANALYZER = "analyzer";
+
     private SkillComponent skillComponent;
     private SkillTransitionTool tool;
 
@@ -58,22 +62,22 @@ class SkillTransitionToolTest {
         setUpAgentContext();
 
         Skill targetSkill = Skill.builder()
-                .name("code-writer")
+                .name(CODE_WRITER)
                 .description("Write code")
                 .available(true)
                 .build();
-        when(skillComponent.findByName("code-writer")).thenReturn(Optional.of(targetSkill));
+        when(skillComponent.findByName(CODE_WRITER)).thenReturn(Optional.of(targetSkill));
 
         ToolResult result = tool.execute(Map.of(
-                "target_skill", "code-writer",
+                TARGET_SKILL, CODE_WRITER,
                 "reason", "Need to generate code")).get();
 
         assertTrue(result.isSuccess());
-        assertTrue(result.getOutput().contains("code-writer"));
+        assertTrue(result.getOutput().contains(CODE_WRITER));
 
         // Verify the context was updated
         AgentContext ctx = AgentContextHolder.get();
-        assertEquals("code-writer", ctx.getAttribute("skill.transition.target"));
+        assertEquals(CODE_WRITER, ctx.getAttribute("skill.transition.target"));
     }
 
     @Test
@@ -81,17 +85,17 @@ class SkillTransitionToolTest {
         setUpAgentContext();
 
         Skill targetSkill = Skill.builder()
-                .name("analyzer")
+                .name(ANALYZER)
                 .description("Analyze things")
                 .available(true)
                 .build();
-        when(skillComponent.findByName("analyzer")).thenReturn(Optional.of(targetSkill));
+        when(skillComponent.findByName(ANALYZER)).thenReturn(Optional.of(targetSkill));
 
         ToolResult result = tool.execute(Map.of(
-                "target_skill", "analyzer")).get();
+                TARGET_SKILL, ANALYZER)).get();
 
         assertTrue(result.isSuccess());
-        assertTrue(result.getOutput().contains("analyzer"));
+        assertTrue(result.getOutput().contains(ANALYZER));
     }
 
     @Test
@@ -101,7 +105,7 @@ class SkillTransitionToolTest {
         when(skillComponent.findByName("nonexistent")).thenReturn(Optional.empty());
 
         ToolResult result = tool.execute(Map.of(
-                "target_skill", "nonexistent")).get();
+                TARGET_SKILL, "nonexistent")).get();
 
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("not found"));
@@ -119,7 +123,7 @@ class SkillTransitionToolTest {
         when(skillComponent.findByName("broken-skill")).thenReturn(Optional.of(unavailableSkill));
 
         ToolResult result = tool.execute(Map.of(
-                "target_skill", "broken-skill")).get();
+                TARGET_SKILL, "broken-skill")).get();
 
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("unavailable"));
@@ -133,7 +137,7 @@ class SkillTransitionToolTest {
                 "reason", "just because")).get();
 
         assertFalse(result.isSuccess());
-        assertTrue(result.getError().contains("target_skill"));
+        assertTrue(result.getError().contains(TARGET_SKILL));
     }
 
     @Test
@@ -141,24 +145,24 @@ class SkillTransitionToolTest {
         setUpAgentContext();
 
         ToolResult result = tool.execute(Map.of(
-                "target_skill", "   ")).get();
+                TARGET_SKILL, "   ")).get();
 
         assertFalse(result.isSuccess());
-        assertTrue(result.getError().contains("target_skill"));
+        assertTrue(result.getError().contains(TARGET_SKILL));
     }
 
     @Test
     void noAgentContext() throws Exception {
         // Don't set up context — AgentContextHolder is empty
         Skill targetSkill = Skill.builder()
-                .name("code-writer")
+                .name(CODE_WRITER)
                 .description("Write code")
                 .available(true)
                 .build();
-        when(skillComponent.findByName("code-writer")).thenReturn(Optional.of(targetSkill));
+        when(skillComponent.findByName(CODE_WRITER)).thenReturn(Optional.of(targetSkill));
 
         ToolResult result = tool.execute(Map.of(
-                "target_skill", "code-writer")).get();
+                TARGET_SKILL, CODE_WRITER)).get();
 
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("No agent context"));
