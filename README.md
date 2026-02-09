@@ -6,7 +6,7 @@
 [![Java](https://img.shields.io/badge/Java-17+-orange.svg)](https://www.oracle.com/java/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.4.2-brightgreen.svg)](https://spring.io/projects/spring-boot)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-986%20passing-success.svg)](https://github.com/alexk-dev/golemcore-bot/actions)
+[![Tests](https://img.shields.io/badge/tests-1272%20passing-success.svg)](https://github.com/alexk-dev/golemcore-bot/actions)
 
 ---
 
@@ -530,7 +530,7 @@ The bot processes messages through ordered pipeline stages:
 
 Contributions welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for:
 - Development workflow
-- Code quality standards (PMD, SpotBugs, 70%+ coverage)
+- Code quality standards (PMD, SpotBugs, 85%+ coverage)
 - Testing requirements
 - Pull request process
 

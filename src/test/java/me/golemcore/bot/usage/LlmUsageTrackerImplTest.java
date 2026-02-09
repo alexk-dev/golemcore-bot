@@ -310,6 +310,145 @@ class LlmUsageTrackerImplTest {
         assertEquals(1, stats.getTotalRequests());
     }
 
+    // ===== Average latency =====
+
+    @Test
+    void shouldComputeAverageLatency() {
+        Instant now = Instant.now();
+        LlmUsage usage1 = LlmUsage.builder()
+                .inputTokens(10).outputTokens(5).totalTokens(15)
+                .timestamp(now).latency(Duration.ofMillis(100))
+                .build();
+        LlmUsage usage2 = LlmUsage.builder()
+                .inputTokens(10).outputTokens(5).totalTokens(15)
+                .timestamp(now).latency(Duration.ofMillis(300))
+                .build();
+
+        tracker.recordUsage("p", "m", usage1);
+        tracker.recordUsage("p", "m", usage2);
+
+        UsageStats stats = tracker.getStats("p", Duration.ofHours(1));
+        assertEquals(Duration.ofMillis(200), stats.getAvgLatency());
+    }
+
+    @Test
+    void shouldReturnZeroLatencyWhenNoLatencyData() {
+        Instant now = Instant.now();
+        LlmUsage usage = LlmUsage.builder()
+                .inputTokens(10).outputTokens(5).totalTokens(15)
+                .timestamp(now)
+                .build(); // no latency
+
+        tracker.recordUsage("p", "m", usage);
+
+        UsageStats stats = tracker.getStats("p", Duration.ofHours(1));
+        assertEquals(Duration.ZERO, stats.getAvgLatency());
+    }
+
+    // ===== Null provider/model handling =====
+
+    @Test
+    void shouldHandleNullProviderInUsage() {
+        LlmUsage usage = LlmUsage.builder()
+                .inputTokens(10).outputTokens(5).totalTokens(15)
+                .timestamp(Instant.now())
+                .build();
+
+        tracker.recordUsage(null, "m", usage);
+
+        // Should be indexed under "unknown" provider
+        UsageStats stats = tracker.getStats("unknown", Duration.ofHours(1));
+        assertEquals(1, stats.getTotalRequests());
+    }
+
+    @Test
+    void shouldHandleNullModelInUsage() {
+        LlmUsage usage = LlmUsage.builder()
+                .inputTokens(10).outputTokens(5).totalTokens(15)
+                .timestamp(Instant.now())
+                .build();
+
+        tracker.recordUsage("p", null, usage);
+
+        UsageStats stats = tracker.getStats("p", Duration.ofHours(1));
+        assertEquals(1, stats.getTotalRequests());
+    }
+
+    // ===== Model breakdown in stats =====
+
+    @Test
+    void shouldTrackRequestsByModel() {
+        Instant now = Instant.now();
+        tracker.recordUsage("p", "gpt-5.1", usage(100, 50, now));
+        tracker.recordUsage("p", "gpt-5.1", usage(100, 50, now));
+        tracker.recordUsage("p", "gpt-5.2", usage(200, 100, now));
+
+        UsageStats stats = tracker.getStats("p", Duration.ofHours(1));
+        assertNotNull(stats.getRequestsByModel());
+        assertEquals(2, stats.getRequestsByModel().get("gpt-5.1"));
+        assertEquals(1, stats.getRequestsByModel().get("gpt-5.2"));
+    }
+
+    @Test
+    void shouldTrackTokensByModel() {
+        Instant now = Instant.now();
+        tracker.recordUsage("p", "gpt-5.1", usage(100, 50, now));
+        tracker.recordUsage("p", "gpt-5.2", usage(200, 100, now));
+
+        UsageStats stats = tracker.getStats("p", Duration.ofHours(1));
+        assertNotNull(stats.getTokensByModel());
+        assertEquals(150, stats.getTokensByModel().get("gpt-5.1"));
+        assertEquals(300, stats.getTokensByModel().get("gpt-5.2"));
+    }
+
+    // ===== Destroy =====
+
+    @Test
+    void shouldHandleDestroy() {
+        assertDoesNotThrow(() -> tracker.destroy());
+    }
+
+    // ===== File read failure on load =====
+
+    @Test
+    void shouldHandleFileReadFailureOnLoad() {
+        when(storagePort.listObjects("usage", ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of("bad.jsonl")));
+        when(storagePort.getText("usage", "bad.jsonl"))
+                .thenThrow(new RuntimeException("Read failed"));
+
+        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, properties, objectMapper);
+        assertDoesNotThrow(() -> freshTracker.init());
+    }
+
+    // ===== Export metrics per model =====
+
+    @Test
+    void shouldExportPerModelMetrics() {
+        Instant now = Instant.now();
+        tracker.recordUsage("p1", "model-a", usage(100, 50, now));
+        tracker.recordUsage("p1", "model-b", usage(200, 100, now));
+
+        List<UsageMetric> metrics = tracker.exportMetrics();
+
+        // Should have provider-level and model-level metrics
+        assertTrue(metrics.stream().anyMatch(m -> "llm.tokens.total".equals(m.getName())
+                && m.getTags().containsValue("model-a")));
+        assertTrue(metrics.stream().anyMatch(m -> "llm.requests.total".equals(m.getName())
+                && m.getTags().containsValue("model-b")));
+    }
+
+    // ===== Null list from storage =====
+
+    @Test
+    void shouldHandleNullListFromStorage() {
+        when(storagePort.listObjects("usage", ""))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, properties, objectMapper);
+        assertDoesNotThrow(() -> freshTracker.init());
+    }
+
     private LlmUsage usage(int input, int output, Instant ts) {
         return LlmUsage.builder()
                 .inputTokens(input).outputTokens(output).totalTokens(input + output)
