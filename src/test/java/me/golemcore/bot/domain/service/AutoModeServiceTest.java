@@ -267,7 +267,7 @@ class AutoModeServiceTest {
         verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq("goals.json"), captor.capture());
 
         String savedJson = captor.getValue();
-        List<Goal> savedGoals = objectMapper.readValue(savedJson, new TypeReference<List<Goal>>() {
+        List<Goal> savedGoals = objectMapper.readValue(savedJson, new TypeReference<>() {
         });
         assertEquals(Goal.GoalStatus.COMPLETED, savedGoals.get(0).getStatus());
 

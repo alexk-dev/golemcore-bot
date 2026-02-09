@@ -246,4 +246,261 @@ class GoalManagementToolTest {
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("operation"));
     }
+
+    // ===== Unknown operation =====
+
+    @Test
+    void unknownOperation() throws Exception {
+        ToolResult result = tool.execute(Map.of("operation", "delete_everything")).get();
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains("Unknown operation"));
+    }
+
+    // ===== planTasks edge cases =====
+
+    @Test
+    void planTasksMissingTasks() throws Exception {
+        Map<String, Object> params = new HashMap<>();
+        params.put("operation", "plan_tasks");
+        params.put("goal_id", "g1");
+
+        ToolResult result = tool.execute(params).get();
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains("tasks"));
+    }
+
+    @Test
+    void planTasksEmptyList() throws Exception {
+        Map<String, Object> params = new HashMap<>();
+        params.put("operation", "plan_tasks");
+        params.put("goal_id", "g1");
+        params.put("tasks", List.of());
+
+        ToolResult result = tool.execute(params).get();
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains("empty"));
+    }
+
+    @Test
+    void planTasksWithMissingTitle() throws Exception {
+        Map<String, Object> params = new HashMap<>();
+        params.put("operation", "plan_tasks");
+        params.put("goal_id", "g1");
+        params.put("tasks", List.of(Map.of("description", "No title")));
+
+        ToolResult result = tool.execute(params).get();
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains("missing title"));
+    }
+
+    @Test
+    void planTasksInvalidTasksType() throws Exception {
+        Map<String, Object> params = new HashMap<>();
+        params.put("operation", "plan_tasks");
+        params.put("goal_id", "g1");
+        params.put("tasks", "not a list");
+
+        ToolResult result = tool.execute(params).get();
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains("must be an array"));
+    }
+
+    // ===== updateTaskStatus edge cases =====
+
+    @Test
+    void updateTaskStatusMissingTaskId() throws Exception {
+        ToolResult result = tool.execute(Map.of(
+                "operation", "update_task_status",
+                "goal_id", "g1",
+                "status", "COMPLETED")).get();
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains("task_id"));
+    }
+
+    @Test
+    void updateTaskStatusMissingStatus() throws Exception {
+        ToolResult result = tool.execute(Map.of(
+                "operation", "update_task_status",
+                "goal_id", "g1",
+                "task_id", "t1")).get();
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains("status"));
+    }
+
+    @Test
+    void updateTaskStatusMissingGoalId() throws Exception {
+        ToolResult result = tool.execute(Map.of(
+                "operation", "update_task_status",
+                "task_id", "t1",
+                "status", "COMPLETED")).get();
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains("goal_id"));
+    }
+
+    // ===== milestone callback =====
+
+    @Test
+    void updateTaskStatusCompletedTriggersCallback() throws Exception {
+        java.util.concurrent.atomic.AtomicReference<GoalManagementTool.MilestoneEvent> event = new java.util.concurrent.atomic.AtomicReference<>();
+        tool.setMilestoneCallback(event::set);
+
+        AutoTask task = AutoTask.builder()
+                .id("t1").goalId("g1").title("Test task")
+                .status(AutoTask.TaskStatus.COMPLETED)
+                .createdAt(Instant.now()).updatedAt(Instant.now())
+                .build();
+
+        Goal goal = Goal.builder()
+                .id("g1").title("Test Goal")
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>(List.of(task)))
+                .createdAt(Instant.now()).updatedAt(Instant.now())
+                .build();
+
+        when(autoModeService.getGoal("g1")).thenReturn(java.util.Optional.of(goal));
+
+        ToolResult result = tool.execute(Map.of(
+                "operation", "update_task_status",
+                "goal_id", "g1",
+                "task_id", "t1",
+                "status", "COMPLETED")).get();
+
+        assertTrue(result.isSuccess());
+        assertNotNull(event.get());
+        assertTrue(event.get().message().contains("Task completed"));
+    }
+
+    @Test
+    void completeGoalTriggersCallback() throws Exception {
+        java.util.concurrent.atomic.AtomicReference<GoalManagementTool.MilestoneEvent> event = new java.util.concurrent.atomic.AtomicReference<>();
+        tool.setMilestoneCallback(event::set);
+
+        Goal goal = Goal.builder()
+                .id("g1").title("Completed Goal")
+                .status(Goal.GoalStatus.COMPLETED)
+                .createdAt(Instant.now()).updatedAt(Instant.now())
+                .build();
+
+        when(autoModeService.getGoal("g1")).thenReturn(java.util.Optional.of(goal));
+
+        ToolResult result = tool.execute(Map.of(
+                "operation", "complete_goal",
+                "goal_id", "g1")).get();
+
+        assertTrue(result.isSuccess());
+        assertNotNull(event.get());
+        assertTrue(event.get().message().contains("Goal completed"));
+    }
+
+    // ===== writeDiary edge cases =====
+
+    @Test
+    void writeDiaryMissingContent() throws Exception {
+        ToolResult result = tool.execute(Map.of(
+                "operation", "write_diary")).get();
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains("content"));
+    }
+
+    @Test
+    void writeDiaryWithType() throws Exception {
+        ToolResult result = tool.execute(Map.of(
+                "operation", "write_diary",
+                "content", "Progress update",
+                "diary_type", "PROGRESS")).get();
+
+        assertTrue(result.isSuccess());
+        verify(autoModeService).writeDiary(argThat(entry -> entry.getType() == DiaryEntry.DiaryType.PROGRESS));
+    }
+
+    @Test
+    void writeDiaryWithInvalidType() throws Exception {
+        ToolResult result = tool.execute(Map.of(
+                "operation", "write_diary",
+                "content", "Some note",
+                "diary_type", "INVALID_TYPE")).get();
+
+        assertTrue(result.isSuccess()); // Should default to THOUGHT
+        verify(autoModeService).writeDiary(argThat(entry -> entry.getType() == DiaryEntry.DiaryType.THOUGHT));
+    }
+
+    @Test
+    void writeDiaryWithGoalAndTaskId() throws Exception {
+        ToolResult result = tool.execute(Map.of(
+                "operation", "write_diary",
+                "content", "Working on task",
+                "goal_id", "g1",
+                "task_id", "t1")).get();
+
+        assertTrue(result.isSuccess());
+        verify(autoModeService)
+                .writeDiary(argThat(entry -> "g1".equals(entry.getGoalId()) && "t1".equals(entry.getTaskId())));
+    }
+
+    // ===== completeGoal edge cases =====
+
+    @Test
+    void completeGoalMissingGoalId() throws Exception {
+        ToolResult result = tool.execute(Map.of(
+                "operation", "complete_goal")).get();
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains("goal_id"));
+    }
+
+    // ===== createGoal with blank title =====
+
+    @Test
+    void createGoalBlankTitle() throws Exception {
+        ToolResult result = tool.execute(Map.of(
+                "operation", "create_goal",
+                "title", "   ")).get();
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains("title"));
+    }
+
+    // ===== getDefinition =====
+
+    @Test
+    void shouldReturnValidDefinition() {
+        assertNotNull(tool.getDefinition());
+        assertEquals("goal_management", tool.getDefinition().getName());
+        assertNotNull(tool.getDefinition().getInputSchema());
+    }
+
+    // ===== isEnabled =====
+
+    @Test
+    void shouldBeEnabled() {
+        assertTrue(tool.isEnabled());
+    }
+
+    @Test
+    void planTasksAddTaskFailure() throws Exception {
+        when(autoModeService.addTask(anyString(), anyString(), any(), anyInt()))
+                .thenThrow(new RuntimeException("Goal not found"));
+
+        List<Map<String, Object>> tasksList = List.of(
+                Map.of("title", "Failed task", "description", "Will fail"));
+
+        Map<String, Object> params = new HashMap<>();
+        params.put("operation", "plan_tasks");
+        params.put("goal_id", "nonexistent");
+        params.put("tasks", tasksList);
+
+        ToolResult result = tool.execute(params).get();
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains("Failed to add task"));
+    }
 }

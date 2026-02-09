@@ -45,6 +45,7 @@ public class DynamicTierSystem implements AgentSystem {
 
     private final BotProperties properties;
 
+    private static final String TOOL_NAME_SHELL = "shell";
     private static final Set<String> CODE_EXTENSIONS = Set.of(
             ".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".go", ".rs", ".rb",
             ".sh", ".bash", ".c", ".cpp", ".h", ".hpp", ".cs", ".kt", ".scala",
@@ -161,7 +162,7 @@ public class DynamicTierSystem implements AgentSystem {
             }
         }
 
-        if ("shell".equals(name)) {
+        if (TOOL_NAME_SHELL.equals(name)) {
             String command = stringArg(args, "command");
             if (command != null) {
                 return isCodeCommand(command);

@@ -69,6 +69,10 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 public class BrowserTool implements ToolComponent {
 
+    private static final String PARAM_URL = "url";
+    private static final String TYPE_STRING = "string";
+    private static final String TYPE_OBJECT = "object";
+
     private final BrowserComponent browserComponent;
     private final BotProperties properties;
 
@@ -81,23 +85,23 @@ public class BrowserTool implements ToolComponent {
                 .name("browse")
                 .description("Browse a web page and extract its content. Returns the page title and text content.")
                 .inputSchema(Map.of(
-                        "type", "object",
+                        "type", TYPE_OBJECT,
                         "properties", Map.of(
-                                "url", Map.of(
-                                        "type", "string",
+                                PARAM_URL, Map.of(
+                                        "type", TYPE_STRING,
                                         "description", "The URL to browse"),
                                 "mode", Map.of(
-                                        "type", "string",
+                                        "type", TYPE_STRING,
                                         "description", "What to extract: 'text' (default), 'html', or 'screenshot'",
                                         "enum", java.util.List.of("text", "html", "screenshot"))),
-                        "required", java.util.List.of("url")))
+                        "required", java.util.List.of(PARAM_URL)))
                 .build();
     }
 
     @Override
     public CompletableFuture<ToolResult> execute(Map<String, Object> parameters) {
         return CompletableFuture.supplyAsync(() -> {
-            String url = (String) parameters.get("url");
+            String url = (String) parameters.get(PARAM_URL);
             if (url == null || url.isBlank()) {
                 return ToolResult.failure("URL is required");
             }
@@ -140,7 +144,7 @@ public class BrowserTool implements ToolComponent {
 
         return ToolResult.success(output, Map.of(
                 "title", page.getTitle(),
-                "url", page.getUrl()));
+                PARAM_URL, page.getUrl()));
     }
 
     private ToolResult executeHtml(String url) throws Exception {

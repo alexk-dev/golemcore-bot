@@ -45,4 +45,5 @@ public interface ConfirmationPort {
      * connected).
      */
     boolean isAvailable();
+
 }

@@ -31,6 +31,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
@@ -71,6 +72,29 @@ import java.util.stream.Collectors;
 @Slf4j
 public class GoalManagementTool implements ToolComponent {
 
+    // JSON Schema constants
+    private static final String SCHEMA_TYPE = "type";
+    private static final String SCHEMA_OBJECT = "object";
+    private static final String SCHEMA_STRING = "string";
+    private static final String SCHEMA_ARRAY = "array";
+    private static final String SCHEMA_PROPERTIES = "properties";
+    private static final String SCHEMA_DESCRIPTION = "description";
+    private static final String SCHEMA_ENUM = "enum";
+    private static final String SCHEMA_ITEMS = "items";
+    private static final String SCHEMA_REQUIRED = "required";
+
+    // Parameter names
+    private static final String PARAM_OPERATION = "operation";
+    private static final String PARAM_GOAL_ID = "goal_id";
+    private static final String PARAM_TASK_ID = "task_id";
+    private static final String PARAM_TITLE = "title";
+    private static final String PARAM_DESCRIPTION = "description";
+    private static final String PARAM_STATUS = "status";
+    private static final String PARAM_RESULT = "result";
+    private static final String PARAM_TASKS = "tasks";
+    private static final String PARAM_CONTENT = "content";
+    private static final String PARAM_DIARY_TYPE = "diary_type";
+
     private final AutoModeService autoModeService;
     private final boolean enabled;
 
@@ -100,34 +124,40 @@ public class GoalManagementTool implements ToolComponent {
                         Operations: create_goal, list_goals, plan_tasks, update_task_status, write_diary, complete_goal.
                         """)
                 .inputSchema(Map.of(
-                        "type", "object",
-                        "properties", buildProperties(),
-                        "required", List.of("operation")))
+                        SCHEMA_TYPE, SCHEMA_OBJECT,
+                        SCHEMA_PROPERTIES, buildProperties(),
+                        SCHEMA_REQUIRED, List.of(PARAM_OPERATION)))
                 .build();
     }
 
     private static Map<String, Object> buildProperties() {
         Map<String, Object> props = new HashMap<>();
-        props.put("operation", Map.of(
-                "type", "string",
-                "enum", List.of("create_goal", "list_goals", "plan_tasks",
+        props.put(PARAM_OPERATION, Map.of(
+                SCHEMA_TYPE, SCHEMA_STRING,
+                SCHEMA_ENUM, List.of("create_goal", "list_goals", "plan_tasks",
                         "update_task_status", "write_diary", "complete_goal"),
-                "description", "Operation to perform"));
-        props.put("goal_id", Map.of("type", "string", "description", "Goal ID (for task operations)"));
-        props.put("task_id", Map.of("type", "string", "description", "Task ID (for update_task_status)"));
-        props.put("title", Map.of("type", "string", "description", "Title for goal or task"));
-        props.put("description", Map.of("type", "string", "description", "Description for goal or task"));
-        props.put("status", Map.of("type", "string", "description",
+                SCHEMA_DESCRIPTION, "Operation to perform"));
+        props.put(PARAM_GOAL_ID,
+                Map.of(SCHEMA_TYPE, SCHEMA_STRING, SCHEMA_DESCRIPTION, "Goal ID (for task operations)"));
+        props.put(PARAM_TASK_ID,
+                Map.of(SCHEMA_TYPE, SCHEMA_STRING, SCHEMA_DESCRIPTION, "Task ID (for update_task_status)"));
+        props.put(PARAM_TITLE, Map.of(SCHEMA_TYPE, SCHEMA_STRING, SCHEMA_DESCRIPTION, "Title for goal or task"));
+        props.put(PARAM_DESCRIPTION,
+                Map.of(SCHEMA_TYPE, SCHEMA_STRING, SCHEMA_DESCRIPTION, "Description for goal or task"));
+        props.put(PARAM_STATUS, Map.of(SCHEMA_TYPE, SCHEMA_STRING, SCHEMA_DESCRIPTION,
                 "New status for task (PENDING, IN_PROGRESS, COMPLETED, FAILED, SKIPPED)"));
-        props.put("result", Map.of("type", "string", "description", "Completion notes for task"));
-        props.put("tasks",
-                Map.of("type", "array", "description", "Array of {title, description} objects for plan_tasks",
-                        "items", Map.of("type", "object", "properties", Map.of(
-                                "title", Map.of("type", "string", "description", "Task title"),
-                                "description", Map.of("type", "string", "description", "Task description")))));
-        props.put("content", Map.of("type", "string", "description", "Diary entry content"));
-        props.put("diary_type",
-                Map.of("type", "string", "description", "Diary type: THOUGHT, PROGRESS, OBSERVATION, DECISION, ERROR"));
+        props.put(PARAM_RESULT, Map.of(SCHEMA_TYPE, SCHEMA_STRING, SCHEMA_DESCRIPTION, "Completion notes for task"));
+        props.put(PARAM_TASKS,
+                Map.of(SCHEMA_TYPE, SCHEMA_ARRAY, SCHEMA_DESCRIPTION,
+                        "Array of {title, description} objects for plan_tasks",
+                        SCHEMA_ITEMS, Map.of(SCHEMA_TYPE, SCHEMA_OBJECT, SCHEMA_PROPERTIES, Map.of(
+                                PARAM_TITLE, Map.of(SCHEMA_TYPE, SCHEMA_STRING, SCHEMA_DESCRIPTION, "Task title"),
+                                PARAM_DESCRIPTION,
+                                Map.of(SCHEMA_TYPE, SCHEMA_STRING, SCHEMA_DESCRIPTION, "Task description")))));
+        props.put(PARAM_CONTENT, Map.of(SCHEMA_TYPE, SCHEMA_STRING, SCHEMA_DESCRIPTION, "Diary entry content"));
+        props.put(PARAM_DIARY_TYPE,
+                Map.of(SCHEMA_TYPE, SCHEMA_STRING, SCHEMA_DESCRIPTION,
+                        "Diary type: THOUGHT, PROGRESS, OBSERVATION, DECISION, ERROR"));
         return props;
     }
 
@@ -141,7 +171,7 @@ public class GoalManagementTool implements ToolComponent {
             }
 
             try {
-                String operation = (String) parameters.get("operation");
+                String operation = (String) parameters.get(PARAM_OPERATION);
 
                 if (operation == null) {
                     return ToolResult.failure("Missing required parameter: operation");
@@ -164,8 +194,8 @@ public class GoalManagementTool implements ToolComponent {
     }
 
     private ToolResult createGoal(Map<String, Object> params) {
-        String title = (String) params.get("title");
-        String description = (String) params.get("description");
+        String title = (String) params.get(PARAM_TITLE);
+        String description = (String) params.get(PARAM_DESCRIPTION);
 
         if (title == null || title.isBlank()) {
             return ToolResult.failure("Missing required parameter: title");
@@ -174,7 +204,7 @@ public class GoalManagementTool implements ToolComponent {
         try {
             Goal goal = autoModeService.createGoal(title, description);
             return ToolResult.success("Goal created: " + goal.getTitle() + " (id: " + goal.getId() + ")",
-                    Map.of("goal_id", goal.getId(), "title", goal.getTitle()));
+                    Map.of(PARAM_GOAL_ID, goal.getId(), PARAM_TITLE, goal.getTitle()));
         } catch (IllegalStateException e) {
             return ToolResult.failure(e.getMessage());
         }
@@ -200,12 +230,12 @@ public class GoalManagementTool implements ToolComponent {
 
     @SuppressWarnings("unchecked")
     private ToolResult planTasks(Map<String, Object> params) {
-        String goalId = (String) params.get("goal_id");
+        String goalId = (String) params.get(PARAM_GOAL_ID);
         if (goalId == null || goalId.isBlank()) {
             return ToolResult.failure("Missing required parameter: goal_id");
         }
 
-        Object tasksObj = params.get("tasks");
+        Object tasksObj = params.get(PARAM_TASKS);
         if (tasksObj == null) {
             return ToolResult.failure("Missing required parameter: tasks");
         }
@@ -225,8 +255,8 @@ public class GoalManagementTool implements ToolComponent {
         sb.append("Added tasks:\n");
         for (int i = 0; i < tasksList.size(); i++) {
             Map<String, Object> taskDef = tasksList.get(i);
-            String title = (String) taskDef.get("title");
-            String description = (String) taskDef.get("description");
+            String title = (String) taskDef.get(PARAM_TITLE);
+            String description = (String) taskDef.get(PARAM_DESCRIPTION);
 
             if (title == null || title.isBlank()) {
                 return ToolResult.failure("Task at index " + i + " missing title");
@@ -244,10 +274,10 @@ public class GoalManagementTool implements ToolComponent {
     }
 
     private ToolResult updateTaskStatus(Map<String, Object> params) {
-        String goalId = (String) params.get("goal_id");
-        String taskId = (String) params.get("task_id");
-        String statusStr = (String) params.get("status");
-        String result = (String) params.get("result");
+        String goalId = (String) params.get(PARAM_GOAL_ID);
+        String taskId = (String) params.get(PARAM_TASK_ID);
+        String statusStr = (String) params.get(PARAM_STATUS);
+        String result = (String) params.get(PARAM_RESULT);
 
         if (goalId == null || goalId.isBlank()) {
             return ToolResult.failure("Missing required parameter: goal_id");
@@ -261,7 +291,7 @@ public class GoalManagementTool implements ToolComponent {
 
         AutoTask.TaskStatus status;
         try {
-            status = AutoTask.TaskStatus.valueOf(statusStr.toUpperCase());
+            status = AutoTask.TaskStatus.valueOf(statusStr.toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
             return ToolResult.failure("Invalid status: " + statusStr +
                     ". Valid: PENDING, IN_PROGRESS, COMPLETED, FAILED, SKIPPED");
@@ -269,7 +299,8 @@ public class GoalManagementTool implements ToolComponent {
 
         autoModeService.updateTaskStatus(goalId, taskId, status, result);
 
-        if (status == AutoTask.TaskStatus.COMPLETED && milestoneCallback != null) {
+        Consumer<MilestoneEvent> callback = milestoneCallback;
+        if (status == AutoTask.TaskStatus.COMPLETED && callback != null) {
             autoModeService.getGoal(goalId).ifPresent(goal -> {
                 String taskTitle = goal.getTasks().stream()
                         .filter(t -> t.getId().equals(taskId))
@@ -279,7 +310,7 @@ public class GoalManagementTool implements ToolComponent {
                 String message = String.format("Task completed: %s%n(Goal: %s — %d/%d done)",
                         taskTitle, goal.getTitle(),
                         goal.getCompletedTaskCount(), goal.getTasks().size());
-                milestoneCallback.accept(new MilestoneEvent(message));
+                callback.accept(new MilestoneEvent(message));
             });
         }
 
@@ -287,8 +318,8 @@ public class GoalManagementTool implements ToolComponent {
     }
 
     private ToolResult writeDiary(Map<String, Object> params) {
-        String content = (String) params.get("content");
-        String diaryTypeStr = (String) params.get("diary_type");
+        String content = (String) params.get(PARAM_CONTENT);
+        String diaryTypeStr = (String) params.get(PARAM_DIARY_TYPE);
 
         if (content == null || content.isBlank()) {
             return ToolResult.failure("Missing required parameter: content");
@@ -297,14 +328,14 @@ public class GoalManagementTool implements ToolComponent {
         DiaryEntry.DiaryType type = DiaryEntry.DiaryType.THOUGHT;
         if (diaryTypeStr != null && !diaryTypeStr.isBlank()) {
             try {
-                type = DiaryEntry.DiaryType.valueOf(diaryTypeStr.toUpperCase());
+                type = DiaryEntry.DiaryType.valueOf(diaryTypeStr.toUpperCase(Locale.ROOT));
             } catch (IllegalArgumentException e) {
-                // default to THOUGHT
+                log.debug("Invalid diary type '{}', defaulting to THOUGHT", diaryTypeStr);
             }
         }
 
-        String goalId = (String) params.get("goal_id");
-        String taskId = (String) params.get("task_id");
+        String goalId = (String) params.get(PARAM_GOAL_ID);
+        String taskId = (String) params.get(PARAM_TASK_ID);
 
         autoModeService.writeDiary(DiaryEntry.builder()
                 .type(type)
@@ -317,17 +348,18 @@ public class GoalManagementTool implements ToolComponent {
     }
 
     private ToolResult completeGoal(Map<String, Object> params) {
-        String goalId = (String) params.get("goal_id");
+        String goalId = (String) params.get(PARAM_GOAL_ID);
         if (goalId == null || goalId.isBlank()) {
             return ToolResult.failure("Missing required parameter: goal_id");
         }
 
         autoModeService.completeGoal(goalId);
 
-        if (milestoneCallback != null) {
+        Consumer<MilestoneEvent> callback = milestoneCallback;
+        if (callback != null) {
             autoModeService.getGoal(goalId).ifPresent(goal -> {
                 String message = "Goal completed: " + goal.getTitle();
-                milestoneCallback.accept(new MilestoneEvent(message));
+                callback.accept(new MilestoneEvent(message));
             });
         }
 

@@ -29,6 +29,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
+import java.time.DateTimeException;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
@@ -202,7 +204,7 @@ public class PromptSectionService {
             ZonedDateTime now = ZonedDateTime.now(ZoneId.of(timezone));
             vars.put("DATE", now.format(DateTimeFormatter.ISO_LOCAL_DATE));
             vars.put("TIME", now.format(DateTimeFormatter.ofPattern("HH:mm")));
-        } catch (Exception e) {
+        } catch (DateTimeException e) {
             log.warn("Invalid timezone '{}', falling back to UTC", timezone);
             ZonedDateTime now = ZonedDateTime.now(ZoneId.of("UTC"));
             vars.put("DATE", now.format(DateTimeFormatter.ISO_LOCAL_DATE));
@@ -253,10 +255,8 @@ public class PromptSectionService {
             }
 
             PromptSection section = parseSection(content, file);
-            if (section != null) {
-                sectionRegistry.put(section.getName(), section);
-                log.debug("Loaded prompt section: {} (order={})", section.getName(), section.getOrder());
-            }
+            sectionRegistry.put(section.getName(), section);
+            log.debug("Loaded prompt section: {} (order={})", section.getName(), section.getOrder());
         } catch (Exception e) {
             log.warn("Failed to load prompt section: {}", file, e);
         }
@@ -285,7 +285,7 @@ public class PromptSectionService {
                 if (yaml.containsKey("enabled")) {
                     enabled = (Boolean) yaml.get("enabled");
                 }
-            } catch (Exception e) {
+            } catch (IOException | RuntimeException e) {
                 log.warn("Failed to parse prompt section frontmatter: {}", file, e);
             }
         }
