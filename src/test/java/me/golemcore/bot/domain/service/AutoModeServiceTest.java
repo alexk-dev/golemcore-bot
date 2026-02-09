@@ -21,12 +21,16 @@ import static org.mockito.Mockito.*;
 
 class AutoModeServiceTest {
 
+    private static final String AUTO_DIR = "auto";
+    private static final String GOALS_FILE = "goals.json";
+    private static final String GOAL_ID = "goal-1";
+    private static final String TASK_ID = "task-1";
+    private static final String DIARY_PREFIX = "diary/";
+
     private StoragePort storagePort;
     private ObjectMapper objectMapper;
     private BotProperties properties;
     private AutoModeService service;
-
-    private static final String AUTO_DIR = "auto";
 
     @BeforeEach
     void setUp() {
@@ -61,7 +65,7 @@ class AutoModeServiceTest {
         assertEquals(Goal.GoalStatus.ACTIVE, goal.getStatus());
         assertNotNull(goal.getCreatedAt());
 
-        verify(storagePort).putText(eq(AUTO_DIR), eq("goals.json"), anyString());
+        verify(storagePort).putText(eq(AUTO_DIR), eq(GOALS_FILE), anyString());
     }
 
     @Test
@@ -78,7 +82,7 @@ class AutoModeServiceTest {
                     .build());
         }
         String goalsJson = objectMapper.writeValueAsString(existingGoals);
-        when(storagePort.getText(AUTO_DIR, "goals.json"))
+        when(storagePort.getText(AUTO_DIR, GOALS_FILE))
                 .thenReturn(CompletableFuture.completedFuture(goalsJson));
 
         assertThrows(IllegalStateException.class,
@@ -95,7 +99,7 @@ class AutoModeServiceTest {
                 Goal.builder().id("g3").title("Active 2")
                         .status(Goal.GoalStatus.ACTIVE).tasks(new ArrayList<>()).createdAt(Instant.now()).build());
         String goalsJson = objectMapper.writeValueAsString(goals);
-        when(storagePort.getText(AUTO_DIR, "goals.json"))
+        when(storagePort.getText(AUTO_DIR, GOALS_FILE))
                 .thenReturn(CompletableFuture.completedFuture(goalsJson));
 
         List<Goal> activeGoals = service.getActiveGoals();
@@ -107,30 +111,30 @@ class AutoModeServiceTest {
     @Test
     void addTask_addsTaskToGoal() throws Exception {
         Goal goal = Goal.builder()
-                .id("goal-1")
+                .id(GOAL_ID)
                 .title("Test Goal")
                 .status(Goal.GoalStatus.ACTIVE)
                 .tasks(new ArrayList<>())
                 .createdAt(Instant.now())
                 .build();
         String goalsJson = objectMapper.writeValueAsString(List.of(goal));
-        when(storagePort.getText(AUTO_DIR, "goals.json"))
+        when(storagePort.getText(AUTO_DIR, GOALS_FILE))
                 .thenReturn(CompletableFuture.completedFuture(goalsJson));
 
-        AutoTask task = service.addTask("goal-1", "Write tests", "Write unit tests for service", 1);
+        AutoTask task = service.addTask(GOAL_ID, "Write tests", "Write unit tests for service", 1);
 
         assertNotNull(task);
         assertNotNull(task.getId());
-        assertEquals("goal-1", task.getGoalId());
+        assertEquals(GOAL_ID, task.getGoalId());
         assertEquals("Write tests", task.getTitle());
         assertEquals(AutoTask.TaskStatus.PENDING, task.getStatus());
 
-        verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq("goals.json"), anyString());
+        verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq(GOALS_FILE), anyString());
     }
 
     @Test
     void addTask_throwsIfGoalNotFound() throws Exception {
-        when(storagePort.getText(AUTO_DIR, "goals.json"))
+        when(storagePort.getText(AUTO_DIR, GOALS_FILE))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
         assertThrows(IllegalArgumentException.class,
@@ -143,7 +147,7 @@ class AutoModeServiceTest {
         for (int i = 0; i < 20; i++) {
             tasks.add(AutoTask.builder()
                     .id("task-" + i)
-                    .goalId("goal-1")
+                    .goalId(GOAL_ID)
                     .title("Task " + i)
                     .status(AutoTask.TaskStatus.PENDING)
                     .order(i)
@@ -151,53 +155,53 @@ class AutoModeServiceTest {
                     .build());
         }
         Goal goal = Goal.builder()
-                .id("goal-1")
+                .id(GOAL_ID)
                 .title("Full Goal")
                 .status(Goal.GoalStatus.ACTIVE)
                 .tasks(tasks)
                 .createdAt(Instant.now())
                 .build();
         String goalsJson = objectMapper.writeValueAsString(List.of(goal));
-        when(storagePort.getText(AUTO_DIR, "goals.json"))
+        when(storagePort.getText(AUTO_DIR, GOALS_FILE))
                 .thenReturn(CompletableFuture.completedFuture(goalsJson));
 
         assertThrows(IllegalStateException.class,
-                () -> service.addTask("goal-1", "Too many", "Should fail", 21));
+                () -> service.addTask(GOAL_ID, "Too many", "Should fail", 21));
     }
 
     @Test
     void updateTaskStatus_updatesStatusAndWritesDiaryOnCompleted() throws Exception {
         AutoTask task = AutoTask.builder()
-                .id("task-1")
-                .goalId("goal-1")
+                .id(TASK_ID)
+                .goalId(GOAL_ID)
                 .title("Do something")
                 .status(AutoTask.TaskStatus.IN_PROGRESS)
                 .order(0)
                 .createdAt(Instant.now())
                 .build();
         Goal goal = Goal.builder()
-                .id("goal-1")
+                .id(GOAL_ID)
                 .title("Test Goal")
                 .status(Goal.GoalStatus.ACTIVE)
                 .tasks(new ArrayList<>(List.of(task)))
                 .createdAt(Instant.now())
                 .build();
         String goalsJson = objectMapper.writeValueAsString(List.of(goal));
-        when(storagePort.getText(AUTO_DIR, "goals.json"))
+        when(storagePort.getText(AUTO_DIR, GOALS_FILE))
                 .thenReturn(CompletableFuture.completedFuture(goalsJson));
 
-        service.updateTaskStatus("goal-1", "task-1", AutoTask.TaskStatus.COMPLETED, "Done successfully");
+        service.updateTaskStatus(GOAL_ID, TASK_ID, AutoTask.TaskStatus.COMPLETED, "Done successfully");
 
         // Verify goals saved
-        verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq("goals.json"), anyString());
+        verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq(GOALS_FILE), anyString());
 
         // Verify diary entry written for COMPLETED status
-        verify(storagePort).appendText(eq(AUTO_DIR), contains("diary/"), anyString());
+        verify(storagePort).appendText(eq(AUTO_DIR), contains(DIARY_PREFIX), anyString());
     }
 
     @Test
     void updateTaskStatus_throwsIfGoalOrTaskNotFound() throws Exception {
-        when(storagePort.getText(AUTO_DIR, "goals.json"))
+        when(storagePort.getText(AUTO_DIR, GOALS_FILE))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
         assertThrows(IllegalArgumentException.class,
@@ -209,22 +213,22 @@ class AutoModeServiceTest {
     void getNextPendingTask_returnsFirstPendingTaskAcrossActiveGoals() throws Exception {
         AutoTask pendingTask = AutoTask.builder()
                 .id("task-2")
-                .goalId("goal-1")
+                .goalId(GOAL_ID)
                 .title("Pending task")
                 .status(AutoTask.TaskStatus.PENDING)
                 .order(0)
                 .createdAt(Instant.now())
                 .build();
         AutoTask completedTask = AutoTask.builder()
-                .id("task-1")
-                .goalId("goal-1")
+                .id(TASK_ID)
+                .goalId(GOAL_ID)
                 .title("Completed task")
                 .status(AutoTask.TaskStatus.COMPLETED)
                 .order(0)
                 .createdAt(Instant.now())
                 .build();
         Goal goal1 = Goal.builder()
-                .id("goal-1")
+                .id(GOAL_ID)
                 .title("First Goal")
                 .status(Goal.GoalStatus.ACTIVE)
                 .tasks(new ArrayList<>(List.of(completedTask, pendingTask)))
@@ -238,7 +242,7 @@ class AutoModeServiceTest {
                 .createdAt(Instant.now())
                 .build();
         String goalsJson = objectMapper.writeValueAsString(List.of(goal1, goal2));
-        when(storagePort.getText(AUTO_DIR, "goals.json"))
+        when(storagePort.getText(AUTO_DIR, GOALS_FILE))
                 .thenReturn(CompletableFuture.completedFuture(goalsJson));
 
         var next = service.getNextPendingTask();
@@ -251,20 +255,20 @@ class AutoModeServiceTest {
     @Test
     void completeGoal_marksGoalAsCompletedAndWritesDiary() throws Exception {
         Goal goal = Goal.builder()
-                .id("goal-1")
+                .id(GOAL_ID)
                 .title("Completed Goal")
                 .status(Goal.GoalStatus.ACTIVE)
                 .tasks(new ArrayList<>())
                 .createdAt(Instant.now())
                 .build();
         String goalsJson = objectMapper.writeValueAsString(List.of(goal));
-        when(storagePort.getText(AUTO_DIR, "goals.json"))
+        when(storagePort.getText(AUTO_DIR, GOALS_FILE))
                 .thenReturn(CompletableFuture.completedFuture(goalsJson));
 
-        service.completeGoal("goal-1");
+        service.completeGoal(GOAL_ID);
 
         ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
-        verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq("goals.json"), captor.capture());
+        verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq(GOALS_FILE), captor.capture());
 
         String savedJson = captor.getValue();
         List<Goal> savedGoals = objectMapper.readValue(savedJson, new TypeReference<>() {
@@ -272,7 +276,7 @@ class AutoModeServiceTest {
         assertEquals(Goal.GoalStatus.COMPLETED, savedGoals.get(0).getStatus());
 
         // Verify diary entry for goal completion
-        verify(storagePort).appendText(eq(AUTO_DIR), contains("diary/"), anyString());
+        verify(storagePort).appendText(eq(AUTO_DIR), contains(DIARY_PREFIX), anyString());
     }
 
     @Test
@@ -288,7 +292,7 @@ class AutoModeServiceTest {
 
     @Test
     void buildAutoContext_returnsNullWhenNoActiveGoals() throws Exception {
-        when(storagePort.getText(AUTO_DIR, "goals.json"))
+        when(storagePort.getText(AUTO_DIR, GOALS_FILE))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
         String context = service.buildAutoContext();
@@ -299,8 +303,8 @@ class AutoModeServiceTest {
     @Test
     void buildAutoContext_formatsGoalsTasksDiaryIntoMarkdown() throws Exception {
         AutoTask task = AutoTask.builder()
-                .id("task-1")
-                .goalId("goal-1")
+                .id(TASK_ID)
+                .goalId(GOAL_ID)
                 .title("Write code")
                 .description("Implement the feature")
                 .status(AutoTask.TaskStatus.PENDING)
@@ -308,7 +312,7 @@ class AutoModeServiceTest {
                 .createdAt(Instant.now())
                 .build();
         Goal goal = Goal.builder()
-                .id("goal-1")
+                .id(GOAL_ID)
                 .title("Build feature X")
                 .description("Implement feature X end-to-end")
                 .status(Goal.GoalStatus.ACTIVE)
@@ -316,20 +320,20 @@ class AutoModeServiceTest {
                 .createdAt(Instant.now())
                 .build();
         String goalsJson = objectMapper.writeValueAsString(List.of(goal));
-        when(storagePort.getText(AUTO_DIR, "goals.json"))
+        when(storagePort.getText(AUTO_DIR, GOALS_FILE))
                 .thenReturn(CompletableFuture.completedFuture(goalsJson));
 
         DiaryEntry entry = DiaryEntry.builder()
                 .timestamp(Instant.now())
                 .type(DiaryEntry.DiaryType.PROGRESS)
                 .content("Started working on feature X")
-                .goalId("goal-1")
+                .goalId(GOAL_ID)
                 .build();
         String diaryLine = objectMapper.writeValueAsString(entry);
         // Diary is stored in date-based files: diary/{date}.jsonl
         String todayDate = java.time.LocalDate.now(java.time.ZoneOffset.UTC)
                 .format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE);
-        when(storagePort.getText(AUTO_DIR, "diary/" + todayDate + ".jsonl"))
+        when(storagePort.getText(AUTO_DIR, DIARY_PREFIX + todayDate + ".jsonl"))
                 .thenReturn(CompletableFuture.completedFuture(diaryLine + "\n"));
 
         String context = service.buildAutoContext();
@@ -355,11 +359,11 @@ class AutoModeServiceTest {
                 .timestamp(Instant.now())
                 .type(DiaryEntry.DiaryType.THOUGHT)
                 .content("Thinking about the approach")
-                .goalId("goal-1")
+                .goalId(GOAL_ID)
                 .build();
 
         service.writeDiary(entry);
 
-        verify(storagePort).appendText(eq(AUTO_DIR), contains("diary/"), anyString());
+        verify(storagePort).appendText(eq(AUTO_DIR), contains(DIARY_PREFIX), anyString());
     }
 }

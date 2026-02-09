@@ -7,8 +7,9 @@ import me.golemcore.bot.port.inbound.CommandPort;
 import me.golemcore.bot.security.AllowlistValidator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
+
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.telegram.telegrambots.longpolling.TelegramBotsLongPollingApplication;
 import org.telegram.telegrambots.meta.api.methods.send.SendChatAction;
 import org.telegram.telegrambots.meta.api.methods.send.SendDocument;
@@ -22,10 +23,23 @@ import org.telegram.telegrambots.meta.generics.TelegramClient;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.atLeast;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class TelegramAdapterMessageTest {
+
+    private static final String CHAT_ID = "123";
+    private static final String CHANNEL_TELEGRAM = "telegram";
+    private static final String USER_ID = "user1";
 
     private TelegramAdapter adapter;
     private TelegramClient telegramClient;
@@ -36,7 +50,7 @@ class TelegramAdapterMessageTest {
         BotProperties properties = mock(BotProperties.class);
         BotProperties.ChannelProperties telegramProps = new BotProperties.ChannelProperties();
         telegramProps.setEnabled(true);
-        when(properties.getChannels()).thenReturn(Map.of("telegram", telegramProps));
+        when(properties.getChannels()).thenReturn(Map.of(CHANNEL_TELEGRAM, telegramProps));
 
         allowlistValidator = mock(AllowlistValidator.class);
         telegramClient = mock(TelegramClient.class);
@@ -60,7 +74,7 @@ class TelegramAdapterMessageTest {
         when(telegramClient.execute(any(SendMessage.class)))
                 .thenReturn(mock(org.telegram.telegrambots.meta.api.objects.message.Message.class));
 
-        CompletableFuture<Void> future = adapter.sendMessage("123", "Hello!");
+        CompletableFuture<Void> future = adapter.sendMessage(CHAT_ID, "Hello!");
         future.get();
 
         verify(telegramClient).execute(any(SendMessage.class));
@@ -72,7 +86,7 @@ class TelegramAdapterMessageTest {
                 .thenReturn(mock(org.telegram.telegrambots.meta.api.objects.message.Message.class));
 
         String longMessage = "A".repeat(5000);
-        CompletableFuture<Void> future = adapter.sendMessage("123", longMessage);
+        CompletableFuture<Void> future = adapter.sendMessage(CHAT_ID, longMessage);
         future.get();
 
         // Should be split into multiple messages
@@ -87,7 +101,7 @@ class TelegramAdapterMessageTest {
                 .thenReturn(mock(org.telegram.telegrambots.meta.api.objects.message.Message.class));
 
         byte[] imageData = new byte[] { 1, 2, 3 };
-        CompletableFuture<Void> future = adapter.sendPhoto("123", imageData, "photo.png", "A caption");
+        CompletableFuture<Void> future = adapter.sendPhoto(CHAT_ID, imageData, "photo.png", "A caption");
         future.get();
 
         verify(telegramClient).execute(any(SendPhoto.class));
@@ -99,7 +113,7 @@ class TelegramAdapterMessageTest {
                 .thenReturn(mock(org.telegram.telegrambots.meta.api.objects.message.Message.class));
 
         byte[] imageData = new byte[] { 1, 2, 3 };
-        CompletableFuture<Void> future = adapter.sendPhoto("123", imageData, "photo.png", null);
+        CompletableFuture<Void> future = adapter.sendPhoto(CHAT_ID, imageData, "photo.png", null);
         future.get();
 
         verify(telegramClient).execute(any(SendPhoto.class));
@@ -111,7 +125,7 @@ class TelegramAdapterMessageTest {
                 .thenReturn(mock(org.telegram.telegrambots.meta.api.objects.message.Message.class));
 
         byte[] imageData = new byte[] { 1, 2, 3 };
-        CompletableFuture<Void> future = adapter.sendPhoto("123", imageData, "photo.png", "  ");
+        CompletableFuture<Void> future = adapter.sendPhoto(CHAT_ID, imageData, "photo.png", "  ");
         future.get();
 
         verify(telegramClient).execute(any(SendPhoto.class));
@@ -125,7 +139,7 @@ class TelegramAdapterMessageTest {
                 .thenReturn(mock(org.telegram.telegrambots.meta.api.objects.message.Message.class));
 
         byte[] fileData = new byte[] { 1, 2, 3 };
-        CompletableFuture<Void> future = adapter.sendDocument("123", fileData, "report.pdf", "PDF report");
+        CompletableFuture<Void> future = adapter.sendDocument(CHAT_ID, fileData, "report.pdf", "PDF report");
         future.get();
 
         verify(telegramClient).execute(any(SendDocument.class));
@@ -137,7 +151,7 @@ class TelegramAdapterMessageTest {
                 .thenReturn(mock(org.telegram.telegrambots.meta.api.objects.message.Message.class));
 
         byte[] fileData = new byte[] { 1, 2, 3 };
-        CompletableFuture<Void> future = adapter.sendDocument("123", fileData, "report.pdf", null);
+        CompletableFuture<Void> future = adapter.sendDocument(CHAT_ID, fileData, "report.pdf", null);
         future.get();
 
         verify(telegramClient).execute(any(SendDocument.class));
@@ -151,7 +165,7 @@ class TelegramAdapterMessageTest {
                 .thenReturn(mock(org.telegram.telegrambots.meta.api.objects.message.Message.class));
 
         byte[] voiceData = new byte[] { 1, 2, 3 };
-        CompletableFuture<Void> future = adapter.sendVoice("123", voiceData);
+        CompletableFuture<Void> future = adapter.sendVoice(CHAT_ID, voiceData);
         future.get();
 
         verify(telegramClient).execute(any(SendVoice.class));
@@ -164,7 +178,7 @@ class TelegramAdapterMessageTest {
         when(telegramClient.execute(any(SendChatAction.class)))
                 .thenReturn(true);
 
-        adapter.showTyping("123");
+        adapter.showTyping(CHAT_ID);
 
         verify(telegramClient).execute(any(SendChatAction.class));
     }
@@ -174,40 +188,40 @@ class TelegramAdapterMessageTest {
         when(telegramClient.execute(any(SendChatAction.class)))
                 .thenThrow(new TelegramApiException("Network error"));
 
-        assertDoesNotThrow(() -> adapter.showTyping("123"));
+        assertDoesNotThrow(() -> adapter.showTyping(CHAT_ID));
     }
 
     // ===== isAuthorized =====
 
     @Test
     void shouldAuthorizeAllowedUser() {
-        when(allowlistValidator.isAllowed("telegram", "user1")).thenReturn(true);
-        when(allowlistValidator.isBlocked("user1")).thenReturn(false);
+        when(allowlistValidator.isAllowed(CHANNEL_TELEGRAM, USER_ID)).thenReturn(true);
+        when(allowlistValidator.isBlocked(USER_ID)).thenReturn(false);
 
-        assertTrue(adapter.isAuthorized("user1"));
+        assertTrue(adapter.isAuthorized(USER_ID));
     }
 
     @Test
     void shouldDenyBlockedUser() {
-        when(allowlistValidator.isAllowed("telegram", "user1")).thenReturn(true);
-        when(allowlistValidator.isBlocked("user1")).thenReturn(true);
+        when(allowlistValidator.isAllowed(CHANNEL_TELEGRAM, USER_ID)).thenReturn(true);
+        when(allowlistValidator.isBlocked(USER_ID)).thenReturn(true);
 
-        assertFalse(adapter.isAuthorized("user1"));
+        assertFalse(adapter.isAuthorized(USER_ID));
     }
 
     @Test
     void shouldDenyNonAllowedUser() {
-        when(allowlistValidator.isAllowed("telegram", "user1")).thenReturn(false);
-        when(allowlistValidator.isBlocked("user1")).thenReturn(false);
+        when(allowlistValidator.isAllowed(CHANNEL_TELEGRAM, USER_ID)).thenReturn(false);
+        when(allowlistValidator.isBlocked(USER_ID)).thenReturn(false);
 
-        assertFalse(adapter.isAuthorized("user1"));
+        assertFalse(adapter.isAuthorized(USER_ID));
     }
 
     // ===== getChannelType =====
 
     @Test
     void shouldReturnTelegramChannelType() {
-        assertEquals("telegram", adapter.getChannelType());
+        assertEquals(CHANNEL_TELEGRAM, adapter.getChannelType());
     }
 
     // ===== onMessage =====
@@ -218,96 +232,73 @@ class TelegramAdapterMessageTest {
         }));
     }
 
-    // ===== truncateCaption via reflection =====
+    // ===== truncateCaption via ReflectionTestUtils =====
 
     @Test
-    void shouldTruncateLongCaption() throws Exception {
-        java.lang.reflect.Method method = TelegramAdapter.class.getDeclaredMethod("truncateCaption", String.class);
-        method.setAccessible(true);
-
+    void shouldTruncateLongCaption() {
         String longCaption = "A".repeat(2000);
-        String result = (String) method.invoke(adapter, longCaption);
+        String result = ReflectionTestUtils.invokeMethod(adapter, "truncateCaption", longCaption);
 
         assertTrue(result.length() <= 1024);
         assertTrue(result.endsWith("..."));
     }
 
     @Test
-    void shouldNotTruncateShortCaption() throws Exception {
-        java.lang.reflect.Method method = TelegramAdapter.class.getDeclaredMethod("truncateCaption", String.class);
-        method.setAccessible(true);
-
-        String result = (String) method.invoke(adapter, "Short caption");
+    void shouldNotTruncateShortCaption() {
+        String result = ReflectionTestUtils.invokeMethod(adapter, "truncateCaption", "Short caption");
         assertEquals("Short caption", result);
     }
 
     // ===== truncateForLog =====
 
     @Test
-    void shouldTruncateForLog() throws Exception {
-        java.lang.reflect.Method method = TelegramAdapter.class.getDeclaredMethod("truncateForLog", String.class,
-                int.class);
-        method.setAccessible(true);
-
+    void shouldTruncateForLog() {
         String longText = "A".repeat(200);
-        String result = (String) method.invoke(null, longText, 50);
+        String result = ReflectionTestUtils.invokeMethod(adapter, "truncateForLog", longText, 50);
 
         assertTrue(result.length() <= 53); // 50 + "..."
         assertTrue(result.endsWith("..."));
     }
 
     @Test
-    void shouldNotTruncateShortTextForLog() throws Exception {
-        java.lang.reflect.Method method = TelegramAdapter.class.getDeclaredMethod("truncateForLog", String.class,
-                int.class);
-        method.setAccessible(true);
-
-        String result = (String) method.invoke(null, "Short", 50);
+    void shouldNotTruncateShortTextForLog() {
+        String result = ReflectionTestUtils.invokeMethod(adapter, "truncateForLog", "Short", 50);
         assertEquals("Short", result);
     }
 
     @Test
-    void shouldHandleNullTextForLog() throws Exception {
-        java.lang.reflect.Method method = TelegramAdapter.class.getDeclaredMethod("truncateForLog", String.class,
-                int.class);
-        method.setAccessible(true);
-
-        String result = (String) method.invoke(null, null, 50);
+    void shouldHandleNullTextForLog() {
+        String result = ReflectionTestUtils.invokeMethod(adapter, "truncateForLog", (String) null, 50);
         assertNull(result);
     }
 
     // ===== isVoiceForbidden =====
 
     @Test
-    void shouldDetectVoiceForbidden() throws Exception {
-        java.lang.reflect.Method method = TelegramAdapter.class.getDeclaredMethod("isVoiceForbidden", Exception.class);
-        method.setAccessible(true);
-
+    void shouldDetectVoiceForbidden() {
         TelegramApiRequestException ex = mock(TelegramApiRequestException.class);
         when(ex.getApiResponse()).thenReturn("VOICE_MESSAGES_FORBIDDEN");
 
-        assertTrue((boolean) method.invoke(adapter, ex));
+        Boolean forbidden = ReflectionTestUtils.invokeMethod(adapter, "isVoiceForbidden", ex);
+        assertTrue(forbidden);
     }
 
     @Test
-    void shouldDetectVoiceForbiddenInCause() throws Exception {
-        java.lang.reflect.Method method = TelegramAdapter.class.getDeclaredMethod("isVoiceForbidden", Exception.class);
-        method.setAccessible(true);
-
+    void shouldDetectVoiceForbiddenInCause() {
         TelegramApiRequestException innerEx = mock(TelegramApiRequestException.class);
         when(innerEx.getApiResponse()).thenReturn("VOICE_MESSAGES_FORBIDDEN");
 
         Exception wrapper = new RuntimeException("Wrapper", innerEx);
 
-        assertTrue((boolean) method.invoke(adapter, wrapper));
+        Boolean forbidden = ReflectionTestUtils.invokeMethod(adapter, "isVoiceForbidden", wrapper);
+        assertTrue(forbidden);
     }
 
     @Test
-    void shouldNotDetectVoiceForbiddenForOtherErrors() throws Exception {
-        java.lang.reflect.Method method = TelegramAdapter.class.getDeclaredMethod("isVoiceForbidden", Exception.class);
-        method.setAccessible(true);
-
-        assertFalse((boolean) method.invoke(adapter, new RuntimeException("Network error")));
+    void shouldNotDetectVoiceForbiddenForOtherErrors() {
+        Boolean forbidden = ReflectionTestUtils.invokeMethod(adapter, "isVoiceForbidden",
+                new RuntimeException("Network error"));
+        assertFalse(forbidden);
     }
 
     // ===== setTelegramClient / getTelegramClient =====

@@ -20,6 +20,8 @@ import static org.mockito.Mockito.*;
  */
 class McpConfigParsingTest {
 
+    private static final String SKILLS_DIR = "skills";
+
     private StoragePort storagePort;
     private SkillService skillService;
 
@@ -51,9 +53,9 @@ class McpConfigParsingTest {
                 You are a GitHub assistant.
                 """;
 
-        when(storagePort.getText("skills", "github-assistant/SKILL.md"))
+        when(storagePort.getText(SKILLS_DIR, "github-assistant/SKILL.md"))
                 .thenReturn(CompletableFuture.completedFuture(content));
-        when(storagePort.listObjects("skills", ""))
+        when(storagePort.listObjects(SKILLS_DIR, ""))
                 .thenReturn(CompletableFuture.completedFuture(List.of("github-assistant/SKILL.md")));
 
         skillService.reload();
@@ -80,9 +82,9 @@ class McpConfigParsingTest {
                 You are a friendly greeter.
                 """;
 
-        when(storagePort.getText("skills", "greeting/SKILL.md"))
+        when(storagePort.getText(SKILLS_DIR, "greeting/SKILL.md"))
                 .thenReturn(CompletableFuture.completedFuture(content));
-        when(storagePort.listObjects("skills", ""))
+        when(storagePort.listObjects(SKILLS_DIR, ""))
                 .thenReturn(CompletableFuture.completedFuture(List.of("greeting/SKILL.md")));
 
         skillService.reload();
@@ -105,9 +107,9 @@ class McpConfigParsingTest {
                 File system assistant.
                 """;
 
-        when(storagePort.getText("skills", "filesystem/SKILL.md"))
+        when(storagePort.getText(SKILLS_DIR, "filesystem/SKILL.md"))
                 .thenReturn(CompletableFuture.completedFuture(content));
-        when(storagePort.listObjects("skills", ""))
+        when(storagePort.listObjects(SKILLS_DIR, ""))
                 .thenReturn(CompletableFuture.completedFuture(List.of("filesystem/SKILL.md")));
 
         skillService.reload();
@@ -144,12 +146,12 @@ class McpConfigParsingTest {
                 """;
 
         // Mock the variable resolver to return a resolved value
-        when(storagePort.getText("skills", "github-test/SKILL.md"))
+        when(storagePort.getText(SKILLS_DIR, "github-test/SKILL.md"))
                 .thenReturn(CompletableFuture.completedFuture(content));
-        when(storagePort.listObjects("skills", ""))
+        when(storagePort.listObjects(SKILLS_DIR, ""))
                 .thenReturn(CompletableFuture.completedFuture(List.of("github-test/SKILL.md")));
         // Mock vars.json to provide GITHUB_TOKEN
-        when(storagePort.getText("skills", "github-test/vars.json"))
+        when(storagePort.getText(SKILLS_DIR, "github-test/vars.json"))
                 .thenReturn(CompletableFuture.completedFuture("{\"GITHUB_TOKEN\": \"ghp_test123\"}"));
         when(storagePort.getText("", "variables.json"))
                 .thenReturn(CompletableFuture.completedFuture("{}"));
@@ -177,9 +179,9 @@ class McpConfigParsingTest {
                 No command.
                 """;
 
-        when(storagePort.getText("skills", "empty-mcp/SKILL.md"))
+        when(storagePort.getText(SKILLS_DIR, "empty-mcp/SKILL.md"))
                 .thenReturn(CompletableFuture.completedFuture(content));
-        when(storagePort.listObjects("skills", ""))
+        when(storagePort.listObjects(SKILLS_DIR, ""))
                 .thenReturn(CompletableFuture.completedFuture(List.of("empty-mcp/SKILL.md")));
 
         skillService.reload();

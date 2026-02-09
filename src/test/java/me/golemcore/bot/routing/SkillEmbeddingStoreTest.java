@@ -14,6 +14,10 @@ import static org.mockito.Mockito.*;
 
 class SkillEmbeddingStoreTest {
 
+    private static final String SKILL_GREETING = "greeting";
+    private static final String SKILL_CODE_REVIEW = "code-review";
+    private static final String DESC_HANDLE_GREETINGS = "Handle greetings";
+
     private EmbeddingPort embeddingPort;
     private SkillEmbeddingStore store;
 
@@ -27,7 +31,7 @@ class SkillEmbeddingStoreTest {
 
     @Test
     void shouldIndexSingleSkill() {
-        Skill skill = Skill.builder().name("greeting").description("Handle greetings").build();
+        Skill skill = Skill.builder().name(SKILL_GREETING).description(DESC_HANDLE_GREETINGS).build();
         when(embeddingPort.embed("greeting: Handle greetings"))
                 .thenReturn(CompletableFuture.completedFuture(new float[] { 1.0f, 0.0f }));
 
@@ -52,8 +56,8 @@ class SkillEmbeddingStoreTest {
     @Test
     void shouldIndexMultipleSkillsInBatch() {
         List<Skill> skills = List.of(
-                Skill.builder().name("greeting").description("Handle greetings").build(),
-                Skill.builder().name("code-review").description("Review code").build());
+                Skill.builder().name(SKILL_GREETING).description(DESC_HANDLE_GREETINGS).build(),
+                Skill.builder().name(SKILL_CODE_REVIEW).description("Review code").build());
 
         when(embeddingPort.embedBatch(anyList()))
                 .thenReturn(CompletableFuture.completedFuture(List.of(
@@ -76,8 +80,8 @@ class SkillEmbeddingStoreTest {
     @Test
     void shouldFallbackToIndividualIndexingOnBatchFailure() {
         List<Skill> skills = List.of(
-                Skill.builder().name("greeting").description("Handle greetings").build(),
-                Skill.builder().name("code-review").description("Review code").build());
+                Skill.builder().name(SKILL_GREETING).description(DESC_HANDLE_GREETINGS).build(),
+                Skill.builder().name(SKILL_CODE_REVIEW).description("Review code").build());
 
         when(embeddingPort.embedBatch(anyList()))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("Batch failed")));
@@ -107,7 +111,7 @@ class SkillEmbeddingStoreTest {
         List<SkillCandidate> candidates = store.findSimilar(queryEmbedding, 5, 0.5);
 
         assertEquals(1, candidates.size());
-        assertEquals("greeting", candidates.get(0).getName());
+        assertEquals(SKILL_GREETING, candidates.get(0).getName());
         assertEquals(0.95, candidates.get(0).getSemanticScore(), 0.001);
     }
 
@@ -134,7 +138,7 @@ class SkillEmbeddingStoreTest {
         List<SkillCandidate> candidates = store.findSimilar(queryEmbedding, 1, 0.5);
 
         assertEquals(1, candidates.size());
-        assertEquals("code-review", candidates.get(0).getName());
+        assertEquals(SKILL_CODE_REVIEW, candidates.get(0).getName());
     }
 
     @Test
@@ -148,8 +152,8 @@ class SkillEmbeddingStoreTest {
         List<SkillCandidate> candidates = store.findSimilar(queryEmbedding, 10, 0.5);
 
         assertEquals(2, candidates.size());
-        assertEquals("code-review", candidates.get(0).getName());
-        assertEquals("greeting", candidates.get(1).getName());
+        assertEquals(SKILL_CODE_REVIEW, candidates.get(0).getName());
+        assertEquals(SKILL_GREETING, candidates.get(1).getName());
     }
 
     @Test
@@ -186,8 +190,8 @@ class SkillEmbeddingStoreTest {
 
     private void indexTwoSkills() {
         List<Skill> skills = List.of(
-                Skill.builder().name("greeting").description("Handle greetings").build(),
-                Skill.builder().name("code-review").description("Review code").build());
+                Skill.builder().name(SKILL_GREETING).description(DESC_HANDLE_GREETINGS).build(),
+                Skill.builder().name(SKILL_CODE_REVIEW).description("Review code").build());
 
         when(embeddingPort.embedBatch(anyList()))
                 .thenReturn(CompletableFuture.completedFuture(List.of(

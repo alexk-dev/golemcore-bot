@@ -9,6 +9,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class SkillTemplateEngineTest {
 
+    private static final String NO_VARS_TEXT = "No vars here";
+
     private SkillTemplateEngine engine;
 
     @BeforeEach
@@ -57,14 +59,14 @@ class SkillTemplateEngineTest {
 
     @Test
     void render_emptyVars() {
-        String result = engine.render("No vars here", Map.of());
-        assertEquals("No vars here", result);
+        String result = engine.render(NO_VARS_TEXT, Map.of());
+        assertEquals(NO_VARS_TEXT, result);
     }
 
     @Test
     void render_nullVars() {
-        String result = engine.render("No vars here", null);
-        assertEquals("No vars here", result);
+        String result = engine.render(NO_VARS_TEXT, null);
+        assertEquals(NO_VARS_TEXT, result);
     }
 
     @Test

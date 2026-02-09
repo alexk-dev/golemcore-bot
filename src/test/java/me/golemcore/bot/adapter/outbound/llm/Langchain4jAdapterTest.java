@@ -20,18 +20,49 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.test.util.ReflectionTestUtils;
 
-import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class Langchain4jAdapterTest {
+
+    private static final String SANITIZE_FN_NAME = "sanitizeFunctionName";
+    private static final String CONVERT_ARGS_TO_JSON = "convertArgsToJson";
+    private static final String PARSE_JSON_ARGS = "parseJsonArgs";
+    private static final String IS_RATE_LIMIT_ERROR = "isRateLimitError";
+    private static final String CONVERT_TOOLS = "convertTools";
+    private static final String CONVERT_MESSAGES = "convertMessages";
+    private static final String TEST_MODEL = "test-model";
+    private static final String ROLE_USER = "user";
+    private static final String ROLE_ASSISTANT = "assistant";
+    private static final String ROLE_TOOL = "tool";
+    private static final String WEATHER = "weather";
+    private static final String OPENAI = "openai";
+    private static final String KEY = "key";
+    private static final String SUPPRESS_UNCHECKED = "unchecked";
+    private static final String TEST_TOOL = "test_tool";
+    private static final String TYPE = "type";
+    private static final String OBJECT = "object";
+    private static final String PROPERTIES = "properties";
+    private static final String STRING = "string";
+    private static final String TEST = "test";
+    private static final String TEST_CAPITALIZED = "Test";
 
     private BotProperties properties;
     private ModelConfigService modelConfig;
@@ -42,7 +73,7 @@ class Langchain4jAdapterTest {
         properties = new BotProperties();
         modelConfig = mock(ModelConfigService.class);
         when(modelConfig.supportsTemperature(anyString())).thenReturn(true);
-        when(modelConfig.getProvider(anyString())).thenReturn("openai");
+        when(modelConfig.getProvider(anyString())).thenReturn(OPENAI);
         when(modelConfig.isReasoningRequired(anyString())).thenReturn(false);
         when(modelConfig.getAllModels()).thenReturn(Map.of());
 
@@ -62,7 +93,7 @@ class Langchain4jAdapterTest {
     void shouldBeAvailableWhenApiKeyConfigured() {
         BotProperties.ProviderProperties providerProps = new BotProperties.ProviderProperties();
         providerProps.setApiKey("test-key");
-        properties.getLlm().getLangchain4j().getProviders().put("openai", providerProps);
+        properties.getLlm().getLangchain4j().getProviders().put(OPENAI, providerProps);
 
         assertTrue(adapter.isAvailable());
     }
@@ -76,7 +107,7 @@ class Langchain4jAdapterTest {
     void shouldNotBeAvailableWhenApiKeyBlank() {
         BotProperties.ProviderProperties providerProps = new BotProperties.ProviderProperties();
         providerProps.setApiKey("  ");
-        properties.getLlm().getLangchain4j().getProviders().put("openai", providerProps);
+        properties.getLlm().getLangchain4j().getProviders().put(OPENAI, providerProps);
 
         assertFalse(adapter.isAvailable());
     }
@@ -100,10 +131,10 @@ class Langchain4jAdapterTest {
     @Test
     void shouldReturnModelsFromConfig() {
         BotProperties.ProviderProperties openaiProps = new BotProperties.ProviderProperties();
-        openaiProps.setApiKey("key");
-        properties.getLlm().getLangchain4j().getProviders().put("openai", openaiProps);
+        openaiProps.setApiKey(KEY);
+        properties.getLlm().getLangchain4j().getProviders().put(OPENAI, openaiProps);
 
-        ModelConfigService.ModelSettings openaiSettings = new ModelConfigService.ModelSettings("openai", false, true);
+        ModelConfigService.ModelSettings openaiSettings = new ModelConfigService.ModelSettings(OPENAI, false, true);
         ModelConfigService.ModelSettings anthropicSettings = new ModelConfigService.ModelSettings("anthropic", false,
                 true);
 
@@ -112,7 +143,7 @@ class Langchain4jAdapterTest {
                 "claude-3-haiku", anthropicSettings));
 
         List<String> models = adapter.getSupportedModels();
-        assertTrue(models.contains("openai/gpt-4o"));
+        assertTrue(models.contains(OPENAI + "/gpt-4o"));
         // claude-3-haiku should not be included because "anthropic" provider is not
         // configured
         assertFalse(models.contains("anthropic/claude-3-haiku"));
@@ -143,304 +174,261 @@ class Langchain4jAdapterTest {
             "name with spaces, name_with_spaces",
             "name@special#chars, name_special_chars"
     })
-    void shouldSanitizeFunctionName(String input, String expected) throws Exception {
-        Method method = Langchain4jAdapter.class.getDeclaredMethod("sanitizeFunctionName", String.class);
-        method.setAccessible(true);
-        assertEquals(expected, method.invoke(adapter, input));
+    void shouldSanitizeFunctionName(String input, String expected) {
+        String result = ReflectionTestUtils.invokeMethod(adapter, SANITIZE_FN_NAME, input);
+        assertEquals(expected, result);
     }
 
     @Test
-    void shouldReturnUnknownForNullFunctionName() throws Exception {
-        Method method = Langchain4jAdapter.class.getDeclaredMethod("sanitizeFunctionName", String.class);
-        method.setAccessible(true);
-        assertEquals("unknown", method.invoke(adapter, (String) null));
+    void shouldReturnUnknownForNullFunctionName() {
+        String result = ReflectionTestUtils.invokeMethod(adapter, SANITIZE_FN_NAME, (String) null);
+        assertEquals("unknown", result);
     }
 
     @Test
-    void shouldReturnUnknownForAllInvalidCharsFunctionName() throws Exception {
-        Method method = Langchain4jAdapter.class.getDeclaredMethod("sanitizeFunctionName", String.class);
-        method.setAccessible(true);
+    void shouldReturnUnknownForAllInvalidCharsFunctionName() {
         // "..." should become "___" which is not empty
-        String result = (String) method.invoke(adapter, "...");
+        String result = ReflectionTestUtils.invokeMethod(adapter, SANITIZE_FN_NAME, "...");
         assertEquals("___", result);
     }
 
     // ===== convertArgsToJson =====
 
     @Test
-    void shouldConvertNullArgsToEmptyJson() throws Exception {
-        Method method = Langchain4jAdapter.class.getDeclaredMethod("convertArgsToJson", Map.class);
-        method.setAccessible(true);
-        assertEquals("{}", method.invoke(adapter, (Map<String, Object>) null));
+    void shouldConvertNullArgsToEmptyJson() {
+        String result = ReflectionTestUtils.invokeMethod(adapter, CONVERT_ARGS_TO_JSON, (Map<String, Object>) null);
+        assertEquals("{}", result);
     }
 
     @Test
-    void shouldConvertEmptyArgsToEmptyJson() throws Exception {
-        Method method = Langchain4jAdapter.class.getDeclaredMethod("convertArgsToJson", Map.class);
-        method.setAccessible(true);
-        assertEquals("{}", method.invoke(adapter, Collections.emptyMap()));
+    void shouldConvertEmptyArgsToEmptyJson() {
+        String result = ReflectionTestUtils.invokeMethod(adapter, CONVERT_ARGS_TO_JSON, Collections.emptyMap());
+        assertEquals("{}", result);
     }
 
     @Test
-    void shouldConvertValidArgsToJson() throws Exception {
-        Method method = Langchain4jAdapter.class.getDeclaredMethod("convertArgsToJson", Map.class);
-        method.setAccessible(true);
-        String json = (String) method.invoke(adapter, Map.of("key", "value"));
-        assertTrue(json.contains("key"));
+    void shouldConvertValidArgsToJson() {
+        String json = ReflectionTestUtils.invokeMethod(adapter, CONVERT_ARGS_TO_JSON, Map.of(KEY, "value"));
+        assertTrue(json.contains(KEY));
         assertTrue(json.contains("value"));
     }
 
     // ===== parseJsonArgs =====
 
     @Test
-    void shouldParseNullJsonToEmptyMap() throws Exception {
-        Method method = Langchain4jAdapter.class.getDeclaredMethod("parseJsonArgs", String.class);
-        method.setAccessible(true);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> result = (Map<String, Object>) method.invoke(adapter, (String) null);
+    void shouldParseNullJsonToEmptyMap() {
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        Map<String, Object> result = (Map<String, Object>) ReflectionTestUtils.invokeMethod(adapter, PARSE_JSON_ARGS,
+                (String) null);
         assertTrue(result.isEmpty());
     }
 
     @Test
-    void shouldParseBlankJsonToEmptyMap() throws Exception {
-        Method method = Langchain4jAdapter.class.getDeclaredMethod("parseJsonArgs", String.class);
-        method.setAccessible(true);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> result = (Map<String, Object>) method.invoke(adapter, "  ");
+    void shouldParseBlankJsonToEmptyMap() {
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        Map<String, Object> result = (Map<String, Object>) ReflectionTestUtils.invokeMethod(adapter, PARSE_JSON_ARGS,
+                "  ");
         assertTrue(result.isEmpty());
     }
 
     @Test
-    void shouldParseInvalidJsonToEmptyMap() throws Exception {
-        Method method = Langchain4jAdapter.class.getDeclaredMethod("parseJsonArgs", String.class);
-        method.setAccessible(true);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> result = (Map<String, Object>) method.invoke(adapter, "invalid json");
+    void shouldParseInvalidJsonToEmptyMap() {
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        Map<String, Object> result = (Map<String, Object>) ReflectionTestUtils.invokeMethod(adapter, PARSE_JSON_ARGS,
+                "invalid json");
         assertTrue(result.isEmpty());
     }
 
     @Test
-    void shouldParseValidJson() throws Exception {
-        Method method = Langchain4jAdapter.class.getDeclaredMethod("parseJsonArgs", String.class);
-        method.setAccessible(true);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> result = (Map<String, Object>) method.invoke(adapter, "{\"key\":\"value\"}");
-        assertEquals("value", result.get("key"));
+    void shouldParseValidJson() {
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        Map<String, Object> result = (Map<String, Object>) ReflectionTestUtils.invokeMethod(adapter, PARSE_JSON_ARGS,
+                "{\"key\":\"value\"}");
+        assertEquals("value", result.get(KEY));
     }
 
     // ===== isRateLimitError =====
 
     @Test
-    void shouldDetectRateLimitErrors() throws Exception {
-        Method method = Langchain4jAdapter.class.getDeclaredMethod("isRateLimitError", Throwable.class);
-        method.setAccessible(true);
-
-        assertTrue((boolean) method.invoke(adapter, new RuntimeException("rate_limit exceeded")));
-        assertTrue((boolean) method.invoke(adapter, new RuntimeException("token_quota_exceeded")));
-        assertTrue((boolean) method.invoke(adapter, new RuntimeException("too_many_tokens")));
-        assertTrue((boolean) method.invoke(adapter, new RuntimeException("Too Many Requests")));
-        assertTrue((boolean) method.invoke(adapter, new RuntimeException("HTTP 429")));
+    void shouldDetectRateLimitErrors() {
+        assertTrue((boolean) ReflectionTestUtils.invokeMethod(adapter, IS_RATE_LIMIT_ERROR,
+                new RuntimeException("rate_limit exceeded")));
+        assertTrue((boolean) ReflectionTestUtils.invokeMethod(adapter, IS_RATE_LIMIT_ERROR,
+                new RuntimeException("token_quota_exceeded")));
+        assertTrue((boolean) ReflectionTestUtils.invokeMethod(adapter, IS_RATE_LIMIT_ERROR,
+                new RuntimeException("too_many_tokens")));
+        assertTrue((boolean) ReflectionTestUtils.invokeMethod(adapter, IS_RATE_LIMIT_ERROR,
+                new RuntimeException("Too Many Requests")));
+        assertTrue((boolean) ReflectionTestUtils.invokeMethod(adapter, IS_RATE_LIMIT_ERROR,
+                new RuntimeException("HTTP 429")));
     }
 
     @Test
-    void shouldDetectRateLimitInCauseChain() throws Exception {
-        Method method = Langchain4jAdapter.class.getDeclaredMethod("isRateLimitError", Throwable.class);
-        method.setAccessible(true);
-
+    void shouldDetectRateLimitInCauseChain() {
         RuntimeException inner = new RuntimeException("rate_limit");
         RuntimeException outer = new RuntimeException("Wrapper", inner);
 
-        assertTrue((boolean) method.invoke(adapter, outer));
+        assertTrue((boolean) ReflectionTestUtils.invokeMethod(adapter, IS_RATE_LIMIT_ERROR, outer));
     }
 
     @Test
-    void shouldNotDetectNonRateLimitErrors() throws Exception {
-        Method method = Langchain4jAdapter.class.getDeclaredMethod("isRateLimitError", Throwable.class);
-        method.setAccessible(true);
-
-        assertFalse((boolean) method.invoke(adapter, new RuntimeException("Connection refused")));
-        assertFalse((boolean) method.invoke(adapter, new RuntimeException("Internal server error")));
+    void shouldNotDetectNonRateLimitErrors() {
+        assertFalse((boolean) ReflectionTestUtils.invokeMethod(adapter, IS_RATE_LIMIT_ERROR,
+                new RuntimeException("Connection refused")));
+        assertFalse((boolean) ReflectionTestUtils.invokeMethod(adapter, IS_RATE_LIMIT_ERROR,
+                new RuntimeException("Internal server error")));
     }
 
     @Test
-    void shouldHandleNullMessageInException() throws Exception {
-        Method method = Langchain4jAdapter.class.getDeclaredMethod("isRateLimitError", Throwable.class);
-        method.setAccessible(true);
-
-        assertFalse((boolean) method.invoke(adapter, new RuntimeException((String) null)));
+    void shouldHandleNullMessageInException() {
+        assertFalse((boolean) ReflectionTestUtils.invokeMethod(adapter, IS_RATE_LIMIT_ERROR,
+                new RuntimeException((String) null)));
     }
 
     // ===== convertTools =====
 
     @Test
-    void shouldReturnEmptyForNullTools() throws Exception {
-        Method method = Langchain4jAdapter.class.getDeclaredMethod("convertTools", LlmRequest.class);
-        method.setAccessible(true);
-
+    void shouldReturnEmptyForNullTools() {
         LlmRequest request = LlmRequest.builder().tools(null).build();
-        @SuppressWarnings("unchecked")
-        List<Object> result = (List<Object>) method.invoke(adapter, request);
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<Object> result = (List<Object>) ReflectionTestUtils.invokeMethod(adapter, CONVERT_TOOLS, request);
         assertTrue(result.isEmpty());
     }
 
     @Test
-    void shouldReturnEmptyForEmptyTools() throws Exception {
-        Method method = Langchain4jAdapter.class.getDeclaredMethod("convertTools", LlmRequest.class);
-        method.setAccessible(true);
-
+    void shouldReturnEmptyForEmptyTools() {
         LlmRequest request = LlmRequest.builder().tools(List.of()).build();
-        @SuppressWarnings("unchecked")
-        List<Object> result = (List<Object>) method.invoke(adapter, request);
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<Object> result = (List<Object>) ReflectionTestUtils.invokeMethod(adapter, CONVERT_TOOLS, request);
         assertTrue(result.isEmpty());
     }
 
     @Test
-    void shouldConvertToolDefinitions() throws Exception {
-        Method method = Langchain4jAdapter.class.getDeclaredMethod("convertTools", LlmRequest.class);
-        method.setAccessible(true);
-
+    void shouldConvertToolDefinitions() {
         ToolDefinition tool = ToolDefinition.builder()
-                .name("test_tool")
+                .name(TEST_TOOL)
                 .description("A test tool")
                 .inputSchema(Map.of(
-                        "type", "object",
-                        "properties", Map.of(
-                                "param1", Map.of("type", "string", "description", "A parameter")),
+                        TYPE, OBJECT,
+                        PROPERTIES, Map.of(
+                                "param1", Map.of(TYPE, STRING, "description", "A parameter")),
                         "required", List.of("param1")))
                 .build();
 
         LlmRequest request = LlmRequest.builder().tools(List.of(tool)).build();
-        @SuppressWarnings("unchecked")
-        List<Object> result = (List<Object>) method.invoke(adapter, request);
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<Object> result = (List<Object>) ReflectionTestUtils.invokeMethod(adapter, CONVERT_TOOLS, request);
         assertEquals(1, result.size());
     }
 
     // ===== convertToolDefinition with enum and array =====
 
     @Test
-    void shouldConvertToolWithEnumParam() throws Exception {
-        Method method = Langchain4jAdapter.class.getDeclaredMethod("convertTools", LlmRequest.class);
-        method.setAccessible(true);
-
+    void shouldConvertToolWithEnumParam() {
         ToolDefinition tool = ToolDefinition.builder()
-                .name("test")
-                .description("Test")
+                .name(TEST)
+                .description(TEST_CAPITALIZED)
                 .inputSchema(Map.of(
-                        "type", "object",
-                        "properties", Map.of(
+                        TYPE, OBJECT,
+                        PROPERTIES, Map.of(
                                 "mode", Map.of(
-                                        "type", "string",
+                                        TYPE, STRING,
                                         "enum", List.of("fast", "slow")))))
                 .build();
 
         LlmRequest request = LlmRequest.builder().tools(List.of(tool)).build();
-        @SuppressWarnings("unchecked")
-        List<Object> result = (List<Object>) method.invoke(adapter, request);
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<Object> result = (List<Object>) ReflectionTestUtils.invokeMethod(adapter, CONVERT_TOOLS, request);
         assertEquals(1, result.size());
     }
 
     @Test
-    void shouldConvertToolWithArrayParam() throws Exception {
-        Method method = Langchain4jAdapter.class.getDeclaredMethod("convertTools", LlmRequest.class);
-        method.setAccessible(true);
-
+    void shouldConvertToolWithArrayParam() {
         ToolDefinition tool = ToolDefinition.builder()
-                .name("test")
-                .description("Test")
+                .name(TEST)
+                .description(TEST_CAPITALIZED)
                 .inputSchema(Map.of(
-                        "type", "object",
-                        "properties", Map.of(
+                        TYPE, OBJECT,
+                        PROPERTIES, Map.of(
                                 "items", Map.of(
-                                        "type", "array",
-                                        "items", Map.of("type", "string")))))
+                                        TYPE, "array",
+                                        "items", Map.of(TYPE, STRING)))))
                 .build();
 
         LlmRequest request = LlmRequest.builder().tools(List.of(tool)).build();
-        @SuppressWarnings("unchecked")
-        List<Object> result = (List<Object>) method.invoke(adapter, request);
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<Object> result = (List<Object>) ReflectionTestUtils.invokeMethod(adapter, CONVERT_TOOLS, request);
         assertEquals(1, result.size());
     }
 
     @Test
-    void shouldConvertToolWithNestedObjectParam() throws Exception {
-        Method method = Langchain4jAdapter.class.getDeclaredMethod("convertTools", LlmRequest.class);
-        method.setAccessible(true);
-
+    void shouldConvertToolWithNestedObjectParam() {
         ToolDefinition tool = ToolDefinition.builder()
-                .name("test")
-                .description("Test")
+                .name(TEST)
+                .description(TEST_CAPITALIZED)
                 .inputSchema(Map.of(
-                        "type", "object",
-                        "properties", Map.of(
+                        TYPE, OBJECT,
+                        PROPERTIES, Map.of(
                                 "config", Map.of(
-                                        "type", "object",
-                                        "properties", Map.of("key", Map.of("type", "string"))))))
+                                        TYPE, OBJECT,
+                                        PROPERTIES, Map.of(KEY, Map.of(TYPE, STRING))))))
                 .build();
 
         LlmRequest request = LlmRequest.builder().tools(List.of(tool)).build();
-        @SuppressWarnings("unchecked")
-        List<Object> result = (List<Object>) method.invoke(adapter, request);
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<Object> result = (List<Object>) ReflectionTestUtils.invokeMethod(adapter, CONVERT_TOOLS, request);
         assertEquals(1, result.size());
     }
 
     @Test
-    void shouldConvertToolWithNullInputSchema() throws Exception {
-        Method method = Langchain4jAdapter.class.getDeclaredMethod("convertTools", LlmRequest.class);
-        method.setAccessible(true);
-
+    void shouldConvertToolWithNullInputSchema() {
         ToolDefinition tool = ToolDefinition.builder()
-                .name("test")
-                .description("Test")
+                .name(TEST)
+                .description(TEST_CAPITALIZED)
                 .inputSchema(null)
                 .build();
 
         LlmRequest request = LlmRequest.builder().tools(List.of(tool)).build();
-        @SuppressWarnings("unchecked")
-        List<Object> result = (List<Object>) method.invoke(adapter, request);
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<Object> result = (List<Object>) ReflectionTestUtils.invokeMethod(adapter, CONVERT_TOOLS, request);
         assertEquals(1, result.size());
     }
 
     // ===== convertMessages ID remapping =====
 
     @Test
-    void shouldNotRemapShortValidIds() throws Exception {
-        Method method = Langchain4jAdapter.class.getDeclaredMethod("convertMessages", LlmRequest.class);
-        method.setAccessible(true);
-
+    void shouldNotRemapShortValidIds() {
         Message assistantMsg = Message.builder()
-                .role("assistant")
+                .role(ROLE_ASSISTANT)
                 .toolCalls(List.of(Message.ToolCall.builder()
                         .id("call_abc123")
-                        .name("weather")
+                        .name(WEATHER)
                         .arguments(Map.of())
                         .build()))
                 .build();
 
         LlmRequest request = LlmRequest.builder()
                 .messages(List.of(
-                        Message.builder().role("user").content("Hi").build(),
+                        Message.builder().role(ROLE_USER).content("Hi").build(),
                         assistantMsg))
                 .build();
 
-        @SuppressWarnings("unchecked")
-        List<Object> messages = (List<Object>) method.invoke(adapter, request);
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<Object> messages = (List<Object>) ReflectionTestUtils.invokeMethod(adapter, CONVERT_MESSAGES, request);
         assertFalse(messages.isEmpty());
     }
 
     @Test
-    void shouldHandleToolMessageRole() throws Exception {
-        Method method = Langchain4jAdapter.class.getDeclaredMethod("convertMessages", LlmRequest.class);
-        method.setAccessible(true);
-
+    void shouldHandleToolMessageRole() {
         LlmRequest request = LlmRequest.builder()
                 .systemPrompt("System prompt")
                 .messages(List.of(
-                        Message.builder().role("user").content("Test").build(),
+                        Message.builder().role(ROLE_USER).content(TEST_CAPITALIZED).build(),
                         Message.builder().role("system").content("System note").build()))
                 .build();
 
-        @SuppressWarnings("unchecked")
-        List<Object> messages = (List<Object>) method.invoke(adapter, request);
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<Object> messages = (List<Object>) ReflectionTestUtils.invokeMethod(adapter, CONVERT_MESSAGES, request);
         // System prompt + user + system note = 3 messages
         assertEquals(3, messages.size());
     }
@@ -449,18 +437,15 @@ class Langchain4jAdapterTest {
 
     @ParameterizedTest
     @ValueSource(strings = { "openai/gpt-4o", "anthropic/claude-3" })
-    void shouldStripProviderPrefix(String model) throws Exception {
-        Method method = Langchain4jAdapter.class.getDeclaredMethod("stripProviderPrefix", String.class);
-        method.setAccessible(true);
-        String result = (String) method.invoke(adapter, model);
+    void shouldStripProviderPrefix(String model) {
+        String result = ReflectionTestUtils.invokeMethod(adapter, "stripProviderPrefix", model);
         assertFalse(result.contains("/"));
     }
 
     @Test
-    void shouldNotStripWhenNoPrefix() throws Exception {
-        Method method = Langchain4jAdapter.class.getDeclaredMethod("stripProviderPrefix", String.class);
-        method.setAccessible(true);
-        assertEquals("gpt-4o", method.invoke(adapter, "gpt-4o"));
+    void shouldNotStripWhenNoPrefix() {
+        String result = ReflectionTestUtils.invokeMethod(adapter, "stripProviderPrefix", "gpt-4o");
+        assertEquals("gpt-4o", result);
     }
 
     // ===== chat() flow tests with mocked ChatLanguageModel =====
@@ -469,7 +454,7 @@ class Langchain4jAdapterTest {
     void shouldFailChatWhenNotInitialized() {
         // adapter not initialized, chatModel is null
         LlmRequest request = LlmRequest.builder()
-                .messages(List.of(Message.builder().role("user").content("Hi").build()))
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
                 .build();
 
         CompletableFuture<LlmResponse> future = adapter.chat(request);
@@ -480,7 +465,7 @@ class Langchain4jAdapterTest {
     @Test
     void shouldReturnResponseOnSuccessfulChat() throws Exception {
         ChatLanguageModel mockModel = mock(ChatLanguageModel.class);
-        injectChatModel(mockModel, "test-model");
+        injectChatModel(mockModel, TEST_MODEL);
 
         AiMessage aiMessage = AiMessage.from("Hello back!");
         TokenUsage tokenUsage = new TokenUsage(10, 5, 15);
@@ -493,7 +478,7 @@ class Langchain4jAdapterTest {
         when(mockModel.chat((List<ChatMessage>) any())).thenReturn(chatResponse);
 
         LlmRequest request = LlmRequest.builder()
-                .messages(List.of(Message.builder().role("user").content("Hi").build()))
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
                 .build();
 
         LlmResponse response = adapter.chat(request).get();
@@ -507,11 +492,11 @@ class Langchain4jAdapterTest {
     @Test
     void shouldReturnResponseWithToolCalls() throws Exception {
         ChatLanguageModel mockModel = mock(ChatLanguageModel.class);
-        injectChatModel(mockModel, "test-model");
+        injectChatModel(mockModel, TEST_MODEL);
 
         ToolExecutionRequest toolReq = ToolExecutionRequest.builder()
                 .id("call_1")
-                .name("weather")
+                .name(WEATHER)
                 .arguments("{\"location\":\"London\"}")
                 .build();
         AiMessage aiMessage = AiMessage.from(List.of(toolReq));
@@ -524,13 +509,13 @@ class Langchain4jAdapterTest {
         when(mockModel.chat(any(ChatRequest.class))).thenReturn(chatResponse);
 
         ToolDefinition toolDef = ToolDefinition.builder()
-                .name("weather")
+                .name(WEATHER)
                 .description("Get weather")
-                .inputSchema(Map.of("type", "object", "properties", Map.of()))
+                .inputSchema(Map.of(TYPE, OBJECT, PROPERTIES, Map.of()))
                 .build();
 
         LlmRequest request = LlmRequest.builder()
-                .messages(List.of(Message.builder().role("user").content("Weather?").build()))
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Weather?").build()))
                 .tools(List.of(toolDef))
                 .build();
 
@@ -538,14 +523,14 @@ class Langchain4jAdapterTest {
         assertTrue(response.hasToolCalls());
         assertEquals(1, response.getToolCalls().size());
         assertEquals("call_1", response.getToolCalls().get(0).getId());
-        assertEquals("weather", response.getToolCalls().get(0).getName());
+        assertEquals(WEATHER, response.getToolCalls().get(0).getName());
         assertEquals("London", response.getToolCalls().get(0).getArguments().get("location"));
     }
 
     @Test
     void shouldRetryOnRateLimitError() throws Exception {
         ChatLanguageModel mockModel = mock(ChatLanguageModel.class);
-        injectChatModel(mockModel, "test-model");
+        injectChatModel(mockModel, TEST_MODEL);
 
         // First call throws rate limit, second succeeds
         AiMessage aiMessage = AiMessage.from("Success after retry");
@@ -559,7 +544,7 @@ class Langchain4jAdapterTest {
                 .thenReturn(chatResponse);
 
         LlmRequest request = LlmRequest.builder()
-                .messages(List.of(Message.builder().role("user").content("Hi").build()))
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
                 .build();
 
         LlmResponse response = adapter.chat(request).get();
@@ -569,13 +554,13 @@ class Langchain4jAdapterTest {
     @Test
     void shouldThrowOnNonRateLimitError() {
         ChatLanguageModel mockModel = mock(ChatLanguageModel.class);
-        injectChatModel(mockModel, "test-model");
+        injectChatModel(mockModel, TEST_MODEL);
 
         when(mockModel.chat((List<ChatMessage>) any()))
                 .thenThrow(new RuntimeException("Connection refused"));
 
         LlmRequest request = LlmRequest.builder()
-                .messages(List.of(Message.builder().role("user").content("Hi").build()))
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
                 .build();
 
         ExecutionException ex = assertThrows(ExecutionException.class, () -> adapter.chat(request).get());
@@ -585,7 +570,7 @@ class Langchain4jAdapterTest {
     @Test
     void shouldHandleChatWithToolsViaRequest() throws Exception {
         ChatLanguageModel mockModel = mock(ChatLanguageModel.class);
-        injectChatModel(mockModel, "test-model");
+        injectChatModel(mockModel, TEST_MODEL);
 
         AiMessage aiMessage = AiMessage.from("Result with tools");
         ChatResponse chatResponse = ChatResponse.builder()
@@ -596,14 +581,14 @@ class Langchain4jAdapterTest {
         when(mockModel.chat(any(ChatRequest.class))).thenReturn(chatResponse);
 
         ToolDefinition toolDef = ToolDefinition.builder()
-                .name("test_tool")
-                .description("Test")
-                .inputSchema(Map.of("type", "object", "properties", Map.of()))
+                .name(TEST_TOOL)
+                .description(TEST_CAPITALIZED)
+                .inputSchema(Map.of(TYPE, OBJECT, PROPERTIES, Map.of()))
                 .build();
 
         LlmRequest request = LlmRequest.builder()
                 .systemPrompt("You are a bot")
-                .messages(List.of(Message.builder().role("user").content("test").build()))
+                .messages(List.of(Message.builder().role(ROLE_USER).content(TEST).build()))
                 .tools(List.of(toolDef))
                 .build();
 
@@ -614,7 +599,7 @@ class Langchain4jAdapterTest {
     @Test
     void shouldHandleChatWithNullTokenUsage() throws Exception {
         ChatLanguageModel mockModel = mock(ChatLanguageModel.class);
-        injectChatModel(mockModel, "test-model");
+        injectChatModel(mockModel, TEST_MODEL);
 
         AiMessage aiMessage = AiMessage.from("No usage info");
         ChatResponse chatResponse = ChatResponse.builder()
@@ -625,7 +610,7 @@ class Langchain4jAdapterTest {
         when(mockModel.chat((List<ChatMessage>) any())).thenReturn(chatResponse);
 
         LlmRequest request = LlmRequest.builder()
-                .messages(List.of(Message.builder().role("user").content("Hi").build()))
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
                 .build();
 
         LlmResponse response = adapter.chat(request).get();
@@ -636,7 +621,7 @@ class Langchain4jAdapterTest {
     @Test
     void shouldHandleNullFinishReason() throws Exception {
         ChatLanguageModel mockModel = mock(ChatLanguageModel.class);
-        injectChatModel(mockModel, "test-model");
+        injectChatModel(mockModel, TEST_MODEL);
 
         AiMessage aiMessage = AiMessage.from("Response");
         ChatResponse chatResponse = ChatResponse.builder()
@@ -646,7 +631,7 @@ class Langchain4jAdapterTest {
         when(mockModel.chat((List<ChatMessage>) any())).thenReturn(chatResponse);
 
         LlmRequest request = LlmRequest.builder()
-                .messages(List.of(Message.builder().role("user").content("Hi").build()))
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
                 .build();
 
         LlmResponse response = adapter.chat(request).get();
@@ -658,7 +643,7 @@ class Langchain4jAdapterTest {
     @Test
     void shouldConvertToolMessageRoundTrip() throws Exception {
         ChatLanguageModel mockModel = mock(ChatLanguageModel.class);
-        injectChatModel(mockModel, "test-model");
+        injectChatModel(mockModel, TEST_MODEL);
 
         AiMessage aiMessage = AiMessage.from("Weather is sunny");
         ChatResponse chatResponse = ChatResponse.builder()
@@ -669,28 +654,28 @@ class Langchain4jAdapterTest {
         when(mockModel.chat((List<ChatMessage>) any())).thenReturn(chatResponse);
 
         Message assistantMsg = Message.builder()
-                .role("assistant")
+                .role(ROLE_ASSISTANT)
                 .toolCalls(List.of(Message.ToolCall.builder()
                         .id("call_short")
-                        .name("weather")
+                        .name(WEATHER)
                         .arguments(Map.of("location", "London"))
                         .build()))
                 .build();
 
         Message toolResultMsg = Message.builder()
-                .role("tool")
+                .role(ROLE_TOOL)
                 .content("Sunny, 25C")
                 .toolCallId("call_short")
-                .toolName("weather")
+                .toolName(WEATHER)
                 .build();
 
         LlmRequest request = LlmRequest.builder()
                 .systemPrompt("You are helpful")
                 .messages(List.of(
-                        Message.builder().role("user").content("Weather?").build(),
+                        Message.builder().role(ROLE_USER).content("Weather?").build(),
                         assistantMsg,
                         toolResultMsg,
-                        Message.builder().role("user").content("Thanks!").build()))
+                        Message.builder().role(ROLE_USER).content("Thanks!").build()))
                 .build();
 
         LlmResponse response = adapter.chat(request).get();
@@ -698,63 +683,57 @@ class Langchain4jAdapterTest {
     }
 
     @Test
-    void shouldRemapLongToolCallIds() throws Exception {
-        Method method = Langchain4jAdapter.class.getDeclaredMethod("convertMessages", LlmRequest.class);
-        method.setAccessible(true);
-
+    void shouldRemapLongToolCallIds() {
         String longId = "call_" + "a".repeat(50); // > 40 chars
         Message assistantMsg = Message.builder()
-                .role("assistant")
+                .role(ROLE_ASSISTANT)
                 .toolCalls(List.of(Message.ToolCall.builder()
                         .id(longId)
-                        .name("test_tool")
+                        .name(TEST_TOOL)
                         .arguments(Map.of())
                         .build()))
                 .build();
 
         Message toolResultMsg = Message.builder()
-                .role("tool")
+                .role(ROLE_TOOL)
                 .content("result")
                 .toolCallId(longId)
-                .toolName("test_tool")
+                .toolName(TEST_TOOL)
                 .build();
 
         LlmRequest request = LlmRequest.builder()
                 .messages(List.of(
-                        Message.builder().role("user").content("test").build(),
+                        Message.builder().role(ROLE_USER).content(TEST).build(),
                         assistantMsg,
                         toolResultMsg))
                 .build();
 
-        @SuppressWarnings("unchecked")
-        List<Object> messages = (List<Object>) method.invoke(adapter, request);
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<Object> messages = (List<Object>) ReflectionTestUtils.invokeMethod(adapter, CONVERT_MESSAGES, request);
         // Should have 3 messages: user + assistant + tool
         assertEquals(3, messages.size());
     }
 
     @Test
-    void shouldRemapIdsWithInvalidChars() throws Exception {
-        Method method = Langchain4jAdapter.class.getDeclaredMethod("convertMessages", LlmRequest.class);
-        method.setAccessible(true);
-
+    void shouldRemapIdsWithInvalidChars() {
         String invalidId = "call.with.dots.123"; // dots are invalid
         Message assistantMsg = Message.builder()
-                .role("assistant")
+                .role(ROLE_ASSISTANT)
                 .toolCalls(List.of(Message.ToolCall.builder()
                         .id(invalidId)
-                        .name("test")
+                        .name(TEST)
                         .arguments(Map.of())
                         .build()))
                 .build();
 
         LlmRequest request = LlmRequest.builder()
                 .messages(List.of(
-                        Message.builder().role("user").content("test").build(),
+                        Message.builder().role(ROLE_USER).content(TEST).build(),
                         assistantMsg))
                 .build();
 
-        @SuppressWarnings("unchecked")
-        List<Object> messages = (List<Object>) method.invoke(adapter, request);
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<Object> messages = (List<Object>) ReflectionTestUtils.invokeMethod(adapter, CONVERT_MESSAGES, request);
         assertEquals(2, messages.size());
     }
 
@@ -763,7 +742,7 @@ class Langchain4jAdapterTest {
     @Test
     void shouldStreamChat() throws Exception {
         ChatLanguageModel mockModel = mock(ChatLanguageModel.class);
-        injectChatModel(mockModel, "test-model");
+        injectChatModel(mockModel, TEST_MODEL);
 
         AiMessage aiMessage = AiMessage.from("Streamed response");
         ChatResponse chatResponse = ChatResponse.builder()
@@ -774,7 +753,7 @@ class Langchain4jAdapterTest {
         when(mockModel.chat((List<ChatMessage>) any())).thenReturn(chatResponse);
 
         LlmRequest request = LlmRequest.builder()
-                .messages(List.of(Message.builder().role("user").content("Hi").build()))
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
                 .build();
 
         List<LlmChunk> chunks = adapter.chatStream(request).collectList().block();
@@ -791,10 +770,10 @@ class Langchain4jAdapterTest {
         // Set up provider config for both models
         BotProperties.ProviderProperties openaiProps = new BotProperties.ProviderProperties();
         openaiProps.setApiKey("test-key");
-        properties.getLlm().getLangchain4j().getProviders().put("openai", openaiProps);
+        properties.getLlm().getLangchain4j().getProviders().put(OPENAI, openaiProps);
 
         ChatLanguageModel mockModel = mock(ChatLanguageModel.class);
-        injectChatModel(mockModel, "openai/gpt-5.1");
+        injectChatModel(mockModel, OPENAI + "/gpt-5.1");
 
         AiMessage aiMessage = AiMessage.from("Default response");
         ChatResponse chatResponse = ChatResponse.builder()
@@ -806,7 +785,7 @@ class Langchain4jAdapterTest {
         when(mockModel.chat((List<ChatMessage>) any())).thenReturn(chatResponse);
 
         LlmRequest request = LlmRequest.builder()
-                .messages(List.of(Message.builder().role("user").content("Hi").build()))
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
                 .build();
 
         LlmResponse response = adapter.chat(request).get();
@@ -816,20 +795,8 @@ class Langchain4jAdapterTest {
     // ===== Helpers =====
 
     private void injectChatModel(ChatLanguageModel model, String modelName) {
-        try {
-            java.lang.reflect.Field chatModelField = Langchain4jAdapter.class.getDeclaredField("chatModel");
-            chatModelField.setAccessible(true);
-            chatModelField.set(adapter, model);
-
-            java.lang.reflect.Field currentModelField = Langchain4jAdapter.class.getDeclaredField("currentModel");
-            currentModelField.setAccessible(true);
-            currentModelField.set(adapter, modelName);
-
-            java.lang.reflect.Field initializedField = Langchain4jAdapter.class.getDeclaredField("initialized");
-            initializedField.setAccessible(true);
-            initializedField.set(adapter, true);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to inject mock model", e);
-        }
+        ReflectionTestUtils.setField(adapter, "chatModel", model);
+        ReflectionTestUtils.setField(adapter, "currentModel", modelName);
+        ReflectionTestUtils.setField(adapter, "initialized", true);
     }
 }

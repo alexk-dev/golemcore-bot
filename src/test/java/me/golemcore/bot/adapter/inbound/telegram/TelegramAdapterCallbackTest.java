@@ -15,10 +15,18 @@ import org.telegram.telegrambots.meta.api.objects.CallbackQuery;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class TelegramAdapterCallbackTest {
+
+    private static final String CHAT_ID_100 = "100";
 
     private TelegramAdapter adapter;
     private ApplicationEventPublisher eventPublisher;
@@ -48,7 +56,7 @@ class TelegramAdapterCallbackTest {
 
     @Test
     void shouldPublishConfirmationEventOnApproval() {
-        Update update = createCallbackUpdate("100", 42, "confirm:abc123:yes");
+        Update update = createCallbackUpdate(CHAT_ID_100, 42, "confirm:abc123:yes");
 
         adapter.consume(update);
 
@@ -58,7 +66,7 @@ class TelegramAdapterCallbackTest {
 
         assertEquals("abc123", event.confirmationId());
         assertTrue(event.approved());
-        assertEquals("100", event.chatId());
+        assertEquals(CHAT_ID_100, event.chatId());
         assertEquals("42", event.messageId());
     }
 
@@ -80,7 +88,7 @@ class TelegramAdapterCallbackTest {
 
     @Test
     void shouldIgnoreInvalidCallbackFormat_tooParts() {
-        Update update = createCallbackUpdate("100", 1, "confirm:abc");
+        Update update = createCallbackUpdate(CHAT_ID_100, 1, "confirm:abc");
 
         adapter.consume(update);
 
@@ -89,7 +97,7 @@ class TelegramAdapterCallbackTest {
 
     @Test
     void shouldIgnoreInvalidCallbackFormat_tooManyParts() {
-        Update update = createCallbackUpdate("100", 1, "confirm:a:b:c");
+        Update update = createCallbackUpdate(CHAT_ID_100, 1, "confirm:a:b:c");
 
         adapter.consume(update);
 
@@ -98,7 +106,7 @@ class TelegramAdapterCallbackTest {
 
     @Test
     void shouldNotPublishForNonConfirmCallback() {
-        Update update = createCallbackUpdate("100", 1, "lang:en");
+        Update update = createCallbackUpdate(CHAT_ID_100, 1, "lang:en");
 
         adapter.consume(update);
 
@@ -122,7 +130,7 @@ class TelegramAdapterCallbackTest {
 
     @Test
     void shouldTreatUnknownResponseAsNotApproved() {
-        Update update = createCallbackUpdate("100", 42, "confirm:abc123:maybe");
+        Update update = createCallbackUpdate(CHAT_ID_100, 42, "confirm:abc123:maybe");
 
         adapter.consume(update);
 

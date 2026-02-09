@@ -24,6 +24,10 @@ import static org.mockito.Mockito.*;
 
 class AutoModeSchedulerTest {
 
+    private static final String CHANNEL_TYPE_TELEGRAM = "telegram";
+    private static final String GOAL_ID = "goal-1";
+    private static final String GOAL_TITLE = "Test Goal";
+
     private AutoModeService autoModeService;
     private AgentLoop agentLoop;
     private GoalManagementTool goalManagementTool;
@@ -38,7 +42,7 @@ class AutoModeSchedulerTest {
         goalManagementTool = mock(GoalManagementTool.class);
         channelPort = mock(ChannelPort.class);
 
-        when(channelPort.getChannelType()).thenReturn("telegram");
+        when(channelPort.getChannelType()).thenReturn(CHANNEL_TYPE_TELEGRAM);
         when(channelPort.sendMessage(anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
@@ -76,8 +80,8 @@ class AutoModeSchedulerTest {
         when(autoModeService.isAutoModeEnabled()).thenReturn(true);
 
         Goal goal = Goal.builder()
-                .id("goal-1")
-                .title("Test Goal")
+                .id(GOAL_ID)
+                .title(GOAL_TITLE)
                 .status(Goal.GoalStatus.ACTIVE)
                 .tasks(new ArrayList<>())
                 .createdAt(Instant.now())
@@ -100,8 +104,8 @@ class AutoModeSchedulerTest {
         when(autoModeService.isAutoModeEnabled()).thenReturn(true);
 
         Goal goal = Goal.builder()
-                .id("goal-1")
-                .title("Test Goal")
+                .id(GOAL_ID)
+                .title(GOAL_TITLE)
                 .status(Goal.GoalStatus.ACTIVE)
                 .createdAt(Instant.now())
                 .build();
@@ -109,7 +113,7 @@ class AutoModeSchedulerTest {
 
         AutoTask task = AutoTask.builder()
                 .id("task-1")
-                .goalId("goal-1")
+                .goalId(GOAL_ID)
                 .title("Write unit tests")
                 .status(AutoTask.TaskStatus.PENDING)
                 .order(1)
@@ -130,7 +134,7 @@ class AutoModeSchedulerTest {
 
     @Test
     void registerChannelStoresChannelInfo() {
-        scheduler.registerChannel("telegram", "chat-123");
+        scheduler.registerChannel(CHANNEL_TYPE_TELEGRAM, "chat-123");
 
         // Verify by sending a milestone notification and checking it reaches the
         // channel
@@ -141,7 +145,7 @@ class AutoModeSchedulerTest {
 
     @Test
     void sendMilestoneNotificationSendsToRegisteredChannel() {
-        scheduler.registerChannel("telegram", "chat-456");
+        scheduler.registerChannel(CHANNEL_TYPE_TELEGRAM, "chat-456");
 
         scheduler.sendMilestoneNotification("Goal completed: Deploy v2");
 
@@ -159,7 +163,7 @@ class AutoModeSchedulerTest {
     void sendMilestoneNotificationDoesNothingWhenNotifyMilestonesDisabled() {
         properties.getAuto().setNotifyMilestones(false);
 
-        scheduler.registerChannel("telegram", "chat-789");
+        scheduler.registerChannel(CHANNEL_TYPE_TELEGRAM, "chat-789");
 
         scheduler.sendMilestoneNotification("Should not be sent");
 
@@ -170,7 +174,8 @@ class AutoModeSchedulerTest {
 
     @Test
     void onChannelRegisteredDelegatesToRegisterChannel() {
-        AutoModeChannelRegisteredEvent event = new AutoModeChannelRegisteredEvent("telegram", "chat-event-123");
+        AutoModeChannelRegisteredEvent event = new AutoModeChannelRegisteredEvent(CHANNEL_TYPE_TELEGRAM,
+                "chat-event-123");
 
         scheduler.onChannelRegistered(event);
 
@@ -193,7 +198,7 @@ class AutoModeSchedulerTest {
 
     @Test
     void sendMilestoneNotificationHandlesExecutionException() {
-        scheduler.registerChannel("telegram", "chat-fail");
+        scheduler.registerChannel(CHANNEL_TYPE_TELEGRAM, "chat-fail");
         when(channelPort.sendMessage(anyString(), anyString()))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("Send failed")));
 
@@ -207,8 +212,8 @@ class AutoModeSchedulerTest {
         when(autoModeService.isAutoModeEnabled()).thenReturn(true);
 
         Goal goal = Goal.builder()
-                .id("goal-1")
-                .title("Test Goal")
+                .id(GOAL_ID)
+                .title(GOAL_TITLE)
                 .status(Goal.GoalStatus.ACTIVE)
                 .tasks(new ArrayList<>())
                 .createdAt(Instant.now())
@@ -228,12 +233,12 @@ class AutoModeSchedulerTest {
 
     @Test
     void tickUsesRegisteredChannelForChatId() {
-        scheduler.registerChannel("telegram", "chat-999");
+        scheduler.registerChannel(CHANNEL_TYPE_TELEGRAM, "chat-999");
         when(autoModeService.isAutoModeEnabled()).thenReturn(true);
 
         Goal goal = Goal.builder()
-                .id("goal-1")
-                .title("Test Goal")
+                .id(GOAL_ID)
+                .title(GOAL_TITLE)
                 .status(Goal.GoalStatus.ACTIVE)
                 .tasks(new ArrayList<>())
                 .createdAt(Instant.now())
@@ -248,7 +253,7 @@ class AutoModeSchedulerTest {
 
         Message sent = captor.getValue();
         assertEquals("chat-999", sent.getChatId());
-        assertEquals("telegram", sent.getChannelType());
+        assertEquals(CHANNEL_TYPE_TELEGRAM, sent.getChannelType());
     }
 
     // ===== Shutdown =====
