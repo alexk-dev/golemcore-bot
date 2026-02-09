@@ -255,7 +255,9 @@ public class PromptSectionService {
             }
 
             PromptSection section = parseSection(content, file);
-            sectionRegistry.put(section.getName(), section);
+            if (section != null) {
+                sectionRegistry.put(section.getName(), section);
+            }
             log.debug("Loaded prompt section: {} (order={})", section.getName(), section.getOrder());
         } catch (Exception e) {
             log.warn("Failed to load prompt section: {}", file, e);

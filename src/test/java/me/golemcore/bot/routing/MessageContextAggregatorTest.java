@@ -1,6 +1,6 @@
 package me.golemcore.bot.routing;
 
-import me.golemcore.bot.domain.component.MessageAggregator;
+import me.golemcore.bot.domain.component.MessageAggregatorComponent;
 import me.golemcore.bot.domain.model.Message;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -144,7 +144,7 @@ class MessageContextAggregatorTest {
         List<Message> history = List.of(
                 userMessage("Помоги написать документацию для API", now()));
 
-        MessageAggregator.AggregationAnalysis analysis = aggregator.analyze(history);
+        MessageAggregatorComponent.AggregationAnalysis analysis = aggregator.analyze(history);
 
         assertFalse(analysis.isFragmented());
         assertEquals("Standalone", analysis.summary());
@@ -157,7 +157,7 @@ class MessageContextAggregatorTest {
                 userMessage("код", base),
                 userMessage("там баг", base.plusSeconds(2)));
 
-        MessageAggregator.AggregationAnalysis analysis = aggregator.analyze(history);
+        MessageAggregatorComponent.AggregationAnalysis analysis = aggregator.analyze(history);
 
         assertTrue(analysis.isFragmented());
         assertTrue(analysis.signals().contains("too_short"));

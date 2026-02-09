@@ -18,7 +18,7 @@ package me.golemcore.bot.domain.system;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.component.MessageAggregator;
+import me.golemcore.bot.domain.component.MessageAggregatorComponent;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Message;
@@ -38,9 +38,9 @@ import java.util.concurrent.TimeUnit;
  * System for intelligent skill routing using hybrid semantic + LLM
  * classification (order=15). Runs before ContextBuildingSystem to select the
  * appropriate skill for the request. Supports fragmented input detection via
- * {@link MessageAggregator} and two-stage matching (embeddings pre-filter + LLM
- * classifier). Sets activeSkill and modelTier in the context for downstream
- * systems.
+ * {@link MessageAggregatorComponent} and two-stage matching (embeddings
+ * pre-filter + LLM classifier). Sets activeSkill and modelTier in the context
+ * for downstream systems.
  */
 @Component
 @RequiredArgsConstructor
@@ -50,7 +50,7 @@ public class SkillRoutingSystem implements AgentSystem {
     private final SkillMatcherPort skillMatcher;
     private final SkillComponent skillComponent;
     private final BotProperties properties;
-    private final MessageAggregator messageAggregator;
+    private final MessageAggregatorComponent messageAggregator;
 
     @Override
     public String getName() {
@@ -103,7 +103,7 @@ public class SkillRoutingSystem implements AgentSystem {
         log.debug("[SkillRouting] Routing query: '{}'", truncate(routingQuery, 100));
 
         // Analyze fragmentation for logging
-        MessageAggregator.AggregationAnalysis analysis = messageAggregator.analyze(context.getMessages());
+        MessageAggregatorComponent.AggregationAnalysis analysis = messageAggregator.analyze(context.getMessages());
         log.debug("[SkillRouting] Fragmentation analysis: fragmented={}, signals={}",
                 analysis.isFragmented(), analysis.signals());
 

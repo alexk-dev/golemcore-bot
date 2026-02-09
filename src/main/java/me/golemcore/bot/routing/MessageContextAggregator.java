@@ -18,7 +18,7 @@ package me.golemcore.bot.routing;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.component.MessageAggregator;
+import me.golemcore.bot.domain.component.MessageAggregatorComponent;
 import me.golemcore.bot.domain.model.Message;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -56,7 +56,7 @@ import java.util.regex.Pattern;
  */
 @Component
 @Slf4j
-public class MessageContextAggregator implements MessageAggregator {
+public class MessageContextAggregator implements MessageAggregatorComponent {
 
     /**
      * Maximum number of recent messages to consider.

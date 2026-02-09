@@ -77,7 +77,7 @@ import java.util.concurrent.TimeoutException;
  * LLM classification uses a fast model (typically gpt-4o-mini) for efficiency.
  *
  * @since 1.0
- * @see SkillMatcher
+ * @see SkillMatcherPort
  * @see SkillEmbeddingStore
  * @see LlmSkillClassifier
  */

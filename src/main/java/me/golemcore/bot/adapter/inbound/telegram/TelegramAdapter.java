@@ -18,8 +18,7 @@
 
 package me.golemcore.bot.adapter.inbound.telegram;
 
-import me.golemcore.bot.adapter.outbound.confirmation.TelegramConfirmationAdapter;
-import me.golemcore.bot.port.outbound.ConfirmationPort;
+import me.golemcore.bot.domain.model.ConfirmationCallbackEvent;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AudioFormat;
 import me.golemcore.bot.domain.model.Message;
@@ -104,7 +103,6 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
     private final UserPreferencesService preferencesService;
     private final MessageService messageService;
     private final CommandPort commandRouter;
-    private final ConfirmationPort confirmationPort;
     private final TelegramVoiceHandler voiceHandler;
 
     private TelegramClient telegramClient;
@@ -142,9 +140,6 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
             return;
         }
         this.telegramClient = new OkHttpTelegramClient(token);
-        if (confirmationPort instanceof TelegramConfirmationAdapter telegramConfirmation) {
-            telegramConfirmation.setTelegramClient(this.telegramClient);
-        }
         initialized = true;
     }
 
@@ -239,21 +234,8 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
         String confirmationId = parts[1];
         boolean approved = "yes".equals(parts[2]);
 
-        boolean resolved = confirmationPort.resolve(confirmationId, approved);
-
-        if (resolved) {
-            String statusText = approved ? "\u2705 Confirmed" : "\u274c Cancelled";
-            try {
-                EditMessageText edit = EditMessageText.builder()
-                        .chatId(chatId)
-                        .messageId(messageId)
-                        .text(statusText)
-                        .build();
-                telegramClient.execute(edit);
-            } catch (Exception e) {
-                log.error("Failed to update confirmation message", e);
-            }
-        }
+        eventPublisher.publishEvent(new ConfirmationCallbackEvent(
+                confirmationId, approved, chatId, messageId.toString()));
     }
 
     private void updateSettingsMessage(String chatId, Integer messageId, String statusMessage) {

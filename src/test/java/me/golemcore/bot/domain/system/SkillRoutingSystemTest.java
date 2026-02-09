@@ -1,6 +1,6 @@
 package me.golemcore.bot.domain.system;
 
-import me.golemcore.bot.domain.component.MessageAggregator;
+import me.golemcore.bot.domain.component.MessageAggregatorComponent;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
@@ -24,7 +24,7 @@ class SkillRoutingSystemTest {
     private SkillMatcherPort skillMatcher;
     private SkillComponent skillComponent;
     private BotProperties properties;
-    private MessageAggregator messageAggregator;
+    private MessageAggregatorComponent messageAggregator;
     private SkillRoutingSystem system;
 
     @BeforeEach
@@ -34,12 +34,12 @@ class SkillRoutingSystemTest {
         properties = new BotProperties();
         properties.getRouter().getSkillMatcher().setEnabled(true);
         properties.getRouter().getSkillMatcher().setRoutingTimeoutMs(5000);
-        messageAggregator = mock(MessageAggregator.class);
+        messageAggregator = mock(MessageAggregatorComponent.class);
 
         when(skillMatcher.isEnabled()).thenReturn(true);
         when(skillMatcher.isReady()).thenReturn(true);
         when(messageAggregator.analyze(anyList()))
-                .thenReturn(new MessageAggregator.AggregationAnalysis(false, List.of(), ""));
+                .thenReturn(new MessageAggregatorComponent.AggregationAnalysis(false, List.of(), ""));
 
         system = new SkillRoutingSystem(skillMatcher, skillComponent, properties, messageAggregator);
     }
@@ -219,7 +219,7 @@ class SkillRoutingSystemTest {
         AgentContext ctx = createContext("hello");
         when(messageAggregator.buildRoutingQuery(anyList())).thenReturn("hello");
         when(messageAggregator.analyze(anyList()))
-                .thenReturn(new MessageAggregator.AggregationAnalysis(true,
+                .thenReturn(new MessageAggregatorComponent.AggregationAnalysis(true,
                         List.of("too_short", "within_time_window"), "Fragmented input detected"));
         when(skillComponent.getAvailableSkills()).thenReturn(List.of(
                 Skill.builder().name("s1").description("d1").available(true).build()));

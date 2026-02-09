@@ -140,7 +140,9 @@ public class SkillService implements SkillComponent {
             }
 
             Skill skill = parseSkill(content, key);
-            target.put(skill.getName(), skill);
+            if (skill != null) {
+                target.put(skill.getName(), skill);
+            }
             log.debug("Loaded skill: {}", skill.getName());
         } catch (Exception e) {
             log.warn("Failed to load skill: {}", key, e);

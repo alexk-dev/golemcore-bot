@@ -1,10 +1,12 @@
 package me.golemcore.bot.adapter.outbound.confirmation;
 
+import me.golemcore.bot.domain.model.ConfirmationCallbackEvent;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 
@@ -82,7 +84,8 @@ class TelegramConfirmationAdapterTest {
 
         String confirmationId = extractConfirmationId(0); // Confirm button
 
-        assertTrue(adapter.resolve(confirmationId, true));
+        adapter.onConfirmationCallback(
+                new ConfirmationCallbackEvent(confirmationId, true, "chat1", "42"));
         assertTrue(result.get(1, TimeUnit.SECONDS));
     }
 
@@ -92,7 +95,8 @@ class TelegramConfirmationAdapterTest {
 
         String confirmationId = extractConfirmationId(1); // Cancel button
 
-        assertTrue(adapter.resolve(confirmationId, false));
+        adapter.onConfirmationCallback(
+                new ConfirmationCallbackEvent(confirmationId, false, "chat1", "42"));
         assertFalse(result.get(1, TimeUnit.SECONDS));
     }
 
@@ -112,7 +116,30 @@ class TelegramConfirmationAdapterTest {
     }
 
     @Test
-    void unknownConfirmationIdReturnsFalse() {
-        assertFalse(adapter.resolve("unknown-id", true));
+    void unknownConfirmationIdIsIgnored() {
+        adapter.onConfirmationCallback(
+                new ConfirmationCallbackEvent("unknown-id", true, "chat1", "42"));
+        // Should not throw, just log debug
+    }
+
+    @Test
+    void callbackUpdatesMessage() throws Exception {
+        when(telegramClient.execute(any(EditMessageText.class)))
+                .thenReturn(null);
+
+        CompletableFuture<Boolean> result = adapter.requestConfirmation("chat1", "shell", "test");
+        String confirmationId = extractConfirmationId(0);
+
+        adapter.onConfirmationCallback(
+                new ConfirmationCallbackEvent(confirmationId, true, "chat1", "99"));
+
+        result.get(1, TimeUnit.SECONDS);
+
+        ArgumentCaptor<EditMessageText> editCaptor = ArgumentCaptor.forClass(EditMessageText.class);
+        verify(telegramClient).execute(editCaptor.capture());
+        EditMessageText edit = editCaptor.getValue();
+        assertEquals("chat1", edit.getChatId());
+        assertEquals(99, edit.getMessageId());
+        assertTrue(edit.getText().contains("Confirmed"));
     }
 }

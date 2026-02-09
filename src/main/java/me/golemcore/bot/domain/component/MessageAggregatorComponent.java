@@ -32,7 +32,7 @@ import java.util.List;
  *
  * @since 1.0
  */
-public interface MessageAggregator {
+public interface MessageAggregatorComponent {
 
     /**
      * Build aggregated query for skill routing from conversation history.
