@@ -1,4 +1,4 @@
-package me.golemcore.bot.usage;
+package me.golemcore.bot.domain.model;
 
 /*
  * Copyright 2026 Aleksei Kuleshov
@@ -22,6 +22,7 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -51,7 +52,7 @@ public class UsageMetric {
     private Instant timestamp;
 
     public static UsageMetric of(String name, double value, String... tags) {
-        Map<String, String> tagMap = new java.util.HashMap<>();
+        Map<String, String> tagMap = new HashMap<>();
         for (int i = 0; i < tags.length - 1; i += 2) {
             tagMap.put(tags[i], tags[i + 1]);
         }

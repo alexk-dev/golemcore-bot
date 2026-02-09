@@ -9,8 +9,8 @@ import me.golemcore.bot.domain.system.AgentSystem;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.SessionPort;
-import me.golemcore.bot.ratelimit.RateLimitResult;
-import me.golemcore.bot.ratelimit.RateLimiter;
+import me.golemcore.bot.domain.model.RateLimitResult;
+import me.golemcore.bot.port.outbound.RateLimitPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -28,7 +28,7 @@ import static org.mockito.Mockito.*;
 class AgentLoopTest {
 
     private SessionPort sessionPort;
-    private RateLimiter rateLimiter;
+    private RateLimitPort rateLimiter;
     private BotProperties properties;
     private UserPreferencesService preferencesService;
     private ChannelPort channelPort;
@@ -39,7 +39,7 @@ class AgentLoopTest {
     @BeforeEach
     void setUp() {
         sessionPort = mock(SessionPort.class);
-        rateLimiter = mock(RateLimiter.class);
+        rateLimiter = mock(RateLimitPort.class);
         properties = new BotProperties();
         properties.getAgent().setMaxIterations(5);
         preferencesService = mock(UserPreferencesService.class);
@@ -422,6 +422,49 @@ class AgentLoopTest {
 
         assertEquals(List.of("Failing", "After"), callOrder);
         verify(sessionPort).save(session);
+    }
+
+    // ===== loop.complete stops loop =====
+
+    @Test
+    void loopStopsWhenLoopCompleteSet() {
+        List<Integer> iterations = new ArrayList<>();
+
+        // System that simulates tool execution + sets loop.complete on first iteration
+        AgentSystem toolWithComplete = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "ToolWithComplete";
+            }
+
+            @Override
+            public int getOrder() {
+                return 40;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                iterations.add(context.getCurrentIteration());
+                // Always simulate tool calls that would normally continue the loop
+                LlmResponse response = LlmResponse.builder()
+                        .content("")
+                        .toolCalls(List.of(
+                                Message.ToolCall.builder().id("tc1").name("send_voice").arguments(Map.of()).build()))
+                        .build();
+                context.setAttribute("llm.response", response);
+                context.setAttribute("tools.executed", true);
+                context.setAttribute("loop.complete", true);
+                return context;
+            }
+        };
+
+        AgentSession session = createSession();
+        when(sessionPort.getOrCreate("telegram", "123")).thenReturn(session);
+
+        AgentLoop loop = createLoop(List.of(toolWithComplete));
+        loop.processMessage(createUserMessage());
+
+        assertEquals(1, iterations.size(), "Loop should stop after 1 iteration when loop.complete is set");
     }
 
     // ===== Helpers =====

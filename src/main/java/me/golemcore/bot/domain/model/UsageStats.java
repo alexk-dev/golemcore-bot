@@ -1,4 +1,4 @@
-package me.golemcore.bot.usage;
+package me.golemcore.bot.domain.model;
 
 /*
  * Copyright 2026 Aleksei Kuleshov

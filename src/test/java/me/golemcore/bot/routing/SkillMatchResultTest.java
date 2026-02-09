@@ -1,5 +1,7 @@
 package me.golemcore.bot.routing;
 
+import me.golemcore.bot.domain.model.SkillCandidate;
+import me.golemcore.bot.domain.model.SkillMatchResult;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

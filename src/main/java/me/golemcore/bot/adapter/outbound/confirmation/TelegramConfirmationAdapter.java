@@ -18,11 +18,15 @@ package me.golemcore.bot.adapter.outbound.confirmation;
  * Contact: alex@kuleshov.tech
  */
 
+import me.golemcore.bot.domain.model.ConfirmationCallbackEvent;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.ConfirmationPort;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
+import org.telegram.telegrambots.client.okhttp.OkHttpTelegramClient;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow;
@@ -31,6 +35,7 @@ import org.telegram.telegrambots.meta.generics.TelegramClient;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.*;
 
@@ -55,11 +60,11 @@ import java.util.concurrent.*;
  * <p>
  * Integration:
  * <ul>
- * <li>{@link me.golemcore.bot.adapter.inbound.telegram.TelegramAdapter} calls
- * {@link #setTelegramClient} after initialization
+ * <li>Lazily initializes TelegramClient from bot properties on first use
  * <li>{@link me.golemcore.bot.domain.system.ToolExecutionSystem} calls
  * {@link #requestConfirmation} before executing tools
- * <li>TelegramAdapter routes callbacks to {@link #resolve}
+ * <li>Listens for {@link ConfirmationCallbackEvent} to resolve pending
+ * confirmations and update the Telegram message
  * </ul>
  *
  * <p>
@@ -76,7 +81,8 @@ import java.util.concurrent.*;
 @Slf4j
 public class TelegramConfirmationAdapter implements ConfirmationPort {
 
-    private final ConcurrentHashMap<String, PendingConfirmation> pending = new ConcurrentHashMap<>();
+    private final Map<String, PendingConfirmation> pending = new ConcurrentHashMap<>();
+    private final BotProperties properties;
     private final int timeoutSeconds;
     private final boolean enabled;
 
@@ -84,7 +90,8 @@ public class TelegramConfirmationAdapter implements ConfirmationPort {
     private ScheduledExecutorService cleanupExecutor;
 
     public TelegramConfirmationAdapter(BotProperties properties) {
-        var config = properties.getSecurity().getToolConfirmation();
+        this.properties = properties;
+        BotProperties.ToolConfirmationProperties config = properties.getSecurity().getToolConfirmation();
         this.enabled = config.isEnabled();
         this.timeoutSeconds = config.getTimeoutSeconds();
         log.info("TelegramConfirmationAdapter enabled: {}, timeout: {}s", enabled, timeoutSeconds);
@@ -123,17 +130,34 @@ public class TelegramConfirmationAdapter implements ConfirmationPort {
     }
 
     /**
-     * Set the TelegramClient instance. Called by TelegramAdapter after
-     * initialization.
+     * Set the TelegramClient instance. Package-private for testing.
      */
-    public void setTelegramClient(TelegramClient client) {
+    void setTelegramClient(TelegramClient client) {
         this.telegramClient = client;
         log.debug("TelegramClient set for confirmation adapter");
     }
 
     @Override
     public boolean isAvailable() {
-        return enabled && telegramClient != null;
+        return enabled && getOrCreateClient() != null;
+    }
+
+    private TelegramClient getOrCreateClient() {
+        TelegramClient client = this.telegramClient;
+        if (client != null) {
+            return client;
+        }
+        BotProperties.ChannelProperties channelProps = properties.getChannels().get("telegram");
+        if (channelProps == null || !channelProps.isEnabled()) {
+            return null;
+        }
+        String token = channelProps.getToken();
+        if (token == null || token.isBlank()) {
+            return null;
+        }
+        this.telegramClient = new OkHttpTelegramClient(token);
+        log.debug("TelegramClient lazily initialized for confirmation adapter");
+        return this.telegramClient;
     }
 
     @Override
@@ -165,29 +189,49 @@ public class TelegramConfirmationAdapter implements ConfirmationPort {
     }
 
     /**
-     * Resolve a pending confirmation. Called by TelegramAdapter when a callback is
-     * received.
-     *
-     * @param confirmationId
-     *            the confirmation ID from the callback data
-     * @param approved
-     *            true if confirmed, false if cancelled
-     * @return true if the confirmation was found and resolved
+     * Handle confirmation callback events published by inbound channel adapters.
+     * Resolves the pending confirmation and updates the Telegram message.
      */
-    public boolean resolve(String confirmationId, boolean approved) {
-        PendingConfirmation confirmation = pending.remove(confirmationId);
+    @EventListener
+    public void onConfirmationCallback(ConfirmationCallbackEvent event) {
+        PendingConfirmation confirmation = pending.remove(event.confirmationId());
         if (confirmation == null) {
-            log.debug("No pending confirmation found for id: {}", confirmationId);
-            return false;
+            log.debug("No pending confirmation found for id: {}", event.confirmationId());
+            return;
         }
 
-        confirmation.future.complete(approved);
-        log.info("Confirmation {} resolved: approved={}", confirmationId, approved);
-        return true;
+        confirmation.future().complete(event.approved());
+        log.info("Confirmation {} resolved: approved={}", event.confirmationId(), event.approved());
+
+        updateConfirmationMessage(event.chatId(), event.messageId(), event.approved());
+    }
+
+    private void updateConfirmationMessage(String chatId, String messageId, boolean approved) {
+        TelegramClient client = getOrCreateClient();
+        if (client == null) {
+            return;
+        }
+        String statusText = approved ? "\u2705 Confirmed" : "\u274c Cancelled";
+        try {
+            EditMessageText edit = EditMessageText.builder()
+                    .chatId(chatId)
+                    .messageId(Integer.parseInt(messageId))
+                    .text(statusText)
+                    .build();
+            client.execute(edit);
+        } catch (Exception e) {
+            log.error("Failed to update confirmation message", e);
+        }
     }
 
     private void sendConfirmationMessage(String chatId, String confirmationId, String toolName, String description)
             throws Exception {
+        TelegramClient client = getOrCreateClient();
+        if (client == null) {
+            log.warn("TelegramClient not initialized, cannot send confirmation message");
+            return;
+        }
+
         String text = "\u26a0\ufe0f <b>Confirm action</b>\n\n"
                 + "<b>Tool:</b> " + escapeHtml(toolName) + "\n"
                 + "<b>Action:</b> " + escapeHtml(description);
@@ -211,7 +255,7 @@ public class TelegramConfirmationAdapter implements ConfirmationPort {
                 .replyMarkup(keyboard)
                 .build();
 
-        telegramClient.execute(message);
+        client.execute(message);
         log.debug("Sent confirmation message for id: {}", confirmationId);
     }
 

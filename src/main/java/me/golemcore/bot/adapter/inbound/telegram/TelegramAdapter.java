@@ -18,7 +18,7 @@
 
 package me.golemcore.bot.adapter.inbound.telegram;
 
-import me.golemcore.bot.adapter.outbound.confirmation.TelegramConfirmationAdapter;
+import me.golemcore.bot.domain.model.ConfirmationCallbackEvent;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AudioFormat;
 import me.golemcore.bot.domain.model.Message;
@@ -39,10 +39,12 @@ import org.telegram.telegrambots.longpolling.util.LongPollingSingleThreadUpdateC
 import org.telegram.telegrambots.meta.api.methods.ActionType;
 import org.telegram.telegrambots.meta.api.methods.GetFile;
 import org.telegram.telegrambots.meta.api.methods.send.SendChatAction;
+import org.telegram.telegrambots.meta.api.methods.send.SendAudio;
 import org.telegram.telegrambots.meta.api.methods.send.SendDocument;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
 import org.telegram.telegrambots.meta.api.methods.send.SendVoice;
+import org.telegram.telegrambots.meta.exceptions.TelegramApiRequestException;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
 import org.telegram.telegrambots.meta.api.objects.InputFile;
 import org.telegram.telegrambots.meta.api.objects.Update;
@@ -94,6 +96,12 @@ import java.util.function.Consumer;
 @Slf4j
 public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpdateConsumer {
 
+    private static final String CHANNEL_TYPE = "telegram";
+    private static final String SETTINGS_COMMAND = "settings";
+    private static final int CALLBACK_DATA_PARTS_COUNT = 3;
+    private static final int TELEGRAM_MAX_MESSAGE_LENGTH = 4096;
+    private static final int TELEGRAM_MAX_CAPTION_LENGTH = 1024;
+
     private final BotProperties properties;
     private final AllowlistValidator allowlistValidator;
     private final ApplicationEventPublisher eventPublisher;
@@ -101,7 +109,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
     private final UserPreferencesService preferencesService;
     private final MessageService messageService;
     private final CommandPort commandRouter;
-    private final TelegramConfirmationAdapter telegramConfirmationAdapter;
+    private final TelegramVoiceHandler voiceHandler;
 
     private TelegramClient telegramClient;
     private volatile Consumer<Message> messageHandler;
@@ -124,7 +132,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
     }
 
     private boolean isEnabled() {
-        BotProperties.ChannelProperties channelProps = properties.getChannels().get("telegram");
+        BotProperties.ChannelProperties channelProps = properties.getChannels().get(CHANNEL_TYPE);
         return channelProps != null && channelProps.isEnabled();
     }
 
@@ -132,19 +140,18 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
         if (initialized || !isEnabled())
             return;
 
-        String token = properties.getChannels().get("telegram").getToken();
+        String token = properties.getChannels().get(CHANNEL_TYPE).getToken();
         if (token == null || token.isBlank()) {
             log.warn("Telegram token not configured, adapter will not start");
             return;
         }
         this.telegramClient = new OkHttpTelegramClient(token);
-        telegramConfirmationAdapter.setTelegramClient(this.telegramClient);
         initialized = true;
     }
 
     @Override
     public String getChannelType() {
-        return "telegram";
+        return CHANNEL_TYPE;
     }
 
     @Override
@@ -160,7 +167,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
         }
 
         try {
-            String token = properties.getChannels().get("telegram").getToken();
+            String token = properties.getChannels().get(CHANNEL_TYPE).getToken();
             botsApplication.registerBot(token, this);
             running = true;
             log.info("Telegram adapter started");
@@ -225,7 +232,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
     private void handleConfirmationCallback(String chatId, Integer messageId, String data) {
         // Format: confirm:<id>:yes or confirm:<id>:no
         String[] parts = data.split(":");
-        if (parts.length != 3) {
+        if (parts.length != CALLBACK_DATA_PARTS_COUNT) {
             log.warn("Invalid confirmation callback data: {}", data);
             return;
         }
@@ -233,21 +240,8 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
         String confirmationId = parts[1];
         boolean approved = "yes".equals(parts[2]);
 
-        boolean resolved = telegramConfirmationAdapter.resolve(confirmationId, approved);
-
-        if (resolved) {
-            String statusText = approved ? "\u2705 Confirmed" : "\u274c Cancelled";
-            try {
-                EditMessageText edit = EditMessageText.builder()
-                        .chatId(chatId)
-                        .messageId(messageId)
-                        .text(statusText)
-                        .build();
-                telegramClient.execute(edit);
-            } catch (Exception e) {
-                log.error("Failed to update confirmation message", e);
-            }
-        }
+        eventPublisher.publishEvent(new ConfirmationCallbackEvent(
+                confirmationId, approved, chatId, messageId.toString()));
     }
 
     private void updateSettingsMessage(String chatId, Integer messageId, String statusMessage) {
@@ -298,12 +292,13 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
         // Check authorization
         if (!isAuthorized(userId)) {
             log.warn("Unauthorized user: {} in chat: {}", userId, chatId);
+            sendMessage(chatId, messageService.getMessage("security.unauthorized"));
             return;
         }
 
         Message.MessageBuilder messageBuilder = Message.builder()
                 .id(telegramMessage.getMessageId().toString())
-                .channelType("telegram")
+                .channelType(CHANNEL_TYPE)
                 .chatId(chatId)
                 .senderId(userId)
                 .role("user")
@@ -319,7 +314,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
                 String cmd = parts[0].substring(1).split("@")[0]; // strip / and @botname
 
                 // /settings is a special case (uses Telegram inline keyboards)
-                if ("settings".equals(cmd)) {
+                if (SETTINGS_COMMAND.equals(cmd)) {
                     sendSettingsMenu(chatId);
                     return;
                 }
@@ -329,11 +324,11 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
                     List<String> args = parts.length > 1
                             ? Arrays.asList(parts[1].split("\\s+"))
                             : List.of();
-                    String sessionId = "telegram:" + chatId;
+                    String sessionId = CHANNEL_TYPE + ":" + chatId;
                     Map<String, Object> ctx = Map.<String, Object>of(
                             "sessionId", sessionId,
                             "chatId", chatId,
-                            "channelType", "telegram");
+                            "channelType", CHANNEL_TYPE);
                     try {
                         var result = commandRouter.execute(cmd, args, ctx).join();
                         sendMessage(chatId, result.output());
@@ -350,16 +345,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
 
         // Handle voice messages
         if (telegramMessage.hasVoice()) {
-            try {
-                byte[] voiceData = downloadVoice(telegramMessage.getVoice().getFileId());
-                messageBuilder
-                        .voiceData(voiceData)
-                        .audioFormat(AudioFormat.OGG_OPUS)
-                        .content("[Voice message]");
-            } catch (Exception e) {
-                log.error("Failed to download voice message", e);
-                messageBuilder.content("[Failed to process voice message]");
-            }
+            processVoiceMessage(telegramMessage, messageBuilder);
         }
 
         Message message = messageBuilder.build();
@@ -374,12 +360,44 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
         eventPublisher.publishEvent(new AgentLoop.InboundMessageEvent(message));
     }
 
+    private void processVoiceMessage(
+            org.telegram.telegrambots.meta.api.objects.message.Message telegramMessage,
+            Message.MessageBuilder messageBuilder) {
+        try {
+            org.telegram.telegrambots.meta.api.objects.Voice voice = telegramMessage.getVoice();
+            byte[] voiceData = downloadVoice(voice.getFileId());
+            int duration = voice.getDuration() != null ? voice.getDuration() : 0;
+            log.info("[Voice] Received voice message: {} bytes, {}s duration", voiceData.length, duration);
+
+            messageBuilder
+                    .voiceData(voiceData)
+                    .audioFormat(AudioFormat.OGG_OPUS);
+
+            String transcription = voiceHandler.handleIncomingVoice(voiceData).get();
+            if (transcription != null && !transcription.startsWith("[")) {
+                log.info("[Voice] Decoded: \"{}\" ({} chars, {} bytes audio)",
+                        truncateForLog(transcription, 100), transcription.length(), voiceData.length);
+                messageBuilder.content(transcription).voiceTranscription(transcription);
+            } else {
+                log.warn("[Voice] Transcription unavailable, using placeholder: {}", transcription);
+                messageBuilder.content(transcription != null ? transcription : "[Voice message]");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("[Voice] Voice processing interrupted", e);
+            messageBuilder.content("[Failed to process voice message]");
+        } catch (Exception e) {
+            log.error("[Voice] Failed to process voice message", e);
+            messageBuilder.content("[Failed to process voice message]");
+        }
+    }
+
     private byte[] downloadVoice(String fileId) throws Exception {
         GetFile getFile = new GetFile(fileId);
         org.telegram.telegrambots.meta.api.objects.File file = telegramClient.execute(getFile);
 
         String filePath = file.getFilePath();
-        String token = properties.getChannels().get("telegram").getToken();
+        String token = properties.getChannels().get(CHANNEL_TYPE).getToken();
         String fileUrl = "https://api.telegram.org/file/bot" + token + "/" + filePath;
 
         try (InputStream is = URI.create(fileUrl).toURL().openStream()) {
@@ -399,8 +417,8 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
                     String formatted = TelegramHtmlFormatter.format(chunk);
 
                     // Safety: if formatted exceeds Telegram limit, truncate
-                    if (formatted.length() > 4096) {
-                        formatted = formatted.substring(0, 4093) + "...";
+                    if (formatted.length() > TELEGRAM_MAX_MESSAGE_LENGTH) {
+                        formatted = formatted.substring(0, TELEGRAM_MAX_MESSAGE_LENGTH - 3) + "...";
                     }
 
                     SendMessage sendMessage = SendMessage.builder()
@@ -489,10 +507,40 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
 
                 telegramClient.execute(sendVoice);
             } catch (Exception e) {
+                if (isVoiceForbidden(e)) {
+                    log.info("Voice messages forbidden in chat {}, falling back to audio", chatId);
+                    sendAudioFallback(chatId, voiceData);
+                    return;
+                }
                 log.error("Failed to send voice to chat: {}", chatId, e);
                 throw new RuntimeException("Failed to send voice", e);
             }
         });
+    }
+
+    private void sendAudioFallback(String chatId, byte[] audioData) {
+        try {
+            SendAudio sendAudio = SendAudio.builder()
+                    .chatId(chatId)
+                    .audio(new InputFile(new ByteArrayInputStream(audioData), "voice.mp3"))
+                    .build();
+            telegramClient.execute(sendAudio);
+        } catch (Exception e) {
+            log.error("Failed to send audio fallback to chat: {}", chatId, e);
+            throw new RuntimeException("Failed to send audio", e);
+        }
+    }
+
+    private boolean isVoiceForbidden(Exception e) {
+        if (e instanceof TelegramApiRequestException reqEx) {
+            return reqEx.getApiResponse() != null
+                    && reqEx.getApiResponse().contains("VOICE_MESSAGES_FORBIDDEN");
+        }
+        if (e.getCause() instanceof TelegramApiRequestException reqEx) {
+            return reqEx.getApiResponse() != null
+                    && reqEx.getApiResponse().contains("VOICE_MESSAGES_FORBIDDEN");
+        }
+        return false;
     }
 
     @Override
@@ -540,14 +588,20 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
     }
 
     private String truncateCaption(String caption) {
-        if (caption.length() <= 1024)
+        if (caption.length() <= TELEGRAM_MAX_CAPTION_LENGTH)
             return caption;
-        return caption.substring(0, 1021) + "...";
+        return caption.substring(0, TELEGRAM_MAX_CAPTION_LENGTH - 3) + "...";
+    }
+
+    private static String truncateForLog(String text, int maxLen) {
+        if (text == null || text.length() <= maxLen)
+            return text;
+        return text.substring(0, maxLen) + "...";
     }
 
     @Override
     public boolean isAuthorized(String senderId) {
-        return allowlistValidator.isAllowed("telegram", senderId) &&
+        return allowlistValidator.isAllowed(CHANNEL_TYPE, senderId) &&
                 !allowlistValidator.isBlocked(senderId);
     }
 

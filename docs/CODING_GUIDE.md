@@ -113,16 +113,10 @@ public class SessionService {
 
 Dependencies must be `private final` fields. This guarantees immutability and makes dependencies explicit.
 
-For circular dependency situations, use `@Lazy` on the field:
-
-```java
-@RequiredArgsConstructor
-public class CommandRouter implements CommandPort {
-
-    @Lazy
-    private final AutoModeScheduler autoModeScheduler;
-}
-```
+**`@Lazy` is prohibited.** It masks circular dependency problems. Break cycles by:
+1. Extracting a shared interface/service that both sides depend on
+2. Using `ApplicationEventPublisher` for one-way notifications
+3. Moving the dependency into a method parameter instead of a constructor field
 
 ### Class Organization
 

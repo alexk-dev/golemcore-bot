@@ -4,7 +4,7 @@ import me.golemcore.bot.domain.model.*;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import me.golemcore.bot.port.outbound.LlmPort;
-import me.golemcore.bot.usage.LlmUsageTracker;
+import me.golemcore.bot.port.outbound.UsageTrackingPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -22,7 +22,7 @@ import static org.mockito.Mockito.*;
 class LlmExecutionSystemTest {
 
     private LlmPort llmPort;
-    private LlmUsageTracker usageTracker;
+    private UsageTrackingPort usageTracker;
     private BotProperties properties;
     private ModelConfigService modelConfigService;
     private Clock clock;
@@ -31,7 +31,7 @@ class LlmExecutionSystemTest {
     @BeforeEach
     void setUp() {
         llmPort = mock(LlmPort.class);
-        usageTracker = mock(LlmUsageTracker.class);
+        usageTracker = mock(UsageTrackingPort.class);
         properties = new BotProperties();
         modelConfigService = mock(ModelConfigService.class);
         when(modelConfigService.getMaxInputTokens(anyString())).thenReturn(131072);

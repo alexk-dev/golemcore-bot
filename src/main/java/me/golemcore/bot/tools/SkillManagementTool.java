@@ -74,6 +74,18 @@ import java.util.stream.Collectors;
 @Slf4j
 public class SkillManagementTool implements ToolComponent {
 
+    private static final String PARAM_OPERATION = "operation";
+    private static final String PARAM_NAME = "name";
+    private static final String PARAM_DESCRIPTION = "description";
+    private static final String PARAM_CONTENT = "content";
+    private static final String PARAM_TYPE = "type";
+    private static final String TYPE_STRING = "string";
+    private static final String TYPE_OBJECT = "object";
+    private static final String OP_CREATE_SKILL = "create_skill";
+    private static final String OP_LIST_SKILLS = "list_skills";
+    private static final String OP_GET_SKILL = "get_skill";
+    private static final String OP_DELETE_SKILL = "delete_skill";
+
     private static final String SKILLS_DIR = "skills";
     private static final Pattern NAME_PATTERN = Pattern.compile("^[a-z0-9][a-z0-9-]*$");
     private static final int MAX_NAME_LENGTH = 50;
@@ -106,24 +118,25 @@ public class SkillManagementTool implements ToolComponent {
                         Operations: create_skill, list_skills, get_skill, delete_skill.
                         """)
                 .inputSchema(Map.of(
-                        "type", "object",
+                        PARAM_TYPE, TYPE_OBJECT,
                         "properties", Map.of(
-                                "operation", Map.of(
-                                        "type", "string",
-                                        "enum", List.of("create_skill", "list_skills", "get_skill", "delete_skill"),
-                                        "description", "Operation to perform"),
-                                "name", Map.of(
-                                        "type", "string",
-                                        "description",
+                                PARAM_OPERATION, Map.of(
+                                        PARAM_TYPE, TYPE_STRING,
+                                        "enum", List.of(OP_CREATE_SKILL, OP_LIST_SKILLS, OP_GET_SKILL, OP_DELETE_SKILL),
+                                        PARAM_DESCRIPTION, "Operation to perform"),
+                                PARAM_NAME, Map.of(
+                                        PARAM_TYPE, TYPE_STRING,
+                                        PARAM_DESCRIPTION,
                                         "Skill name (lowercase, alphanumeric with hyphens, e.g. 'greeting' or 'code-review')"),
-                                "description", Map.of(
-                                        "type", "string",
-                                        "description", "Short description of what the skill does (for create_skill)"),
-                                "content", Map.of(
-                                        "type", "string",
-                                        "description",
+                                PARAM_DESCRIPTION, Map.of(
+                                        PARAM_TYPE, TYPE_STRING,
+                                        PARAM_DESCRIPTION,
+                                        "Short description of what the skill does (for create_skill)"),
+                                PARAM_CONTENT, Map.of(
+                                        PARAM_TYPE, TYPE_STRING,
+                                        PARAM_DESCRIPTION,
                                         "Full skill instructions/content in markdown (for create_skill)")),
-                        "required", List.of("operation")))
+                        "required", List.of(PARAM_OPERATION)))
                 .build();
     }
 
@@ -137,16 +150,16 @@ public class SkillManagementTool implements ToolComponent {
             }
 
             try {
-                String operation = (String) parameters.get("operation");
+                String operation = (String) parameters.get(PARAM_OPERATION);
                 if (operation == null) {
                     return ToolResult.failure("Missing required parameter: operation");
                 }
 
                 return switch (operation) {
-                case "create_skill" -> createSkill(parameters);
-                case "list_skills" -> listSkills();
-                case "get_skill" -> getSkill(parameters);
-                case "delete_skill" -> deleteSkill(parameters);
+                case OP_CREATE_SKILL -> createSkill(parameters);
+                case OP_LIST_SKILLS -> listSkills();
+                case OP_GET_SKILL -> getSkill(parameters);
+                case OP_DELETE_SKILL -> deleteSkill(parameters);
                 default -> ToolResult.failure("Unknown operation: " + operation);
                 };
             } catch (Exception e) {
@@ -157,9 +170,9 @@ public class SkillManagementTool implements ToolComponent {
     }
 
     private ToolResult createSkill(Map<String, Object> parameters) {
-        String name = (String) parameters.get("name");
-        String description = (String) parameters.get("description");
-        String content = (String) parameters.get("content");
+        String name = (String) parameters.get(PARAM_NAME);
+        String description = (String) parameters.get(PARAM_DESCRIPTION);
+        String content = (String) parameters.get(PARAM_CONTENT);
 
         // Validate required fields
         if (name == null || name.isBlank()) {
@@ -204,7 +217,7 @@ public class SkillManagementTool implements ToolComponent {
             skillComponent.reload();
             log.info("[SkillManagement] Created skill: {}", name);
             return ToolResult.success("Skill '" + name + "' created successfully.", Map.of(
-                    "name", name,
+                    PARAM_NAME, name,
                     "path", SKILLS_DIR + "/" + path));
         } catch (Exception e) {
             log.error("[SkillManagement] Failed to create skill: {}", name, e);
@@ -229,7 +242,7 @@ public class SkillManagementTool implements ToolComponent {
     }
 
     private ToolResult getSkill(Map<String, Object> parameters) {
-        String name = (String) parameters.get("name");
+        String name = (String) parameters.get(PARAM_NAME);
         if (name == null || name.isBlank()) {
             return ToolResult.failure("Missing required parameter: name");
         }
@@ -244,13 +257,13 @@ public class SkillManagementTool implements ToolComponent {
                 s.getName(), s.getDescription(), s.isAvailable(), s.getContent());
 
         return ToolResult.success(output, Map.of(
-                "name", s.getName(),
-                "description", s.getDescription(),
+                PARAM_NAME, s.getName(),
+                PARAM_DESCRIPTION, s.getDescription(),
                 "available", s.isAvailable()));
     }
 
     private ToolResult deleteSkill(Map<String, Object> parameters) {
-        String name = (String) parameters.get("name");
+        String name = (String) parameters.get(PARAM_NAME);
         if (name == null || name.isBlank()) {
             return ToolResult.failure("Missing required parameter: name");
         }

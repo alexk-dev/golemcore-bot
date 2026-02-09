@@ -518,4 +518,143 @@ class SkillServiceTest {
     void getComponentTypeReturnsSkill() {
         assertEquals("skill", service.getComponentType());
     }
+
+    // ==================== Edge cases for loadSkillInto null guard
+    // ====================
+
+    @Test
+    void reloadHandlesGetTextExceptionForSingleSkill() {
+        String goodContent = """
+                ---
+                name: good
+                description: Good skill
+                ---
+                Good content
+                """;
+
+        loadSkills("bad/SKILL.md", "good/SKILL.md");
+        when(storagePort.getText("skills", "bad/SKILL.md"))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("read error")));
+        stubSkillContent("good/SKILL.md", goodContent);
+
+        service.reload();
+
+        assertEquals(1, service.getAllSkills().size());
+        assertTrue(service.findByName("good").isPresent());
+    }
+
+    @Test
+    void extractNameFromPathWithSingleSegment() {
+        loadSkills("SKILL.md");
+        stubSkillContent("SKILL.md", """
+                ---
+                description: Root skill
+                ---
+                Content
+                """);
+
+        service.reload();
+
+        // Single-segment path "SKILL.md" -> extractNameFromPath returns "unknown"
+        // because parts.length < 2
+        Optional<Skill> skill = service.findByName("unknown");
+        assertTrue(skill.isPresent());
+        assertEquals("Root skill", skill.get().getDescription());
+    }
+
+    @Test
+    void parseSkillMcpConfigWithNoEnvSection() {
+        loadSkills("noenv/SKILL.md");
+        stubSkillContent("noenv/SKILL.md", """
+                ---
+                name: noenv
+                description: MCP no env
+                mcp:
+                  command: some-server
+                ---
+                Content
+                """);
+
+        service.reload();
+
+        Optional<Skill> skill = service.findByName("noenv");
+        assertTrue(skill.isPresent());
+        assertNotNull(skill.get().getMcpConfig());
+        assertEquals("some-server", skill.get().getMcpConfig().getCommand());
+        assertTrue(skill.get().getMcpConfig().getEnv().isEmpty());
+    }
+
+    @Test
+    void parseSkillWithEmptyBody() {
+        loadSkills("empty-body/SKILL.md");
+        stubSkillContent("empty-body/SKILL.md", """
+                ---
+                name: empty-body
+                description: Empty body skill
+                ---
+                """);
+
+        service.reload();
+
+        Optional<Skill> skill = service.findByName("empty-body");
+        assertTrue(skill.isPresent());
+        assertEquals("", skill.get().getContent());
+    }
+
+    @Test
+    void parseSkillMcpConfigWithNullCommand() {
+        loadSkills("nullcmd/SKILL.md");
+        stubSkillContent("nullcmd/SKILL.md", """
+                ---
+                name: nullcmd
+                description: test
+                mcp:
+                  startup_timeout: 10
+                ---
+                Content
+                """);
+
+        service.reload();
+
+        Optional<Skill> skill = service.findByName("nullcmd");
+        assertTrue(skill.isPresent());
+        assertNull(skill.get().getMcpConfig());
+    }
+
+    @Test
+    void parseSkillConditionalNextSkillsWithNonMapType() {
+        loadSkills("badcns/SKILL.md");
+        stubSkillContent("badcns/SKILL.md", """
+                ---
+                name: badcns
+                description: test
+                conditional_next_skills: not-a-map
+                ---
+                Content
+                """);
+
+        service.reload();
+
+        Optional<Skill> skill = service.findByName("badcns");
+        assertTrue(skill.isPresent());
+        assertTrue(skill.get().getConditionalNextSkills().isEmpty());
+    }
+
+    @Test
+    void getSkillsSummaryIncludesAvailableSkills() {
+        loadSkills("s1/SKILL.md");
+        stubSkillContent("s1/SKILL.md", """
+                ---
+                name: s1
+                description: First skill
+                ---
+                Content
+                """);
+
+        service.reload();
+
+        String summary = service.getSkillsSummary();
+        assertFalse(summary.isEmpty());
+        assertTrue(summary.contains("s1"));
+    }
 }

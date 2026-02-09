@@ -55,10 +55,6 @@ public class AllowlistValidator {
      * Check if a user is allowed to use the bot on a specific channel.
      */
     public boolean isAllowed(String channelType, String userId) {
-        if (!properties.getSecurity().getAllowlist().isEnabled()) {
-            return true;
-        }
-
         log.trace("[Security] Allowlist check: channel={}, user={}", channelType, userId);
 
         BotProperties.ChannelProperties channelProps = properties.getChannels().get(channelType);
