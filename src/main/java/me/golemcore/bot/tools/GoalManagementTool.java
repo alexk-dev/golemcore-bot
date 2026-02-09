@@ -31,6 +31,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
@@ -261,7 +262,7 @@ public class GoalManagementTool implements ToolComponent {
 
         AutoTask.TaskStatus status;
         try {
-            status = AutoTask.TaskStatus.valueOf(statusStr.toUpperCase());
+            status = AutoTask.TaskStatus.valueOf(statusStr.toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
             return ToolResult.failure("Invalid status: " + statusStr +
                     ". Valid: PENDING, IN_PROGRESS, COMPLETED, FAILED, SKIPPED");
@@ -269,7 +270,8 @@ public class GoalManagementTool implements ToolComponent {
 
         autoModeService.updateTaskStatus(goalId, taskId, status, result);
 
-        if (status == AutoTask.TaskStatus.COMPLETED && milestoneCallback != null) {
+        Consumer<MilestoneEvent> callback = milestoneCallback;
+        if (status == AutoTask.TaskStatus.COMPLETED && callback != null) {
             autoModeService.getGoal(goalId).ifPresent(goal -> {
                 String taskTitle = goal.getTasks().stream()
                         .filter(t -> t.getId().equals(taskId))
@@ -279,7 +281,7 @@ public class GoalManagementTool implements ToolComponent {
                 String message = String.format("Task completed: %s%n(Goal: %s — %d/%d done)",
                         taskTitle, goal.getTitle(),
                         goal.getCompletedTaskCount(), goal.getTasks().size());
-                milestoneCallback.accept(new MilestoneEvent(message));
+                callback.accept(new MilestoneEvent(message));
             });
         }
 
@@ -297,9 +299,9 @@ public class GoalManagementTool implements ToolComponent {
         DiaryEntry.DiaryType type = DiaryEntry.DiaryType.THOUGHT;
         if (diaryTypeStr != null && !diaryTypeStr.isBlank()) {
             try {
-                type = DiaryEntry.DiaryType.valueOf(diaryTypeStr.toUpperCase());
+                type = DiaryEntry.DiaryType.valueOf(diaryTypeStr.toUpperCase(Locale.ROOT));
             } catch (IllegalArgumentException e) {
-                // default to THOUGHT
+                log.debug("Invalid diary type '{}', defaulting to THOUGHT", diaryTypeStr);
             }
         }
 
@@ -324,10 +326,11 @@ public class GoalManagementTool implements ToolComponent {
 
         autoModeService.completeGoal(goalId);
 
-        if (milestoneCallback != null) {
+        Consumer<MilestoneEvent> callback = milestoneCallback;
+        if (callback != null) {
             autoModeService.getGoal(goalId).ifPresent(goal -> {
                 String message = "Goal completed: " + goal.getTitle();
-                milestoneCallback.accept(new MilestoneEvent(message));
+                callback.accept(new MilestoneEvent(message));
             });
         }
 

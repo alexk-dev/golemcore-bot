@@ -31,6 +31,7 @@ import org.telegram.telegrambots.meta.generics.TelegramClient;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.*;
 
@@ -76,7 +77,7 @@ import java.util.concurrent.*;
 @Slf4j
 public class TelegramConfirmationAdapter implements ConfirmationPort {
 
-    private final ConcurrentHashMap<String, PendingConfirmation> pending = new ConcurrentHashMap<>();
+    private final Map<String, PendingConfirmation> pending = new ConcurrentHashMap<>();
     private final int timeoutSeconds;
     private final boolean enabled;
 
@@ -188,6 +189,12 @@ public class TelegramConfirmationAdapter implements ConfirmationPort {
 
     private void sendConfirmationMessage(String chatId, String confirmationId, String toolName, String description)
             throws Exception {
+        TelegramClient client = this.telegramClient;
+        if (client == null) {
+            log.warn("TelegramClient not initialized, cannot send confirmation message");
+            return;
+        }
+
         String text = "\u26a0\ufe0f <b>Confirm action</b>\n\n"
                 + "<b>Tool:</b> " + escapeHtml(toolName) + "\n"
                 + "<b>Action:</b> " + escapeHtml(description);
@@ -211,7 +218,7 @@ public class TelegramConfirmationAdapter implements ConfirmationPort {
                 .replyMarkup(keyboard)
                 .build();
 
-        telegramClient.execute(message);
+        client.execute(message);
         log.debug("Sent confirmation message for id: {}", confirmationId);
     }
 

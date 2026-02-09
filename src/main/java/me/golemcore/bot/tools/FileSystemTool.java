@@ -29,7 +29,11 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
+import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.List;
 import java.util.Map;
@@ -206,7 +210,7 @@ public class FileSystemTool implements ToolComponent {
                 log.info("[FileSystem] Operation '{}' result: success={}", operation, result.isSuccess());
                 return result;
 
-            } catch (Exception e) {
+            } catch (RuntimeException e) {
                 log.error("[FileSystem] ERROR: {}", e.getMessage(), e);
                 return ToolResult.failure("Error: " + e.getMessage());
             }
@@ -317,16 +321,20 @@ public class FileSystemTool implements ToolComponent {
             List<Map<String, Object>> entries = stream
                     .limit(MAX_FILES_LIST)
                     .map(p -> {
+                        Path fileName = p.getFileName();
+                        if (fileName == null) {
+                            return Map.<String, Object>of("name", "unknown", "type", "unknown");
+                        }
                         try {
                             BasicFileAttributes attrs = Files.readAttributes(p, BasicFileAttributes.class);
                             return Map.<String, Object>of(
-                                    "name", p.getFileName().toString(),
+                                    "name", fileName.toString(),
                                     "type", attrs.isDirectory() ? "directory" : "file",
                                     "size", attrs.size(),
                                     "modified", attrs.lastModifiedTime().toString());
                         } catch (IOException e) {
                             return Map.<String, Object>of(
-                                    "name", p.getFileName().toString(),
+                                    "name", fileName.toString(),
                                     "type", "unknown");
                         }
                     })

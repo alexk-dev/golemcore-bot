@@ -97,6 +97,7 @@ public class ElevenLabsAdapter implements VoicePort {
         return CompletableFuture.supplyAsync(() -> doSynthesize(text, config), VOICE_EXECUTOR);
     }
 
+    @SuppressWarnings("PMD.CloseResource") // ResponseBody is closed when Response is closed in try-with-resources
     private TranscriptionResult doTranscribe(byte[] audioData, AudioFormat format) {
         try {
             BotProperties.VoiceProperties voice = properties.getVoice();
@@ -168,6 +169,7 @@ public class ElevenLabsAdapter implements VoicePort {
                 Collections.emptyList());
     }
 
+    @SuppressWarnings("PMD.CloseResource") // ResponseBody is closed when Response is closed in try-with-resources
     private byte[] doSynthesize(String text, VoiceConfig config) {
         try {
             BotProperties.VoiceProperties voice = properties.getVoice();

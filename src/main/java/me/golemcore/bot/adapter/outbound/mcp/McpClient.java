@@ -21,6 +21,7 @@ package me.golemcore.bot.adapter.outbound.mcp;
 import me.golemcore.bot.domain.model.McpConfig;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -71,6 +72,8 @@ public class McpClient implements Closeable {
     private static final Logger log = LoggerFactory.getLogger(McpClient.class);
     private static final String JSONRPC_VERSION = "2.0";
     private static final String MCP_PROTOCOL_VERSION = "2024-11-05";
+    private static final TypeReference<Map<String, Object>> MAP_TYPE_REF = new TypeReference<>() {
+    };
 
     private final String skillName;
     private final McpConfig config;
@@ -82,7 +85,7 @@ public class McpClient implements Closeable {
     private Thread stderrThread;
 
     private final AtomicInteger nextId = new AtomicInteger(1);
-    private final ConcurrentHashMap<Integer, CompletableFuture<JsonNode>> pendingRequests = new ConcurrentHashMap<>();
+    private final Map<Integer, CompletableFuture<JsonNode>> pendingRequests = new ConcurrentHashMap<>();
     private final AtomicLong lastActivityTimestamp = new AtomicLong(System.currentTimeMillis());
 
     private volatile boolean running;
@@ -151,7 +154,12 @@ public class McpClient implements Closeable {
 
             touchActivity();
             return cachedTools;
-        } catch (Exception e) {
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("[MCP:{}] Initialization failed, cleaning up: {}", skillName, e.getMessage());
+            close();
+            throw e;
+        } catch (ExecutionException | TimeoutException | RuntimeException e) {
             log.error("[MCP:{}] Initialization failed, cleaning up: {}", skillName, e.getMessage());
             close();
             throw e;
@@ -196,7 +204,7 @@ public class McpClient implements Closeable {
                 writer.newLine();
                 writer.flush();
             }
-        } catch (Exception e) {
+        } catch (IOException e) {
             pendingRequests.remove(id);
             future.completeExceptionally(e);
         }
@@ -223,14 +231,17 @@ public class McpClient implements Closeable {
                 writer.newLine();
                 writer.flush();
             }
-        } catch (Exception e) {
+        } catch (IOException e) {
             log.warn("[MCP:{}] Failed to send notification: {}", skillName, e.getMessage());
         }
     }
 
     private void readLoop() {
+        Process p = this.process;
+        if (p == null)
+            return;
         try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
             String line;
             while (running && (line = reader.readLine()) != null) {
                 line = line.trim();
@@ -263,7 +274,7 @@ public class McpClient implements Closeable {
                         String method = message.has("method") ? message.get("method").asText() : "unknown";
                         log.debug("[MCP:{}] Server notification: {}", skillName, method);
                     }
-                } catch (Exception e) {
+                } catch (JsonProcessingException e) {
                     log.warn("[MCP:{}] Failed to parse response: {}", skillName, e.getMessage());
                 }
             }
@@ -281,8 +292,11 @@ public class McpClient implements Closeable {
     }
 
     private void stderrDrain() {
+        Process p = this.process;
+        if (p == null)
+            return;
         try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(process.getErrorStream(), StandardCharsets.UTF_8))) {
+                new InputStreamReader(p.getErrorStream(), StandardCharsets.UTF_8))) {
             String line;
             while (running && (line = reader.readLine()) != null) {
                 log.debug("[MCP:{}] stderr: {}", skillName, line);
@@ -314,8 +328,7 @@ public class McpClient implements Closeable {
             if (toolNode.has("inputSchema")) {
                 try {
                     inputSchema = objectMapper.convertValue(toolNode.get("inputSchema"),
-                            new TypeReference<Map<String, Object>>() {
-                            });
+                            MAP_TYPE_REF);
                 } catch (Exception e) {
                     log.warn("[MCP:{}] Failed to parse inputSchema for tool '{}': {}", skillName, name, e.getMessage());
                 }

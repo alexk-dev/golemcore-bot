@@ -30,6 +30,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
@@ -117,7 +118,7 @@ public class SkillService implements SkillComponent {
         try {
             List<String> keys = storagePort.listObjects(SKILLS_DIR, "").join();
             for (String key : keys) {
-                if (key.endsWith("/SKILL.md") || key.equals("SKILL.md")) {
+                if (key.endsWith("/SKILL.md") || "SKILL.md".equals(key)) {
                     loadSkillInto(key, newRegistry);
                 }
             }
@@ -131,10 +132,6 @@ public class SkillService implements SkillComponent {
         }
     }
 
-    private void loadSkill(String key) {
-        loadSkillInto(key, skillRegistry);
-    }
-
     private void loadSkillInto(String key, Map<String, Skill> target) {
         try {
             String content = storagePort.getText(SKILLS_DIR, key).join();
@@ -143,10 +140,8 @@ public class SkillService implements SkillComponent {
             }
 
             Skill skill = parseSkill(content, key);
-            if (skill != null) {
-                target.put(skill.getName(), skill);
-                log.debug("Loaded skill: {}", skill.getName());
-            }
+            target.put(skill.getName(), skill);
+            log.debug("Loaded skill: {}", skill.getName());
         } catch (Exception e) {
             log.warn("Failed to load skill: {}", key, e);
         }
@@ -172,7 +167,7 @@ public class SkillService implements SkillComponent {
                 description = (String) yaml.getOrDefault("description", "");
                 metadata = yaml;
 
-            } catch (Exception e) {
+            } catch (IOException | RuntimeException e) {
                 log.warn("Failed to parse skill frontmatter: {}", path, e);
             }
         }

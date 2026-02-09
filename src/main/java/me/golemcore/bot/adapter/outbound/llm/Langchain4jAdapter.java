@@ -351,6 +351,8 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         return this;
     }
 
+    private static final TypeReference<Map<String, Object>> MAP_TYPE_REF = new TypeReference<>() {
+    };
     private static final int MAX_TOOL_CALL_ID_LENGTH = 40;
     private static final java.util.regex.Pattern VALID_FUNCTION_NAME = java.util.regex.Pattern
             .compile("^[a-zA-Z0-9_-]+$");
@@ -555,8 +557,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             return Collections.emptyMap();
         }
         try {
-            return objectMapper.readValue(json, new TypeReference<Map<String, Object>>() {
-            });
+            return objectMapper.readValue(json, MAP_TYPE_REF);
         } catch (Exception e) {
             log.warn("Failed to parse tool arguments: {}", e.getMessage());
             return Collections.emptyMap();

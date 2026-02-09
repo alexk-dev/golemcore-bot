@@ -327,8 +327,7 @@
                             <failOnViolation>true</failOnViolation>
                             <printFailingErrors>true</printFailingErrors>
                             <rulesets>
-                                <ruleset>/category/java/errorprone.xml</ruleset>
-                                <ruleset>/category/java/bestpractices.xml</ruleset>
+                                <ruleset>misc/pmd-ruleset.xml</ruleset>
                             </rulesets>
                         </configuration>
                         <executions>

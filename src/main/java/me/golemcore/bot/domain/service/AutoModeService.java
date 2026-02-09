@@ -28,6 +28,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -53,6 +54,8 @@ import java.util.*;
 public class AutoModeService {
 
     private static final String AUTO_DIR = "auto";
+    private static final TypeReference<List<Goal>> GOAL_LIST_TYPE_REF = new TypeReference<>() {
+    };
 
     private final StoragePort storagePort;
     private final ObjectMapper objectMapper;
@@ -259,7 +262,7 @@ public class AutoModeService {
 
             Collections.reverse(entries);
             return entries;
-        } catch (Exception e) {
+        } catch (IOException | RuntimeException e) {
             log.error("[AutoMode] Failed to read diary", e);
             return List.of();
         }
@@ -354,10 +357,9 @@ public class AutoModeService {
         try {
             String json = storagePort.getText(AUTO_DIR, "goals.json").join();
             if (json != null && !json.isBlank()) {
-                return new ArrayList<>(objectMapper.readValue(json, new TypeReference<List<Goal>>() {
-                }));
+                return new ArrayList<>(objectMapper.readValue(json, GOAL_LIST_TYPE_REF));
             }
-        } catch (Exception e) { // NOSONAR - intentionally catch all for fallback
+        } catch (IOException | RuntimeException e) { // NOSONAR - intentionally catch all for fallback
             log.debug("[AutoMode] No goals found or failed to parse: {}", e.getMessage());
         }
         return new ArrayList<>();
@@ -375,7 +377,7 @@ public class AutoModeService {
                 enabled = Boolean.TRUE.equals(state.get("enabled"));
             }
             log.info("[AutoMode] Loaded state: enabled={}", enabled);
-        } catch (Exception e) {
+        } catch (IOException | RuntimeException e) {
             log.debug("[AutoMode] Failed to load state: {}", e.getMessage());
         }
     }
