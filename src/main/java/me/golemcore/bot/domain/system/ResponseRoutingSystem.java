@@ -196,6 +196,10 @@ public class ResponseRoutingSystem implements AgentSystem {
             }
 
             log.info("[Response] Sent text to {}/{}", channelType, chatId);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("[Response] FAILED to send (interrupted): {}", e.getMessage(), e);
+            context.setAttribute("routing.error", e.getMessage());
         } catch (Exception e) {
             log.error("[Response] FAILED to send: {}", e.getMessage(), e);
             context.setAttribute("routing.error", e.getMessage());
@@ -322,7 +326,7 @@ public class ResponseRoutingSystem implements AgentSystem {
 
     @SuppressWarnings("unchecked")
     private void sendPendingAttachments(AgentContext context) {
-        List<Attachment> pending = context.getAttribute("pendingAttachments");
+        List<Attachment> pending = context.getAttribute(ContextAttributes.PENDING_ATTACHMENTS);
         if (pending == null || pending.isEmpty())
             return;
 
@@ -344,13 +348,17 @@ public class ResponseRoutingSystem implements AgentSystem {
                 }
                 log.debug("[Response] Sent attachment: {} ({} bytes)",
                         attachment.getFilename(), attachment.getData().length);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.error("[Response] Failed to send attachment '{}' (interrupted): {}",
+                        attachment.getFilename(), e.getMessage());
             } catch (Exception e) {
                 log.error("[Response] Failed to send attachment '{}': {}",
                         attachment.getFilename(), e.getMessage());
             }
         }
 
-        context.setAttribute("pendingAttachments", null);
+        context.setAttribute(ContextAttributes.PENDING_ATTACHMENTS, null);
     }
 
     private void sendErrorToUser(AgentContext context, String error) {
@@ -366,6 +374,9 @@ public class ResponseRoutingSystem implements AgentSystem {
         log.warn("[Response] Sending LLM error: {}", error);
         try {
             channel.sendMessage(chatId, errorMessage).get(30, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("[Response] Failed to send error message (interrupted): {}", e.getMessage());
         } catch (Exception e) {
             log.error("[Response] Failed to send error message: {}", e.getMessage());
         }
@@ -375,7 +386,7 @@ public class ResponseRoutingSystem implements AgentSystem {
     public boolean shouldProcess(AgentContext context) {
         LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
         String llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
-        List<?> pending = context.getAttribute("pendingAttachments");
+        List<?> pending = context.getAttribute(ContextAttributes.PENDING_ATTACHMENTS);
         Boolean voiceRequested = context.getAttribute(ContextAttributes.VOICE_REQUESTED);
         return response != null || llmError != null || (pending != null && !pending.isEmpty())
                 || Boolean.TRUE.equals(voiceRequested);

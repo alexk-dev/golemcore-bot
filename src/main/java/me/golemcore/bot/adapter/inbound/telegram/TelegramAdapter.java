@@ -354,30 +354,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
 
         // Handle voice messages
         if (telegramMessage.hasVoice()) {
-            try {
-                var voice = telegramMessage.getVoice();
-                byte[] voiceData = downloadVoice(voice.getFileId());
-                int duration = voice.getDuration() != null ? voice.getDuration() : 0;
-                log.info("[Voice] Received voice message: {} bytes, {}s duration", voiceData.length, duration);
-
-                messageBuilder
-                        .voiceData(voiceData)
-                        .audioFormat(AudioFormat.OGG_OPUS);
-
-                // Transcribe via ElevenLabs STT
-                String transcription = voiceHandler.handleIncomingVoice(voiceData).get();
-                if (transcription != null && !transcription.startsWith("[")) {
-                    log.info("[Voice] Decoded: \"{}\" ({} chars, {} bytes audio)",
-                            truncateForLog(transcription, 100), transcription.length(), voiceData.length);
-                    messageBuilder.content(transcription).voiceTranscription(transcription);
-                } else {
-                    log.warn("[Voice] Transcription unavailable, using placeholder: {}", transcription);
-                    messageBuilder.content(transcription != null ? transcription : "[Voice message]");
-                }
-            } catch (Exception e) {
-                log.error("[Voice] Failed to process voice message", e);
-                messageBuilder.content("[Failed to process voice message]");
-            }
+            processVoiceMessage(telegramMessage, messageBuilder);
         }
 
         Message message = messageBuilder.build();
@@ -390,6 +367,38 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
 
         // Publish event
         eventPublisher.publishEvent(new AgentLoop.InboundMessageEvent(message));
+    }
+
+    private void processVoiceMessage(
+            org.telegram.telegrambots.meta.api.objects.message.Message telegramMessage,
+            Message.MessageBuilder messageBuilder) {
+        try {
+            org.telegram.telegrambots.meta.api.objects.Voice voice = telegramMessage.getVoice();
+            byte[] voiceData = downloadVoice(voice.getFileId());
+            int duration = voice.getDuration() != null ? voice.getDuration() : 0;
+            log.info("[Voice] Received voice message: {} bytes, {}s duration", voiceData.length, duration);
+
+            messageBuilder
+                    .voiceData(voiceData)
+                    .audioFormat(AudioFormat.OGG_OPUS);
+
+            String transcription = voiceHandler.handleIncomingVoice(voiceData).get();
+            if (transcription != null && !transcription.startsWith("[")) {
+                log.info("[Voice] Decoded: \"{}\" ({} chars, {} bytes audio)",
+                        truncateForLog(transcription, 100), transcription.length(), voiceData.length);
+                messageBuilder.content(transcription).voiceTranscription(transcription);
+            } else {
+                log.warn("[Voice] Transcription unavailable, using placeholder: {}", transcription);
+                messageBuilder.content(transcription != null ? transcription : "[Voice message]");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("[Voice] Voice processing interrupted", e);
+            messageBuilder.content("[Failed to process voice message]");
+        } catch (Exception e) {
+            log.error("[Voice] Failed to process voice message", e);
+            messageBuilder.content("[Failed to process voice message]");
+        }
     }
 
     private byte[] downloadVoice(String fileId) throws Exception {

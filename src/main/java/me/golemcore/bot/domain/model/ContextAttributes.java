@@ -46,4 +46,7 @@ public final class ContextAttributes {
 
     /** Boolean — tools were executed in this iteration. */
     public static final String TOOLS_EXECUTED = "tools.executed";
+
+    /** List&lt;Attachment&gt; — attachments pending delivery to channel. */
+    public static final String PENDING_ATTACHMENTS = "pendingAttachments";
 }

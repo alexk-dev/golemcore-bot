@@ -71,6 +71,10 @@ public class VoiceResponseHandler {
             channel.sendVoice(chatId, audioData).get(30, TimeUnit.SECONDS);
             log.info("[Voice] Sent: {} chars → {} bytes audio, chatId={}", text.length(), audioData.length, chatId);
             return true;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("[Voice] TTS/send interrupted: {}", e.getMessage());
+            return false;
         } catch (Exception e) {
             log.error("[Voice] TTS/send failed, caller should fall back to text: {}", e.getMessage());
             return false;
@@ -97,6 +101,10 @@ public class VoiceResponseHandler {
             channel.sendMessage(chatId, text).get(30, TimeUnit.SECONDS);
             log.info("[Voice] Fallback text sent: {} chars, chatId={}", text.length(), chatId);
             return true;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("[Voice] Fallback text interrupted: {}", e.getMessage());
+            return false;
         } catch (Exception e) {
             log.error("[Voice] Fallback text also failed: {}", e.getMessage());
             return false;

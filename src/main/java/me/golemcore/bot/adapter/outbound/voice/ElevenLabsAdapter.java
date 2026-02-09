@@ -38,6 +38,7 @@ import org.springframework.stereotype.Component;
 import jakarta.annotation.PostConstruct;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
@@ -87,131 +88,142 @@ public class ElevenLabsAdapter implements VoicePort {
 
     @Override
     public CompletableFuture<TranscriptionResult> transcribe(byte[] audioData, AudioFormat format) {
-        return CompletableFuture.supplyAsync(() -> {
-            try {
-                BotProperties.VoiceProperties voice = properties.getVoice();
-                String apiKey = voice.getApiKey();
-                if (apiKey == null || apiKey.isBlank()) {
-                    log.warn("[ElevenLabs] STT request rejected: API key not configured");
-                    throw new RuntimeException("ElevenLabs API key not configured");
-                }
-
-                String mimeType = format != null ? format.getMimeType() : "audio/ogg";
-                String extension = format != null ? format.getExtension() : "ogg";
-
-                log.info("[ElevenLabs] STT request: {} bytes, format={}, model={}",
-                        audioData.length, mimeType, voice.getSttModelId());
-
-                RequestBody fileBody = RequestBody.create(audioData, MediaType.parse(mimeType));
-
-                MultipartBody requestBody = new MultipartBody.Builder()
-                        .setType(MultipartBody.FORM)
-                        .addFormDataPart("file", "audio." + extension, fileBody)
-                        .addFormDataPart("model_id", voice.getSttModelId())
-                        .build();
-
-                Request request = new Request.Builder()
-                        .url(getSttUrl())
-                        .header("xi-api-key", apiKey)
-                        .post(requestBody)
-                        .build();
-
-                long startTime = System.currentTimeMillis();
-                try (Response response = okHttpClient.newCall(request).execute()) {
-                    long elapsed = System.currentTimeMillis() - startTime;
-
-                    if (!response.isSuccessful()) {
-                        String error = response.body() != null ? response.body().string() : "Unknown error";
-                        log.warn("[ElevenLabs] STT failed: HTTP {} in {}ms — {}",
-                                response.code(), elapsed, error);
-                        throw new RuntimeException("ElevenLabs STT error (" + response.code() + "): " + error);
-                    }
-
-                    String responseBody = response.body().string();
-                    SttResponse sttResponse = objectMapper.readValue(responseBody, SttResponse.class);
-
-                    String language = sttResponse.getLanguageCode() != null
-                            ? sttResponse.getLanguageCode()
-                            : "unknown";
-                    String text = sttResponse.getText();
-                    int textLength = text != null ? text.length() : 0;
-                    String preview = text != null && text.length() > 200
-                            ? text.substring(0, 200) + "..."
-                            : text;
-                    log.info("[ElevenLabs] STT success: \"{}\" ({} chars, language={}, {}ms)",
-                            preview, textLength, language, elapsed);
-
-                    return new TranscriptionResult(
-                            sttResponse.getText(),
-                            language,
-                            1.0f,
-                            Duration.ZERO,
-                            Collections.emptyList());
-                }
-            } catch (IOException e) {
-                log.error("[ElevenLabs] STT network error: {}", e.getMessage(), e);
-                throw new RuntimeException("Transcription failed: " + e.getMessage(), e);
-            }
-        }, VOICE_EXECUTOR);
+        return CompletableFuture.supplyAsync(() -> doTranscribe(audioData, format), VOICE_EXECUTOR);
     }
 
     @Override
     public CompletableFuture<byte[]> synthesize(String text, VoiceConfig config) {
-        return CompletableFuture.supplyAsync(() -> {
-            try {
-                BotProperties.VoiceProperties voice = properties.getVoice();
-                String apiKey = voice.getApiKey();
-                if (apiKey == null || apiKey.isBlank()) {
-                    log.warn("[ElevenLabs] TTS request rejected: API key not configured");
-                    throw new RuntimeException("ElevenLabs API key not configured");
+        return CompletableFuture.supplyAsync(() -> doSynthesize(text, config), VOICE_EXECUTOR);
+    }
+
+    private TranscriptionResult doTranscribe(byte[] audioData, AudioFormat format) {
+        try {
+            BotProperties.VoiceProperties voice = properties.getVoice();
+            String apiKey = requireApiKey(voice);
+
+            String mimeType = format != null ? format.getMimeType() : "audio/ogg";
+            String extension = format != null ? format.getExtension() : "ogg";
+
+            log.info("[ElevenLabs] STT request: {} bytes, format={}, model={}",
+                    audioData.length, mimeType, voice.getSttModelId());
+
+            RequestBody fileBody = RequestBody.create(audioData, MediaType.parse(mimeType));
+
+            MultipartBody requestBody = new MultipartBody.Builder()
+                    .setType(MultipartBody.FORM)
+                    .addFormDataPart("file", "audio." + extension, fileBody)
+                    .addFormDataPart("model_id", voice.getSttModelId())
+                    .build();
+
+            Request request = new Request.Builder()
+                    .url(getSttUrl())
+                    .header("xi-api-key", apiKey)
+                    .post(requestBody)
+                    .build();
+
+            long startTime = System.currentTimeMillis();
+            try (Response response = okHttpClient.newCall(request).execute()) {
+                long elapsed = System.currentTimeMillis() - startTime;
+
+                if (!response.isSuccessful()) {
+                    String error = response.body() != null ? response.body().string() : "Unknown error";
+                    log.warn("[ElevenLabs] STT failed: HTTP {} in {}ms — {}",
+                            response.code(), elapsed, error);
+                    throw new IllegalStateException(
+                            "ElevenLabs STT error (" + response.code() + "): " + error);
                 }
 
-                String voiceId = config.voiceId() != null ? config.voiceId() : voice.getVoiceId();
-                String modelId = config.modelId() != null ? config.modelId() : voice.getTtsModelId();
-                float speed = config.speed() > 0 ? config.speed() : voice.getSpeed();
-
-                log.info("[ElevenLabs] TTS request: {} chars, voice={}, model={}, speed={}",
-                        text.length(), voiceId, modelId, speed);
-
-                String url = getTtsUrl(voiceId) + "?output_format=mp3_44100_128";
-
-                String jsonBody = objectMapper.writeValueAsString(new TtsRequest(text, modelId, speed));
-
-                Request request = new Request.Builder()
-                        .url(url)
-                        .header("xi-api-key", apiKey)
-                        .header("Accept", "audio/mpeg")
-                        .header("Content-Type", "application/json")
-                        .post(RequestBody.create(jsonBody, MediaType.parse("application/json")))
-                        .build();
-
-                long startTime = System.currentTimeMillis();
-                try (Response response = okHttpClient.newCall(request).execute()) {
-                    long elapsed = System.currentTimeMillis() - startTime;
-
-                    if (!response.isSuccessful()) {
-                        String error = response.body() != null ? response.body().string() : "Unknown error";
-                        log.warn("[ElevenLabs] TTS failed: HTTP {} in {}ms — {}",
-                                response.code(), elapsed, error);
-                        throw new RuntimeException("ElevenLabs TTS error (" + response.code() + "): " + error);
-                    }
-
-                    byte[] audioBytes = response.body().bytes();
-                    log.info("[ElevenLabs] TTS success: {} chars → {} bytes MP3, {}ms",
-                            text.length(), audioBytes.length, elapsed);
-                    return audioBytes;
-                }
-            } catch (IOException e) {
-                log.error("[ElevenLabs] TTS network error: {}", e.getMessage(), e);
-                throw new RuntimeException("Synthesis failed: " + e.getMessage(), e);
+                return parseSttResponse(response.body().string(), elapsed);
             }
-        }, VOICE_EXECUTOR);
+        } catch (IOException e) {
+            log.error("[ElevenLabs] STT network error: {}", e.getMessage(), e);
+            throw new UncheckedIOException("Transcription failed: " + e.getMessage(), e);
+        }
+    }
+
+    private TranscriptionResult parseSttResponse(String responseBody, long elapsed) throws IOException {
+        SttResponse sttResponse = objectMapper.readValue(responseBody, SttResponse.class);
+
+        String language = sttResponse.getLanguageCode() != null
+                ? sttResponse.getLanguageCode()
+                : "unknown";
+        String text = sttResponse.getText();
+        int textLength = text != null ? text.length() : 0;
+        String preview = text != null && text.length() > 200
+                ? text.substring(0, 200) + "..."
+                : text;
+        log.info("[ElevenLabs] STT success: \"{}\" ({} chars, language={}, {}ms)",
+                preview, textLength, language, elapsed);
+
+        return new TranscriptionResult(
+                sttResponse.getText(),
+                language,
+                1.0f,
+                Duration.ZERO,
+                Collections.emptyList());
+    }
+
+    private byte[] doSynthesize(String text, VoiceConfig config) {
+        try {
+            BotProperties.VoiceProperties voice = properties.getVoice();
+            String apiKey = requireApiKey(voice);
+
+            String voiceId = config.voiceId() != null ? config.voiceId() : voice.getVoiceId();
+            String modelId = config.modelId() != null ? config.modelId() : voice.getTtsModelId();
+            float speed = config.speed() > 0 ? config.speed() : voice.getSpeed();
+
+            log.info("[ElevenLabs] TTS request: {} chars, voice={}, model={}, speed={}",
+                    text.length(), voiceId, modelId, speed);
+
+            String url = getTtsUrl(voiceId) + "?output_format=mp3_44100_128";
+
+            String jsonBody = objectMapper.writeValueAsString(new TtsRequest(text, modelId, speed));
+
+            Request request = new Request.Builder()
+                    .url(url)
+                    .header("xi-api-key", apiKey)
+                    .header("Accept", "audio/mpeg")
+                    .header("Content-Type", "application/json")
+                    .post(RequestBody.create(jsonBody, MediaType.parse("application/json")))
+                    .build();
+
+            long startTime = System.currentTimeMillis();
+            try (Response response = okHttpClient.newCall(request).execute()) {
+                long elapsed = System.currentTimeMillis() - startTime;
+
+                if (!response.isSuccessful()) {
+                    String error = response.body() != null ? response.body().string() : "Unknown error";
+                    log.warn("[ElevenLabs] TTS failed: HTTP {} in {}ms — {}",
+                            response.code(), elapsed, error);
+                    throw new IllegalStateException(
+                            "ElevenLabs TTS error (" + response.code() + "): " + error);
+                }
+
+                byte[] audioBytes = response.body().bytes();
+                log.info("[ElevenLabs] TTS success: {} chars → {} bytes MP3, {}ms",
+                        text.length(), audioBytes.length, elapsed);
+                return audioBytes;
+            }
+        } catch (IOException e) {
+            log.error("[ElevenLabs] TTS network error: {}", e.getMessage(), e);
+            throw new UncheckedIOException("Synthesis failed: " + e.getMessage(), e);
+        }
+    }
+
+    private String requireApiKey(BotProperties.VoiceProperties voice) {
+        String apiKey = voice.getApiKey();
+        if (apiKey == null || apiKey.isBlank()) {
+            log.warn("[ElevenLabs] Request rejected: API key not configured");
+            throw new IllegalStateException("ElevenLabs API key not configured");
+        }
+        return apiKey;
     }
 
     @Override
     public boolean isAvailable() {
-        String apiKey = properties.getVoice().getApiKey();
-        return properties.getVoice().isEnabled() && apiKey != null && !apiKey.isBlank();
+        BotProperties.VoiceProperties voice = properties.getVoice();
+        String apiKey = voice.getApiKey();
+        return voice.isEnabled() && apiKey != null && !apiKey.isBlank();
     }
 
     protected String getSttUrl() {
