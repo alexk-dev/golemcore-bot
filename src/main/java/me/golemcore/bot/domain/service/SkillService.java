@@ -30,6 +30,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
@@ -55,6 +56,9 @@ public class SkillService implements SkillComponent {
     private final SkillVariableResolver variableResolver;
 
     private static final String SKILLS_DIR = "skills";
+    private static final String SUPPRESS_UNCHECKED = "unchecked";
+    private static final String UNKNOWN = "unknown";
+    private static final int MIN_PATH_PARTS_FOR_SKILL_NAME = 2;
     private static final Pattern FRONTMATTER_PATTERN = Pattern.compile(
             "^---\\s*\\n(.*?)\\n---\\s*\\n(.*)$", Pattern.DOTALL);
 
@@ -117,7 +121,7 @@ public class SkillService implements SkillComponent {
         try {
             List<String> keys = storagePort.listObjects(SKILLS_DIR, "").join();
             for (String key : keys) {
-                if (key.endsWith("/SKILL.md") || key.equals("SKILL.md")) {
+                if (key.endsWith("/SKILL.md") || "SKILL.md".equals(key)) {
                     loadSkillInto(key, newRegistry);
                 }
             }
@@ -131,10 +135,6 @@ public class SkillService implements SkillComponent {
         }
     }
 
-    private void loadSkill(String key) {
-        loadSkillInto(key, skillRegistry);
-    }
-
     private void loadSkillInto(String key, Map<String, Skill> target) {
         try {
             String content = storagePort.getText(SKILLS_DIR, key).join();
@@ -143,10 +143,8 @@ public class SkillService implements SkillComponent {
             }
 
             Skill skill = parseSkill(content, key);
-            if (skill != null) {
-                target.put(skill.getName(), skill);
-                log.debug("Loaded skill: {}", skill.getName());
-            }
+            target.put(skill.getName(), skill);
+            log.debug("Loaded skill: {}", skill.getName());
         } catch (Exception e) {
             log.warn("Failed to load skill: {}", key, e);
         }
@@ -165,14 +163,14 @@ public class SkillService implements SkillComponent {
             body = matcher.group(2);
 
             try {
-                @SuppressWarnings("unchecked")
+                @SuppressWarnings(SUPPRESS_UNCHECKED)
                 Map<String, Object> yaml = yamlMapper.readValue(frontmatter, Map.class);
 
                 name = (String) yaml.getOrDefault("name", name);
                 description = (String) yaml.getOrDefault("description", "");
                 metadata = yaml;
 
-            } catch (Exception e) {
+            } catch (IOException | RuntimeException e) {
                 log.warn("Failed to parse skill frontmatter: {}", path, e);
             }
         }
@@ -184,7 +182,7 @@ public class SkillService implements SkillComponent {
         List<SkillVariable> variableDefinitions = List.of();
         Map<String, String> resolvedVariables = Map.of();
 
-        @SuppressWarnings("unchecked")
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
         Map<String, Object> varsSection = (Map<String, Object>) metadata.get("vars");
         if (varsSection != null) {
             variableDefinitions = variableResolver.parseVariableDefinitions(varsSection);
@@ -226,13 +224,13 @@ public class SkillService implements SkillComponent {
     private String extractNameFromPath(String path) {
         // Extract skill name from path like "skills/summarize/SKILL.md"
         String[] parts = path.split("/");
-        if (parts.length >= 2) {
+        if (parts.length >= MIN_PATH_PARTS_FOR_SKILL_NAME) {
             return parts[parts.length - 2];
         }
-        return "unknown";
+        return UNKNOWN;
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings(SUPPRESS_UNCHECKED)
     private Map<String, String> parseConditionalNextSkills(Map<String, Object> metadata) {
         Object cnsObj = metadata.get("conditional_next_skills");
         if (!(cnsObj instanceof Map)) {
@@ -248,7 +246,7 @@ public class SkillService implements SkillComponent {
         return result;
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings(SUPPRESS_UNCHECKED)
     private McpConfig parseMcpConfig(Map<String, Object> metadata, Map<String, String> resolvedVariables) {
         Object mcpObj = metadata.get("mcp");
         if (!(mcpObj instanceof Map)) {
@@ -313,7 +311,7 @@ public class SkillService implements SkillComponent {
         return result.toString();
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings(SUPPRESS_UNCHECKED)
     private boolean checkRequirements(Map<String, Object> metadata) {
         Object reqObj = metadata.get("requires");
         if (reqObj == null) {

@@ -183,6 +183,18 @@
       "reasoningRequired": false,
       "supportsTemperature": true,
       "maxInputTokens": 131072
+    },
+    "deepinfra/deepseek-ai/DeepSeek-V3.2": {
+      "provider": "deepinfra",
+      "reasoningRequired": false,
+      "supportsTemperature": true,
+      "maxInputTokens": 163840
+    },
+    "deepinfra/moonshotai/Kimi-K2.5": {
+      "provider": "deepinfra",
+      "reasoningRequired": false,
+      "supportsTemperature": true,
+      "maxInputTokens": 262144
     }
   },
   "defaults": {

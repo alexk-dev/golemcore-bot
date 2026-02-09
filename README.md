@@ -2,24 +2,24 @@
 
 > AI assistant framework with intelligent skill routing, multi-LLM support, and autonomous execution capabilities
 
-[![CI](https://github.com/your-org/golemcore-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/golemcore-bot/actions/workflows/ci.yml)
+[![CI](https://github.com/alexk-dev/golemcore-bot/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/alexk-dev/golemcore-bot/actions/workflows/docker-publish.yml)
 [![Java](https://img.shields.io/badge/Java-17+-orange.svg)](https://www.oracle.com/java/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.4.2-brightgreen.svg)](https://spring.io/projects/spring-boot)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-775%20passing-success.svg)](https://github.com/your-org/golemcore-bot/actions)
+[![Tests](https://img.shields.io/badge/tests-1272%20passing-success.svg)](https://github.com/alexk-dev/golemcore-bot/actions)
 
 ---
 
 ## 🚀 Key Features
 
 ### 🧠 Intelligent Processing
-- **Hybrid Skill Routing** — 2-stage semantic search + LLM classifier (~5ms + 200ms)
+- **Hybrid Skill Routing** — 2-stage semantic search + LLM classifier
 - **Dynamic Model Tier Selection** — Automatic escalation to coding-tier model when code activity detected
 - **Context Overflow Protection** — Smart truncation with emergency recovery, handles 50K+ token conversations
 - **Fragmented Input Detection** — Aggregates split messages using temporal and linguistic signals
 
 ### 🛠️ Powerful Tools
-- **9 Built-in Tools** — Filesystem, Shell, Web Search, Browser, Weather, Skill Management, Goal Management, Transitions, DateTime
+- **10 Built-in Tools** — Filesystem, Shell, Web Search, Browser, Weather, Skill Management, Goal Management, Transitions, DateTime, Voice
 - **MCP Protocol Support** — Model Context Protocol for stdio-based tool servers (GitHub, Slack, etc.)
 - **Sandboxed Execution** — Isolated workspace with path traversal protection
 - **Tool Confirmation** — User approval workflow for destructive operations
@@ -32,13 +32,12 @@
 - **Modular System Prompt** — File-based prompt sections (IDENTITY.md, RULES.md)
 
 ### 🌐 Multi-LLM & Channels
-- **LLM Providers** — OpenAI, Anthropic (Claude), Google (Gemini), custom OpenAI-compatible endpoints
+- **LLM Providers** — OpenAI, Anthropic (Claude), custom OpenAI-compatible endpoints
 - **Channels** — Telegram (long-polling, voice, file uploads), extensible for Discord/Slack
-- **Streaming** — Real-time response streaming with typing indicators
 
-### 🔒 Enterprise Security
-- 5 Security Layers: Unicode normalization, injection detection, allowlists, sandboxing, content policy
-- Rate limiting: per-user (20/min, 100/hr, 500/day), per-channel, per-LLM
+### 🔒 Security
+- 5 layers: Unicode normalization, injection detection, allowlists, sandboxing, content policy
+- Rate limiting: configurable request limits (20/min, 100/hr, 500/day), per-channel, per-LLM
 - Tool confirmation with 60s timeout
 
 ---
@@ -78,14 +77,14 @@
 
 ```
 Docker (recommended) OR Java 17+ with Maven 3.x
-At least one LLM API key (OpenAI, Anthropic, or Google)
+At least one LLM API key (OpenAI or Anthropic)
 ```
 
 ### Docker (Recommended)
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/golemcore-bot.git
+git clone https://github.com/alexk-dev/golemcore-bot.git
 cd golemcore-bot
 
 # Build Docker image with Jib (no Docker daemon needed)
@@ -94,7 +93,6 @@ cd golemcore-bot
 # Configure LLM provider (choose one)
 export OPENAI_API_KEY=sk-proj-...          # OpenAI (GPT-5.1, GPT-5.2, o1, o3)
 export ANTHROPIC_API_KEY=sk-ant-...        # Anthropic (Claude Opus/Sonnet)
-export GOOGLE_API_KEY=...                  # Google (Gemini)
 
 # Run container
 docker run -d \
@@ -148,7 +146,7 @@ docker-compose up -d
 ./mvnw clean package -DskipTests
 
 # Configure LLM provider
-export OPENAI_API_KEY=sk-proj-...     # or ANTHROPIC_API_KEY or GOOGLE_API_KEY
+export OPENAI_API_KEY=sk-proj-...     # or ANTHROPIC_API_KEY
 
 # Run
 java -jar target/golemcore-bot-0.1.0-SNAPSHOT.jar
@@ -167,7 +165,7 @@ Messages flow through an ordered pipeline of specialized systems:
 ```
 User Message
     ↓
-[10] InputSanitizationSystem     — HTML sanitization, length check
+[10] InputSanitizationSystem     — Unicode normalization, length check
 [15] SkillRoutingSystem           — Hybrid skill matching
 [18] AutoCompactionSystem         — Context overflow prevention
 [20] ContextBuildingSystem        — Prompt assembly, MCP startup
@@ -184,7 +182,7 @@ The loop iterates up to 20 times while the LLM requests tool calls.
 
 ### Skill Routing & Model Selection
 
-3-stage hybrid matching: fragmented input detection, semantic search (~5ms), LLM classifier (~200ms). 4 model tiers (fast/default/smart/coding) with automatic escalation to coding tier when code activity is detected.
+3-stage hybrid matching: fragmented input detection, semantic search, LLM classifier. 4 model tiers (fast/default/smart/coding) with automatic escalation to coding tier when code activity is detected.
 
 See **[Model Routing Guide](docs/MODEL_ROUTING.md)** for the full end-to-end flow, tier architecture, dynamic upgrades, tool ID remapping, context overflow protection, and debugging tips.
 
@@ -216,7 +214,6 @@ See the [Tools & Integrations](#-tools--integrations) section below for configur
 |----------|-------------|---------|
 | `OPENAI_API_KEY` | OpenAI API key (GPT-5.x, o1, o3) | `sk-proj-...` |
 | `ANTHROPIC_API_KEY` | Anthropic API key (Claude Opus/Sonnet) | `sk-ant-...` |
-| `GOOGLE_API_KEY` | Google API key (Gemini) | `...` |
 
 ### Telegram Channel
 
@@ -235,7 +232,8 @@ See the [Tools & Integrations](#-tools--integrations) section below for configur
 | `AUTO_MODE_ENABLED` | Autonomous goal execution | `false` |
 | `MCP_ENABLED` | Model Context Protocol client | `true` |
 | `BRAVE_SEARCH_ENABLED` | Web search via Brave | `false` |
-| `VOICE_ENABLED` | Voice processing (STT/TTS) | `false` |
+| `VOICE_ENABLED` | Voice processing (ElevenLabs STT/TTS) | `false` |
+| `ELEVENLABS_API_KEY` | ElevenLabs API key for voice | — |
 | `BOT_ROUTER_DYNAMIC_TIER_ENABLED` | Auto-upgrade to coding tier | `true` |
 
 For the complete list of 80+ environment variables (model routing, security, rate limiting, storage, tools, voice, streaming, HTTP, etc.), see the **[Configuration Guide](docs/CONFIGURATION.md)**.
@@ -279,7 +277,7 @@ See **[Configuration Guide](docs/CONFIGURATION.md)** for all settings, **[Quick 
 
 ## 🛠️ Tools & Integrations
 
-### Built-in Tools (9)
+### Built-in Tools (10)
 
 | Tool | Operations | Requires | Notes |
 |------|------------|----------|-------|
@@ -292,6 +290,7 @@ See **[Configuration Guide](docs/CONFIGURATION.md)** for all settings, **[Quick 
 | **BraveSearch** | search | `BRAVE_SEARCH_API_KEY` | 2000 free queries/month |
 | **Weather** | get_weather | — | Open-Meteo API (free) |
 | **DateTime** | current_time, convert_timezone, date_math | — | — |
+| **VoiceResponse** | send_voice | `ELEVENLABS_API_KEY` | LLM-initiated TTS synthesis |
 
 ### MCP Integrations
 
@@ -435,7 +434,8 @@ src/main/java/me/golemcore/bot/
 │       ├── llm/              # LLM providers (Langchain4j, Custom, NoOp)
 │       ├── storage/          # Local filesystem
 │       ├── mcp/              # MCP client
-│       └── rag/              # RAG integration
+│       ├── rag/              # RAG integration
+│       └── voice/            # ElevenLabs STT + TTS
 ├── domain/                    # Core business logic
 │   ├── loop/                 # Agent loop orchestration
 │   ├── system/               # Processing pipeline (11 systems)
@@ -445,14 +445,14 @@ src/main/java/me/golemcore/bot/
 ├── auto/                      # Auto-mode scheduler
 ├── routing/                   # Hybrid skill matcher
 ├── security/                  # Security layers
-├── tools/                     # 9 built-in tools
+├── tools/                     # 10 built-in tools
 └── usage/                     # Usage tracking
 ```
 
 ### Running Tests
 
 ```bash
-# All tests (775 tests)
+# All tests
 mvn test
 
 # Specific test class
@@ -477,31 +477,31 @@ After running checks:
 ### Processing Flow
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                        Input Layer                      │
-│  ┌───────────┐  ┌──────────────┐                        │
-│  │  Telegram  │  │ CommandRouter│                        │
-│  └─────┬─────┘  └──────┬───────┘                        │
-├────────┼────────────────┼───────────────────────────────┤
-│        │                                                │
-│        ▼                                                │
-│  ┌──────────────────────────────────────────────────┐   │
-│  │              Agent Processing Loop               │   │
-│  │  ┌────────────┐ ┌──────────────┐ ┌────────────┐ │   │
-│  │  │   Skill    │ │   Context    │ │    Tool    │ │   │
-│  │  │  Routing   │ │  Building    │ │  Execution │ │   │
-│  │  └────────────┘ └──────────────┘ └────────────┘ │   │
-│  └──────────────────────────────────────────────────┘   │
-│                                                         │
-│        │                │                   │           │
-├────────┼────────────────┼───────────────────┼───────────┤
-│        ▼                ▼                   ▼           │
-│  ┌───────────┐  ┌──────────────┐  ┌──────────────────┐ │
-│  │    LLM    │  │   Storage    │  │    Embedding     │ │
-│  │(Langchain4j)│ │   (Local)    │  │    (OpenAI)      │ │
-│  └───────────┘  └──────────────┘  └──────────────────┘ │
-│                     Service Layer                       │
-└─────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────┐
+│                        Input Layer                        │
+│  ┌────────────┐  ┌──────────────┐                         │
+│  │  Telegram  │  │ CommandRouter│                         │
+│  └─────┬──────┘  └──────┬───────┘                         │
+├────────┼────────────────┼─────────────────────────────────┤
+│        └────────┬───────┘                                 │
+│                 ▼                                         │
+│  ┌─────────────────────────────────────────────────────┐  │
+│  │              Agent Processing Loop                  │  │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐   │  │
+│  │  │  Skill   │  │ Context  │  │ Tool Execution + │   │  │
+│  │  │ Routing  │  │ Building │  │   LLM Calls      │   │  │
+│  │  └──────────┘  └──────────┘  └──────────────────┘   │  │
+│  └─────────────────────────────────────────────────────┘  │
+│                                                           │
+│        │                │                 │               │
+├────────┼────────────────┼─────────────────┼───────────────┤
+│        ▼                ▼                 ▼               │
+│  ┌───────────────┐ ┌───────────┐ ┌───────────────────┐    │
+│  │     LLM       │ │  Storage  │ │     Embedding     │    │
+│  │ (Langchain4j) │ │  (Local)  │ │     (OpenAI)      │    │
+│  └───────────────┘ └───────────┘ └───────────────────┘    │
+│                     Service Layer                         │
+└───────────────────────────────────────────────────────────┘
 ```
 
 The bot processes messages through ordered pipeline stages:
@@ -520,7 +520,7 @@ The bot processes messages through ordered pipeline stages:
 | **Messaging** | Telegram Bots | 8.2.0 |
 | **Browser** | Playwright | 1.49.0 |
 | **Security** | Custom (Unicode normalization, injection guard) | — |
-| **Voice** | Jaffree (FFmpeg) | 2023.09.10 |
+| **Voice** | ElevenLabs (STT + TTS) | API v1 |
 | **Testing** | JUnit 5 + Mockito | — |
 | **Code Quality** | SpotBugs + PMD + JaCoCo | — |
 
@@ -530,7 +530,7 @@ The bot processes messages through ordered pipeline stages:
 
 Contributions welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for:
 - Development workflow
-- Code quality standards (PMD, SpotBugs, 70%+ coverage)
+- Code quality standards (PMD, SpotBugs, 85%+ coverage)
 - Testing requirements
 - Pull request process
 
@@ -589,7 +589,7 @@ See [LICENSE](LICENSE) for full text and [NOTICE](NOTICE) for attributions.
 
 | Library | License |
 |---------|---------|
-| Spring Boot, LangChain4j, OkHttp, Playwright, Jackson, Jaffree | Apache 2.0 |
+| Spring Boot, LangChain4j, OkHttp, Playwright, Jackson | Apache 2.0 |
 | Telegram Bots, Lombok | MIT |
 
 ---
@@ -607,8 +607,8 @@ Special thanks to the Model Context Protocol community for MCP tooling.
 
 ## 📞 Support
 
-- 🐛 **Issues:** [GitHub Issues](https://github.com/your-org/golemcore-bot/issues)
-- 💬 **Discussions:** [GitHub Discussions](https://github.com/your-org/golemcore-bot/discussions)
+- 🐛 **Issues:** [GitHub Issues](https://github.com/alexk-dev/golemcore-bot/issues)
+- 💬 **Discussions:** [GitHub Discussions](https://github.com/alexk-dev/golemcore-bot/discussions)
 - 📧 **Security:** Report vulnerabilities via email (not public issues)
 
 ---

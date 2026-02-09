@@ -20,6 +20,7 @@ package me.golemcore.bot.adapter.outbound.rag;
 
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.RagPort;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -110,13 +111,14 @@ public class LightRagAdapter implements RagPort {
                 addApiKeyHeader(requestBuilder);
 
                 try (Response response = httpClient.newCall(requestBuilder.build()).execute()) {
-                    if (!response.isSuccessful() || response.body() == null) {
+                    ResponseBody responseBody = response.body();
+                    if (!response.isSuccessful() || responseBody == null) {
                         log.warn("[RAG] Query failed: HTTP {}", response.code());
                         return "";
                     }
 
-                    String responseBody = response.body().string();
-                    return parseQueryResponse(responseBody);
+                    String responseStr = responseBody.string();
+                    return parseQueryResponse(responseStr);
                 }
             } catch (Exception e) {
                 log.warn("[RAG] Query error: {}", e.getMessage());
@@ -155,7 +157,7 @@ public class LightRagAdapter implements RagPort {
                         log.debug("[RAG] Indexed {} chars", content.length());
                     }
                 }
-            } catch (Exception e) {
+            } catch (IOException e) {
                 log.warn("[RAG] Index error: {}", e.getMessage());
             }
         });
@@ -202,7 +204,7 @@ public class LightRagAdapter implements RagPort {
             }
             // Fallback: treat entire body as text
             return responseBody.trim();
-        } catch (Exception e) {
+        } catch (JsonProcessingException e) {
             log.debug("[RAG] Failed to parse query response, using raw text");
             return responseBody.trim();
         }

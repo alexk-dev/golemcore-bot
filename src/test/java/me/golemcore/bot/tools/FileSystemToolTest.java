@@ -295,6 +295,192 @@ class FileSystemToolTest {
     }
 
     @Test
+    void sendFileWithCaption() throws Exception {
+        Files.write(tempDir.resolve("audio.mp3"), new byte[] { 0x49, 0x44 });
+
+        ToolResult result = tool.execute(Map.of(
+                "operation", "send_file",
+                "path", "audio.mp3")).get();
+
+        assertTrue(result.isSuccess());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) result.getData();
+        assertEquals("audio/mpeg", data.get("mime_type"));
+        assertEquals(Attachment.Type.DOCUMENT, data.get("type"));
+    }
+
+    // ===== write_file edge cases =====
+
+    @Test
+    void shouldFailWriteWithoutContent() throws Exception {
+        ToolResult result = tool.execute(Map.of(
+                "operation", "write_file",
+                "path", "test.txt")).get();
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains("Missing content"));
+    }
+
+    @Test
+    void shouldCreateParentDirectoriesOnWrite() throws Exception {
+        ToolResult result = tool.execute(Map.of(
+                "operation", "write_file",
+                "path", "deep/nested/dir/file.txt",
+                "content", "hello")).get();
+        assertTrue(result.isSuccess());
+        assertTrue(Files.exists(tempDir.resolve("deep/nested/dir/file.txt")));
+    }
+
+    // ===== read_file edge cases =====
+
+    @Test
+    void shouldFailReadOnDirectory() throws Exception {
+        Files.createDirectory(tempDir.resolve("adir"));
+        ToolResult result = tool.execute(Map.of(
+                "operation", "read_file",
+                "path", "adir")).get();
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains("Not a file"));
+    }
+
+    // ===== list_directory edge cases =====
+
+    @Test
+    void shouldFailListOnNonExistentDir() throws Exception {
+        ToolResult result = tool.execute(Map.of(
+                "operation", "list_directory",
+                "path", "nonexistent")).get();
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains("not found"));
+    }
+
+    @Test
+    void shouldFailListOnFile() throws Exception {
+        Files.writeString(tempDir.resolve("file.txt"), "hello");
+        ToolResult result = tool.execute(Map.of(
+                "operation", "list_directory",
+                "path", "file.txt")).get();
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains("Not a directory"));
+    }
+
+    // ===== create_directory edge cases =====
+
+    @Test
+    void shouldSucceedWhenDirectoryAlreadyExists() throws Exception {
+        Files.createDirectory(tempDir.resolve("existing"));
+        ToolResult result = tool.execute(Map.of(
+                "operation", "create_directory",
+                "path", "existing")).get();
+        assertTrue(result.isSuccess());
+        assertTrue(result.getOutput().contains("already exists"));
+    }
+
+    @Test
+    void shouldFailCreateDirWhenFileExists() throws Exception {
+        Files.writeString(tempDir.resolve("afile"), "content");
+        ToolResult result = tool.execute(Map.of(
+                "operation", "create_directory",
+                "path", "afile")).get();
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains("not a directory"));
+    }
+
+    // ===== delete edge cases =====
+
+    @Test
+    void shouldFailDeleteNonExistent() throws Exception {
+        ToolResult result = tool.execute(Map.of(
+                "operation", "delete",
+                "path", "nonexistent")).get();
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains("not found"));
+    }
+
+    // ===== file_info edge cases =====
+
+    @Test
+    void shouldReturnDirectoryInfo() throws Exception {
+        Files.createDirectory(tempDir.resolve("infodir"));
+        ToolResult result = tool.execute(Map.of(
+                "operation", "file_info",
+                "path", "infodir")).get();
+        assertTrue(result.isSuccess());
+        assertTrue(result.getOutput().contains("Directory"));
+    }
+
+    @Test
+    void shouldFailInfoOnNonExistent() throws Exception {
+        ToolResult result = tool.execute(Map.of(
+                "operation", "file_info",
+                "path", "nonexistent")).get();
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains("not found"));
+    }
+
+    // ===== unknown operation =====
+
+    @Test
+    void shouldFailOnUnknownOperation() throws Exception {
+        ToolResult result = tool.execute(Map.of(
+                "operation", "unknown_op",
+                "path", "test.txt")).get();
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains("Unknown operation"));
+    }
+
+    // ===== getDefinition =====
+
+    @Test
+    void shouldReturnValidDefinition() {
+        assertNotNull(tool.getDefinition());
+        assertEquals("filesystem", tool.getDefinition().getName());
+        assertNotNull(tool.getDefinition().getDescription());
+        assertNotNull(tool.getDefinition().getInputSchema());
+    }
+
+    // ===== isEnabled =====
+
+    @Test
+    void shouldBeEnabled() {
+        assertTrue(tool.isEnabled());
+    }
+
+    // ===== Additional MIME type tests =====
+
+    @Test
+    void shouldDetectWebpMimeType() {
+        assertEquals("image/webp", FileSystemTool.detectMimeType("image.webp"));
+    }
+
+    @Test
+    void shouldDetectYamlMimeType() {
+        assertEquals("text/yaml", FileSystemTool.detectMimeType("config.yml"));
+        assertEquals("text/yaml", FileSystemTool.detectMimeType("config.yaml"));
+    }
+
+    @Test
+    void shouldDetectCodeMimeTypes() {
+        assertEquals("text/x-python", FileSystemTool.detectMimeType("script.py"));
+        assertEquals("text/x-java", FileSystemTool.detectMimeType("Main.java"));
+        assertEquals("text/javascript", FileSystemTool.detectMimeType("app.js"));
+        assertEquals("text/typescript", FileSystemTool.detectMimeType("app.ts"));
+    }
+
+    @Test
+    void shouldDetectArchiveMimeTypes() {
+        assertEquals("application/x-tar", FileSystemTool.detectMimeType("archive.tar"));
+        assertEquals("application/gzip", FileSystemTool.detectMimeType("archive.gz"));
+    }
+
+    @Test
+    void shouldDetectMediaMimeTypes() {
+        assertEquals("audio/mpeg", FileSystemTool.detectMimeType("song.mp3"));
+        assertEquals("video/mp4", FileSystemTool.detectMimeType("video.mp4"));
+        assertEquals("audio/wav", FileSystemTool.detectMimeType("sound.wav"));
+    }
+
+    @Test
     void toolDefinitionIncludesSendFile() {
         String desc = tool.getDefinition().getDescription();
         assertTrue(desc.contains("send_file"));
