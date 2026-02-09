@@ -1,0 +1,291 @@
+# CLAUDE.md — GolemCore Bot
+
+## Build & Test
+
+```bash
+./mvnw clean package -DskipTests   # build
+./mvnw test                         # run tests
+./mvnw clean verify -P strict       # full check (tests + PMD + SpotBugs)
+```
+
+**Required env vars:** `OPENAI_API_KEY` (or `ANTHROPIC_API_KEY`).
+**Optional:** `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ENABLED`, `TELEGRAM_ALLOWED_USERS`.
+
+---
+
+## Architecture
+
+Spring Boot 3.4.2, Java 17, Hexagonal Architecture (Ports & Adapters).
+
+### Package Structure
+
+```
+me.golemcore.bot
+├── adapter/inbound/          Telegram (TelegramAdapter, TelegramVoiceHandler), CommandRouter
+├── adapter/outbound/         LLM, storage, browser, MCP, voice (ElevenLabsAdapter), embeddings
+├── domain/component/         Interfaces: ToolComponent, SkillComponent, etc.
+├── domain/loop/              AgentLoop, AgentContextHolder
+├── domain/model/             AgentContext, AgentSession, Message, Skill, ToolDefinition, ContextAttributes, etc.
+├── domain/service/           SessionService, SkillService, CompactionService, VoiceResponseHandler, etc.
+├── domain/system/            Ordered pipeline systems (see below)
+├── port/inbound/             ChannelPort, CommandPort
+├── port/outbound/            LlmPort, StoragePort, EmbeddingPort, BrowserPort, VoicePort, McpPort, SessionPort, RagPort, ConfirmationPort
+├── routing/                  HybridSkillMatcher, LlmSkillClassifier, MessageContextAggregator
+├── security/                 InjectionGuard, InputSanitizer, AllowlistValidator
+└── tools/                    FileSystemTool, ShellTool, BrowserTool, VoiceResponseTool, etc.
+```
+
+### Agent Loop Pipeline
+
+| Order | System                    | Purpose |
+|-------|--------------------------|---------|
+| 10    | `InputSanitizationSystem` | Sanitization, injection detection |
+| 15    | `SkillRoutingSystem`      | Fragmented input aggregation, semantic search, LLM classifier |
+| 18    | `AutoCompactionSystem`    | Auto-compact when context nears limit |
+| 20    | `ContextBuildingSystem`   | System prompt, memory, skills, tools, MCP |
+| 25    | `DynamicTierSystem`       | Upgrade model tier mid-conversation if needed |
+| 30    | `LlmExecutionSystem`     | Model selection by tier, LLM call, usage tracking |
+| 40    | `ToolExecutionSystem`     | Execute tool calls, loop back to LLM |
+| 50    | `MemoryPersistSystem`     | Persist memory |
+| 55    | `SkillPipelineSystem`     | Auto-transition between skills |
+| 55    | `RagIndexingSystem`       | Index conversations for RAG |
+| 60    | `ResponseRoutingSystem`   | Send response to channel |
+
+Max iterations: `bot.agent.max-iterations=20`.
+
+### Port/Adapter Boundaries
+
+Domain code (`domain/`) depends only on port interfaces (`port/`). Never import adapter classes in domain code.
+
+```
+domain/ -> port/         OK
+adapter/ -> port/        OK
+adapter/ -> domain/      OK (models and services only)
+domain/ -> adapter/      PROHIBITED
+```
+
+---
+
+## Coding Rules
+
+### Java Style
+
+- **No `var`** — always declare types explicitly
+- **No wildcard imports** — use explicit imports (`import java.util.List`, not `import java.util.*`)
+- **No `@Autowired`** — constructor injection only via `@RequiredArgsConstructor` + `private final` fields
+- **No `@Lazy`** — masks circular dependency problems; break cycles architecturally (see below)
+- **No `@ConditionalOnProperty`** — all beans always exist, use `isEnabled()` for runtime checks
+- Static imports allowed in tests only
+
+### Class Organization
+
+```java
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class ExampleService {
+    // 1. Static constants
+    private static final String DIR_NAME = "examples";
+    // 2. Injected dependencies (private final)
+    private final StoragePort storagePort;
+    // 3. Mutable state (caches, registries)
+    private final Map<String, Item> cache = new ConcurrentHashMap<>();
+    // 4. @PostConstruct
+    // 5. Public interface methods (@Override)
+    // 6. Public methods
+    // 7. Private methods
+}
+```
+
+### Naming
+
+| Suffix | Layer | Example |
+|--------|-------|---------|
+| `*Service` | Domain services | `SessionService` |
+| `*System` | Pipeline systems | `LlmExecutionSystem` |
+| `*Tool` | Tool implementations | `FileSystemTool` |
+| `*Adapter` | Outbound adapters | `Langchain4jAdapter` |
+| `*Port` | Port interfaces | `LlmPort`, `StoragePort` |
+| `*Component` | Component interfaces | `ToolComponent` |
+
+Methods: `get*` (throw if missing), `find*` (return Optional), `is*`/`has*` (boolean), `create*`/`build*` (factory), `process` (pipeline), `execute` (action).
+
+### Lombok
+
+- `@RequiredArgsConstructor` on services/adapters/systems/tools for injection
+- `@Slf4j` on any class that logs
+- `@Data` on model POJOs, `@Builder` on request/response objects
+- `@NoArgsConstructor` + `@AllArgsConstructor` on Jackson-deserialized models
+- **Gotcha:** computed getters in `@Data` classes get serialized by Jackson — mark them `@JsonIgnore`
+
+### Logging
+
+Use `@Slf4j`. Parametrized messages only, no string concatenation.
+
+```java
+log.info("[MCP] Starting server for skill: {}", skillName);    // OK
+log.info("Starting server for " + skillName);                   // PROHIBITED
+```
+
+Levels: `error` (failures + exception), `warn` (recoverable), `info` (milestones), `debug` (internal flow), `trace` (raw content).
+
+### Error Handling
+
+- No custom exception hierarchy — use standard exceptions (`IllegalStateException`, `IllegalArgumentException`)
+- Use `Optional` for lookups, never return `null` from public methods
+- Catch broadly in I/O layers with `// NOSONAR` comment for intentional broad catches
+
+### Spring Stereotypes
+
+- `@Service` — domain services
+- `@Component` — adapters, tools, infrastructure
+- `@Configuration` — config classes; `@Bean` methods with injected fields **must be `static`**
+
+### Circular Dependencies
+
+**No `@Lazy`** — it masks architectural problems. Break cycles by:
+1. Extracting a shared interface/service that both sides depend on
+2. Using Spring's `ApplicationEventPublisher` for one-way notifications
+3. Moving the dependency into a method parameter instead of a constructor field
+
+---
+
+## Commit Messages
+
+Follow [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/).
+
+### Format
+
+```
+<type>[optional scope]: <description>
+
+[optional body]
+
+[optional footer(s)]
+```
+
+### Types
+
+| Type | When to use |
+|------|-------------|
+| `feat` | New feature or capability |
+| `fix` | Bug fix |
+| `refactor` | Code change that neither fixes a bug nor adds a feature |
+| `test` | Adding or updating tests |
+| `docs` | Documentation only |
+| `chore` | Build config, CI, dependencies, tooling |
+| `perf` | Performance improvement |
+| `style` | Formatting, whitespace (no logic change) |
+
+### Scope
+
+Use module/area name: `llm`, `telegram`, `tools`, `skills`, `mcp`, `auto`, `routing`, `security`, `storage`, `loop`, `voice`.
+
+### Rules
+
+- Imperative mood: "add feature", not "added feature"
+- Subject line under 72 characters, no period at end
+- Breaking changes: append `!` after type/scope AND add `BREAKING CHANGE:` footer
+
+### Examples
+
+```
+feat(tools): add BrowserTool screenshot mode
+fix(llm): handle empty response from Anthropic API
+refactor(routing): extract MessageContextAggregator from HybridSkillMatcher
+test(mcp): add McpClient lifecycle tests
+chore: upgrade langchain4j to 1.0.0-beta2
+feat(skills)!: rename nextSkill field to next_skill in YAML frontmatter
+
+BREAKING CHANGE: skill YAML files must use next_skill instead of nextSkill.
+```
+
+---
+
+## Testing
+
+Tests mirror main source structure.
+
+- Test class: `*Test` suffix
+- Test method: `shouldDoSomethingWhenCondition()` — no `test` prefix
+- Pattern: Arrange-Act-Assert
+- Mocking: Mockito, create mocks in `@BeforeEach`
+- For varargs mocks, use custom `Answer` on mock creation (not `when().thenAnswer()`)
+- Use `@ParameterizedTest` + `@ValueSource` for input validation
+
+```java
+@Test
+void shouldRejectPathTraversalAttempt() {
+    // Arrange
+    Map<String, Object> params = Map.of("path", "../../../etc/passwd");
+    // Act
+    ToolResult result = tool.execute(params).join();
+    // Assert
+    assertTrue(result.getError().contains("traversal"));
+}
+```
+
+---
+
+## Key Patterns
+
+### AgentContext
+
+Uses `@Builder` only (no no-arg constructor):
+```java
+AgentContext context = AgentContext.builder()
+        .session(session).messages(messages)
+        .channel(channelPort).chatId("123")
+        .build();
+```
+
+### AgentSession
+
+Field is `chatId` (not `channelId`).
+
+### ToolDefinition
+
+Field is `inputSchema` (not `parameters`).
+
+### ToolResult
+
+`ToolResult.success(output)` stores in `output` field. `ToolResult.failure(error)` stores in `error` field.
+
+### Tools
+
+All tools implement `ToolComponent`. Tools using `AgentContextHolder` (ThreadLocal) must NOT use `CompletableFuture.supplyAsync()` — ThreadLocal not propagated to ForkJoinPool.
+
+### Adding a New Tool
+
+1. Create class in `tools/` implementing `ToolComponent`
+2. Implement `getDefinition()` (JSON Schema), `execute()`, `isEnabled()`
+3. Add config flag `bot.tools.<name>.enabled` in `application.properties`
+
+### Adding a New System
+
+1. Implement `AgentSystem` in `domain/system/`
+2. Set `@Order(N)` to control pipeline position
+3. Implement `process(AgentContext)`, `shouldProcess()`, `isEnabled()`
+
+### Storage
+
+Local filesystem only. `StoragePort` uses "directory" and "path" terminology.
+Base path: `${user.home}/.golemcore/workspace`. Directories: `sessions/`, `memory/`, `skills/`, `usage/`, `preferences/`.
+
+### MCP Client
+
+Lightweight MCP over stdio (Jackson + ProcessBuilder, JSON-RPC 2.0). `McpPort` outbound port interface. `McpClientManager` manages pool of `McpClient` by skill name with idle timeout. `McpToolAdapter` (NOT a Spring bean) wraps MCP tools as `ToolComponent`.
+
+Skill frontmatter:
+```yaml
+mcp:
+  command: npx -y @modelcontextprotocol/server-github
+  env:
+    GITHUB_PERSONAL_ACCESS_TOKEN: ${GITHUB_TOKEN}
+  startup_timeout: 30
+  idle_timeout: 10
+```
+
+### Voice
+
+ElevenLabs for STT + TTS. Voice prefix mechanism: LLM starts response with `🔊` -> `ResponseRoutingSystem` detects, strips prefix, synthesizes TTS, sends voice. Falls back to text on failure.

@@ -26,6 +26,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.util.*;
 
 /**
@@ -48,6 +49,10 @@ public class SkillVariableResolver {
 
     private static final String SKILLS_DIR = "skills";
     private static final String GLOBAL_SECTION = "_global";
+    private static final TypeReference<Map<String, String>> STRING_MAP_TYPE_REF = new TypeReference<>() {
+    };
+    private static final TypeReference<Map<String, Map<String, String>>> NESTED_MAP_TYPE_REF = new TypeReference<>() {
+    };
 
     private final StoragePort storagePort;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -194,10 +199,9 @@ public class SkillVariableResolver {
         try {
             String json = storagePort.getText(SKILLS_DIR, skillName + "/vars.json").join();
             if (json != null && !json.isBlank()) {
-                return objectMapper.readValue(json, new TypeReference<>() {
-                });
+                return objectMapper.readValue(json, STRING_MAP_TYPE_REF);
             }
-        } catch (Exception e) {
+        } catch (IOException | RuntimeException e) {
             log.debug("No per-skill vars.json for {}: {}", skillName, e.getMessage());
         }
         return Collections.emptyMap();
@@ -207,10 +211,9 @@ public class SkillVariableResolver {
         try {
             String json = storagePort.getText("", "variables.json").join();
             if (json != null && !json.isBlank()) {
-                return objectMapper.readValue(json, new TypeReference<>() {
-                });
+                return objectMapper.readValue(json, NESTED_MAP_TYPE_REF);
             }
-        } catch (Exception e) {
+        } catch (IOException | RuntimeException e) {
             log.debug("No global variables.json: {}", e.getMessage());
         }
         return Collections.emptyMap();

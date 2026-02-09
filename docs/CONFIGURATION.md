@@ -152,10 +152,7 @@ export BOT_ROUTER_SKILL_MATCHER_SKIP_CLASSIFIER_THRESHOLD=0.95
 export BOT_ROUTER_SKILL_MATCHER_CACHE_TTL_MINUTES=60
 ```
 
-**Performance:**
-- Semantic search: ~5ms
-- LLM classifier: ~200ms
-- Cache hit: <1ms
+Cached results are near-instant. The classifier is skipped for high-confidence semantic matches (score > 0.95).
 
 ---
 
@@ -201,11 +198,10 @@ export BOT_SECURITY_DETECT_COMMAND_INJECTION=true
 ### User Allowlist (Telegram)
 
 ```bash
-export BOT_SECURITY_ALLOWLIST_ENABLED=true
 export TELEGRAM_ALLOWED_USERS=123456789,987654321
 ```
 
-Only these Telegram user IDs can use the bot.
+Only these Telegram user IDs can use the bot. The allowlist is enforced automatically when set.
 
 ### Tool Confirmation
 
@@ -220,7 +216,7 @@ User must approve destructive operations (file delete, risky shell commands).
 
 ## Rate Limiting
 
-### Per-User Limits
+### Request Limits
 
 ```bash
 export BOT_RATE_LIMIT_USER_REQUESTS_PER_MINUTE=20
@@ -338,32 +334,31 @@ Bot works autonomously every 15 minutes.
 
 ---
 
-## Voice (Experimental)
+## Voice (ElevenLabs STT + TTS)
 
-### Speech-to-Text (Whisper)
+ElevenLabs provides both speech-to-text and text-to-speech. No FFmpeg or external tools needed.
 
 ```bash
 export VOICE_ENABLED=true
-export BOT_VOICE_STT_PROVIDER=whisper
-export BOT_VOICE_STT_MODEL=whisper-1
-export BOT_VOICE_STT_LANGUAGE=auto
-```
-
-### Text-to-Speech (ElevenLabs)
-
-```bash
-export BOT_VOICE_TTS_PROVIDER=elevenlabs
-export BOT_VOICE_TTS_VOICE_ID=21m00Tcm4TlvDq8ikWAM
-export BOT_VOICE_TTS_SPEED=1.0
-export BOT_VOICE_OUTPUT_FORMAT=OGG_OPUS
+export ELEVENLABS_API_KEY=your-key-here
+export ELEVENLABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM        # Default voice
+export ELEVENLABS_TTS_MODEL=eleven_multilingual_v2       # TTS model (29+ languages)
+export ELEVENLABS_STT_MODEL=scribe_v1                    # STT model
+export ELEVENLABS_SPEED=1.0                              # Speech speed
 ```
 
 ### Telegram Voice
 
 ```bash
-export BOT_VOICE_TELEGRAM_RESPOND_WITH_VOICE=true
-export BOT_VOICE_TELEGRAM_TRANSCRIBE_INCOMING=true
+export BOT_VOICE_TELEGRAM_RESPOND_WITH_VOICE=true   # Auto-reply with voice to voice messages
+export BOT_VOICE_TELEGRAM_TRANSCRIBE_INCOMING=true   # Transcribe incoming voice messages
 ```
+
+### Voice Response Mechanisms
+
+**Primary (voice prefix):** LLM starts response with a special prefix — `ResponseRoutingSystem` detects it, strips the prefix, synthesizes speech via TTS, and sends voice. Falls back to text on TTS failure.
+
+**Secondary (send_voice tool):** LLM calls the `send_voice` tool with custom text to synthesize. Works as a fallback for models with tool calling support.
 
 ---
 
@@ -417,7 +412,6 @@ export BOT_AGENT_MAX_ITERATIONS=20  # max tool call loops
 
 ```bash
 # Lenient settings
-export BOT_SECURITY_ALLOWLIST_ENABLED=false
 export BOT_RATE_LIMIT_ENABLED=false
 export LOGGING_LEVEL_ME_GOLEMCORE_BOT=DEBUG
 ```
@@ -426,7 +420,6 @@ export LOGGING_LEVEL_ME_GOLEMCORE_BOT=DEBUG
 
 ```bash
 # Strict settings
-export BOT_SECURITY_ALLOWLIST_ENABLED=true
 export BOT_RATE_LIMIT_ENABLED=true
 export TOOL_CONFIRMATION_ENABLED=true
 export LOGGING_LEVEL_ME_GOLEMCORE_BOT=INFO

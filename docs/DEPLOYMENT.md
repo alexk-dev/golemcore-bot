@@ -20,7 +20,7 @@ Production deployment guide for GolemCore Bot.
 ./mvnw compile jib:dockerBuild
 
 # Or push directly to registry (no Docker needed)
-./mvnw compile jib:build -Djib.to.image=ghcr.io/your-org/golemcore-bot:latest
+./mvnw compile jib:build -Djib.to.image=ghcr.io/alexk-dev/golemcore-bot:latest
 ```
 
 ### Run Container
@@ -68,7 +68,6 @@ services:
       # LLM Provider (set at least one)
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
 
       # Telegram
       TELEGRAM_ENABLED: ${TELEGRAM_ENABLED:-false}
@@ -85,7 +84,6 @@ services:
       AUTO_MODE_ENABLED: ${AUTO_MODE_ENABLED:-false}
 
       # Security
-      BOT_SECURITY_ALLOWLIST_ENABLED: ${BOT_SECURITY_ALLOWLIST_ENABLED:-true}
       TOOL_CONFIRMATION_ENABLED: ${TOOL_CONFIRMATION_ENABLED:-true}
 
       # Logging
@@ -203,7 +201,6 @@ sudo journalctl -u golemcore-bot -f
 # === LLM PROVIDER (Required: Set At Least One) ===
 OPENAI_API_KEY=sk-proj-...          # OpenAI (GPT-5.x, o1, o3)
 ANTHROPIC_API_KEY=sk-ant-...        # Anthropic (Claude)
-GOOGLE_API_KEY=...                  # Google (Gemini)
 
 # === TELEGRAM ===
 TELEGRAM_ENABLED=true
@@ -211,7 +208,6 @@ TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
 TELEGRAM_ALLOWED_USERS=123456789,987654321
 
 # === SECURITY (STRICT) ===
-BOT_SECURITY_ALLOWLIST_ENABLED=true
 BOT_SECURITY_SANITIZE_INPUT=true
 BOT_SECURITY_DETECT_PROMPT_INJECTION=true
 BOT_SECURITY_DETECT_COMMAND_INJECTION=true
@@ -425,7 +421,7 @@ docker run --memory=4g golemcore-bot:latest
 ## Production Checklist
 
 - [ ] Set `LOGGING_LEVEL_ME_GOLEMCORE_BOT=INFO` (not DEBUG)
-- [ ] Enable `BOT_SECURITY_ALLOWLIST_ENABLED=true`
+- [ ] Set `TELEGRAM_ALLOWED_USERS` to restrict access
 - [ ] Set conservative rate limits
 - [ ] Enable tool confirmations
 - [ ] Rotate API keys regularly

@@ -25,8 +25,8 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Port for voice processing including speech-to-text (STT), text-to-speech
- * (TTS), and audio format conversion.
+ * Port for voice processing including speech-to-text (STT) and text-to-speech
+ * (TTS).
  */
 public interface VoicePort {
 
@@ -36,14 +36,9 @@ public interface VoicePort {
     CompletableFuture<TranscriptionResult> transcribe(byte[] audioData, AudioFormat format);
 
     /**
-     * Synthesize text to audio (Text-to-Speech).
+     * Synthesize text to audio (Text-to-Speech). Returns MP3 bytes.
      */
     CompletableFuture<byte[]> synthesize(String text, VoiceConfig config);
-
-    /**
-     * Convert audio between formats.
-     */
-    CompletableFuture<byte[]> convert(byte[] audioData, AudioFormat from, AudioFormat to);
 
     /**
      * Check if the voice service is available.
@@ -75,16 +70,15 @@ public interface VoicePort {
      */
     record VoiceConfig(
             String voiceId,
-            String language,
+            String modelId,
             float speed,
-            float pitch,
             AudioFormat outputFormat
     ) {
         /**
-         * Returns default voice configuration with English language and standard settings.
+         * Returns default voice configuration with standard settings.
          */
         public static VoiceConfig defaultConfig() {
-            return new VoiceConfig(null, "en", 1.0f, 0f, AudioFormat.OGG_OPUS);
+            return new VoiceConfig(null, null, 1.0f, AudioFormat.MP3);
         }
     }
 }
