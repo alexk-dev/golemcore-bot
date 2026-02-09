@@ -30,6 +30,7 @@ import lombok.Data;
 @Builder
 public class ToolResult {
 
+    @SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName") // Lombok generates isSuccess()
     private boolean success;
     private String output;
     private Object data;

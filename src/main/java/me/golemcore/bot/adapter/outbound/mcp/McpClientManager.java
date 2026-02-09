@@ -29,8 +29,13 @@ import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Manages MCP client lifecycles — pool of McpClient instances keyed by skill
@@ -76,8 +81,8 @@ public class McpClientManager implements McpPort {
     private final BotProperties properties;
     private final ObjectMapper objectMapper;
 
-    private final ConcurrentHashMap<String, McpClient> clients = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, List<String>> skillToolNames = new ConcurrentHashMap<>();
+    private final Map<String, McpClient> clients = new ConcurrentHashMap<>();
+    private final Map<String, List<String>> skillToolNames = new ConcurrentHashMap<>();
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "mcp-idle-check");
         t.setDaemon(true);
@@ -93,6 +98,7 @@ public class McpClientManager implements McpPort {
     }
 
     @Override
+    @SuppressWarnings("PMD.CloseResource")
     public List<ToolDefinition> getOrStartClient(Skill skill) {
         if (!properties.getMcp().isEnabled()) {
             return List.of();
@@ -156,6 +162,7 @@ public class McpClientManager implements McpPort {
     }
 
     @Override
+    @SuppressWarnings("PMD.CloseResource")
     public List<String> stopClient(String skillName) {
         McpClient client = clients.remove(skillName);
         List<String> toolNames = skillToolNames.remove(skillName);
@@ -193,6 +200,7 @@ public class McpClientManager implements McpPort {
         skillToolNames.clear();
     }
 
+    @SuppressWarnings("PMD.CloseResource")
     private void checkIdleClients() {
         long now = System.currentTimeMillis();
         for (Map.Entry<String, McpClient> entry : clients.entrySet()) {
@@ -214,7 +222,7 @@ public class McpClientManager implements McpPort {
     }
 
     private McpConfig applyDefaults(McpConfig config) {
-        var defaults = properties.getMcp();
+        BotProperties.McpClientProperties defaults = properties.getMcp();
         return McpConfig.builder()
                 .command(config.getCommand())
                 .env(config.getEnv())

@@ -64,6 +64,12 @@ import java.util.stream.Collectors;
 @Slf4j
 public class BraveSearchTool implements ToolComponent {
 
+    private static final String PARAM_QUERY = "query";
+    private static final String PARAM_COUNT = "count";
+    private static final String TYPE_STRING = "string";
+    private static final String TYPE_INTEGER = "integer";
+    private static final String TYPE_OBJECT = "object";
+
     private final FeignClientFactory feignClientFactory;
     private final BotProperties properties;
 
@@ -102,29 +108,29 @@ public class BraveSearchTool implements ToolComponent {
                 .description(
                         "Search the web using Brave Search. Returns titles, URLs, and descriptions of search results.")
                 .inputSchema(Map.of(
-                        "type", "object",
+                        "type", TYPE_OBJECT,
                         "properties", Map.of(
-                                "query", Map.of(
-                                        "type", "string",
+                                PARAM_QUERY, Map.of(
+                                        "type", TYPE_STRING,
                                         "description", "The search query"),
-                                "count", Map.of(
-                                        "type", "integer",
+                                PARAM_COUNT, Map.of(
+                                        "type", TYPE_INTEGER,
                                         "description", "Number of results to return (1-20, default: " + 5 + ")")),
-                        "required", List.of("query")))
+                        "required", List.of(PARAM_QUERY)))
                 .build();
     }
 
     @Override
     public CompletableFuture<ToolResult> execute(Map<String, Object> parameters) {
         return CompletableFuture.supplyAsync(() -> {
-            String query = (String) parameters.get("query");
+            String query = (String) parameters.get(PARAM_QUERY);
             if (query == null || query.isBlank()) {
                 return ToolResult.failure("Search query is required");
             }
 
             int count = defaultCount;
-            if (parameters.containsKey("count")) {
-                Object countObj = parameters.get("count");
+            if (parameters.containsKey(PARAM_COUNT)) {
+                Object countObj = parameters.get(PARAM_COUNT);
                 if (countObj instanceof Number n) {
                     count = Math.max(1, Math.min(20, n.intValue()));
                 }
@@ -155,8 +161,8 @@ public class BraveSearchTool implements ToolComponent {
                 String header = String.format("Search results for \"%s\" (%d results):%n%n", query, results.size());
 
                 return ToolResult.success(header + output, Map.of(
-                        "query", query,
-                        "count", results.size(),
+                        PARAM_QUERY, query,
+                        PARAM_COUNT, results.size(),
                         "results", results.stream()
                                 .map(r -> Map.of(
                                         "title", r.getTitle() != null ? r.getTitle() : "",

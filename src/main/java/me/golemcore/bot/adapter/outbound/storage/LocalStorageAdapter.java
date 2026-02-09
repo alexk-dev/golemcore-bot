@@ -91,7 +91,10 @@ public class LocalStorageAdapter implements StoragePort {
         return CompletableFuture.runAsync(() -> {
             try {
                 Path filePath = resolvePath(directory, path);
-                Files.createDirectories(filePath.getParent());
+                Path parent = filePath.getParent();
+                if (parent != null) {
+                    Files.createDirectories(parent);
+                }
                 Files.write(filePath, content, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
             } catch (IOException e) {
                 throw new RuntimeException("Failed to write file: " + directory + "/" + path, e);
@@ -183,7 +186,10 @@ public class LocalStorageAdapter implements StoragePort {
         return CompletableFuture.runAsync(() -> {
             try {
                 Path filePath = resolvePath(directory, path);
-                Files.createDirectories(filePath.getParent());
+                Path parent = filePath.getParent();
+                if (parent != null) {
+                    Files.createDirectories(parent);
+                }
                 Files.writeString(filePath, content,
                         StandardOpenOption.CREATE,
                         StandardOpenOption.APPEND);

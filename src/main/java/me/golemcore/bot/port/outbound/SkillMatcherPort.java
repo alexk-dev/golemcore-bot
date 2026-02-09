@@ -1,4 +1,4 @@
-package me.golemcore.bot.routing;
+package me.golemcore.bot.port.outbound;
 
 /*
  * Copyright 2026 Aleksei Kuleshov
@@ -20,6 +20,7 @@ package me.golemcore.bot.routing;
 
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.Skill;
+import me.golemcore.bot.domain.model.SkillMatchResult;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -39,9 +40,8 @@ import java.util.concurrent.CompletableFuture;
  * use. Skills should be re-indexed when they are added, removed, or modified.
  *
  * @since 1.0
- * @see HybridSkillMatcher
  */
-public interface SkillMatcher {
+public interface SkillMatcherPort {
 
     /**
      * Find the best matching skill for a user request.

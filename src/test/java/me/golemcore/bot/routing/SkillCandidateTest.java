@@ -1,5 +1,6 @@
 package me.golemcore.bot.routing;
 
+import me.golemcore.bot.domain.model.SkillCandidate;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;

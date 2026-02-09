@@ -5,7 +5,7 @@ Get GolemCore Bot running in 5 minutes.
 ## Prerequisites
 
 - 🐳 Docker (recommended) OR ☕ Java 17+ with Maven 3.x
-- 🔑 LLM API key (OpenAI, Anthropic, or Google)
+- 🔑 LLM API key (OpenAI or Anthropic)
 
 ## Installation
 
@@ -14,7 +14,7 @@ Get GolemCore Bot running in 5 minutes.
 #### 1. Clone & Build Image
 
 ```bash
-git clone https://github.com/your-org/golemcore-bot.git
+git clone https://github.com/alexk-dev/golemcore-bot.git
 cd golemcore-bot
 
 # Build Docker image with Jib (no Docker daemon needed)
@@ -32,8 +32,6 @@ export OPENAI_API_KEY=sk-proj-your-key-here
 # OR Anthropic
 export ANTHROPIC_API_KEY=sk-ant-your-key-here
 
-# OR Google
-export GOOGLE_API_KEY=your-key-here
 ```
 
 #### 3. Run Container
@@ -66,12 +64,12 @@ You'll see:
 
 ```bash
 # Clone & Build
-git clone https://github.com/your-org/golemcore-bot.git
+git clone https://github.com/alexk-dev/golemcore-bot.git
 cd golemcore-bot
 ./mvnw clean package -DskipTests
 
 # Configure LLM
-export OPENAI_API_KEY=sk-proj-...  # or ANTHROPIC_API_KEY or GOOGLE_API_KEY
+export OPENAI_API_KEY=sk-proj-...  # or ANTHROPIC_API_KEY
 
 # Run
 java -jar target/golemcore-bot-0.1.0-SNAPSHOT.jar
@@ -242,8 +240,6 @@ docker-compose up -d
 docker run -e OPENAI_API_KEY=sk-... golemcore-bot:latest
 # OR
 docker run -e ANTHROPIC_API_KEY=sk-ant-... golemcore-bot:latest
-# OR
-docker run -e GOOGLE_API_KEY=... golemcore-bot:latest
 ```
 
 ### "Rate limit exceeded"
@@ -286,6 +282,6 @@ Common issues:
 
 ## Support
 
-- 🐛 Report issues: [GitHub Issues](https://github.com/your-org/golemcore-bot/issues)
-- 💬 Ask questions: [GitHub Discussions](https://github.com/your-org/golemcore-bot/discussions)
+- 🐛 Report issues: [GitHub Issues](https://github.com/alexk-dev/golemcore-bot/issues)
+- 💬 Ask questions: [GitHub Discussions](https://github.com/alexk-dev/golemcore-bot/discussions)
 - 📚 Read docs: [Documentation](../docs/)

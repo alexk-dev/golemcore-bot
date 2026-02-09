@@ -1,4 +1,4 @@
-package me.golemcore.bot.ratelimit;
+package me.golemcore.bot.port.outbound;
 
 /*
  * Copyright 2026 Aleksei Kuleshov
@@ -18,6 +18,9 @@ package me.golemcore.bot.ratelimit;
  * Contact: alex@kuleshov.tech
  */
 
+import me.golemcore.bot.domain.model.BucketState;
+import me.golemcore.bot.domain.model.RateLimitResult;
+
 /**
  * Rate limiter interface for controlling request throughput using token bucket
  * algorithm.
@@ -36,9 +39,8 @@ package me.golemcore.bot.ratelimit;
  * request was allowed and how many tokens remain.
  *
  * @since 1.0
- * @see TokenBucketRateLimiter
  */
-public interface RateLimiter {
+public interface RateLimitPort {
 
     /**
      * Check and consume a token (global rate limit).

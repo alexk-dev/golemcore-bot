@@ -1,4 +1,4 @@
-package me.golemcore.bot.usage;
+package me.golemcore.bot.port.outbound;
 
 /*
  * Copyright 2026 Aleksei Kuleshov
@@ -19,6 +19,8 @@ package me.golemcore.bot.usage;
  */
 
 import me.golemcore.bot.domain.model.LlmUsage;
+import me.golemcore.bot.domain.model.UsageMetric;
+import me.golemcore.bot.domain.model.UsageStats;
 
 import java.time.Duration;
 import java.util.List;
@@ -41,9 +43,8 @@ import java.util.Map;
  * and later analysis.
  *
  * @since 1.0
- * @see LlmUsageTrackerImpl
  */
-public interface LlmUsageTracker {
+public interface UsageTrackingPort {
 
     void recordUsage(String providerId, String model, LlmUsage usage);
 

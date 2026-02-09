@@ -29,7 +29,11 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
+import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.List;
 import java.util.Map;
@@ -77,6 +81,34 @@ public class FileSystemTool implements ToolComponent {
     private static final long MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
     private static final long MAX_SEND_FILE_SIZE = 50 * 1024 * 1024; // 50 MB (Telegram limit)
     private static final int MAX_FILES_LIST = 100;
+    private static final int BYTES_PER_KB = 1024;
+
+    // JSON Schema constants
+    private static final String SCHEMA_TYPE = "type";
+    private static final String SCHEMA_OBJECT = "object";
+    private static final String SCHEMA_STRING = "string";
+    private static final String SCHEMA_BOOLEAN = "boolean";
+    private static final String SCHEMA_PROPERTIES = "properties";
+    private static final String SCHEMA_DESCRIPTION = "description";
+    private static final String SCHEMA_ENUM = "enum";
+    private static final String SCHEMA_REQUIRED = "required";
+
+    // Parameter names
+    private static final String PARAM_OPERATION = "operation";
+    private static final String PARAM_PATH = "path";
+    private static final String PARAM_CONTENT = "content";
+    private static final String PARAM_APPEND = "append";
+
+    // Data field names
+    private static final String FIELD_NAME = "name";
+    private static final String FIELD_SIZE = "size";
+    private static final String FIELD_TYPE = "type";
+    private static final String FIELD_MODIFIED = "modified";
+
+    // Type constants
+    private static final String TYPE_DIRECTORY = "directory";
+    private static final String TYPE_FILE = "file";
+    private static final String TYPE_UNKNOWN = "unknown";
 
     private static final Map<String, String> MIME_TYPES = Map.ofEntries(
             Map.entry("png", "image/png"),
@@ -136,25 +168,25 @@ public class FileSystemTool implements ToolComponent {
                                 All paths are relative to the workspace root.
                                 """)
                 .inputSchema(Map.of(
-                        "type", "object",
-                        "properties", Map.of(
-                                "operation", Map.of(
-                                        "type", "string",
-                                        "enum",
+                        SCHEMA_TYPE, SCHEMA_OBJECT,
+                        SCHEMA_PROPERTIES, Map.of(
+                                PARAM_OPERATION, Map.of(
+                                        SCHEMA_TYPE, SCHEMA_STRING,
+                                        SCHEMA_ENUM,
                                         List.of("read_file", "write_file", "list_directory", "create_directory",
                                                 "delete", "file_info", "send_file"),
-                                        "description", "Operation to perform"),
-                                "path", Map.of(
-                                        "type", "string",
-                                        "description", "File or directory path (relative to workspace)"),
-                                "content", Map.of(
-                                        "type", "string",
-                                        "description", "Content to write (for write_file operation)"),
-                                "append", Map.of(
-                                        "type", "boolean",
-                                        "description",
+                                        SCHEMA_DESCRIPTION, "Operation to perform"),
+                                PARAM_PATH, Map.of(
+                                        SCHEMA_TYPE, SCHEMA_STRING,
+                                        SCHEMA_DESCRIPTION, "File or directory path (relative to workspace)"),
+                                PARAM_CONTENT, Map.of(
+                                        SCHEMA_TYPE, SCHEMA_STRING,
+                                        SCHEMA_DESCRIPTION, "Content to write (for write_file operation)"),
+                                PARAM_APPEND, Map.of(
+                                        SCHEMA_TYPE, SCHEMA_BOOLEAN,
+                                        SCHEMA_DESCRIPTION,
                                         "Append to file instead of overwriting (for write_file, default: false)")),
-                        "required", List.of("operation", "path")))
+                        SCHEMA_REQUIRED, List.of(PARAM_OPERATION, PARAM_PATH)))
                 .build();
     }
 
@@ -169,8 +201,8 @@ public class FileSystemTool implements ToolComponent {
             }
 
             try {
-                String operation = (String) parameters.get("operation");
-                String pathStr = (String) parameters.get("path");
+                String operation = (String) parameters.get(PARAM_OPERATION);
+                String pathStr = (String) parameters.get(PARAM_PATH);
                 log.info("[FileSystem] Operation: {}, Path: {}", operation, pathStr);
 
                 if (operation == null || pathStr == null) {
@@ -206,7 +238,7 @@ public class FileSystemTool implements ToolComponent {
                 log.info("[FileSystem] Operation '{}' result: success={}", operation, result.isSuccess());
                 return result;
 
-            } catch (Exception e) {
+            } catch (RuntimeException e) {
                 log.error("[FileSystem] ERROR: {}", e.getMessage(), e);
                 return ToolResult.failure("Error: " + e.getMessage());
             }
@@ -259,8 +291,8 @@ public class FileSystemTool implements ToolComponent {
 
             String content = Files.readString(path, StandardCharsets.UTF_8);
             return ToolResult.success(content, Map.of(
-                    "path", relativePath(path),
-                    "size", size,
+                    PARAM_PATH, relativePath(path),
+                    FIELD_SIZE, size,
                     "lines", content.lines().count()));
 
         } catch (IOException e) {
@@ -269,12 +301,12 @@ public class FileSystemTool implements ToolComponent {
     }
 
     private ToolResult writeFile(Path path, Map<String, Object> params) {
-        String content = (String) params.get("content");
+        String content = (String) params.get(PARAM_CONTENT);
         if (content == null) {
             return ToolResult.failure("Missing content for write_file operation");
         }
 
-        Boolean append = (Boolean) params.get("append");
+        Boolean append = (Boolean) params.get(PARAM_APPEND);
         boolean shouldAppend = append != null && append;
 
         try {
@@ -295,9 +327,9 @@ public class FileSystemTool implements ToolComponent {
             String action = shouldAppend ? "appended to" : "written to";
 
             return ToolResult.success("Successfully " + action + " file: " + relativePath(path), Map.of(
-                    "path", relativePath(path),
-                    "size", size,
-                    "operation", shouldAppend ? "append" : "write"));
+                    PARAM_PATH, relativePath(path),
+                    FIELD_SIZE, size,
+                    PARAM_OPERATION, shouldAppend ? "append" : "write"));
 
         } catch (IOException e) {
             return ToolResult.failure("Failed to write file: " + e.getMessage());
@@ -317,17 +349,21 @@ public class FileSystemTool implements ToolComponent {
             List<Map<String, Object>> entries = stream
                     .limit(MAX_FILES_LIST)
                     .map(p -> {
+                        Path fileName = p.getFileName();
+                        if (fileName == null) {
+                            return Map.<String, Object>of(FIELD_NAME, TYPE_UNKNOWN, FIELD_TYPE, TYPE_UNKNOWN);
+                        }
                         try {
                             BasicFileAttributes attrs = Files.readAttributes(p, BasicFileAttributes.class);
                             return Map.<String, Object>of(
-                                    "name", p.getFileName().toString(),
-                                    "type", attrs.isDirectory() ? "directory" : "file",
-                                    "size", attrs.size(),
-                                    "modified", attrs.lastModifiedTime().toString());
+                                    FIELD_NAME, fileName.toString(),
+                                    FIELD_TYPE, attrs.isDirectory() ? TYPE_DIRECTORY : TYPE_FILE,
+                                    FIELD_SIZE, attrs.size(),
+                                    FIELD_MODIFIED, attrs.lastModifiedTime().toString());
                         } catch (IOException e) {
                             return Map.<String, Object>of(
-                                    "name", p.getFileName().toString(),
-                                    "type", "unknown");
+                                    FIELD_NAME, fileName.toString(),
+                                    FIELD_TYPE, TYPE_UNKNOWN);
                         }
                     })
                     .collect(Collectors.toList());
@@ -337,18 +373,18 @@ public class FileSystemTool implements ToolComponent {
             sb.append("Entries: ").append(entries.size()).append("\n\n");
 
             for (Map<String, Object> entry : entries) {
-                String type = (String) entry.get("type");
-                String name = (String) entry.get("name");
-                if ("directory".equals(type)) {
+                String type = (String) entry.get(FIELD_TYPE);
+                String name = (String) entry.get(FIELD_NAME);
+                if (TYPE_DIRECTORY.equals(type)) {
                     sb.append("[DIR]  ").append(name).append("/\n");
                 } else {
-                    long size = (long) entry.get("size");
+                    long size = (long) entry.get(FIELD_SIZE);
                     sb.append("[FILE] ").append(name).append(" (").append(formatSize(size)).append(")\n");
                 }
             }
 
             return ToolResult.success(sb.toString(), Map.of(
-                    "path", relativePath(path),
+                    PARAM_PATH, relativePath(path),
                     "entries", entries));
 
         } catch (IOException e) {
@@ -368,7 +404,7 @@ public class FileSystemTool implements ToolComponent {
 
             Files.createDirectories(path);
             return ToolResult.success("Created directory: " + relativePath(path), Map.of(
-                    "path", relativePath(path)));
+                    PARAM_PATH, relativePath(path)));
 
         } catch (IOException e) {
             return ToolResult.failure("Failed to create directory: " + e.getMessage());
@@ -411,13 +447,13 @@ public class FileSystemTool implements ToolComponent {
             BasicFileAttributes attrs = Files.readAttributes(path, BasicFileAttributes.class);
 
             Map<String, Object> info = Map.of(
-                    "path", relativePath(path),
+                    PARAM_PATH, relativePath(path),
                     "absolutePath", path.toString(),
-                    "type", attrs.isDirectory() ? "directory" : "file",
-                    "size", attrs.size(),
+                    FIELD_TYPE, attrs.isDirectory() ? TYPE_DIRECTORY : TYPE_FILE,
+                    FIELD_SIZE, attrs.size(),
                     "sizeFormatted", formatSize(attrs.size()),
                     "created", attrs.creationTime().toString(),
-                    "modified", attrs.lastModifiedTime().toString(),
+                    FIELD_MODIFIED, attrs.lastModifiedTime().toString(),
                     "readable", Files.isReadable(path),
                     "writable", Files.isWritable(path));
 
@@ -461,7 +497,7 @@ public class FileSystemTool implements ToolComponent {
 
             return ToolResult.success(
                     "File queued for sending: " + filename + " (" + formatSize(size) + ")",
-                    Map.of("file_bytes", bytes, "filename", filename, "mime_type", mimeType, "type", type));
+                    Map.of("file_bytes", bytes, "filename", filename, "mime_type", mimeType, FIELD_TYPE, type));
 
         } catch (IOException e) {
             return ToolResult.failure("Failed to read file: " + e.getMessage());
@@ -481,12 +517,12 @@ public class FileSystemTool implements ToolComponent {
     }
 
     private String formatSize(long bytes) {
-        if (bytes < 1024)
+        if (bytes < BYTES_PER_KB)
             return bytes + " B";
-        if (bytes < 1024 * 1024)
-            return String.format("%.1f KB", bytes / 1024.0);
-        if (bytes < 1024 * 1024 * 1024)
-            return String.format("%.1f MB", bytes / (1024.0 * 1024));
-        return String.format("%.1f GB", bytes / (1024.0 * 1024 * 1024));
+        if (bytes < BYTES_PER_KB * BYTES_PER_KB)
+            return String.format("%.1f KB", bytes / (double) BYTES_PER_KB);
+        if (bytes < BYTES_PER_KB * BYTES_PER_KB * BYTES_PER_KB)
+            return String.format("%.1f MB", bytes / (double) (BYTES_PER_KB * BYTES_PER_KB));
+        return String.format("%.1f GB", bytes / (double) (BYTES_PER_KB * BYTES_PER_KB * BYTES_PER_KB));
     }
 }

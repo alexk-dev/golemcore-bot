@@ -19,6 +19,7 @@ package me.golemcore.bot.auto;
  */
 
 import me.golemcore.bot.domain.loop.AgentLoop;
+import me.golemcore.bot.domain.model.AutoModeChannelRegisteredEvent;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
@@ -27,12 +28,20 @@ import me.golemcore.bot.tools.GoalManagementTool;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Scheduler for autonomous mode that periodically triggers goal-driven agent
@@ -143,6 +152,11 @@ public class AutoModeScheduler {
         log.debug("[AutoScheduler] Registered channel: {}:{}", channelType, chatId);
     }
 
+    @EventListener
+    public void onChannelRegistered(AutoModeChannelRegisteredEvent event) {
+        registerChannel(event.channelType(), event.chatId());
+    }
+
     /**
      * Send a milestone notification to the registered channel.
      */
@@ -166,7 +180,10 @@ public class AutoModeScheduler {
         try {
             channel.sendMessage(info.chatId(), "\uD83E\uDD16 " + text).get(10, TimeUnit.SECONDS);
             log.info("[AutoScheduler] Sent milestone notification: {}", text);
-        } catch (Exception e) {
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("[AutoScheduler] Failed to send notification: {}", e.getMessage());
+        } catch (ExecutionException | TimeoutException e) {
             log.error("[AutoScheduler] Failed to send notification: {}", e.getMessage());
         }
     }
