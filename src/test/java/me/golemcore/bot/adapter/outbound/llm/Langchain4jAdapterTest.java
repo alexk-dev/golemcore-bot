@@ -9,7 +9,7 @@ import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
-import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.output.FinishReason;
@@ -448,7 +448,7 @@ class Langchain4jAdapterTest {
         assertEquals("gpt-4o", result);
     }
 
-    // ===== chat() flow tests with mocked ChatLanguageModel =====
+    // ===== chat() flow tests with mocked ChatModel =====
 
     @Test
     void shouldFailChatWhenNotInitialized() {
@@ -464,7 +464,7 @@ class Langchain4jAdapterTest {
 
     @Test
     void shouldReturnResponseOnSuccessfulChat() throws Exception {
-        ChatLanguageModel mockModel = mock(ChatLanguageModel.class);
+        ChatModel mockModel = mock(ChatModel.class);
         injectChatModel(mockModel, TEST_MODEL);
 
         AiMessage aiMessage = AiMessage.from("Hello back!");
@@ -491,7 +491,7 @@ class Langchain4jAdapterTest {
 
     @Test
     void shouldReturnResponseWithToolCalls() throws Exception {
-        ChatLanguageModel mockModel = mock(ChatLanguageModel.class);
+        ChatModel mockModel = mock(ChatModel.class);
         injectChatModel(mockModel, TEST_MODEL);
 
         ToolExecutionRequest toolReq = ToolExecutionRequest.builder()
@@ -529,7 +529,7 @@ class Langchain4jAdapterTest {
 
     @Test
     void shouldRetryOnRateLimitError() throws Exception {
-        ChatLanguageModel mockModel = mock(ChatLanguageModel.class);
+        ChatModel mockModel = mock(ChatModel.class);
         injectChatModel(mockModel, TEST_MODEL);
 
         // First call throws rate limit, second succeeds
@@ -553,7 +553,7 @@ class Langchain4jAdapterTest {
 
     @Test
     void shouldThrowOnNonRateLimitError() {
-        ChatLanguageModel mockModel = mock(ChatLanguageModel.class);
+        ChatModel mockModel = mock(ChatModel.class);
         injectChatModel(mockModel, TEST_MODEL);
 
         when(mockModel.chat((List<ChatMessage>) any()))
@@ -569,7 +569,7 @@ class Langchain4jAdapterTest {
 
     @Test
     void shouldHandleChatWithToolsViaRequest() throws Exception {
-        ChatLanguageModel mockModel = mock(ChatLanguageModel.class);
+        ChatModel mockModel = mock(ChatModel.class);
         injectChatModel(mockModel, TEST_MODEL);
 
         AiMessage aiMessage = AiMessage.from("Result with tools");
@@ -598,7 +598,7 @@ class Langchain4jAdapterTest {
 
     @Test
     void shouldHandleChatWithNullTokenUsage() throws Exception {
-        ChatLanguageModel mockModel = mock(ChatLanguageModel.class);
+        ChatModel mockModel = mock(ChatModel.class);
         injectChatModel(mockModel, TEST_MODEL);
 
         AiMessage aiMessage = AiMessage.from("No usage info");
@@ -620,7 +620,7 @@ class Langchain4jAdapterTest {
 
     @Test
     void shouldHandleNullFinishReason() throws Exception {
-        ChatLanguageModel mockModel = mock(ChatLanguageModel.class);
+        ChatModel mockModel = mock(ChatModel.class);
         injectChatModel(mockModel, TEST_MODEL);
 
         AiMessage aiMessage = AiMessage.from("Response");
@@ -642,7 +642,7 @@ class Langchain4jAdapterTest {
 
     @Test
     void shouldConvertToolMessageRoundTrip() throws Exception {
-        ChatLanguageModel mockModel = mock(ChatLanguageModel.class);
+        ChatModel mockModel = mock(ChatModel.class);
         injectChatModel(mockModel, TEST_MODEL);
 
         AiMessage aiMessage = AiMessage.from("Weather is sunny");
@@ -741,7 +741,7 @@ class Langchain4jAdapterTest {
 
     @Test
     void shouldStreamChat() throws Exception {
-        ChatLanguageModel mockModel = mock(ChatLanguageModel.class);
+        ChatModel mockModel = mock(ChatModel.class);
         injectChatModel(mockModel, TEST_MODEL);
 
         AiMessage aiMessage = AiMessage.from("Streamed response");
@@ -772,7 +772,7 @@ class Langchain4jAdapterTest {
         openaiProps.setApiKey("test-key");
         properties.getLlm().getLangchain4j().getProviders().put(OPENAI, openaiProps);
 
-        ChatLanguageModel mockModel = mock(ChatLanguageModel.class);
+        ChatModel mockModel = mock(ChatModel.class);
         injectChatModel(mockModel, OPENAI + "/gpt-5.1");
 
         AiMessage aiMessage = AiMessage.from("Default response");
@@ -794,7 +794,7 @@ class Langchain4jAdapterTest {
 
     // ===== Helpers =====
 
-    private void injectChatModel(ChatLanguageModel model, String modelName) {
+    private void injectChatModel(ChatModel model, String modelName) {
         ReflectionTestUtils.setField(adapter, "chatModel", model);
         ReflectionTestUtils.setField(adapter, "currentModel", modelName);
         ReflectionTestUtils.setField(adapter, "initialized", true);
