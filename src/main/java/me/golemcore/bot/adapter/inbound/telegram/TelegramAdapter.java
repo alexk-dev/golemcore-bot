@@ -39,10 +39,12 @@ import org.telegram.telegrambots.longpolling.util.LongPollingSingleThreadUpdateC
 import org.telegram.telegrambots.meta.api.methods.ActionType;
 import org.telegram.telegrambots.meta.api.methods.GetFile;
 import org.telegram.telegrambots.meta.api.methods.send.SendChatAction;
+import org.telegram.telegrambots.meta.api.methods.send.SendAudio;
 import org.telegram.telegrambots.meta.api.methods.send.SendDocument;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
 import org.telegram.telegrambots.meta.api.methods.send.SendVoice;
+import org.telegram.telegrambots.meta.exceptions.TelegramApiRequestException;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
 import org.telegram.telegrambots.meta.api.objects.InputFile;
 import org.telegram.telegrambots.meta.api.objects.Update;
@@ -102,6 +104,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
     private final MessageService messageService;
     private final CommandPort commandRouter;
     private final TelegramConfirmationAdapter telegramConfirmationAdapter;
+    private final TelegramVoiceHandler voiceHandler;
 
     private TelegramClient telegramClient;
     private volatile Consumer<Message> messageHandler;
@@ -351,16 +354,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
 
         // Handle voice messages
         if (telegramMessage.hasVoice()) {
-            try {
-                byte[] voiceData = downloadVoice(telegramMessage.getVoice().getFileId());
-                messageBuilder
-                        .voiceData(voiceData)
-                        .audioFormat(AudioFormat.OGG_OPUS)
-                        .content("[Voice message]");
-            } catch (Exception e) {
-                log.error("Failed to download voice message", e);
-                messageBuilder.content("[Failed to process voice message]");
-            }
+            processVoiceMessage(telegramMessage, messageBuilder);
         }
 
         Message message = messageBuilder.build();
@@ -373,6 +367,38 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
 
         // Publish event
         eventPublisher.publishEvent(new AgentLoop.InboundMessageEvent(message));
+    }
+
+    private void processVoiceMessage(
+            org.telegram.telegrambots.meta.api.objects.message.Message telegramMessage,
+            Message.MessageBuilder messageBuilder) {
+        try {
+            org.telegram.telegrambots.meta.api.objects.Voice voice = telegramMessage.getVoice();
+            byte[] voiceData = downloadVoice(voice.getFileId());
+            int duration = voice.getDuration() != null ? voice.getDuration() : 0;
+            log.info("[Voice] Received voice message: {} bytes, {}s duration", voiceData.length, duration);
+
+            messageBuilder
+                    .voiceData(voiceData)
+                    .audioFormat(AudioFormat.OGG_OPUS);
+
+            String transcription = voiceHandler.handleIncomingVoice(voiceData).get();
+            if (transcription != null && !transcription.startsWith("[")) {
+                log.info("[Voice] Decoded: \"{}\" ({} chars, {} bytes audio)",
+                        truncateForLog(transcription, 100), transcription.length(), voiceData.length);
+                messageBuilder.content(transcription).voiceTranscription(transcription);
+            } else {
+                log.warn("[Voice] Transcription unavailable, using placeholder: {}", transcription);
+                messageBuilder.content(transcription != null ? transcription : "[Voice message]");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("[Voice] Voice processing interrupted", e);
+            messageBuilder.content("[Failed to process voice message]");
+        } catch (Exception e) {
+            log.error("[Voice] Failed to process voice message", e);
+            messageBuilder.content("[Failed to process voice message]");
+        }
     }
 
     private byte[] downloadVoice(String fileId) throws Exception {
@@ -490,10 +516,40 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
 
                 telegramClient.execute(sendVoice);
             } catch (Exception e) {
+                if (isVoiceForbidden(e)) {
+                    log.info("Voice messages forbidden in chat {}, falling back to audio", chatId);
+                    sendAudioFallback(chatId, voiceData);
+                    return;
+                }
                 log.error("Failed to send voice to chat: {}", chatId, e);
                 throw new RuntimeException("Failed to send voice", e);
             }
         });
+    }
+
+    private void sendAudioFallback(String chatId, byte[] audioData) {
+        try {
+            SendAudio sendAudio = SendAudio.builder()
+                    .chatId(chatId)
+                    .audio(new InputFile(new ByteArrayInputStream(audioData), "voice.mp3"))
+                    .build();
+            telegramClient.execute(sendAudio);
+        } catch (Exception e) {
+            log.error("Failed to send audio fallback to chat: {}", chatId, e);
+            throw new RuntimeException("Failed to send audio", e);
+        }
+    }
+
+    private boolean isVoiceForbidden(Exception e) {
+        if (e instanceof TelegramApiRequestException reqEx) {
+            return reqEx.getApiResponse() != null
+                    && reqEx.getApiResponse().contains("VOICE_MESSAGES_FORBIDDEN");
+        }
+        if (e.getCause() instanceof TelegramApiRequestException reqEx) {
+            return reqEx.getApiResponse() != null
+                    && reqEx.getApiResponse().contains("VOICE_MESSAGES_FORBIDDEN");
+        }
+        return false;
     }
 
     @Override
@@ -544,6 +600,12 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
         if (caption.length() <= 1024)
             return caption;
         return caption.substring(0, 1021) + "...";
+    }
+
+    private static String truncateForLog(String text, int maxLen) {
+        if (text == null || text.length() <= maxLen)
+            return text;
+        return text.substring(0, maxLen) + "...";
     }
 
     @Override

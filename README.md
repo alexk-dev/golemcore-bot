@@ -6,7 +6,7 @@
 [![Java](https://img.shields.io/badge/Java-17+-orange.svg)](https://www.oracle.com/java/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.4.2-brightgreen.svg)](https://spring.io/projects/spring-boot)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-777%20passing-success.svg)](https://github.com/alexk-dev/golemcore-bot/actions)
+[![Tests](https://img.shields.io/badge/tests-801%20passing-success.svg)](https://github.com/alexk-dev/golemcore-bot/actions)
 
 ---
 
@@ -232,7 +232,8 @@ See the [Tools & Integrations](#-tools--integrations) section below for configur
 | `AUTO_MODE_ENABLED` | Autonomous goal execution | `false` |
 | `MCP_ENABLED` | Model Context Protocol client | `true` |
 | `BRAVE_SEARCH_ENABLED` | Web search via Brave | `false` |
-| `VOICE_ENABLED` | Voice processing (STT/TTS) | `false` |
+| `VOICE_ENABLED` | Voice processing (ElevenLabs STT/TTS) | `false` |
+| `ELEVENLABS_API_KEY` | ElevenLabs API key for voice | — |
 | `BOT_ROUTER_DYNAMIC_TIER_ENABLED` | Auto-upgrade to coding tier | `true` |
 
 For the complete list of 80+ environment variables (model routing, security, rate limiting, storage, tools, voice, streaming, HTTP, etc.), see the **[Configuration Guide](docs/CONFIGURATION.md)**.
@@ -517,7 +518,7 @@ The bot processes messages through ordered pipeline stages:
 | **Messaging** | Telegram Bots | 8.2.0 |
 | **Browser** | Playwright | 1.49.0 |
 | **Security** | Custom (Unicode normalization, injection guard) | — |
-| **Voice** | Jaffree (FFmpeg) | 2023.09.10 |
+| **Voice** | ElevenLabs (STT + TTS) | API v1 |
 | **Testing** | JUnit 5 + Mockito | — |
 | **Code Quality** | SpotBugs + PMD + JaCoCo | — |
 
@@ -586,7 +587,7 @@ See [LICENSE](LICENSE) for full text and [NOTICE](NOTICE) for attributions.
 
 | Library | License |
 |---------|---------|
-| Spring Boot, LangChain4j, OkHttp, Playwright, Jackson, Jaffree | Apache 2.0 |
+| Spring Boot, LangChain4j, OkHttp, Playwright, Jackson | Apache 2.0 |
 | Telegram Bots, Lombok | MIT |
 
 ---

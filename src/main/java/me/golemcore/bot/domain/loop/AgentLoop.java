@@ -20,6 +20,7 @@ package me.golemcore.bot.domain.loop;
 
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -244,6 +245,11 @@ public class AgentLoop {
     }
 
     private boolean shouldContinueLoop(AgentContext context) {
+        Boolean loopComplete = context.getAttribute(ContextAttributes.LOOP_COMPLETE);
+        if (Boolean.TRUE.equals(loopComplete)) {
+            return false;
+        }
+
         Boolean toolsExecuted = context.getAttribute("tools.executed");
         if (Boolean.TRUE.equals(toolsExecuted)) {
             LlmResponse response = context.getAttribute("llm.response");

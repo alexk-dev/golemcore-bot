@@ -424,6 +424,49 @@ class AgentLoopTest {
         verify(sessionPort).save(session);
     }
 
+    // ===== loop.complete stops loop =====
+
+    @Test
+    void loopStopsWhenLoopCompleteSet() {
+        List<Integer> iterations = new ArrayList<>();
+
+        // System that simulates tool execution + sets loop.complete on first iteration
+        AgentSystem toolWithComplete = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "ToolWithComplete";
+            }
+
+            @Override
+            public int getOrder() {
+                return 40;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                iterations.add(context.getCurrentIteration());
+                // Always simulate tool calls that would normally continue the loop
+                LlmResponse response = LlmResponse.builder()
+                        .content("")
+                        .toolCalls(List.of(
+                                Message.ToolCall.builder().id("tc1").name("send_voice").arguments(Map.of()).build()))
+                        .build();
+                context.setAttribute("llm.response", response);
+                context.setAttribute("tools.executed", true);
+                context.setAttribute("loop.complete", true);
+                return context;
+            }
+        };
+
+        AgentSession session = createSession();
+        when(sessionPort.getOrCreate("telegram", "123")).thenReturn(session);
+
+        AgentLoop loop = createLoop(List.of(toolWithComplete));
+        loop.processMessage(createUserMessage());
+
+        assertEquals(1, iterations.size(), "Loop should stop after 1 iteration when loop.complete is set");
+    }
+
     // ===== Helpers =====
 
     private AgentSystem createOrderedSystem(String name, int order, List<String> callOrder) {

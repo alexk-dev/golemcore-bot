@@ -242,25 +242,13 @@ public class BotProperties {
 
     @Data
     public static class VoiceProperties {
-        private boolean enabled = true;
-        private SttProperties stt = new SttProperties();
-        private TtsProperties tts = new TtsProperties();
-        private String outputFormat = "OGG_OPUS";
-        private TelegramVoiceProperties telegram = new TelegramVoiceProperties();
-    }
-
-    @Data
-    public static class SttProperties {
-        private String provider = "whisper";
-        private String model = "whisper-1";
-        private String language = "auto";
-    }
-
-    @Data
-    public static class TtsProperties {
-        private String provider = "elevenlabs";
+        private boolean enabled = false;
+        private String apiKey = "";
         private String voiceId = "21m00Tcm4TlvDq8ikWAM";
+        private String ttsModelId = "eleven_multilingual_v2";
+        private String sttModelId = "scribe_v1";
         private float speed = 1.0f;
+        private TelegramVoiceProperties telegram = new TelegramVoiceProperties();
     }
 
     @Data
