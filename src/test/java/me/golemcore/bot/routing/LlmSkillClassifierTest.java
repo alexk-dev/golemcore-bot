@@ -173,4 +173,75 @@ class LlmSkillClassifierTest {
         assertEquals("balanced", result.modelTier()); // default
         assertEquals("LLM classification", result.reason()); // default
     }
+
+    // ===== Exception handling =====
+
+    @Test
+    void classify_fallsBackOnTimeoutException() throws Exception {
+        CompletableFuture<LlmResponse> timeoutFuture = new CompletableFuture<>();
+        timeoutFuture.completeExceptionally(new java.util.concurrent.TimeoutException("Request timed out"));
+        when(mockLlmPort.chat(any(LlmRequest.class))).thenReturn(timeoutFuture);
+
+        LlmSkillClassifier.ClassificationResult result = classifier
+                .classify("Test message", List.of(), candidates, mockLlmPort)
+                .join();
+
+        // Should fallback to top semantic candidate
+        assertEquals("code-review", result.skill());
+        assertEquals(0.89, result.confidence());
+        assertEquals("balanced", result.modelTier());
+    }
+
+    @Test
+    void classify_returnsNoMatchWhenEmptyCandidatesAndLlmFails() throws Exception {
+        when(mockLlmPort.chat(any(LlmRequest.class)))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("LLM error")));
+
+        List<SkillCandidate> emptyCandidates = List.of();
+        LlmSkillClassifier.ClassificationResult result = classifier
+                .classify("Test message", List.of(), emptyCandidates, mockLlmPort)
+                .join();
+
+        assertNull(result.skill());
+        assertEquals(0, result.confidence());
+        assertEquals("fast", result.modelTier());
+    }
+
+    @Test
+    void classify_returnsNoMatchOnInvalidJsonWithEmptyCandidates() throws Exception {
+        when(mockLlmPort.chat(any(LlmRequest.class)))
+                .thenReturn(CompletableFuture.completedFuture(
+                        LlmResponse.builder().content("not json").build()));
+
+        List<SkillCandidate> emptyCandidates = List.of();
+        LlmSkillClassifier.ClassificationResult result = classifier
+                .classify("Test message", List.of(), emptyCandidates, mockLlmPort)
+                .join();
+
+        assertNull(result.skill());
+        assertEquals("fast", result.modelTier());
+        assertTrue(result.reason().contains("Parse failed"));
+    }
+
+    @Test
+    void classify_includesConversationHistoryInPrompt() throws Exception {
+        String jsonResponse = """
+                {"skill": "code-review", "confidence": 0.9, "model_tier": "balanced", "reason": "Context"}
+                """;
+        when(mockLlmPort.chat(any(LlmRequest.class)))
+                .thenReturn(CompletableFuture.completedFuture(
+                        LlmResponse.builder().content(jsonResponse).build()));
+
+        List<me.golemcore.bot.domain.model.Message> history = List.of(
+                me.golemcore.bot.domain.model.Message.builder()
+                        .role("user").content("Previous question").build(),
+                me.golemcore.bot.domain.model.Message.builder()
+                        .role("assistant").content("Previous answer").build());
+
+        LlmSkillClassifier.ClassificationResult result = classifier
+                .classify("Follow up question", history, candidates, mockLlmPort)
+                .join();
+
+        assertEquals("code-review", result.skill());
+    }
 }

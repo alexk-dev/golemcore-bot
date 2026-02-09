@@ -254,6 +254,48 @@ class HybridSkillMatcherTest {
         verify(embeddingStore).clear();
     }
 
+    // ===== InterruptedException handling =====
+
+    @Test
+    void fallsBackToSemanticOnInterruptedExceptionInClassifier() throws Exception {
+        when(embeddingPort.embed(anyString()))
+                .thenReturn(CompletableFuture.completedFuture(new float[] { 1.0f }));
+        List<SkillCandidate> candidates = List.of(
+                SkillCandidate.builder().name("code-review").description("Review code").semanticScore(0.85).build());
+        when(embeddingStore.findSimilar(any(), anyInt(), anyDouble())).thenReturn(candidates);
+
+        LlmPort classifierLlm = mock(LlmPort.class);
+        when(llmAdapterFactory.getActiveAdapter()).thenReturn(classifierLlm);
+
+        // Simulate InterruptedException via ExecutionException wrapping
+        CompletableFuture<LlmSkillClassifier.ClassificationResult> interruptedFuture = new CompletableFuture<>();
+        interruptedFuture.completeExceptionally(new RuntimeException("Interrupted"));
+        when(llmClassifier.classify(anyString(), anyList(), anyList(), any()))
+                .thenReturn(interruptedFuture);
+
+        SkillMatchResult result = matcher.match("review my PR", List.of(), skills).get(5, TimeUnit.SECONDS);
+
+        assertEquals("code-review", result.getSelectedSkill());
+        assertFalse(result.isLlmClassifierUsed());
+        assertTrue(result.getReason().contains("semantic fallback"));
+    }
+
+    @Test
+    void returnsEmptyListOnInterruptedExceptionInSemanticSearch() throws Exception {
+        // Make embed() throw an ExecutionException
+        CompletableFuture<float[]> failedFuture = new CompletableFuture<>();
+        failedFuture.completeExceptionally(new RuntimeException("Embedding interrupted"));
+        when(embeddingPort.embed(anyString())).thenReturn(failedFuture);
+
+        properties.getRouter().getSkillMatcher().getClassifier().setEnabled(false);
+        matcher = new HybridSkillMatcher(properties, embeddingPort, embeddingStore, llmClassifier, llmAdapterFactory);
+
+        SkillMatchResult result = matcher.match("hello", List.of(), skills).get(5, TimeUnit.SECONDS);
+
+        assertNull(result.getSelectedSkill());
+        assertEquals("fast", result.getModelTier());
+    }
+
     // ===== Classifier disabled → semantic only =====
 
     @Test

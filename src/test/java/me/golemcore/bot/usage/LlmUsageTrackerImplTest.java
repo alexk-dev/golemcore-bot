@@ -196,6 +196,120 @@ class LlmUsageTrackerImplTest {
         assertEquals("gpt-5.1", stats.getModel());
     }
 
+    // ===== Loading persisted data =====
+
+    @Test
+    void shouldSkipMalformedJsonlLinesOnLoad() {
+        String validLine = "{\"inputTokens\":100,\"outputTokens\":50,\"totalTokens\":150,\"providerId\":\"p\",\"model\":\"m\",\"timestamp\":\""
+                + Instant.now() + "\"}";
+        String mixedContent = validLine + "\nthis is not json\n" + validLine;
+
+        when(storagePort.listObjects("usage", ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of("test.jsonl")));
+        when(storagePort.getText("usage", "test.jsonl"))
+                .thenReturn(CompletableFuture.completedFuture(mixedContent));
+
+        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, properties, objectMapper);
+        freshTracker.init();
+
+        // Should have loaded 2 valid records, skipping the malformed one
+        UsageStats stats = freshTracker.getStats("p", Duration.ofHours(1));
+        assertEquals(2, stats.getTotalRequests());
+    }
+
+    @Test
+    void shouldHandleEmptyFileOnLoad() {
+        when(storagePort.listObjects("usage", ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of("empty.jsonl")));
+        when(storagePort.getText("usage", "empty.jsonl"))
+                .thenReturn(CompletableFuture.completedFuture(""));
+
+        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, properties, objectMapper);
+        assertDoesNotThrow(() -> freshTracker.init());
+    }
+
+    @Test
+    void shouldSkipNonJsonlFilesOnLoad() {
+        when(storagePort.listObjects("usage", ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of("readme.txt", "data.csv")));
+
+        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, properties, objectMapper);
+        assertDoesNotThrow(() -> freshTracker.init());
+        // Should not attempt to read non-jsonl files
+        verify(storagePort, never()).getText(eq("usage"), eq("readme.txt"));
+    }
+
+    @Test
+    void shouldSkipOldRecordsOnLoad() {
+        Instant oldTimestamp = Instant.now().minus(Duration.ofDays(10));
+        String oldLine = "{\"inputTokens\":100,\"outputTokens\":50,\"totalTokens\":150,\"providerId\":\"p\",\"model\":\"m\",\"timestamp\":\""
+                + oldTimestamp + "\"}";
+
+        when(storagePort.listObjects("usage", ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of("old.jsonl")));
+        when(storagePort.getText("usage", "old.jsonl"))
+                .thenReturn(CompletableFuture.completedFuture(oldLine));
+
+        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, properties, objectMapper);
+        freshTracker.init();
+
+        UsageStats stats = freshTracker.getStats("p", Duration.ofHours(24));
+        assertEquals(0, stats.getTotalRequests());
+    }
+
+    @Test
+    void shouldHandleStorageFailureOnLoadGracefully() {
+        when(storagePort.listObjects("usage", ""))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("Storage unavailable")));
+
+        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, properties, objectMapper);
+        assertDoesNotThrow(() -> freshTracker.init());
+    }
+
+    @Test
+    void shouldSkipLoadingWhenDisabled() {
+        properties.getUsage().setEnabled(false);
+
+        when(storagePort.listObjects("usage", ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of("data.jsonl")));
+
+        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, properties, objectMapper);
+        freshTracker.init();
+
+        // Should not list objects when disabled
+        verify(storagePort, never()).getText(eq("usage"), anyString());
+    }
+
+    // ===== getAllStats =====
+
+    @Test
+    void shouldReturnAllProviderStats() {
+        Instant now = Instant.now();
+        tracker.recordUsage("openai", "gpt-5.1", usage(100, 50, now));
+        tracker.recordUsage("anthropic", "claude-4", usage(200, 100, now));
+
+        Map<String, UsageStats> allStats = tracker.getAllStats(Duration.ofHours(1));
+
+        assertEquals(2, allStats.size());
+        assertTrue(allStats.containsKey("openai"));
+        assertTrue(allStats.containsKey("anthropic"));
+    }
+
+    // ===== Persist failure =====
+
+    @Test
+    void shouldHandlePersistFailureGracefully() {
+        when(storagePort.appendText(anyString(), anyString(), anyString()))
+                .thenThrow(new RuntimeException("Disk full"));
+
+        LlmUsage usage = usage(100, 50, Instant.now());
+        assertDoesNotThrow(() -> tracker.recordUsage("p", "m", usage));
+
+        // Record should still be in memory even though persistence failed
+        UsageStats stats = tracker.getStats("p", Duration.ofHours(1));
+        assertEquals(1, stats.getTotalRequests());
+    }
+
     private LlmUsage usage(int input, int output, Instant ts) {
         return LlmUsage.builder()
                 .inputTokens(input).outputTokens(output).totalTokens(input + output)

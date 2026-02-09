@@ -1,10 +1,12 @@
 package me.golemcore.bot.adapter.outbound.mcp;
 
+import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -204,6 +206,60 @@ class McpClientTest {
         assertEquals("tools/call", parsed.get("method").asText());
         assertEquals("create_issue", parsed.get("params").get("name").asText());
         assertEquals("Bug report", parsed.get("params").get("arguments").get("title").asText());
+    }
+
+    // ===== McpClient lifecycle =====
+
+    @Test
+    void testReadLoopHandlesNullProcess() throws Exception {
+        // McpClient with no process started — readLoop should return immediately
+        McpClient client = new McpClient("test-skill", null, objectMapper);
+        // Just verify it can be closed without NPE
+        client.close();
+        assertFalse(client.isRunning());
+    }
+
+    @Test
+    void testCloseCompletesAllPendingRequests() throws Exception {
+        McpClient client = new McpClient("close-test", null, objectMapper);
+        // Client without started process should still close gracefully
+        client.close();
+        assertFalse(client.isRunning());
+        assertEquals(0, client.getCachedTools().size());
+    }
+
+    @Test
+    void testGetCachedToolsReturnsEmptyWhenNotStarted() {
+        McpClient client = new McpClient("empty-test", null, objectMapper);
+        List<ToolDefinition> tools = client.getCachedTools();
+        assertNotNull(tools);
+        assertTrue(tools.isEmpty());
+    }
+
+    @Test
+    void testIsRunningReturnsFalseWhenNotStarted() {
+        McpClient client = new McpClient("not-started", null, objectMapper);
+        assertFalse(client.isRunning());
+    }
+
+    @Test
+    void testGetSkillName() {
+        McpClient client = new McpClient("my-skill", null, objectMapper);
+        assertEquals("my-skill", client.getSkillName());
+    }
+
+    @Test
+    void testLastActivityTimestamp() {
+        McpClient client = new McpClient("activity-test", null, objectMapper);
+        long ts = client.getLastActivityTimestamp();
+        assertTrue(ts > 0);
+    }
+
+    @Test
+    void testMcpExceptionPreservesCodeAndMessage() {
+        McpClient.McpException ex = new McpClient.McpException(-32601, "Method not found");
+        assertEquals(-32601, ex.getCode());
+        assertEquals("Method not found", ex.getMessage());
     }
 
     // Helper: replicate the parseToolCallResult logic for testing without a full

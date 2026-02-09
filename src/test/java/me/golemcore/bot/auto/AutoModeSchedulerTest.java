@@ -1,6 +1,7 @@
 package me.golemcore.bot.auto;
 
 import me.golemcore.bot.domain.loop.AgentLoop;
+import me.golemcore.bot.domain.model.AutoModeChannelRegisteredEvent;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.Message;
@@ -163,5 +164,101 @@ class AutoModeSchedulerTest {
         scheduler.sendMilestoneNotification("Should not be sent");
 
         verify(channelPort, never()).sendMessage(anyString(), anyString());
+    }
+
+    // ===== Event listener =====
+
+    @Test
+    void onChannelRegisteredDelegatesToRegisterChannel() {
+        AutoModeChannelRegisteredEvent event = new AutoModeChannelRegisteredEvent("telegram", "chat-event-123");
+
+        scheduler.onChannelRegistered(event);
+
+        // Verify registration worked by sending a milestone notification
+        scheduler.sendMilestoneNotification("Event test");
+        verify(channelPort).sendMessage(eq("chat-event-123"), contains("Event test"));
+    }
+
+    // ===== Notification failure handling =====
+
+    @Test
+    void sendMilestoneNotificationHandlesChannelNotFound() {
+        // Register a channel type that doesn't exist in the registry
+        scheduler.registerChannel("unknown-channel", "chat-123");
+
+        // Should not throw
+        assertDoesNotThrow(() -> scheduler.sendMilestoneNotification("Test"));
+        verify(channelPort, never()).sendMessage(anyString(), anyString());
+    }
+
+    @Test
+    void sendMilestoneNotificationHandlesExecutionException() {
+        scheduler.registerChannel("telegram", "chat-fail");
+        when(channelPort.sendMessage(anyString(), anyString()))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("Send failed")));
+
+        assertDoesNotThrow(() -> scheduler.sendMilestoneNotification("Should handle error"));
+    }
+
+    // ===== Tick with channel info =====
+
+    @Test
+    void tickUsesFallbackChatIdWhenNoChannelRegistered() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+
+        Goal goal = Goal.builder()
+                .id("goal-1")
+                .title("Test Goal")
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>())
+                .createdAt(Instant.now())
+                .build();
+        when(autoModeService.getActiveGoals()).thenReturn(List.of(goal));
+        when(autoModeService.getNextPendingTask()).thenReturn(Optional.empty());
+
+        scheduler.tick();
+
+        ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
+        verify(agentLoop).processMessage(captor.capture());
+
+        Message sent = captor.getValue();
+        assertEquals("auto", sent.getChatId());
+        assertEquals("auto", sent.getChannelType());
+    }
+
+    @Test
+    void tickUsesRegisteredChannelForChatId() {
+        scheduler.registerChannel("telegram", "chat-999");
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+
+        Goal goal = Goal.builder()
+                .id("goal-1")
+                .title("Test Goal")
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>())
+                .createdAt(Instant.now())
+                .build();
+        when(autoModeService.getActiveGoals()).thenReturn(List.of(goal));
+        when(autoModeService.getNextPendingTask()).thenReturn(Optional.empty());
+
+        scheduler.tick();
+
+        ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
+        verify(agentLoop).processMessage(captor.capture());
+
+        Message sent = captor.getValue();
+        assertEquals("chat-999", sent.getChatId());
+        assertEquals("telegram", sent.getChannelType());
+    }
+
+    // ===== Shutdown =====
+
+    @Test
+    void shutdownDoesNotThrowWhenNotInitialized() {
+        AutoModeScheduler freshScheduler = new AutoModeScheduler(
+                autoModeService, agentLoop, properties,
+                goalManagementTool, List.of(channelPort));
+
+        assertDoesNotThrow(freshScheduler::shutdown);
     }
 }
