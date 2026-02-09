@@ -14,6 +14,8 @@ import static org.mockito.Mockito.*;
 
 class SkillServiceVariableTest {
 
+    private static final String SKILLS_DIR = "skills";
+
     private SkillService skillService;
     private StoragePort mockStorage;
 
@@ -47,9 +49,9 @@ class SkillServiceVariableTest {
                 Connect to {{ENDPOINT}} with timeout {{TIMEOUT}}s.
                 """;
 
-        when(mockStorage.getText("skills", "test-skill/SKILL.md"))
+        when(mockStorage.getText(SKILLS_DIR, "test-skill/SKILL.md"))
                 .thenReturn(CompletableFuture.completedFuture(skillMd));
-        when(mockStorage.listObjects("skills", ""))
+        when(mockStorage.listObjects(SKILLS_DIR, ""))
                 .thenReturn(CompletableFuture.completedFuture(List.of("test-skill/SKILL.md")));
 
         skillService.reload();
@@ -77,9 +79,9 @@ class SkillServiceVariableTest {
                 Use key to connect.
                 """;
 
-        when(mockStorage.getText("skills", "needs-key/SKILL.md"))
+        when(mockStorage.getText(SKILLS_DIR, "needs-key/SKILL.md"))
                 .thenReturn(CompletableFuture.completedFuture(skillMd));
-        when(mockStorage.listObjects("skills", ""))
+        when(mockStorage.listObjects(SKILLS_DIR, ""))
                 .thenReturn(CompletableFuture.completedFuture(List.of("needs-key/SKILL.md")));
 
         skillService.reload();
@@ -103,11 +105,11 @@ class SkillServiceVariableTest {
                 Use key to connect.
                 """;
 
-        when(mockStorage.getText("skills", "has-key/SKILL.md"))
+        when(mockStorage.getText(SKILLS_DIR, "has-key/SKILL.md"))
                 .thenReturn(CompletableFuture.completedFuture(skillMd));
-        when(mockStorage.getText("skills", "has-key/vars.json"))
+        when(mockStorage.getText(SKILLS_DIR, "has-key/vars.json"))
                 .thenReturn(CompletableFuture.completedFuture("{\"API_KEY\": \"sk-abc123\"}"));
-        when(mockStorage.listObjects("skills", ""))
+        when(mockStorage.listObjects(SKILLS_DIR, ""))
                 .thenReturn(CompletableFuture.completedFuture(List.of("has-key/SKILL.md")));
 
         skillService.reload();
@@ -128,9 +130,9 @@ class SkillServiceVariableTest {
                 Just plain content.
                 """;
 
-        when(mockStorage.getText("skills", "simple-skill/SKILL.md"))
+        when(mockStorage.getText(SKILLS_DIR, "simple-skill/SKILL.md"))
                 .thenReturn(CompletableFuture.completedFuture(skillMd));
-        when(mockStorage.listObjects("skills", ""))
+        when(mockStorage.listObjects(SKILLS_DIR, ""))
                 .thenReturn(CompletableFuture.completedFuture(List.of("simple-skill/SKILL.md")));
 
         skillService.reload();

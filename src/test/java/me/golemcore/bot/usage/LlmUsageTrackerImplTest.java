@@ -1,6 +1,8 @@
 package me.golemcore.bot.usage;
 
 import me.golemcore.bot.domain.model.LlmUsage;
+import me.golemcore.bot.domain.model.UsageMetric;
+import me.golemcore.bot.domain.model.UsageStats;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.StoragePort;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -18,6 +20,13 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class LlmUsageTrackerImplTest {
+
+    private static final String PROVIDER_LANGCHAIN4J = "langchain4j";
+    private static final String MODEL_GPT_51 = "gpt-5.1";
+    private static final String USAGE_DIR = "usage";
+    private static final String MODEL_GPT_52 = "gpt-5.2";
+    private static final String KEY_LANGCHAIN4J_GPT51 = PROVIDER_LANGCHAIN4J + "/" + MODEL_GPT_51;
+    private static final String KEY_LANGCHAIN4J_GPT52 = PROVIDER_LANGCHAIN4J + "/" + MODEL_GPT_52;
 
     private StoragePort storagePort;
     private BotProperties properties;
@@ -50,9 +59,9 @@ class LlmUsageTrackerImplTest {
                 .latency(Duration.ofMillis(500))
                 .build();
 
-        tracker.recordUsage("langchain4j", "gpt-5.1", usage);
+        tracker.recordUsage(PROVIDER_LANGCHAIN4J, MODEL_GPT_51, usage);
 
-        UsageStats stats = tracker.getStats("langchain4j", Duration.ofHours(1));
+        UsageStats stats = tracker.getStats(PROVIDER_LANGCHAIN4J, Duration.ofHours(1));
         assertEquals(1, stats.getTotalRequests());
         assertEquals(100, stats.getTotalInputTokens());
         assertEquals(50, stats.getTotalOutputTokens());
@@ -65,10 +74,10 @@ class LlmUsageTrackerImplTest {
                 .inputTokens(10).outputTokens(5).totalTokens(15)
                 .build();
 
-        tracker.recordUsage("langchain4j", "gpt-5.1", usage);
+        tracker.recordUsage(PROVIDER_LANGCHAIN4J, MODEL_GPT_51, usage);
 
-        assertEquals("langchain4j", usage.getProviderId());
-        assertEquals("gpt-5.1", usage.getModel());
+        assertEquals(PROVIDER_LANGCHAIN4J, usage.getProviderId());
+        assertEquals(MODEL_GPT_51, usage.getModel());
         assertNotNull(usage.getTimestamp());
     }
 
@@ -79,9 +88,9 @@ class LlmUsageTrackerImplTest {
                 .timestamp(Instant.now())
                 .build();
 
-        tracker.recordUsage("langchain4j", "gpt-5.1", usage);
+        tracker.recordUsage(PROVIDER_LANGCHAIN4J, MODEL_GPT_51, usage);
 
-        verify(storagePort).appendText(eq("usage"), contains("langchain4j"), contains("gpt-5.1"));
+        verify(storagePort).appendText(eq(USAGE_DIR), contains(PROVIDER_LANGCHAIN4J), contains(MODEL_GPT_51));
     }
 
     // ===== Aggregation =====
@@ -95,10 +104,10 @@ class LlmUsageTrackerImplTest {
                     .timestamp(now)
                     .latency(Duration.ofMillis(200))
                     .build();
-            tracker.recordUsage("langchain4j", "gpt-5.1", usage);
+            tracker.recordUsage(PROVIDER_LANGCHAIN4J, MODEL_GPT_51, usage);
         }
 
-        UsageStats stats = tracker.getStats("langchain4j", Duration.ofHours(1));
+        UsageStats stats = tracker.getStats(PROVIDER_LANGCHAIN4J, Duration.ofHours(1));
         assertEquals(5, stats.getTotalRequests());
         assertEquals(500, stats.getTotalInputTokens());
         assertEquals(250, stats.getTotalOutputTokens());
@@ -110,19 +119,19 @@ class LlmUsageTrackerImplTest {
     @Test
     void groupsStatsByModel() {
         Instant now = Instant.now();
-        tracker.recordUsage("langchain4j", "gpt-5.1", usage(100, 50, now));
-        tracker.recordUsage("langchain4j", "gpt-5.1", usage(200, 100, now));
-        tracker.recordUsage("langchain4j", "gpt-5.2", usage(300, 150, now));
+        tracker.recordUsage(PROVIDER_LANGCHAIN4J, MODEL_GPT_51, usage(100, 50, now));
+        tracker.recordUsage(PROVIDER_LANGCHAIN4J, MODEL_GPT_51, usage(200, 100, now));
+        tracker.recordUsage(PROVIDER_LANGCHAIN4J, MODEL_GPT_52, usage(300, 150, now));
 
         Map<String, UsageStats> byModel = tracker.getStatsByModel(Duration.ofHours(1));
 
         assertEquals(2, byModel.size());
-        assertTrue(byModel.containsKey("langchain4j/gpt-5.1"));
-        assertTrue(byModel.containsKey("langchain4j/gpt-5.2"));
+        assertTrue(byModel.containsKey(KEY_LANGCHAIN4J_GPT51));
+        assertTrue(byModel.containsKey(KEY_LANGCHAIN4J_GPT52));
 
-        assertEquals(2, byModel.get("langchain4j/gpt-5.1").getTotalRequests());
-        assertEquals(1, byModel.get("langchain4j/gpt-5.2").getTotalRequests());
-        assertEquals(450, byModel.get("langchain4j/gpt-5.2").getTotalTokens());
+        assertEquals(2, byModel.get(KEY_LANGCHAIN4J_GPT51).getTotalRequests());
+        assertEquals(1, byModel.get(KEY_LANGCHAIN4J_GPT52).getTotalRequests());
+        assertEquals(450, byModel.get(KEY_LANGCHAIN4J_GPT52).getTotalTokens());
     }
 
     // ===== Period filtering =====
@@ -130,16 +139,16 @@ class LlmUsageTrackerImplTest {
     @Test
     void filtersOldUsageByPeriod() {
         // Recent usage
-        tracker.recordUsage("langchain4j", "gpt-5.1", usage(100, 50, Instant.now()));
+        tracker.recordUsage(PROVIDER_LANGCHAIN4J, MODEL_GPT_51, usage(100, 50, Instant.now()));
         // Old usage (8 days ago)
         LlmUsage old = LlmUsage.builder()
                 .inputTokens(999).outputTokens(999).totalTokens(1998)
                 .timestamp(Instant.now().minus(Duration.ofDays(8)))
                 .build();
-        tracker.recordUsage("langchain4j", "gpt-5.1", old);
+        tracker.recordUsage(PROVIDER_LANGCHAIN4J, MODEL_GPT_51, old);
 
         // Query last 24h — should only see the recent one
-        UsageStats stats = tracker.getStats("langchain4j", Duration.ofHours(24));
+        UsageStats stats = tracker.getStats(PROVIDER_LANGCHAIN4J, Duration.ofHours(24));
         assertEquals(1, stats.getTotalRequests());
         assertEquals(150, stats.getTotalTokens());
     }
@@ -151,9 +160,9 @@ class LlmUsageTrackerImplTest {
         properties.getUsage().setEnabled(false);
 
         LlmUsage usage = usage(100, 50, Instant.now());
-        tracker.recordUsage("langchain4j", "gpt-5.1", usage);
+        tracker.recordUsage(PROVIDER_LANGCHAIN4J, MODEL_GPT_51, usage);
 
-        UsageStats stats = tracker.getStats("langchain4j", Duration.ofHours(1));
+        UsageStats stats = tracker.getStats(PROVIDER_LANGCHAIN4J, Duration.ofHours(1));
         assertEquals(0, stats.getTotalRequests());
         verify(storagePort, never()).appendText(anyString(), anyString(), anyString());
     }
@@ -171,7 +180,7 @@ class LlmUsageTrackerImplTest {
 
     @Test
     void exportsMetrics() {
-        tracker.recordUsage("langchain4j", "gpt-5.1", usage(100, 50, Instant.now()));
+        tracker.recordUsage(PROVIDER_LANGCHAIN4J, MODEL_GPT_51, usage(100, 50, Instant.now()));
 
         List<UsageMetric> metrics = tracker.exportMetrics();
         assertFalse(metrics.isEmpty());
@@ -185,13 +194,266 @@ class LlmUsageTrackerImplTest {
     void detectsPrimaryModel() {
         Instant now = Instant.now();
         // 3x gpt-5.1, 1x gpt-5.2 → primary is gpt-5.1
-        tracker.recordUsage("p", "gpt-5.1", usage(10, 5, now));
-        tracker.recordUsage("p", "gpt-5.1", usage(10, 5, now));
-        tracker.recordUsage("p", "gpt-5.1", usage(10, 5, now));
-        tracker.recordUsage("p", "gpt-5.2", usage(10, 5, now));
+        tracker.recordUsage("p", MODEL_GPT_51, usage(10, 5, now));
+        tracker.recordUsage("p", MODEL_GPT_51, usage(10, 5, now));
+        tracker.recordUsage("p", MODEL_GPT_51, usage(10, 5, now));
+        tracker.recordUsage("p", MODEL_GPT_52, usage(10, 5, now));
 
         UsageStats stats = tracker.getStats("p", Duration.ofHours(1));
-        assertEquals("gpt-5.1", stats.getModel());
+        assertEquals(MODEL_GPT_51, stats.getModel());
+    }
+
+    // ===== Loading persisted data =====
+
+    @Test
+    void shouldSkipMalformedJsonlLinesOnLoad() {
+        String validLine = "{\"inputTokens\":100,\"outputTokens\":50,\"totalTokens\":150,\"providerId\":\"p\",\"model\":\"m\",\"timestamp\":\""
+                + Instant.now() + "\"}";
+        String mixedContent = validLine + "\nthis is not json\n" + validLine;
+
+        when(storagePort.listObjects(USAGE_DIR, ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of("test.jsonl")));
+        when(storagePort.getText(USAGE_DIR, "test.jsonl"))
+                .thenReturn(CompletableFuture.completedFuture(mixedContent));
+
+        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, properties, objectMapper);
+        freshTracker.init();
+
+        // Should have loaded 2 valid records, skipping the malformed one
+        UsageStats stats = freshTracker.getStats("p", Duration.ofHours(1));
+        assertEquals(2, stats.getTotalRequests());
+    }
+
+    @Test
+    void shouldHandleEmptyFileOnLoad() {
+        when(storagePort.listObjects(USAGE_DIR, ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of("empty.jsonl")));
+        when(storagePort.getText(USAGE_DIR, "empty.jsonl"))
+                .thenReturn(CompletableFuture.completedFuture(""));
+
+        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, properties, objectMapper);
+        assertDoesNotThrow(() -> freshTracker.init());
+    }
+
+    @Test
+    void shouldSkipNonJsonlFilesOnLoad() {
+        when(storagePort.listObjects(USAGE_DIR, ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of("readme.txt", "data.csv")));
+
+        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, properties, objectMapper);
+        assertDoesNotThrow(() -> freshTracker.init());
+        // Should not attempt to read non-jsonl files
+        verify(storagePort, never()).getText(eq(USAGE_DIR), eq("readme.txt"));
+    }
+
+    @Test
+    void shouldSkipOldRecordsOnLoad() {
+        Instant oldTimestamp = Instant.now().minus(Duration.ofDays(10));
+        String oldLine = "{\"inputTokens\":100,\"outputTokens\":50,\"totalTokens\":150,\"providerId\":\"p\",\"model\":\"m\",\"timestamp\":\""
+                + oldTimestamp + "\"}";
+
+        when(storagePort.listObjects(USAGE_DIR, ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of("old.jsonl")));
+        when(storagePort.getText(USAGE_DIR, "old.jsonl"))
+                .thenReturn(CompletableFuture.completedFuture(oldLine));
+
+        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, properties, objectMapper);
+        freshTracker.init();
+
+        UsageStats stats = freshTracker.getStats("p", Duration.ofHours(24));
+        assertEquals(0, stats.getTotalRequests());
+    }
+
+    @Test
+    void shouldHandleStorageFailureOnLoadGracefully() {
+        when(storagePort.listObjects(USAGE_DIR, ""))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("Storage unavailable")));
+
+        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, properties, objectMapper);
+        assertDoesNotThrow(() -> freshTracker.init());
+    }
+
+    @Test
+    void shouldSkipLoadingWhenDisabled() {
+        properties.getUsage().setEnabled(false);
+
+        when(storagePort.listObjects(USAGE_DIR, ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of("data.jsonl")));
+
+        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, properties, objectMapper);
+        freshTracker.init();
+
+        // Should not list objects when disabled
+        verify(storagePort, never()).getText(eq(USAGE_DIR), anyString());
+    }
+
+    // ===== getAllStats =====
+
+    @Test
+    void shouldReturnAllProviderStats() {
+        Instant now = Instant.now();
+        tracker.recordUsage("openai", MODEL_GPT_51, usage(100, 50, now));
+        tracker.recordUsage("anthropic", "claude-4", usage(200, 100, now));
+
+        Map<String, UsageStats> allStats = tracker.getAllStats(Duration.ofHours(1));
+
+        assertEquals(2, allStats.size());
+        assertTrue(allStats.containsKey("openai"));
+        assertTrue(allStats.containsKey("anthropic"));
+    }
+
+    // ===== Persist failure =====
+
+    @Test
+    void shouldHandlePersistFailureGracefully() {
+        when(storagePort.appendText(anyString(), anyString(), anyString()))
+                .thenThrow(new RuntimeException("Disk full"));
+
+        LlmUsage usage = usage(100, 50, Instant.now());
+        assertDoesNotThrow(() -> tracker.recordUsage("p", "m", usage));
+
+        // Record should still be in memory even though persistence failed
+        UsageStats stats = tracker.getStats("p", Duration.ofHours(1));
+        assertEquals(1, stats.getTotalRequests());
+    }
+
+    // ===== Average latency =====
+
+    @Test
+    void shouldComputeAverageLatency() {
+        Instant now = Instant.now();
+        LlmUsage usage1 = LlmUsage.builder()
+                .inputTokens(10).outputTokens(5).totalTokens(15)
+                .timestamp(now).latency(Duration.ofMillis(100))
+                .build();
+        LlmUsage usage2 = LlmUsage.builder()
+                .inputTokens(10).outputTokens(5).totalTokens(15)
+                .timestamp(now).latency(Duration.ofMillis(300))
+                .build();
+
+        tracker.recordUsage("p", "m", usage1);
+        tracker.recordUsage("p", "m", usage2);
+
+        UsageStats stats = tracker.getStats("p", Duration.ofHours(1));
+        assertEquals(Duration.ofMillis(200), stats.getAvgLatency());
+    }
+
+    @Test
+    void shouldReturnZeroLatencyWhenNoLatencyData() {
+        Instant now = Instant.now();
+        LlmUsage usage = LlmUsage.builder()
+                .inputTokens(10).outputTokens(5).totalTokens(15)
+                .timestamp(now)
+                .build(); // no latency
+
+        tracker.recordUsage("p", "m", usage);
+
+        UsageStats stats = tracker.getStats("p", Duration.ofHours(1));
+        assertEquals(Duration.ZERO, stats.getAvgLatency());
+    }
+
+    // ===== Null provider/model handling =====
+
+    @Test
+    void shouldHandleNullProviderInUsage() {
+        LlmUsage usage = LlmUsage.builder()
+                .inputTokens(10).outputTokens(5).totalTokens(15)
+                .timestamp(Instant.now())
+                .build();
+
+        tracker.recordUsage(null, "m", usage);
+
+        // Should be indexed under "unknown" provider
+        UsageStats stats = tracker.getStats("unknown", Duration.ofHours(1));
+        assertEquals(1, stats.getTotalRequests());
+    }
+
+    @Test
+    void shouldHandleNullModelInUsage() {
+        LlmUsage usage = LlmUsage.builder()
+                .inputTokens(10).outputTokens(5).totalTokens(15)
+                .timestamp(Instant.now())
+                .build();
+
+        tracker.recordUsage("p", null, usage);
+
+        UsageStats stats = tracker.getStats("p", Duration.ofHours(1));
+        assertEquals(1, stats.getTotalRequests());
+    }
+
+    // ===== Model breakdown in stats =====
+
+    @Test
+    void shouldTrackRequestsByModel() {
+        Instant now = Instant.now();
+        tracker.recordUsage("p", MODEL_GPT_51, usage(100, 50, now));
+        tracker.recordUsage("p", MODEL_GPT_51, usage(100, 50, now));
+        tracker.recordUsage("p", MODEL_GPT_52, usage(200, 100, now));
+
+        UsageStats stats = tracker.getStats("p", Duration.ofHours(1));
+        assertNotNull(stats.getRequestsByModel());
+        assertEquals(2, stats.getRequestsByModel().get(MODEL_GPT_51));
+        assertEquals(1, stats.getRequestsByModel().get(MODEL_GPT_52));
+    }
+
+    @Test
+    void shouldTrackTokensByModel() {
+        Instant now = Instant.now();
+        tracker.recordUsage("p", MODEL_GPT_51, usage(100, 50, now));
+        tracker.recordUsage("p", MODEL_GPT_52, usage(200, 100, now));
+
+        UsageStats stats = tracker.getStats("p", Duration.ofHours(1));
+        assertNotNull(stats.getTokensByModel());
+        assertEquals(150, stats.getTokensByModel().get(MODEL_GPT_51));
+        assertEquals(300, stats.getTokensByModel().get(MODEL_GPT_52));
+    }
+
+    // ===== Destroy =====
+
+    @Test
+    void shouldHandleDestroy() {
+        assertDoesNotThrow(() -> tracker.destroy());
+    }
+
+    // ===== File read failure on load =====
+
+    @Test
+    void shouldHandleFileReadFailureOnLoad() {
+        when(storagePort.listObjects(USAGE_DIR, ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of("bad.jsonl")));
+        when(storagePort.getText(USAGE_DIR, "bad.jsonl"))
+                .thenThrow(new RuntimeException("Read failed"));
+
+        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, properties, objectMapper);
+        assertDoesNotThrow(() -> freshTracker.init());
+    }
+
+    // ===== Export metrics per model =====
+
+    @Test
+    void shouldExportPerModelMetrics() {
+        Instant now = Instant.now();
+        tracker.recordUsage("p1", "model-a", usage(100, 50, now));
+        tracker.recordUsage("p1", "model-b", usage(200, 100, now));
+
+        List<UsageMetric> metrics = tracker.exportMetrics();
+
+        // Should have provider-level and model-level metrics
+        assertTrue(metrics.stream().anyMatch(m -> "llm.tokens.total".equals(m.getName())
+                && m.getTags().containsValue("model-a")));
+        assertTrue(metrics.stream().anyMatch(m -> "llm.requests.total".equals(m.getName())
+                && m.getTags().containsValue("model-b")));
+    }
+
+    // ===== Null list from storage =====
+
+    @Test
+    void shouldHandleNullListFromStorage() {
+        when(storagePort.listObjects(USAGE_DIR, ""))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, properties, objectMapper);
+        assertDoesNotThrow(() -> freshTracker.init());
     }
 
     private LlmUsage usage(int input, int output, Instant ts) {

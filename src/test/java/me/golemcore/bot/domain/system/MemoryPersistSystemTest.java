@@ -17,6 +17,13 @@ import static org.mockito.Mockito.*;
 
 class MemoryPersistSystemTest {
 
+    private static final String ROLE_USER = "user";
+    private static final String CONTENT_HELLO = "hello";
+    private static final String CONTENT_REPLY = "reply";
+    private static final String CONTENT_RESPONSE = "response";
+    private static final String SESSION_ID = "test";
+    private static final String ATTR_LLM_RESPONSE = "llm.response";
+
     private MemoryComponent memoryComponent;
     private MemoryPersistSystem system;
 
@@ -28,11 +35,11 @@ class MemoryPersistSystemTest {
 
     private AgentContext contextWith(List<Message> messages, LlmResponse response) {
         AgentContext ctx = AgentContext.builder()
-                .session(AgentSession.builder().id("test").build())
+                .session(AgentSession.builder().id(SESSION_ID).build())
                 .messages(new ArrayList<>(messages))
                 .build();
         if (response != null) {
-            ctx.setAttribute("llm.response", response);
+            ctx.setAttribute(ATTR_LLM_RESPONSE, response);
         }
         return ctx;
     }
@@ -55,7 +62,7 @@ class MemoryPersistSystemTest {
     void processAppendsMemoryEntry() {
         LlmResponse response = LlmResponse.builder().content("Hello there!").build();
         AgentContext ctx = contextWith(
-                List.of(Message.builder().role("user").content("Hi").timestamp(Instant.now()).build()),
+                List.of(Message.builder().role(ROLE_USER).content("Hi").timestamp(Instant.now()).build()),
                 response);
 
         system.process(ctx);
@@ -67,7 +74,7 @@ class MemoryPersistSystemTest {
     @Test
     void processSkipsWhenNoMessages() {
         AgentContext ctx = contextWith(List.of(),
-                LlmResponse.builder().content("response").build());
+                LlmResponse.builder().content(CONTENT_RESPONSE).build());
 
         system.process(ctx);
 
@@ -77,10 +84,10 @@ class MemoryPersistSystemTest {
     @Test
     void processSkipsWhenNullMessages() {
         AgentContext ctx = AgentContext.builder()
-                .session(AgentSession.builder().id("test").build())
+                .session(AgentSession.builder().id(SESSION_ID).build())
                 .messages(null)
                 .build();
-        ctx.setAttribute("llm.response", LlmResponse.builder().content("response").build());
+        ctx.setAttribute(ATTR_LLM_RESPONSE, LlmResponse.builder().content(CONTENT_RESPONSE).build());
 
         system.process(ctx);
 
@@ -91,7 +98,7 @@ class MemoryPersistSystemTest {
     void processSkipsWhenNoUserMessages() {
         AgentContext ctx = contextWith(
                 List.of(Message.builder().role("assistant").content("only assistant").timestamp(Instant.now()).build()),
-                LlmResponse.builder().content("response").build());
+                LlmResponse.builder().content(CONTENT_RESPONSE).build());
 
         system.process(ctx);
 
@@ -101,7 +108,7 @@ class MemoryPersistSystemTest {
     @Test
     void processSkipsWhenNoLlmResponse() {
         AgentContext ctx = contextWith(
-                List.of(Message.builder().role("user").content("hello").timestamp(Instant.now()).build()),
+                List.of(Message.builder().role(ROLE_USER).content(CONTENT_HELLO).timestamp(Instant.now()).build()),
                 null);
 
         system.process(ctx);
@@ -112,7 +119,7 @@ class MemoryPersistSystemTest {
     @Test
     void processSkipsWhenLlmResponseContentIsNull() {
         AgentContext ctx = contextWith(
-                List.of(Message.builder().role("user").content("hello").timestamp(Instant.now()).build()),
+                List.of(Message.builder().role(ROLE_USER).content(CONTENT_HELLO).timestamp(Instant.now()).build()),
                 LlmResponse.builder().content(null).build());
 
         system.process(ctx);
@@ -122,12 +129,12 @@ class MemoryPersistSystemTest {
 
     @Test
     void processFindsLastUserMessage() {
-        LlmResponse response = LlmResponse.builder().content("reply").build();
+        LlmResponse response = LlmResponse.builder().content(CONTENT_REPLY).build();
         AgentContext ctx = contextWith(
                 List.of(
-                        Message.builder().role("user").content("first").timestamp(Instant.now()).build(),
+                        Message.builder().role(ROLE_USER).content("first").timestamp(Instant.now()).build(),
                         Message.builder().role("assistant").content("response1").timestamp(Instant.now()).build(),
-                        Message.builder().role("user").content("second").timestamp(Instant.now()).build()),
+                        Message.builder().role(ROLE_USER).content("second").timestamp(Instant.now()).build()),
                 response);
 
         system.process(ctx);
@@ -140,7 +147,7 @@ class MemoryPersistSystemTest {
         String longMsg = "x".repeat(300);
         LlmResponse response = LlmResponse.builder().content("short").build();
         AgentContext ctx = contextWith(
-                List.of(Message.builder().role("user").content(longMsg).timestamp(Instant.now()).build()),
+                List.of(Message.builder().role(ROLE_USER).content(longMsg).timestamp(Instant.now()).build()),
                 response);
 
         system.process(ctx);
@@ -157,7 +164,7 @@ class MemoryPersistSystemTest {
         String longResponse = "y".repeat(400);
         LlmResponse response = LlmResponse.builder().content(longResponse).build();
         AgentContext ctx = contextWith(
-                List.of(Message.builder().role("user").content("q").timestamp(Instant.now()).build()),
+                List.of(Message.builder().role(ROLE_USER).content("q").timestamp(Instant.now()).build()),
                 response);
 
         system.process(ctx);
@@ -173,7 +180,7 @@ class MemoryPersistSystemTest {
         String exactMsg = "a".repeat(200);
         LlmResponse response = LlmResponse.builder().content("short").build();
         AgentContext ctx = contextWith(
-                List.of(Message.builder().role("user").content(exactMsg).timestamp(Instant.now()).build()),
+                List.of(Message.builder().role(ROLE_USER).content(exactMsg).timestamp(Instant.now()).build()),
                 response);
 
         system.process(ctx);
@@ -184,9 +191,9 @@ class MemoryPersistSystemTest {
 
     @Test
     void processHandlesNullUserContent() {
-        LlmResponse response = LlmResponse.builder().content("reply").build();
+        LlmResponse response = LlmResponse.builder().content(CONTENT_REPLY).build();
         AgentContext ctx = contextWith(
-                List.of(Message.builder().role("user").content(null).timestamp(Instant.now()).build()),
+                List.of(Message.builder().role(ROLE_USER).content(null).timestamp(Instant.now()).build()),
                 response);
 
         system.process(ctx);
@@ -200,7 +207,7 @@ class MemoryPersistSystemTest {
     void processReplacesNewlinesInContent() {
         LlmResponse response = LlmResponse.builder().content("line1\nline2").build();
         AgentContext ctx = contextWith(
-                List.of(Message.builder().role("user").content("hello\nworld").timestamp(Instant.now()).build()),
+                List.of(Message.builder().role(ROLE_USER).content("hello\nworld").timestamp(Instant.now()).build()),
                 response);
 
         system.process(ctx);
@@ -213,9 +220,9 @@ class MemoryPersistSystemTest {
     void processHandlesMemoryAppendFailure() {
         doThrow(new RuntimeException("write error")).when(memoryComponent).appendToday(any());
 
-        LlmResponse response = LlmResponse.builder().content("reply").build();
+        LlmResponse response = LlmResponse.builder().content(CONTENT_REPLY).build();
         AgentContext ctx = contextWith(
-                List.of(Message.builder().role("user").content("hello").timestamp(Instant.now()).build()),
+                List.of(Message.builder().role(ROLE_USER).content(CONTENT_HELLO).timestamp(Instant.now()).build()),
                 response);
 
         assertDoesNotThrow(() -> system.process(ctx));
@@ -223,9 +230,9 @@ class MemoryPersistSystemTest {
 
     @Test
     void processEntryIncludesTimestamp() {
-        LlmResponse response = LlmResponse.builder().content("reply").build();
+        LlmResponse response = LlmResponse.builder().content(CONTENT_REPLY).build();
         AgentContext ctx = contextWith(
-                List.of(Message.builder().role("user").content("hello").timestamp(Instant.now()).build()),
+                List.of(Message.builder().role(ROLE_USER).content(CONTENT_HELLO).timestamp(Instant.now()).build()),
                 response);
 
         system.process(ctx);

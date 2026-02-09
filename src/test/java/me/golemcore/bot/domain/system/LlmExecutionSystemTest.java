@@ -1,10 +1,14 @@
 package me.golemcore.bot.domain.system;
 
-import me.golemcore.bot.domain.model.*;
+import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.LlmResponse;
+import me.golemcore.bot.domain.model.LlmUsage;
+import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import me.golemcore.bot.port.outbound.LlmPort;
-import me.golemcore.bot.usage.LlmUsageTracker;
+import me.golemcore.bot.port.outbound.UsageTrackingPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -21,8 +25,28 @@ import static org.mockito.Mockito.*;
 
 class LlmExecutionSystemTest {
 
+    private static final String SESSION_ID = "test-session";
+    private static final String CHAT_ID = "chat1";
+    private static final String CHANNEL_TYPE = "telegram";
+    private static final String TIER_BALANCED = "balanced";
+    private static final String TIER_FAST = "fast";
+    private static final String PROVIDER_ID = "langchain4j";
+    private static final String MODEL_NAME = "gpt-5.1";
+    private static final String MSG_ID_1 = "m1";
+    private static final String ROLE_USER = "user";
+    private static final String ROLE_TOOL = "tool";
+    private static final String ROLE_ASSISTANT = "assistant";
+    private static final String CONTENT_HELLO = "Hello";
+    private static final String CONTENT_OK = "OK";
+    private static final String EMERGENCY_TRUNCATED_MARKER = "[EMERGENCY TRUNCATED:";
+    private static final String ATTR_LLM_RESPONSE = "llm.response";
+    private static final String ATTR_LLM_ERROR = "llm.error";
+    private static final String TOOL_CALL_ID = "tc1";
+    private static final String OPENAI_MODEL = "openai/gpt-5.1";
+    private static final String REASONING_MEDIUM = "medium";
+
     private LlmPort llmPort;
-    private LlmUsageTracker usageTracker;
+    private UsageTrackingPort usageTracker;
     private BotProperties properties;
     private ModelConfigService modelConfigService;
     private Clock clock;
@@ -31,7 +55,7 @@ class LlmExecutionSystemTest {
     @BeforeEach
     void setUp() {
         llmPort = mock(LlmPort.class);
-        usageTracker = mock(LlmUsageTracker.class);
+        usageTracker = mock(UsageTrackingPort.class);
         properties = new BotProperties();
         modelConfigService = mock(ModelConfigService.class);
         when(modelConfigService.getMaxInputTokens(anyString())).thenReturn(131072);
@@ -102,22 +126,24 @@ class LlmExecutionSystemTest {
         // Floor is 10000 chars
         String hugeContent = "x".repeat(200000);
         List<Message> messages = new ArrayList<>();
-        messages.add(Message.builder().id("m1").role("user").content("Hello").timestamp(Instant.now()).build());
-        messages.add(Message.builder().id("m2").role("tool").content(hugeContent).toolCallId("tc1").toolName("shell")
-                .timestamp(Instant.now()).build());
-        messages.add(Message.builder().id("m3").role("assistant").content("OK").timestamp(Instant.now()).build());
+        messages.add(
+                Message.builder().id(MSG_ID_1).role(ROLE_USER).content(CONTENT_HELLO).timestamp(Instant.now()).build());
+        messages.add(Message.builder().id("m2").role(ROLE_TOOL).content(hugeContent).toolCallId(TOOL_CALL_ID)
+                .toolName("shell").timestamp(Instant.now()).build());
+        messages.add(
+                Message.builder().id("m3").role(ROLE_ASSISTANT).content(CONTENT_OK).timestamp(Instant.now()).build());
 
         AgentSession session = AgentSession.builder()
-                .id("test-session")
-                .chatId("chat1")
-                .channelType("telegram")
+                .id(SESSION_ID)
+                .chatId(CHAT_ID)
+                .channelType(CHANNEL_TYPE)
                 .messages(new ArrayList<>(messages))
                 .build();
 
         AgentContext context = AgentContext.builder()
                 .session(session)
                 .messages(new ArrayList<>(messages))
-                .modelTier("balanced")
+                .modelTier(TIER_BALANCED)
                 .build();
 
         int truncated = system.truncateLargeMessages(context);
@@ -125,32 +151,34 @@ class LlmExecutionSystemTest {
         assertEquals(1, truncated);
         // The huge message should now be smaller
         assertTrue(context.getMessages().get(1).getContent().length() < 200000);
-        assertTrue(context.getMessages().get(1).getContent().contains("[EMERGENCY TRUNCATED:"));
+        assertTrue(context.getMessages().get(1).getContent().contains(EMERGENCY_TRUNCATED_MARKER));
         // Other messages unchanged
-        assertEquals("Hello", context.getMessages().get(0).getContent());
-        assertEquals("OK", context.getMessages().get(2).getContent());
+        assertEquals(CONTENT_HELLO, context.getMessages().get(0).getContent());
+        assertEquals(CONTENT_OK, context.getMessages().get(2).getContent());
         // Metadata preserved
-        assertEquals("tc1", context.getMessages().get(1).getToolCallId());
+        assertEquals(TOOL_CALL_ID, context.getMessages().get(1).getToolCallId());
         assertEquals("shell", context.getMessages().get(1).getToolName());
     }
 
     @Test
     void noTruncationWhenMessagesSmall() {
         List<Message> messages = new ArrayList<>();
-        messages.add(Message.builder().id("m1").role("user").content("Hello").timestamp(Instant.now()).build());
-        messages.add(Message.builder().id("m2").role("assistant").content("Hi there").timestamp(Instant.now()).build());
+        messages.add(
+                Message.builder().id(MSG_ID_1).role(ROLE_USER).content(CONTENT_HELLO).timestamp(Instant.now()).build());
+        messages.add(
+                Message.builder().id("m2").role(ROLE_ASSISTANT).content("Hi there").timestamp(Instant.now()).build());
 
         AgentSession session = AgentSession.builder()
-                .id("test-session")
-                .chatId("chat1")
-                .channelType("telegram")
+                .id(SESSION_ID)
+                .chatId(CHAT_ID)
+                .channelType(CHANNEL_TYPE)
                 .messages(new ArrayList<>(messages))
                 .build();
 
         AgentContext context = AgentContext.builder()
                 .session(session)
                 .messages(new ArrayList<>(messages))
-                .modelTier("balanced")
+                .modelTier(TIER_BALANCED)
                 .build();
 
         int truncated = system.truncateLargeMessages(context);
@@ -161,26 +189,26 @@ class LlmExecutionSystemTest {
     void truncationAlsoAppliedToSessionMessages() {
         String hugeContent = "x".repeat(200000);
         List<Message> messages = new ArrayList<>();
-        messages.add(Message.builder().id("m1").role("tool").content(hugeContent).toolCallId("tc1")
+        messages.add(Message.builder().id(MSG_ID_1).role(ROLE_TOOL).content(hugeContent).toolCallId(TOOL_CALL_ID)
                 .timestamp(Instant.now()).build());
 
         AgentSession session = AgentSession.builder()
-                .id("test-session")
-                .chatId("chat1")
-                .channelType("telegram")
+                .id(SESSION_ID)
+                .chatId(CHAT_ID)
+                .channelType(CHANNEL_TYPE)
                 .messages(new ArrayList<>(messages))
                 .build();
 
         AgentContext context = AgentContext.builder()
                 .session(session)
                 .messages(new ArrayList<>(messages))
-                .modelTier("balanced")
+                .modelTier(TIER_BALANCED)
                 .build();
 
         system.truncateLargeMessages(context);
 
         // Session messages also truncated
-        assertTrue(session.getMessages().get(0).getContent().contains("[EMERGENCY TRUNCATED:"));
+        assertTrue(session.getMessages().get(0).getContent().contains(EMERGENCY_TRUNCATED_MARKER));
         assertTrue(session.getMessages().get(0).getContent().length() < 200000);
     }
 
@@ -191,19 +219,19 @@ class LlmExecutionSystemTest {
         // per-message limit = 32000 * 3.5 * 0.25 = 28000 chars
         String content = "x".repeat(50000);
         List<Message> messages = new ArrayList<>();
-        messages.add(Message.builder().id("m1").role("tool").content(content).timestamp(Instant.now()).build());
+        messages.add(Message.builder().id(MSG_ID_1).role(ROLE_TOOL).content(content).timestamp(Instant.now()).build());
 
         AgentSession session = AgentSession.builder()
-                .id("test-session")
-                .chatId("chat1")
-                .channelType("telegram")
+                .id(SESSION_ID)
+                .chatId(CHAT_ID)
+                .channelType(CHANNEL_TYPE)
                 .messages(new ArrayList<>(messages))
                 .build();
 
         AgentContext context = AgentContext.builder()
                 .session(session)
                 .messages(new ArrayList<>(messages))
-                .modelTier("balanced")
+                .modelTier(TIER_BALANCED)
                 .build();
 
         int truncated = system.truncateLargeMessages(context);
@@ -219,19 +247,19 @@ class LlmExecutionSystemTest {
         // 1000 * 3.5 * 0.25 = 875, but floor is 10000
         String content = "x".repeat(20000);
         List<Message> messages = new ArrayList<>();
-        messages.add(Message.builder().id("m1").role("tool").content(content).timestamp(Instant.now()).build());
+        messages.add(Message.builder().id(MSG_ID_1).role(ROLE_TOOL).content(content).timestamp(Instant.now()).build());
 
         AgentSession session = AgentSession.builder()
-                .id("test-session")
-                .chatId("chat1")
-                .channelType("telegram")
+                .id(SESSION_ID)
+                .chatId(CHAT_ID)
+                .channelType(CHANNEL_TYPE)
                 .messages(new ArrayList<>(messages))
                 .build();
 
         AgentContext context = AgentContext.builder()
                 .session(session)
                 .messages(new ArrayList<>(messages))
-                .modelTier("balanced")
+                .modelTier(TIER_BALANCED)
                 .build();
 
         system.truncateLargeMessages(context);
@@ -259,19 +287,19 @@ class LlmExecutionSystemTest {
     @Test
     void truncationSkipsNullContentMessages() {
         List<Message> messages = new ArrayList<>();
-        messages.add(Message.builder().id("m1").role("user").content(null).timestamp(Instant.now()).build());
+        messages.add(Message.builder().id(MSG_ID_1).role(ROLE_USER).content(null).timestamp(Instant.now()).build());
 
         AgentSession session = AgentSession.builder()
-                .id("test-session")
-                .chatId("chat1")
-                .channelType("telegram")
+                .id(SESSION_ID)
+                .chatId(CHAT_ID)
+                .channelType(CHANNEL_TYPE)
                 .messages(new ArrayList<>(messages))
                 .build();
 
         AgentContext context = AgentContext.builder()
                 .session(session)
                 .messages(new ArrayList<>(messages))
-                .modelTier("balanced")
+                .modelTier(TIER_BALANCED)
                 .build();
 
         int truncated = system.truncateLargeMessages(context);
@@ -282,15 +310,15 @@ class LlmExecutionSystemTest {
     @Test
     void truncationHandlesEmptyMessageList() {
         AgentSession session = AgentSession.builder()
-                .id("test-session")
-                .chatId("chat1")
-                .channelType("telegram")
+                .id(SESSION_ID)
+                .chatId(CHAT_ID)
+                .channelType(CHANNEL_TYPE)
                 .build();
 
         AgentContext context = AgentContext.builder()
                 .session(session)
                 .messages(new ArrayList<>())
-                .modelTier("balanced")
+                .modelTier(TIER_BALANCED)
                 .build();
 
         int truncated = system.truncateLargeMessages(context);
@@ -315,19 +343,19 @@ class LlmExecutionSystemTest {
     void truncationPreservesMessageId() {
         String huge = "x".repeat(200000);
         List<Message> messages = new ArrayList<>();
-        messages.add(Message.builder().id("msg-42").role("tool").content(huge).timestamp(Instant.now()).build());
+        messages.add(Message.builder().id("msg-42").role(ROLE_TOOL).content(huge).timestamp(Instant.now()).build());
 
         AgentSession session = AgentSession.builder()
-                .id("test-session")
-                .chatId("chat1")
-                .channelType("telegram")
+                .id(SESSION_ID)
+                .chatId(CHAT_ID)
+                .channelType(CHANNEL_TYPE)
                 .messages(new ArrayList<>(messages))
                 .build();
 
         AgentContext context = AgentContext.builder()
                 .session(session)
                 .messages(new ArrayList<>(messages))
-                .modelTier("balanced")
+                .modelTier(TIER_BALANCED)
                 .build();
 
         system.truncateLargeMessages(context);
@@ -338,33 +366,33 @@ class LlmExecutionSystemTest {
 
     @Test
     void selectsFastModelForFastTier() {
-        properties.getRouter().setFastModel("openai/gpt-5.1");
+        properties.getRouter().setFastModel(OPENAI_MODEL);
         properties.getRouter().setFastModelReasoning("low");
 
-        when(llmPort.getProviderId()).thenReturn("langchain4j");
-        when(llmPort.getCurrentModel()).thenReturn("gpt-5.1");
+        when(llmPort.getProviderId()).thenReturn(PROVIDER_ID);
+        when(llmPort.getCurrentModel()).thenReturn(MODEL_NAME);
 
         LlmResponse response = LlmResponse.builder().content("Hello!").build();
         when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(response));
 
-        AgentContext ctx = createContextWithTier("fast");
+        AgentContext ctx = createContextWithTier(TIER_FAST);
         system.process(ctx);
 
-        LlmResponse result = ctx.getAttribute("llm.response");
+        LlmResponse result = ctx.getAttribute(ATTR_LLM_RESPONSE);
         assertNotNull(result);
-        assertNull(ctx.getAttribute("llm.error"));
+        assertNull(ctx.getAttribute(ATTR_LLM_ERROR));
 
         // Verify the request was built with fast model
         verify(llmPort).chat(
-                argThat(req -> "openai/gpt-5.1".equals(req.getModel()) && "low".equals(req.getReasoningEffort())));
+                argThat(req -> OPENAI_MODEL.equals(req.getModel()) && "low".equals(req.getReasoningEffort())));
     }
 
     @Test
     void selectsCodingModelForCodingTier() {
         properties.getRouter().setCodingModel("openai/gpt-5.2");
-        properties.getRouter().setCodingModelReasoning("medium");
+        properties.getRouter().setCodingModelReasoning(REASONING_MEDIUM);
 
-        when(llmPort.getProviderId()).thenReturn("langchain4j");
+        when(llmPort.getProviderId()).thenReturn(PROVIDER_ID);
         when(llmPort.getCurrentModel()).thenReturn("gpt-5.2");
 
         LlmResponse response = LlmResponse.builder().content("```python\nprint()```").build();
@@ -374,16 +402,17 @@ class LlmExecutionSystemTest {
         system.process(ctx);
 
         verify(llmPort).chat(
-                argThat(req -> "openai/gpt-5.2".equals(req.getModel()) && "medium".equals(req.getReasoningEffort())));
+                argThat(req -> "openai/gpt-5.2".equals(req.getModel())
+                        && REASONING_MEDIUM.equals(req.getReasoningEffort())));
     }
 
     @Test
     void selectsSmartModelForSmartTier() {
-        properties.getRouter().setSmartModel("openai/gpt-5.1");
+        properties.getRouter().setSmartModel(OPENAI_MODEL);
         properties.getRouter().setSmartModelReasoning("high");
 
-        when(llmPort.getProviderId()).thenReturn("langchain4j");
-        when(llmPort.getCurrentModel()).thenReturn("gpt-5.1");
+        when(llmPort.getProviderId()).thenReturn(PROVIDER_ID);
+        when(llmPort.getCurrentModel()).thenReturn(MODEL_NAME);
 
         LlmResponse response = LlmResponse.builder().content("Analysis...").build();
         when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(response));
@@ -396,39 +425,40 @@ class LlmExecutionSystemTest {
 
     @Test
     void usesDefaultModelForNullTier() {
-        properties.getRouter().setDefaultModel("openai/gpt-5.1");
-        properties.getRouter().setDefaultModelReasoning("medium");
+        properties.getRouter().setDefaultModel(OPENAI_MODEL);
+        properties.getRouter().setDefaultModelReasoning(REASONING_MEDIUM);
 
-        when(llmPort.getProviderId()).thenReturn("langchain4j");
-        when(llmPort.getCurrentModel()).thenReturn("gpt-5.1");
+        when(llmPort.getProviderId()).thenReturn(PROVIDER_ID);
+        when(llmPort.getCurrentModel()).thenReturn(MODEL_NAME);
 
-        LlmResponse response = LlmResponse.builder().content("OK").build();
+        LlmResponse response = LlmResponse.builder().content(CONTENT_OK).build();
         when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(response));
 
         AgentContext ctx = createContextWithTier(null);
         system.process(ctx);
 
         verify(llmPort).chat(
-                argThat(req -> "openai/gpt-5.1".equals(req.getModel()) && "medium".equals(req.getReasoningEffort())));
+                argThat(req -> OPENAI_MODEL.equals(req.getModel())
+                        && REASONING_MEDIUM.equals(req.getReasoningEffort())));
     }
 
     // ===== Happy path / tool calls =====
 
     @Test
     void storesToolCallsInContext() {
-        when(llmPort.getProviderId()).thenReturn("langchain4j");
-        when(llmPort.getCurrentModel()).thenReturn("gpt-5.1");
+        when(llmPort.getProviderId()).thenReturn(PROVIDER_ID);
+        when(llmPort.getCurrentModel()).thenReturn(MODEL_NAME);
 
         List<Message.ToolCall> toolCalls = List.of(
-                Message.ToolCall.builder().id("tc1").name("shell").arguments(java.util.Map.of("command", "ls"))
+                Message.ToolCall.builder().id(TOOL_CALL_ID).name("shell").arguments(java.util.Map.of("command", "ls"))
                         .build());
         LlmResponse response = LlmResponse.builder().content(null).toolCalls(toolCalls).build();
         when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(response));
 
-        AgentContext ctx = createContextWithTier("fast");
+        AgentContext ctx = createContextWithTier(TIER_FAST);
         system.process(ctx);
 
-        LlmResponse result = ctx.getAttribute("llm.response");
+        LlmResponse result = ctx.getAttribute(ATTR_LLM_RESPONSE);
         assertNotNull(result);
         assertTrue(result.hasToolCalls());
         assertNotNull(ctx.getAttribute("llm.toolCalls"));
@@ -436,25 +466,25 @@ class LlmExecutionSystemTest {
 
     @Test
     void tracksUsageOnSuccess() {
-        when(llmPort.getProviderId()).thenReturn("langchain4j");
-        when(llmPort.getCurrentModel()).thenReturn("gpt-5.1");
+        when(llmPort.getProviderId()).thenReturn(PROVIDER_ID);
+        when(llmPort.getCurrentModel()).thenReturn(MODEL_NAME);
 
         LlmUsage usage = LlmUsage.builder().inputTokens(100).outputTokens(50).totalTokens(150).build();
         LlmResponse response = LlmResponse.builder().content("Hi").usage(usage).build();
         when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(response));
 
-        AgentContext ctx = createContextWithTier("fast");
+        AgentContext ctx = createContextWithTier(TIER_FAST);
         system.process(ctx);
 
-        verify(usageTracker).recordUsage(eq("langchain4j"), eq("gpt-5.1"), any(LlmUsage.class));
+        verify(usageTracker).recordUsage(eq(PROVIDER_ID), eq(MODEL_NAME), any(LlmUsage.class));
     }
 
     // ===== Empty response retry =====
 
     @Test
     void retriesOnceOnEmptyResponse() {
-        when(llmPort.getProviderId()).thenReturn("langchain4j");
-        when(llmPort.getCurrentModel()).thenReturn("gpt-5.1");
+        when(llmPort.getProviderId()).thenReturn(PROVIDER_ID);
+        when(llmPort.getCurrentModel()).thenReturn(MODEL_NAME);
 
         LlmResponse empty = LlmResponse.builder().content("").build();
         LlmResponse good = LlmResponse.builder().content("Hello!").build();
@@ -462,58 +492,58 @@ class LlmExecutionSystemTest {
                 .thenReturn(CompletableFuture.completedFuture(empty))
                 .thenReturn(CompletableFuture.completedFuture(good));
 
-        AgentContext ctx = createContextWithTier("fast");
+        AgentContext ctx = createContextWithTier(TIER_FAST);
         system.process(ctx);
 
-        LlmResponse result = ctx.getAttribute("llm.response");
+        LlmResponse result = ctx.getAttribute(ATTR_LLM_RESPONSE);
         assertEquals("Hello!", result.getContent());
-        assertNull(ctx.getAttribute("llm.error"));
+        assertNull(ctx.getAttribute(ATTR_LLM_ERROR));
         verify(llmPort, times(2)).chat(any());
     }
 
     @Test
     void setsErrorAfterMaxEmptyRetries() {
-        when(llmPort.getProviderId()).thenReturn("langchain4j");
-        when(llmPort.getCurrentModel()).thenReturn("gpt-5.1");
+        when(llmPort.getProviderId()).thenReturn(PROVIDER_ID);
+        when(llmPort.getCurrentModel()).thenReturn(MODEL_NAME);
 
         LlmResponse empty = LlmResponse.builder().content(null).build();
         when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(empty));
 
-        AgentContext ctx = createContextWithTier("fast");
+        AgentContext ctx = createContextWithTier(TIER_FAST);
         system.process(ctx);
 
-        assertNotNull(ctx.getAttribute("llm.error"));
-        assertEquals("LLM returned empty response", ctx.getAttribute("llm.error"));
+        assertNotNull(ctx.getAttribute(ATTR_LLM_ERROR));
+        assertEquals("LLM returned empty response", ctx.getAttribute(ATTR_LLM_ERROR));
     }
 
     // ===== LLM exception =====
 
     @Test
     void setsErrorOnLlmException() {
-        when(llmPort.getProviderId()).thenReturn("langchain4j");
-        when(llmPort.getCurrentModel()).thenReturn("gpt-5.1");
+        when(llmPort.getProviderId()).thenReturn(PROVIDER_ID);
+        when(llmPort.getCurrentModel()).thenReturn(MODEL_NAME);
         when(llmPort.chat(any()))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("Connection refused")));
 
-        AgentContext ctx = createContextWithTier("fast");
+        AgentContext ctx = createContextWithTier(TIER_FAST);
         system.process(ctx);
 
-        assertNotNull(ctx.getAttribute("llm.error"));
-        assertNull(ctx.getAttribute("llm.response"));
+        assertNotNull(ctx.getAttribute(ATTR_LLM_ERROR));
+        assertNull(ctx.getAttribute(ATTR_LLM_RESPONSE));
     }
 
     // ===== Context overflow retry =====
 
     @Test
     void retriesAfterContextOverflowTruncation() {
-        when(llmPort.getProviderId()).thenReturn("langchain4j");
-        when(llmPort.getCurrentModel()).thenReturn("gpt-5.1");
+        when(llmPort.getProviderId()).thenReturn(PROVIDER_ID);
+        when(llmPort.getCurrentModel()).thenReturn(MODEL_NAME);
 
         // First call: overflow error
         CompletableFuture<LlmResponse> overflowFuture = new CompletableFuture<>();
         overflowFuture.completeExceptionally(new RuntimeException("exceeds maximum input length"));
         // Second call: success
-        LlmResponse good = LlmResponse.builder().content("OK").build();
+        LlmResponse good = LlmResponse.builder().content(CONTENT_OK).build();
 
         when(llmPort.chat(any()))
                 .thenReturn(overflowFuture)
@@ -522,28 +552,30 @@ class LlmExecutionSystemTest {
         // Need large message for truncation to actually happen
         String hugeContent = "x".repeat(200000);
         List<Message> messages = new ArrayList<>();
-        messages.add(Message.builder().id("m1").role("user").content("Hello").timestamp(Instant.now()).build());
-        messages.add(Message.builder().id("m2").role("tool").content(hugeContent).timestamp(Instant.now()).build());
+        messages.add(
+                Message.builder().id(MSG_ID_1).role(ROLE_USER).content(CONTENT_HELLO).timestamp(Instant.now()).build());
+        messages.add(Message.builder().id("m2").role(ROLE_TOOL).content(hugeContent).timestamp(Instant.now()).build());
 
         AgentContext ctx = AgentContext.builder()
-                .session(AgentSession.builder().id("s1").chatId("ch1").channelType("telegram")
+                .session(AgentSession.builder().id("s1").chatId("ch1").channelType(CHANNEL_TYPE)
                         .messages(new ArrayList<>(messages)).build())
                 .messages(new ArrayList<>(messages))
-                .modelTier("fast")
+                .modelTier(TIER_FAST)
                 .build();
 
         system.process(ctx);
 
-        LlmResponse result = ctx.getAttribute("llm.response");
-        assertEquals("OK", result.getContent());
+        LlmResponse result = ctx.getAttribute(ATTR_LLM_RESPONSE);
+        assertEquals(CONTENT_OK, result.getContent());
     }
 
     private AgentContext createContextWithTier(String tier) {
         List<Message> messages = new ArrayList<>();
-        messages.add(Message.builder().id("m1").role("user").content("Hello").timestamp(Instant.now()).build());
+        messages.add(
+                Message.builder().id(MSG_ID_1).role(ROLE_USER).content(CONTENT_HELLO).timestamp(Instant.now()).build());
 
         return AgentContext.builder()
-                .session(AgentSession.builder().id("test-session").chatId("ch1").channelType("telegram")
+                .session(AgentSession.builder().id(SESSION_ID).chatId("ch1").channelType(CHANNEL_TYPE)
                         .messages(new ArrayList<>(messages)).build())
                 .messages(new ArrayList<>(messages))
                 .modelTier(tier)
@@ -556,27 +588,27 @@ class LlmExecutionSystemTest {
     void truncatesMultipleLargeMessages() {
         String huge = "x".repeat(200000);
         List<Message> messages = new ArrayList<>();
-        messages.add(Message.builder().id("m1").role("tool").content(huge).timestamp(Instant.now()).build());
-        messages.add(Message.builder().id("m2").role("user").content("small").timestamp(Instant.now()).build());
-        messages.add(Message.builder().id("m3").role("tool").content(huge).timestamp(Instant.now()).build());
+        messages.add(Message.builder().id(MSG_ID_1).role(ROLE_TOOL).content(huge).timestamp(Instant.now()).build());
+        messages.add(Message.builder().id("m2").role(ROLE_USER).content("small").timestamp(Instant.now()).build());
+        messages.add(Message.builder().id("m3").role(ROLE_TOOL).content(huge).timestamp(Instant.now()).build());
 
         AgentSession session = AgentSession.builder()
-                .id("test-session")
-                .chatId("chat1")
-                .channelType("telegram")
+                .id(SESSION_ID)
+                .chatId(CHAT_ID)
+                .channelType(CHANNEL_TYPE)
                 .messages(new ArrayList<>(messages))
                 .build();
 
         AgentContext context = AgentContext.builder()
                 .session(session)
                 .messages(new ArrayList<>(messages))
-                .modelTier("balanced")
+                .modelTier(TIER_BALANCED)
                 .build();
 
         int truncated = system.truncateLargeMessages(context);
         assertEquals(2, truncated);
-        assertTrue(context.getMessages().get(0).getContent().contains("[EMERGENCY TRUNCATED:"));
+        assertTrue(context.getMessages().get(0).getContent().contains(EMERGENCY_TRUNCATED_MARKER));
         assertEquals("small", context.getMessages().get(1).getContent());
-        assertTrue(context.getMessages().get(2).getContent().contains("[EMERGENCY TRUNCATED:"));
+        assertTrue(context.getMessages().get(2).getContent().contains(EMERGENCY_TRUNCATED_MARKER));
     }
 }

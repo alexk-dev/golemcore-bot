@@ -18,6 +18,10 @@ import static org.mockito.Mockito.*;
 
 class CompactionServiceTest {
 
+    private static final String ROLE_USER = "user";
+    private static final String ROLE_ASSISTANT = "assistant";
+    private static final String HELLO = "Hello";
+
     private LlmPort llmPort;
     private Clock clock;
     private CompactionService service;
@@ -35,11 +39,12 @@ class CompactionServiceTest {
     @Test
     void summarizeMessages() {
         List<Message> messages = List.of(
-                Message.builder().role("user").content("What is Java?").timestamp(Instant.now()).build(),
-                Message.builder().role("assistant").content("Java is a programming language.").timestamp(Instant.now())
+                Message.builder().role(ROLE_USER).content("What is Java?").timestamp(Instant.now()).build(),
+                Message.builder().role(ROLE_ASSISTANT).content("Java is a programming language.")
+                        .timestamp(Instant.now())
                         .build(),
-                Message.builder().role("user").content("How about Spring?").timestamp(Instant.now()).build(),
-                Message.builder().role("assistant").content("Spring is a Java framework.").timestamp(Instant.now())
+                Message.builder().role(ROLE_USER).content("How about Spring?").timestamp(Instant.now()).build(),
+                Message.builder().role(ROLE_ASSISTANT).content("Spring is a Java framework.").timestamp(Instant.now())
                         .build());
 
         when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(
@@ -60,7 +65,7 @@ class CompactionServiceTest {
         when(llmPort.isAvailable()).thenReturn(false);
 
         List<Message> messages = List.of(
-                Message.builder().role("user").content("Hello").timestamp(Instant.now()).build());
+                Message.builder().role(ROLE_USER).content(HELLO).timestamp(Instant.now()).build());
 
         String summary = service.summarize(messages);
         assertNull(summary);
@@ -72,7 +77,7 @@ class CompactionServiceTest {
         CompactionService nullService = new CompactionService(null, properties, clock);
 
         List<Message> messages = List.of(
-                Message.builder().role("user").content("Hello").timestamp(Instant.now()).build());
+                Message.builder().role(ROLE_USER).content(HELLO).timestamp(Instant.now()).build());
 
         String summary = nullService.summarize(messages);
         assertNull(summary);
@@ -90,7 +95,7 @@ class CompactionServiceTest {
                 CompletableFuture.failedFuture(new RuntimeException("LLM error")));
 
         List<Message> messages = List.of(
-                Message.builder().role("user").content("Hello").timestamp(Instant.now()).build());
+                Message.builder().role(ROLE_USER).content(HELLO).timestamp(Instant.now()).build());
 
         String summary = service.summarize(messages);
         assertNull(summary);
@@ -109,10 +114,10 @@ class CompactionServiceTest {
     @Test
     void summarizeFiltersToolMessages() {
         List<Message> messages = List.of(
-                Message.builder().role("user").content("Run a command").timestamp(Instant.now()).build(),
-                Message.builder().role("assistant").content("Running...").timestamp(Instant.now()).build(),
+                Message.builder().role(ROLE_USER).content("Run a command").timestamp(Instant.now()).build(),
+                Message.builder().role(ROLE_ASSISTANT).content("Running...").timestamp(Instant.now()).build(),
                 Message.builder().role("tool").content("{\"result\": \"ok\"}").timestamp(Instant.now()).build(),
-                Message.builder().role("assistant").content("Done!").timestamp(Instant.now()).build());
+                Message.builder().role(ROLE_ASSISTANT).content("Done!").timestamp(Instant.now()).build());
 
         when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(
                 LlmResponse.builder().content("User ran a command.").build()));
@@ -135,7 +140,7 @@ class CompactionServiceTest {
                 LlmResponse.builder().content("   ").build()));
 
         List<Message> messages = List.of(
-                Message.builder().role("user").content("Hello").timestamp(Instant.now()).build());
+                Message.builder().role(ROLE_USER).content(HELLO).timestamp(Instant.now()).build());
 
         assertNull(service.summarize(messages));
     }
@@ -146,7 +151,7 @@ class CompactionServiceTest {
                 LlmResponse.builder().content(null).build()));
 
         List<Message> messages = List.of(
-                Message.builder().role("user").content("Hello").timestamp(Instant.now()).build());
+                Message.builder().role(ROLE_USER).content(HELLO).timestamp(Instant.now()).build());
 
         assertNull(service.summarize(messages));
     }
@@ -157,10 +162,10 @@ class CompactionServiceTest {
                 LlmResponse.builder().content("Summary").build()));
 
         List<Message> messages = List.of(
-                Message.builder().role("user").content("Hello").timestamp(Instant.now()).build(),
-                Message.builder().role("assistant").content("   ").timestamp(Instant.now()).build(),
-                Message.builder().role("user").content(null).timestamp(Instant.now()).build(),
-                Message.builder().role("user").content("World").timestamp(Instant.now()).build());
+                Message.builder().role(ROLE_USER).content(HELLO).timestamp(Instant.now()).build(),
+                Message.builder().role(ROLE_ASSISTANT).content("   ").timestamp(Instant.now()).build(),
+                Message.builder().role(ROLE_USER).content(null).timestamp(Instant.now()).build(),
+                Message.builder().role(ROLE_USER).content("World").timestamp(Instant.now()).build());
 
         String summary = service.summarize(messages);
         assertNotNull(summary);
@@ -168,7 +173,7 @@ class CompactionServiceTest {
         // Verify only non-blank messages are included
         verify(llmPort).chat(argThat(req -> {
             String content = req.getMessages().get(0).getContent();
-            return content.contains("Hello") && content.contains("World") && !content.contains("   ");
+            return content.contains(HELLO) && content.contains("World") && !content.contains("   ");
         }));
     }
 
@@ -179,7 +184,7 @@ class CompactionServiceTest {
                 LlmResponse.builder().content("Summary").build()));
 
         List<Message> messages = List.of(
-                Message.builder().role("user").content(longMsg).timestamp(Instant.now()).build());
+                Message.builder().role(ROLE_USER).content(longMsg).timestamp(Instant.now()).build());
 
         service.summarize(messages);
 
@@ -196,7 +201,7 @@ class CompactionServiceTest {
                 LlmResponse.builder().content("Summary").build()));
 
         List<Message> messages = List.of(
-                Message.builder().role("user").content("Hello").timestamp(Instant.now()).build());
+                Message.builder().role(ROLE_USER).content(HELLO).timestamp(Instant.now()).build());
 
         service.summarize(messages);
 

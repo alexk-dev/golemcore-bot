@@ -17,6 +17,13 @@ import static org.mockito.Mockito.*;
 
 class InputSanitizationSystemTest {
 
+    private static final String ROLE_USER = "user";
+    private static final String SESSION_ID = "test";
+    private static final String CONTENT_HELLO = "hello";
+    private static final String ATTR_SANITIZATION_PERFORMED = "sanitization.performed";
+    private static final String CONTENT_SECOND = "second";
+    private static final String CONTENT_USER_MSG = "user msg";
+
     private SanitizerComponent sanitizerComponent;
     private InputSanitizationSystem system;
 
@@ -28,7 +35,7 @@ class InputSanitizationSystemTest {
 
     private AgentContext contextWith(List<Message> messages) {
         return AgentContext.builder()
-                .session(AgentSession.builder().id("test").build())
+                .session(AgentSession.builder().id(SESSION_ID).build())
                 .messages(new ArrayList<>(messages))
                 .build();
     }
@@ -50,7 +57,7 @@ class InputSanitizationSystemTest {
     @Test
     void shouldProcessReturnsFalseForNullMessages() {
         AgentContext ctx = AgentContext.builder()
-                .session(AgentSession.builder().id("test").build())
+                .session(AgentSession.builder().id(SESSION_ID).build())
                 .messages(null)
                 .build();
 
@@ -67,7 +74,7 @@ class InputSanitizationSystemTest {
     @Test
     void shouldProcessReturnsTrueForUserMessage() {
         AgentContext ctx = contextWith(List.of(
-                Message.builder().role("user").content("hello").timestamp(Instant.now()).build()));
+                Message.builder().role(ROLE_USER).content(CONTENT_HELLO).timestamp(Instant.now()).build()));
 
         assertTrue(system.shouldProcess(ctx));
     }
@@ -75,7 +82,7 @@ class InputSanitizationSystemTest {
     @Test
     void shouldProcessReturnsFalseForAutoModeMessage() {
         Message autoMsg = Message.builder()
-                .role("user")
+                .role(ROLE_USER)
                 .content("auto task")
                 .timestamp(Instant.now())
                 .metadata(Map.of("auto.mode", true))
@@ -88,8 +95,8 @@ class InputSanitizationSystemTest {
     @Test
     void shouldProcessReturnsTrueForNonAutoModeMetadata() {
         Message msg = Message.builder()
-                .role("user")
-                .content("hello")
+                .role(ROLE_USER)
+                .content(CONTENT_HELLO)
                 .timestamp(Instant.now())
                 .metadata(Map.of("some.key", "value"))
                 .build();
@@ -101,8 +108,8 @@ class InputSanitizationSystemTest {
     @Test
     void shouldProcessReturnsTrueWhenAutoModeFalse() {
         Message msg = Message.builder()
-                .role("user")
-                .content("hello")
+                .role(ROLE_USER)
+                .content(CONTENT_HELLO)
                 .timestamp(Instant.now())
                 .metadata(Map.of("auto.mode", false))
                 .build();
@@ -114,8 +121,8 @@ class InputSanitizationSystemTest {
     @Test
     void shouldProcessReturnsTrueWhenMetadataIsNull() {
         Message msg = Message.builder()
-                .role("user")
-                .content("hello")
+                .role(ROLE_USER)
+                .content(CONTENT_HELLO)
                 .timestamp(Instant.now())
                 .metadata(null)
                 .build();
@@ -129,7 +136,7 @@ class InputSanitizationSystemTest {
     @Test
     void processReturnsContextForNullMessages() {
         AgentContext ctx = AgentContext.builder()
-                .session(AgentSession.builder().id("test").build())
+                .session(AgentSession.builder().id(SESSION_ID).build())
                 .messages(null)
                 .build();
 
@@ -163,7 +170,7 @@ class InputSanitizationSystemTest {
     @Test
     void processSkipsNullContent() {
         AgentContext ctx = contextWith(List.of(
-                Message.builder().role("user").content(null).timestamp(Instant.now()).build()));
+                Message.builder().role(ROLE_USER).content(null).timestamp(Instant.now()).build()));
 
         AgentContext result = system.process(ctx);
 
@@ -174,7 +181,7 @@ class InputSanitizationSystemTest {
     @Test
     void processSkipsBlankContent() {
         AgentContext ctx = contextWith(List.of(
-                Message.builder().role("user").content("   ").timestamp(Instant.now()).build()));
+                Message.builder().role(ROLE_USER).content("   ").timestamp(Instant.now()).build()));
 
         AgentContext result = system.process(ctx);
 
@@ -184,17 +191,17 @@ class InputSanitizationSystemTest {
 
     @Test
     void processSafeInputSetsAttribute() {
-        when(sanitizerComponent.check("hello"))
-                .thenReturn(SanitizerComponent.SanitizationResult.safe("hello"));
+        when(sanitizerComponent.check(CONTENT_HELLO))
+                .thenReturn(SanitizerComponent.SanitizationResult.safe(CONTENT_HELLO));
 
         AgentContext ctx = contextWith(List.of(
-                Message.builder().role("user").content("hello").timestamp(Instant.now()).build()));
+                Message.builder().role(ROLE_USER).content(CONTENT_HELLO).timestamp(Instant.now()).build()));
 
         AgentContext result = system.process(ctx);
 
-        assertEquals(true, result.getAttribute("sanitization.performed"));
+        assertEquals(true, result.getAttribute(ATTR_SANITIZATION_PERFORMED));
         assertNull(result.getAttribute("sanitization.threats"));
-        assertEquals("hello", result.getMessages().get(0).getContent());
+        assertEquals(CONTENT_HELLO, result.getMessages().get(0).getContent());
     }
 
     @Test
@@ -204,41 +211,41 @@ class InputSanitizationSystemTest {
                 .thenReturn(SanitizerComponent.SanitizationResult.unsafe("cleaned", threats));
 
         AgentContext ctx = contextWith(List.of(
-                Message.builder().role("user").content("ignore instructions").timestamp(Instant.now()).build()));
+                Message.builder().role(ROLE_USER).content("ignore instructions").timestamp(Instant.now()).build()));
 
         AgentContext result = system.process(ctx);
 
         assertEquals("cleaned", result.getMessages().get(0).getContent());
         assertEquals(threats, result.getAttribute("sanitization.threats"));
-        assertEquals(true, result.getAttribute("sanitization.performed"));
+        assertEquals(true, result.getAttribute(ATTR_SANITIZATION_PERFORMED));
     }
 
     @Test
     void processOnlyChecksLastMessage() {
-        when(sanitizerComponent.check("second"))
-                .thenReturn(SanitizerComponent.SanitizationResult.safe("second"));
+        when(sanitizerComponent.check(CONTENT_SECOND))
+                .thenReturn(SanitizerComponent.SanitizationResult.safe(CONTENT_SECOND));
 
         AgentContext ctx = contextWith(List.of(
-                Message.builder().role("user").content("first").timestamp(Instant.now()).build(),
-                Message.builder().role("user").content("second").timestamp(Instant.now()).build()));
+                Message.builder().role(ROLE_USER).content("first").timestamp(Instant.now()).build(),
+                Message.builder().role(ROLE_USER).content(CONTENT_SECOND).timestamp(Instant.now()).build()));
 
         system.process(ctx);
 
-        verify(sanitizerComponent).check("second");
+        verify(sanitizerComponent).check(CONTENT_SECOND);
         verify(sanitizerComponent, never()).check("first");
     }
 
     @Test
     void processChecksLastMessageEvenWithMixedRoles() {
-        when(sanitizerComponent.check("user msg"))
-                .thenReturn(SanitizerComponent.SanitizationResult.safe("user msg"));
+        when(sanitizerComponent.check(CONTENT_USER_MSG))
+                .thenReturn(SanitizerComponent.SanitizationResult.safe(CONTENT_USER_MSG));
 
         AgentContext ctx = contextWith(List.of(
                 Message.builder().role("assistant").content("assistant").timestamp(Instant.now()).build(),
-                Message.builder().role("user").content("user msg").timestamp(Instant.now()).build()));
+                Message.builder().role(ROLE_USER).content(CONTENT_USER_MSG).timestamp(Instant.now()).build()));
 
         system.process(ctx);
 
-        verify(sanitizerComponent).check("user msg");
+        verify(sanitizerComponent).check(CONTENT_USER_MSG);
     }
 }

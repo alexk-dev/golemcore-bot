@@ -1,19 +1,23 @@
 package me.golemcore.bot.domain.system;
 
+import me.golemcore.bot.domain.component.MessageAggregatorComponent;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.Skill;
+import me.golemcore.bot.domain.model.SkillMatchResult;
 import me.golemcore.bot.infrastructure.config.BotProperties;
-import me.golemcore.bot.routing.MessageContextAggregator;
-import me.golemcore.bot.routing.SkillMatchResult;
-import me.golemcore.bot.routing.SkillMatcher;
+import me.golemcore.bot.port.outbound.SkillMatcherPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -21,25 +25,31 @@ import static org.mockito.Mockito.*;
 
 class SkillRoutingSystemTest {
 
-    private SkillMatcher skillMatcher;
+    private static final String CONTENT_HELLO = "hello";
+    private static final String SESSION_ID = "test";
+    private static final String CHAT_ID = "ch1";
+    private static final String CHANNEL_TYPE = "telegram";
+    private static final String SKILL_CODE_REVIEW = "code-review";
+
+    private SkillMatcherPort skillMatcher;
     private SkillComponent skillComponent;
     private BotProperties properties;
-    private MessageContextAggregator messageAggregator;
+    private MessageAggregatorComponent messageAggregator;
     private SkillRoutingSystem system;
 
     @BeforeEach
     void setUp() {
-        skillMatcher = mock(SkillMatcher.class);
+        skillMatcher = mock(SkillMatcherPort.class);
         skillComponent = mock(SkillComponent.class);
         properties = new BotProperties();
         properties.getRouter().getSkillMatcher().setEnabled(true);
         properties.getRouter().getSkillMatcher().setRoutingTimeoutMs(5000);
-        messageAggregator = mock(MessageContextAggregator.class);
+        messageAggregator = mock(MessageAggregatorComponent.class);
 
         when(skillMatcher.isEnabled()).thenReturn(true);
         when(skillMatcher.isReady()).thenReturn(true);
         when(messageAggregator.analyze(anyList()))
-                .thenReturn(new MessageContextAggregator.AggregationAnalysis(false, List.of(), ""));
+                .thenReturn(new MessageAggregatorComponent.AggregationAnalysis(false, List.of(), ""));
 
         system = new SkillRoutingSystem(skillMatcher, skillComponent, properties, messageAggregator);
     }
@@ -48,7 +58,7 @@ class SkillRoutingSystemTest {
         List<Message> messages = new ArrayList<>();
         messages.add(Message.builder().role("user").content(userMessage).timestamp(Instant.now()).build());
         return AgentContext.builder()
-                .session(AgentSession.builder().id("test").chatId("ch1").channelType("telegram").build())
+                .session(AgentSession.builder().id(SESSION_ID).chatId(CHAT_ID).channelType(CHANNEL_TYPE).build())
                 .messages(messages)
                 .currentIteration(0)
                 .build();
@@ -70,7 +80,7 @@ class SkillRoutingSystemTest {
 
     @Test
     void skipsOnNonZeroIteration() {
-        AgentContext ctx = createContext("hello");
+        AgentContext ctx = createContext(CONTENT_HELLO);
         ctx.setCurrentIteration(1);
         assertFalse(system.shouldProcess(ctx));
     }
@@ -83,7 +93,7 @@ class SkillRoutingSystemTest {
         messages.add(
                 Message.builder().role("user").content("auto check").timestamp(Instant.now()).metadata(meta).build());
         AgentContext ctx = AgentContext.builder()
-                .session(AgentSession.builder().id("test").chatId("ch1").channelType("telegram").build())
+                .session(AgentSession.builder().id(SESSION_ID).chatId(CHAT_ID).channelType(CHANNEL_TYPE).build())
                 .messages(messages)
                 .currentIteration(0)
                 .build();
@@ -93,7 +103,7 @@ class SkillRoutingSystemTest {
 
     @Test
     void processesNormalFirstIteration() {
-        AgentContext ctx = createContext("hello");
+        AgentContext ctx = createContext(CONTENT_HELLO);
         assertTrue(system.shouldProcess(ctx));
     }
 
@@ -104,13 +114,13 @@ class SkillRoutingSystemTest {
         AgentContext ctx = createContext("review my code");
         when(messageAggregator.buildRoutingQuery(anyList())).thenReturn("review my code");
 
-        Skill codeSkill = Skill.builder().name("code-review").description("Reviews code").content("You are a reviewer")
-                .available(true).build();
+        Skill codeSkill = Skill.builder().name(SKILL_CODE_REVIEW).description("Reviews code")
+                .content("You are a reviewer").available(true).build();
         when(skillComponent.getAvailableSkills()).thenReturn(List.of(codeSkill));
-        when(skillComponent.findByName("code-review")).thenReturn(Optional.of(codeSkill));
+        when(skillComponent.findByName(SKILL_CODE_REVIEW)).thenReturn(Optional.of(codeSkill));
 
         SkillMatchResult matchResult = SkillMatchResult.builder()
-                .selectedSkill("code-review")
+                .selectedSkill(SKILL_CODE_REVIEW)
                 .confidence(0.92)
                 .modelTier("coding")
                 .reason("Code review detected")
@@ -124,7 +134,7 @@ class SkillRoutingSystemTest {
 
         assertEquals(codeSkill, ctx.getActiveSkill());
         assertEquals("coding", ctx.getModelTier());
-        assertEquals("code-review", ctx.getAttribute("routing.skill"));
+        assertEquals(SKILL_CODE_REVIEW, ctx.getAttribute("routing.skill"));
         assertEquals(0.92, (double) ctx.getAttribute("routing.confidence"), 0.01);
     }
 
@@ -152,8 +162,8 @@ class SkillRoutingSystemTest {
 
     @Test
     void skipsWhenNoAvailableSkills() {
-        AgentContext ctx = createContext("hello");
-        when(messageAggregator.buildRoutingQuery(anyList())).thenReturn("hello");
+        AgentContext ctx = createContext(CONTENT_HELLO);
+        when(messageAggregator.buildRoutingQuery(anyList())).thenReturn(CONTENT_HELLO);
         when(skillComponent.getAvailableSkills()).thenReturn(List.of());
 
         system.process(ctx);
@@ -166,7 +176,7 @@ class SkillRoutingSystemTest {
     @Test
     void skipsWhenMatcherDisabled() {
         when(skillMatcher.isEnabled()).thenReturn(false);
-        AgentContext ctx = createContext("hello");
+        AgentContext ctx = createContext(CONTENT_HELLO);
 
         system.process(ctx);
 
@@ -187,8 +197,8 @@ class SkillRoutingSystemTest {
     @Test
     void indexesSkillsWhenMatcherNotReady() {
         when(skillMatcher.isReady()).thenReturn(false);
-        AgentContext ctx = createContext("hello");
-        when(messageAggregator.buildRoutingQuery(anyList())).thenReturn("hello");
+        AgentContext ctx = createContext(CONTENT_HELLO);
+        when(messageAggregator.buildRoutingQuery(anyList())).thenReturn(CONTENT_HELLO);
         List<Skill> skills = List.of(Skill.builder().name("s1").description("d1").available(true).build());
         when(skillComponent.getAvailableSkills()).thenReturn(skills);
         when(skillMatcher.match(anyString(), anyList(), anyList()))
@@ -201,8 +211,8 @@ class SkillRoutingSystemTest {
 
     @Test
     void setsRoutingErrorOnException() {
-        AgentContext ctx = createContext("hello");
-        when(messageAggregator.buildRoutingQuery(anyList())).thenReturn("hello");
+        AgentContext ctx = createContext(CONTENT_HELLO);
+        when(messageAggregator.buildRoutingQuery(anyList())).thenReturn(CONTENT_HELLO);
         when(skillComponent.getAvailableSkills()).thenReturn(List.of(
                 Skill.builder().name("s1").description("d1").available(true).build()));
 
@@ -216,10 +226,10 @@ class SkillRoutingSystemTest {
 
     @Test
     void setsFragmentationAttributes() {
-        AgentContext ctx = createContext("hello");
-        when(messageAggregator.buildRoutingQuery(anyList())).thenReturn("hello");
+        AgentContext ctx = createContext(CONTENT_HELLO);
+        when(messageAggregator.buildRoutingQuery(anyList())).thenReturn(CONTENT_HELLO);
         when(messageAggregator.analyze(anyList()))
-                .thenReturn(new MessageContextAggregator.AggregationAnalysis(true,
+                .thenReturn(new MessageAggregatorComponent.AggregationAnalysis(true,
                         List.of("too_short", "within_time_window"), "Fragmented input detected"));
         when(skillComponent.getAvailableSkills()).thenReturn(List.of(
                 Skill.builder().name("s1").description("d1").available(true).build()));

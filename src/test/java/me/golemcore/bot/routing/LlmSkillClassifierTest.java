@@ -2,6 +2,7 @@ package me.golemcore.bot.routing;
 
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
+import me.golemcore.bot.domain.model.SkillCandidate;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.LlmPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -15,6 +16,11 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class LlmSkillClassifierTest {
+
+    private static final String SKILL_CODE_REVIEW = "code-review";
+    private static final String TIER_BALANCED = "balanced";
+    private static final String TIER_FAST = "fast";
+    private static final String TEST_MESSAGE = "Test message";
 
     private LlmSkillClassifier classifier;
     private BotProperties properties;
@@ -32,7 +38,7 @@ class LlmSkillClassifierTest {
 
         candidates = List.of(
                 SkillCandidate.builder()
-                        .name("code-review")
+                        .name(SKILL_CODE_REVIEW)
                         .description("Review code")
                         .semanticScore(0.89)
                         .build(),
@@ -57,9 +63,9 @@ class LlmSkillClassifierTest {
                 .classify("Review my code", List.of(), candidates, mockLlmPort)
                 .join();
 
-        assertEquals("code-review", result.skill());
+        assertEquals(SKILL_CODE_REVIEW, result.skill());
         assertEquals(0.95, result.confidence());
-        assertEquals("balanced", result.modelTier());
+        assertEquals(TIER_BALANCED, result.modelTier());
         assertEquals("User asked for review", result.reason());
     }
 
@@ -101,7 +107,7 @@ class LlmSkillClassifierTest {
 
         assertNull(result.skill());
         assertEquals(0.90, result.confidence());
-        assertEquals("fast", result.modelTier());
+        assertEquals(TIER_FAST, result.modelTier());
     }
 
     @Test
@@ -115,7 +121,7 @@ class LlmSkillClassifierTest {
                         LlmResponse.builder().content(jsonResponse).build()));
 
         LlmSkillClassifier.ClassificationResult result = classifier
-                .classify("Test message", List.of(), candidates, mockLlmPort)
+                .classify(TEST_MESSAGE, List.of(), candidates, mockLlmPort)
                 .join();
 
         // Should be null because skill doesn't exist in candidates
@@ -129,13 +135,13 @@ class LlmSkillClassifierTest {
                         LlmResponse.builder().content("This is not JSON at all").build()));
 
         LlmSkillClassifier.ClassificationResult result = classifier
-                .classify("Test message", List.of(), candidates, mockLlmPort)
+                .classify(TEST_MESSAGE, List.of(), candidates, mockLlmPort)
                 .join();
 
         // Should fall back to top semantic candidate
-        assertEquals("code-review", result.skill());
+        assertEquals(SKILL_CODE_REVIEW, result.skill());
         assertEquals(0.89, result.confidence());
-        assertEquals("balanced", result.modelTier());
+        assertEquals(TIER_BALANCED, result.modelTier());
         assertTrue(result.reason().contains("Parse failed"));
     }
 
@@ -145,11 +151,11 @@ class LlmSkillClassifierTest {
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("LLM error")));
 
         LlmSkillClassifier.ClassificationResult result = classifier
-                .classify("Test message", List.of(), candidates, mockLlmPort)
+                .classify(TEST_MESSAGE, List.of(), candidates, mockLlmPort)
                 .join();
 
         // Should fall back to top semantic candidate
-        assertEquals("code-review", result.skill());
+        assertEquals(SKILL_CODE_REVIEW, result.skill());
         assertEquals(0.89, result.confidence());
     }
 
@@ -167,9 +173,80 @@ class LlmSkillClassifierTest {
                 .classify("Review code", List.of(), candidates, mockLlmPort)
                 .join();
 
-        assertEquals("code-review", result.skill());
+        assertEquals(SKILL_CODE_REVIEW, result.skill());
         assertEquals(0.8, result.confidence()); // default
-        assertEquals("balanced", result.modelTier()); // default
+        assertEquals(TIER_BALANCED, result.modelTier()); // default
         assertEquals("LLM classification", result.reason()); // default
+    }
+
+    // ===== Exception handling =====
+
+    @Test
+    void classify_fallsBackOnTimeoutException() throws Exception {
+        CompletableFuture<LlmResponse> timeoutFuture = new CompletableFuture<>();
+        timeoutFuture.completeExceptionally(new java.util.concurrent.TimeoutException("Request timed out"));
+        when(mockLlmPort.chat(any(LlmRequest.class))).thenReturn(timeoutFuture);
+
+        LlmSkillClassifier.ClassificationResult result = classifier
+                .classify(TEST_MESSAGE, List.of(), candidates, mockLlmPort)
+                .join();
+
+        // Should fallback to top semantic candidate
+        assertEquals(SKILL_CODE_REVIEW, result.skill());
+        assertEquals(0.89, result.confidence());
+        assertEquals(TIER_BALANCED, result.modelTier());
+    }
+
+    @Test
+    void classify_returnsNoMatchWhenEmptyCandidatesAndLlmFails() throws Exception {
+        when(mockLlmPort.chat(any(LlmRequest.class)))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("LLM error")));
+
+        List<SkillCandidate> emptyCandidates = List.of();
+        LlmSkillClassifier.ClassificationResult result = classifier
+                .classify(TEST_MESSAGE, List.of(), emptyCandidates, mockLlmPort)
+                .join();
+
+        assertNull(result.skill());
+        assertEquals(0, result.confidence());
+        assertEquals(TIER_FAST, result.modelTier());
+    }
+
+    @Test
+    void classify_returnsNoMatchOnInvalidJsonWithEmptyCandidates() throws Exception {
+        when(mockLlmPort.chat(any(LlmRequest.class)))
+                .thenReturn(CompletableFuture.completedFuture(
+                        LlmResponse.builder().content("not json").build()));
+
+        List<SkillCandidate> emptyCandidates = List.of();
+        LlmSkillClassifier.ClassificationResult result = classifier
+                .classify(TEST_MESSAGE, List.of(), emptyCandidates, mockLlmPort)
+                .join();
+
+        assertNull(result.skill());
+        assertEquals(TIER_FAST, result.modelTier());
+        assertTrue(result.reason().contains("Parse failed"));
+    }
+
+    @Test
+    void classify_includesConversationHistoryInPrompt() throws Exception {
+        String jsonResponse = """
+                {"skill": "code-review", "confidence": 0.9, "model_tier": "balanced", "reason": "Context"}
+                """;
+        when(mockLlmPort.chat(any(LlmRequest.class)))
+                .thenReturn(CompletableFuture.completedFuture(
+                        LlmResponse.builder().content(jsonResponse).build()));
+
+        List<me.golemcore.bot.domain.model.Message> history = List.of(
+                me.golemcore.bot.domain.model.Message.builder()
+                        .role("user").content("Previous question").build(),
+                me.golemcore.bot.domain.model.Message.builder()
+                        .role("assistant").content("Previous answer").build());
+
+        LlmSkillClassifier.ClassificationResult result = classifier
+                .classify("Follow up question", history, candidates, mockLlmPort)
+                .join();
+
+        assertEquals(SKILL_CODE_REVIEW, result.skill());
     }
 }

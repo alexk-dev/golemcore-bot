@@ -18,7 +18,7 @@
 
 package me.golemcore.bot.adapter.inbound.telegram;
 
-import me.golemcore.bot.adapter.outbound.confirmation.TelegramConfirmationAdapter;
+import me.golemcore.bot.domain.model.ConfirmationCallbackEvent;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AudioFormat;
 import me.golemcore.bot.domain.model.Message;
@@ -96,6 +96,12 @@ import java.util.function.Consumer;
 @Slf4j
 public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpdateConsumer {
 
+    private static final String CHANNEL_TYPE = "telegram";
+    private static final String SETTINGS_COMMAND = "settings";
+    private static final int CALLBACK_DATA_PARTS_COUNT = 3;
+    private static final int TELEGRAM_MAX_MESSAGE_LENGTH = 4096;
+    private static final int TELEGRAM_MAX_CAPTION_LENGTH = 1024;
+
     private final BotProperties properties;
     private final AllowlistValidator allowlistValidator;
     private final ApplicationEventPublisher eventPublisher;
@@ -103,7 +109,6 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
     private final UserPreferencesService preferencesService;
     private final MessageService messageService;
     private final CommandPort commandRouter;
-    private final TelegramConfirmationAdapter telegramConfirmationAdapter;
     private final TelegramVoiceHandler voiceHandler;
 
     private TelegramClient telegramClient;
@@ -127,7 +132,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
     }
 
     private boolean isEnabled() {
-        BotProperties.ChannelProperties channelProps = properties.getChannels().get("telegram");
+        BotProperties.ChannelProperties channelProps = properties.getChannels().get(CHANNEL_TYPE);
         return channelProps != null && channelProps.isEnabled();
     }
 
@@ -135,19 +140,18 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
         if (initialized || !isEnabled())
             return;
 
-        String token = properties.getChannels().get("telegram").getToken();
+        String token = properties.getChannels().get(CHANNEL_TYPE).getToken();
         if (token == null || token.isBlank()) {
             log.warn("Telegram token not configured, adapter will not start");
             return;
         }
         this.telegramClient = new OkHttpTelegramClient(token);
-        telegramConfirmationAdapter.setTelegramClient(this.telegramClient);
         initialized = true;
     }
 
     @Override
     public String getChannelType() {
-        return "telegram";
+        return CHANNEL_TYPE;
     }
 
     @Override
@@ -163,7 +167,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
         }
 
         try {
-            String token = properties.getChannels().get("telegram").getToken();
+            String token = properties.getChannels().get(CHANNEL_TYPE).getToken();
             botsApplication.registerBot(token, this);
             running = true;
             log.info("Telegram adapter started");
@@ -228,7 +232,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
     private void handleConfirmationCallback(String chatId, Integer messageId, String data) {
         // Format: confirm:<id>:yes or confirm:<id>:no
         String[] parts = data.split(":");
-        if (parts.length != 3) {
+        if (parts.length != CALLBACK_DATA_PARTS_COUNT) {
             log.warn("Invalid confirmation callback data: {}", data);
             return;
         }
@@ -236,21 +240,8 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
         String confirmationId = parts[1];
         boolean approved = "yes".equals(parts[2]);
 
-        boolean resolved = telegramConfirmationAdapter.resolve(confirmationId, approved);
-
-        if (resolved) {
-            String statusText = approved ? "\u2705 Confirmed" : "\u274c Cancelled";
-            try {
-                EditMessageText edit = EditMessageText.builder()
-                        .chatId(chatId)
-                        .messageId(messageId)
-                        .text(statusText)
-                        .build();
-                telegramClient.execute(edit);
-            } catch (Exception e) {
-                log.error("Failed to update confirmation message", e);
-            }
-        }
+        eventPublisher.publishEvent(new ConfirmationCallbackEvent(
+                confirmationId, approved, chatId, messageId.toString()));
     }
 
     private void updateSettingsMessage(String chatId, Integer messageId, String statusMessage) {
@@ -307,7 +298,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
 
         Message.MessageBuilder messageBuilder = Message.builder()
                 .id(telegramMessage.getMessageId().toString())
-                .channelType("telegram")
+                .channelType(CHANNEL_TYPE)
                 .chatId(chatId)
                 .senderId(userId)
                 .role("user")
@@ -323,7 +314,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
                 String cmd = parts[0].substring(1).split("@")[0]; // strip / and @botname
 
                 // /settings is a special case (uses Telegram inline keyboards)
-                if ("settings".equals(cmd)) {
+                if (SETTINGS_COMMAND.equals(cmd)) {
                     sendSettingsMenu(chatId);
                     return;
                 }
@@ -333,11 +324,11 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
                     List<String> args = parts.length > 1
                             ? Arrays.asList(parts[1].split("\\s+"))
                             : List.of();
-                    String sessionId = "telegram:" + chatId;
+                    String sessionId = CHANNEL_TYPE + ":" + chatId;
                     Map<String, Object> ctx = Map.<String, Object>of(
                             "sessionId", sessionId,
                             "chatId", chatId,
-                            "channelType", "telegram");
+                            "channelType", CHANNEL_TYPE);
                     try {
                         var result = commandRouter.execute(cmd, args, ctx).join();
                         sendMessage(chatId, result.output());
@@ -406,7 +397,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
         org.telegram.telegrambots.meta.api.objects.File file = telegramClient.execute(getFile);
 
         String filePath = file.getFilePath();
-        String token = properties.getChannels().get("telegram").getToken();
+        String token = properties.getChannels().get(CHANNEL_TYPE).getToken();
         String fileUrl = "https://api.telegram.org/file/bot" + token + "/" + filePath;
 
         try (InputStream is = URI.create(fileUrl).toURL().openStream()) {
@@ -426,8 +417,8 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
                     String formatted = TelegramHtmlFormatter.format(chunk);
 
                     // Safety: if formatted exceeds Telegram limit, truncate
-                    if (formatted.length() > 4096) {
-                        formatted = formatted.substring(0, 4093) + "...";
+                    if (formatted.length() > TELEGRAM_MAX_MESSAGE_LENGTH) {
+                        formatted = formatted.substring(0, TELEGRAM_MAX_MESSAGE_LENGTH - 3) + "...";
                     }
 
                     SendMessage sendMessage = SendMessage.builder()
@@ -597,9 +588,9 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
     }
 
     private String truncateCaption(String caption) {
-        if (caption.length() <= 1024)
+        if (caption.length() <= TELEGRAM_MAX_CAPTION_LENGTH)
             return caption;
-        return caption.substring(0, 1021) + "...";
+        return caption.substring(0, TELEGRAM_MAX_CAPTION_LENGTH - 3) + "...";
     }
 
     private static String truncateForLog(String text, int maxLen) {
@@ -610,7 +601,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
 
     @Override
     public boolean isAuthorized(String senderId) {
-        return allowlistValidator.isAllowed("telegram", senderId) &&
+        return allowlistValidator.isAllowed(CHANNEL_TYPE, senderId) &&
                 !allowlistValidator.isBlocked(senderId);
     }
 

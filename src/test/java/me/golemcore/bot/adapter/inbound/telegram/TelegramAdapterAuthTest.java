@@ -1,6 +1,5 @@
 package me.golemcore.bot.adapter.inbound.telegram;
 
-import me.golemcore.bot.adapter.outbound.confirmation.TelegramConfirmationAdapter;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
@@ -19,10 +18,18 @@ import org.telegram.telegrambots.meta.generics.TelegramClient;
 
 import java.util.function.Consumer;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class TelegramAdapterAuthTest {
+
+    private static final String CHANNEL_TELEGRAM = "telegram";
 
     private TelegramAdapter adapter;
     private AllowlistValidator allowlistValidator;
@@ -36,7 +43,7 @@ class TelegramAdapterAuthTest {
         BotProperties properties = mock(BotProperties.class);
         BotProperties.ChannelProperties telegramProps = new BotProperties.ChannelProperties();
         telegramProps.setEnabled(true);
-        when(properties.getChannels()).thenReturn(java.util.Map.of("telegram", telegramProps));
+        when(properties.getChannels()).thenReturn(java.util.Map.of(CHANNEL_TELEGRAM, telegramProps));
 
         allowlistValidator = mock(AllowlistValidator.class);
         messageService = mock(MessageService.class);
@@ -50,7 +57,6 @@ class TelegramAdapterAuthTest {
                 mock(UserPreferencesService.class),
                 messageService,
                 mock(CommandPort.class),
-                mock(TelegramConfirmationAdapter.class),
                 mock(TelegramVoiceHandler.class));
         adapter.setTelegramClient(telegramClient);
 
@@ -60,7 +66,7 @@ class TelegramAdapterAuthTest {
 
     @Test
     void unauthorizedUser_sendsAccessDeniedAndDoesNotProcess() throws Exception {
-        when(allowlistValidator.isAllowed("telegram", "999")).thenReturn(false);
+        when(allowlistValidator.isAllowed(CHANNEL_TELEGRAM, "999")).thenReturn(false);
         when(messageService.getMessage("security.unauthorized")).thenReturn("Access denied.");
 
         Update update = createTextUpdate(999L, 100L, "Hello bot");
@@ -79,7 +85,7 @@ class TelegramAdapterAuthTest {
 
     @Test
     void authorizedUser_processesMessageNormally() {
-        when(allowlistValidator.isAllowed("telegram", "123")).thenReturn(true);
+        when(allowlistValidator.isAllowed(CHANNEL_TELEGRAM, "123")).thenReturn(true);
         when(allowlistValidator.isBlocked("123")).thenReturn(false);
 
         Update update = createTextUpdate(123L, 100L, "Hello bot");
@@ -92,7 +98,7 @@ class TelegramAdapterAuthTest {
 
     @Test
     void blockedUser_sendsAccessDeniedAndDoesNotProcess() throws Exception {
-        when(allowlistValidator.isAllowed("telegram", "456")).thenReturn(true);
+        when(allowlistValidator.isAllowed(CHANNEL_TELEGRAM, "456")).thenReturn(true);
         when(allowlistValidator.isBlocked("456")).thenReturn(true);
         when(messageService.getMessage("security.unauthorized")).thenReturn("Access denied.");
 

@@ -25,16 +25,16 @@
 
     <properties>
         <java.version>17</java.version>
-        <feign.version>13.5</feign.version>
-        <okhttp.version>4.12.0</okhttp.version>
-        <telegram.version>8.2.0</telegram.version>
+        <feign.version>13.7</feign.version>
+        <okhttp.version>5.3.2</okhttp.version>
+        <telegram.version>9.3.0</telegram.version>
         <langchain4j.version>1.0.0-beta1</langchain4j.version>
         <playwright.version>1.49.0</playwright.version>
 
-        <spotbugs.version>4.8.6.6</spotbugs.version>
-        <pmd.version>3.26.0</pmd.version>
-        <jacoco.version>0.8.12</jacoco.version>
-        <jib.version>3.4.4</jib.version>
+        <spotbugs.version>4.9.8.2</spotbugs.version>
+        <pmd.version>3.28.0</pmd.version>
+        <jacoco.version>0.8.14</jacoco.version>
+        <jib.version>3.5.1</jib.version>
         <jib.target.image>ghcr.io/${env.GITHUB_REPOSITORY}</jib.target.image>
 
         <!-- SonarCloud -->
@@ -46,6 +46,18 @@
         <sonar.java.pmd.reportPaths>${project.build.directory}/pmd.xml</sonar.java.pmd.reportPaths>
         <sonar.java.spotbugs.reportPaths>${project.build.directory}/spotbugsXml.xml</sonar.java.spotbugs.reportPaths>
     </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.squareup.okhttp3</groupId>
+                <artifactId>okhttp-bom</artifactId>
+                <version>${okhttp.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <!-- Spring Boot -->
@@ -88,7 +100,7 @@
         </dependency>
         <dependency>
             <groupId>com.squareup.okhttp3</groupId>
-            <artifactId>okhttp</artifactId>
+            <artifactId>okhttp-jvm</artifactId>
             <version>${okhttp.version}</version>
         </dependency>
 
@@ -150,7 +162,7 @@
         </dependency>
         <dependency>
             <groupId>com.squareup.okhttp3</groupId>
-            <artifactId>mockwebserver</artifactId>
+            <artifactId>mockwebserver3</artifactId>
             <version>${okhttp.version}</version>
             <scope>test</scope>
         </dependency>
@@ -198,7 +210,7 @@
             <plugin>
                 <groupId>org.sonarsource.scanner.maven</groupId>
                 <artifactId>sonar-maven-plugin</artifactId>
-                <version>4.0.0.4121</version>
+                <version>5.5.0.6356</version>
             </plugin>
 
             <!-- SpotBugs -->
@@ -327,8 +339,7 @@
                             <failOnViolation>true</failOnViolation>
                             <printFailingErrors>true</printFailingErrors>
                             <rulesets>
-                                <ruleset>/category/java/errorprone.xml</ruleset>
-                                <ruleset>/category/java/bestpractices.xml</ruleset>
+                                <ruleset>misc/pmd-ruleset.xml</ruleset>
                             </rulesets>
                         </configuration>
                         <executions>

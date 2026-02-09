@@ -6,14 +6,14 @@
 [![Java](https://img.shields.io/badge/Java-17+-orange.svg)](https://www.oracle.com/java/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.4.2-brightgreen.svg)](https://spring.io/projects/spring-boot)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-878%20passing-success.svg)](https://github.com/alexk-dev/golemcore-bot/actions)
+[![Tests](https://img.shields.io/badge/tests-1292%20passing-success.svg)](https://github.com/alexk-dev/golemcore-bot/actions)
 
 ---
 
 ## 🚀 Key Features
 
 ### 🧠 Intelligent Processing
-- **Hybrid Skill Routing** — 2-stage semantic search + LLM classifier (~5ms + 200ms)
+- **Hybrid Skill Routing** — 2-stage semantic search + LLM classifier
 - **Dynamic Model Tier Selection** — Automatic escalation to coding-tier model when code activity detected
 - **Context Overflow Protection** — Smart truncation with emergency recovery, handles 50K+ token conversations
 - **Fragmented Input Detection** — Aggregates split messages using temporal and linguistic signals
@@ -37,7 +37,7 @@
 
 ### 🔒 Security
 - 5 layers: Unicode normalization, injection detection, allowlists, sandboxing, content policy
-- Rate limiting: per-user (20/min, 100/hr, 500/day), per-channel, per-LLM
+- Rate limiting: configurable request limits (20/min, 100/hr, 500/day), per-channel, per-LLM
 - Tool confirmation with 60s timeout
 
 ---
@@ -165,7 +165,7 @@ Messages flow through an ordered pipeline of specialized systems:
 ```
 User Message
     ↓
-[10] InputSanitizationSystem     — HTML sanitization, length check
+[10] InputSanitizationSystem     — Unicode normalization, length check
 [15] SkillRoutingSystem           — Hybrid skill matching
 [18] AutoCompactionSystem         — Context overflow prevention
 [20] ContextBuildingSystem        — Prompt assembly, MCP startup
@@ -182,7 +182,7 @@ The loop iterates up to 20 times while the LLM requests tool calls.
 
 ### Skill Routing & Model Selection
 
-3-stage hybrid matching: fragmented input detection, semantic search (~5ms), LLM classifier (~200ms). 4 model tiers (fast/default/smart/coding) with automatic escalation to coding tier when code activity is detected.
+3-stage hybrid matching: fragmented input detection, semantic search, LLM classifier. 4 model tiers (fast/default/smart/coding) with automatic escalation to coding tier when code activity is detected.
 
 See **[Model Routing Guide](docs/MODEL_ROUTING.md)** for the full end-to-end flow, tier architecture, dynamic upgrades, tool ID remapping, context overflow protection, and debugging tips.
 
@@ -530,7 +530,7 @@ The bot processes messages through ordered pipeline stages:
 
 Contributions welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for:
 - Development workflow
-- Code quality standards (PMD, SpotBugs, 70%+ coverage)
+- Code quality standards (PMD, SpotBugs, 85%+ coverage)
 - Testing requirements
 - Pull request process
 

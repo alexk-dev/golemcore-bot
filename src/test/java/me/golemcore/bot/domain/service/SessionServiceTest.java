@@ -20,12 +20,22 @@ import static org.mockito.Mockito.*;
 
 class SessionServiceTest {
 
+    private static final Instant FIXED_TIME = Instant.parse("2026-01-15T10:00:00Z");
+    private static final String SESSIONS_DIR = "sessions";
+    private static final String CHANNEL_TELEGRAM = "telegram";
+    private static final String CHAT_ID = "123";
+    private static final String SESSION_ID = "telegram:123";
+    private static final String SESSION_FILE = "telegram:123.json";
+    private static final String NOT_FOUND = "not found";
+    private static final String ROLE_USER = "user";
+    private static final String NONEXISTENT = "nonexistent";
+    private static final String MSG_PREFIX = "msg";
+    private static final String SUMMARY_TEXT = "[Summary]";
+
     private StoragePort storagePort;
     private ObjectMapper objectMapper;
     private Clock clock;
     private SessionService service;
-
-    private static final Instant FIXED_TIME = Instant.parse("2026-01-15T10:00:00Z");
 
     @BeforeEach
     void setUp() {
@@ -45,25 +55,25 @@ class SessionServiceTest {
 
     @Test
     void getOrCreateCreatesNewSession() {
-        when(storagePort.getText("sessions", "telegram:123.json"))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("not found")));
+        when(storagePort.getText(SESSIONS_DIR, SESSION_FILE))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
-        AgentSession session = service.getOrCreate("telegram", "123");
+        AgentSession session = service.getOrCreate(CHANNEL_TELEGRAM, CHAT_ID);
 
         assertNotNull(session);
-        assertEquals("telegram:123", session.getId());
-        assertEquals("telegram", session.getChannelType());
-        assertEquals("123", session.getChatId());
+        assertEquals(SESSION_ID, session.getId());
+        assertEquals(CHANNEL_TELEGRAM, session.getChannelType());
+        assertEquals(CHAT_ID, session.getChatId());
         assertEquals(FIXED_TIME, session.getCreatedAt());
     }
 
     @Test
     void getOrCreateReturnsCachedSession() {
-        when(storagePort.getText("sessions", "telegram:123.json"))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("not found")));
+        when(storagePort.getText(SESSIONS_DIR, SESSION_FILE))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
-        AgentSession first = service.getOrCreate("telegram", "123");
-        AgentSession second = service.getOrCreate("telegram", "123");
+        AgentSession first = service.getOrCreate(CHANNEL_TELEGRAM, CHAT_ID);
+        AgentSession second = service.getOrCreate(CHANNEL_TELEGRAM, CHAT_ID);
 
         assertSame(first, second);
     }
@@ -71,10 +81,10 @@ class SessionServiceTest {
     @Test
     void getOrCreateCreatesNewWhenStorageLoadFails() {
         // Corrupt JSON in storage — service should gracefully create new session
-        when(storagePort.getText("sessions", "telegram:200.json"))
+        when(storagePort.getText(SESSIONS_DIR, "telegram:200.json"))
                 .thenReturn(CompletableFuture.completedFuture("{corrupt json}"));
 
-        AgentSession session = service.getOrCreate("telegram", "200");
+        AgentSession session = service.getOrCreate(CHANNEL_TELEGRAM, "200");
 
         assertNotNull(session);
         assertEquals("telegram:200", session.getId());
@@ -85,8 +95,8 @@ class SessionServiceTest {
 
     @Test
     void getReturnsEmptyForUnknownSession() {
-        when(storagePort.getText("sessions", "unknown.json"))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("not found")));
+        when(storagePort.getText(SESSIONS_DIR, "unknown.json"))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
         Optional<AgentSession> result = service.get("unknown");
 
@@ -95,18 +105,18 @@ class SessionServiceTest {
 
     @Test
     void getReturnsCachedSession() {
-        when(storagePort.getText("sessions", "telegram:123.json"))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("not found")));
+        when(storagePort.getText(SESSIONS_DIR, SESSION_FILE))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
-        service.getOrCreate("telegram", "123");
-        Optional<AgentSession> result = service.get("telegram:123");
+        service.getOrCreate(CHANNEL_TELEGRAM, CHAT_ID);
+        Optional<AgentSession> result = service.get(SESSION_ID);
 
         assertTrue(result.isPresent());
     }
 
     @Test
     void getReturnsEmptyWhenStorageJsonIsCorrupt() {
-        when(storagePort.getText("sessions", "telegram:456.json"))
+        when(storagePort.getText(SESSIONS_DIR, "telegram:456.json"))
                 .thenReturn(CompletableFuture.completedFuture("{corrupt}"));
 
         Optional<AgentSession> result = service.get("telegram:456");
@@ -116,7 +126,7 @@ class SessionServiceTest {
 
     @Test
     void getReturnsEmptyForBlankJson() {
-        when(storagePort.getText("sessions", "blank.json"))
+        when(storagePort.getText(SESSIONS_DIR, "blank.json"))
                 .thenReturn(CompletableFuture.completedFuture("  "));
 
         Optional<AgentSession> result = service.get("blank");
@@ -126,7 +136,7 @@ class SessionServiceTest {
 
     @Test
     void getReturnsEmptyForNullJson() {
-        when(storagePort.getText("sessions", "nulljson.json"))
+        when(storagePort.getText(SESSIONS_DIR, "nulljson.json"))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
         Optional<AgentSession> result = service.get("nulljson");
@@ -139,15 +149,15 @@ class SessionServiceTest {
     @Test
     void savePersistsToStorage() {
         AgentSession session = AgentSession.builder()
-                .id("telegram:123")
-                .channelType("telegram")
-                .chatId("123")
+                .id(SESSION_ID)
+                .channelType(CHANNEL_TELEGRAM)
+                .chatId(CHAT_ID)
                 .build();
 
         service.save(session);
 
         assertEquals(FIXED_TIME, session.getUpdatedAt());
-        verify(storagePort).putText(eq("sessions"), eq("telegram:123.json"), anyString());
+        verify(storagePort).putText(eq(SESSIONS_DIR), eq(SESSION_FILE), anyString());
     }
 
     @Test
@@ -156,9 +166,9 @@ class SessionServiceTest {
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("disk full")));
 
         AgentSession session = AgentSession.builder()
-                .id("telegram:123")
-                .channelType("telegram")
-                .chatId("123")
+                .id(SESSION_ID)
+                .channelType(CHANNEL_TELEGRAM)
+                .chatId(CHAT_ID)
                 .build();
 
         assertDoesNotThrow(() -> service.save(session));
@@ -168,13 +178,13 @@ class SessionServiceTest {
 
     @Test
     void deleteRemovesFromCacheAndStorage() {
-        when(storagePort.getText("sessions", "telegram:123.json"))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("not found")));
+        when(storagePort.getText(SESSIONS_DIR, SESSION_FILE))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
-        service.getOrCreate("telegram", "123");
-        service.delete("telegram:123");
+        service.getOrCreate(CHANNEL_TELEGRAM, CHAT_ID);
+        service.delete(SESSION_ID);
 
-        verify(storagePort).deleteObject("sessions", "telegram:123.json");
+        verify(storagePort).deleteObject(SESSIONS_DIR, SESSION_FILE);
     }
 
     @Test
@@ -182,29 +192,29 @@ class SessionServiceTest {
         when(storagePort.deleteObject(anyString(), anyString()))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("error")));
 
-        assertDoesNotThrow(() -> service.delete("nonexistent"));
+        assertDoesNotThrow(() -> service.delete(NONEXISTENT));
     }
 
     // ==================== clearMessages ====================
 
     @Test
     void clearMessagesRemovesAllMessages() {
-        when(storagePort.getText("sessions", "telegram:123.json"))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("not found")));
+        when(storagePort.getText(SESSIONS_DIR, SESSION_FILE))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
-        AgentSession session = service.getOrCreate("telegram", "123");
-        session.addMessage(Message.builder().role("user").content("hi").timestamp(Instant.now()).build());
+        AgentSession session = service.getOrCreate(CHANNEL_TELEGRAM, CHAT_ID);
+        session.addMessage(Message.builder().role(ROLE_USER).content("hi").timestamp(Instant.now()).build());
         assertEquals(1, session.getMessages().size());
 
-        service.clearMessages("telegram:123");
+        service.clearMessages(SESSION_ID);
 
         assertEquals(0, session.getMessages().size());
-        verify(storagePort).putText(eq("sessions"), eq("telegram:123.json"), anyString());
+        verify(storagePort).putText(eq(SESSIONS_DIR), eq(SESSION_FILE), anyString());
     }
 
     @Test
     void clearMessagesDoesNothingForUnknownSession() {
-        service.clearMessages("nonexistent");
+        service.clearMessages(NONEXISTENT);
         verify(storagePort, never()).putText(anyString(), anyString(), anyString());
     }
 
@@ -212,15 +222,16 @@ class SessionServiceTest {
 
     @Test
     void compactMessagesRemovesOldMessages() {
-        when(storagePort.getText("sessions", "telegram:123.json"))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("not found")));
+        when(storagePort.getText(SESSIONS_DIR, SESSION_FILE))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
-        AgentSession session = service.getOrCreate("telegram", "123");
+        AgentSession session = service.getOrCreate(CHANNEL_TELEGRAM, CHAT_ID);
         for (int i = 0; i < 10; i++) {
-            session.addMessage(Message.builder().role("user").content("msg" + i).timestamp(Instant.now()).build());
+            session.addMessage(
+                    Message.builder().role(ROLE_USER).content(MSG_PREFIX + i).timestamp(Instant.now()).build());
         }
 
-        int removed = service.compactMessages("telegram:123", 3);
+        int removed = service.compactMessages(SESSION_ID, 3);
 
         assertEquals(7, removed);
         assertEquals(3, session.getMessages().size());
@@ -229,34 +240,35 @@ class SessionServiceTest {
 
     @Test
     void compactMessagesReturnsMinusOneForUnknownSession() {
-        int result = service.compactMessages("nonexistent", 5);
+        int result = service.compactMessages(NONEXISTENT, 5);
         assertEquals(-1, result);
     }
 
     @Test
     void compactMessagesReturnsZeroWhenNotEnoughMessages() {
-        when(storagePort.getText("sessions", "telegram:123.json"))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("not found")));
+        when(storagePort.getText(SESSIONS_DIR, SESSION_FILE))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
-        AgentSession session = service.getOrCreate("telegram", "123");
-        session.addMessage(Message.builder().role("user").content("msg").timestamp(Instant.now()).build());
+        AgentSession session = service.getOrCreate(CHANNEL_TELEGRAM, CHAT_ID);
+        session.addMessage(Message.builder().role(ROLE_USER).content(MSG_PREFIX).timestamp(Instant.now()).build());
 
-        int removed = service.compactMessages("telegram:123", 5);
+        int removed = service.compactMessages(SESSION_ID, 5);
 
         assertEquals(0, removed);
     }
 
     @Test
     void compactMessagesKeepLastEqualsTotal() {
-        when(storagePort.getText("sessions", "telegram:123.json"))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("not found")));
+        when(storagePort.getText(SESSIONS_DIR, SESSION_FILE))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
-        AgentSession session = service.getOrCreate("telegram", "123");
+        AgentSession session = service.getOrCreate(CHANNEL_TELEGRAM, CHAT_ID);
         for (int i = 0; i < 5; i++) {
-            session.addMessage(Message.builder().role("user").content("msg" + i).timestamp(Instant.now()).build());
+            session.addMessage(
+                    Message.builder().role(ROLE_USER).content(MSG_PREFIX + i).timestamp(Instant.now()).build());
         }
 
-        int removed = service.compactMessages("telegram:123", 5);
+        int removed = service.compactMessages(SESSION_ID, 5);
 
         assertEquals(0, removed);
         assertEquals(5, session.getMessages().size());
@@ -266,39 +278,40 @@ class SessionServiceTest {
 
     @Test
     void compactWithSummaryReplaceOldMessagesWithSummary() {
-        when(storagePort.getText("sessions", "telegram:123.json"))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("not found")));
+        when(storagePort.getText(SESSIONS_DIR, SESSION_FILE))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
-        AgentSession session = service.getOrCreate("telegram", "123");
+        AgentSession session = service.getOrCreate(CHANNEL_TELEGRAM, CHAT_ID);
         for (int i = 0; i < 10; i++) {
-            session.addMessage(Message.builder().role("user").content("msg" + i).timestamp(Instant.now()).build());
+            session.addMessage(
+                    Message.builder().role(ROLE_USER).content(MSG_PREFIX + i).timestamp(Instant.now()).build());
         }
 
-        Message summary = Message.builder().role("system").content("[Summary]").timestamp(Instant.now()).build();
-        int removed = service.compactWithSummary("telegram:123", 3, summary);
+        Message summary = Message.builder().role("system").content(SUMMARY_TEXT).timestamp(Instant.now()).build();
+        int removed = service.compactWithSummary(SESSION_ID, 3, summary);
 
         assertEquals(7, removed);
         assertEquals(4, session.getMessages().size()); // summary + 3 kept
-        assertEquals("[Summary]", session.getMessages().get(0).getContent());
+        assertEquals(SUMMARY_TEXT, session.getMessages().get(0).getContent());
         assertEquals("msg7", session.getMessages().get(1).getContent());
     }
 
     @Test
     void compactWithSummaryReturnsMinusOneForUnknownSession() {
-        Message summary = Message.builder().role("system").content("[Summary]").timestamp(Instant.now()).build();
-        assertEquals(-1, service.compactWithSummary("nonexistent", 3, summary));
+        Message summary = Message.builder().role("system").content(SUMMARY_TEXT).timestamp(Instant.now()).build();
+        assertEquals(-1, service.compactWithSummary(NONEXISTENT, 3, summary));
     }
 
     @Test
     void compactWithSummaryReturnsZeroWhenNotEnough() {
-        when(storagePort.getText("sessions", "telegram:123.json"))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("not found")));
+        when(storagePort.getText(SESSIONS_DIR, SESSION_FILE))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
-        AgentSession session = service.getOrCreate("telegram", "123");
-        session.addMessage(Message.builder().role("user").content("msg").timestamp(Instant.now()).build());
+        AgentSession session = service.getOrCreate(CHANNEL_TELEGRAM, CHAT_ID);
+        session.addMessage(Message.builder().role(ROLE_USER).content(MSG_PREFIX).timestamp(Instant.now()).build());
 
-        Message summary = Message.builder().role("system").content("[Summary]").timestamp(Instant.now()).build();
-        int removed = service.compactWithSummary("telegram:123", 5, summary);
+        Message summary = Message.builder().role("system").content(SUMMARY_TEXT).timestamp(Instant.now()).build();
+        int removed = service.compactWithSummary(SESSION_ID, 5, summary);
 
         assertEquals(0, removed);
     }
@@ -307,15 +320,16 @@ class SessionServiceTest {
 
     @Test
     void getMessagesToCompactReturnsOldMessages() {
-        when(storagePort.getText("sessions", "telegram:123.json"))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("not found")));
+        when(storagePort.getText(SESSIONS_DIR, SESSION_FILE))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
-        AgentSession session = service.getOrCreate("telegram", "123");
+        AgentSession session = service.getOrCreate(CHANNEL_TELEGRAM, CHAT_ID);
         for (int i = 0; i < 10; i++) {
-            session.addMessage(Message.builder().role("user").content("msg" + i).timestamp(Instant.now()).build());
+            session.addMessage(
+                    Message.builder().role(ROLE_USER).content(MSG_PREFIX + i).timestamp(Instant.now()).build());
         }
 
-        List<Message> toCompact = service.getMessagesToCompact("telegram:123", 3);
+        List<Message> toCompact = service.getMessagesToCompact(SESSION_ID, 3);
 
         assertEquals(7, toCompact.size());
         assertEquals("msg0", toCompact.get(0).getContent());
@@ -324,36 +338,36 @@ class SessionServiceTest {
 
     @Test
     void getMessagesToCompactReturnsEmptyForUnknown() {
-        assertTrue(service.getMessagesToCompact("nonexistent", 5).isEmpty());
+        assertTrue(service.getMessagesToCompact(NONEXISTENT, 5).isEmpty());
     }
 
     @Test
     void getMessagesToCompactReturnsEmptyWhenNotEnough() {
-        when(storagePort.getText("sessions", "telegram:123.json"))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("not found")));
+        when(storagePort.getText(SESSIONS_DIR, SESSION_FILE))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
-        AgentSession session = service.getOrCreate("telegram", "123");
-        session.addMessage(Message.builder().role("user").content("msg").timestamp(Instant.now()).build());
+        AgentSession session = service.getOrCreate(CHANNEL_TELEGRAM, CHAT_ID);
+        session.addMessage(Message.builder().role(ROLE_USER).content(MSG_PREFIX).timestamp(Instant.now()).build());
 
-        assertTrue(service.getMessagesToCompact("telegram:123", 5).isEmpty());
+        assertTrue(service.getMessagesToCompact(SESSION_ID, 5).isEmpty());
     }
 
     // ==================== getMessageCount ====================
 
     @Test
     void getMessageCountReturnsZeroForUnknown() {
-        assertEquals(0, service.getMessageCount("nonexistent"));
+        assertEquals(0, service.getMessageCount(NONEXISTENT));
     }
 
     @Test
     void getMessageCountReturnsCorrectCount() {
-        when(storagePort.getText("sessions", "telegram:123.json"))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("not found")));
+        when(storagePort.getText(SESSIONS_DIR, SESSION_FILE))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
-        AgentSession session = service.getOrCreate("telegram", "123");
-        session.addMessage(Message.builder().role("user").content("a").timestamp(Instant.now()).build());
+        AgentSession session = service.getOrCreate(CHANNEL_TELEGRAM, CHAT_ID);
+        session.addMessage(Message.builder().role(ROLE_USER).content("a").timestamp(Instant.now()).build());
         session.addMessage(Message.builder().role("assistant").content("b").timestamp(Instant.now()).build());
 
-        assertEquals(2, service.getMessageCount("telegram:123"));
+        assertEquals(2, service.getMessageCount(SESSION_ID));
     }
 }

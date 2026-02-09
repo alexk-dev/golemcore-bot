@@ -16,6 +16,11 @@ import static org.mockito.Mockito.*;
 
 class SkillServiceTest {
 
+    private static final String SKILLS_DIR = "skills";
+    private static final String SKILL_FILE = "SKILL.md";
+    private static final String GREETING_PREFIX = "greeting/";
+    private static final String BAD_PREFIX = "bad/";
+
     private StoragePort storagePort;
     private BotProperties properties;
     private SkillVariableResolver variableResolver;
@@ -31,7 +36,7 @@ class SkillServiceTest {
         when(variableResolver.resolveVariables(any(), any())).thenReturn(Map.of());
         when(variableResolver.findMissingRequired(any(), any())).thenReturn(List.of());
 
-        when(storagePort.listObjects(eq("skills"), eq("")))
+        when(storagePort.listObjects(eq(SKILLS_DIR), eq("")))
                 .thenReturn(CompletableFuture.completedFuture(List.of()));
 
         service = new SkillService(storagePort, properties, variableResolver);
@@ -39,12 +44,12 @@ class SkillServiceTest {
 
     private void loadSkills(String... keys) {
         List<String> keyList = List.of(keys);
-        when(storagePort.listObjects("skills", ""))
+        when(storagePort.listObjects(SKILLS_DIR, ""))
                 .thenReturn(CompletableFuture.completedFuture(keyList));
     }
 
     private void stubSkillContent(String key, String content) {
-        when(storagePort.getText("skills", key))
+        when(storagePort.getText(SKILLS_DIR, key))
                 .thenReturn(CompletableFuture.completedFuture(content));
     }
 
@@ -59,8 +64,8 @@ class SkillServiceTest {
                 ---
                 You are a friendly greeter.
                 """;
-        loadSkills("greeting/SKILL.md");
-        stubSkillContent("greeting/SKILL.md", skillContent);
+        loadSkills(GREETING_PREFIX + SKILL_FILE);
+        stubSkillContent(GREETING_PREFIX + SKILL_FILE, skillContent);
 
         service.reload();
 
@@ -77,8 +82,8 @@ class SkillServiceTest {
                 ---
                 Content 1
                 """;
-        loadSkills("skill1/SKILL.md");
-        stubSkillContent("skill1/SKILL.md", skill1);
+        loadSkills("skill1/" + SKILL_FILE);
+        stubSkillContent("skill1/" + SKILL_FILE, skill1);
         service.reload();
 
         assertEquals(1, service.getAllSkills().size());
@@ -91,8 +96,8 @@ class SkillServiceTest {
                 ---
                 Content 2
                 """;
-        loadSkills("skill2/SKILL.md");
-        stubSkillContent("skill2/SKILL.md", skill2);
+        loadSkills("skill2/" + SKILL_FILE);
+        stubSkillContent("skill2/" + SKILL_FILE, skill2);
         service.reload();
 
         assertEquals(1, service.getAllSkills().size());
@@ -101,7 +106,7 @@ class SkillServiceTest {
 
     @Test
     void reloadHandlesStorageFailure() {
-        when(storagePort.listObjects("skills", ""))
+        when(storagePort.listObjects(SKILLS_DIR, ""))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("storage error")));
 
         assertDoesNotThrow(() -> service.reload());
@@ -109,8 +114,8 @@ class SkillServiceTest {
 
     @Test
     void reloadSkipsNonSkillFiles() {
-        loadSkills("readme.md", "notes.txt", "greeting/SKILL.md");
-        stubSkillContent("greeting/SKILL.md", """
+        loadSkills("readme.md", "notes.txt", GREETING_PREFIX + SKILL_FILE);
+        stubSkillContent(GREETING_PREFIX + SKILL_FILE, """
                 ---
                 name: greeting
                 description: test
@@ -121,13 +126,13 @@ class SkillServiceTest {
         service.reload();
 
         assertEquals(1, service.getAllSkills().size());
-        verify(storagePort, never()).getText("skills", "readme.md");
+        verify(storagePort, never()).getText(SKILLS_DIR, "readme.md");
     }
 
     @Test
     void reloadLoadsSkillMdAtRoot() {
-        loadSkills("SKILL.md");
-        stubSkillContent("SKILL.md", """
+        loadSkills(SKILL_FILE);
+        stubSkillContent(SKILL_FILE, """
                 ---
                 name: root-skill
                 description: Root level skill
@@ -142,8 +147,8 @@ class SkillServiceTest {
 
     @Test
     void reloadSkipsBlankContent() {
-        loadSkills("empty/SKILL.md");
-        stubSkillContent("empty/SKILL.md", "   ");
+        loadSkills("empty/" + SKILL_FILE);
+        stubSkillContent("empty/" + SKILL_FILE, "   ");
 
         service.reload();
 
@@ -152,8 +157,8 @@ class SkillServiceTest {
 
     @Test
     void reloadSkipsNullContent() {
-        loadSkills("null/SKILL.md");
-        when(storagePort.getText("skills", "null/SKILL.md"))
+        loadSkills("null/" + SKILL_FILE);
+        when(storagePort.getText(SKILLS_DIR, "null/" + SKILL_FILE))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
         service.reload();
@@ -165,8 +170,8 @@ class SkillServiceTest {
 
     @Test
     void parseSkillWithValidFrontmatter() {
-        loadSkills("summarize/SKILL.md");
-        stubSkillContent("summarize/SKILL.md", """
+        loadSkills("summarize/" + SKILL_FILE);
+        stubSkillContent("summarize/" + SKILL_FILE, """
                 ---
                 name: summarize
                 description: Summarize text
@@ -185,8 +190,8 @@ class SkillServiceTest {
 
     @Test
     void parseSkillWithoutFrontmatter() {
-        loadSkills("simple/SKILL.md");
-        stubSkillContent("simple/SKILL.md", "Just plain content without frontmatter.");
+        loadSkills("simple/" + SKILL_FILE);
+        stubSkillContent("simple/" + SKILL_FILE, "Just plain content without frontmatter.");
 
         service.reload();
 
@@ -198,8 +203,8 @@ class SkillServiceTest {
 
     @Test
     void parseSkillWithInvalidYaml() {
-        loadSkills("bad/SKILL.md");
-        stubSkillContent("bad/SKILL.md", """
+        loadSkills(BAD_PREFIX + SKILL_FILE);
+        stubSkillContent(BAD_PREFIX + SKILL_FILE, """
                 ---
                 name: [invalid yaml here!!!
                 ---
@@ -215,8 +220,8 @@ class SkillServiceTest {
 
     @Test
     void parseSkillExtractsNameFromPath() {
-        loadSkills("my-skill/SKILL.md");
-        stubSkillContent("my-skill/SKILL.md", """
+        loadSkills("my-skill/" + SKILL_FILE);
+        stubSkillContent("my-skill/" + SKILL_FILE, """
                 ---
                 description: No name in frontmatter
                 ---
@@ -232,8 +237,8 @@ class SkillServiceTest {
 
     @Test
     void parseSkillFrontmatterNameOverridesPath() {
-        loadSkills("dir-name/SKILL.md");
-        stubSkillContent("dir-name/SKILL.md", """
+        loadSkills("dir-name/" + SKILL_FILE);
+        stubSkillContent("dir-name/" + SKILL_FILE, """
                 ---
                 name: custom-name
                 description: Custom
@@ -251,8 +256,8 @@ class SkillServiceTest {
 
     @Test
     void parseSkillWithMcpConfig() {
-        loadSkills("github/SKILL.md");
-        stubSkillContent("github/SKILL.md", """
+        loadSkills("github/" + SKILL_FILE);
+        stubSkillContent("github/" + SKILL_FILE, """
                 ---
                 name: github
                 description: GitHub skill
@@ -279,8 +284,8 @@ class SkillServiceTest {
 
     @Test
     void parseSkillMcpConfigWithBlankCommand() {
-        loadSkills("nomcp/SKILL.md");
-        stubSkillContent("nomcp/SKILL.md", """
+        loadSkills("nomcp/" + SKILL_FILE);
+        stubSkillContent("nomcp/" + SKILL_FILE, """
                 ---
                 name: nomcp
                 description: test
@@ -299,8 +304,8 @@ class SkillServiceTest {
 
     @Test
     void parseSkillMcpConfigUsesDefaults() {
-        loadSkills("defaults/SKILL.md");
-        stubSkillContent("defaults/SKILL.md", """
+        loadSkills("defaults/" + SKILL_FILE);
+        stubSkillContent("defaults/" + SKILL_FILE, """
                 ---
                 name: defaults
                 description: test
@@ -323,8 +328,8 @@ class SkillServiceTest {
 
     @Test
     void parseSkillWithNextSkill() {
-        loadSkills("step1/SKILL.md");
-        stubSkillContent("step1/SKILL.md", """
+        loadSkills("step1/" + SKILL_FILE);
+        stubSkillContent("step1/" + SKILL_FILE, """
                 ---
                 name: step1
                 description: First step
@@ -342,8 +347,8 @@ class SkillServiceTest {
 
     @Test
     void parseSkillWithConditionalNextSkills() {
-        loadSkills("router/SKILL.md");
-        stubSkillContent("router/SKILL.md", """
+        loadSkills("router/" + SKILL_FILE);
+        stubSkillContent("router/" + SKILL_FILE, """
                 ---
                 name: router
                 description: Route skill
@@ -364,8 +369,8 @@ class SkillServiceTest {
 
     @Test
     void parseSkillConditionalNextSkillsIgnoresNullValues() {
-        loadSkills("nullval/SKILL.md");
-        stubSkillContent("nullval/SKILL.md", """
+        loadSkills("nullval/" + SKILL_FILE);
+        stubSkillContent("nullval/" + SKILL_FILE, """
                 ---
                 name: nullval
                 description: test
@@ -388,8 +393,8 @@ class SkillServiceTest {
 
     @Test
     void parseSkillWithMissingEnvRequirement() {
-        loadSkills("needsenv/SKILL.md");
-        stubSkillContent("needsenv/SKILL.md", """
+        loadSkills("needsenv/" + SKILL_FILE);
+        stubSkillContent("needsenv/" + SKILL_FILE, """
                 ---
                 name: needsenv
                 description: Needs env
@@ -409,8 +414,8 @@ class SkillServiceTest {
 
     @Test
     void parseSkillAvailableWithNoRequirements() {
-        loadSkills("noreq/SKILL.md");
-        stubSkillContent("noreq/SKILL.md", """
+        loadSkills("noreq/" + SKILL_FILE);
+        stubSkillContent("noreq/" + SKILL_FILE, """
                 ---
                 name: noreq
                 description: No requirements
@@ -429,8 +434,8 @@ class SkillServiceTest {
 
     @Test
     void parseSkillWithMissingRequiredVariables() {
-        loadSkills("needsvar/SKILL.md");
-        stubSkillContent("needsvar/SKILL.md", """
+        loadSkills("needsvar/" + SKILL_FILE);
+        stubSkillContent("needsvar/" + SKILL_FILE, """
                 ---
                 name: needsvar
                 description: test
@@ -457,15 +462,15 @@ class SkillServiceTest {
 
     @Test
     void getAvailableSkillsFiltersUnavailable() {
-        loadSkills("avail/SKILL.md", "unavail/SKILL.md");
-        stubSkillContent("avail/SKILL.md", """
+        loadSkills("avail/" + SKILL_FILE, "unavail/" + SKILL_FILE);
+        stubSkillContent("avail/" + SKILL_FILE, """
                 ---
                 name: avail
                 description: Available
                 ---
                 Content
                 """);
-        stubSkillContent("unavail/SKILL.md", """
+        stubSkillContent("unavail/" + SKILL_FILE, """
                 ---
                 name: unavail
                 description: Unavailable
@@ -500,8 +505,8 @@ class SkillServiceTest {
 
     @Test
     void getSkillContentReturnsContent() {
-        loadSkills("test/SKILL.md");
-        stubSkillContent("test/SKILL.md", """
+        loadSkills("test/" + SKILL_FILE);
+        stubSkillContent("test/" + SKILL_FILE, """
                 ---
                 name: test
                 description: Test
@@ -517,5 +522,144 @@ class SkillServiceTest {
     @Test
     void getComponentTypeReturnsSkill() {
         assertEquals("skill", service.getComponentType());
+    }
+
+    // ==================== Edge cases for loadSkillInto null guard
+    // ====================
+
+    @Test
+    void reloadHandlesGetTextExceptionForSingleSkill() {
+        String goodContent = """
+                ---
+                name: good
+                description: Good skill
+                ---
+                Good content
+                """;
+
+        loadSkills(BAD_PREFIX + SKILL_FILE, "good/" + SKILL_FILE);
+        when(storagePort.getText(SKILLS_DIR, BAD_PREFIX + SKILL_FILE))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("read error")));
+        stubSkillContent("good/" + SKILL_FILE, goodContent);
+
+        service.reload();
+
+        assertEquals(1, service.getAllSkills().size());
+        assertTrue(service.findByName("good").isPresent());
+    }
+
+    @Test
+    void extractNameFromPathWithSingleSegment() {
+        loadSkills(SKILL_FILE);
+        stubSkillContent(SKILL_FILE, """
+                ---
+                description: Root skill
+                ---
+                Content
+                """);
+
+        service.reload();
+
+        // Single-segment path "SKILL.md" -> extractNameFromPath returns "unknown"
+        // because parts.length < 2
+        Optional<Skill> skill = service.findByName("unknown");
+        assertTrue(skill.isPresent());
+        assertEquals("Root skill", skill.get().getDescription());
+    }
+
+    @Test
+    void parseSkillMcpConfigWithNoEnvSection() {
+        loadSkills("noenv/" + SKILL_FILE);
+        stubSkillContent("noenv/" + SKILL_FILE, """
+                ---
+                name: noenv
+                description: MCP no env
+                mcp:
+                  command: some-server
+                ---
+                Content
+                """);
+
+        service.reload();
+
+        Optional<Skill> skill = service.findByName("noenv");
+        assertTrue(skill.isPresent());
+        assertNotNull(skill.get().getMcpConfig());
+        assertEquals("some-server", skill.get().getMcpConfig().getCommand());
+        assertTrue(skill.get().getMcpConfig().getEnv().isEmpty());
+    }
+
+    @Test
+    void parseSkillWithEmptyBody() {
+        loadSkills("empty-body/" + SKILL_FILE);
+        stubSkillContent("empty-body/" + SKILL_FILE, """
+                ---
+                name: empty-body
+                description: Empty body skill
+                ---
+                """);
+
+        service.reload();
+
+        Optional<Skill> skill = service.findByName("empty-body");
+        assertTrue(skill.isPresent());
+        assertEquals("", skill.get().getContent());
+    }
+
+    @Test
+    void parseSkillMcpConfigWithNullCommand() {
+        loadSkills("nullcmd/" + SKILL_FILE);
+        stubSkillContent("nullcmd/" + SKILL_FILE, """
+                ---
+                name: nullcmd
+                description: test
+                mcp:
+                  startup_timeout: 10
+                ---
+                Content
+                """);
+
+        service.reload();
+
+        Optional<Skill> skill = service.findByName("nullcmd");
+        assertTrue(skill.isPresent());
+        assertNull(skill.get().getMcpConfig());
+    }
+
+    @Test
+    void parseSkillConditionalNextSkillsWithNonMapType() {
+        loadSkills("badcns/" + SKILL_FILE);
+        stubSkillContent("badcns/" + SKILL_FILE, """
+                ---
+                name: badcns
+                description: test
+                conditional_next_skills: not-a-map
+                ---
+                Content
+                """);
+
+        service.reload();
+
+        Optional<Skill> skill = service.findByName("badcns");
+        assertTrue(skill.isPresent());
+        assertTrue(skill.get().getConditionalNextSkills().isEmpty());
+    }
+
+    @Test
+    void getSkillsSummaryIncludesAvailableSkills() {
+        loadSkills("s1/" + SKILL_FILE);
+        stubSkillContent("s1/" + SKILL_FILE, """
+                ---
+                name: s1
+                description: First skill
+                ---
+                Content
+                """);
+
+        service.reload();
+
+        String summary = service.getSkillsSummary();
+        assertFalse(summary.isEmpty());
+        assertTrue(summary.contains("s1"));
     }
 }

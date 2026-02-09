@@ -2,9 +2,15 @@ package me.golemcore.bot.adapter.inbound.telegram;
 
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TelegramHtmlFormatterTest {
+
+    private static final String PRE_TAG = "<pre>";
+    private static final String EXPECTED_LINE_BREAK = "line1\nline2";
 
     @Test
     void nullAndBlank() {
@@ -70,7 +76,7 @@ class TelegramHtmlFormatterTest {
     void codeBlock() {
         String input = "```java\nSystem.out.println(\"hello\");\n```";
         String result = TelegramHtmlFormatter.format(input);
-        assertTrue(result.contains("<pre>"));
+        assertTrue(result.contains(PRE_TAG));
         assertTrue(result.contains("System.out.println"));
         assertTrue(result.contains("</pre>"));
     }
@@ -80,7 +86,7 @@ class TelegramHtmlFormatterTest {
         String input = "```\nList<String> x = new ArrayList<>();\n```";
         String result = TelegramHtmlFormatter.format(input);
         assertTrue(result.contains("&lt;String&gt;"));
-        assertTrue(result.contains("<pre>"));
+        assertTrue(result.contains(PRE_TAG));
     }
 
     @Test
@@ -141,10 +147,10 @@ class TelegramHtmlFormatterTest {
 
     @Test
     void brTagsConvertedToNewlines() {
-        assertEquals("line1\nline2", TelegramHtmlFormatter.format("line1<br>line2"));
-        assertEquals("line1\nline2", TelegramHtmlFormatter.format("line1<br/>line2"));
-        assertEquals("line1\nline2", TelegramHtmlFormatter.format("line1<br />line2"));
-        assertEquals("line1\nline2", TelegramHtmlFormatter.format("line1<BR>line2"));
+        assertEquals(EXPECTED_LINE_BREAK, TelegramHtmlFormatter.format("line1<br>line2"));
+        assertEquals(EXPECTED_LINE_BREAK, TelegramHtmlFormatter.format("line1<br/>line2"));
+        assertEquals(EXPECTED_LINE_BREAK, TelegramHtmlFormatter.format("line1<br />line2"));
+        assertEquals(EXPECTED_LINE_BREAK, TelegramHtmlFormatter.format("line1<BR>line2"));
     }
 
     @Test
@@ -160,7 +166,7 @@ class TelegramHtmlFormatterTest {
     void smallTableRenderedAsPre() {
         String input = "| Name | Age |\n|------|-----|\n| Alice | 30 |\n| Bob | 25 |\n";
         String result = TelegramHtmlFormatter.format(input);
-        assertTrue(result.contains("<pre>"), "should use <pre> for small tables");
+        assertTrue(result.contains(PRE_TAG), "should use <pre> for small tables");
         assertTrue(result.contains("Alice"), "should contain data");
         assertTrue(result.contains("│"), "should have column separators");
         assertTrue(result.contains("─"), "should have row separator");
@@ -174,7 +180,7 @@ class TelegramHtmlFormatterTest {
         String result = TelegramHtmlFormatter.format(input);
         assertTrue(result.contains("<b>"), "should use bold titles in list format");
         assertTrue(result.contains("▪"), "should have bullet markers");
-        assertFalse(result.contains("<pre>"), "should NOT use <pre> for wide tables");
+        assertFalse(result.contains(PRE_TAG), "should NOT use <pre> for wide tables");
         assertTrue(result.contains("Model:"), "should show header as key");
         assertTrue(result.contains("Description:"), "should show header as key");
     }
@@ -203,7 +209,7 @@ class TelegramHtmlFormatterTest {
         String result = TelegramHtmlFormatter.format(input);
         assertTrue(result.contains("Here is a table:"), "text before table preserved");
         assertTrue(result.contains("End of text."), "text after table preserved");
-        assertTrue(result.contains("<pre>") || result.contains("▪"), "table should be converted");
+        assertTrue(result.contains(PRE_TAG) || result.contains("▪"), "table should be converted");
     }
 
     @Test

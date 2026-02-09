@@ -15,6 +15,16 @@ import static org.mockito.Mockito.*;
 
 class SkillVariableResolverTest {
 
+    private static final String TEST_SKILL = "test-skill";
+    private static final String VAR_KEY = "KEY";
+    private static final String VAR_API_KEY = "API_KEY";
+    private static final String VAR_ENDPOINT = "ENDPOINT";
+    private static final String VAR_TIMEOUT = "TIMEOUT";
+    private static final String DEFAULT_TIMEOUT = "30";
+    private static final String DEFAULT_ENDPOINT = "https://api.example.com";
+    private static final String VARIABLES_FILE = "variables.json";
+    private static final String YAML_KEY_DEFAULT = "default";
+
     private SkillVariableResolver resolver;
     private StoragePort mockStorage;
 
@@ -33,7 +43,7 @@ class SkillVariableResolverTest {
     @Test
     void parseVariableDefinitions_fullDefinition() {
         Map<String, Object> vars = new LinkedHashMap<>();
-        vars.put("API_KEY", Map.of(
+        vars.put(VAR_API_KEY, Map.of(
                 "description", "API key",
                 "required", true,
                 "secret", true));
@@ -42,7 +52,7 @@ class SkillVariableResolverTest {
 
         assertEquals(1, result.size());
         SkillVariable v = result.get(0);
-        assertEquals("API_KEY", v.getName());
+        assertEquals(VAR_API_KEY, v.getName());
         assertEquals("API key", v.getDescription());
         assertTrue(v.isRequired());
         assertTrue(v.isSecret());
@@ -52,14 +62,14 @@ class SkillVariableResolverTest {
     @Test
     void parseVariableDefinitions_withDefault() {
         Map<String, Object> vars = new LinkedHashMap<>();
-        vars.put("ENDPOINT", Map.of(
+        vars.put(VAR_ENDPOINT, Map.of(
                 "description", "API endpoint",
-                "default", "https://api.example.com"));
+                YAML_KEY_DEFAULT, DEFAULT_ENDPOINT));
 
         List<SkillVariable> result = resolver.parseVariableDefinitions(vars);
 
         assertEquals(1, result.size());
-        assertEquals("https://api.example.com", result.get(0).getDefaultValue());
+        assertEquals(DEFAULT_ENDPOINT, result.get(0).getDefaultValue());
         assertFalse(result.get(0).isRequired());
         assertFalse(result.get(0).isSecret());
     }
@@ -67,13 +77,13 @@ class SkillVariableResolverTest {
     @Test
     void parseVariableDefinitions_shorthandString() {
         Map<String, Object> vars = new LinkedHashMap<>();
-        vars.put("TIMEOUT", "30");
+        vars.put(VAR_TIMEOUT, DEFAULT_TIMEOUT);
 
         List<SkillVariable> result = resolver.parseVariableDefinitions(vars);
 
         assertEquals(1, result.size());
-        assertEquals("TIMEOUT", result.get(0).getName());
-        assertEquals("30", result.get(0).getDefaultValue());
+        assertEquals(VAR_TIMEOUT, result.get(0).getName());
+        assertEquals(DEFAULT_TIMEOUT, result.get(0).getDefaultValue());
         assertFalse(result.get(0).isRequired());
     }
 
@@ -92,9 +102,9 @@ class SkillVariableResolverTest {
     @Test
     void parseVariableDefinitions_multipleVars() {
         Map<String, Object> vars = new LinkedHashMap<>();
-        vars.put("KEY", Map.of("required", true, "secret", true));
-        vars.put("ENDPOINT", "https://default.api.com");
-        vars.put("TIMEOUT", Map.of("default", "30"));
+        vars.put(VAR_KEY, Map.of("required", true, "secret", true));
+        vars.put(VAR_ENDPOINT, "https://default.api.com");
+        vars.put(VAR_TIMEOUT, Map.of(YAML_KEY_DEFAULT, DEFAULT_TIMEOUT));
 
         List<SkillVariable> result = resolver.parseVariableDefinitions(vars);
 
@@ -105,35 +115,35 @@ class SkillVariableResolverTest {
 
     @Test
     void resolveVariables_fromPerSkillVarsJson() {
-        when(mockStorage.getText("skills", "test-skill/vars.json"))
+        when(mockStorage.getText("skills", TEST_SKILL + "/vars.json"))
                 .thenReturn(CompletableFuture.completedFuture(
                         "{\"API_KEY\": \"per-skill-key\"}"));
 
         List<SkillVariable> defs = List.of(
-                SkillVariable.builder().name("API_KEY").required(true).build());
+                SkillVariable.builder().name(VAR_API_KEY).required(true).build());
 
-        Map<String, String> result = resolver.resolveVariables("test-skill", defs);
+        Map<String, String> result = resolver.resolveVariables(TEST_SKILL, defs);
 
-        assertEquals("per-skill-key", result.get("API_KEY"));
+        assertEquals("per-skill-key", result.get(VAR_API_KEY));
     }
 
     @Test
     void resolveVariables_fromGlobalSkillSection() {
-        when(mockStorage.getText("", "variables.json"))
+        when(mockStorage.getText("", VARIABLES_FILE))
                 .thenReturn(CompletableFuture.completedFuture(
                         "{\"test-skill\": {\"API_KEY\": \"global-skill-key\"}}"));
 
         List<SkillVariable> defs = List.of(
-                SkillVariable.builder().name("API_KEY").required(true).build());
+                SkillVariable.builder().name(VAR_API_KEY).required(true).build());
 
-        Map<String, String> result = resolver.resolveVariables("test-skill", defs);
+        Map<String, String> result = resolver.resolveVariables(TEST_SKILL, defs);
 
-        assertEquals("global-skill-key", result.get("API_KEY"));
+        assertEquals("global-skill-key", result.get(VAR_API_KEY));
     }
 
     @Test
     void resolveVariables_fromGlobalSection() {
-        when(mockStorage.getText("", "variables.json"))
+        when(mockStorage.getText("", VARIABLES_FILE))
                 .thenReturn(CompletableFuture.completedFuture(
                         "{\"_global\": {\"DEFAULT_LANG\": \"ru\"}}"));
 
@@ -148,53 +158,53 @@ class SkillVariableResolverTest {
     @Test
     void resolveVariables_fromDefault() {
         List<SkillVariable> defs = List.of(
-                SkillVariable.builder().name("TIMEOUT").defaultValue("30").build());
+                SkillVariable.builder().name(VAR_TIMEOUT).defaultValue(DEFAULT_TIMEOUT).build());
 
-        Map<String, String> result = resolver.resolveVariables("test-skill", defs);
+        Map<String, String> result = resolver.resolveVariables(TEST_SKILL, defs);
 
-        assertEquals("30", result.get("TIMEOUT"));
+        assertEquals(DEFAULT_TIMEOUT, result.get(VAR_TIMEOUT));
     }
 
     @Test
     void resolveVariables_priority_perSkillOverridesGlobal() {
-        when(mockStorage.getText("skills", "test-skill/vars.json"))
+        when(mockStorage.getText("skills", TEST_SKILL + "/vars.json"))
                 .thenReturn(CompletableFuture.completedFuture(
                         "{\"KEY\": \"per-skill\"}"));
-        when(mockStorage.getText("", "variables.json"))
+        when(mockStorage.getText("", VARIABLES_FILE))
                 .thenReturn(CompletableFuture.completedFuture(
                         "{\"_global\": {\"KEY\": \"global\"}, \"test-skill\": {\"KEY\": \"global-skill\"}}"));
 
         List<SkillVariable> defs = List.of(
-                SkillVariable.builder().name("KEY").defaultValue("default").build());
+                SkillVariable.builder().name(VAR_KEY).defaultValue(YAML_KEY_DEFAULT).build());
 
-        Map<String, String> result = resolver.resolveVariables("test-skill", defs);
+        Map<String, String> result = resolver.resolveVariables(TEST_SKILL, defs);
 
-        assertEquals("per-skill", result.get("KEY"));
+        assertEquals("per-skill", result.get(VAR_KEY));
     }
 
     @Test
     void resolveVariables_priority_globalSkillSectionOverridesGlobal() {
-        when(mockStorage.getText("", "variables.json"))
+        when(mockStorage.getText("", VARIABLES_FILE))
                 .thenReturn(CompletableFuture.completedFuture(
                         "{\"_global\": {\"KEY\": \"global\"}, \"test-skill\": {\"KEY\": \"global-skill\"}}"));
 
         List<SkillVariable> defs = List.of(
-                SkillVariable.builder().name("KEY").defaultValue("default").build());
+                SkillVariable.builder().name(VAR_KEY).defaultValue(YAML_KEY_DEFAULT).build());
 
-        Map<String, String> result = resolver.resolveVariables("test-skill", defs);
+        Map<String, String> result = resolver.resolveVariables(TEST_SKILL, defs);
 
-        assertEquals("global-skill", result.get("KEY"));
+        assertEquals("global-skill", result.get(VAR_KEY));
     }
 
     @Test
     void resolveVariables_emptyDefinitions() {
-        Map<String, String> result = resolver.resolveVariables("test-skill", List.of());
+        Map<String, String> result = resolver.resolveVariables(TEST_SKILL, List.of());
         assertTrue(result.isEmpty());
     }
 
     @Test
     void resolveVariables_nullDefinitions() {
-        Map<String, String> result = resolver.resolveVariables("test-skill", null);
+        Map<String, String> result = resolver.resolveVariables(TEST_SKILL, null);
         assertTrue(result.isEmpty());
     }
 
@@ -203,7 +213,7 @@ class SkillVariableResolverTest {
         List<SkillVariable> defs = List.of(
                 SkillVariable.builder().name("NONEXISTENT_VAR_XYZ_12345").build());
 
-        Map<String, String> result = resolver.resolveVariables("test-skill", defs);
+        Map<String, String> result = resolver.resolveVariables(TEST_SKILL, defs);
 
         assertFalse(result.containsKey("NONEXISTENT_VAR_XYZ_12345"));
     }
@@ -213,20 +223,20 @@ class SkillVariableResolverTest {
     @Test
     void findMissingRequired_detectsMissing() {
         List<SkillVariable> defs = List.of(
-                SkillVariable.builder().name("KEY").required(true).build(),
+                SkillVariable.builder().name(VAR_KEY).required(true).build(),
                 SkillVariable.builder().name("OPTIONAL").build());
         Map<String, String> resolved = Map.of("OPTIONAL", "value");
 
         List<String> missing = resolver.findMissingRequired(defs, resolved);
 
-        assertEquals(List.of("KEY"), missing);
+        assertEquals(List.of(VAR_KEY), missing);
     }
 
     @Test
     void findMissingRequired_noneWhenAllResolved() {
         List<SkillVariable> defs = List.of(
-                SkillVariable.builder().name("KEY").required(true).build());
-        Map<String, String> resolved = Map.of("KEY", "value");
+                SkillVariable.builder().name(VAR_KEY).required(true).build());
+        Map<String, String> resolved = Map.of(VAR_KEY, "value");
 
         List<String> missing = resolver.findMissingRequired(defs, resolved);
 
@@ -244,16 +254,16 @@ class SkillVariableResolverTest {
     @Test
     void maskSecrets_masksSecretValues() {
         List<SkillVariable> defs = List.of(
-                SkillVariable.builder().name("KEY").secret(true).build(),
-                SkillVariable.builder().name("ENDPOINT").build());
+                SkillVariable.builder().name(VAR_KEY).secret(true).build(),
+                SkillVariable.builder().name(VAR_ENDPOINT).build());
         Map<String, String> resolved = Map.of(
-                "KEY", "sk-abc123",
-                "ENDPOINT", "https://api.example.com");
+                VAR_KEY, "sk-abc123",
+                VAR_ENDPOINT, DEFAULT_ENDPOINT);
 
         Map<String, String> masked = resolver.maskSecrets(defs, resolved);
 
-        assertEquals("***", masked.get("KEY"));
-        assertEquals("https://api.example.com", masked.get("ENDPOINT"));
+        assertEquals("***", masked.get(VAR_KEY));
+        assertEquals(DEFAULT_ENDPOINT, masked.get(VAR_ENDPOINT));
     }
 
     @Test

@@ -4,7 +4,7 @@
 
 ```bash
 ./mvnw clean package -DskipTests   # build
-./mvnw test                         # 878 tests
+./mvnw test                         # run tests
 ./mvnw clean verify -P strict       # full check (tests + PMD + SpotBugs)
 ```
 
@@ -204,7 +204,7 @@ BREAKING CHANGE: skill YAML files must use next_skill instead of nextSkill.
 
 ## Testing
 
-878 tests. Tests mirror main source structure.
+Tests mirror main source structure.
 
 - Test class: `*Test` suffix
 - Test method: `shouldDoSomethingWhenCondition()` — no `test` prefix
@@ -289,3 +289,11 @@ mcp:
 ### Voice
 
 ElevenLabs for STT + TTS. Voice prefix mechanism: LLM starts response with `🔊` -> `ResponseRoutingSystem` detects, strips prefix, synthesizes TTS, sends voice. Falls back to text on failure.
+
+**API Documentation:**
+- [ElevenLabs API Reference](https://elevenlabs.io/docs/api-reference/overview)
+- [Error Messages & Status Codes](https://elevenlabs.io/docs/developers/resources/error-messages)
+- STT endpoint: `POST /v1/speech-to-text` (model: `scribe_v1`)
+- TTS endpoint: `POST /v1/text-to-speech/{voice_id}`
+
+**Error Handling:** Handles 401 (auth), 429 (rate limit), 500/503 (server errors), network errors. See `ElevenLabsAdapter` for implementation.
