@@ -63,6 +63,8 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 public class LlmAdapterFactory implements LlmPort {
 
+    private static final String PROVIDER_NONE = "none";
+
     private final BotProperties properties;
     private final List<LlmProviderAdapter> adapters;
 
@@ -83,12 +85,12 @@ public class LlmAdapterFactory implements LlmPort {
 
         if (activeAdapter == null) {
             // Fallback to noop if configured provider not found
-            activeAdapter = adaptersByProvider.get("none");
+            activeAdapter = adaptersByProvider.get(PROVIDER_NONE);
             if (activeAdapter == null && !adapters.isEmpty()) {
                 activeAdapter = adapters.get(0);
             }
             log.warn("Provider '{}' not found, using: {}",
-                    provider, activeAdapter != null ? activeAdapter.getProviderId() : "none");
+                    provider, activeAdapter != null ? activeAdapter.getProviderId() : PROVIDER_NONE);
         } else {
             log.info("Active LLM provider: {}", provider);
         }
@@ -137,7 +139,7 @@ public class LlmAdapterFactory implements LlmPort {
 
     @Override
     public String getProviderId() {
-        return activeAdapter != null ? activeAdapter.getProviderId() : "none";
+        return activeAdapter != null ? activeAdapter.getProviderId() : PROVIDER_NONE;
     }
 
     @Override
@@ -162,7 +164,7 @@ public class LlmAdapterFactory implements LlmPort {
 
     @Override
     public String getCurrentModel() {
-        return activeAdapter != null ? activeAdapter.getCurrentModel() : "none";
+        return activeAdapter != null ? activeAdapter.getCurrentModel() : PROVIDER_NONE;
     }
 
     @Override

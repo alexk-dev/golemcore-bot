@@ -62,6 +62,8 @@ import java.util.Map;
 public class ModelConfigService {
 
     private static final String CONFIG_FILE = "models.json";
+    private static final String PROVIDER_OPENAI = "openai";
+    private static final String PROVIDER_ANTHROPIC = "anthropic";
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private ModelsConfig config;
@@ -106,24 +108,24 @@ public class ModelConfigService {
         ModelsConfig cfg = new ModelsConfig();
 
         // OpenAI reasoning models
-        cfg.getModels().put("gpt-5.1", new ModelSettings("openai", true, false));
-        cfg.getModels().put("gpt-5.2", new ModelSettings("openai", true, false));
-        cfg.getModels().put("o1", new ModelSettings("openai", true, false));
-        cfg.getModels().put("o3", new ModelSettings("openai", true, false));
-        cfg.getModels().put("o3-mini", new ModelSettings("openai", true, false));
+        cfg.getModels().put("gpt-5.1", new ModelSettings(PROVIDER_OPENAI, true, false));
+        cfg.getModels().put("gpt-5.2", new ModelSettings(PROVIDER_OPENAI, true, false));
+        cfg.getModels().put("o1", new ModelSettings(PROVIDER_OPENAI, true, false));
+        cfg.getModels().put("o3", new ModelSettings(PROVIDER_OPENAI, true, false));
+        cfg.getModels().put("o3-mini", new ModelSettings(PROVIDER_OPENAI, true, false));
 
         // OpenAI standard models
-        cfg.getModels().put("gpt-4o", new ModelSettings("openai", false, true));
-        cfg.getModels().put("gpt-4-turbo", new ModelSettings("openai", false, true));
+        cfg.getModels().put("gpt-4o", new ModelSettings(PROVIDER_OPENAI, false, true));
+        cfg.getModels().put("gpt-4-turbo", new ModelSettings(PROVIDER_OPENAI, false, true));
 
         // Anthropic models
-        cfg.getModels().put("claude-sonnet-4-20250514", new ModelSettings("anthropic", false, true));
-        cfg.getModels().put("claude-3-5-sonnet", new ModelSettings("anthropic", false, true));
-        cfg.getModels().put("claude-3-opus", new ModelSettings("anthropic", false, true));
-        cfg.getModels().put("claude-3-haiku", new ModelSettings("anthropic", false, true));
+        cfg.getModels().put("claude-sonnet-4-20250514", new ModelSettings(PROVIDER_ANTHROPIC, false, true));
+        cfg.getModels().put("claude-3-5-sonnet", new ModelSettings(PROVIDER_ANTHROPIC, false, true));
+        cfg.getModels().put("claude-3-opus", new ModelSettings(PROVIDER_ANTHROPIC, false, true));
+        cfg.getModels().put("claude-3-haiku", new ModelSettings(PROVIDER_ANTHROPIC, false, true));
 
         // Defaults
-        cfg.setDefaults(new ModelSettings("openai", false, true));
+        cfg.setDefaults(new ModelSettings(PROVIDER_OPENAI, false, true));
 
         return cfg;
     }
@@ -212,7 +214,7 @@ public class ModelConfigService {
     @Data
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class ModelSettings {
-        private String provider = "openai";
+        private String provider = PROVIDER_OPENAI;
         private boolean reasoningRequired = false;
         private boolean supportsTemperature = true;
         /**

@@ -98,13 +98,9 @@ jobs:
       - name: Build, test and analyze
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
-          SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
         run: >
           ./mvnw clean verify sonar:sonar
           -DskipGitHooks=true
-          -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}
-          -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}
 
   build-and-push:
     name: Push to GHCR
@@ -130,10 +126,14 @@ jobs:
       - name: Determine image tags
         id: tags
         run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
           if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            echo "tags=latest,${{ github.sha }}" >> $GITHUB_OUTPUT
+            echo "tags=latest,${SHORT_SHA}" >> $GITHUB_OUTPUT
+            echo "image=${IMAGE}:${SHORT_SHA}" >> $GITHUB_OUTPUT
           else
-            echo "tags=${{ github.sha }}" >> $GITHUB_OUTPUT
+            echo "tags=dev-${SHORT_SHA}" >> $GITHUB_OUTPUT
+            echo "image=${IMAGE}:dev-${SHORT_SHA}" >> $GITHUB_OUTPUT
           fi
 
       - name: Build and push image to GHCR
@@ -145,3 +145,20 @@ jobs:
             -Djib.to.tags=${{ steps.tags.outputs.tags }} \
             -Djib.to.auth.username=${{ github.actor }} \
             -Djib.to.auth.password=${{ secrets.GITHUB_TOKEN }}
+
+      - name: Job Summary
+        run: |
+          echo "## Docker Image Published" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Image** | \`${{ steps.tags.outputs.image }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Tags** | \`${{ steps.tags.outputs.tags }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Registry** | ${{ env.REGISTRY }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Branch** | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit** | \`$(echo "${{ github.sha }}" | cut -c1-7)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Pull command" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ steps.tags.outputs.image }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
