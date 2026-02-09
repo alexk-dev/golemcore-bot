@@ -1,7 +1,12 @@
 package me.golemcore.bot.domain.system;
 
 import me.golemcore.bot.domain.component.ToolComponent;
-import me.golemcore.bot.domain.model.*;
+import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.Attachment;
+import me.golemcore.bot.domain.model.LlmResponse;
+import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.ToolConfirmationPolicy;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.ChannelPort;
@@ -22,6 +27,23 @@ import static org.mockito.Mockito.*;
 
 class ToolExecutionSystemTest {
 
+    private static final String TOOL_CALL_ID = "tc1";
+    private static final String TOOL_SHELL = "shell";
+    private static final String TOOL_DATETIME = "datetime";
+    private static final String CHAT_ID = "chat1";
+    private static final String SESSION_ID = "test-session";
+    private static final String CHANNEL_TYPE = "telegram";
+    private static final String ARG_COMMAND = "command";
+    private static final String ARG_OPERATION = "operation";
+    private static final String ARG_NOW = "now";
+    private static final String ATTR_PENDING_ATTACHMENTS = "pendingAttachments";
+    private static final String MIME_IMAGE_PNG = "image/png";
+    private static final String MIME_APP_PDF = "application/pdf";
+    private static final String TOOL_BROWSE = "browse";
+    private static final String TOOL_NAME_TEST = "test";
+    private static final String KEY_ATTACHMENT = "attachment";
+    private static final String SUPPRESS_UNCHECKED = "unchecked";
+
     private ToolExecutionSystem system;
     private ToolComponent shellTool;
     private ToolComponent dateTimeTool;
@@ -33,17 +55,17 @@ class ToolExecutionSystemTest {
     @BeforeEach
     void setUp() {
         shellTool = mock(ToolComponent.class);
-        when(shellTool.getToolName()).thenReturn("shell");
+        when(shellTool.getToolName()).thenReturn(TOOL_SHELL);
         when(shellTool.isEnabled()).thenReturn(true);
 
         dateTimeTool = mock(ToolComponent.class);
-        when(dateTimeTool.getToolName()).thenReturn("datetime");
+        when(dateTimeTool.getToolName()).thenReturn(TOOL_DATETIME);
         when(dateTimeTool.isEnabled()).thenReturn(true);
 
         confirmationPolicy = mock(ToolConfirmationPolicy.class);
         confirmationPort = mock(ConfirmationPort.class);
         channelPort = mock(ChannelPort.class);
-        when(channelPort.getChannelType()).thenReturn("telegram");
+        when(channelPort.getChannelType()).thenReturn(CHANNEL_TYPE);
         when(channelPort.sendMessage(anyString(), anyString())).thenReturn(CompletableFuture.completedFuture(null));
 
         properties = new BotProperties();
@@ -55,9 +77,9 @@ class ToolExecutionSystemTest {
 
     private AgentContext createContextWithToolCalls(List<Message.ToolCall> toolCalls) {
         AgentSession session = AgentSession.builder()
-                .id("test-session")
-                .chatId("chat1")
-                .channelType("telegram")
+                .id(SESSION_ID)
+                .chatId(CHAT_ID)
+                .channelType(CHANNEL_TYPE)
                 .messages(new ArrayList<>())
                 .build();
 
@@ -78,15 +100,15 @@ class ToolExecutionSystemTest {
     @Test
     void confirmedToolCallExecutes() {
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("tc1")
-                .name("shell")
-                .arguments(Map.of("command", "echo hello"))
+                .id(TOOL_CALL_ID)
+                .name(TOOL_SHELL)
+                .arguments(Map.of(ARG_COMMAND, "echo hello"))
                 .build();
 
         when(confirmationPolicy.requiresConfirmation(toolCall)).thenReturn(true);
         when(confirmationPolicy.describeAction(toolCall)).thenReturn("Run command: echo hello");
         when(confirmationPort.isAvailable()).thenReturn(true);
-        when(confirmationPort.requestConfirmation(eq("chat1"), eq("shell"), anyString()))
+        when(confirmationPort.requestConfirmation(eq(CHAT_ID), eq(TOOL_SHELL), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(true));
         when(shellTool.execute(any())).thenReturn(CompletableFuture.completedFuture(ToolResult.success("hello\n")));
 
@@ -103,15 +125,15 @@ class ToolExecutionSystemTest {
     @Test
     void deniedToolCallReturnsCancelled() {
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("tc1")
-                .name("shell")
-                .arguments(Map.of("command", "rm -rf test"))
+                .id(TOOL_CALL_ID)
+                .name(TOOL_SHELL)
+                .arguments(Map.of(ARG_COMMAND, "rm -rf test"))
                 .build();
 
         when(confirmationPolicy.requiresConfirmation(toolCall)).thenReturn(true);
         when(confirmationPolicy.describeAction(toolCall)).thenReturn("Run command: rm -rf test");
         when(confirmationPort.isAvailable()).thenReturn(true);
-        when(confirmationPort.requestConfirmation(eq("chat1"), eq("shell"), anyString()))
+        when(confirmationPort.requestConfirmation(eq(CHAT_ID), eq(TOOL_SHELL), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(false));
 
         AgentContext context = createContextWithToolCalls(List.of(toolCall));
@@ -126,9 +148,9 @@ class ToolExecutionSystemTest {
     @Test
     void nonDestructiveToolSkipsConfirmation() {
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("tc1")
-                .name("datetime")
-                .arguments(Map.of("operation", "now"))
+                .id(TOOL_CALL_ID)
+                .name(TOOL_DATETIME)
+                .arguments(Map.of(ARG_OPERATION, ARG_NOW))
                 .build();
 
         when(confirmationPolicy.requiresConfirmation(toolCall)).thenReturn(false);
@@ -145,9 +167,9 @@ class ToolExecutionSystemTest {
     @Test
     void confirmationUnavailableSkipsConfirmation() {
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("tc1")
-                .name("shell")
-                .arguments(Map.of("command", "ls"))
+                .id(TOOL_CALL_ID)
+                .name(TOOL_SHELL)
+                .arguments(Map.of(ARG_COMMAND, "ls"))
                 .build();
 
         when(confirmationPolicy.requiresConfirmation(toolCall)).thenReturn(true);
@@ -164,9 +186,9 @@ class ToolExecutionSystemTest {
     @Test
     void disabledConfirmationSendsNotificationForNotableAction() {
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("tc1")
-                .name("shell")
-                .arguments(Map.of("command", "echo hello"))
+                .id(TOOL_CALL_ID)
+                .name(TOOL_SHELL)
+                .arguments(Map.of(ARG_COMMAND, "echo hello"))
                 .build();
 
         when(confirmationPolicy.requiresConfirmation(toolCall)).thenReturn(false);
@@ -180,15 +202,15 @@ class ToolExecutionSystemTest {
 
         verify(shellTool).execute(any());
         verify(confirmationPort, never()).requestConfirmation(any(), any(), any());
-        verify(channelPort).sendMessage(eq("chat1"), contains("Run command: echo hello"));
+        verify(channelPort).sendMessage(eq(CHAT_ID), contains("Run command: echo hello"));
     }
 
     @Test
     void disabledConfirmationNoNotificationForNonNotableAction() {
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("tc1")
-                .name("datetime")
-                .arguments(Map.of("operation", "now"))
+                .id(TOOL_CALL_ID)
+                .name(TOOL_DATETIME)
+                .arguments(Map.of(ARG_OPERATION, ARG_NOW))
                 .build();
 
         when(confirmationPolicy.requiresConfirmation(toolCall)).thenReturn(false);
@@ -207,9 +229,9 @@ class ToolExecutionSystemTest {
     @Test
     void enabledConfirmationNoNotificationForNotableAction() {
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("tc1")
-                .name("datetime")
-                .arguments(Map.of("operation", "now"))
+                .id(TOOL_CALL_ID)
+                .name(TOOL_DATETIME)
+                .arguments(Map.of(ARG_OPERATION, ARG_NOW))
                 .build();
 
         // Enabled but doesn't require confirmation (non-notable tool)
@@ -228,13 +250,13 @@ class ToolExecutionSystemTest {
 
     @Test
     void smallToolResultNotTruncated() {
-        String result = system.truncateToolResult("short result", "test");
+        String result = system.truncateToolResult("short result", TOOL_NAME_TEST);
         assertEquals("short result", result);
     }
 
     @Test
     void nullToolResultPassesThrough() {
-        assertNull(system.truncateToolResult(null, "test"));
+        assertNull(system.truncateToolResult(null, TOOL_NAME_TEST));
     }
 
     @Test
@@ -242,7 +264,7 @@ class ToolExecutionSystemTest {
         properties.getAutoCompact().setMaxToolResultChars(200);
         String largeContent = "x".repeat(500);
 
-        String result = system.truncateToolResult(largeContent, "shell");
+        String result = system.truncateToolResult(largeContent, TOOL_SHELL);
 
         assertTrue(result.length() <= 200 + 10, "Result should be approximately maxChars");
         assertTrue(result.contains("[OUTPUT TRUNCATED:"));
@@ -256,9 +278,9 @@ class ToolExecutionSystemTest {
         String hugeOutput = "data".repeat(100); // 400 chars
 
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("tc1")
-                .name("shell")
-                .arguments(Map.of("command", "fetch_data"))
+                .id(TOOL_CALL_ID)
+                .name(TOOL_SHELL)
+                .arguments(Map.of(ARG_COMMAND, "fetch_data"))
                 .build();
 
         when(confirmationPolicy.requiresConfirmation(toolCall)).thenReturn(false);
@@ -279,7 +301,7 @@ class ToolExecutionSystemTest {
         properties.getAutoCompact().setMaxToolResultChars(0);
         String largeContent = "x".repeat(500);
 
-        String result = system.truncateToolResult(largeContent, "test");
+        String result = system.truncateToolResult(largeContent, TOOL_NAME_TEST);
         assertEquals(largeContent, result); // Not truncated
     }
 
@@ -291,16 +313,16 @@ class ToolExecutionSystemTest {
                 .type(Attachment.Type.IMAGE)
                 .data(new byte[] { 1, 2, 3 })
                 .filename("test.png")
-                .mimeType("image/png")
+                .mimeType(MIME_IMAGE_PNG)
                 .build();
 
-        ToolResult result = ToolResult.success("done", Map.of("attachment", attachment));
+        ToolResult result = ToolResult.success("done", Map.of(KEY_ATTACHMENT, attachment));
         AgentContext context = createContextWithToolCalls(List.of());
 
-        system.extractAttachment(context, result, "browse");
+        system.extractAttachment(context, result, TOOL_BROWSE);
 
-        @SuppressWarnings("unchecked")
-        List<Attachment> pending = context.getAttribute("pendingAttachments");
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<Attachment> pending = context.getAttribute(ATTR_PENDING_ATTACHMENTS);
         assertNotNull(pending);
         assertEquals(1, pending.size());
         assertEquals("test.png", pending.get(0).getFilename());
@@ -315,14 +337,14 @@ class ToolExecutionSystemTest {
         ToolResult result = ToolResult.success("captured", Map.of("screenshot_base64", b64, "format", "png"));
         AgentContext context = createContextWithToolCalls(List.of());
 
-        system.extractAttachment(context, result, "browse");
+        system.extractAttachment(context, result, TOOL_BROWSE);
 
-        @SuppressWarnings("unchecked")
-        List<Attachment> pending = context.getAttribute("pendingAttachments");
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<Attachment> pending = context.getAttribute(ATTR_PENDING_ATTACHMENTS);
         assertNotNull(pending);
         assertEquals(1, pending.size());
         assertEquals("screenshot.png", pending.get(0).getFilename());
-        assertEquals("image/png", pending.get(0).getMimeType());
+        assertEquals(MIME_IMAGE_PNG, pending.get(0).getMimeType());
         assertArrayEquals(imageBytes, pending.get(0).getData());
     }
 
@@ -333,15 +355,15 @@ class ToolExecutionSystemTest {
         Map<String, Object> data = new HashMap<>();
         data.put("file_bytes", fileBytes);
         data.put("filename", "report.pdf");
-        data.put("mime_type", "application/pdf");
+        data.put("mime_type", MIME_APP_PDF);
 
         ToolResult result = ToolResult.success("queued", data);
         AgentContext context = createContextWithToolCalls(List.of());
 
         system.extractAttachment(context, result, "filesystem");
 
-        @SuppressWarnings("unchecked")
-        List<Attachment> pending = context.getAttribute("pendingAttachments");
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<Attachment> pending = context.getAttribute(ATTR_PENDING_ATTACHMENTS);
         assertNotNull(pending);
         assertEquals(1, pending.size());
         assertEquals("report.pdf", pending.get(0).getFilename());
@@ -363,8 +385,8 @@ class ToolExecutionSystemTest {
 
         system.extractAttachment(context, result, "filesystem");
 
-        @SuppressWarnings("unchecked")
-        List<Attachment> pending = context.getAttribute("pendingAttachments");
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<Attachment> pending = context.getAttribute(ATTR_PENDING_ATTACHMENTS);
         assertNotNull(pending);
         assertEquals(Attachment.Type.IMAGE, pending.get(0).getType());
     }
@@ -374,9 +396,9 @@ class ToolExecutionSystemTest {
         ToolResult result = ToolResult.failure("something went wrong");
         AgentContext context = createContextWithToolCalls(List.of());
 
-        system.extractAttachment(context, result, "browse");
+        system.extractAttachment(context, result, TOOL_BROWSE);
 
-        List<?> pending = context.getAttribute("pendingAttachments");
+        List<?> pending = context.getAttribute(ATTR_PENDING_ATTACHMENTS);
         assertNull(pending);
     }
 
@@ -385,9 +407,9 @@ class ToolExecutionSystemTest {
         ToolResult result = ToolResult.success("done", "just a string");
         AgentContext context = createContextWithToolCalls(List.of());
 
-        system.extractAttachment(context, result, "browse");
+        system.extractAttachment(context, result, TOOL_BROWSE);
 
-        List<?> pending = context.getAttribute("pendingAttachments");
+        List<?> pending = context.getAttribute(ATTR_PENDING_ATTACHMENTS);
         assertNull(pending);
     }
 
@@ -397,22 +419,22 @@ class ToolExecutionSystemTest {
                 .type(Attachment.Type.IMAGE)
                 .data(new byte[] { 1 })
                 .filename("img1.png")
-                .mimeType("image/png")
+                .mimeType(MIME_IMAGE_PNG)
                 .build();
         Attachment a2 = Attachment.builder()
                 .type(Attachment.Type.DOCUMENT)
                 .data(new byte[] { 2 })
                 .filename("doc.pdf")
-                .mimeType("application/pdf")
+                .mimeType(MIME_APP_PDF)
                 .build();
 
         AgentContext context = createContextWithToolCalls(List.of());
 
-        system.extractAttachment(context, ToolResult.success("ok", Map.of("attachment", a1)), "t1");
-        system.extractAttachment(context, ToolResult.success("ok", Map.of("attachment", a2)), "t2");
+        system.extractAttachment(context, ToolResult.success("ok", Map.of(KEY_ATTACHMENT, a1)), "t1");
+        system.extractAttachment(context, ToolResult.success("ok", Map.of(KEY_ATTACHMENT, a2)), "t2");
 
-        @SuppressWarnings("unchecked")
-        List<Attachment> pending = context.getAttribute("pendingAttachments");
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<Attachment> pending = context.getAttribute(ATTR_PENDING_ATTACHMENTS);
         assertNotNull(pending);
         assertEquals(2, pending.size());
     }
@@ -423,21 +445,21 @@ class ToolExecutionSystemTest {
                 .type(Attachment.Type.IMAGE)
                 .data(new byte[] { 1, 2, 3 })
                 .filename("explicit.png")
-                .mimeType("image/png")
+                .mimeType(MIME_IMAGE_PNG)
                 .build();
 
         String b64 = Base64.getEncoder().encodeToString(new byte[] { 10, 20 });
         Map<String, Object> data = new HashMap<>();
-        data.put("attachment", explicit);
+        data.put(KEY_ATTACHMENT, explicit);
         data.put("screenshot_base64", b64);
 
         ToolResult result = ToolResult.success("ok", data);
         AgentContext context = createContextWithToolCalls(List.of());
 
-        system.extractAttachment(context, result, "browse");
+        system.extractAttachment(context, result, TOOL_BROWSE);
 
-        @SuppressWarnings("unchecked")
-        List<Attachment> pending = context.getAttribute("pendingAttachments");
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<Attachment> pending = context.getAttribute(ATTR_PENDING_ATTACHMENTS);
         assertEquals(1, pending.size());
         assertEquals("explicit.png", pending.get(0).getFilename());
     }
@@ -448,25 +470,25 @@ class ToolExecutionSystemTest {
                 .type(Attachment.Type.IMAGE)
                 .data(new byte[] { 1, 2, 3 })
                 .filename("screenshot.png")
-                .mimeType("image/png")
+                .mimeType(MIME_IMAGE_PNG)
                 .build();
 
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("tc1")
-                .name("datetime")
-                .arguments(Map.of("operation", "now"))
+                .id(TOOL_CALL_ID)
+                .name(TOOL_DATETIME)
+                .arguments(Map.of(ARG_OPERATION, ARG_NOW))
                 .build();
 
         when(confirmationPolicy.requiresConfirmation(toolCall)).thenReturn(false);
         when(dateTimeTool.execute(any())).thenReturn(
                 CompletableFuture.completedFuture(
-                        ToolResult.success("done", Map.of("attachment", attachment))));
+                        ToolResult.success("done", Map.of(KEY_ATTACHMENT, attachment))));
 
         AgentContext context = createContextWithToolCalls(List.of(toolCall));
         system.process(context);
 
-        @SuppressWarnings("unchecked")
-        List<Attachment> pending = context.getAttribute("pendingAttachments");
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<Attachment> pending = context.getAttribute(ATTR_PENDING_ATTACHMENTS);
         assertNotNull(pending);
         assertEquals(1, pending.size());
         assertEquals("screenshot.png", pending.get(0).getFilename());
@@ -477,7 +499,7 @@ class ToolExecutionSystemTest {
     @Test
     void unknownToolReturnsError() {
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("tc1")
+                .id(TOOL_CALL_ID)
                 .name("nonexistent_tool")
                 .arguments(Map.of())
                 .build();
@@ -497,9 +519,9 @@ class ToolExecutionSystemTest {
         when(shellTool.isEnabled()).thenReturn(false);
 
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("tc1")
-                .name("shell")
-                .arguments(Map.of("command", "ls"))
+                .id(TOOL_CALL_ID)
+                .name(TOOL_SHELL)
+                .arguments(Map.of(ARG_COMMAND, "ls"))
                 .build();
 
         when(confirmationPolicy.requiresConfirmation(toolCall)).thenReturn(false);
@@ -514,9 +536,9 @@ class ToolExecutionSystemTest {
     @Test
     void toolExecutionExceptionReturnsError() {
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("tc1")
-                .name("shell")
-                .arguments(Map.of("command", "bad"))
+                .id(TOOL_CALL_ID)
+                .name(TOOL_SHELL)
+                .arguments(Map.of(ARG_COMMAND, "bad"))
                 .build();
 
         when(confirmationPolicy.requiresConfirmation(toolCall)).thenReturn(false);
@@ -544,14 +566,14 @@ class ToolExecutionSystemTest {
     @Test
     void multipleToolCallsAllExecuted() {
         Message.ToolCall tc1 = Message.ToolCall.builder()
-                .id("tc1")
-                .name("shell")
-                .arguments(Map.of("command", "ls"))
+                .id(TOOL_CALL_ID)
+                .name(TOOL_SHELL)
+                .arguments(Map.of(ARG_COMMAND, "ls"))
                 .build();
         Message.ToolCall tc2 = Message.ToolCall.builder()
                 .id("tc2")
-                .name("datetime")
-                .arguments(Map.of("operation", "now"))
+                .name(TOOL_DATETIME)
+                .arguments(Map.of(ARG_OPERATION, ARG_NOW))
                 .build();
 
         when(confirmationPolicy.requiresConfirmation(any())).thenReturn(false);
@@ -572,9 +594,9 @@ class ToolExecutionSystemTest {
     @Test
     void toolNameSanitization() {
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("tc1")
+                .id(TOOL_CALL_ID)
                 .name("shell<|channel|>commentary")
-                .arguments(Map.of("command", "ls"))
+                .arguments(Map.of(ARG_COMMAND, "ls"))
                 .build();
 
         when(confirmationPolicy.requiresConfirmation(toolCall)).thenReturn(false);
@@ -591,8 +613,8 @@ class ToolExecutionSystemTest {
         String longId = "call_" + "a".repeat(50);
         Message.ToolCall toolCall = Message.ToolCall.builder()
                 .id(longId)
-                .name("datetime")
-                .arguments(Map.of("operation", "now"))
+                .name(TOOL_DATETIME)
+                .arguments(Map.of(ARG_OPERATION, ARG_NOW))
                 .build();
 
         when(confirmationPolicy.requiresConfirmation(toolCall)).thenReturn(false);
@@ -609,15 +631,15 @@ class ToolExecutionSystemTest {
     @Test
     void confirmationFailureDefaultsToDeny() {
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("tc1")
-                .name("shell")
-                .arguments(Map.of("command", "rm test"))
+                .id(TOOL_CALL_ID)
+                .name(TOOL_SHELL)
+                .arguments(Map.of(ARG_COMMAND, "rm test"))
                 .build();
 
         when(confirmationPolicy.requiresConfirmation(toolCall)).thenReturn(true);
         when(confirmationPolicy.describeAction(toolCall)).thenReturn("Delete file");
         when(confirmationPort.isAvailable()).thenReturn(true);
-        when(confirmationPort.requestConfirmation(eq("chat1"), eq("shell"), anyString()))
+        when(confirmationPort.requestConfirmation(eq(CHAT_ID), eq(TOOL_SHELL), anyString()))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("timeout")));
 
         AgentContext context = createContextWithToolCalls(List.of(toolCall));
@@ -632,7 +654,7 @@ class ToolExecutionSystemTest {
         properties.getAutoCompact().setMaxToolResultChars(50);
         String exactContent = "x".repeat(50);
 
-        String result = system.truncateToolResult(exactContent, "test");
+        String result = system.truncateToolResult(exactContent, TOOL_NAME_TEST);
 
         assertEquals(exactContent, result); // exactly at boundary, not truncated
     }
@@ -642,9 +664,9 @@ class ToolExecutionSystemTest {
         ToolResult result = ToolResult.success("captured", Map.of("screenshot_base64", "not-valid-base64!!!"));
         AgentContext context = createContextWithToolCalls(List.of());
 
-        system.extractAttachment(context, result, "browse");
+        system.extractAttachment(context, result, TOOL_BROWSE);
 
-        List<?> pending = context.getAttribute("pendingAttachments");
+        List<?> pending = context.getAttribute(ATTR_PENDING_ATTACHMENTS);
         assertNull(pending); // invalid base64 should be skipped
     }
 
@@ -652,17 +674,17 @@ class ToolExecutionSystemTest {
     void extractAttachmentNullResult() {
         AgentContext context = createContextWithToolCalls(List.of());
 
-        system.extractAttachment(context, null, "browse");
+        system.extractAttachment(context, null, TOOL_BROWSE);
 
-        assertNull(context.getAttribute("pendingAttachments"));
+        assertNull(context.getAttribute(ATTR_PENDING_ATTACHMENTS));
     }
 
     @Test
     void toolFailureResultIncludesOutputWhenPresent() {
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("tc1")
-                .name("shell")
-                .arguments(Map.of("command", "bad-cmd"))
+                .id(TOOL_CALL_ID)
+                .name(TOOL_SHELL)
+                .arguments(Map.of(ARG_COMMAND, "bad-cmd"))
                 .build();
 
         when(confirmationPolicy.requiresConfirmation(toolCall)).thenReturn(false);

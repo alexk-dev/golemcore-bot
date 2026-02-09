@@ -19,6 +19,13 @@ import static org.mockito.Mockito.*;
 
 class HybridSkillMatcherTest {
 
+    private static final String SKILL_GREETING = "greeting";
+    private static final String SKILL_CODE_REVIEW = "code-review";
+    private static final String DESC_HANDLE_GREETINGS = "Handle greetings";
+    private static final String DESC_REVIEW_CODE = "Review code";
+    private static final String TIER_FAST = "fast";
+    private static final String QUERY_HELLO = "hello";
+
     private BotProperties properties;
     private EmbeddingPort embeddingPort;
     private SkillEmbeddingStore embeddingStore;
@@ -27,8 +34,8 @@ class HybridSkillMatcherTest {
     private HybridSkillMatcher matcher;
 
     private final List<Skill> skills = List.of(
-            Skill.builder().name("greeting").description("Handle greetings").available(true).build(),
-            Skill.builder().name("code-review").description("Review code").available(true).build());
+            Skill.builder().name(SKILL_GREETING).description(DESC_HANDLE_GREETINGS).available(true).build(),
+            Skill.builder().name(SKILL_CODE_REVIEW).description(DESC_REVIEW_CODE).available(true).build());
 
     @BeforeEach
     void setUp() {
@@ -59,7 +66,7 @@ class HybridSkillMatcherTest {
         properties.getRouter().getSkillMatcher().setEnabled(false);
         matcher = new HybridSkillMatcher(properties, embeddingPort, embeddingStore, llmClassifier, llmAdapterFactory);
 
-        SkillMatchResult result = matcher.match("hello", List.of(), skills).get(5, TimeUnit.SECONDS);
+        SkillMatchResult result = matcher.match(QUERY_HELLO, List.of(), skills).get(5, TimeUnit.SECONDS);
 
         assertNull(result.getSelectedSkill());
         assertEquals("Skill matcher disabled", result.getReason());
@@ -67,7 +74,7 @@ class HybridSkillMatcherTest {
 
     @Test
     void returnsNoMatchWhenNoSkills() throws Exception {
-        SkillMatchResult result = matcher.match("hello", List.of(), List.of()).get(5, TimeUnit.SECONDS);
+        SkillMatchResult result = matcher.match(QUERY_HELLO, List.of(), List.of()).get(5, TimeUnit.SECONDS);
 
         assertNull(result.getSelectedSkill());
         assertEquals("No skills available", result.getReason());
@@ -75,7 +82,7 @@ class HybridSkillMatcherTest {
 
     @Test
     void returnsNoMatchWhenNullSkills() throws Exception {
-        SkillMatchResult result = matcher.match("hello", List.of(), null).get(5, TimeUnit.SECONDS);
+        SkillMatchResult result = matcher.match(QUERY_HELLO, List.of(), null).get(5, TimeUnit.SECONDS);
 
         assertNull(result.getSelectedSkill());
     }
@@ -88,12 +95,13 @@ class HybridSkillMatcherTest {
                 .thenReturn(CompletableFuture.completedFuture(new float[] { 1.0f }));
         when(embeddingStore.findSimilar(any(), anyInt(), anyDouble()))
                 .thenReturn(List.of(
-                        SkillCandidate.builder().name("greeting").description("Handle greetings").semanticScore(0.97)
+                        SkillCandidate.builder().name(SKILL_GREETING).description(DESC_HANDLE_GREETINGS)
+                                .semanticScore(0.97)
                                 .build()));
 
         SkillMatchResult result = matcher.match("hi there", List.of(), skills).get(5, TimeUnit.SECONDS);
 
-        assertEquals("greeting", result.getSelectedSkill());
+        assertEquals(SKILL_GREETING, result.getSelectedSkill());
         assertEquals(0.97, result.getConfidence(), 0.01);
         assertFalse(result.isLlmClassifierUsed());
         verifyNoInteractions(llmClassifier);
@@ -104,21 +112,24 @@ class HybridSkillMatcherTest {
         when(embeddingPort.embed(anyString()))
                 .thenReturn(CompletableFuture.completedFuture(new float[] { 1.0f }));
         List<SkillCandidate> candidates = List.of(
-                SkillCandidate.builder().name("greeting").description("Handle greetings").semanticScore(0.80).build(),
-                SkillCandidate.builder().name("code-review").description("Review code").semanticScore(0.70).build());
+                SkillCandidate.builder().name(SKILL_GREETING).description(DESC_HANDLE_GREETINGS).semanticScore(0.80)
+                        .build(),
+                SkillCandidate.builder().name(SKILL_CODE_REVIEW).description(DESC_REVIEW_CODE).semanticScore(0.70)
+                        .build());
         when(embeddingStore.findSimilar(any(), anyInt(), anyDouble())).thenReturn(candidates);
 
         LlmPort classifierLlm = mock(LlmPort.class);
         when(llmAdapterFactory.getActiveAdapter()).thenReturn(classifierLlm);
         when(llmClassifier.classify(anyString(), anyList(), anyList(), any()))
                 .thenReturn(CompletableFuture.completedFuture(
-                        new LlmSkillClassifier.ClassificationResult("greeting", 0.9, "fast", "Greeting detected")));
+                        new LlmSkillClassifier.ClassificationResult(SKILL_GREETING, 0.9, TIER_FAST,
+                                "Greeting detected")));
 
         SkillMatchResult result = matcher.match("hello world", List.of(), skills).get(5, TimeUnit.SECONDS);
 
-        assertEquals("greeting", result.getSelectedSkill());
+        assertEquals(SKILL_GREETING, result.getSelectedSkill());
         assertEquals(0.9, result.getConfidence(), 0.01);
-        assertEquals("fast", result.getModelTier());
+        assertEquals(TIER_FAST, result.getModelTier());
         assertTrue(result.isLlmClassifierUsed());
     }
 
@@ -129,7 +140,8 @@ class HybridSkillMatcherTest {
         when(embeddingPort.embed(anyString()))
                 .thenReturn(CompletableFuture.completedFuture(new float[] { 1.0f }));
         List<SkillCandidate> candidates = List.of(
-                SkillCandidate.builder().name("code-review").description("Review code").semanticScore(0.85).build());
+                SkillCandidate.builder().name(SKILL_CODE_REVIEW).description(DESC_REVIEW_CODE).semanticScore(0.85)
+                        .build());
         when(embeddingStore.findSimilar(any(), anyInt(), anyDouble())).thenReturn(candidates);
 
         LlmPort classifierLlm = mock(LlmPort.class);
@@ -139,7 +151,7 @@ class HybridSkillMatcherTest {
 
         SkillMatchResult result = matcher.match("review my PR", List.of(), skills).get(5, TimeUnit.SECONDS);
 
-        assertEquals("code-review", result.getSelectedSkill());
+        assertEquals(SKILL_CODE_REVIEW, result.getSelectedSkill());
         assertEquals(0.85, result.getConfidence(), 0.01);
         assertFalse(result.isLlmClassifierUsed());
         assertTrue(result.getReason().contains("semantic fallback"));
@@ -179,7 +191,7 @@ class HybridSkillMatcherTest {
         SkillMatchResult result = matcher.match("something", List.of(), skills).get(5, TimeUnit.SECONDS);
 
         assertNull(result.getSelectedSkill());
-        assertEquals("fast", result.getModelTier());
+        assertEquals(TIER_FAST, result.getModelTier());
     }
 
     // ===== Re-indexing =====
@@ -191,7 +203,8 @@ class HybridSkillMatcherTest {
                 .thenReturn(CompletableFuture.completedFuture(new float[] { 1.0f }));
         when(embeddingStore.findSimilar(any(), anyInt(), anyDouble()))
                 .thenReturn(List.of(
-                        SkillCandidate.builder().name("greeting").description("Greet").semanticScore(0.99).build()));
+                        SkillCandidate.builder().name(SKILL_GREETING).description("Greet").semanticScore(0.99)
+                                .build()));
 
         matcher.match("hi", List.of(), skills).get(5, TimeUnit.SECONDS);
 
@@ -209,10 +222,10 @@ class HybridSkillMatcherTest {
         properties.getRouter().getSkillMatcher().getClassifier().setEnabled(false);
         matcher = new HybridSkillMatcher(properties, embeddingPort, embeddingStore, llmClassifier, llmAdapterFactory);
 
-        SkillMatchResult result = matcher.match("hello", List.of(), skills).get(5, TimeUnit.SECONDS);
+        SkillMatchResult result = matcher.match(QUERY_HELLO, List.of(), skills).get(5, TimeUnit.SECONDS);
 
         assertNull(result.getSelectedSkill());
-        assertEquals("fast", result.getModelTier());
+        assertEquals(TIER_FAST, result.getModelTier());
     }
 
     // ===== Index/ready/enabled =====
@@ -261,7 +274,8 @@ class HybridSkillMatcherTest {
         when(embeddingPort.embed(anyString()))
                 .thenReturn(CompletableFuture.completedFuture(new float[] { 1.0f }));
         List<SkillCandidate> candidates = List.of(
-                SkillCandidate.builder().name("code-review").description("Review code").semanticScore(0.85).build());
+                SkillCandidate.builder().name(SKILL_CODE_REVIEW).description(DESC_REVIEW_CODE).semanticScore(0.85)
+                        .build());
         when(embeddingStore.findSimilar(any(), anyInt(), anyDouble())).thenReturn(candidates);
 
         LlmPort classifierLlm = mock(LlmPort.class);
@@ -275,7 +289,7 @@ class HybridSkillMatcherTest {
 
         SkillMatchResult result = matcher.match("review my PR", List.of(), skills).get(5, TimeUnit.SECONDS);
 
-        assertEquals("code-review", result.getSelectedSkill());
+        assertEquals(SKILL_CODE_REVIEW, result.getSelectedSkill());
         assertFalse(result.isLlmClassifierUsed());
         assertTrue(result.getReason().contains("semantic fallback"));
     }
@@ -290,10 +304,10 @@ class HybridSkillMatcherTest {
         properties.getRouter().getSkillMatcher().getClassifier().setEnabled(false);
         matcher = new HybridSkillMatcher(properties, embeddingPort, embeddingStore, llmClassifier, llmAdapterFactory);
 
-        SkillMatchResult result = matcher.match("hello", List.of(), skills).get(5, TimeUnit.SECONDS);
+        SkillMatchResult result = matcher.match(QUERY_HELLO, List.of(), skills).get(5, TimeUnit.SECONDS);
 
         assertNull(result.getSelectedSkill());
-        assertEquals("fast", result.getModelTier());
+        assertEquals(TIER_FAST, result.getModelTier());
     }
 
     // ===== Classifier disabled → semantic only =====
@@ -307,11 +321,12 @@ class HybridSkillMatcherTest {
                 .thenReturn(CompletableFuture.completedFuture(new float[] { 1.0f }));
         when(embeddingStore.findSimilar(any(), anyInt(), anyDouble()))
                 .thenReturn(List.of(
-                        SkillCandidate.builder().name("greeting").description("Greet").semanticScore(0.80).build()));
+                        SkillCandidate.builder().name(SKILL_GREETING).description("Greet").semanticScore(0.80)
+                                .build()));
 
         SkillMatchResult result = matcher.match("hi", List.of(), skills).get(5, TimeUnit.SECONDS);
 
-        assertEquals("greeting", result.getSelectedSkill());
+        assertEquals(SKILL_GREETING, result.getSelectedSkill());
         assertFalse(result.isLlmClassifierUsed());
         verifyNoInteractions(llmClassifier);
     }

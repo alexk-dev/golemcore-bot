@@ -9,19 +9,42 @@ import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import me.golemcore.bot.infrastructure.http.FeignClientFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class CustomLlmAdapterTest {
+
+    private static final String API_URL = "https://api.example.com";
+    private static final String CONVERT_ARGS_TO_JSON = "convertArgsToJson";
+    private static final String PARSE_JSON_ARGS = "parseJsonArgs";
+    private static final String TEST_KEY = "test-key";
+    private static final String FINISH_REASON_STOP = "stop";
+    private static final String ROLE_USER = "user";
+    private static final String ROLE_ASSISTANT = "assistant";
+    private static final String WEATHER = "weather";
+    private static final String TEST_MODEL = "test-model";
+    private static final String API_KEY_VALUE = "key";
 
     private BotProperties properties;
     private FeignClientFactory feignClientFactory;
@@ -49,35 +72,35 @@ class CustomLlmAdapterTest {
 
     @Test
     void shouldBeAvailableWhenApiUrlAndKeyConfigured() {
-        properties.getLlm().getCustom().setApiUrl("https://api.example.com");
-        properties.getLlm().getCustom().setApiKey("test-key");
+        properties.getLlm().getCustom().setApiUrl(API_URL);
+        properties.getLlm().getCustom().setApiKey(TEST_KEY);
         assertTrue(adapter.isAvailable());
     }
 
     @Test
     void shouldNotBeAvailableWhenApiUrlMissing() {
         properties.getLlm().getCustom().setApiUrl(null);
-        properties.getLlm().getCustom().setApiKey("test-key");
+        properties.getLlm().getCustom().setApiKey(TEST_KEY);
         assertFalse(adapter.isAvailable());
     }
 
     @Test
     void shouldNotBeAvailableWhenApiUrlBlank() {
         properties.getLlm().getCustom().setApiUrl("  ");
-        properties.getLlm().getCustom().setApiKey("test-key");
+        properties.getLlm().getCustom().setApiKey(TEST_KEY);
         assertFalse(adapter.isAvailable());
     }
 
     @Test
     void shouldNotBeAvailableWhenApiKeyMissing() {
-        properties.getLlm().getCustom().setApiUrl("https://api.example.com");
+        properties.getLlm().getCustom().setApiUrl(API_URL);
         properties.getLlm().getCustom().setApiKey(null);
         assertFalse(adapter.isAvailable());
     }
 
     @Test
     void shouldNotBeAvailableWhenApiKeyBlank() {
-        properties.getLlm().getCustom().setApiUrl("https://api.example.com");
+        properties.getLlm().getCustom().setApiUrl(API_URL);
         properties.getLlm().getCustom().setApiKey("  ");
         assertFalse(adapter.isAvailable());
     }
@@ -93,15 +116,15 @@ class CustomLlmAdapterTest {
 
     @Test
     void shouldReturnCurrentModelInSupportedModels() {
-        properties.getRouter().setDefaultModel("test-model");
-        properties.getLlm().getCustom().setApiUrl("https://api.example.com");
-        properties.getLlm().getCustom().setApiKey("key");
+        properties.getRouter().setDefaultModel(TEST_MODEL);
+        properties.getLlm().getCustom().setApiUrl(API_URL);
+        properties.getLlm().getCustom().setApiKey(API_KEY_VALUE);
 
         adapter.initialize();
 
         List<String> models = adapter.getSupportedModels();
         assertEquals(1, models.size());
-        assertEquals("test-model", models.get(0));
+        assertEquals(TEST_MODEL, models.get(0));
     }
 
     @Test
@@ -122,11 +145,11 @@ class CustomLlmAdapterTest {
     @Test
     void shouldReturnModelAfterInit() {
         properties.getRouter().setDefaultModel("my-model");
-        properties.getLlm().getCustom().setApiUrl("https://api.example.com");
-        properties.getLlm().getCustom().setApiKey("key");
+        properties.getLlm().getCustom().setApiUrl(API_URL);
+        properties.getLlm().getCustom().setApiKey(API_KEY_VALUE);
 
         CustomLlmAdapter.CustomLlmApi mockApi = mock(CustomLlmAdapter.CustomLlmApi.class);
-        when(feignClientFactory.create(CustomLlmAdapter.CustomLlmApi.class, "https://api.example.com"))
+        when(feignClientFactory.create(CustomLlmAdapter.CustomLlmApi.class, API_URL))
                 .thenReturn(mockApi);
 
         adapter.initialize();
@@ -138,10 +161,10 @@ class CustomLlmAdapterTest {
     @Test
     void shouldInitializeOnlyOnce() {
         properties.getRouter().setDefaultModel("model");
-        properties.getLlm().getCustom().setApiUrl("https://api.example.com");
-        properties.getLlm().getCustom().setApiKey("key");
+        properties.getLlm().getCustom().setApiUrl(API_URL);
+        properties.getLlm().getCustom().setApiKey(API_KEY_VALUE);
 
-        when(feignClientFactory.create(CustomLlmAdapter.CustomLlmApi.class, "https://api.example.com"))
+        when(feignClientFactory.create(CustomLlmAdapter.CustomLlmApi.class, API_URL))
                 .thenReturn(mock(CustomLlmAdapter.CustomLlmApi.class));
 
         adapter.initialize();
@@ -152,8 +175,8 @@ class CustomLlmAdapterTest {
 
     @Test
     void shouldHandleInitFailureGracefully() {
-        properties.getLlm().getCustom().setApiUrl("https://api.example.com");
-        properties.getLlm().getCustom().setApiKey("key");
+        properties.getLlm().getCustom().setApiUrl(API_URL);
+        properties.getLlm().getCustom().setApiKey(API_KEY_VALUE);
 
         when(feignClientFactory.create(any(), anyString())).thenThrow(new RuntimeException("Connection failed"));
 
@@ -163,7 +186,7 @@ class CustomLlmAdapterTest {
     @Test
     void shouldNotInitializeWhenUrlBlank() {
         properties.getLlm().getCustom().setApiUrl("");
-        properties.getLlm().getCustom().setApiKey("key");
+        properties.getLlm().getCustom().setApiKey(API_KEY_VALUE);
 
         adapter.initialize();
 
@@ -192,12 +215,12 @@ class CustomLlmAdapterTest {
         CustomLlmAdapter.CustomLlmApi client = getInjectedClient();
 
         CustomLlmAdapter.ApiMessage apiMsg = new CustomLlmAdapter.ApiMessage();
-        apiMsg.setRole("assistant");
+        apiMsg.setRole(ROLE_ASSISTANT);
         apiMsg.setContent("Hello!");
 
         CustomLlmAdapter.ChatChoice choice = new CustomLlmAdapter.ChatChoice();
         choice.setMessage(apiMsg);
-        choice.setFinishReason("stop");
+        choice.setFinishReason(FINISH_REASON_STOP);
 
         CustomLlmAdapter.ApiUsage apiUsage = new CustomLlmAdapter.ApiUsage();
         apiUsage.setPromptTokens(10);
@@ -207,18 +230,18 @@ class CustomLlmAdapterTest {
         CustomLlmAdapter.ChatCompletionResponse apiResponse = new CustomLlmAdapter.ChatCompletionResponse();
         apiResponse.setChoices(List.of(choice));
         apiResponse.setUsage(apiUsage);
-        apiResponse.setModel("test-model");
+        apiResponse.setModel(TEST_MODEL);
 
         when(client.chatCompletion(anyString(), any())).thenReturn(apiResponse);
 
         LlmRequest request = LlmRequest.builder()
-                .messages(List.of(Message.builder().role("user").content("Hi").build()))
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
                 .build();
 
         LlmResponse response = adapter.chat(request).get();
 
         assertEquals("Hello!", response.getContent());
-        assertEquals("stop", response.getFinishReason());
+        assertEquals(FINISH_REASON_STOP, response.getFinishReason());
         assertNotNull(response.getUsage());
         assertEquals(10, response.getUsage().getInputTokens());
         assertEquals(5, response.getUsage().getOutputTokens());
@@ -237,7 +260,7 @@ class CustomLlmAdapterTest {
         when(client.chatCompletion(anyString(), any())).thenReturn(apiResponse);
 
         LlmRequest request = LlmRequest.builder()
-                .messages(List.of(Message.builder().role("user").content("Hi").build()))
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
                 .build();
 
         LlmResponse response = adapter.chat(request).get();
@@ -256,7 +279,7 @@ class CustomLlmAdapterTest {
         when(client.chatCompletion(anyString(), any())).thenReturn(apiResponse);
 
         LlmRequest request = LlmRequest.builder()
-                .messages(List.of(Message.builder().role("user").content("Hi").build()))
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
                 .build();
 
         LlmResponse response = adapter.chat(request).get();
@@ -271,7 +294,7 @@ class CustomLlmAdapterTest {
         CustomLlmAdapter.CustomLlmApi client = getInjectedClient();
 
         CustomLlmAdapter.ApiFunction func = new CustomLlmAdapter.ApiFunction();
-        func.setName("weather");
+        func.setName(WEATHER);
         func.setArguments("{\"location\":\"London\"}");
 
         CustomLlmAdapter.ApiToolCall toolCall = new CustomLlmAdapter.ApiToolCall();
@@ -280,7 +303,7 @@ class CustomLlmAdapterTest {
         toolCall.setFunction(func);
 
         CustomLlmAdapter.ApiMessage apiMsg = new CustomLlmAdapter.ApiMessage();
-        apiMsg.setRole("assistant");
+        apiMsg.setRole(ROLE_ASSISTANT);
         apiMsg.setContent(null);
         apiMsg.setToolCalls(List.of(toolCall));
 
@@ -294,14 +317,14 @@ class CustomLlmAdapterTest {
         when(client.chatCompletion(anyString(), any())).thenReturn(apiResponse);
 
         LlmRequest request = LlmRequest.builder()
-                .messages(List.of(Message.builder().role("user").content("Weather in London").build()))
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Weather in London").build()))
                 .build();
 
         LlmResponse response = adapter.chat(request).get();
         assertNotNull(response.getToolCalls());
         assertEquals(1, response.getToolCalls().size());
         assertEquals("call_123", response.getToolCalls().get(0).getId());
-        assertEquals("weather", response.getToolCalls().get(0).getName());
+        assertEquals(WEATHER, response.getToolCalls().get(0).getName());
         assertEquals("London", response.getToolCalls().get(0).getArguments().get("location"));
     }
 
@@ -314,12 +337,12 @@ class CustomLlmAdapterTest {
 
         // Make the actual call to verify tool definitions are included
         CustomLlmAdapter.ApiMessage apiMsg = new CustomLlmAdapter.ApiMessage();
-        apiMsg.setRole("assistant");
+        apiMsg.setRole(ROLE_ASSISTANT);
         apiMsg.setContent("Result");
 
         CustomLlmAdapter.ChatChoice choice = new CustomLlmAdapter.ChatChoice();
         choice.setMessage(apiMsg);
-        choice.setFinishReason("stop");
+        choice.setFinishReason(FINISH_REASON_STOP);
 
         CustomLlmAdapter.ChatCompletionResponse apiResponse = new CustomLlmAdapter.ChatCompletionResponse();
         apiResponse.setChoices(List.of(choice));
@@ -333,7 +356,7 @@ class CustomLlmAdapterTest {
                 .build();
 
         LlmRequest request = LlmRequest.builder()
-                .messages(List.of(Message.builder().role("user").content("test").build()))
+                .messages(List.of(Message.builder().role(ROLE_USER).content("test").build()))
                 .tools(List.of(toolDef))
                 .build();
 
@@ -349,12 +372,12 @@ class CustomLlmAdapterTest {
         CustomLlmAdapter.CustomLlmApi client = getInjectedClient();
 
         CustomLlmAdapter.ApiMessage apiMsg = new CustomLlmAdapter.ApiMessage();
-        apiMsg.setRole("assistant");
+        apiMsg.setRole(ROLE_ASSISTANT);
         apiMsg.setContent("Done");
 
         CustomLlmAdapter.ChatChoice choice = new CustomLlmAdapter.ChatChoice();
         choice.setMessage(apiMsg);
-        choice.setFinishReason("stop");
+        choice.setFinishReason(FINISH_REASON_STOP);
 
         CustomLlmAdapter.ChatCompletionResponse apiResponse = new CustomLlmAdapter.ChatCompletionResponse();
         apiResponse.setChoices(List.of(choice));
@@ -362,10 +385,10 @@ class CustomLlmAdapterTest {
         when(client.chatCompletion(anyString(), any())).thenReturn(apiResponse);
 
         Message assistantMsg = Message.builder()
-                .role("assistant")
+                .role(ROLE_ASSISTANT)
                 .toolCalls(List.of(Message.ToolCall.builder()
                         .id("call_1")
-                        .name("weather")
+                        .name(WEATHER)
                         .arguments(Map.of("location", "Tokyo"))
                         .build()))
                 .build();
@@ -374,13 +397,13 @@ class CustomLlmAdapterTest {
                 .role("tool")
                 .content("Sunny, 25C")
                 .toolCallId("call_1")
-                .toolName("weather")
+                .toolName(WEATHER)
                 .build();
 
         LlmRequest request = LlmRequest.builder()
                 .systemPrompt("You are a helpful bot")
                 .messages(List.of(
-                        Message.builder().role("user").content("What's the weather?").build(),
+                        Message.builder().role(ROLE_USER).content("What's the weather?").build(),
                         assistantMsg,
                         toolResultMsg))
                 .build();
@@ -392,45 +415,40 @@ class CustomLlmAdapterTest {
     // ===== convertArgsToJson =====
 
     @Test
-    void shouldConvertNullArgsToEmptyJson() throws Exception {
-        Method method = CustomLlmAdapter.class.getDeclaredMethod("convertArgsToJson", Map.class);
-        method.setAccessible(true);
-        assertEquals("{}", method.invoke(adapter, (Map<String, Object>) null));
+    void shouldConvertNullArgsToEmptyJson() {
+        String result = ReflectionTestUtils.invokeMethod(adapter, CONVERT_ARGS_TO_JSON, (Map<String, Object>) null);
+        assertEquals("{}", result);
     }
 
     @Test
-    void shouldConvertEmptyArgsToEmptyJson() throws Exception {
-        Method method = CustomLlmAdapter.class.getDeclaredMethod("convertArgsToJson", Map.class);
-        method.setAccessible(true);
-        assertEquals("{}", method.invoke(adapter, Collections.emptyMap()));
+    void shouldConvertEmptyArgsToEmptyJson() {
+        String result = ReflectionTestUtils.invokeMethod(adapter, CONVERT_ARGS_TO_JSON, Collections.emptyMap());
+        assertEquals("{}", result);
     }
 
     // ===== parseJsonArgs =====
 
     @Test
-    void shouldParseNullJsonToEmptyMap() throws Exception {
-        Method method = CustomLlmAdapter.class.getDeclaredMethod("parseJsonArgs", String.class);
-        method.setAccessible(true);
+    void shouldParseNullJsonToEmptyMap() {
         @SuppressWarnings("unchecked")
-        Map<String, Object> result = (Map<String, Object>) method.invoke(adapter, (String) null);
+        Map<String, Object> result = (Map<String, Object>) ReflectionTestUtils.invokeMethod(adapter, PARSE_JSON_ARGS,
+                (String) null);
         assertTrue(result.isEmpty());
     }
 
     @Test
-    void shouldParseBlankJsonToEmptyMap() throws Exception {
-        Method method = CustomLlmAdapter.class.getDeclaredMethod("parseJsonArgs", String.class);
-        method.setAccessible(true);
+    void shouldParseBlankJsonToEmptyMap() {
         @SuppressWarnings("unchecked")
-        Map<String, Object> result = (Map<String, Object>) method.invoke(adapter, "  ");
+        Map<String, Object> result = (Map<String, Object>) ReflectionTestUtils.invokeMethod(adapter, PARSE_JSON_ARGS,
+                "  ");
         assertTrue(result.isEmpty());
     }
 
     @Test
-    void shouldParseInvalidJsonToEmptyMap() throws Exception {
-        Method method = CustomLlmAdapter.class.getDeclaredMethod("parseJsonArgs", String.class);
-        method.setAccessible(true);
+    void shouldParseInvalidJsonToEmptyMap() {
         @SuppressWarnings("unchecked")
-        Map<String, Object> result = (Map<String, Object>) method.invoke(adapter, "not json");
+        Map<String, Object> result = (Map<String, Object>) ReflectionTestUtils.invokeMethod(adapter, PARSE_JSON_ARGS,
+                "not json");
         assertTrue(result.isEmpty());
     }
 
@@ -443,21 +461,19 @@ class CustomLlmAdapterTest {
 
     // ===== Helpers =====
 
-    private void setupInitializedAdapter() throws Exception {
-        properties.getRouter().setDefaultModel("test-model");
-        properties.getLlm().getCustom().setApiUrl("https://api.example.com");
-        properties.getLlm().getCustom().setApiKey("test-key");
+    private void setupInitializedAdapter() {
+        properties.getRouter().setDefaultModel(TEST_MODEL);
+        properties.getLlm().getCustom().setApiUrl(API_URL);
+        properties.getLlm().getCustom().setApiKey(TEST_KEY);
 
         CustomLlmAdapter.CustomLlmApi mockApi = mock(CustomLlmAdapter.CustomLlmApi.class);
-        when(feignClientFactory.create(CustomLlmAdapter.CustomLlmApi.class, "https://api.example.com"))
+        when(feignClientFactory.create(CustomLlmAdapter.CustomLlmApi.class, API_URL))
                 .thenReturn(mockApi);
 
         adapter.initialize();
     }
 
-    private CustomLlmAdapter.CustomLlmApi getInjectedClient() throws Exception {
-        Field clientField = CustomLlmAdapter.class.getDeclaredField("client");
-        clientField.setAccessible(true);
-        return (CustomLlmAdapter.CustomLlmApi) clientField.get(adapter);
+    private CustomLlmAdapter.CustomLlmApi getInjectedClient() {
+        return (CustomLlmAdapter.CustomLlmApi) ReflectionTestUtils.getField(adapter, "client");
     }
 }

@@ -45,6 +45,7 @@ import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.Function;
 
 /**
  * ElevenLabs adapter for both STT and TTS via ElevenLabs API.
@@ -61,6 +62,7 @@ public class ElevenLabsAdapter implements VoicePort {
 
     private static final String DEFAULT_STT_URL = "https://api.elevenlabs.io/v1/speech-to-text";
     private static final String DEFAULT_TTS_URL_TEMPLATE = "https://api.elevenlabs.io/v1/text-to-speech/%s";
+    private static final int HTTP_PAYMENT_REQUIRED = 402;
 
     private static final ExecutorService VOICE_EXECUTOR = Executors.newFixedThreadPool(2,
             r -> {
@@ -97,6 +99,58 @@ public class ElevenLabsAdapter implements VoicePort {
         return CompletableFuture.supplyAsync(() -> doSynthesize(text, config), VOICE_EXECUTOR);
     }
 
+    /**
+     * Executes HTTP request with retry logic for transient errors.
+     *
+     * @param request
+     *            the HTTP request to execute
+     * @param operationName
+     *            operation name for logging (e.g., "STT", "TTS")
+     * @param processor
+     *            function to process successful response
+     * @param <T>
+     *            return type
+     * @return processed result
+     * @throws IOException
+     *             on network errors
+     * @throws InterruptedException
+     *             if interrupted during retry backoff
+     */
+    @SuppressWarnings("PMD.CloseResource") // ResponseBody is closed when Response is closed in try-with-resources
+    private <T> T executeWithRetry(Request request, String operationName, Function<Response, T> processor)
+            throws IOException, InterruptedException {
+        long startTime = System.currentTimeMillis();
+        int maxRetries = 3;
+        int attempt = 0;
+
+        while (attempt < maxRetries) {
+            try (Response response = okHttpClient.newCall(request).execute()) {
+                long elapsed = System.currentTimeMillis() - startTime;
+                ResponseBody body = response.body();
+
+                if (!response.isSuccessful()) {
+                    if (isRetryableError(response.code()) && attempt < maxRetries - 1) {
+                        attempt++;
+                        long backoffMs = (long) Math.pow(2, attempt) * 1000;
+                        log.info("[ElevenLabs] {} retrying after {} (attempt {}/{}), backoff={}ms",
+                                operationName, response.code(), attempt, maxRetries, backoffMs);
+                        Thread.sleep(backoffMs);
+                        continue;
+                    }
+                    handleErrorResponse(response, body, elapsed, operationName);
+                }
+
+                if (body == null) {
+                    throw new IllegalStateException(
+                            "ElevenLabs " + operationName + " returned empty body");
+                }
+                return processor.apply(response);
+            }
+        }
+        throw new IllegalStateException(
+                "ElevenLabs " + operationName + " failed after " + maxRetries + " attempts");
+    }
+
     @SuppressWarnings("PMD.CloseResource") // ResponseBody is closed when Response is closed in try-with-resources
     private TranscriptionResult doTranscribe(byte[] audioData, AudioFormat format) {
         try {
@@ -124,23 +178,20 @@ public class ElevenLabsAdapter implements VoicePort {
                     .build();
 
             long startTime = System.currentTimeMillis();
-            try (Response response = okHttpClient.newCall(request).execute()) {
-                long elapsed = System.currentTimeMillis() - startTime;
-
-                if (!response.isSuccessful()) {
-                    String error = response.body() != null ? response.body().string() : "Unknown error";
-                    log.warn("[ElevenLabs] STT failed: HTTP {} in {}ms — {}",
-                            response.code(), elapsed, error);
-                    throw new IllegalStateException(
-                            "ElevenLabs STT error (" + response.code() + "): " + error);
+            return executeWithRetry(request, "STT", response -> {
+                try {
+                    long elapsed = System.currentTimeMillis() - startTime;
+                    return parseSttResponse(response.body().string(), elapsed);
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
                 }
-
-                ResponseBody body = response.body();
-                if (body == null) {
-                    throw new IllegalStateException("ElevenLabs STT returned empty body");
-                }
-                return parseSttResponse(body.string(), elapsed);
-            }
+            });
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("ElevenLabs STT interrupted", e);
+        } catch (UncheckedIOException e) {
+            log.error("[ElevenLabs] STT network error: {}", e.getMessage(), e);
+            throw new UncheckedIOException("Transcription failed: " + e.getMessage(), e.getCause());
         } catch (IOException e) {
             log.error("[ElevenLabs] STT network error: {}", e.getMessage(), e);
             throw new UncheckedIOException("Transcription failed: " + e.getMessage(), e);
@@ -195,26 +246,23 @@ public class ElevenLabsAdapter implements VoicePort {
                     .build();
 
             long startTime = System.currentTimeMillis();
-            try (Response response = okHttpClient.newCall(request).execute()) {
-                long elapsed = System.currentTimeMillis() - startTime;
-
-                if (!response.isSuccessful()) {
-                    String error = response.body() != null ? response.body().string() : "Unknown error";
-                    log.warn("[ElevenLabs] TTS failed: HTTP {} in {}ms — {}",
-                            response.code(), elapsed, error);
-                    throw new IllegalStateException(
-                            "ElevenLabs TTS error (" + response.code() + "): " + error);
+            return executeWithRetry(request, "TTS", response -> {
+                try {
+                    byte[] audioBytes = response.body().bytes();
+                    long elapsed = System.currentTimeMillis() - startTime;
+                    log.info("[ElevenLabs] TTS success: {} chars → {} bytes MP3, {}ms",
+                            text.length(), audioBytes.length, elapsed);
+                    return audioBytes;
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
                 }
-
-                ResponseBody body = response.body();
-                if (body == null) {
-                    throw new IllegalStateException("ElevenLabs TTS returned empty body");
-                }
-                byte[] audioBytes = body.bytes();
-                log.info("[ElevenLabs] TTS success: {} chars → {} bytes MP3, {}ms",
-                        text.length(), audioBytes.length, elapsed);
-                return audioBytes;
-            }
+            });
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("ElevenLabs TTS interrupted", e);
+        } catch (UncheckedIOException e) {
+            log.error("[ElevenLabs] TTS network error: {}", e.getMessage(), e);
+            throw new UncheckedIOException("Synthesis failed: " + e.getMessage(), e.getCause());
         } catch (IOException e) {
             log.error("[ElevenLabs] TTS network error: {}", e.getMessage(), e);
             throw new UncheckedIOException("Synthesis failed: " + e.getMessage(), e);
@@ -257,5 +305,93 @@ public class ElevenLabsAdapter implements VoicePort {
             String text,
             @JsonProperty("model_id") String modelId,
             float speed) {
+    }
+
+    @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    static class ErrorResponse {
+        private ErrorDetail detail;
+        private String message; // Sometimes error is at root level
+    }
+
+    @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    static class ErrorDetail {
+        private String status;
+        private String message;
+    }
+
+    /**
+     * Exception for quota/payment issues that should be shown to the user.
+     */
+    public static class QuotaExceededException extends IllegalStateException {
+        private static final long serialVersionUID = 1L;
+
+        public QuotaExceededException(String message) {
+            super(message);
+        }
+    }
+
+    private ErrorResponse parseErrorResponse(String errorBody) {
+        try {
+            return objectMapper.readValue(errorBody, ErrorResponse.class);
+        } catch (IOException e) {
+            log.debug("[ElevenLabs] Could not parse error response: {}", errorBody);
+            ErrorResponse fallback = new ErrorResponse();
+            fallback.setMessage(errorBody);
+            return fallback;
+        }
+    }
+
+    private String extractErrorMessage(ErrorResponse errorResponse) {
+        if (errorResponse.getDetail() != null && errorResponse.getDetail().getMessage() != null) {
+            return errorResponse.getDetail().getMessage();
+        }
+        if (errorResponse.getMessage() != null) {
+            return errorResponse.getMessage();
+        }
+        return "Unknown error";
+    }
+
+    private String getErrorContext(int code, String status) {
+        return switch (code) {
+        case 400 -> "Bad request. Check text length limits (max 10,000-40,000 chars depending on model)";
+        case 401 -> "Authentication failed. Check your ElevenLabs API key";
+        case 402 -> "⚠️ Quota exceeded. Please enable usage-based billing or upgrade your plan";
+        case 422 -> "Invalid request format. Check parameters";
+        case 429 -> "Rate limit exceeded. Please retry in a few seconds";
+        case 500, 503 -> "ElevenLabs service temporarily unavailable. Will retry automatically";
+        case 504 -> "Request timeout. Try breaking text into smaller chunks";
+        default -> status != null ? "Error: " + status : "Service error";
+        };
+    }
+
+    private boolean isRetryableError(int code) {
+        return code == 429 || code == 500 || code == 503 || code == 504;
+    }
+
+    private void handleErrorResponse(Response response, ResponseBody body, long elapsed, String operation)
+            throws IOException {
+        int code = response.code();
+        String errorBody = body != null ? body.string() : "";
+        ErrorResponse errorResponse = parseErrorResponse(errorBody);
+        String errorMessage = extractErrorMessage(errorResponse);
+        String errorStatus = errorResponse.getDetail() != null
+                ? errorResponse.getDetail().getStatus()
+                : null;
+        String context = getErrorContext(code, errorStatus);
+
+        log.warn("[ElevenLabs] {} failed: HTTP {} in {}ms — {} ({})",
+                operation, code, elapsed, errorMessage, context);
+
+        // Special handling for quota exceeded - throw custom exception
+        if (code == HTTP_PAYMENT_REQUIRED) {
+            throw new QuotaExceededException(
+                    String.format("ElevenLabs quota exceeded: %s. %s", errorMessage, context));
+        }
+
+        throw new IllegalStateException(
+                String.format("ElevenLabs %s error (HTTP %d): %s. %s",
+                        operation, code, errorMessage, context));
     }
 }

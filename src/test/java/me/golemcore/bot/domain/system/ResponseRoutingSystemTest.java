@@ -1,6 +1,12 @@
 package me.golemcore.bot.domain.system;
 
-import me.golemcore.bot.domain.model.*;
+import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.Attachment;
+import me.golemcore.bot.domain.model.AudioFormat;
+import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.LlmResponse;
+import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.infrastructure.config.BotProperties;
@@ -20,6 +26,18 @@ import static org.mockito.Mockito.*;
 
 class ResponseRoutingSystemTest {
 
+    private static final String CHAT_ID = "chat1";
+    private static final String SESSION_ID = "test-session";
+    private static final String CHANNEL_TELEGRAM = "telegram";
+    private static final String CHANNEL_UNKNOWN = "unknown_channel";
+    private static final String ATTR_PENDING_ATTACHMENTS = "pendingAttachments";
+    private static final String MIME_IMAGE_PNG = "image/png";
+    private static final String FILENAME_IMG_PNG = "img.png";
+    private static final String VOICE_PREFIX = "\uD83D\uDD0A";
+    private static final String FILENAME_DOC_PDF = "doc.pdf";
+    private static final String ROLE_USER = "user";
+    private static final String CONTENT_RESPONSE = "response";
+
     private ResponseRoutingSystem system;
     private ChannelPort channelPort;
     private UserPreferencesService preferencesService;
@@ -29,7 +47,7 @@ class ResponseRoutingSystemTest {
     @BeforeEach
     void setUp() {
         channelPort = mock(ChannelPort.class);
-        when(channelPort.getChannelType()).thenReturn("telegram");
+        when(channelPort.getChannelType()).thenReturn(CHANNEL_TELEGRAM);
         when(channelPort.sendMessage(anyString(), anyString())).thenReturn(CompletableFuture.completedFuture(null));
         when(channelPort.sendPhoto(anyString(), any(byte[].class), anyString(), any()))
                 .thenReturn(CompletableFuture.completedFuture(null));
@@ -52,9 +70,9 @@ class ResponseRoutingSystemTest {
 
     private AgentContext createContext() {
         AgentSession session = AgentSession.builder()
-                .id("test-session")
-                .chatId("chat1")
-                .channelType("telegram")
+                .id(SESSION_ID)
+                .chatId(CHAT_ID)
+                .channelType(CHANNEL_TELEGRAM)
                 .messages(new ArrayList<>())
                 .build();
 
@@ -74,18 +92,18 @@ class ResponseRoutingSystemTest {
                 .type(Attachment.Type.IMAGE)
                 .data(new byte[] { 1, 2, 3 })
                 .filename("screenshot.png")
-                .mimeType("image/png")
+                .mimeType(MIME_IMAGE_PNG)
                 .caption("A screenshot")
                 .build();
 
         List<Attachment> pending = new ArrayList<>();
         pending.add(attachment);
-        context.setAttribute("pendingAttachments", pending);
+        context.setAttribute(ATTR_PENDING_ATTACHMENTS, pending);
 
         system.process(context);
 
-        verify(channelPort).sendMessage(eq("chat1"), eq("Here is the screenshot"));
-        verify(channelPort).sendPhoto(eq("chat1"), eq(new byte[] { 1, 2, 3 }), eq("screenshot.png"),
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Here is the screenshot"));
+        verify(channelPort).sendPhoto(eq(CHAT_ID), eq(new byte[] { 1, 2, 3 }), eq("screenshot.png"),
                 eq("A screenshot"));
     }
 
@@ -105,11 +123,11 @@ class ResponseRoutingSystemTest {
 
         List<Attachment> pending = new ArrayList<>();
         pending.add(attachment);
-        context.setAttribute("pendingAttachments", pending);
+        context.setAttribute(ATTR_PENDING_ATTACHMENTS, pending);
 
         system.process(context);
 
-        verify(channelPort).sendDocument(eq("chat1"), eq(new byte[] { 4, 5, 6 }), eq("report.pdf"), eq("The report"));
+        verify(channelPort).sendDocument(eq(CHAT_ID), eq(new byte[] { 4, 5, 6 }), eq("report.pdf"), eq("The report"));
     }
 
     @Test
@@ -122,21 +140,21 @@ class ResponseRoutingSystemTest {
         pending.add(Attachment.builder()
                 .type(Attachment.Type.IMAGE)
                 .data(new byte[] { 1 })
-                .filename("img.png")
-                .mimeType("image/png")
+                .filename(FILENAME_IMG_PNG)
+                .mimeType(MIME_IMAGE_PNG)
                 .build());
         pending.add(Attachment.builder()
                 .type(Attachment.Type.DOCUMENT)
                 .data(new byte[] { 2 })
-                .filename("doc.pdf")
+                .filename(FILENAME_DOC_PDF)
                 .mimeType("application/pdf")
                 .build());
-        context.setAttribute("pendingAttachments", pending);
+        context.setAttribute(ATTR_PENDING_ATTACHMENTS, pending);
 
         system.process(context);
 
-        verify(channelPort).sendPhoto(eq("chat1"), any(byte[].class), eq("img.png"), isNull());
-        verify(channelPort).sendDocument(eq("chat1"), any(byte[].class), eq("doc.pdf"), isNull());
+        verify(channelPort).sendPhoto(eq(CHAT_ID), any(byte[].class), eq(FILENAME_IMG_PNG), isNull());
+        verify(channelPort).sendDocument(eq(CHAT_ID), any(byte[].class), eq(FILENAME_DOC_PDF), isNull());
     }
 
     @Test
@@ -149,14 +167,14 @@ class ResponseRoutingSystemTest {
         pending.add(Attachment.builder()
                 .type(Attachment.Type.IMAGE)
                 .data(new byte[] { 1 })
-                .filename("img.png")
-                .mimeType("image/png")
+                .filename(FILENAME_IMG_PNG)
+                .mimeType(MIME_IMAGE_PNG)
                 .build());
-        context.setAttribute("pendingAttachments", pending);
+        context.setAttribute(ATTR_PENDING_ATTACHMENTS, pending);
 
         system.process(context);
 
-        assertNull(context.getAttribute("pendingAttachments"));
+        assertNull(context.getAttribute(ATTR_PENDING_ATTACHMENTS));
     }
 
     @Test
@@ -166,10 +184,10 @@ class ResponseRoutingSystemTest {
         pending.add(Attachment.builder()
                 .type(Attachment.Type.IMAGE)
                 .data(new byte[] { 1 })
-                .filename("img.png")
-                .mimeType("image/png")
+                .filename(FILENAME_IMG_PNG)
+                .mimeType(MIME_IMAGE_PNG)
                 .build());
-        context.setAttribute("pendingAttachments", pending);
+        context.setAttribute(ATTR_PENDING_ATTACHMENTS, pending);
 
         assertTrue(system.shouldProcess(context));
     }
@@ -189,16 +207,16 @@ class ResponseRoutingSystemTest {
         pending.add(Attachment.builder()
                 .type(Attachment.Type.IMAGE)
                 .data(new byte[] { 1 })
-                .filename("img.png")
-                .mimeType("image/png")
+                .filename(FILENAME_IMG_PNG)
+                .mimeType(MIME_IMAGE_PNG)
                 .caption("Before error")
                 .build());
-        context.setAttribute("pendingAttachments", pending);
+        context.setAttribute(ATTR_PENDING_ATTACHMENTS, pending);
 
         system.process(context);
 
-        verify(channelPort).sendMessage(eq("chat1"), anyString()); // error message
-        verify(channelPort).sendPhoto(eq("chat1"), any(byte[].class), eq("img.png"), eq("Before error"));
+        verify(channelPort).sendMessage(eq(CHAT_ID), anyString()); // error message
+        verify(channelPort).sendPhoto(eq(CHAT_ID), any(byte[].class), eq(FILENAME_IMG_PNG), eq("Before error"));
     }
 
     @Test
@@ -214,13 +232,13 @@ class ResponseRoutingSystemTest {
         pending.add(Attachment.builder()
                 .type(Attachment.Type.IMAGE)
                 .data(new byte[] { 1 })
-                .filename("img.png")
-                .mimeType("image/png")
+                .filename(FILENAME_IMG_PNG)
+                .mimeType(MIME_IMAGE_PNG)
                 .build());
-        context.setAttribute("pendingAttachments", pending);
+        context.setAttribute(ATTR_PENDING_ATTACHMENTS, pending);
 
         assertDoesNotThrow(() -> system.process(context));
-        verify(channelPort).sendMessage(eq("chat1"), eq("text"));
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq("text"));
     }
 
     // ===== Edge Cases =====
@@ -254,7 +272,7 @@ class ResponseRoutingSystemTest {
         context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
 
         Message autoMsg = Message.builder()
-                .role("user")
+                .role(ROLE_USER)
                 .content("auto task")
                 .timestamp(Instant.now())
                 .metadata(Map.of("auto.mode", true))
@@ -290,7 +308,7 @@ class ResponseRoutingSystemTest {
 
         system.process(context);
 
-        verify(channelPort).sendMessage(eq("chat1"), eq("Error occurred"));
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Error occurred"));
     }
 
     @Test
@@ -316,8 +334,8 @@ class ResponseRoutingSystemTest {
     @Test
     void unknownChannelTypeDoesNotThrow() {
         AgentContext context = createContext();
-        context.getSession().setChannelType("unknown_channel");
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, LlmResponse.builder().content("response").build());
+        context.getSession().setChannelType(CHANNEL_UNKNOWN);
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, LlmResponse.builder().content(CONTENT_RESPONSE).build());
 
         assertDoesNotThrow(() -> system.process(context));
         verify(channelPort, never()).sendMessage(anyString(), anyString());
@@ -329,7 +347,7 @@ class ResponseRoutingSystemTest {
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("send failed")));
 
         AgentContext context = createContext();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, LlmResponse.builder().content("response").build());
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, LlmResponse.builder().content(CONTENT_RESPONSE).build());
 
         system.process(context);
 
@@ -367,8 +385,8 @@ class ResponseRoutingSystemTest {
 
         system.process(context);
 
-        verify(channelPort).sendMessage(eq("chat1"), eq("Hello there"));
-        verify(voiceHandler).trySendVoice(eq(channelPort), eq("chat1"), eq("Hello there"));
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Hello there"));
+        verify(voiceHandler).trySendVoice(eq(channelPort), eq(CHAT_ID), eq("Hello there"));
     }
 
     @Test
@@ -384,7 +402,7 @@ class ResponseRoutingSystemTest {
 
         system.process(context);
 
-        verify(voiceHandler).trySendVoice(eq(channelPort), eq("chat1"), eq("Short spoken version"));
+        verify(voiceHandler).trySendVoice(eq(channelPort), eq(CHAT_ID), eq("Short spoken version"));
     }
 
     @Test
@@ -398,7 +416,7 @@ class ResponseRoutingSystemTest {
         context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
 
         context.getMessages().add(Message.builder()
-                .role("user")
+                .role(ROLE_USER)
                 .content("transcribed text")
                 .voiceData(new byte[] { 10, 20 })
                 .audioFormat(AudioFormat.OGG_OPUS)
@@ -407,7 +425,7 @@ class ResponseRoutingSystemTest {
 
         system.process(context);
 
-        verify(voiceHandler).trySendVoice(eq(channelPort), eq("chat1"), eq("Voice reply"));
+        verify(voiceHandler).trySendVoice(eq(channelPort), eq(CHAT_ID), eq("Voice reply"));
     }
 
     @Test
@@ -419,7 +437,7 @@ class ResponseRoutingSystemTest {
         context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
 
         context.getMessages().add(Message.builder()
-                .role("user")
+                .role(ROLE_USER)
                 .content("hello")
                 .timestamp(Instant.now())
                 .build());
@@ -440,7 +458,7 @@ class ResponseRoutingSystemTest {
         context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
 
         assertDoesNotThrow(() -> system.process(context));
-        verify(channelPort).sendMessage(eq("chat1"), eq("response text"));
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq("response text"));
     }
 
     // ===== Voice Prefix Detection Tests =====
@@ -451,12 +469,12 @@ class ResponseRoutingSystemTest {
         when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(true);
 
         AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content("\uD83D\uDD0A Hello, this is voice").build();
+        LlmResponse response = LlmResponse.builder().content(VOICE_PREFIX + " Hello, this is voice").build();
         context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
 
         system.process(context);
 
-        verify(voiceHandler).trySendVoice(eq(channelPort), eq("chat1"), eq("Hello, this is voice"));
+        verify(voiceHandler).trySendVoice(eq(channelPort), eq(CHAT_ID), eq("Hello, this is voice"));
         verify(channelPort, never()).sendMessage(anyString(), anyString());
         assertFalse(context.getSession().getMessages().isEmpty());
         assertEquals("Hello, this is voice", context.getSession().getMessages().get(0).getContent());
@@ -468,12 +486,12 @@ class ResponseRoutingSystemTest {
         when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(false);
 
         AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content("\uD83D\uDD0A Fallback text").build();
+        LlmResponse response = LlmResponse.builder().content(VOICE_PREFIX + " Fallback text").build();
         context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
 
         system.process(context);
 
-        verify(channelPort).sendMessage(eq("chat1"), eq("Fallback text"));
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Fallback text"));
     }
 
     @Test
@@ -486,7 +504,7 @@ class ResponseRoutingSystemTest {
 
         system.process(context);
 
-        verify(channelPort).sendMessage(eq("chat1"), eq("Normal response"));
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Normal response"));
         verify(voiceHandler, never()).trySendVoice(any(), anyString(), anyString());
     }
 
@@ -495,12 +513,12 @@ class ResponseRoutingSystemTest {
         when(voiceHandler.isAvailable()).thenReturn(false);
 
         AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content("\uD83D\uDD0A Should be text").build();
+        LlmResponse response = LlmResponse.builder().content(VOICE_PREFIX + " Should be text").build();
         context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
 
         system.process(context);
 
-        verify(channelPort).sendMessage(eq("chat1"), eq("\uD83D\uDD0A Should be text"));
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq(VOICE_PREFIX + " Should be text"));
         verify(voiceHandler, never()).trySendVoice(any(), anyString(), anyString());
     }
 
@@ -511,7 +529,8 @@ class ResponseRoutingSystemTest {
 
         AgentContext context = createContext();
         LlmResponse response = LlmResponse.builder().content(
-                "\uD83D\uDD0A \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u043E")
+                VOICE_PREFIX
+                        + " \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u043E")
                 .build();
         context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
         context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
@@ -519,7 +538,7 @@ class ResponseRoutingSystemTest {
 
         system.process(context);
 
-        verify(voiceHandler).trySendVoice(eq(channelPort), eq("chat1"),
+        verify(voiceHandler).trySendVoice(eq(channelPort), eq(CHAT_ID),
                 eq("This is the actual joke that should be spoken"));
         verify(channelPort, never()).sendMessage(anyString(), anyString());
     }
@@ -542,7 +561,7 @@ class ResponseRoutingSystemTest {
 
         system.process(context);
 
-        verify(voiceHandler).sendVoiceWithFallback(eq(channelPort), eq("chat1"), eq("Here is a joke for you"));
+        verify(voiceHandler).sendVoiceWithFallback(eq(channelPort), eq(CHAT_ID), eq("Here is a joke for you"));
         verify(channelPort, never()).sendMessage(anyString(), anyString());
         assertFalse(context.getSession().getMessages().isEmpty());
         assertEquals("Here is a joke for you", context.getSession().getMessages().get(0).getContent());
@@ -560,7 +579,7 @@ class ResponseRoutingSystemTest {
 
         system.process(context);
 
-        verify(voiceHandler).sendVoiceWithFallback(eq(channelPort), eq("chat1"), eq("Fallback joke text"));
+        verify(voiceHandler).sendVoiceWithFallback(eq(channelPort), eq(CHAT_ID), eq("Fallback joke text"));
         assertFalse(context.getSession().getMessages().isEmpty());
         assertEquals("Fallback joke text", context.getSession().getMessages().get(0).getContent());
     }
@@ -577,7 +596,7 @@ class ResponseRoutingSystemTest {
 
         system.process(context);
 
-        verify(voiceHandler).sendVoiceWithFallback(eq(channelPort), eq("chat1"), eq("Joke that fails TTS"));
+        verify(voiceHandler).sendVoiceWithFallback(eq(channelPort), eq(CHAT_ID), eq("Joke that fails TTS"));
         // When sendVoiceWithFallback returns false, no assistant message added
         assertTrue(context.getSession().getMessages().isEmpty());
     }
@@ -592,19 +611,19 @@ class ResponseRoutingSystemTest {
 
     @Test
     void hasVoicePrefixDetectsPrefix() {
-        assertTrue(system.hasVoicePrefix("\uD83D\uDD0A Hello"));
-        assertTrue(system.hasVoicePrefix("  \uD83D\uDD0A Hello with leading spaces"));
+        assertTrue(system.hasVoicePrefix(VOICE_PREFIX + " Hello"));
+        assertTrue(system.hasVoicePrefix("  " + VOICE_PREFIX + " Hello with leading spaces"));
         assertFalse(system.hasVoicePrefix("Normal text"));
-        assertFalse(system.hasVoicePrefix("Hello \uD83D\uDD0A not at start"));
+        assertFalse(system.hasVoicePrefix("Hello " + VOICE_PREFIX + " not at start"));
         assertFalse(system.hasVoicePrefix(null));
         assertFalse(system.hasVoicePrefix(""));
     }
 
     @Test
     void stripVoicePrefixRemovesPrefix() {
-        assertEquals("Hello", system.stripVoicePrefix("\uD83D\uDD0A Hello"));
-        assertEquals("Hello", system.stripVoicePrefix("  \uD83D\uDD0A Hello"));
-        assertEquals("", system.stripVoicePrefix("\uD83D\uDD0A"));
+        assertEquals("Hello", system.stripVoicePrefix(VOICE_PREFIX + " Hello"));
+        assertEquals("Hello", system.stripVoicePrefix("  " + VOICE_PREFIX + " Hello"));
+        assertEquals("", system.stripVoicePrefix(VOICE_PREFIX));
         assertEquals("Normal text", system.stripVoicePrefix("Normal text"));
     }
 
@@ -647,7 +666,7 @@ class ResponseRoutingSystemTest {
         when(voiceHandler.isAvailable()).thenReturn(true);
 
         AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content("\uD83D\uDD0A   ").build();
+        LlmResponse response = LlmResponse.builder().content(VOICE_PREFIX + "   ").build();
         context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
 
         system.process(context);
@@ -671,20 +690,20 @@ class ResponseRoutingSystemTest {
         pending.add(Attachment.builder()
                 .type(Attachment.Type.IMAGE)
                 .data(new byte[] { 1 })
-                .filename("img.png")
-                .mimeType("image/png")
+                .filename(FILENAME_IMG_PNG)
+                .mimeType(MIME_IMAGE_PNG)
                 .build());
-        context.setAttribute("pendingAttachments", pending);
+        context.setAttribute(ATTR_PENDING_ATTACHMENTS, pending);
 
         system.process(context);
 
         // Text sent
-        verify(channelPort).sendMessage(eq("chat1"), eq("Text with voice and attachment"));
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Text with voice and attachment"));
         // Voice sent after text
-        verify(voiceHandler).trySendVoice(eq(channelPort), eq("chat1"),
+        verify(voiceHandler).trySendVoice(eq(channelPort), eq(CHAT_ID),
                 eq("Text with voice and attachment"));
         // Attachment also sent
-        verify(channelPort).sendPhoto(eq("chat1"), any(byte[].class), eq("img.png"), isNull());
+        verify(channelPort).sendPhoto(eq(CHAT_ID), any(byte[].class), eq(FILENAME_IMG_PNG), isNull());
     }
 
     @Test
@@ -701,27 +720,27 @@ class ResponseRoutingSystemTest {
         pending.add(Attachment.builder()
                 .type(Attachment.Type.DOCUMENT)
                 .data(new byte[] { 2 })
-                .filename("doc.pdf")
+                .filename(FILENAME_DOC_PDF)
                 .mimeType("application/pdf")
                 .build());
-        context.setAttribute("pendingAttachments", pending);
+        context.setAttribute(ATTR_PENDING_ATTACHMENTS, pending);
 
         system.process(context);
 
-        verify(voiceHandler).sendVoiceWithFallback(eq(channelPort), eq("chat1"), eq("Voice text"));
-        verify(channelPort).sendDocument(eq("chat1"), any(byte[].class), eq("doc.pdf"), isNull());
-        assertNull(context.getAttribute("pendingAttachments"));
+        verify(voiceHandler).sendVoiceWithFallback(eq(channelPort), eq(CHAT_ID), eq("Voice text"));
+        verify(channelPort).sendDocument(eq(CHAT_ID), any(byte[].class), eq(FILENAME_DOC_PDF), isNull());
+        assertNull(context.getAttribute(ATTR_PENDING_ATTACHMENTS));
     }
 
     @Test
     void autoModeWithVoicePrefixStoresWithoutPrefix() {
         AgentContext context = createContext();
         LlmResponse response = LlmResponse.builder()
-                .content("\uD83D\uDD0A Auto voice response").build();
+                .content(VOICE_PREFIX + " Auto voice response").build();
         context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
 
         Message autoMsg = Message.builder()
-                .role("user")
+                .role(ROLE_USER)
                 .content("auto task")
                 .timestamp(Instant.now())
                 .metadata(Map.of("auto.mode", true))
@@ -735,7 +754,7 @@ class ResponseRoutingSystemTest {
         verify(voiceHandler, never()).trySendVoice(any(), anyString(), anyString());
         assertFalse(context.getSession().getMessages().isEmpty());
         // Stores with prefix since auto mode returns early before prefix detection
-        assertEquals("\uD83D\uDD0A Auto voice response",
+        assertEquals(VOICE_PREFIX + " Auto voice response",
                 context.getSession().getMessages().get(0).getContent());
     }
 
@@ -744,8 +763,8 @@ class ResponseRoutingSystemTest {
         when(voiceHandler.isAvailable()).thenReturn(true);
 
         AgentContext context = createContext();
-        context.getSession().setChannelType("unknown_channel");
-        LlmResponse response = LlmResponse.builder().content("response").build();
+        context.getSession().setChannelType(CHANNEL_UNKNOWN);
+        LlmResponse response = LlmResponse.builder().content(CONTENT_RESPONSE).build();
         context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
         context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
 
@@ -760,7 +779,7 @@ class ResponseRoutingSystemTest {
 
         AgentContext context = createContext();
         context.getMessages().add(Message.builder()
-                .role("user")
+                .role(ROLE_USER)
                 .content("transcribed")
                 .voiceData(new byte[] { 1 })
                 .audioFormat(AudioFormat.OGG_OPUS)
@@ -787,7 +806,7 @@ class ResponseRoutingSystemTest {
     @Test
     void voiceOnlySkippedWhenNoChannel() {
         AgentContext context = createContext();
-        context.getSession().setChannelType("unknown_channel");
+        context.getSession().setChannelType(CHANNEL_UNKNOWN);
         LlmResponse response = LlmResponse.builder().content("").build();
         context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
         context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
@@ -810,7 +829,7 @@ class ResponseRoutingSystemTest {
         AgentContext context = createContext();
         context.getMessages().add(Message.builder()
                 .role("assistant")
-                .content("response")
+                .content(CONTENT_RESPONSE)
                 .timestamp(Instant.now())
                 .build());
         assertFalse(system.shouldRespondWithVoice(context));
@@ -821,7 +840,7 @@ class ResponseRoutingSystemTest {
         properties.getVoice().getTelegram().setRespondWithVoice(true);
         AgentContext context = createContext();
         context.getMessages().add(Message.builder()
-                .role("user")
+                .role(ROLE_USER)
                 .content("text message")
                 .timestamp(Instant.now())
                 .build());
@@ -836,7 +855,7 @@ class ResponseRoutingSystemTest {
     @Test
     void sendErrorToUser_unknownChannelDoesNotThrow() {
         AgentContext context = createContext();
-        context.getSession().setChannelType("unknown_channel");
+        context.getSession().setChannelType(CHANNEL_UNKNOWN);
         context.setAttribute(ContextAttributes.LLM_ERROR, "some error");
 
         assertDoesNotThrow(() -> system.process(context));
@@ -870,14 +889,14 @@ class ResponseRoutingSystemTest {
 
         AgentContext context = createContext();
         LlmResponse response = LlmResponse.builder()
-                .content("\uD83D\uDD0A Voice after tools")
+                .content(VOICE_PREFIX + " Voice after tools")
                 .build();
         context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
         context.setAttribute(ContextAttributes.TOOLS_EXECUTED, true);
 
         system.process(context);
 
-        verify(voiceHandler).trySendVoice(eq(channelPort), eq("chat1"), eq("Voice after tools"));
+        verify(voiceHandler).trySendVoice(eq(channelPort), eq(CHAT_ID), eq("Voice after tools"));
         verify(channelPort, never()).sendMessage(anyString(), anyString());
     }
 

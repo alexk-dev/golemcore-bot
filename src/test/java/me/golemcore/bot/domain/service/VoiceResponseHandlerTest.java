@@ -15,6 +15,9 @@ import static org.mockito.Mockito.*;
 
 class VoiceResponseHandlerTest {
 
+    private static final String CHAT_ID = "chat1";
+    private static final String TEXT_HELLO = "Hello";
+
     private VoicePort voicePort;
     private BotProperties properties;
     private ChannelPort channel;
@@ -46,18 +49,18 @@ class VoiceResponseHandlerTest {
         when(voicePort.synthesize(anyString(), any(VoicePort.VoiceConfig.class)))
                 .thenReturn(CompletableFuture.completedFuture(new byte[] { 1, 2, 3 }));
 
-        boolean result = handler.trySendVoice(channel, "chat1", "Hello");
+        boolean result = handler.trySendVoice(channel, CHAT_ID, TEXT_HELLO);
 
         assertTrue(result);
-        verify(voicePort).synthesize(eq("Hello"), any(VoicePort.VoiceConfig.class));
-        verify(channel).sendVoice(eq("chat1"), eq(new byte[] { 1, 2, 3 }));
+        verify(voicePort).synthesize(eq(TEXT_HELLO), any(VoicePort.VoiceConfig.class));
+        verify(channel).sendVoice(eq(CHAT_ID), eq(new byte[] { 1, 2, 3 }));
     }
 
     @Test
     void trySendVoice_voiceNotAvailable() {
         when(voicePort.isAvailable()).thenReturn(false);
 
-        boolean result = handler.trySendVoice(channel, "chat1", "Hello");
+        boolean result = handler.trySendVoice(channel, CHAT_ID, TEXT_HELLO);
 
         assertFalse(result);
         verify(voicePort, never()).synthesize(anyString(), any());
@@ -70,7 +73,7 @@ class VoiceResponseHandlerTest {
         when(voicePort.synthesize(anyString(), any(VoicePort.VoiceConfig.class)))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("TTS error")));
 
-        boolean result = handler.trySendVoice(channel, "chat1", "Hello");
+        boolean result = handler.trySendVoice(channel, CHAT_ID, TEXT_HELLO);
 
         assertFalse(result);
         verify(channel, never()).sendVoice(anyString(), any(byte[].class));
@@ -84,7 +87,7 @@ class VoiceResponseHandlerTest {
         when(channel.sendVoice(anyString(), any(byte[].class)))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("send failed")));
 
-        boolean result = handler.trySendVoice(channel, "chat1", "Hello");
+        boolean result = handler.trySendVoice(channel, CHAT_ID, TEXT_HELLO);
 
         assertFalse(result);
     }
@@ -106,7 +109,7 @@ class VoiceResponseHandlerTest {
                     return CompletableFuture.completedFuture(new byte[] { 1 });
                 });
 
-        handler.trySendVoice(channel, "chat1", "Test");
+        handler.trySendVoice(channel, CHAT_ID, "Test");
 
         verify(voicePort).synthesize(eq("Test"), any(VoicePort.VoiceConfig.class));
     }
@@ -119,10 +122,10 @@ class VoiceResponseHandlerTest {
         when(voicePort.synthesize(anyString(), any(VoicePort.VoiceConfig.class)))
                 .thenReturn(CompletableFuture.completedFuture(new byte[] { 1, 2 }));
 
-        boolean result = handler.sendVoiceWithFallback(channel, "chat1", "Hello");
+        boolean result = handler.sendVoiceWithFallback(channel, CHAT_ID, TEXT_HELLO);
 
         assertTrue(result);
-        verify(channel).sendVoice(eq("chat1"), any(byte[].class));
+        verify(channel).sendVoice(eq(CHAT_ID), any(byte[].class));
         verify(channel, never()).sendMessage(anyString(), anyString());
     }
 
@@ -132,21 +135,21 @@ class VoiceResponseHandlerTest {
         when(voicePort.synthesize(anyString(), any(VoicePort.VoiceConfig.class)))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("TTS failed")));
 
-        boolean result = handler.sendVoiceWithFallback(channel, "chat1", "Hello");
+        boolean result = handler.sendVoiceWithFallback(channel, CHAT_ID, TEXT_HELLO);
 
         assertTrue(result);
-        verify(channel).sendMessage(eq("chat1"), eq("Hello"));
+        verify(channel).sendMessage(eq(CHAT_ID), eq(TEXT_HELLO));
     }
 
     @Test
     void sendVoiceWithFallback_voiceUnavailableFallsBackToText() {
         when(voicePort.isAvailable()).thenReturn(false);
 
-        boolean result = handler.sendVoiceWithFallback(channel, "chat1", "Hello");
+        boolean result = handler.sendVoiceWithFallback(channel, CHAT_ID, TEXT_HELLO);
 
         assertTrue(result);
         verify(channel, never()).sendVoice(anyString(), any(byte[].class));
-        verify(channel).sendMessage(eq("chat1"), eq("Hello"));
+        verify(channel).sendMessage(eq(CHAT_ID), eq(TEXT_HELLO));
     }
 
     @Test
@@ -157,7 +160,7 @@ class VoiceResponseHandlerTest {
         when(channel.sendMessage(anyString(), anyString()))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("text send failed")));
 
-        boolean result = handler.sendVoiceWithFallback(channel, "chat1", "Hello");
+        boolean result = handler.sendVoiceWithFallback(channel, CHAT_ID, TEXT_HELLO);
 
         assertFalse(result);
     }

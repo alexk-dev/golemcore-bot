@@ -18,6 +18,10 @@ import static org.mockito.Mockito.*;
 
 class BrowserToolTest {
 
+    private static final String EXAMPLE_URL = "https://example.com";
+    private static final String URL = "url";
+    private static final String MODE = "mode";
+
     private BrowserComponent browserComponent;
     private BotProperties properties;
     private BrowserTool tool;
@@ -64,22 +68,22 @@ class BrowserToolTest {
 
     @Test
     void shouldFailWhenUrlIsBlank() {
-        ToolResult result = tool.execute(Map.of("url", "  ")).join();
+        ToolResult result = tool.execute(Map.of(URL, "  ")).join();
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("URL is required"));
     }
 
     @ParameterizedTest
     @ValueSource(strings = { "javascript:alert(1)", "data:text/html,<h1>test</h1>", "file:///etc/passwd" })
-    void shouldRejectDangerousUrlSchemes(String url) {
-        ToolResult result = tool.execute(Map.of("url", url)).join();
+    void shouldRejectDangerousUrlSchemes(String dangerousUrl) {
+        ToolResult result = tool.execute(Map.of(URL, dangerousUrl)).join();
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("Only http and https URLs are allowed"));
     }
 
     @Test
     void shouldRejectCustomScheme() {
-        ToolResult result = tool.execute(Map.of("url", "ftp://example.com")).join();
+        ToolResult result = tool.execute(Map.of(URL, "ftp://example.com")).join();
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("Only http and https URLs are allowed"));
     }
@@ -87,17 +91,17 @@ class BrowserToolTest {
     @Test
     void shouldPrependHttpsWhenNoScheme() {
         BrowserPage page = BrowserPage.builder()
-                .url("https://example.com")
+                .url(EXAMPLE_URL)
                 .title("Example")
                 .text("Hello")
                 .build();
-        when(browserComponent.navigate("https://example.com"))
+        when(browserComponent.navigate(EXAMPLE_URL))
                 .thenReturn(CompletableFuture.completedFuture(page));
 
-        ToolResult result = tool.execute(Map.of("url", "example.com")).join();
+        ToolResult result = tool.execute(Map.of(URL, "example.com")).join();
 
         assertTrue(result.isSuccess());
-        verify(browserComponent).navigate("https://example.com");
+        verify(browserComponent).navigate(EXAMPLE_URL);
     }
 
     // ===== Text mode (default) =====
@@ -105,14 +109,14 @@ class BrowserToolTest {
     @Test
     void shouldExtractTextByDefault() {
         BrowserPage page = BrowserPage.builder()
-                .url("https://example.com")
+                .url(EXAMPLE_URL)
                 .title("Example Domain")
                 .text("This is an example page.")
                 .build();
-        when(browserComponent.navigate("https://example.com"))
+        when(browserComponent.navigate(EXAMPLE_URL))
                 .thenReturn(CompletableFuture.completedFuture(page));
 
-        ToolResult result = tool.execute(Map.of("url", "https://example.com")).join();
+        ToolResult result = tool.execute(Map.of(URL, EXAMPLE_URL)).join();
 
         assertTrue(result.isSuccess());
         assertTrue(result.getOutput().contains("Example Domain"));
@@ -123,14 +127,14 @@ class BrowserToolTest {
     void shouldTruncateLongText() {
         String longText = "A".repeat(20000);
         BrowserPage page = BrowserPage.builder()
-                .url("https://example.com")
+                .url(EXAMPLE_URL)
                 .title("Test")
                 .text(longText)
                 .build();
-        when(browserComponent.navigate("https://example.com"))
+        when(browserComponent.navigate(EXAMPLE_URL))
                 .thenReturn(CompletableFuture.completedFuture(page));
 
-        ToolResult result = tool.execute(Map.of("url", "https://example.com")).join();
+        ToolResult result = tool.execute(Map.of(URL, EXAMPLE_URL)).join();
 
         assertTrue(result.isSuccess());
         assertTrue(result.getOutput().contains("(truncated)"));
@@ -142,10 +146,10 @@ class BrowserToolTest {
     @Test
     void shouldReturnHtmlInHtmlMode() {
         String html = "<html><body>Hello</body></html>";
-        when(browserComponent.getHtml("https://example.com"))
+        when(browserComponent.getHtml(EXAMPLE_URL))
                 .thenReturn(CompletableFuture.completedFuture(html));
 
-        ToolResult result = tool.execute(Map.of("url", "https://example.com", "mode", "html")).join();
+        ToolResult result = tool.execute(Map.of(URL, EXAMPLE_URL, MODE, "html")).join();
 
         assertTrue(result.isSuccess());
         assertEquals(html, result.getOutput());
@@ -154,10 +158,10 @@ class BrowserToolTest {
     @Test
     void shouldTruncateLongHtml() {
         String longHtml = "<p>" + "B".repeat(25000) + "</p>";
-        when(browserComponent.getHtml("https://example.com"))
+        when(browserComponent.getHtml(EXAMPLE_URL))
                 .thenReturn(CompletableFuture.completedFuture(longHtml));
 
-        ToolResult result = tool.execute(Map.of("url", "https://example.com", "mode", "html")).join();
+        ToolResult result = tool.execute(Map.of(URL, EXAMPLE_URL, MODE, "html")).join();
 
         assertTrue(result.isSuccess());
         assertTrue(result.getOutput().contains("(truncated)"));
@@ -168,10 +172,10 @@ class BrowserToolTest {
     @Test
     void shouldReturnScreenshotWithAttachment() {
         byte[] screenshotBytes = new byte[] { 0x50, 0x4E, 0x47 };
-        when(browserComponent.screenshot("https://example.com"))
+        when(browserComponent.screenshot(EXAMPLE_URL))
                 .thenReturn(CompletableFuture.completedFuture(screenshotBytes));
 
-        ToolResult result = tool.execute(Map.of("url", "https://example.com", "mode", "screenshot")).join();
+        ToolResult result = tool.execute(Map.of(URL, EXAMPLE_URL, MODE, "screenshot")).join();
 
         assertTrue(result.isSuccess());
         assertTrue(result.getOutput().contains("Screenshot captured"));
@@ -195,7 +199,7 @@ class BrowserToolTest {
         when(browserComponent.navigate("https://broken.example.com"))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("Connection refused")));
 
-        ToolResult result = tool.execute(Map.of("url", "https://broken.example.com")).join();
+        ToolResult result = tool.execute(Map.of(URL, "https://broken.example.com")).join();
 
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("Failed to browse page"));
@@ -203,10 +207,10 @@ class BrowserToolTest {
 
     @Test
     void shouldReturnFailureOnScreenshotError() {
-        when(browserComponent.screenshot("https://example.com"))
+        when(browserComponent.screenshot(EXAMPLE_URL))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("Browser crashed")));
 
-        ToolResult result = tool.execute(Map.of("url", "https://example.com", "mode", "screenshot")).join();
+        ToolResult result = tool.execute(Map.of(URL, EXAMPLE_URL, MODE, "screenshot")).join();
 
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("Failed to browse page"));
@@ -222,7 +226,7 @@ class BrowserToolTest {
         when(browserComponent.navigate("http://example.com"))
                 .thenReturn(CompletableFuture.completedFuture(page));
 
-        ToolResult result = tool.execute(Map.of("url", "http://example.com")).join();
+        ToolResult result = tool.execute(Map.of(URL, "http://example.com")).join();
 
         assertTrue(result.isSuccess());
     }

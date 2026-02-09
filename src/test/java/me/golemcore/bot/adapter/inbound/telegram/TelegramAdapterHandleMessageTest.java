@@ -21,10 +21,19 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class TelegramAdapterHandleMessageTest {
+
+    private static final String COMMAND_HELP = "help";
 
     private TelegramAdapter adapter;
     private TelegramClient telegramClient;
@@ -73,10 +82,10 @@ class TelegramAdapterHandleMessageTest {
 
     @Test
     void shouldRouteKnownCommandToRouter() throws Exception {
-        when(commandRouter.hasCommand("help")).thenReturn(true);
+        when(commandRouter.hasCommand(COMMAND_HELP)).thenReturn(true);
 
         CommandPort.CommandResult result = CommandPort.CommandResult.success("Help text");
-        when(commandRouter.execute(eq("help"), eq(List.of()), any()))
+        when(commandRouter.execute(eq(COMMAND_HELP), eq(List.of()), any()))
                 .thenReturn(CompletableFuture.completedFuture(result));
 
         when(telegramClient.execute(any(SendMessage.class)))
@@ -85,8 +94,8 @@ class TelegramAdapterHandleMessageTest {
         Update update = createTextUpdate(123L, 100L, "/help");
         adapter.consume(update);
 
-        verify(commandRouter).hasCommand("help");
-        verify(commandRouter).execute(eq("help"), eq(List.of()), any());
+        verify(commandRouter).hasCommand(COMMAND_HELP);
+        verify(commandRouter).execute(eq(COMMAND_HELP), eq(List.of()), any());
         verify(messageHandler, never()).accept(any());
     }
 
@@ -133,10 +142,10 @@ class TelegramAdapterHandleMessageTest {
 
     @Test
     void shouldHandleCommandWithBotMention() throws Exception {
-        when(commandRouter.hasCommand("help")).thenReturn(true);
+        when(commandRouter.hasCommand(COMMAND_HELP)).thenReturn(true);
 
         CommandPort.CommandResult result = CommandPort.CommandResult.success("Help text");
-        when(commandRouter.execute(eq("help"), eq(List.of()), any()))
+        when(commandRouter.execute(eq(COMMAND_HELP), eq(List.of()), any()))
                 .thenReturn(CompletableFuture.completedFuture(result));
 
         when(telegramClient.execute(any(SendMessage.class)))
@@ -146,7 +155,7 @@ class TelegramAdapterHandleMessageTest {
         Update update = createTextUpdate(123L, 100L, "/help@mybot");
         adapter.consume(update);
 
-        verify(commandRouter).hasCommand("help");
+        verify(commandRouter).hasCommand(COMMAND_HELP);
     }
 
     @Test

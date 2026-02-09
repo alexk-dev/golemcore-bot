@@ -3,7 +3,14 @@ package me.golemcore.bot.domain.system;
 import me.golemcore.bot.domain.component.MemoryComponent;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
-import me.golemcore.bot.domain.model.*;
+import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.McpConfig;
+import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.PromptSection;
+import me.golemcore.bot.domain.model.Skill;
+import me.golemcore.bot.domain.model.ToolDefinition;
+import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.PromptSectionService;
 import me.golemcore.bot.domain.service.SkillTemplateEngine;
@@ -25,6 +32,9 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class ContextBuildingSystemPromptTest {
+
+    private static final String SECTION_IDENTITY = "identity";
+    private static final String SKILL_PROCESSING = "processing";
 
     private MemoryComponent memoryComponent;
     private SkillComponent skillComponent;
@@ -85,7 +95,7 @@ class ContextBuildingSystemPromptTest {
         when(promptSectionService.buildTemplateVariables(any()))
                 .thenReturn(Map.of("BOT_NAME", "TestBot"));
         when(promptSectionService.getEnabledSections()).thenReturn(List.of(
-                PromptSection.builder().name("identity").content("You are TestBot.").order(10).build(),
+                PromptSection.builder().name(SECTION_IDENTITY).content("You are TestBot.").order(10).build(),
                 PromptSection.builder().name("rules").content("Be helpful.").order(20).build()));
         when(promptSectionService.renderSection(any(), any()))
                 .thenAnswer(inv -> {
@@ -129,7 +139,7 @@ class ContextBuildingSystemPromptTest {
         when(promptSectionService.isEnabled()).thenReturn(true);
         when(promptSectionService.buildTemplateVariables(any())).thenReturn(Map.of());
         when(promptSectionService.getEnabledSections()).thenReturn(List.of(
-                PromptSection.builder().name("identity").content("IDENTITY_MARKER").order(10).build(),
+                PromptSection.builder().name(SECTION_IDENTITY).content("IDENTITY_MARKER").order(10).build(),
                 PromptSection.builder().name("rules").content("RULES_MARKER").order(20).build()));
         when(promptSectionService.renderSection(any(), any()))
                 .thenAnswer(inv -> ((PromptSection) inv.getArgument(0)).getContent());
@@ -147,7 +157,7 @@ class ContextBuildingSystemPromptTest {
         when(promptSectionService.buildTemplateVariables(any()))
                 .thenReturn(Map.of("BOT_NAME", "SuperBot"));
         when(promptSectionService.getEnabledSections()).thenReturn(List.of(
-                PromptSection.builder().name("identity").content("I am {{BOT_NAME}}").order(10).build()));
+                PromptSection.builder().name(SECTION_IDENTITY).content("I am {{BOT_NAME}}").order(10).build()));
         when(promptSectionService.renderSection(any(), any())).thenReturn("I am SuperBot");
 
         AgentContext ctx = createContext();
@@ -162,7 +172,7 @@ class ContextBuildingSystemPromptTest {
         when(promptSectionService.isEnabled()).thenReturn(true);
         when(promptSectionService.buildTemplateVariables(any())).thenReturn(Map.of());
         when(promptSectionService.getEnabledSections()).thenReturn(List.of(
-                PromptSection.builder().name("identity").content("Bot identity").order(10).build()));
+                PromptSection.builder().name(SECTION_IDENTITY).content("Bot identity").order(10).build()));
         when(promptSectionService.renderSection(any(), any())).thenReturn("Bot identity");
 
         // Set up memory and tools
@@ -245,7 +255,7 @@ class ContextBuildingSystemPromptTest {
                 .name("intake")
                 .description("Intake skill")
                 .content("Collect user info")
-                .nextSkill("processing")
+                .nextSkill(SKILL_PROCESSING)
                 .conditionalNextSkills(Map.of("error", "error-handler"))
                 .available(true)
                 .build();
@@ -330,15 +340,15 @@ class ContextBuildingSystemPromptTest {
         when(promptSectionService.isEnabled()).thenReturn(false);
 
         Skill targetSkill = Skill.builder()
-                .name("processing")
+                .name(SKILL_PROCESSING)
                 .description("Process data")
                 .content("You process data")
                 .available(true)
                 .build();
-        when(skillComponent.findByName("processing")).thenReturn(java.util.Optional.of(targetSkill));
+        when(skillComponent.findByName(SKILL_PROCESSING)).thenReturn(java.util.Optional.of(targetSkill));
 
         AgentContext ctx = createContext();
-        ctx.setAttribute("skill.transition.target", "processing");
+        ctx.setAttribute("skill.transition.target", SKILL_PROCESSING);
         system.process(ctx);
 
         assertEquals(targetSkill, ctx.getActiveSkill());

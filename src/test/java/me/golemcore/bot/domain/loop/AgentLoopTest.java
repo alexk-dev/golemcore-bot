@@ -27,14 +27,16 @@ import static org.mockito.Mockito.*;
 
 class AgentLoopTest {
 
+    private static final String CHANNEL_TYPE_TELEGRAM = "telegram";
+    private static final String CHAT_ID = "123";
+    private static final Instant FIXED_TIME = Instant.parse("2026-01-01T12:00:00Z");
+
     private SessionPort sessionPort;
     private RateLimitPort rateLimiter;
     private BotProperties properties;
     private UserPreferencesService preferencesService;
     private ChannelPort channelPort;
     private Clock clock;
-
-    private static final Instant FIXED_TIME = Instant.parse("2026-01-01T12:00:00Z");
 
     @BeforeEach
     void setUp() {
@@ -46,7 +48,7 @@ class AgentLoopTest {
         when(preferencesService.getMessage(anyString(), any(Object[].class))).thenReturn("limit reached");
 
         channelPort = mock(ChannelPort.class);
-        when(channelPort.getChannelType()).thenReturn("telegram");
+        when(channelPort.getChannelType()).thenReturn(CHANNEL_TYPE_TELEGRAM);
         when(channelPort.sendMessage(anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
@@ -65,8 +67,8 @@ class AgentLoopTest {
                 .id("msg-1")
                 .role("user")
                 .content("Hello")
-                .channelType("telegram")
-                .chatId("123")
+                .channelType(CHANNEL_TYPE_TELEGRAM)
+                .chatId(CHAT_ID)
                 .senderId("user1")
                 .timestamp(FIXED_TIME)
                 .build();
@@ -75,8 +77,8 @@ class AgentLoopTest {
     private AgentSession createSession() {
         return AgentSession.builder()
                 .id("telegram:123")
-                .channelType("telegram")
-                .chatId("123")
+                .channelType(CHANNEL_TYPE_TELEGRAM)
+                .chatId(CHAT_ID)
                 .createdAt(FIXED_TIME)
                 .updatedAt(FIXED_TIME)
                 .build();
@@ -93,7 +95,7 @@ class AgentLoopTest {
         AgentSystem system30 = createOrderedSystem("C", 30, callOrder);
 
         AgentSession session = createSession();
-        when(sessionPort.getOrCreate("telegram", "123")).thenReturn(session);
+        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
 
         AgentLoop loop = createLoop(List.of(system30, system10, system20)); // intentionally unordered
         loop.processMessage(createUserMessage());
@@ -138,7 +140,7 @@ class AgentLoopTest {
         };
 
         AgentSession session = createSession();
-        when(sessionPort.getOrCreate("telegram", "123")).thenReturn(session);
+        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
 
         AgentLoop loop = createLoop(List.of(toolSystem));
         loop.processMessage(createUserMessage());
@@ -175,7 +177,7 @@ class AgentLoopTest {
         };
 
         AgentSession session = createSession();
-        when(sessionPort.getOrCreate("telegram", "123")).thenReturn(session);
+        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
 
         AgentLoop loop = createLoop(List.of(system));
         loop.processMessage(createUserMessage());
@@ -217,14 +219,14 @@ class AgentLoopTest {
         };
 
         AgentSession session = createSession();
-        when(sessionPort.getOrCreate("telegram", "123")).thenReturn(session);
+        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
 
         AgentLoop loop = createLoop(List.of(infiniteTools));
         loop.processMessage(createUserMessage());
 
         assertEquals(3, iterations.size(), "Should stop after max iterations");
         // Verify iteration limit notification sent to channel
-        verify(channelPort).sendMessage(eq("123"), eq("limit reached"));
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq("limit reached"));
     }
 
     // ===== Rate limiting =====
@@ -235,7 +237,7 @@ class AgentLoopTest {
                 .thenReturn(RateLimitResult.denied(1000, "Rate limit exceeded"));
 
         AgentSession session = createSession();
-        when(sessionPort.getOrCreate("telegram", "123")).thenReturn(session);
+        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
 
         List<Integer> iterations = new ArrayList<>();
         AgentSystem system = createTrackingSystem(iterations);
@@ -252,7 +254,7 @@ class AgentLoopTest {
     @Test
     void sessionCreatedAndSaved() {
         AgentSession session = createSession();
-        when(sessionPort.getOrCreate("telegram", "123")).thenReturn(session);
+        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
 
         AgentSystem system = new AgentSystem() {
             @Override
@@ -274,7 +276,7 @@ class AgentLoopTest {
         AgentLoop loop = createLoop(List.of(system));
         loop.processMessage(createUserMessage());
 
-        verify(sessionPort).getOrCreate("telegram", "123");
+        verify(sessionPort).getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID);
         verify(sessionPort).save(session);
         // Message should be added to session
         assertFalse(session.getMessages().isEmpty());
@@ -311,7 +313,7 @@ class AgentLoopTest {
         };
 
         AgentSession session = createSession();
-        when(sessionPort.getOrCreate("telegram", "123")).thenReturn(session);
+        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
 
         AgentLoop loop = createLoop(List.of(enabled, disabled));
         loop.processMessage(createUserMessage());
@@ -350,7 +352,7 @@ class AgentLoopTest {
         };
 
         AgentSession session = createSession();
-        when(sessionPort.getOrCreate("telegram", "123")).thenReturn(session);
+        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
 
         AgentLoop loop = createLoop(List.of(always, conditional));
         loop.processMessage(createUserMessage());
@@ -369,15 +371,15 @@ class AgentLoopTest {
                 .id("auto-1")
                 .role("user")
                 .content("Auto check")
-                .channelType("telegram")
-                .chatId("123")
+                .channelType(CHANNEL_TYPE_TELEGRAM)
+                .chatId(CHAT_ID)
                 .senderId("bot")
                 .timestamp(FIXED_TIME)
                 .metadata(Map.of("auto.mode", true))
                 .build();
 
         AgentSession session = createSession();
-        when(sessionPort.getOrCreate("telegram", "123")).thenReturn(session);
+        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
 
         List<Integer> iterations = new ArrayList<>();
         AgentSystem system = createTrackingSystem(iterations);
@@ -415,7 +417,7 @@ class AgentLoopTest {
         AgentSystem after = createOrderedSystem("After", 20, callOrder);
 
         AgentSession session = createSession();
-        when(sessionPort.getOrCreate("telegram", "123")).thenReturn(session);
+        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
 
         AgentLoop loop = createLoop(List.of(failing, after));
         loop.processMessage(createUserMessage());
@@ -459,7 +461,7 @@ class AgentLoopTest {
         };
 
         AgentSession session = createSession();
-        when(sessionPort.getOrCreate("telegram", "123")).thenReturn(session);
+        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
 
         AgentLoop loop = createLoop(List.of(toolWithComplete));
         loop.processMessage(createUserMessage());

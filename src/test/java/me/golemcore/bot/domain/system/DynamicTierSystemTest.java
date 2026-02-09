@@ -16,6 +16,17 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class DynamicTierSystemTest {
 
+    private static final String ROLE_USER = "user";
+    private static final String ROLE_ASSISTANT = "assistant";
+    private static final String ROLE_TOOL = "tool";
+    private static final String TIER_DEFAULT = "default";
+    private static final String TIER_CODING = "coding";
+    private static final String TOOL_CALL_ID = "tc1";
+    private static final String TOOL_SHELL = "shell";
+    private static final String TOOL_FILESYSTEM = "filesystem";
+    private static final String CONTENT_HELLO = "Hello";
+    private static final String ARG_COMMAND = "command";
+
     private BotProperties properties;
     private DynamicTierSystem system;
 
@@ -41,32 +52,32 @@ class DynamicTierSystemTest {
 
     @Test
     void shouldNotProcessIteration0() {
-        AgentContext context = buildContext(0, "default", List.of());
+        AgentContext context = buildContext(0, TIER_DEFAULT, List.of());
         assertFalse(system.shouldProcess(context));
     }
 
     @Test
     void shouldNotProcessWhenAlreadyCoding() {
-        AgentContext context = buildContext(1, "coding", List.of());
+        AgentContext context = buildContext(1, TIER_CODING, List.of());
         assertFalse(system.shouldProcess(context));
     }
 
     @Test
     void shouldProcessIteration1WithDefaultTier() {
-        AgentContext context = buildContext(1, "default", List.of());
+        AgentContext context = buildContext(1, TIER_DEFAULT, List.of());
         assertTrue(system.shouldProcess(context));
     }
 
     @Test
     void noCodingSignalsAfterUserMessage_tierUnchanged() {
         List<Message> messages = List.of(
-                Message.builder().role("user").content("What's the weather?").build(),
-                Message.builder().role("assistant").content("It's sunny.").build());
+                Message.builder().role(ROLE_USER).content("What's the weather?").build(),
+                Message.builder().role(ROLE_ASSISTANT).content("It's sunny.").build());
 
-        AgentContext context = buildContext(1, "default", messages);
+        AgentContext context = buildContext(1, TIER_DEFAULT, messages);
         AgentContext result = system.process(context);
 
-        assertEquals("default", result.getModelTier());
+        assertEquals(TIER_DEFAULT, result.getModelTier());
     }
 
     // --- Coding signal detection (after user message) ---
@@ -74,99 +85,99 @@ class DynamicTierSystemTest {
     @Test
     void fileSystemWritePyUpgradesToCoding() {
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("tc1")
-                .name("filesystem")
+                .id(TOOL_CALL_ID)
+                .name(TOOL_FILESYSTEM)
                 .arguments(Map.of("operation", "write_file", "path", "script.py"))
                 .build();
 
         List<Message> messages = List.of(
-                Message.builder().role("user").content("Write a python script").build(),
-                Message.builder().role("assistant").toolCalls(List.of(toolCall)).build());
+                Message.builder().role(ROLE_USER).content("Write a python script").build(),
+                Message.builder().role(ROLE_ASSISTANT).toolCalls(List.of(toolCall)).build());
 
-        AgentContext context = buildContext(1, "default", messages);
+        AgentContext context = buildContext(1, TIER_DEFAULT, messages);
         AgentContext result = system.process(context);
 
-        assertEquals("coding", result.getModelTier());
+        assertEquals(TIER_CODING, result.getModelTier());
     }
 
     @Test
     void fileSystemReadJavaUpgradesToCoding() {
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("tc1")
+                .id(TOOL_CALL_ID)
                 .name("file_system")
                 .arguments(Map.of("operation", "read_file", "path", "/project/Main.java"))
                 .build();
 
         List<Message> messages = List.of(
-                Message.builder().role("user").content("Read the java file").build(),
-                Message.builder().role("assistant").toolCalls(List.of(toolCall)).build());
+                Message.builder().role(ROLE_USER).content("Read the java file").build(),
+                Message.builder().role(ROLE_ASSISTANT).toolCalls(List.of(toolCall)).build());
 
-        AgentContext context = buildContext(1, "default", messages);
+        AgentContext context = buildContext(1, TIER_DEFAULT, messages);
         AgentContext result = system.process(context);
 
-        assertEquals("coding", result.getModelTier());
+        assertEquals(TIER_CODING, result.getModelTier());
     }
 
     @Test
     void shellPythonCommandUpgradesToCoding() {
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("tc1")
-                .name("shell")
-                .arguments(Map.of("command", "python script.py"))
+                .id(TOOL_CALL_ID)
+                .name(TOOL_SHELL)
+                .arguments(Map.of(ARG_COMMAND, "python script.py"))
                 .build();
 
         List<Message> messages = List.of(
-                Message.builder().role("user").content("Run the script").build(),
-                Message.builder().role("assistant").toolCalls(List.of(toolCall)).build());
+                Message.builder().role(ROLE_USER).content("Run the script").build(),
+                Message.builder().role(ROLE_ASSISTANT).toolCalls(List.of(toolCall)).build());
 
-        AgentContext context = buildContext(1, "default", messages);
+        AgentContext context = buildContext(1, TIER_DEFAULT, messages);
         AgentContext result = system.process(context);
 
-        assertEquals("coding", result.getModelTier());
+        assertEquals(TIER_CODING, result.getModelTier());
     }
 
     @Test
     void shellNpmCommandUpgradesToCoding() {
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("tc1")
-                .name("shell")
-                .arguments(Map.of("command", "npm install express"))
+                .id(TOOL_CALL_ID)
+                .name(TOOL_SHELL)
+                .arguments(Map.of(ARG_COMMAND, "npm install express"))
                 .build();
 
         List<Message> messages = List.of(
-                Message.builder().role("user").content("Install express").build(),
-                Message.builder().role("assistant").toolCalls(List.of(toolCall)).build());
+                Message.builder().role(ROLE_USER).content("Install express").build(),
+                Message.builder().role(ROLE_ASSISTANT).toolCalls(List.of(toolCall)).build());
 
         AgentContext context = buildContext(1, "fast", messages);
         AgentContext result = system.process(context);
 
-        assertEquals("coding", result.getModelTier());
+        assertEquals(TIER_CODING, result.getModelTier());
     }
 
     @Test
     void toolResultWithTracebackUpgradesToCoding() {
         List<Message> messages = List.of(
-                Message.builder().role("user").content("Run the script").build(),
+                Message.builder().role(ROLE_USER).content("Run the script").build(),
                 Message.builder()
-                        .role("tool")
-                        .toolName("shell")
+                        .role(ROLE_TOOL)
+                        .toolName(TOOL_SHELL)
                         .content(
                                 "Traceback (most recent call last):\n  File \"main.py\", line 1\n    print(x\n        ^\nSyntaxError: unexpected EOF")
                         .build());
 
-        AgentContext context = buildContext(1, "default", messages);
+        AgentContext context = buildContext(1, TIER_DEFAULT, messages);
         AgentContext result = system.process(context);
 
-        assertEquals("coding", result.getModelTier());
+        assertEquals(TIER_CODING, result.getModelTier());
     }
 
     @Test
     void toolResultWithJavaStackTraceUpgradesToCoding() {
         List<Message> messages = List.of(
-                Message.builder().role("user").content("Build the project").build(),
+                Message.builder().role(ROLE_USER).content("Build the project").build(),
                 Message.builder()
-                        .role("tool")
-                        .toolName("shell")
+                        .role(ROLE_TOOL)
+                        .toolName(TOOL_SHELL)
                         .content(
                                 "Exception in thread \"main\" java.lang.NullPointerException\n    at com.example.Main.run(Main.java:42)")
                         .build());
@@ -174,43 +185,43 @@ class DynamicTierSystemTest {
         AgentContext context = buildContext(1, "smart", messages);
         AgentContext result = system.process(context);
 
-        assertEquals("coding", result.getModelTier());
+        assertEquals(TIER_CODING, result.getModelTier());
     }
 
     @Test
     void nonCodeFileDoesNotTrigger() {
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("tc1")
-                .name("filesystem")
+                .id(TOOL_CALL_ID)
+                .name(TOOL_FILESYSTEM)
                 .arguments(Map.of("operation", "write_file", "path", "notes.txt"))
                 .build();
 
         List<Message> messages = List.of(
-                Message.builder().role("user").content("Write notes").build(),
-                Message.builder().role("assistant").toolCalls(List.of(toolCall)).build());
+                Message.builder().role(ROLE_USER).content("Write notes").build(),
+                Message.builder().role(ROLE_ASSISTANT).toolCalls(List.of(toolCall)).build());
 
-        AgentContext context = buildContext(1, "default", messages);
+        AgentContext context = buildContext(1, TIER_DEFAULT, messages);
         AgentContext result = system.process(context);
 
-        assertEquals("default", result.getModelTier());
+        assertEquals(TIER_DEFAULT, result.getModelTier());
     }
 
     @Test
     void nonCodeShellCommandDoesNotTrigger() {
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("tc1")
-                .name("shell")
-                .arguments(Map.of("command", "ls -la"))
+                .id(TOOL_CALL_ID)
+                .name(TOOL_SHELL)
+                .arguments(Map.of(ARG_COMMAND, "ls -la"))
                 .build();
 
         List<Message> messages = List.of(
-                Message.builder().role("user").content("List files").build(),
-                Message.builder().role("assistant").toolCalls(List.of(toolCall)).build());
+                Message.builder().role(ROLE_USER).content("List files").build(),
+                Message.builder().role(ROLE_ASSISTANT).toolCalls(List.of(toolCall)).build());
 
-        AgentContext context = buildContext(1, "default", messages);
+        AgentContext context = buildContext(1, TIER_DEFAULT, messages);
         AgentContext result = system.process(context);
 
-        assertEquals("default", result.getModelTier());
+        assertEquals(TIER_DEFAULT, result.getModelTier());
     }
 
     // --- Only scans current run (after last user message) ---
@@ -220,73 +231,73 @@ class DynamicTierSystemTest {
         // Old history has coding activity, but it's before the current user message
         Message.ToolCall oldCodingCall = Message.ToolCall.builder()
                 .id("tc0")
-                .name("shell")
-                .arguments(Map.of("command", "python train.py"))
+                .name(TOOL_SHELL)
+                .arguments(Map.of(ARG_COMMAND, "python train.py"))
                 .build();
 
         List<Message> messages = new ArrayList<>();
         // Old conversation turn with coding
-        messages.add(Message.builder().role("user").content("Train the model").build());
-        messages.add(Message.builder().role("assistant").toolCalls(List.of(oldCodingCall)).build());
-        messages.add(Message.builder().role("tool").toolName("shell").content("Training complete").build());
-        messages.add(Message.builder().role("assistant").content("Training finished!").build());
+        messages.add(Message.builder().role(ROLE_USER).content("Train the model").build());
+        messages.add(Message.builder().role(ROLE_ASSISTANT).toolCalls(List.of(oldCodingCall)).build());
+        messages.add(Message.builder().role(ROLE_TOOL).toolName(TOOL_SHELL).content("Training complete").build());
+        messages.add(Message.builder().role(ROLE_ASSISTANT).content("Training finished!").build());
         // Current turn — no coding
-        messages.add(Message.builder().role("user").content("What time is it?").build());
-        messages.add(Message.builder().role("assistant").content("Let me check...").build());
+        messages.add(Message.builder().role(ROLE_USER).content("What time is it?").build());
+        messages.add(Message.builder().role(ROLE_ASSISTANT).content("Let me check...").build());
 
-        AgentContext context = buildContext(1, "default", messages);
+        AgentContext context = buildContext(1, TIER_DEFAULT, messages);
         AgentContext result = system.process(context);
 
         // Should NOT upgrade — coding was in old history, not current run
-        assertEquals("default", result.getModelTier());
+        assertEquals(TIER_DEFAULT, result.getModelTier());
     }
 
     @Test
     void codingSignalsInCurrentRunDetected() {
         List<Message> messages = new ArrayList<>();
         // Old non-coding turn
-        messages.add(Message.builder().role("user").content("Hello").build());
-        messages.add(Message.builder().role("assistant").content("Hi!").build());
+        messages.add(Message.builder().role(ROLE_USER).content(CONTENT_HELLO).build());
+        messages.add(Message.builder().role(ROLE_ASSISTANT).content("Hi!").build());
         // Current turn — has coding
-        messages.add(Message.builder().role("user").content("Write a script").build());
+        messages.add(Message.builder().role(ROLE_USER).content("Write a script").build());
 
         Message.ToolCall codingCall = Message.ToolCall.builder()
-                .id("tc1")
-                .name("shell")
-                .arguments(Map.of("command", "cargo build"))
+                .id(TOOL_CALL_ID)
+                .name(TOOL_SHELL)
+                .arguments(Map.of(ARG_COMMAND, "cargo build"))
                 .build();
-        messages.add(Message.builder().role("assistant").toolCalls(List.of(codingCall)).build());
+        messages.add(Message.builder().role(ROLE_ASSISTANT).toolCalls(List.of(codingCall)).build());
 
-        AgentContext context = buildContext(1, "default", messages);
+        AgentContext context = buildContext(1, TIER_DEFAULT, messages);
         AgentContext result = system.process(context);
 
-        assertEquals("coding", result.getModelTier());
+        assertEquals(TIER_CODING, result.getModelTier());
     }
 
     @Test
     void noUserMessageInHistory_noUpgrade() {
         // Only assistant/tool messages, no user message — nothing to scan
         List<Message> messages = List.of(
-                Message.builder().role("assistant").content("Hello").build(),
-                Message.builder().role("tool").toolName("shell")
+                Message.builder().role(ROLE_ASSISTANT).content(CONTENT_HELLO).build(),
+                Message.builder().role(ROLE_TOOL).toolName(TOOL_SHELL)
                         .content("Traceback...SyntaxError").build());
 
-        AgentContext context = buildContext(1, "default", messages);
+        AgentContext context = buildContext(1, TIER_DEFAULT, messages);
         AgentContext result = system.process(context);
 
-        assertEquals("default", result.getModelTier());
+        assertEquals(TIER_DEFAULT, result.getModelTier());
     }
 
     @Test
     void userMessageIsLastMessage_noToolCalls_noUpgrade() {
         // User message is the very last message — nothing after it to scan
         List<Message> messages = List.of(
-                Message.builder().role("user").content("Write python code").build());
+                Message.builder().role(ROLE_USER).content("Write python code").build());
 
-        AgentContext context = buildContext(1, "default", messages);
+        AgentContext context = buildContext(1, TIER_DEFAULT, messages);
         AgentContext result = system.process(context);
 
-        assertEquals("default", result.getModelTier());
+        assertEquals(TIER_DEFAULT, result.getModelTier());
     }
 
     // --- Edge cases ---
@@ -299,9 +310,9 @@ class DynamicTierSystemTest {
 
     @Test
     void emptyMessagesNoChange() {
-        AgentContext context = buildContext(1, "default", List.of());
+        AgentContext context = buildContext(1, TIER_DEFAULT, List.of());
         AgentContext result = system.process(context);
-        assertEquals("default", result.getModelTier());
+        assertEquals(TIER_DEFAULT, result.getModelTier());
     }
 
     @Test
@@ -310,29 +321,29 @@ class DynamicTierSystemTest {
                 .session(buildSession())
                 .messages(null)
                 .currentIteration(1)
-                .modelTier("default")
+                .modelTier(TIER_DEFAULT)
                 .build();
 
         AgentContext result = system.process(context);
-        assertEquals("default", result.getModelTier());
+        assertEquals(TIER_DEFAULT, result.getModelTier());
     }
 
     @Test
     void nullToolCallArguments_noException() {
         Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id("tc1")
-                .name("filesystem")
+                .id(TOOL_CALL_ID)
+                .name(TOOL_FILESYSTEM)
                 .arguments(null)
                 .build();
 
         List<Message> messages = List.of(
-                Message.builder().role("user").content("Do something").build(),
-                Message.builder().role("assistant").toolCalls(List.of(toolCall)).build());
+                Message.builder().role(ROLE_USER).content("Do something").build(),
+                Message.builder().role(ROLE_ASSISTANT).toolCalls(List.of(toolCall)).build());
 
-        AgentContext context = buildContext(1, "default", messages);
+        AgentContext context = buildContext(1, TIER_DEFAULT, messages);
         AgentContext result = system.process(context);
 
-        assertEquals("default", result.getModelTier());
+        assertEquals(TIER_DEFAULT, result.getModelTier());
     }
 
     // --- Unit tests for helper methods ---
@@ -388,22 +399,22 @@ class DynamicTierSystemTest {
     @Test
     void getMessagesAfterLastUserMessage_basic() {
         List<Message> messages = List.of(
-                Message.builder().role("user").content("Hello").build(),
-                Message.builder().role("assistant").content("Hi").build(),
-                Message.builder().role("tool").toolName("t").content("result").build());
+                Message.builder().role(ROLE_USER).content(CONTENT_HELLO).build(),
+                Message.builder().role(ROLE_ASSISTANT).content("Hi").build(),
+                Message.builder().role(ROLE_TOOL).toolName("t").content("result").build());
         List<Message> result = system.getMessagesAfterLastUserMessage(messages);
         assertEquals(2, result.size());
-        assertEquals("assistant", result.get(0).getRole());
-        assertEquals("tool", result.get(1).getRole());
+        assertEquals(ROLE_ASSISTANT, result.get(0).getRole());
+        assertEquals(ROLE_TOOL, result.get(1).getRole());
     }
 
     @Test
     void getMessagesAfterLastUserMessage_multipleUserMessages() {
         List<Message> messages = List.of(
-                Message.builder().role("user").content("First").build(),
-                Message.builder().role("assistant").content("Reply 1").build(),
-                Message.builder().role("user").content("Second").build(),
-                Message.builder().role("assistant").content("Reply 2").build());
+                Message.builder().role(ROLE_USER).content("First").build(),
+                Message.builder().role(ROLE_ASSISTANT).content("Reply 1").build(),
+                Message.builder().role(ROLE_USER).content("Second").build(),
+                Message.builder().role(ROLE_ASSISTANT).content("Reply 2").build());
         List<Message> result = system.getMessagesAfterLastUserMessage(messages);
         assertEquals(1, result.size());
         assertEquals("Reply 2", result.get(0).getContent());
@@ -412,7 +423,7 @@ class DynamicTierSystemTest {
     @Test
     void getMessagesAfterLastUserMessage_userIsLast() {
         List<Message> messages = List.of(
-                Message.builder().role("user").content("Hello").build());
+                Message.builder().role(ROLE_USER).content(CONTENT_HELLO).build());
         List<Message> result = system.getMessagesAfterLastUserMessage(messages);
         assertTrue(result.isEmpty());
     }
@@ -420,7 +431,7 @@ class DynamicTierSystemTest {
     @Test
     void getMessagesAfterLastUserMessage_noUserMessage() {
         List<Message> messages = List.of(
-                Message.builder().role("assistant").content("Hi").build());
+                Message.builder().role(ROLE_ASSISTANT).content("Hi").build());
         List<Message> result = system.getMessagesAfterLastUserMessage(messages);
         assertTrue(result.isEmpty());
     }

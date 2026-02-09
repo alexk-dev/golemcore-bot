@@ -2,13 +2,19 @@ package me.golemcore.bot.adapter.inbound.command;
 
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
-import me.golemcore.bot.domain.model.*;
+import me.golemcore.bot.domain.model.AutoModeChannelRegisteredEvent;
+import me.golemcore.bot.domain.model.AutoTask;
+import me.golemcore.bot.domain.model.DiaryEntry;
+import me.golemcore.bot.domain.model.Goal;
+import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.Skill;
+import me.golemcore.bot.domain.model.ToolDefinition;
+import me.golemcore.bot.domain.model.UsageStats;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.CompactionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.infrastructure.config.BotProperties;
-import me.golemcore.bot.domain.model.UsageStats;
+import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,12 +22,35 @@ import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.*;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyInt;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.RETURNS_DEFAULTS;
 
 class CommandRouterTest {
+
+    private static final String SESSION_ID = "telegram:12345";
+    private static final String CHANNEL_TYPE_TELEGRAM = "telegram";
+    private static final String CHAT_ID = "12345";
+    private static final String GET_MESSAGE_METHOD = "getMessage";
+    private static final int ONE = 1;
+    private static final String CMD_COMPACT = "compact";
+    private static final String CMD_AUTO = "auto";
+    private static final String CMD_GOALS = "goals";
+    private static final String CMD_GOAL = "goal";
+    private static final String CMD_DIARY = "diary";
 
     private SkillComponent skillComponent;
     private SessionPort sessionService;
@@ -33,7 +62,7 @@ class CommandRouterTest {
     private CommandRouter router;
 
     private static final Map<String, Object> CTX = Map.of(
-            "sessionId", "telegram:12345");
+            "sessionId", SESSION_ID);
 
     @BeforeEach
     void setUp() {
@@ -44,10 +73,10 @@ class CommandRouterTest {
 
         // Default: pass through message key + args for easy assertion.
         preferencesService = mock(UserPreferencesService.class, inv -> {
-            if ("getMessage".equals(inv.getMethod().getName())) {
+            if (GET_MESSAGE_METHOD.equals(inv.getMethod().getName())) {
                 Object[] allArgs = inv.getArguments();
                 String key = (String) allArgs[0];
-                if (allArgs.length > 1) {
+                if (allArgs.length > ONE) {
                     StringBuilder sb = new StringBuilder(key);
                     Object vararg = allArgs[1];
                     if (vararg instanceof Object[] arr) {
@@ -104,12 +133,12 @@ class CommandRouterTest {
         assertTrue(router.hasCommand("status"));
         assertTrue(router.hasCommand("new"));
         assertTrue(router.hasCommand("reset"));
-        assertTrue(router.hasCommand("compact"));
+        assertTrue(router.hasCommand(CMD_COMPACT));
         assertTrue(router.hasCommand("help"));
-        assertTrue(router.hasCommand("auto"));
-        assertTrue(router.hasCommand("goals"));
-        assertTrue(router.hasCommand("goal"));
-        assertTrue(router.hasCommand("diary"));
+        assertTrue(router.hasCommand(CMD_AUTO));
+        assertTrue(router.hasCommand(CMD_GOALS));
+        assertTrue(router.hasCommand(CMD_GOAL));
+        assertTrue(router.hasCommand(CMD_DIARY));
         assertTrue(router.hasCommand("tasks"));
         assertFalse(router.hasCommand("unknown"));
         assertFalse(router.hasCommand("settings"));
@@ -153,7 +182,7 @@ class CommandRouterTest {
 
     @Test
     void statusCommand() throws Exception {
-        when(sessionService.getMessageCount("telegram:12345")).thenReturn(42);
+        when(sessionService.getMessageCount(SESSION_ID)).thenReturn(42);
 
         Map<String, UsageStats> byModel = new LinkedHashMap<>();
         byModel.put("langchain4j/gpt-5.1", UsageStats.builder()
@@ -175,7 +204,7 @@ class CommandRouterTest {
 
     @Test
     void statusCommandNoUsage() throws Exception {
-        when(sessionService.getMessageCount("telegram:12345")).thenReturn(3);
+        when(sessionService.getMessageCount(SESSION_ID)).thenReturn(3);
         when(usageTracker.getStatsByModel(any(Duration.class)))
                 .thenReturn(Collections.emptyMap());
 
@@ -189,14 +218,14 @@ class CommandRouterTest {
     void newCommand() throws Exception {
         var result = router.execute("new", List.of(), CTX).get();
         assertTrue(result.success());
-        verify(sessionService).clearMessages("telegram:12345");
+        verify(sessionService).clearMessages(SESSION_ID);
     }
 
     @Test
     void resetCommand() throws Exception {
         var result = router.execute("reset", List.of(), CTX).get();
         assertTrue(result.success());
-        verify(sessionService).clearMessages("telegram:12345");
+        verify(sessionService).clearMessages(SESSION_ID);
     }
 
     @Test
@@ -205,21 +234,21 @@ class CommandRouterTest {
         List<Message> oldMessages = List.of(
                 Message.builder().role("user").content("Hello").timestamp(Instant.now()).build(),
                 Message.builder().role("assistant").content("Hi there!").timestamp(Instant.now()).build());
-        when(sessionService.getMessagesToCompact("telegram:12345", 10)).thenReturn(oldMessages);
+        when(sessionService.getMessagesToCompact(SESSION_ID, 10)).thenReturn(oldMessages);
 
         // LLM returns a summary
         when(compactionService.summarize(oldMessages)).thenReturn("User greeted the bot.");
         Message summaryMsg = Message.builder().role("system").content("[Conversation summary]\nUser greeted the bot.")
                 .build();
         when(compactionService.createSummaryMessage("User greeted the bot.")).thenReturn(summaryMsg);
-        when(sessionService.compactWithSummary("telegram:12345", 10, summaryMsg)).thenReturn(20);
+        when(sessionService.compactWithSummary(SESSION_ID, 10, summaryMsg)).thenReturn(20);
 
-        var result = router.execute("compact", List.of(), CTX).get();
+        var result = router.execute(CMD_COMPACT, List.of(), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("20"));
         assertTrue(result.output().contains("command.compact.done.summary"));
         verify(compactionService).summarize(oldMessages);
-        verify(sessionService).compactWithSummary("telegram:12345", 10, summaryMsg);
+        verify(sessionService).compactWithSummary(SESSION_ID, 10, summaryMsg);
     }
 
     @Test
@@ -227,17 +256,17 @@ class CommandRouterTest {
         // Messages exist to compact
         List<Message> oldMessages = List.of(
                 Message.builder().role("user").content("Hello").timestamp(Instant.now()).build());
-        when(sessionService.getMessagesToCompact("telegram:12345", 10)).thenReturn(oldMessages);
+        when(sessionService.getMessagesToCompact(SESSION_ID, 10)).thenReturn(oldMessages);
 
         // LLM returns null (unavailable)
         when(compactionService.summarize(oldMessages)).thenReturn(null);
-        when(sessionService.compactMessages("telegram:12345", 10)).thenReturn(15);
+        when(sessionService.compactMessages(SESSION_ID, 10)).thenReturn(15);
 
-        var result = router.execute("compact", List.of(), CTX).get();
+        var result = router.execute(CMD_COMPACT, List.of(), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("15"));
         assertTrue(result.output().contains("command.compact.done "));
-        verify(sessionService).compactMessages("telegram:12345", 10);
+        verify(sessionService).compactMessages(SESSION_ID, 10);
         verify(sessionService, never()).compactWithSummary(anyString(), anyInt(), any());
     }
 
@@ -245,21 +274,21 @@ class CommandRouterTest {
     void compactCommandWithArg() throws Exception {
         List<Message> oldMessages = List.of(
                 Message.builder().role("user").content("Hi").timestamp(Instant.now()).build());
-        when(sessionService.getMessagesToCompact("telegram:12345", 5)).thenReturn(oldMessages);
+        when(sessionService.getMessagesToCompact(SESSION_ID, 5)).thenReturn(oldMessages);
         when(compactionService.summarize(oldMessages)).thenReturn(null);
-        when(sessionService.compactMessages("telegram:12345", 5)).thenReturn(15);
+        when(sessionService.compactMessages(SESSION_ID, 5)).thenReturn(15);
 
-        var result = router.execute("compact", List.of("5"), CTX).get();
+        var result = router.execute(CMD_COMPACT, List.of("5"), CTX).get();
         assertTrue(result.success());
-        verify(sessionService).compactMessages("telegram:12345", 5);
+        verify(sessionService).compactMessages(SESSION_ID, 5);
     }
 
     @Test
     void compactCommandNothingToCompact() throws Exception {
-        when(sessionService.getMessagesToCompact("telegram:12345", 10)).thenReturn(List.of());
-        when(sessionService.getMessageCount("telegram:12345")).thenReturn(5);
+        when(sessionService.getMessagesToCompact(SESSION_ID, 10)).thenReturn(List.of());
+        when(sessionService.getMessageCount(SESSION_ID)).thenReturn(5);
 
-        var result = router.execute("compact", List.of(), CTX).get();
+        var result = router.execute(CMD_COMPACT, List.of(), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.compact.nothing"));
     }
@@ -281,26 +310,26 @@ class CommandRouterTest {
     // ===== Auto mode commands =====
 
     private static final Map<String, Object> CTX_WITH_CHANNEL = Map.of(
-            "sessionId", "telegram:12345",
-            "channelType", "telegram",
-            "chatId", "12345");
+            "sessionId", SESSION_ID,
+            "channelType", CHANNEL_TYPE_TELEGRAM,
+            "chatId", CHAT_ID);
 
     @Test
     void autoOnEnablesAutoMode() throws Exception {
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
 
-        var result = router.execute("auto", List.of("on"), CTX_WITH_CHANNEL).get();
+        var result = router.execute(CMD_AUTO, List.of("on"), CTX_WITH_CHANNEL).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.auto.enabled"));
         verify(autoModeService).enableAutoMode();
-        verify(eventPublisher).publishEvent(new AutoModeChannelRegisteredEvent("telegram", "12345"));
+        verify(eventPublisher).publishEvent(new AutoModeChannelRegisteredEvent(CHANNEL_TYPE_TELEGRAM, CHAT_ID));
     }
 
     @Test
     void autoOffDisablesAutoMode() throws Exception {
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
 
-        var result = router.execute("auto", List.of("off"), CTX_WITH_CHANNEL).get();
+        var result = router.execute(CMD_AUTO, List.of("off"), CTX_WITH_CHANNEL).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.auto.disabled"));
         verify(autoModeService).disableAutoMode();
@@ -311,7 +340,7 @@ class CommandRouterTest {
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
         when(autoModeService.isAutoModeEnabled()).thenReturn(true);
 
-        var result = router.execute("auto", List.of(), CTX).get();
+        var result = router.execute(CMD_AUTO, List.of(), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.auto.status"));
         assertTrue(result.output().contains("ON"));
@@ -321,7 +350,7 @@ class CommandRouterTest {
     void autoReturnsNotAvailableWhenDisabled() throws Exception {
         when(autoModeService.isFeatureEnabled()).thenReturn(false);
 
-        var result = router.execute("auto", List.of("on"), CTX).get();
+        var result = router.execute(CMD_AUTO, List.of("on"), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.auto.not-available"));
     }
@@ -330,7 +359,7 @@ class CommandRouterTest {
     void autoInvalidSubcommand() throws Exception {
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
 
-        var result = router.execute("auto", List.of("invalid"), CTX).get();
+        var result = router.execute(CMD_AUTO, List.of("invalid"), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.auto.usage"));
     }
@@ -346,7 +375,7 @@ class CommandRouterTest {
                                 .build()))
                         .build()));
 
-        var result = router.execute("goals", List.of(), CTX).get();
+        var result = router.execute(CMD_GOALS, List.of(), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("Build API"));
         assertTrue(result.output().contains("ACTIVE"));
@@ -357,7 +386,7 @@ class CommandRouterTest {
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
         when(autoModeService.getGoals()).thenReturn(List.of());
 
-        var result = router.execute("goals", List.of(), CTX).get();
+        var result = router.execute(CMD_GOALS, List.of(), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.goals.empty"));
     }
@@ -371,7 +400,7 @@ class CommandRouterTest {
                 .thenReturn(
                         Goal.builder().title("Build REST API").status(Goal.GoalStatus.ACTIVE).tasks(List.of()).build());
 
-        var result = router.execute("goal", List.of("Build", "REST", "API"), CTX).get();
+        var result = router.execute(CMD_GOAL, List.of("Build", "REST", "API"), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.goal.created"));
     }
@@ -380,7 +409,7 @@ class CommandRouterTest {
     void goalWithoutArgsShowsEmpty() throws Exception {
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
 
-        var result = router.execute("goal", List.of(), CTX).get();
+        var result = router.execute(CMD_GOAL, List.of(), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.goals.empty"));
     }
@@ -391,7 +420,7 @@ class CommandRouterTest {
         when(autoModeService.createGoal(anyString(), any()))
                 .thenThrow(new IllegalStateException("Max goals reached"));
 
-        var result = router.execute("goal", List.of("Another", "goal"), CTX).get();
+        var result = router.execute(CMD_GOAL, List.of("Another", "goal"), CTX).get();
         assertFalse(result.success());
         assertTrue(result.output().contains("command.goal.limit"));
     }
@@ -436,7 +465,7 @@ class CommandRouterTest {
                         .timestamp(Instant.parse("2026-02-07T10:00:00Z"))
                         .build()));
 
-        var result = router.execute("diary", List.of(), CTX).get();
+        var result = router.execute(CMD_DIARY, List.of(), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("Started working on API design"));
         assertTrue(result.output().contains("OBSERVATION"));
@@ -447,7 +476,7 @@ class CommandRouterTest {
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
         when(autoModeService.getRecentDiary(5)).thenReturn(List.of());
 
-        router.execute("diary", List.of("5"), CTX).get();
+        router.execute(CMD_DIARY, List.of("5"), CTX).get();
         verify(autoModeService).getRecentDiary(5);
     }
 
@@ -456,7 +485,7 @@ class CommandRouterTest {
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
         when(autoModeService.getRecentDiary(10)).thenReturn(List.of());
 
-        var result = router.execute("diary", List.of(), CTX).get();
+        var result = router.execute(CMD_DIARY, List.of(), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.diary.empty"));
     }
@@ -465,30 +494,30 @@ class CommandRouterTest {
 
     @Test
     void compactClampsKeepToMinOne() throws Exception {
-        when(sessionService.getMessagesToCompact("telegram:12345", 1)).thenReturn(List.of());
-        when(sessionService.getMessageCount("telegram:12345")).thenReturn(3);
+        when(sessionService.getMessagesToCompact(SESSION_ID, 1)).thenReturn(List.of());
+        when(sessionService.getMessageCount(SESSION_ID)).thenReturn(3);
 
-        router.execute("compact", List.of("0"), CTX).get();
-        verify(sessionService).getMessagesToCompact("telegram:12345", 1);
+        router.execute(CMD_COMPACT, List.of("0"), CTX).get();
+        verify(sessionService).getMessagesToCompact(SESSION_ID, 1);
     }
 
     @Test
     void compactClampsKeepToMax100() throws Exception {
-        when(sessionService.getMessagesToCompact("telegram:12345", 100)).thenReturn(List.of());
-        when(sessionService.getMessageCount("telegram:12345")).thenReturn(3);
+        when(sessionService.getMessagesToCompact(SESSION_ID, 100)).thenReturn(List.of());
+        when(sessionService.getMessageCount(SESSION_ID)).thenReturn(3);
 
-        router.execute("compact", List.of("999"), CTX).get();
-        verify(sessionService).getMessagesToCompact("telegram:12345", 100);
+        router.execute(CMD_COMPACT, List.of("999"), CTX).get();
+        verify(sessionService).getMessagesToCompact(SESSION_ID, 100);
     }
 
     @Test
     void compactIgnoresNonNumericArg() throws Exception {
-        when(sessionService.getMessagesToCompact("telegram:12345", 10)).thenReturn(List.of());
-        when(sessionService.getMessageCount("telegram:12345")).thenReturn(3);
+        when(sessionService.getMessagesToCompact(SESSION_ID, 10)).thenReturn(List.of());
+        when(sessionService.getMessageCount(SESSION_ID)).thenReturn(3);
 
-        router.execute("compact", List.of("abc"), CTX).get();
+        router.execute(CMD_COMPACT, List.of("abc"), CTX).get();
         // Falls back to default 10
-        verify(sessionService).getMessagesToCompact("telegram:12345", 10);
+        verify(sessionService).getMessagesToCompact(SESSION_ID, 10);
     }
 
     // ===== listCommands includes auto when enabled =====
@@ -498,9 +527,9 @@ class CommandRouterTest {
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
 
         var commands = router.listCommands();
-        assertTrue(commands.stream().anyMatch(c -> "auto".equals(c.name())));
-        assertTrue(commands.stream().anyMatch(c -> "goals".equals(c.name())));
-        assertTrue(commands.stream().anyMatch(c -> "diary".equals(c.name())));
+        assertTrue(commands.stream().anyMatch(c -> CMD_AUTO.equals(c.name())));
+        assertTrue(commands.stream().anyMatch(c -> CMD_GOALS.equals(c.name())));
+        assertTrue(commands.stream().anyMatch(c -> CMD_DIARY.equals(c.name())));
         assertEquals(12, commands.size());
     }
 

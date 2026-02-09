@@ -13,6 +13,12 @@ import static org.mockito.Mockito.*;
 
 class UserPreferencesServiceTest {
 
+    private static final String PREFS_DIR = "preferences";
+    private static final String SETTINGS_FILE = "settings.json";
+    private static final String LANG_EN = "en";
+    private static final String LANG_RU = "ru";
+    private static final String NOT_FOUND = "not found";
+
     private StoragePort storagePort;
     private MessageService messageService;
     private UserPreferencesService service;
@@ -30,21 +36,21 @@ class UserPreferencesServiceTest {
 
     @Test
     void getPreferencesCreatesDefaultWhenNoSaved() {
-        when(storagePort.getText("preferences", "settings.json"))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("not found")));
+        when(storagePort.getText(PREFS_DIR, SETTINGS_FILE))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
         UserPreferences prefs = service.getPreferences();
 
         assertNotNull(prefs);
-        assertEquals("en", prefs.getLanguage());
-        verify(messageService).setLanguage("en");
+        assertEquals(LANG_EN, prefs.getLanguage());
+        verify(messageService).setLanguage(LANG_EN);
     }
 
     @Test
     void getPreferencesFallsBackToDefaultWhenStorageJsonInvalid() {
         // UserPreferences lacks @NoArgsConstructor so Jackson deserialization
         // fails gracefully and service creates defaults
-        when(storagePort.getText("preferences", "settings.json"))
+        when(storagePort.getText(PREFS_DIR, SETTINGS_FILE))
                 .thenReturn(CompletableFuture.completedFuture("{\"language\":\"ru\"}"));
 
         UserPreferences prefs = service.getPreferences();
@@ -52,85 +58,85 @@ class UserPreferencesServiceTest {
         // Falls back to default "en" because @Data @Builder without @NoArgsConstructor
         // prevents Jackson deserialization
         assertNotNull(prefs);
-        assertEquals("en", prefs.getLanguage());
+        assertEquals(LANG_EN, prefs.getLanguage());
     }
 
     @Test
     void getPreferencesReturnsCachedAfterFirstLoad() {
-        when(storagePort.getText("preferences", "settings.json"))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("not found")));
+        when(storagePort.getText(PREFS_DIR, SETTINGS_FILE))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
         UserPreferences first = service.getPreferences();
         UserPreferences second = service.getPreferences();
 
         assertSame(first, second);
         // Storage should only be queried once
-        verify(storagePort, times(1)).getText("preferences", "settings.json");
+        verify(storagePort, times(1)).getText(PREFS_DIR, SETTINGS_FILE);
     }
 
     @Test
     void getPreferencesHandlesBlankJson() {
-        when(storagePort.getText("preferences", "settings.json"))
+        when(storagePort.getText(PREFS_DIR, SETTINGS_FILE))
                 .thenReturn(CompletableFuture.completedFuture("   "));
 
         UserPreferences prefs = service.getPreferences();
 
-        assertEquals("en", prefs.getLanguage()); // default
+        assertEquals(LANG_EN, prefs.getLanguage()); // default
     }
 
     @Test
     void getPreferencesHandlesNullJson() {
-        when(storagePort.getText("preferences", "settings.json"))
+        when(storagePort.getText(PREFS_DIR, SETTINGS_FILE))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
         UserPreferences prefs = service.getPreferences();
 
-        assertEquals("en", prefs.getLanguage()); // default
+        assertEquals(LANG_EN, prefs.getLanguage()); // default
     }
 
     @Test
     void getPreferencesHandlesMalformedJson() {
-        when(storagePort.getText("preferences", "settings.json"))
+        when(storagePort.getText(PREFS_DIR, SETTINGS_FILE))
                 .thenReturn(CompletableFuture.completedFuture("{invalid json"));
 
         UserPreferences prefs = service.getPreferences();
 
-        assertEquals("en", prefs.getLanguage()); // falls back to default
+        assertEquals(LANG_EN, prefs.getLanguage()); // falls back to default
     }
 
     @Test
     void getPreferencesSavesDefaultOnCreation() {
-        when(storagePort.getText("preferences", "settings.json"))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("not found")));
+        when(storagePort.getText(PREFS_DIR, SETTINGS_FILE))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
         service.getPreferences();
 
-        verify(storagePort).putText(eq("preferences"), eq("settings.json"), anyString());
+        verify(storagePort).putText(eq(PREFS_DIR), eq(SETTINGS_FILE), anyString());
     }
 
     @Test
     void getPreferencesHandlesSaveFailureOnCreation() {
-        when(storagePort.getText("preferences", "settings.json"))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("not found")));
+        when(storagePort.getText(PREFS_DIR, SETTINGS_FILE))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
         when(storagePort.putText(anyString(), anyString(), anyString()))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("disk full")));
 
         UserPreferences prefs = service.getPreferences();
 
         assertNotNull(prefs); // should still return default even if save fails
-        assertEquals("en", prefs.getLanguage());
+        assertEquals(LANG_EN, prefs.getLanguage());
     }
 
     // ==================== savePreferences ====================
 
     @Test
     void savePreferencesPersistsToStorage() {
-        UserPreferences prefs = UserPreferences.builder().language("ru").build();
+        UserPreferences prefs = UserPreferences.builder().language(LANG_RU).build();
 
         service.savePreferences(prefs);
 
-        verify(storagePort).putText(eq("preferences"), eq("settings.json"), contains("\"language\":\"ru\""));
-        verify(messageService).setLanguage("ru");
+        verify(storagePort).putText(eq(PREFS_DIR), eq(SETTINGS_FILE), contains("\"language\":\"ru\""));
+        verify(messageService).setLanguage(LANG_RU);
     }
 
     @Test
@@ -138,52 +144,52 @@ class UserPreferencesServiceTest {
         when(storagePort.putText(anyString(), anyString(), anyString()))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("error")));
 
-        UserPreferences prefs = UserPreferences.builder().language("en").build();
+        UserPreferences prefs = UserPreferences.builder().language(LANG_EN).build();
 
         assertDoesNotThrow(() -> service.savePreferences(prefs));
     }
 
     @Test
     void savePreferencesUpdatesCachedValue() {
-        when(storagePort.getText("preferences", "settings.json"))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("not found")));
+        when(storagePort.getText(PREFS_DIR, SETTINGS_FILE))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
         service.getPreferences(); // loads default "en"
 
-        UserPreferences newPrefs = UserPreferences.builder().language("ru").build();
+        UserPreferences newPrefs = UserPreferences.builder().language(LANG_RU).build();
         service.savePreferences(newPrefs);
 
-        assertEquals("ru", service.getPreferences().getLanguage());
+        assertEquals(LANG_RU, service.getPreferences().getLanguage());
     }
 
     // ==================== getLanguage / setLanguage ====================
 
     @Test
     void getLanguageReturnsCurrentLanguage() {
-        when(storagePort.getText("preferences", "settings.json"))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("not found")));
+        when(storagePort.getText(PREFS_DIR, SETTINGS_FILE))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
-        assertEquals("en", service.getLanguage());
+        assertEquals(LANG_EN, service.getLanguage());
     }
 
     @Test
     void setLanguageUpdatesAndSaves() {
-        when(storagePort.getText("preferences", "settings.json"))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("not found")));
+        when(storagePort.getText(PREFS_DIR, SETTINGS_FILE))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
-        service.setLanguage("ru");
+        service.setLanguage(LANG_RU);
 
-        assertEquals("ru", service.getLanguage());
-        verify(messageService, atLeastOnce()).setLanguage("ru");
+        assertEquals(LANG_RU, service.getLanguage());
+        verify(messageService, atLeastOnce()).setLanguage(LANG_RU);
     }
 
     // ==================== getMessage ====================
 
     @Test
     void getMessageDelegatesToMessageService() {
-        when(storagePort.getText("preferences", "settings.json"))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("not found")));
-        when(messageService.getMessage("key", "en", "arg1")).thenReturn("Hello arg1");
+        when(storagePort.getText(PREFS_DIR, SETTINGS_FILE))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
+        when(messageService.getMessage("key", LANG_EN, "arg1")).thenReturn("Hello arg1");
 
         String result = service.getMessage("key", "arg1");
 

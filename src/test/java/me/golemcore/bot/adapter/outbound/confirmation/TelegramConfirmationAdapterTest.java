@@ -19,6 +19,10 @@ import static org.mockito.Mockito.*;
 
 class TelegramConfirmationAdapterTest {
 
+    private static final String CHAT_ID = "chat1";
+    private static final String TOOL_NAME = "shell";
+    private static final String TOOL_DESCRIPTION = "test";
+
     private TelegramConfirmationAdapter adapter;
     private TelegramClient telegramClient;
 
@@ -127,7 +131,7 @@ class TelegramConfirmationAdapterTest {
         // No telegram channel configured → getOrCreateClient returns null
 
         TelegramConfirmationAdapter lazyAdapter = new TelegramConfirmationAdapter(props);
-        CompletableFuture<Boolean> result = lazyAdapter.requestConfirmation("chat1", "shell", "test");
+        CompletableFuture<Boolean> result = lazyAdapter.requestConfirmation(CHAT_ID, TOOL_NAME, TOOL_DESCRIPTION);
         assertTrue(result.get(1, TimeUnit.SECONDS));
     }
 
@@ -139,27 +143,27 @@ class TelegramConfirmationAdapterTest {
         properties.getSecurity().getToolConfirmation().setEnabled(true);
         TelegramConfirmationAdapter noClientAdapter = new TelegramConfirmationAdapter(properties);
 
-        CompletableFuture<Boolean> result = noClientAdapter.requestConfirmation("chat1", "shell", "test");
+        CompletableFuture<Boolean> result = noClientAdapter.requestConfirmation(CHAT_ID, TOOL_NAME, TOOL_DESCRIPTION);
         assertTrue(result.get(1, TimeUnit.SECONDS));
     }
 
     @Test
     void confirmationApproved() throws Exception {
-        CompletableFuture<Boolean> result = adapter.requestConfirmation("chat1", "shell", "echo hello");
+        CompletableFuture<Boolean> result = adapter.requestConfirmation(CHAT_ID, TOOL_NAME, "echo hello");
         String confirmationId = extractConfirmationId(0);
 
         adapter.onConfirmationCallback(
-                new ConfirmationCallbackEvent(confirmationId, true, "chat1", "42"));
+                new ConfirmationCallbackEvent(confirmationId, true, CHAT_ID, "42"));
         assertTrue(result.get(1, TimeUnit.SECONDS));
     }
 
     @Test
     void confirmationDenied() throws Exception {
-        CompletableFuture<Boolean> result = adapter.requestConfirmation("chat1", "shell", "rm -rf test");
+        CompletableFuture<Boolean> result = adapter.requestConfirmation(CHAT_ID, TOOL_NAME, "rm -rf test");
         String confirmationId = extractConfirmationId(1);
 
         adapter.onConfirmationCallback(
-                new ConfirmationCallbackEvent(confirmationId, false, "chat1", "42"));
+                new ConfirmationCallbackEvent(confirmationId, false, CHAT_ID, "42"));
         assertFalse(result.get(1, TimeUnit.SECONDS));
     }
 
@@ -172,7 +176,8 @@ class TelegramConfirmationAdapterTest {
         TelegramConfirmationAdapter shortTimeoutAdapter = new TelegramConfirmationAdapter(props);
         shortTimeoutAdapter.setTelegramClient(telegramClient);
 
-        CompletableFuture<Boolean> result = shortTimeoutAdapter.requestConfirmation("chat1", "shell", "test");
+        CompletableFuture<Boolean> result = shortTimeoutAdapter.requestConfirmation(CHAT_ID, TOOL_NAME,
+                TOOL_DESCRIPTION);
 
         Boolean approved = result.get(3, TimeUnit.SECONDS);
         assertFalse(approved);
@@ -183,7 +188,7 @@ class TelegramConfirmationAdapterTest {
     @Test
     void unknownConfirmationIdIsIgnored() {
         adapter.onConfirmationCallback(
-                new ConfirmationCallbackEvent("unknown-id", true, "chat1", "42"));
+                new ConfirmationCallbackEvent("unknown-id", true, CHAT_ID, "42"));
         // Should not throw, just log debug
     }
 
@@ -191,17 +196,17 @@ class TelegramConfirmationAdapterTest {
     void callbackUpdatesMessageOnApproval() throws Exception {
         when(telegramClient.execute(any(EditMessageText.class))).thenReturn(null);
 
-        CompletableFuture<Boolean> result = adapter.requestConfirmation("chat1", "shell", "test");
+        CompletableFuture<Boolean> result = adapter.requestConfirmation(CHAT_ID, TOOL_NAME, TOOL_DESCRIPTION);
         String confirmationId = extractConfirmationId(0);
 
         adapter.onConfirmationCallback(
-                new ConfirmationCallbackEvent(confirmationId, true, "chat1", "99"));
+                new ConfirmationCallbackEvent(confirmationId, true, CHAT_ID, "99"));
         result.get(1, TimeUnit.SECONDS);
 
         ArgumentCaptor<EditMessageText> editCaptor = ArgumentCaptor.forClass(EditMessageText.class);
         verify(telegramClient).execute(editCaptor.capture());
         EditMessageText edit = editCaptor.getValue();
-        assertEquals("chat1", edit.getChatId());
+        assertEquals(CHAT_ID, edit.getChatId());
         assertEquals(99, edit.getMessageId());
         assertTrue(edit.getText().contains("Confirmed"));
     }
@@ -210,11 +215,11 @@ class TelegramConfirmationAdapterTest {
     void callbackUpdatesMessageOnDenial() throws Exception {
         when(telegramClient.execute(any(EditMessageText.class))).thenReturn(null);
 
-        CompletableFuture<Boolean> result = adapter.requestConfirmation("chat1", "shell", "test");
+        CompletableFuture<Boolean> result = adapter.requestConfirmation(CHAT_ID, TOOL_NAME, TOOL_DESCRIPTION);
         String confirmationId = extractConfirmationId(0);
 
         adapter.onConfirmationCallback(
-                new ConfirmationCallbackEvent(confirmationId, false, "chat1", "50"));
+                new ConfirmationCallbackEvent(confirmationId, false, CHAT_ID, "50"));
         result.get(1, TimeUnit.SECONDS);
 
         ArgumentCaptor<EditMessageText> editCaptor = ArgumentCaptor.forClass(EditMessageText.class);
@@ -227,11 +232,11 @@ class TelegramConfirmationAdapterTest {
         when(telegramClient.execute(any(EditMessageText.class)))
                 .thenThrow(new RuntimeException("Telegram API error"));
 
-        CompletableFuture<Boolean> result = adapter.requestConfirmation("chat1", "shell", "test");
+        CompletableFuture<Boolean> result = adapter.requestConfirmation(CHAT_ID, TOOL_NAME, TOOL_DESCRIPTION);
         String confirmationId = extractConfirmationId(0);
 
         adapter.onConfirmationCallback(
-                new ConfirmationCallbackEvent(confirmationId, true, "chat1", "99"));
+                new ConfirmationCallbackEvent(confirmationId, true, CHAT_ID, "99"));
 
         // Future should still resolve despite EditMessage failure
         assertTrue(result.get(1, TimeUnit.SECONDS));
@@ -239,12 +244,12 @@ class TelegramConfirmationAdapterTest {
 
     @Test
     void shouldNotCrashWhenMessageIdNotNumeric() throws Exception {
-        CompletableFuture<Boolean> result = adapter.requestConfirmation("chat1", "shell", "test");
+        CompletableFuture<Boolean> result = adapter.requestConfirmation(CHAT_ID, TOOL_NAME, TOOL_DESCRIPTION);
         String confirmationId = extractConfirmationId(0);
 
         // "not-a-number" will cause NumberFormatException in Integer.parseInt
         adapter.onConfirmationCallback(
-                new ConfirmationCallbackEvent(confirmationId, true, "chat1", "not-a-number"));
+                new ConfirmationCallbackEvent(confirmationId, true, CHAT_ID, "not-a-number"));
 
         // Future should still resolve — the exception is caught in
         // updateConfirmationMessage
@@ -255,23 +260,23 @@ class TelegramConfirmationAdapterTest {
 
     @Test
     void shouldIgnoreDuplicateCallback() throws Exception {
-        CompletableFuture<Boolean> result = adapter.requestConfirmation("chat1", "shell", "test");
+        CompletableFuture<Boolean> result = adapter.requestConfirmation(CHAT_ID, TOOL_NAME, TOOL_DESCRIPTION);
         String confirmationId = extractConfirmationId(0);
 
         adapter.onConfirmationCallback(
-                new ConfirmationCallbackEvent(confirmationId, true, "chat1", "42"));
+                new ConfirmationCallbackEvent(confirmationId, true, CHAT_ID, "42"));
         assertTrue(result.get(1, TimeUnit.SECONDS));
 
         // Second callback with same ID — should be ignored silently
         adapter.onConfirmationCallback(
-                new ConfirmationCallbackEvent(confirmationId, false, "chat1", "42"));
+                new ConfirmationCallbackEvent(confirmationId, false, CHAT_ID, "42"));
         // No exception, result stays true
         assertTrue(result.get(1, TimeUnit.SECONDS));
     }
 
     @Test
     void shouldTrackMultiplePendingConfirmations() throws Exception {
-        CompletableFuture<Boolean> result1 = adapter.requestConfirmation("chat1", "shell", "cmd1");
+        CompletableFuture<Boolean> result1 = adapter.requestConfirmation(CHAT_ID, TOOL_NAME, "cmd1");
         ArgumentCaptor<SendMessage> captor1 = ArgumentCaptor.forClass(SendMessage.class);
         verify(telegramClient).execute(captor1.capture());
         String id1 = extractIdFromSendMessage(captor1.getValue(), 0);
@@ -291,7 +296,7 @@ class TelegramConfirmationAdapterTest {
         adapter.onConfirmationCallback(
                 new ConfirmationCallbackEvent(id2, false, "chat2", "2"));
         adapter.onConfirmationCallback(
-                new ConfirmationCallbackEvent(id1, true, "chat1", "1"));
+                new ConfirmationCallbackEvent(id1, true, CHAT_ID, "1"));
 
         assertTrue(result1.get(1, TimeUnit.SECONDS));
         assertFalse(result2.get(1, TimeUnit.SECONDS));
@@ -301,7 +306,7 @@ class TelegramConfirmationAdapterTest {
 
     @Test
     void shouldEscapeHtmlInToolNameAndDescription() throws Exception {
-        adapter.requestConfirmation("chat1", "<script>alert(1)</script>", "a & b > c");
+        adapter.requestConfirmation(CHAT_ID, "<script>alert(1)</script>", "a & b > c");
 
         ArgumentCaptor<SendMessage> captor = ArgumentCaptor.forClass(SendMessage.class);
         verify(telegramClient).execute(captor.capture());
@@ -317,7 +322,7 @@ class TelegramConfirmationAdapterTest {
         when(telegramClient.execute(any(SendMessage.class)))
                 .thenThrow(new RuntimeException("Send failed"));
 
-        CompletableFuture<Boolean> result = adapter.requestConfirmation("chat1", "shell", "test");
+        CompletableFuture<Boolean> result = adapter.requestConfirmation(CHAT_ID, TOOL_NAME, TOOL_DESCRIPTION);
         assertTrue(result.get(1, TimeUnit.SECONDS));
     }
 

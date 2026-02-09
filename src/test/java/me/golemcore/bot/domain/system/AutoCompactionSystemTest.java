@@ -19,6 +19,9 @@ import static org.mockito.Mockito.*;
 
 class AutoCompactionSystemTest {
 
+    private static final String SESSION_ID = "test-session";
+    private static final String ROLE_USER = "user";
+
     private SessionPort sessionService;
     private CompactionService compactionService;
     private BotProperties properties;
@@ -75,7 +78,7 @@ class AutoCompactionSystemTest {
     void belowThresholdNoCompaction() {
         // 11 chars + 100 overhead = 111 tokens, well below 1000 threshold
         List<Message> messages = List.of(
-                Message.builder().role("user").content("Hello world").timestamp(Instant.now()).build());
+                Message.builder().role(ROLE_USER).content("Hello world").timestamp(Instant.now()).build());
         AgentContext context = buildContext(messages);
 
         AgentContext result = system.process(context);
@@ -99,13 +102,13 @@ class AutoCompactionSystemTest {
                 .build();
 
         List<Message> toCompact = messages.subList(0, 45);
-        when(sessionService.getMessagesToCompact("test-session", 5)).thenReturn(toCompact);
+        when(sessionService.getMessagesToCompact(SESSION_ID, 5)).thenReturn(toCompact);
         when(compactionService.summarize(toCompact)).thenReturn("Summary of conversation");
 
         Message summaryMsg = Message.builder().role("system").content("[Conversation summary]\nSummary of conversation")
                 .build();
         when(compactionService.createSummaryMessage("Summary of conversation")).thenReturn(summaryMsg);
-        when(sessionService.compactWithSummary("test-session", 5, summaryMsg)).thenReturn(45);
+        when(sessionService.compactWithSummary(SESSION_ID, 5, summaryMsg)).thenReturn(45);
 
         // After compaction, session has summary + 5 kept messages
         List<Message> compactedMessages = new ArrayList<>();
@@ -118,7 +121,7 @@ class AutoCompactionSystemTest {
 
         verify(compactionService).summarize(toCompact);
         verify(compactionService).createSummaryMessage("Summary of conversation");
-        verify(sessionService).compactWithSummary("test-session", 5, summaryMsg);
+        verify(sessionService).compactWithSummary(SESSION_ID, 5, summaryMsg);
         assertEquals(6, result.getMessages().size()); // summary + 5 kept
     }
 
@@ -134,9 +137,9 @@ class AutoCompactionSystemTest {
                 .build();
 
         List<Message> toCompact = messages.subList(0, 45);
-        when(sessionService.getMessagesToCompact("test-session", 5)).thenReturn(toCompact);
+        when(sessionService.getMessagesToCompact(SESSION_ID, 5)).thenReturn(toCompact);
         when(compactionService.summarize(toCompact)).thenReturn(null); // LLM unavailable
-        when(sessionService.compactMessages("test-session", 5)).thenReturn(45);
+        when(sessionService.compactMessages(SESSION_ID, 5)).thenReturn(45);
 
         // After truncation, session has 5 kept messages
         List<Message> truncatedMessages = new ArrayList<>(messages.subList(45, 50));
@@ -147,7 +150,7 @@ class AutoCompactionSystemTest {
 
         verify(compactionService).summarize(toCompact);
         verify(compactionService, never()).createSummaryMessage(any());
-        verify(sessionService).compactMessages("test-session", 5);
+        verify(sessionService).compactMessages(SESSION_ID, 5);
         assertEquals(5, result.getMessages().size());
     }
 
@@ -157,7 +160,7 @@ class AutoCompactionSystemTest {
         List<Message> messages = buildLargeMessageList(50, 50);
         AgentContext context = buildContext(messages);
 
-        when(sessionService.getMessagesToCompact("test-session", 5)).thenReturn(List.of());
+        when(sessionService.getMessagesToCompact(SESSION_ID, 5)).thenReturn(List.of());
 
         AgentContext result = system.process(context);
 
@@ -171,12 +174,12 @@ class AutoCompactionSystemTest {
         AgentContext context = buildContext(messages);
 
         List<Message> toCompact = messages.subList(0, 45);
-        when(sessionService.getMessagesToCompact("test-session", 5)).thenReturn(toCompact);
+        when(sessionService.getMessagesToCompact(SESSION_ID, 5)).thenReturn(toCompact);
         when(compactionService.summarize(toCompact)).thenReturn("Summary");
 
         Message summaryMsg = Message.builder().role("system").content("[Conversation summary]\nSummary").build();
         when(compactionService.createSummaryMessage("Summary")).thenReturn(summaryMsg);
-        when(sessionService.compactWithSummary("test-session", 5, summaryMsg)).thenReturn(0);
+        when(sessionService.compactWithSummary(SESSION_ID, 5, summaryMsg)).thenReturn(0);
 
         AgentContext result = system.process(context);
 
@@ -187,7 +190,7 @@ class AutoCompactionSystemTest {
     @Test
     void nullContentMessagesHandledGracefully() {
         List<Message> messages = new ArrayList<>();
-        messages.add(Message.builder().role("user").content(null).timestamp(Instant.now()).build());
+        messages.add(Message.builder().role(ROLE_USER).content(null).timestamp(Instant.now()).build());
         messages.add(Message.builder().role("assistant").content(null).timestamp(Instant.now()).build());
 
         AgentContext context = buildContext(messages);
@@ -208,7 +211,7 @@ class AutoCompactionSystemTest {
 
     private AgentSession buildSession() {
         return AgentSession.builder()
-                .id("test-session")
+                .id(SESSION_ID)
                 .channelType("telegram")
                 .chatId("123")
                 .createdAt(Instant.now())
@@ -224,7 +227,7 @@ class AutoCompactionSystemTest {
 
         // 20 chars + 100 overhead = 120 tokens, below 1000
         List<Message> small = List.of(
-                Message.builder().role("user").content("x".repeat(20)).timestamp(Instant.now()).build());
+                Message.builder().role(ROLE_USER).content("x".repeat(20)).timestamp(Instant.now()).build());
         AgentContext context = buildContext(small);
 
         system.process(context);
@@ -238,7 +241,7 @@ class AutoCompactionSystemTest {
         AgentContext context = buildContext(messages);
 
         List<Message> toCompact = messages.subList(0, 45);
-        when(sessionService.getMessagesToCompact("test-session", 5)).thenReturn(toCompact);
+        when(sessionService.getMessagesToCompact(SESSION_ID, 5)).thenReturn(toCompact);
         when(compactionService.summarize(toCompact)).thenThrow(new RuntimeException("LLM error"));
 
         // No try-catch in process() — exception propagates
@@ -249,7 +252,7 @@ class AutoCompactionSystemTest {
     void shouldProcessWithSufficientMessages() {
         // 1000 chars + 100 overhead = 1100, above 1000 threshold
         List<Message> messages = List.of(
-                Message.builder().role("user").content("x".repeat(1000)).timestamp(Instant.now()).build());
+                Message.builder().role(ROLE_USER).content("x".repeat(1000)).timestamp(Instant.now()).build());
         AgentContext context = buildContext(messages);
 
         assertTrue(system.shouldProcess(context));
@@ -259,7 +262,7 @@ class AutoCompactionSystemTest {
     void singleMessageBelowThresholdNotCompacted() {
         // 500 chars + 100 overhead = 600, below 1000
         List<Message> messages = List.of(
-                Message.builder().role("user").content("x".repeat(500)).timestamp(Instant.now()).build());
+                Message.builder().role(ROLE_USER).content("x".repeat(500)).timestamp(Instant.now()).build());
         AgentContext context = buildContext(messages);
 
         system.process(context);
@@ -272,7 +275,7 @@ class AutoCompactionSystemTest {
         String content = "x".repeat(contentLength);
         for (int i = 0; i < count; i++) {
             messages.add(Message.builder()
-                    .role(i % 2 == 0 ? "user" : "assistant")
+                    .role(i % 2 == 0 ? ROLE_USER : "assistant")
                     .content(content)
                     .timestamp(Instant.now())
                     .build());
