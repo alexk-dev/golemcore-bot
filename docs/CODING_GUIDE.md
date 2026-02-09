@@ -46,7 +46,7 @@ refactor(routing): extract MessageContextAggregator from HybridSkillMatcher
 
 test(mcp): add McpClient lifecycle tests
 
-chore: upgrade langchain4j to 1.0.0-beta2
+chore: upgrade langchain4j to 1.11.0
 
 feat(skills)!: rename nextSkill field to next_skill in YAML frontmatter
 
