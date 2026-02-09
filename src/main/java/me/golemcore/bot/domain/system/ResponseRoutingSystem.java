@@ -79,30 +79,16 @@ public class ResponseRoutingSystem implements AgentSystem {
 
     @Override
     public AgentContext process(AgentContext context) {
-        // Skip if a pipeline transition is pending — response will be handled in next
-        // iteration
         String transitionTarget = context.getAttribute("skill.transition.target");
         if (transitionTarget != null) {
             log.debug("[Response] Pipeline transition pending (→ {}), skipping response routing", transitionTarget);
             return context;
         }
 
-        // Auto-mode: store response in session only, don't send to channel.
         if (isAutoModeMessage(context)) {
-            LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
-            if (response != null && response.getContent() != null && !response.getContent().isBlank()) {
-                context.getSession().addMessage(Message.builder()
-                        .role("assistant")
-                        .content(response.getContent())
-                        .timestamp(Instant.now())
-                        .build());
-            }
-            return context;
+            return handleAutoMode(context);
         }
 
-        LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
-
-        // Handle LLM errors — send error message to user
         String llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
         if (llmError != null) {
             sendErrorToUser(context, llmError);
@@ -110,17 +96,17 @@ public class ResponseRoutingSystem implements AgentSystem {
             return context;
         }
 
-        // Voice-only response: send_voice tool provided text, LLM had no text content
+        LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
         Boolean voiceRequested = context.getAttribute(ContextAttributes.VOICE_REQUESTED);
         String voiceText = context.getAttribute(ContextAttributes.VOICE_TEXT);
-        if (Boolean.TRUE.equals(voiceRequested) && voiceText != null && !voiceText.isBlank()
-                && (response == null || response.getContent() == null || response.getContent().isBlank())) {
+
+        if (isVoiceOnlyResponse(voiceRequested, voiceText, response)) {
             sendVoiceOnly(context, voiceText);
             sendPendingAttachments(context);
             return context;
         }
 
-        if (response == null || response.getContent() == null || response.getContent().isBlank()) {
+        if (!hasResponseContent(response)) {
             log.debug("[Response] No response content to route (response={}, content={})",
                     response != null ? "present" : "null",
                     response != null && response.getContent() != null ? response.getContent().length() + " chars"
@@ -128,7 +114,6 @@ public class ResponseRoutingSystem implements AgentSystem {
             return context;
         }
 
-        // Don't route if there are pending tool calls
         Boolean toolsExecuted = context.getAttribute(ContextAttributes.TOOLS_EXECUTED);
         if (Boolean.TRUE.equals(toolsExecuted) && response.hasToolCalls()) {
             log.debug("[Response] Tools executed with pending tool calls, waiting for next LLM iteration");
@@ -136,52 +121,74 @@ public class ResponseRoutingSystem implements AgentSystem {
         }
 
         AgentSession session = context.getSession();
-        String channelType = session.getChannelType();
-        String chatId = session.getChatId();
-
-        ChannelPort channel = channelRegistry.get(channelType);
+        ChannelPort channel = resolveChannel(session);
         if (channel == null) {
-            log.error("[Response] Unknown channel type: {}", channelType);
             return context;
         }
 
-        log.info("[Response] Routing {} chars to {}/{}", response.getContent().length(), channelType, chatId);
-
         String content = response.getContent();
+        log.info("[Response] Routing {} chars to {}/{}", content.length(),
+                session.getChannelType(), session.getChatId());
 
-        // Voice prefix detection: if response starts with 🔊, send voice instead of
-        // text
         if (voiceHandler.isAvailable() && hasVoicePrefix(content)) {
-            String prefixVoiceText = context.getAttribute(ContextAttributes.VOICE_TEXT);
-            String textToSpeak = (prefixVoiceText != null && !prefixVoiceText.isBlank())
-                    ? prefixVoiceText
-                    : stripVoicePrefix(content);
-            // Skip TTS for blank text (e.g. "🔊 " with no actual content)
-            if (!textToSpeak.isBlank()) {
-                log.debug("[Response] Voice prefix detected, sending voice: {} chars (from {})",
-                        textToSpeak.length(), prefixVoiceText != null ? "tool" : "prefix");
-                if (voiceHandler.trySendVoice(channel, chatId, textToSpeak)) {
-                    addAssistantMessage(session, textToSpeak, response.getToolCalls());
-                    sendPendingAttachments(context);
-                    return context;
-                }
-            }
-            // TTS failed or blank — fall through to send text without prefix
-            content = textToSpeak;
-            if (content.isBlank()) {
-                log.debug("[Response] Voice prefix with no content, nothing to send");
+            return handleVoicePrefixResponse(context, session, channel, response);
+        }
+
+        return sendTextResponse(context, session, channel, response, content, toolsExecuted);
+    }
+
+    // --- Extracted response handlers ---
+
+    private AgentContext handleAutoMode(AgentContext context) {
+        LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
+        if (hasResponseContent(response)) {
+            context.getSession().addMessage(Message.builder()
+                    .role("assistant")
+                    .content(response.getContent())
+                    .timestamp(Instant.now())
+                    .build());
+        }
+        return context;
+    }
+
+    private AgentContext handleVoicePrefixResponse(AgentContext context, AgentSession session,
+            ChannelPort channel, LlmResponse response) {
+        String chatId = session.getChatId();
+        String prefixVoiceText = context.getAttribute(ContextAttributes.VOICE_TEXT);
+        String textToSpeak = (prefixVoiceText != null && !prefixVoiceText.isBlank())
+                ? prefixVoiceText
+                : stripVoicePrefix(response.getContent());
+
+        if (!textToSpeak.isBlank()) {
+            log.debug("[Response] Voice prefix detected, sending voice: {} chars (from {})",
+                    textToSpeak.length(), prefixVoiceText != null ? "tool" : "prefix");
+            if (voiceHandler.trySendVoice(channel, chatId, textToSpeak)) {
+                addAssistantMessage(session, textToSpeak, response.getToolCalls());
                 sendPendingAttachments(context);
                 return context;
             }
-            log.debug("[Response] TTS skipped/failed, falling back to text: {} chars", content.length());
         }
 
+        // TTS failed or blank — fall through to send text without prefix
+        if (textToSpeak.isBlank()) {
+            log.debug("[Response] Voice prefix with no content, nothing to send");
+            sendPendingAttachments(context);
+            return context;
+        }
+
+        log.debug("[Response] TTS skipped/failed, falling back to text: {} chars", textToSpeak.length());
+        Boolean toolsExecuted = context.getAttribute(ContextAttributes.TOOLS_EXECUTED);
+        return sendTextResponse(context, session, channel, response, textToSpeak, toolsExecuted);
+    }
+
+    private AgentContext sendTextResponse(AgentContext context, AgentSession session,
+            ChannelPort channel, LlmResponse response, String content, Boolean toolsExecuted) {
+        String chatId = session.getChatId();
+        String channelType = session.getChannelType();
+
         try {
-            // Send the response (with timeout to prevent indefinite blocking)
             channel.sendMessage(chatId, content).get(30, TimeUnit.SECONDS);
 
-            // Add assistant message to session only if NOT a continuation after tool calls
-            // (ToolExecutionSystem already adds assistant message with tool calls)
             if (!Boolean.TRUE.equals(toolsExecuted)) {
                 addAssistantMessage(session, content, response.getToolCalls());
             } else {
@@ -189,7 +196,6 @@ public class ResponseRoutingSystem implements AgentSystem {
             }
 
             log.info("[Response] Sent text to {}/{}", channelType, chatId);
-
         } catch (Exception e) {
             log.error("[Response] FAILED to send: {}", e.getMessage(), e);
             context.setAttribute("routing.error", e.getMessage());
@@ -199,6 +205,18 @@ public class ResponseRoutingSystem implements AgentSystem {
         sendVoiceAfterText(context, content);
 
         return context;
+    }
+
+    // --- Helper predicates ---
+
+    private boolean hasResponseContent(LlmResponse response) {
+        return response != null && response.getContent() != null && !response.getContent().isBlank();
+    }
+
+    private boolean isVoiceOnlyResponse(Boolean voiceRequested, String voiceText, LlmResponse response) {
+        return Boolean.TRUE.equals(voiceRequested)
+                && voiceText != null && !voiceText.isBlank()
+                && !hasResponseContent(response);
     }
 
     boolean hasVoicePrefix(String content) {
@@ -215,18 +233,29 @@ public class ResponseRoutingSystem implements AgentSystem {
         return trimmed;
     }
 
+    // --- Channel resolution ---
+
+    private ChannelPort resolveChannel(AgentSession session) {
+        ChannelPort channel = channelRegistry.get(session.getChannelType());
+        if (channel == null) {
+            log.warn("[Response] No channel registered for type: {}", session.getChannelType());
+        }
+        return channel;
+    }
+
+    // --- Voice helpers ---
+
     /**
      * Voice-only path: LLM had no text content, but send_voice tool queued text.
      */
     private void sendVoiceOnly(AgentContext context, String textToSpeak) {
         AgentSession session = context.getSession();
-        String chatId = session.getChatId();
-        ChannelPort channel = channelRegistry.get(session.getChannelType());
+        ChannelPort channel = resolveChannel(session);
         if (channel == null) {
-            log.warn("[Response] Voice-only skipped: no channel for '{}'", session.getChannelType());
             return;
         }
 
+        String chatId = session.getChatId();
         boolean sent = voiceHandler.sendVoiceWithFallback(channel, chatId, textToSpeak);
         if (sent) {
             addAssistantMessage(session, textToSpeak, null);
@@ -243,12 +272,12 @@ public class ResponseRoutingSystem implements AgentSystem {
         }
 
         AgentSession session = context.getSession();
-        String chatId = session.getChatId();
-        ChannelPort channel = channelRegistry.get(session.getChannelType());
+        ChannelPort channel = resolveChannel(session);
         if (channel == null) {
             return;
         }
 
+        String chatId = session.getChatId();
         String voiceText = context.getAttribute(ContextAttributes.VOICE_TEXT);
         String textToSpeak = (voiceText != null && !voiceText.isBlank()) ? voiceText : responseText;
 
@@ -261,10 +290,8 @@ public class ResponseRoutingSystem implements AgentSystem {
         if (Boolean.TRUE.equals(voiceRequested)) {
             return true;
         }
-        if (properties.getVoice().getTelegram().isRespondWithVoice() && hasIncomingVoice(context)) {
-            return true;
-        }
-        return false;
+        BotProperties.VoiceProperties voice = properties.getVoice();
+        return voice.getTelegram().isRespondWithVoice() && hasIncomingVoice(context);
     }
 
     private boolean hasIncomingVoice(AgentContext context) {
@@ -279,6 +306,8 @@ public class ResponseRoutingSystem implements AgentSystem {
         }
         return false;
     }
+
+    // --- Message helpers ---
 
     private void addAssistantMessage(AgentSession session, String content, List<Message.ToolCall> toolCalls) {
         session.addMessage(Message.builder()
@@ -298,15 +327,12 @@ public class ResponseRoutingSystem implements AgentSystem {
             return;
 
         AgentSession session = context.getSession();
-        String channelType = session.getChannelType();
-        String chatId = session.getChatId();
-
-        ChannelPort channel = channelRegistry.get(channelType);
+        ChannelPort channel = resolveChannel(session);
         if (channel == null) {
-            log.warn("[Response] Cannot send attachments — unknown channel: {}", channelType);
             return;
         }
 
+        String chatId = session.getChatId();
         for (Attachment attachment : pending) {
             try {
                 if (attachment.getType() == Attachment.Type.IMAGE) {
@@ -329,15 +355,12 @@ public class ResponseRoutingSystem implements AgentSystem {
 
     private void sendErrorToUser(AgentContext context, String error) {
         AgentSession session = context.getSession();
-        String channelType = session.getChannelType();
-        String chatId = session.getChatId();
-
-        ChannelPort channel = channelRegistry.get(channelType);
+        ChannelPort channel = resolveChannel(session);
         if (channel == null) {
-            log.error("[Response] Cannot send error — unknown channel: {}", channelType);
             return;
         }
 
+        String chatId = session.getChatId();
         String errorMessage = preferencesService.getMessage("system.error.llm");
 
         log.warn("[Response] Sending LLM error: {}", error);

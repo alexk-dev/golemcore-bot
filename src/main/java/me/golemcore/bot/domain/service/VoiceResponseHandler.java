@@ -61,10 +61,11 @@ public class VoiceResponseHandler {
             return false;
         }
         try {
+            BotProperties.VoiceProperties voice = properties.getVoice();
             VoicePort.VoiceConfig config = new VoicePort.VoiceConfig(
-                    properties.getVoice().getVoiceId(),
-                    properties.getVoice().getTtsModelId(),
-                    properties.getVoice().getSpeed(),
+                    voice.getVoiceId(),
+                    voice.getTtsModelId(),
+                    voice.getSpeed(),
                     AudioFormat.MP3);
             byte[] audioData = voicePort.synthesize(text, config).get(60, TimeUnit.SECONDS);
             channel.sendVoice(chatId, audioData).get(30, TimeUnit.SECONDS);
