@@ -33,6 +33,7 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
+import okhttp3.ResponseBody;
 import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PostConstruct;
@@ -133,7 +134,11 @@ public class ElevenLabsAdapter implements VoicePort {
                             "ElevenLabs STT error (" + response.code() + "): " + error);
                 }
 
-                return parseSttResponse(response.body().string(), elapsed);
+                ResponseBody body = response.body();
+                if (body == null) {
+                    throw new IllegalStateException("ElevenLabs STT returned empty body");
+                }
+                return parseSttResponse(body.string(), elapsed);
             }
         } catch (IOException e) {
             log.error("[ElevenLabs] STT network error: {}", e.getMessage(), e);
@@ -199,7 +204,11 @@ public class ElevenLabsAdapter implements VoicePort {
                             "ElevenLabs TTS error (" + response.code() + "): " + error);
                 }
 
-                byte[] audioBytes = response.body().bytes();
+                ResponseBody body = response.body();
+                if (body == null) {
+                    throw new IllegalStateException("ElevenLabs TTS returned empty body");
+                }
+                byte[] audioBytes = body.bytes();
                 log.info("[ElevenLabs] TTS success: {} chars → {} bytes MP3, {}ms",
                         text.length(), audioBytes.length, elapsed);
                 return audioBytes;
