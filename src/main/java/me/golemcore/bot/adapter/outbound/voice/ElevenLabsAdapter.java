@@ -45,6 +45,7 @@ import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.Function;
 
 /**
  * ElevenLabs adapter for both STT and TTS via ElevenLabs API.
@@ -97,6 +98,57 @@ public class ElevenLabsAdapter implements VoicePort {
         return CompletableFuture.supplyAsync(() -> doSynthesize(text, config), VOICE_EXECUTOR);
     }
 
+    /**
+     * Executes HTTP request with retry logic for transient errors.
+     *
+     * @param request
+     *            the HTTP request to execute
+     * @param operationName
+     *            operation name for logging (e.g., "STT", "TTS")
+     * @param processor
+     *            function to process successful response
+     * @param <T>
+     *            return type
+     * @return processed result
+     * @throws IOException
+     *             on network errors
+     * @throws InterruptedException
+     *             if interrupted during retry backoff
+     */
+    private <T> T executeWithRetry(Request request, String operationName, Function<Response, T> processor)
+            throws IOException, InterruptedException {
+        long startTime = System.currentTimeMillis();
+        int maxRetries = 3;
+        int attempt = 0;
+
+        while (attempt < maxRetries) {
+            try (Response response = okHttpClient.newCall(request).execute()) {
+                long elapsed = System.currentTimeMillis() - startTime;
+                ResponseBody body = response.body();
+
+                if (!response.isSuccessful()) {
+                    if (isRetryableError(response.code()) && attempt < maxRetries - 1) {
+                        attempt++;
+                        long backoffMs = (long) Math.pow(2, attempt) * 1000;
+                        log.info("[ElevenLabs] {} retrying after {} (attempt {}/{}), backoff={}ms",
+                                operationName, response.code(), attempt, maxRetries, backoffMs);
+                        Thread.sleep(backoffMs);
+                        continue;
+                    }
+                    handleErrorResponse(response, body, elapsed, operationName);
+                }
+
+                if (body == null) {
+                    throw new IllegalStateException(
+                            "ElevenLabs " + operationName + " returned empty body");
+                }
+                return processor.apply(response);
+            }
+        }
+        throw new IllegalStateException(
+                "ElevenLabs " + operationName + " failed after " + maxRetries + " attempts");
+    }
+
     @SuppressWarnings("PMD.CloseResource") // ResponseBody is closed when Response is closed in try-with-resources
     private TranscriptionResult doTranscribe(byte[] audioData, AudioFormat format) {
         try {
@@ -124,36 +176,22 @@ public class ElevenLabsAdapter implements VoicePort {
                     .build();
 
             long startTime = System.currentTimeMillis();
-            int maxRetries = 3;
-            int attempt = 0;
-
-            while (attempt < maxRetries) {
-                try (Response response = okHttpClient.newCall(request).execute()) {
+            return executeWithRetry(request, "STT", response -> {
+                try {
                     long elapsed = System.currentTimeMillis() - startTime;
-                    ResponseBody body = response.body();
-
-                    if (!response.isSuccessful()) {
-                        if (isRetryableError(response.code()) && attempt < maxRetries - 1) {
-                            attempt++;
-                            long backoffMs = (long) Math.pow(2, attempt) * 1000;
-                            log.info("[ElevenLabs] STT retrying after {} (attempt {}/{}), backoff={}ms",
-                                    response.code(), attempt, maxRetries, backoffMs);
-                            Thread.sleep(backoffMs);
-                            continue;
-                        }
-                        handleErrorResponse(response, body, elapsed, "STT");
-                    }
-
-                    if (body == null) {
-                        throw new IllegalStateException("ElevenLabs STT returned empty body");
-                    }
-                    return parseSttResponse(body.string(), elapsed);
+                    return parseSttResponse(response.body().string(), elapsed);
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
                 }
-            }
-            throw new IllegalStateException("ElevenLabs STT failed after " + maxRetries + " attempts");
+            });
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("ElevenLabs STT interrupted", e);
+        } catch (UncheckedIOException e) {
+            log.error("[ElevenLabs] STT network error: {}", e.getMessage(), e);
+            IOException cause = e.getCause() instanceof IOException ? (IOException) e.getCause() : null;
+            throw new UncheckedIOException("Transcription failed: " + e.getMessage(),
+                    cause != null ? cause : new IOException(e));
         } catch (IOException e) {
             log.error("[ElevenLabs] STT network error: {}", e.getMessage(), e);
             throw new UncheckedIOException("Transcription failed: " + e.getMessage(), e);
@@ -208,39 +246,25 @@ public class ElevenLabsAdapter implements VoicePort {
                     .build();
 
             long startTime = System.currentTimeMillis();
-            int maxRetries = 3;
-            int attempt = 0;
-
-            while (attempt < maxRetries) {
-                try (Response response = okHttpClient.newCall(request).execute()) {
+            return executeWithRetry(request, "TTS", response -> {
+                try {
+                    byte[] audioBytes = response.body().bytes();
                     long elapsed = System.currentTimeMillis() - startTime;
-                    ResponseBody body = response.body();
-
-                    if (!response.isSuccessful()) {
-                        if (isRetryableError(response.code()) && attempt < maxRetries - 1) {
-                            attempt++;
-                            long backoffMs = (long) Math.pow(2, attempt) * 1000;
-                            log.info("[ElevenLabs] TTS retrying after {} (attempt {}/{}), backoff={}ms",
-                                    response.code(), attempt, maxRetries, backoffMs);
-                            Thread.sleep(backoffMs);
-                            continue;
-                        }
-                        handleErrorResponse(response, body, elapsed, "TTS");
-                    }
-
-                    if (body == null) {
-                        throw new IllegalStateException("ElevenLabs TTS returned empty body");
-                    }
-                    byte[] audioBytes = body.bytes();
                     log.info("[ElevenLabs] TTS success: {} chars → {} bytes MP3, {}ms",
                             text.length(), audioBytes.length, elapsed);
                     return audioBytes;
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
                 }
-            }
-            throw new IllegalStateException("ElevenLabs TTS failed after " + maxRetries + " attempts");
+            });
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("ElevenLabs TTS interrupted", e);
+        } catch (UncheckedIOException e) {
+            log.error("[ElevenLabs] TTS network error: {}", e.getMessage(), e);
+            IOException cause = e.getCause() instanceof IOException ? (IOException) e.getCause() : null;
+            throw new UncheckedIOException("Synthesis failed: " + e.getMessage(),
+                    cause != null ? cause : new IOException(e));
         } catch (IOException e) {
             log.error("[ElevenLabs] TTS network error: {}", e.getMessage(), e);
             throw new UncheckedIOException("Synthesis failed: " + e.getMessage(), e);
