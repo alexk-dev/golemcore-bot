@@ -289,3 +289,11 @@ mcp:
 ### Voice
 
 ElevenLabs for STT + TTS. Voice prefix mechanism: LLM starts response with `🔊` -> `ResponseRoutingSystem` detects, strips prefix, synthesizes TTS, sends voice. Falls back to text on failure.
+
+**API Documentation:**
+- [ElevenLabs API Reference](https://elevenlabs.io/docs/api-reference/overview)
+- [Error Messages & Status Codes](https://elevenlabs.io/docs/developers/resources/error-messages)
+- STT endpoint: `POST /v1/speech-to-text` (model: `scribe_v1`)
+- TTS endpoint: `POST /v1/text-to-speech/{voice_id}`
+
+**Error Handling:** Handles 401 (auth), 429 (rate limit), 500/503 (server errors), network errors. See `ElevenLabsAdapter` for implementation.

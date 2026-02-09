@@ -3,9 +3,9 @@ package me.golemcore.bot.adapter.outbound.rag;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import okhttp3.*;
-import okhttp3.mockwebserver.MockResponse;
-import okhttp3.mockwebserver.MockWebServer;
-import okhttp3.mockwebserver.RecordedRequest;
+import mockwebserver3.MockResponse;
+import mockwebserver3.MockWebServer;
+import mockwebserver3.RecordedRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -36,29 +36,29 @@ class LightRagAdapterTest {
 
     @AfterEach
     void tearDown() throws IOException {
-        mockServer.shutdown();
+        mockServer.close();
     }
 
     @Test
     void queryReturnsResponse() throws Exception {
-        mockServer.enqueue(new MockResponse()
-                .setBody("{\"response\": \"LightRAG found relevant info\"}")
-                .setHeader("Content-Type", "application/json"));
+        mockServer.enqueue(new MockResponse.Builder()
+                .body("{\"response\": \"LightRAG found relevant info\"}")
+                .setHeader("Content-Type", "application/json").build());
 
         String result = adapter.query("test query", "hybrid").get();
         assertEquals("LightRAG found relevant info", result);
 
         RecordedRequest request = mockServer.takeRequest();
         assertEquals("POST", request.getMethod());
-        assertTrue(request.getPath().endsWith("/query"));
-        String body = request.getBody().readUtf8();
+        assertTrue(request.getTarget().endsWith("/query"));
+        String body = request.getBody().utf8();
         assertTrue(body.contains("\"query\":\"test query\""));
         assertTrue(body.contains("\"mode\":\"hybrid\""));
     }
 
     @Test
     void queryReturnsEmptyOnError() throws Exception {
-        mockServer.enqueue(new MockResponse().setResponseCode(500));
+        mockServer.enqueue(new MockResponse.Builder().code(500).build());
 
         String result = adapter.query("test", "hybrid").get();
         assertEquals("", result);
@@ -73,9 +73,9 @@ class LightRagAdapterTest {
 
     @Test
     void queryHandlesPlainTextResponse() throws Exception {
-        mockServer.enqueue(new MockResponse()
-                .setBody("plain text response")
-                .setHeader("Content-Type", "text/plain"));
+        mockServer.enqueue(new MockResponse.Builder()
+                .body("plain text response")
+                .setHeader("Content-Type", "text/plain").build());
 
         String result = adapter.query("test", "hybrid").get();
         assertEquals("plain text response", result);
@@ -83,14 +83,14 @@ class LightRagAdapterTest {
 
     @Test
     void indexSendsCorrectRequest() throws Exception {
-        mockServer.enqueue(new MockResponse().setResponseCode(200));
+        mockServer.enqueue(new MockResponse.Builder().code(200).build());
 
         adapter.index("some document text").get();
 
         RecordedRequest request = mockServer.takeRequest();
         assertEquals("POST", request.getMethod());
-        assertTrue(request.getPath().endsWith("/documents/text"));
-        String body = request.getBody().readUtf8();
+        assertTrue(request.getTarget().endsWith("/documents/text"));
+        String body = request.getBody().utf8();
         assertTrue(body.contains("\"text\":\"some document text\""));
         assertTrue(body.contains("\"file_source\":\"conv_"), "should include file_source");
     }
@@ -114,13 +114,13 @@ class LightRagAdapterTest {
 
     @Test
     void isHealthyReturnsTrueOnSuccess() {
-        mockServer.enqueue(new MockResponse().setResponseCode(200));
+        mockServer.enqueue(new MockResponse.Builder().code(200).build());
         assertTrue(adapter.isHealthy());
     }
 
     @Test
     void isHealthyReturnsFalseOnError() {
-        mockServer.enqueue(new MockResponse().setResponseCode(503));
+        mockServer.enqueue(new MockResponse.Builder().code(503).build());
         assertFalse(adapter.isHealthy());
     }
 
@@ -137,27 +137,27 @@ class LightRagAdapterTest {
         OkHttpClient client = new OkHttpClient();
         adapter = new LightRagAdapter(properties, client, new ObjectMapper());
 
-        mockServer.enqueue(new MockResponse()
-                .setBody("{\"response\": \"ok\"}")
-                .setHeader("Content-Type", "application/json"));
+        mockServer.enqueue(new MockResponse.Builder()
+                .body("{\"response\": \"ok\"}")
+                .setHeader("Content-Type", "application/json").build());
 
         adapter.query("test", "hybrid").get();
 
         RecordedRequest request = mockServer.takeRequest();
-        assertEquals("Bearer test-api-key", request.getHeader("Authorization"));
+        assertEquals("Bearer test-api-key", request.getHeaders().get("Authorization"));
     }
 
     @Test
     void noAuthHeaderWhenApiKeyEmpty() throws Exception {
         properties.getRag().setApiKey("");
 
-        mockServer.enqueue(new MockResponse()
-                .setBody("{\"response\": \"ok\"}")
-                .setHeader("Content-Type", "application/json"));
+        mockServer.enqueue(new MockResponse.Builder()
+                .body("{\"response\": \"ok\"}")
+                .setHeader("Content-Type", "application/json").build());
 
         adapter.query("test", "hybrid").get();
 
         RecordedRequest request = mockServer.takeRequest();
-        assertNull(request.getHeader("Authorization"));
+        assertNull(request.getHeaders().get("Authorization"));
     }
 }
