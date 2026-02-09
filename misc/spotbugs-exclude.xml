@@ -37,4 +37,13 @@
         <Bug pattern="PZLA_PREFER_ZERO_LENGTH_ARRAYS" />
         <Class name="me.golemcore.bot.adapter.outbound.storage.LocalStorageAdapter" />
     </Match>
+    <!--
+        Response.body() null checks are defensive.
+        While OkHttp 5.x marks body() as non-null, it can still return null
+        for empty responses (204 No Content, etc.). Keep defensive checks.
+    -->
+    <Match>
+        <Bug pattern="RCN_REDUNDANT_NULLCHECK_OF_NONNULL_VALUE" />
+        <Class name="me.golemcore.bot.adapter.outbound.voice.ElevenLabsAdapter" />
+    </Match>
 </FindBugsFilter>

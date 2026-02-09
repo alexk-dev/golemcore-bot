@@ -126,16 +126,16 @@ public class ElevenLabsAdapter implements VoicePort {
             long startTime = System.currentTimeMillis();
             try (Response response = okHttpClient.newCall(request).execute()) {
                 long elapsed = System.currentTimeMillis() - startTime;
+                ResponseBody body = response.body();
 
                 if (!response.isSuccessful()) {
-                    String error = response.body() != null ? response.body().string() : "Unknown error";
+                    String error = body != null ? body.string() : "Unknown error";
                     log.warn("[ElevenLabs] STT failed: HTTP {} in {}ms — {}",
                             response.code(), elapsed, error);
                     throw new IllegalStateException(
                             "ElevenLabs STT error (" + response.code() + "): " + error);
                 }
 
-                ResponseBody body = response.body();
                 if (body == null) {
                     throw new IllegalStateException("ElevenLabs STT returned empty body");
                 }
@@ -197,16 +197,16 @@ public class ElevenLabsAdapter implements VoicePort {
             long startTime = System.currentTimeMillis();
             try (Response response = okHttpClient.newCall(request).execute()) {
                 long elapsed = System.currentTimeMillis() - startTime;
+                ResponseBody body = response.body();
 
                 if (!response.isSuccessful()) {
-                    String error = response.body() != null ? response.body().string() : "Unknown error";
+                    String error = body != null ? body.string() : "Unknown error";
                     log.warn("[ElevenLabs] TTS failed: HTTP {} in {}ms — {}",
                             response.code(), elapsed, error);
                     throw new IllegalStateException(
                             "ElevenLabs TTS error (" + response.code() + "): " + error);
                 }
 
-                ResponseBody body = response.body();
                 if (body == null) {
                     throw new IllegalStateException("ElevenLabs TTS returned empty body");
                 }
