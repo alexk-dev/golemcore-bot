@@ -18,9 +18,9 @@
 
 package me.golemcore.bot.adapter.inbound.command;
 
-import me.golemcore.bot.auto.AutoModeScheduler;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
+import me.golemcore.bot.domain.model.AutoModeChannelRegisteredEvent;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.DiaryEntry;
 import me.golemcore.bot.domain.model.Goal;
@@ -32,10 +32,10 @@ import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.CommandPort;
-import me.golemcore.bot.usage.LlmUsageTracker;
-import me.golemcore.bot.usage.UsageStats;
+import me.golemcore.bot.domain.model.UsageStats;
+import me.golemcore.bot.port.outbound.UsageTrackingPort;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.annotation.Lazy;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
@@ -74,15 +74,21 @@ import java.util.concurrent.CompletableFuture;
 public class CommandRouter implements CommandPort {
 
     private static final int DEFAULT_COMPACT_KEEP = 10;
+    private static final int MAX_TOOL_DESC_LENGTH = 120;
+    private static final long TOKEN_MILLION_THRESHOLD = 1_000_000;
+    private static final long TOKEN_THOUSAND_THRESHOLD = 1_000;
+    private static final String DOUBLE_NEWLINE = "\n\n";
+    private static final String TABLE_SEPARATOR = " | ";
+    private static final String MSG_AUTO_NOT_AVAILABLE = "command.auto.not-available";
 
     private final SkillComponent skillComponent;
     private final List<ToolComponent> toolComponents;
     private final SessionPort sessionService;
-    private final LlmUsageTracker usageTracker;
+    private final UsageTrackingPort usageTracker;
     private final UserPreferencesService preferencesService;
     private final CompactionService compactionService;
     private final AutoModeService autoModeService;
-    private final AutoModeScheduler autoModeScheduler;
+    private final ApplicationEventPublisher eventPublisher;
     private final BotProperties properties;
 
     private static final List<String> KNOWN_COMMANDS = List.of(
@@ -93,11 +99,11 @@ public class CommandRouter implements CommandPort {
             SkillComponent skillComponent,
             List<ToolComponent> toolComponents,
             SessionPort sessionService,
-            LlmUsageTracker usageTracker,
+            UsageTrackingPort usageTracker,
             UserPreferencesService preferencesService,
             CompactionService compactionService,
             AutoModeService autoModeService,
-            @Lazy AutoModeScheduler autoModeScheduler,
+            ApplicationEventPublisher eventPublisher,
             BotProperties properties) {
         this.skillComponent = skillComponent;
         this.toolComponents = toolComponents;
@@ -106,7 +112,7 @@ public class CommandRouter implements CommandPort {
         this.preferencesService = preferencesService;
         this.compactionService = compactionService;
         this.autoModeService = autoModeService;
-        this.autoModeScheduler = autoModeScheduler;
+        this.eventPublisher = eventPublisher;
         this.properties = properties;
         log.info("CommandRouter initialized with commands: {}", KNOWN_COMMANDS);
     }
@@ -199,10 +205,10 @@ public class CommandRouter implements CommandPort {
             String desc = t.getDefinition().getDescription().trim()
                     .replaceAll("\\s*\\n\\s*", " ");
             int dotIdx = desc.indexOf(". ");
-            if (dotIdx > 0 && dotIdx < 120) {
+            if (dotIdx > 0 && dotIdx < MAX_TOOL_DESC_LENGTH) {
                 desc = desc.substring(0, dotIdx + 1);
-            } else if (desc.length() > 120) {
-                desc = desc.substring(0, 120) + "...";
+            } else if (desc.length() > MAX_TOOL_DESC_LENGTH) {
+                desc = desc.substring(0, MAX_TOOL_DESC_LENGTH) + "...";
             }
             sb.append("\n`").append(name).append("`\n");
             sb.append(desc).append("\n");
@@ -213,17 +219,17 @@ public class CommandRouter implements CommandPort {
 
     private CommandResult handleStatus(String sessionId) {
         StringBuilder sb = new StringBuilder();
-        sb.append("**").append(msg("command.status.title")).append("**\n\n");
+        sb.append("**").append(msg("command.status.title")).append("**").append(DOUBLE_NEWLINE);
 
         int messageCount = sessionService.getMessageCount(sessionId);
-        sb.append(msg("command.status.messages", messageCount)).append("\n\n");
+        sb.append(msg("command.status.messages", messageCount)).append(DOUBLE_NEWLINE);
 
         try {
             Map<String, UsageStats> statsByModel = usageTracker.getStatsByModel(Duration.ofHours(24));
             if (statsByModel == null || statsByModel.isEmpty()) {
                 sb.append(msg("command.status.usage.empty"));
             } else {
-                sb.append(msg("command.status.usage.title")).append("\n\n");
+                sb.append(msg("command.status.usage.title")).append(DOUBLE_NEWLINE);
                 sb.append(renderUsageTable(statsByModel));
             }
         } catch (Exception e) {
@@ -261,7 +267,8 @@ public class CommandRouter implements CommandPort {
         long totalTokens = 0;
 
         StringBuilder sb = new StringBuilder();
-        sb.append("| ").append(colModel).append(" | ").append(colReq).append(" | ").append(colTokens).append(" |\n");
+        sb.append("| ").append(colModel).append(TABLE_SEPARATOR).append(colReq).append(TABLE_SEPARATOR)
+                .append(colTokens).append(" |\n");
         sb.append("|---|---|---|\n");
 
         for (Map.Entry<String, UsageStats> entry : sorted) {
@@ -271,22 +278,22 @@ public class CommandRouter implements CommandPort {
             totalReq += stats.getTotalRequests();
             totalTokens += stats.getTotalTokens();
             sb.append("| ").append(modelName)
-                    .append(" | ").append(stats.getTotalRequests())
-                    .append(" | ").append(formatTokens(stats.getTotalTokens()))
+                    .append(TABLE_SEPARATOR).append(stats.getTotalRequests())
+                    .append(TABLE_SEPARATOR).append(formatTokens(stats.getTotalTokens()))
                     .append(" |\n");
         }
 
-        sb.append("| **").append(totalLabel).append("** | **").append(totalReq)
-                .append("** | **").append(formatTokens(totalTokens)).append("** |\n");
+        sb.append("| **").append(totalLabel).append("**").append(TABLE_SEPARATOR).append("**").append(totalReq)
+                .append("**").append(TABLE_SEPARATOR).append("**").append(formatTokens(totalTokens)).append("** |\n");
 
         return sb.toString();
     }
 
     static String formatTokens(long tokens) {
-        if (tokens >= 1_000_000) {
-            return String.format("%.1fM", tokens / 1_000_000.0);
-        } else if (tokens >= 1_000) {
-            return String.format("%.1fK", tokens / 1_000.0);
+        if (tokens >= TOKEN_MILLION_THRESHOLD) {
+            return String.format("%.1fM", tokens / (double) TOKEN_MILLION_THRESHOLD);
+        } else if (tokens >= TOKEN_THOUSAND_THRESHOLD) {
+            return String.format("%.1fK", tokens / (double) TOKEN_THOUSAND_THRESHOLD);
         }
         return String.valueOf(tokens);
     }
@@ -340,7 +347,7 @@ public class CommandRouter implements CommandPort {
 
     private CommandResult handleAuto(List<String> args, String channelType, String chatId) {
         if (!autoModeService.isFeatureEnabled()) {
-            return CommandResult.success(msg("command.auto.not-available"));
+            return CommandResult.success(msg(MSG_AUTO_NOT_AVAILABLE));
         }
 
         if (args.isEmpty()) {
@@ -353,7 +360,7 @@ public class CommandRouter implements CommandPort {
             case "on" -> {
                 autoModeService.enableAutoMode();
                 if (channelType != null && chatId != null) {
-                    autoModeScheduler.registerChannel(channelType, chatId);
+                    eventPublisher.publishEvent(new AutoModeChannelRegisteredEvent(channelType, chatId));
                 }
                 int interval = properties.getAuto().getIntervalMinutes();
                 yield CommandResult.success(msg("command.auto.enabled", interval));
@@ -368,7 +375,7 @@ public class CommandRouter implements CommandPort {
 
     private CommandResult handleGoals() {
         if (!autoModeService.isFeatureEnabled()) {
-            return CommandResult.success(msg("command.auto.not-available"));
+            return CommandResult.success(msg(MSG_AUTO_NOT_AVAILABLE));
         }
 
         List<Goal> goals = autoModeService.getGoals();
@@ -377,7 +384,7 @@ public class CommandRouter implements CommandPort {
         }
 
         StringBuilder sb = new StringBuilder();
-        sb.append(msg("command.goals.title", goals.size())).append("\n\n");
+        sb.append(msg("command.goals.title", goals.size())).append(DOUBLE_NEWLINE);
 
         for (Goal goal : goals) {
             long completed = goal.getCompletedTaskCount();
@@ -400,7 +407,7 @@ public class CommandRouter implements CommandPort {
 
     private CommandResult handleGoal(List<String> args) {
         if (!autoModeService.isFeatureEnabled()) {
-            return CommandResult.success(msg("command.auto.not-available"));
+            return CommandResult.success(msg(MSG_AUTO_NOT_AVAILABLE));
         }
 
         if (args.isEmpty()) {
@@ -419,7 +426,7 @@ public class CommandRouter implements CommandPort {
 
     private CommandResult handleTasks() {
         if (!autoModeService.isFeatureEnabled()) {
-            return CommandResult.success(msg("command.auto.not-available"));
+            return CommandResult.success(msg(MSG_AUTO_NOT_AVAILABLE));
         }
 
         List<Goal> goals = autoModeService.getGoals();
@@ -429,7 +436,7 @@ public class CommandRouter implements CommandPort {
         }
 
         StringBuilder sb = new StringBuilder();
-        sb.append(msg("command.tasks.title")).append("\n\n");
+        sb.append(msg("command.tasks.title")).append(DOUBLE_NEWLINE);
 
         for (Goal goal : goals) {
             if (goal.getTasks().isEmpty())
@@ -460,7 +467,7 @@ public class CommandRouter implements CommandPort {
 
     private CommandResult handleDiary(List<String> args) {
         if (!autoModeService.isFeatureEnabled()) {
-            return CommandResult.success(msg("command.auto.not-available"));
+            return CommandResult.success(msg(MSG_AUTO_NOT_AVAILABLE));
         }
 
         int count = 10;
@@ -478,7 +485,7 @@ public class CommandRouter implements CommandPort {
         }
 
         StringBuilder sb = new StringBuilder();
-        sb.append(msg("command.diary.title", entries.size())).append("\n\n");
+        sb.append(msg("command.diary.title", entries.size())).append(DOUBLE_NEWLINE);
 
         java.time.format.DateTimeFormatter timeFormat = java.time.format.DateTimeFormatter.ofPattern("HH:mm")
                 .withZone(java.time.ZoneOffset.UTC);

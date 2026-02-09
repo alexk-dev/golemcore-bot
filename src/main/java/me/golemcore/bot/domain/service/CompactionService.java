@@ -30,7 +30,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
 /**
@@ -102,7 +104,11 @@ public class CompactionService {
                     messages.size(), elapsed, summary.length());
             return summary;
 
-        } catch (Exception e) {
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("[Compaction] LLM summarization interrupted: {}", e.getMessage());
+            return null;
+        } catch (ExecutionException | TimeoutException e) {
             log.warn("[Compaction] LLM summarization failed: {}", e.getMessage());
             return null;
         }

@@ -27,6 +27,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
@@ -188,7 +189,7 @@ public class SessionService implements SessionPort {
                 AgentSession session = objectMapper.readValue(json, AgentSession.class);
                 return Optional.of(session);
             }
-        } catch (Exception e) { // NOSONAR - intentionally catch all for fallback
+        } catch (IOException | RuntimeException e) { // NOSONAR - intentionally catch all for fallback
             log.debug("Session not found or failed to load: {} - {}", sessionId, e.getMessage());
         }
         return Optional.empty();

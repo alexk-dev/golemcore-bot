@@ -1,4 +1,4 @@
-package me.golemcore.bot.routing;
+package me.golemcore.bot.domain.model;
 
 /*
  * Copyright 2026 Aleksei Kuleshov
@@ -44,7 +44,6 @@ import java.util.List;
  * construction.
  *
  * @since 1.0
- * @see HybridSkillMatcher
  */
 @Data
 @Builder

@@ -36,6 +36,12 @@ import java.util.Map;
 @Slf4j
 public class ToolConfirmationPolicy {
 
+    private static final String OPERATION = "operation";
+    private static final String UNKNOWN = "unknown";
+    private static final String DELETE = "delete";
+    private static final String DELETE_SKILL = "delete_skill";
+    private static final int COMMAND_LENGTH_THRESHOLD = 80;
+
     private final boolean enabled;
 
     public ToolConfirmationPolicy(BotProperties properties) {
@@ -91,39 +97,39 @@ public class ToolConfirmationPolicy {
     private boolean isDestructiveFileOp(Map<String, Object> args) {
         if (args == null)
             return false;
-        String operation = (String) args.get("operation");
-        return "delete".equals(operation);
+        String operation = (String) args.get(OPERATION);
+        return DELETE.equals(operation);
     }
 
     private boolean isDestructiveSkillOp(Map<String, Object> args) {
         if (args == null)
             return false;
-        String operation = (String) args.get("operation");
-        return "delete_skill".equals(operation);
+        String operation = (String) args.get(OPERATION);
+        return DELETE_SKILL.equals(operation);
     }
 
     private String describeFileAction(Map<String, Object> args) {
-        String operation = args != null ? (String) args.get("operation") : "unknown";
-        String path = args != null ? (String) args.get("path") : "unknown";
-        if ("delete".equals(operation)) {
-            return "Delete file: " + (path != null ? path : "unknown");
+        String operation = args != null ? (String) args.get(OPERATION) : UNKNOWN;
+        String path = args != null ? (String) args.get("path") : UNKNOWN;
+        if (DELETE.equals(operation)) {
+            return "Delete file: " + (path != null ? path : UNKNOWN);
         }
         return "File operation: " + operation + " on " + path;
     }
 
     private String describeShellAction(Map<String, Object> args) {
-        String command = args != null ? (String) args.get("command") : "unknown";
-        if (command != null && command.length() > 80) {
-            command = command.substring(0, 80) + "...";
+        String command = args != null ? (String) args.get("command") : UNKNOWN;
+        if (command != null && command.length() > COMMAND_LENGTH_THRESHOLD) {
+            command = command.substring(0, COMMAND_LENGTH_THRESHOLD) + "...";
         }
         return "Run command: " + command;
     }
 
     private String describeSkillAction(Map<String, Object> args) {
-        String operation = args != null ? (String) args.get("operation") : "unknown";
-        String name = args != null ? (String) args.get("name") : "unknown";
-        if ("delete_skill".equals(operation)) {
-            return "Delete skill: " + (name != null ? name : "unknown");
+        String operation = args != null ? (String) args.get(OPERATION) : UNKNOWN;
+        String name = args != null ? (String) args.get("name") : UNKNOWN;
+        if (DELETE_SKILL.equals(operation)) {
+            return "Delete skill: " + (name != null ? name : UNKNOWN);
         }
         return "Skill operation: " + operation;
     }

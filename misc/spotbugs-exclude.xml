@@ -28,4 +28,13 @@
         <Bug pattern="REC_CATCH_EXCEPTION" />
         <Class name="~me\.golemcore\.bot\.domain\.system\..*" />
     </Match>
+    <!--
+        Returning null from getObject() is intentional — null means "file not found".
+        Callers (getText, etc.) depend on this null semantic to distinguish
+        missing files from empty files.
+    -->
+    <Match>
+        <Bug pattern="PZLA_PREFER_ZERO_LENGTH_ARRAYS" />
+        <Class name="me.golemcore.bot.adapter.outbound.storage.LocalStorageAdapter" />
+    </Match>
 </FindBugsFilter>

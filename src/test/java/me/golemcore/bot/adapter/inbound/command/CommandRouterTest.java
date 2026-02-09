@@ -1,6 +1,5 @@
 package me.golemcore.bot.adapter.inbound.command;
 
-import me.golemcore.bot.auto.AutoModeScheduler;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.*;
@@ -9,10 +8,11 @@ import me.golemcore.bot.domain.service.CompactionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.infrastructure.config.BotProperties;
-import me.golemcore.bot.usage.LlmUsageTracker;
-import me.golemcore.bot.usage.UsageStats;
+import me.golemcore.bot.domain.model.UsageStats;
+import me.golemcore.bot.port.outbound.UsageTrackingPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -25,11 +25,11 @@ class CommandRouterTest {
 
     private SkillComponent skillComponent;
     private SessionPort sessionService;
-    private LlmUsageTracker usageTracker;
+    private UsageTrackingPort usageTracker;
     private UserPreferencesService preferencesService;
     private CompactionService compactionService;
     private AutoModeService autoModeService;
-    private AutoModeScheduler autoModeScheduler;
+    private ApplicationEventPublisher eventPublisher;
     private CommandRouter router;
 
     private static final Map<String, Object> CTX = Map.of(
@@ -39,7 +39,7 @@ class CommandRouterTest {
     void setUp() {
         skillComponent = mock(SkillComponent.class);
         sessionService = mock(SessionPort.class);
-        usageTracker = mock(LlmUsageTracker.class);
+        usageTracker = mock(UsageTrackingPort.class);
         compactionService = mock(CompactionService.class);
 
         // Default: pass through message key + args for easy assertion.
@@ -67,7 +67,7 @@ class CommandRouterTest {
         });
 
         autoModeService = mock(AutoModeService.class);
-        autoModeScheduler = mock(AutoModeScheduler.class);
+        eventPublisher = mock(ApplicationEventPublisher.class);
 
         ToolComponent tool1 = mockTool("filesystem", "File system operations", true);
         ToolComponent tool2 = mockTool("shell", "Shell command execution", true);
@@ -83,7 +83,7 @@ class CommandRouterTest {
                 preferencesService,
                 compactionService,
                 autoModeService,
-                autoModeScheduler,
+                eventPublisher,
                 properties);
     }
 
@@ -293,7 +293,7 @@ class CommandRouterTest {
         assertTrue(result.success());
         assertTrue(result.output().contains("command.auto.enabled"));
         verify(autoModeService).enableAutoMode();
-        verify(autoModeScheduler).registerChannel("telegram", "12345");
+        verify(eventPublisher).publishEvent(new AutoModeChannelRegisteredEvent("telegram", "12345"));
     }
 
     @Test
