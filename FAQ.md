@@ -90,7 +90,7 @@ No Telegram token needed.
   - OpenAI: Check [pricing page](https://openai.com/pricing)
   - Anthropic: Check [pricing page](https://www.anthropic.com/pricing)
 - **Optional: Brave Search** — Free tier: 2000 queries/month, paid plans available
-- **Optional: ElevenLabs TTS** — If voice enabled
+- **Optional: ElevenLabs STT/TTS** — If voice enabled
 
 **No cost for:**
 - GolemCore Bot itself (Apache 2.0 license)
@@ -163,7 +163,7 @@ export AUTO_MODE_INTERVAL=15  # minutes
 
 **Without MCP:**
 ```
-Bot → [Built-in 9 tools only]
+Bot → [Built-in 10 tools only]
 ```
 
 **With MCP:**
@@ -196,19 +196,22 @@ See: [docs/MCP.md](docs/MCP.md)
 
 ### Does it support voice?
 
-**Yes** (experimental):
+**Yes** — ElevenLabs for both STT and TTS:
 
 ```bash
 export VOICE_ENABLED=true
-export BOT_VOICE_STT_PROVIDER=whisper       # Speech-to-text
-export BOT_VOICE_TTS_PROVIDER=elevenlabs    # Text-to-speech
+export ELEVENLABS_API_KEY=your-key-here
+export ELEVENLABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM
 export BOT_VOICE_TELEGRAM_RESPOND_WITH_VOICE=true
 ```
 
 **Requirements:**
-- Whisper API (OpenAI) for STT
-- ElevenLabs API for TTS
-- FFmpeg installed (for audio conversion)
+- ElevenLabs API key (for both STT and TTS)
+- No FFmpeg needed (OGG accepted natively)
+
+**Voice response mechanisms:**
+- **Primary:** LLM starts response with voice prefix — auto-detected and synthesized
+- **Secondary:** `send_voice` tool for explicit voice output
 
 ### Can it browse the web?
 

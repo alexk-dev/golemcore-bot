@@ -4,7 +4,7 @@
 
 ```bash
 ./mvnw clean package -DskipTests   # build
-./mvnw test                         # 807 tests
+./mvnw test                         # 878 tests
 ./mvnw clean verify -P strict       # full check (tests + PMD + SpotBugs)
 ```
 
@@ -21,19 +21,18 @@ Spring Boot 3.4.2, Java 17, Hexagonal Architecture (Ports & Adapters).
 
 ```
 me.golemcore.bot
-├── adapter/inbound/          Telegram, CommandRouter
-├── adapter/outbound/         LLM, storage, browser, MCP, voice, embeddings
+├── adapter/inbound/          Telegram (TelegramAdapter, TelegramVoiceHandler), CommandRouter
+├── adapter/outbound/         LLM, storage, browser, MCP, voice (ElevenLabsAdapter), embeddings
 ├── domain/component/         Interfaces: ToolComponent, SkillComponent, etc.
-├── domain/loop/              AgentLoop
-├── domain/model/             AgentContext, AgentSession, Message, Skill, ToolDefinition, etc.
-├── domain/service/           SessionService, SkillService, CompactionService, etc.
+├── domain/loop/              AgentLoop, AgentContextHolder
+├── domain/model/             AgentContext, AgentSession, Message, Skill, ToolDefinition, ContextAttributes, etc.
+├── domain/service/           SessionService, SkillService, CompactionService, VoiceResponseHandler, etc.
 ├── domain/system/            Ordered pipeline systems (see below)
 ├── port/inbound/             ChannelPort, CommandPort
-├── port/outbound/            LlmPort, StoragePort, EmbeddingPort, BrowserPort, VoicePort
+├── port/outbound/            LlmPort, StoragePort, EmbeddingPort, BrowserPort, VoicePort, McpPort, SessionPort, RagPort, ConfirmationPort
 ├── routing/                  HybridSkillMatcher, LlmSkillClassifier, MessageContextAggregator
 ├── security/                 InjectionGuard, InputSanitizer, AllowlistValidator
-├── tools/                    FileSystemTool, ShellTool, BrowserTool, etc.
-└── voice/                    TelegramVoiceHandler
+└── tools/                    FileSystemTool, ShellTool, BrowserTool, VoiceResponseTool, etc.
 ```
 
 ### Agent Loop Pipeline
@@ -205,7 +204,7 @@ BREAKING CHANGE: skill YAML files must use next_skill instead of nextSkill.
 
 ## Testing
 
-807 tests. Tests mirror main source structure.
+878 tests. Tests mirror main source structure.
 
 - Test class: `*Test` suffix
 - Test method: `shouldDoSomethingWhenCondition()` — no `test` prefix

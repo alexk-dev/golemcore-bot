@@ -6,7 +6,7 @@
 [![Java](https://img.shields.io/badge/Java-17+-orange.svg)](https://www.oracle.com/java/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.4.2-brightgreen.svg)](https://spring.io/projects/spring-boot)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-801%20passing-success.svg)](https://github.com/alexk-dev/golemcore-bot/actions)
+[![Tests](https://img.shields.io/badge/tests-878%20passing-success.svg)](https://github.com/alexk-dev/golemcore-bot/actions)
 
 ---
 
@@ -19,7 +19,7 @@
 - **Fragmented Input Detection** — Aggregates split messages using temporal and linguistic signals
 
 ### 🛠️ Powerful Tools
-- **9 Built-in Tools** — Filesystem, Shell, Web Search, Browser, Weather, Skill Management, Goal Management, Transitions, DateTime
+- **10 Built-in Tools** — Filesystem, Shell, Web Search, Browser, Weather, Skill Management, Goal Management, Transitions, DateTime, Voice
 - **MCP Protocol Support** — Model Context Protocol for stdio-based tool servers (GitHub, Slack, etc.)
 - **Sandboxed Execution** — Isolated workspace with path traversal protection
 - **Tool Confirmation** — User approval workflow for destructive operations
@@ -277,7 +277,7 @@ See **[Configuration Guide](docs/CONFIGURATION.md)** for all settings, **[Quick 
 
 ## 🛠️ Tools & Integrations
 
-### Built-in Tools (9)
+### Built-in Tools (10)
 
 | Tool | Operations | Requires | Notes |
 |------|------------|----------|-------|
@@ -290,6 +290,7 @@ See **[Configuration Guide](docs/CONFIGURATION.md)** for all settings, **[Quick 
 | **BraveSearch** | search | `BRAVE_SEARCH_API_KEY` | 2000 free queries/month |
 | **Weather** | get_weather | — | Open-Meteo API (free) |
 | **DateTime** | current_time, convert_timezone, date_math | — | — |
+| **VoiceResponse** | send_voice | `ELEVENLABS_API_KEY` | LLM-initiated TTS synthesis |
 
 ### MCP Integrations
 
@@ -433,7 +434,8 @@ src/main/java/me/golemcore/bot/
 │       ├── llm/              # LLM providers (Langchain4j, Custom, NoOp)
 │       ├── storage/          # Local filesystem
 │       ├── mcp/              # MCP client
-│       └── rag/              # RAG integration
+│       ├── rag/              # RAG integration
+│       └── voice/            # ElevenLabs STT + TTS
 ├── domain/                    # Core business logic
 │   ├── loop/                 # Agent loop orchestration
 │   ├── system/               # Processing pipeline (11 systems)
@@ -443,7 +445,7 @@ src/main/java/me/golemcore/bot/
 ├── auto/                      # Auto-mode scheduler
 ├── routing/                   # Hybrid skill matcher
 ├── security/                  # Security layers
-├── tools/                     # 9 built-in tools
+├── tools/                     # 10 built-in tools
 └── usage/                     # Usage tracking
 ```
 

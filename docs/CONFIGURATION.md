@@ -339,11 +339,13 @@ Bot works autonomously every 15 minutes.
 
 ## Voice (ElevenLabs STT + TTS)
 
+ElevenLabs provides both speech-to-text and text-to-speech. No FFmpeg or external tools needed.
+
 ```bash
 export VOICE_ENABLED=true
 export ELEVENLABS_API_KEY=your-key-here
 export ELEVENLABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM        # Default voice
-export ELEVENLABS_TTS_MODEL=eleven_multilingual_v2       # TTS model
+export ELEVENLABS_TTS_MODEL=eleven_multilingual_v2       # TTS model (29+ languages)
 export ELEVENLABS_STT_MODEL=scribe_v1                    # STT model
 export ELEVENLABS_SPEED=1.0                              # Speech speed
 ```
@@ -354,6 +356,12 @@ export ELEVENLABS_SPEED=1.0                              # Speech speed
 export BOT_VOICE_TELEGRAM_RESPOND_WITH_VOICE=true   # Auto-reply with voice to voice messages
 export BOT_VOICE_TELEGRAM_TRANSCRIBE_INCOMING=true   # Transcribe incoming voice messages
 ```
+
+### Voice Response Mechanisms
+
+**Primary (voice prefix):** LLM starts response with a special prefix — `ResponseRoutingSystem` detects it, strips the prefix, synthesizes speech via TTS, and sends voice. Falls back to text on TTS failure.
+
+**Secondary (send_voice tool):** LLM calls the `send_voice` tool with custom text to synthesize. Works as a fallback for models with tool calling support.
 
 ---
 
