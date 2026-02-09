@@ -11,6 +11,8 @@ import mockwebserver3.RecordedRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
@@ -58,6 +60,32 @@ class ElevenLabsAdapterTest {
     @AfterEach
     void tearDown() throws IOException {
         mockServer.close();
+    }
+
+    // Helper methods to reduce duplication
+    private void enqueueErrorResponse(int code, String json) {
+        mockServer.enqueue(new MockResponse.Builder().code(code).body(json).build());
+    }
+
+    private void enqueueErrorResponseMultiple(int code, String json, int times) {
+        for (int i = 0; i < times; i++) {
+            enqueueErrorResponse(code, json);
+        }
+    }
+
+    private void assertTranscribeThrows(int expectedCode) {
+        CompletableFuture<VoicePort.TranscriptionResult> future = adapter.transcribe(new byte[] { 1 },
+                AudioFormat.OGG_OPUS);
+        Exception ex = assertThrows(Exception.class, () -> future.get(15, TimeUnit.SECONDS));
+        String message = ex.getCause() != null ? ex.getCause().getMessage() : ex.getMessage();
+        assertTrue(message != null && message.contains(String.valueOf(expectedCode)));
+    }
+
+    private void assertSynthesizeThrows(int expectedCode) {
+        CompletableFuture<byte[]> future = adapter.synthesize("Test", VoicePort.VoiceConfig.defaultConfig());
+        Exception ex = assertThrows(Exception.class, () -> future.get(15, TimeUnit.SECONDS));
+        String message = ex.getCause() != null ? ex.getCause().getMessage() : ex.getMessage();
+        assertTrue(message != null && message.contains(String.valueOf(expectedCode)));
     }
 
     @Test
@@ -384,78 +412,41 @@ class ElevenLabsAdapterTest {
         assertDoesNotThrow(() -> adapter.init());
     }
 
-    // ===== New Error Handling Tests =====
+    // ===== Error Handling Tests (Consolidated) =====
 
-    @Test
-    void transcribe400BadRequest() {
-        String errorJson = "{\"detail\":{\"status\":\"max_character_limit_exceeded\",\"message\":\"Text has 50000 characters and exceeds the limit of 10000\"}}";
-        mockServer.enqueue(new MockResponse.Builder().code(400).body(errorJson).build());
+    @ParameterizedTest
+    @CsvSource({ "400,max_character_limit_exceeded,Text too long",
+            "422,value_error,Invalid parameter" })
+    void transcribeHttpErrors(int code, String status, String errorMessage) {
+        String json = String.format("{\"detail\":{\"status\":\"%s\",\"message\":\"%s\"}}", status, errorMessage);
+        enqueueErrorResponse(code, json);
+        assertTranscribeThrows(code);
+    }
 
-        CompletableFuture<VoicePort.TranscriptionResult> future = adapter.transcribe(new byte[] { 1 },
-                AudioFormat.OGG_OPUS);
-        Exception ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
-        String message = ex.getCause() != null ? ex.getCause().getMessage() : ex.getMessage();
-        assertTrue(message != null && (message.contains("400") || message.contains("Bad request")));
+    @ParameterizedTest
+    @CsvSource({ "400,max_character_limit_exceeded,Text too long",
+            "422,value_error,Invalid parameter" })
+    void synthesizeHttpErrors(int code, String status, String errorMessage) {
+        String json = String.format("{\"detail\":{\"status\":\"%s\",\"message\":\"%s\"}}", status, errorMessage);
+        enqueueErrorResponse(code, json);
+        assertSynthesizeThrows(code);
     }
 
     @Test
     void transcribe402QuotaExceeded() {
-        String errorJson = "{\"detail\":{\"status\":\"quota_exceeded\",\"message\":\"Quota exceeded for current billing period\"}}";
-        mockServer.enqueue(new MockResponse.Builder().code(402).body(errorJson).build());
-
+        enqueueErrorResponse(402, "{\"detail\":{\"status\":\"quota_exceeded\",\"message\":\"Quota exceeded\"}}");
         CompletableFuture<VoicePort.TranscriptionResult> future = adapter.transcribe(new byte[] { 1 },
                 AudioFormat.OGG_OPUS);
         Exception ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
         Throwable cause = ex.getCause();
         assertTrue(cause instanceof ElevenLabsAdapter.QuotaExceededException
                 || (cause != null && cause.getMessage().contains("quota")));
-    }
-
-    @Test
-    void transcribe422ValidationError() {
-        String errorJson = "{\"detail\":{\"status\":\"value_error\",\"message\":\"Invalid model_id parameter\"}}";
-        mockServer.enqueue(new MockResponse.Builder().code(422).body(errorJson).build());
-
-        CompletableFuture<VoicePort.TranscriptionResult> future = adapter.transcribe(new byte[] { 1 },
-                AudioFormat.OGG_OPUS);
-        Exception ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
-        String message = ex.getCause() != null ? ex.getCause().getMessage() : ex.getMessage();
-        assertTrue(message != null && message.contains("422"));
-    }
-
-    @Test
-    void transcribe504Timeout() {
-        String errorJson = "{\"message\":\"Gateway timeout\"}";
-        // Enqueue 3 times because 504 is retryable
-        for (int i = 0; i < 3; i++) {
-            mockServer.enqueue(new MockResponse.Builder().code(504).body(errorJson).build());
-        }
-
-        CompletableFuture<VoicePort.TranscriptionResult> future = adapter.transcribe(new byte[] { 1 },
-                AudioFormat.OGG_OPUS);
-        Exception ex = assertThrows(Exception.class, () -> future.get(15, TimeUnit.SECONDS));
-        String message = ex.getCause() != null ? ex.getCause().getMessage() : ex.getMessage();
-        assertTrue(message != null && message.contains("504"));
-    }
-
-    @Test
-    void synthesize400BadRequest() {
-        String errorJson = "{\"detail\":{\"status\":\"max_character_limit_exceeded\",\"message\":\"Text too long\"}}";
-        mockServer.enqueue(new MockResponse.Builder().code(400).body(errorJson).build());
-
-        VoicePort.VoiceConfig config = VoicePort.VoiceConfig.defaultConfig();
-        CompletableFuture<byte[]> future = adapter.synthesize("Test", config);
-        Exception ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
-        assertTrue(ex.getMessage().contains("400") || ex.getCause().getMessage().contains("400"));
     }
 
     @Test
     void synthesize402QuotaExceeded() {
-        String errorJson = "{\"detail\":{\"status\":\"quota_exceeded\",\"message\":\"Quota exceeded\"}}";
-        mockServer.enqueue(new MockResponse.Builder().code(402).body(errorJson).build());
-
-        VoicePort.VoiceConfig config = VoicePort.VoiceConfig.defaultConfig();
-        CompletableFuture<byte[]> future = adapter.synthesize("Test", config);
+        enqueueErrorResponse(402, "{\"detail\":{\"status\":\"quota_exceeded\",\"message\":\"Quota exceeded\"}}");
+        CompletableFuture<byte[]> future = adapter.synthesize("Test", VoicePort.VoiceConfig.defaultConfig());
         Exception ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
         Throwable cause = ex.getCause();
         assertTrue(cause instanceof ElevenLabsAdapter.QuotaExceededException
@@ -463,30 +454,15 @@ class ElevenLabsAdapterTest {
     }
 
     @Test
-    void synthesize422ValidationError() {
-        String errorJson = "{\"detail\":{\"status\":\"value_error\",\"message\":\"Invalid voice_id\"}}";
-        mockServer.enqueue(new MockResponse.Builder().code(422).body(errorJson).build());
-
-        VoicePort.VoiceConfig config = VoicePort.VoiceConfig.defaultConfig();
-        CompletableFuture<byte[]> future = adapter.synthesize("Test", config);
-        Exception ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
-        String message = ex.getCause() != null ? ex.getCause().getMessage() : ex.getMessage();
-        assertTrue(message != null && message.contains("422"));
+    void transcribe504Timeout() {
+        enqueueErrorResponseMultiple(504, "{\"message\":\"Gateway timeout\"}", 3);
+        assertTranscribeThrows(504);
     }
 
     @Test
     void synthesize504Timeout() {
-        String errorJson = "{\"message\":\"Gateway timeout\"}";
-        // Enqueue 3 times because 504 is retryable
-        for (int i = 0; i < 3; i++) {
-            mockServer.enqueue(new MockResponse.Builder().code(504).body(errorJson).build());
-        }
-
-        VoicePort.VoiceConfig config = VoicePort.VoiceConfig.defaultConfig();
-        CompletableFuture<byte[]> future = adapter.synthesize("Test", config);
-        Exception ex = assertThrows(Exception.class, () -> future.get(15, TimeUnit.SECONDS));
-        String message = ex.getCause() != null ? ex.getCause().getMessage() : ex.getMessage();
-        assertTrue(message != null && message.contains("504"));
+        enqueueErrorResponseMultiple(504, "{\"message\":\"Gateway timeout\"}", 3);
+        assertSynthesizeThrows(504);
     }
 
     @Test
