@@ -25,6 +25,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
+
 /**
  * Service for managing global user preferences including language and timezone
  * settings. Uses a single-user design where preferences are stored in
@@ -111,7 +113,7 @@ public class UserPreferencesService {
                 log.debug("Loaded global preferences");
                 return prefs;
             }
-        } catch (Exception e) { // NOSONAR - intentionally catch all for fallback
+        } catch (IOException | RuntimeException e) { // NOSONAR - intentionally catch all for fallback
             log.debug("No saved preferences or failed to parse, creating default: {}", e.getMessage());
         }
 

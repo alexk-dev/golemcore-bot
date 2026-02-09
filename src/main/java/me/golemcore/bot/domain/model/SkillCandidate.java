@@ -1,4 +1,4 @@
-package me.golemcore.bot.routing;
+package me.golemcore.bot.domain.model;
 
 /*
  * Copyright 2026 Aleksei Kuleshov
@@ -34,7 +34,6 @@ import lombok.Data;
  * directly if semantic score is high enough.
  *
  * @since 1.0
- * @see HybridSkillMatcher
  */
 @Data
 @Builder

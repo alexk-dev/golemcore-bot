@@ -398,18 +398,18 @@ Before routing, `MessageContextAggregator` checks if the user's message is a fra
 
 If 2+ signals are detected, the message is aggregated with recent context for better matching.
 
-### Stage 1: Semantic Search (~5ms)
+### Stage 1: Semantic Search
 
 Generate an embedding of the user's message and compare it against pre-indexed skill embeddings (name + description). Returns top-K candidates ranked by cosine similarity.
 
 - Top-K: 5 (configurable)
 - Minimum score: 0.6
 
-### Stage 2: LLM Classifier (~200-400ms)
+### Stage 2: LLM Classifier
 
 A fast LLM picks the best skill from the semantic candidates and assigns a **model tier** (fast/default/smart/coding).
 
-The classifier is **skipped** if the semantic score exceeds the threshold (default: 0.95), saving ~300ms.
+The classifier is **skipped** if the semantic score exceeds the threshold (default: 0.95).
 
 ### No Match
 

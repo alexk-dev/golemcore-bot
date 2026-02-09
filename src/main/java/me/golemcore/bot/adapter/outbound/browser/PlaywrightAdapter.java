@@ -75,6 +75,7 @@ public class PlaywrightAdapter implements BrowserPort, BrowserComponent {
     private BrowserContext context;
     private volatile boolean initialized = false;
 
+    @SuppressWarnings("PMD.CloseResource")
     private synchronized void ensureInitialized() {
         if (initialized || !properties.getBrowser().isEnabled()) {
             return;
@@ -107,13 +108,15 @@ public class PlaywrightAdapter implements BrowserPort, BrowserComponent {
                 try {
                     br.close();
                 } catch (Exception ex) {
-                    /* ignore */ }
+                    log.trace("Error closing browser resource: {}", ex.getMessage());
+                }
             }
             if (pw != null) {
                 try {
                     pw.close();
                 } catch (Exception ex) {
-                    /* ignore */ }
+                    log.trace("Error closing browser resource: {}", ex.getMessage());
+                }
             }
         }
     }
@@ -124,6 +127,7 @@ public class PlaywrightAdapter implements BrowserPort, BrowserComponent {
     }
 
     @Override
+    @SuppressWarnings("PMD.UseTryWithResources")
     public CompletableFuture<BrowserPage> navigate(String url) {
         return CompletableFuture.supplyAsync(() -> {
             ensureInitialized();
@@ -162,6 +166,7 @@ public class PlaywrightAdapter implements BrowserPort, BrowserComponent {
     }
 
     @Override
+    @SuppressWarnings("PMD.UseTryWithResources")
     public CompletableFuture<byte[]> screenshot(String url) {
         return CompletableFuture.supplyAsync(() -> {
             ensureInitialized();
@@ -185,6 +190,7 @@ public class PlaywrightAdapter implements BrowserPort, BrowserComponent {
     }
 
     @Override
+    @SuppressWarnings("PMD.UseTryWithResources")
     public CompletableFuture<String> evaluate(String url, String script) {
         return CompletableFuture.supplyAsync(() -> {
             ensureInitialized();

@@ -277,22 +277,24 @@ public class BotProperties {
      */
     @Data
     public static class ModelRouterProperties {
+        private static final String DEFAULT_GPT_5_1_MODEL = "openai/gpt-5.1";
+
         /** Temperature for models that support it (0.0-2.0) */
         private double temperature = 0.7;
 
         /** Simple tasks: greetings, short answers, translations */
-        private String fastModel = "openai/gpt-5.1";
+        private String fastModel = DEFAULT_GPT_5_1_MODEL;
         private String fastModelReasoning = "low";
 
         /**
          * Standard tasks: general questions, summarization, basic coding (used as
          * fallback)
          */
-        private String defaultModel = "openai/gpt-5.1";
+        private String defaultModel = DEFAULT_GPT_5_1_MODEL;
         private String defaultModelReasoning = "medium";
 
         /** Complex tasks: architecture, deep analysis, multi-step reasoning */
-        private String smartModel = "openai/gpt-5.1";
+        private String smartModel = DEFAULT_GPT_5_1_MODEL;
         private String smartModelReasoning = "high";
 
         /** Coding tasks: code generation, debugging, refactoring, code review */
@@ -348,7 +350,7 @@ public class BotProperties {
     @Data
     public static class ClassifierProperties {
         private boolean enabled = true;
-        private String model = "openai/gpt-5.1"; // Fast model for classification
+        private String model = ModelRouterProperties.DEFAULT_GPT_5_1_MODEL; // Fast model for classification
         private String modelReasoning = "low"; // Low reasoning for speed
         private double temperature = 0.1; // Low for consistency
         private int maxTokens = 200;

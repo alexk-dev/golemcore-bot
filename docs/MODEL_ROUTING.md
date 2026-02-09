@@ -92,7 +92,7 @@ User Message
     |  continuation, lowercase_start, previous_incomplete
     |  Threshold: >= 2 signals = fragmented
     v
-[Stage 1: Semantic Pre-filter] (~5ms)
+[Stage 1: Semantic Pre-filter]
     |  Query embedding via EmbeddingPort (text-embedding-3-small)
     |  Cosine similarity against indexed skill embeddings
     |  Returns top-K candidates (K=5, min_score=0.6)
@@ -102,7 +102,7 @@ User Message
     +-- Score < 0.95 and classifier enabled?
         |
         v
-[Stage 2: LLM Classifier] (~200-400ms)
+[Stage 2: LLM Classifier]
         |  Fast model (e.g., gpt-5-mini) receives:
         |  - Candidate skills with descriptions and scores
         |  - Last 3 conversation messages for context
@@ -293,14 +293,7 @@ BOT_ROUTER_SKILL_MATCHER_ROUTING_TIMEOUT_MS=15000
 BOT_ROUTER_SKILL_MATCHER_CLASSIFIER_TIMEOUT_MS=10000
 ```
 
-**Performance characteristics:**
-
-| Operation | Typical Latency |
-|-----------|----------------|
-| Semantic search | ~5ms |
-| LLM classifier | ~200-400ms |
-| Cache hit | <1ms |
-| High-confidence skip (score > 0.95) | ~5ms (semantic only) |
+Cached results are near-instant. The classifier is skipped for high-confidence semantic matches (score > 0.95).
 
 > **See:** [Configuration Guide — Skill Routing](CONFIGURATION.md#skill-routing) for a concise reference.
 
@@ -544,10 +537,10 @@ The routing system produces detailed logs at INFO level:
 [SkillMatcher] Semantic search returned 3 candidates
 [SkillMatcher] Top candidate: coding-assistant (score: 0.870), threshold: 0.95
 [SkillMatcher] Stage 2: Running LLM classifier...
-[Classifier] Sending request to LLM (timeout: 10000ms)...
-[Classifier] LLM responded in 285ms
+[Classifier] Sending request to LLM...
+[Classifier] LLM responded
 [Classifier] Parsed result: skill=coding-assistant, confidence=0.92, tier=coding
-[SkillRouting] MATCHED: skill=coding-assistant, confidence=0.92, tier=coding, cached=false, llmUsed=true, latency=310ms
+[SkillRouting] MATCHED: skill=coding-assistant, confidence=0.92, tier=coding, cached=false, llmUsed=true
 [LLM] Model tier: coding, selected model: openai/gpt-5.2, reasoning: medium
 ```
 

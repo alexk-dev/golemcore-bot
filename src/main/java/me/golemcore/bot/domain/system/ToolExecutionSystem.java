@@ -62,6 +62,7 @@ public class ToolExecutionSystem implements AgentSystem {
     private final Map<String, ChannelPort> channelRegistry = new ConcurrentHashMap<>();
 
     private static final long TOOL_TIMEOUT_SECONDS = 30;
+    private static final int MAX_BASE64_LENGTH = 67_000_000;
 
     public ToolExecutionSystem(List<ToolComponent> toolComponents,
             ToolConfirmationPolicy confirmationPolicy,
@@ -350,7 +351,7 @@ public class ToolExecutionSystem implements AgentSystem {
             Object screenshotB64 = dataMap.get("screenshot_base64");
             if (screenshotB64 instanceof String b64) {
                 // Guard against OOM: reject base64 strings > ~50MB decoded
-                if (b64.length() > 67_000_000) { // ~50MB when decoded (base64 is ~4/3 ratio)
+                if (b64.length() > MAX_BASE64_LENGTH) { // ~50MB when decoded (base64 is ~4/3 ratio)
                     log.warn("[Tools] Base64 data too large ({} chars) from '{}', skipping", b64.length(), toolName);
                 } else {
                     try {

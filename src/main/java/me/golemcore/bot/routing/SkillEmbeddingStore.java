@@ -19,6 +19,7 @@ package me.golemcore.bot.routing;
  */
 
 import me.golemcore.bot.domain.model.Skill;
+import me.golemcore.bot.domain.model.SkillCandidate;
 import me.golemcore.bot.port.outbound.EmbeddingPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

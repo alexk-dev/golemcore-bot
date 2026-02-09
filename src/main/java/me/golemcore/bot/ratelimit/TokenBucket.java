@@ -18,6 +18,9 @@ package me.golemcore.bot.ratelimit;
  * Contact: alex@kuleshov.tech
  */
 
+import me.golemcore.bot.domain.model.BucketState;
+import me.golemcore.bot.domain.model.RateLimitResult;
+
 import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.atomic.AtomicLong;

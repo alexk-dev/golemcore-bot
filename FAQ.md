@@ -127,8 +127,8 @@ Bot: [Matches to "code-reviewer" skill]
 
 **3 stages:**
 1. **Fragment detection** — Aggregates split messages
-2. **Semantic search** — Embedding similarity (~5ms)
-3. **LLM classifier** — Accurate selection (~200ms)
+2. **Semantic search** — Embedding similarity
+3. **LLM classifier** — Accurate selection
 
 Enable:
 ```bash
@@ -490,7 +490,7 @@ docker run --env-file .env golemcore-bot:latest
 **Yes** — designed for production:
 
 ✅ **Security:**
-- OWASP HTML sanitizer
+- Unicode normalization, invisible character removal
 - Prompt injection detection
 - Command injection detection
 - Path traversal protection
@@ -549,21 +549,11 @@ Implement custom `ChannelPort` with authentication.
 - **Coding tier (code gen):** 3s - 10s
 - **With tools:** +1s - 5s per tool call
 
-**Skill routing:**
-- Semantic search: ~5ms
-- LLM classifier: ~200ms
-- Cache hit: <1ms
+**Skill routing** adds minimal overhead; cached results are near-instant.
 
 ### How many conversations can it handle?
 
-**Single instance:**
-- CLI: 1 user
-- Telegram: 100s of users (limited by rate limits)
-
-**Scaling:**
-- Run multiple instances behind load balancer
-- Each instance stateless (sessions in storage)
-- Shared storage (Redis, S3) for session state
+Designed as a **single-user personal assistant**. One active conversation at a time via CLI or Telegram.
 
 ### Can I disable features to improve speed?
 
