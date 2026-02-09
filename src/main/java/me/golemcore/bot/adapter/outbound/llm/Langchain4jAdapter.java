@@ -25,13 +25,20 @@ import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import me.golemcore.bot.port.outbound.LlmPort;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.langchain4j.agent.tool.JsonSchemaProperty;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.*;
 import dev.langchain4j.model.anthropic.AnthropicChatModel;
-import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
+import dev.langchain4j.model.chat.request.json.JsonArraySchema;
+import dev.langchain4j.model.chat.request.json.JsonBooleanSchema;
+import dev.langchain4j.model.chat.request.json.JsonEnumSchema;
+import dev.langchain4j.model.chat.request.json.JsonIntegerSchema;
+import dev.langchain4j.model.chat.request.json.JsonNumberSchema;
+import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
+import dev.langchain4j.model.chat.request.json.JsonSchemaElement;
+import dev.langchain4j.model.chat.request.json.JsonStringSchema;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import lombok.RequiredArgsConstructor;
@@ -93,7 +100,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     private final ModelConfigService modelConfig;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    private ChatLanguageModel chatModel;
+    private ChatModel chatModel;
     private String currentModel;
     private volatile boolean initialized = false;
 
@@ -150,7 +157,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     /**
      * Create a model instance based on configuration.
      */
-    private ChatLanguageModel createModel(String model, String reasoningEffort) {
+    private ChatModel createModel(String model, String reasoningEffort) {
         String provider = getProvider(model);
         BotProperties.ProviderProperties config = getProviderConfig(provider);
         String modelName = stripProviderPrefix(model);
@@ -163,7 +170,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         }
     }
 
-    private ChatLanguageModel createAnthropicModel(String modelName, BotProperties.ProviderProperties config) {
+    private ChatModel createAnthropicModel(String modelName, BotProperties.ProviderProperties config) {
         var builder = AnthropicChatModel.builder()
                 .apiKey(config.getApiKey())
                 .modelName(modelName)
@@ -181,7 +188,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         return builder.build();
     }
 
-    private ChatLanguageModel createOpenAiModel(String modelName, String fullModel,
+    private ChatModel createOpenAiModel(String modelName, String fullModel,
             String reasoningEffort, BotProperties.ProviderProperties config) {
         var builder = OpenAiChatModel.builder()
                 .apiKey(config.getApiKey())
@@ -199,8 +206,9 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                     reasoningEffort != null ? reasoningEffort : "default");
         }
 
-        // TODO: Pass reasoningEffort to API when langchain4j supports it
-        // builder.reasoningEffort(reasoningEffort);
+        if (reasoningEffort != null && !reasoningEffort.isBlank()) {
+            builder.reasoningEffort(reasoningEffort);
+        }
 
         return builder.build();
     }
@@ -219,7 +227,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             }
 
             // Handle per-request model/reasoning override
-            ChatLanguageModel modelToUse = getModelForRequest(request);
+            ChatModel modelToUse = getModelForRequest(request);
             List<ChatMessage> messages = convertMessages(request);
             List<ToolSpecification> tools = convertTools(request);
 
@@ -274,7 +282,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         return false;
     }
 
-    private ChatLanguageModel getModelForRequest(LlmRequest request) {
+    private ChatModel getModelForRequest(LlmRequest request) {
         String requestModel = request.getModel();
         String reasoningEffort = request.getReasoningEffort();
 
@@ -448,24 +456,27 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
 
     @SuppressWarnings("unchecked")
     private ToolSpecification convertToolDefinition(ToolDefinition tool) {
-        var builder = ToolSpecification.builder()
+        ToolSpecification.Builder builder = ToolSpecification.builder()
                 .name(tool.getName())
                 .description(tool.getDescription());
 
-        // Convert input schema to tool parameters
+        // Convert input schema to JsonObjectSchema parameters
         if (tool.getInputSchema() != null) {
             Map<String, Object> schema = tool.getInputSchema();
             Map<String, Object> properties = (Map<String, Object>) schema.get(SCHEMA_KEY_PROPERTIES);
             List<String> required = (List<String>) schema.get("required");
 
             if (properties != null) {
+                JsonObjectSchema.Builder schemaBuilder = JsonObjectSchema.builder();
                 for (Map.Entry<String, Object> entry : properties.entrySet()) {
                     String paramName = entry.getKey();
                     Map<String, Object> paramSchema = (Map<String, Object>) entry.getValue();
-                    boolean isRequired = required != null && required.contains(paramName);
-
-                    builder.addParameter(paramName, toJsonSchemaProperties(paramSchema, isRequired));
+                    schemaBuilder.addProperty(paramName, toJsonSchemaElement(paramSchema));
                 }
+                if (required != null && !required.isEmpty()) {
+                    schemaBuilder.required(required);
+                }
+                builder.parameters(schemaBuilder.build());
             }
         }
 
@@ -473,39 +484,86 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     }
 
     @SuppressWarnings("unchecked")
-    private JsonSchemaProperty[] toJsonSchemaProperties(Map<String, Object> paramSchema, boolean required) {
-        List<JsonSchemaProperty> props = new ArrayList<>();
-
+    private JsonSchemaElement toJsonSchemaElement(Map<String, Object> paramSchema) {
         String type = (String) paramSchema.get("type");
         String description = (String) paramSchema.get("description");
         List<String> enumValues = (List<String>) paramSchema.get("enum");
 
-        // Add type property
-        props.add(JsonSchemaProperty.type(type != null ? type : "string"));
-
-        // Add description
-        if (description != null && !description.isBlank()) {
-            props.add(JsonSchemaProperty.description(description));
-        }
-
-        // Add enum values if present
+        // Enum values take priority
         if (enumValues != null && !enumValues.isEmpty()) {
-            props.add(JsonSchemaProperty.from("enum", new ArrayList<>(enumValues)));
+            JsonEnumSchema.Builder builder = JsonEnumSchema.builder().enumValues(enumValues);
+            if (description != null && !description.isBlank()) {
+                builder.description(description);
+            }
+            return builder.build();
         }
 
-        // Handle array items
-        if ("array".equals(type) && paramSchema.containsKey("items")) {
-            Map<String, Object> items = (Map<String, Object>) paramSchema.get("items");
-            props.add(JsonSchemaProperty.from("items", new HashMap<>(items)));
+        if (type == null) {
+            type = "string";
         }
 
-        // Handle nested object properties
-        if ("object".equals(type) && paramSchema.containsKey(SCHEMA_KEY_PROPERTIES)) {
-            Map<String, Object> nestedProps = (Map<String, Object>) paramSchema.get(SCHEMA_KEY_PROPERTIES);
-            props.add(JsonSchemaProperty.from(SCHEMA_KEY_PROPERTIES, new HashMap<>(nestedProps)));
+        switch (type) {
+        case "string" -> {
+            JsonStringSchema.Builder builder = JsonStringSchema.builder();
+            if (description != null && !description.isBlank()) {
+                builder.description(description);
+            }
+            return builder.build();
         }
-
-        return props.toArray(new JsonSchemaProperty[0]);
+        case "integer" -> {
+            JsonIntegerSchema.Builder builder = JsonIntegerSchema.builder();
+            if (description != null && !description.isBlank()) {
+                builder.description(description);
+            }
+            return builder.build();
+        }
+        case "number" -> {
+            JsonNumberSchema.Builder builder = JsonNumberSchema.builder();
+            if (description != null && !description.isBlank()) {
+                builder.description(description);
+            }
+            return builder.build();
+        }
+        case "boolean" -> {
+            JsonBooleanSchema.Builder builder = JsonBooleanSchema.builder();
+            if (description != null && !description.isBlank()) {
+                builder.description(description);
+            }
+            return builder.build();
+        }
+        case "array" -> {
+            JsonArraySchema.Builder builder = JsonArraySchema.builder();
+            if (description != null && !description.isBlank()) {
+                builder.description(description);
+            }
+            if (paramSchema.containsKey("items")) {
+                Map<String, Object> items = (Map<String, Object>) paramSchema.get("items");
+                builder.items(toJsonSchemaElement(items));
+            }
+            return builder.build();
+        }
+        case "object" -> {
+            JsonObjectSchema.Builder builder = JsonObjectSchema.builder();
+            if (description != null && !description.isBlank()) {
+                builder.description(description);
+            }
+            if (paramSchema.containsKey(SCHEMA_KEY_PROPERTIES)) {
+                Map<String, Object> nestedProps = (Map<String, Object>) paramSchema.get(SCHEMA_KEY_PROPERTIES);
+                for (Map.Entry<String, Object> entry : nestedProps.entrySet()) {
+                    builder.addProperty(entry.getKey(), toJsonSchemaElement((Map<String, Object>) entry.getValue()));
+                }
+            }
+            return builder.build();
+        }
+        default -> {
+            // Fallback to string for unknown types
+            JsonStringSchema.Builder builder = JsonStringSchema.builder();
+            if (description != null && !description.isBlank()) {
+                builder.description(description);
+            }
+            return builder.build();
+        }
+        }
     }
 
     private LlmResponse convertResponse(ChatResponse response) {
