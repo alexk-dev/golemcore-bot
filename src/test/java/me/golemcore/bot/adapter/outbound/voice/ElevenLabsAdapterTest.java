@@ -13,6 +13,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+
+import java.util.stream.Stream;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
@@ -465,134 +469,80 @@ class ElevenLabsAdapterTest {
         assertSynthesizeThrows(504);
     }
 
-    @Test
-    void synthesizeRetriesOn429() throws Exception {
-        // First call: 429, second call: success
-        mockServer.enqueue(new MockResponse.Builder().code(429)
-                .body("{\"detail\":{\"status\":\"too_many_concurrent_requests\",\"message\":\"Rate limited\"}}")
-                .build());
-        mockServer.enqueue(new MockResponse.Builder()
-                .body(new okio.Buffer().write(new byte[] { 1, 2, 3 }))
-                .addHeader("Content-Type", "audio/mpeg").build());
+    @ParameterizedTest
+    @CsvSource({
+            "synthesize,429,1",
+            "synthesize,500,2",
+            "synthesize,503,3",
+            "transcribe,429,1"
+    })
+    void retriesOnRetryableErrors(String operation, int errorCode, int expectedBytes) throws Exception {
+        String errorBody = errorCode == 429
+                ? "{\"detail\":{\"status\":\"rate_limited\",\"message\":\"Rate limited\"}}"
+                : "{\"message\":\"Server error\"}";
+        mockServer.enqueue(new MockResponse.Builder().code(errorCode).body(errorBody).build());
 
-        VoicePort.VoiceConfig config = VoicePort.VoiceConfig.defaultConfig();
-        byte[] result = adapter.synthesize("Test", config).get(10, TimeUnit.SECONDS);
-
-        assertEquals(3, result.length);
-        assertEquals(2, mockServer.getRequestCount());
-    }
-
-    @Test
-    void synthesizeRetriesOn500() throws Exception {
-        // First call: 500, second call: success
-        mockServer.enqueue(new MockResponse.Builder().code(500)
-                .body("{\"detail\":{\"message\":\"Internal server error\"}}").build());
-        mockServer.enqueue(new MockResponse.Builder()
-                .body(new okio.Buffer().write(new byte[] { 1, 2 }))
-                .addHeader("Content-Type", "audio/mpeg").build());
-
-        VoicePort.VoiceConfig config = VoicePort.VoiceConfig.defaultConfig();
-        byte[] result = adapter.synthesize("Test", config).get(10, TimeUnit.SECONDS);
-
-        assertEquals(2, result.length);
-        assertEquals(2, mockServer.getRequestCount());
-    }
-
-    @Test
-    void synthesizeRetriesOn503() throws Exception {
-        // First call: 503, second call: success
-        mockServer.enqueue(new MockResponse.Builder().code(503)
-                .body("{\"message\":\"Service unavailable\"}}").build());
-        mockServer.enqueue(new MockResponse.Builder()
-                .body(new okio.Buffer().write(new byte[] { 1 }))
-                .addHeader("Content-Type", "audio/mpeg").build());
-
-        VoicePort.VoiceConfig config = VoicePort.VoiceConfig.defaultConfig();
-        byte[] result = adapter.synthesize("Test", config).get(10, TimeUnit.SECONDS);
-
-        assertEquals(1, result.length);
-        assertEquals(2, mockServer.getRequestCount());
-    }
-
-    @Test
-    void synthesizeFailsAfterMaxRetries() {
-        // All 3 attempts fail with 429
-        for (int i = 0; i < 3; i++) {
-            mockServer.enqueue(new MockResponse.Builder().code(429)
-                    .body("{\"detail\":{\"status\":\"rate_limited\",\"message\":\"Too many requests\"}}").build());
+        if ("synthesize".equals(operation)) {
+            byte[] response = new byte[expectedBytes];
+            for (int i = 0; i < expectedBytes; i++) {
+                response[i] = (byte) (i + 1);
+            }
+            mockServer.enqueue(new MockResponse.Builder()
+                    .body(new okio.Buffer().write(response))
+                    .addHeader("Content-Type", "audio/mpeg").build());
+            byte[] result = adapter.synthesize("Test", VoicePort.VoiceConfig.defaultConfig()).get(10,
+                    TimeUnit.SECONDS);
+            assertEquals(expectedBytes, result.length);
+        } else {
+            mockServer.enqueue(new MockResponse.Builder()
+                    .body("{\"text\":\"Hello\",\"language_code\":\"en\"}")
+                    .addHeader("Content-Type", "application/json").build());
+            VoicePort.TranscriptionResult result = adapter.transcribe(new byte[] { 1 },
+                    AudioFormat.OGG_OPUS).get(10, TimeUnit.SECONDS);
+            assertEquals("Hello", result.text());
         }
+        assertEquals(2, mockServer.getRequestCount());
+    }
 
-        VoicePort.VoiceConfig config = VoicePort.VoiceConfig.defaultConfig();
-        CompletableFuture<byte[]> future = adapter.synthesize("Test", config);
-        Exception ex = assertThrows(Exception.class, () -> future.get(15, TimeUnit.SECONDS));
-        assertTrue((ex.getMessage() != null && ex.getMessage().contains("429"))
-                || (ex.getCause() != null && ex.getCause().getMessage().contains("429")));
+    @ParameterizedTest
+    @CsvSource({ "synthesize,429", "transcribe,500" })
+    void failsAfterMaxRetries(String operation, int errorCode) {
+        String errorBody = "{\"detail\":{\"message\":\"Error\"}}";
+        enqueueErrorResponseMultiple(errorCode, errorBody, 3);
+
+        if ("synthesize".equals(operation)) {
+            CompletableFuture<byte[]> future = adapter.synthesize("Test", VoicePort.VoiceConfig.defaultConfig());
+            Exception ex = assertThrows(Exception.class, () -> future.get(15, TimeUnit.SECONDS));
+            String message = ex.getCause() != null ? ex.getCause().getMessage() : ex.getMessage();
+            assertTrue(message != null && message.contains(String.valueOf(errorCode)));
+        } else {
+            CompletableFuture<VoicePort.TranscriptionResult> future = adapter.transcribe(new byte[] { 1 },
+                    AudioFormat.OGG_OPUS);
+            Exception ex = assertThrows(Exception.class, () -> future.get(15, TimeUnit.SECONDS));
+            String message = ex.getCause() != null ? ex.getCause().getMessage() : ex.getMessage();
+            assertTrue(message != null && message.contains(String.valueOf(errorCode)));
+        }
         assertEquals(3, mockServer.getRequestCount());
     }
 
-    @Test
-    void transcribeRetriesOn429() throws Exception {
-        // First call: 429, second call: success
-        mockServer.enqueue(new MockResponse.Builder().code(429)
-                .body("{\"detail\":{\"status\":\"rate_limited\",\"message\":\"Rate limited\"}}").build());
-        mockServer.enqueue(new MockResponse.Builder()
-                .body("{\"text\":\"Hello\",\"language_code\":\"en\"}")
-                .addHeader("Content-Type", "application/json").build());
-
-        VoicePort.TranscriptionResult result = adapter.transcribe(new byte[] { 1 },
-                AudioFormat.OGG_OPUS).get(10, TimeUnit.SECONDS);
-
-        assertEquals("Hello", result.text());
-        assertEquals(2, mockServer.getRequestCount());
+    static Stream<Arguments> errorParsingCases() {
+        return Stream.of(
+                Arguments.of(400, "{\"detail\":{\"status\":\"test_error\",\"message\":\"Test message\"}}",
+                        "Test message"),
+                Arguments.of(400, "{\"message\":\"Root level error\"}", "Root level"),
+                Arguments.of(500, "Not valid JSON at all", ""));
     }
 
-    @Test
-    void transcribeFailsAfterMaxRetries() {
-        // All 3 attempts fail with 500
-        for (int i = 0; i < 3; i++) {
-            mockServer.enqueue(new MockResponse.Builder().code(500)
-                    .body("{\"message\":\"Internal error\"}").build());
+    @ParameterizedTest
+    @MethodSource("errorParsingCases")
+    void errorResponseParsing(int code, String errorBody, String expectedSubstring) {
+        mockServer.enqueue(new MockResponse.Builder().code(code).body(errorBody).build());
+        CompletableFuture<VoicePort.TranscriptionResult> future = adapter.transcribe(new byte[] { 1 },
+                AudioFormat.OGG_OPUS);
+        Exception ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
+        if (!expectedSubstring.isEmpty()) {
+            String message = ex.getCause() != null ? ex.getCause().getMessage() : ex.getMessage();
+            assertTrue(message != null && message.contains(expectedSubstring));
         }
-
-        CompletableFuture<VoicePort.TranscriptionResult> future = adapter.transcribe(new byte[] { 1 },
-                AudioFormat.OGG_OPUS);
-        Exception ex = assertThrows(Exception.class, () -> future.get(15, TimeUnit.SECONDS));
-        assertTrue(ex.getMessage().contains("500") || ex.getCause().getMessage().contains("500"));
-        assertEquals(3, mockServer.getRequestCount());
-    }
-
-    @Test
-    void errorResponseParsing() {
-        // Test structured error parsing
-        String structuredError = "{\"detail\":{\"status\":\"test_error\",\"message\":\"Test message\"}}";
-        mockServer.enqueue(new MockResponse.Builder().code(400).body(structuredError).build());
-
-        CompletableFuture<VoicePort.TranscriptionResult> future = adapter.transcribe(new byte[] { 1 },
-                AudioFormat.OGG_OPUS);
-        Exception ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
-        assertTrue(ex.getMessage().contains("Test message") || ex.getCause().getMessage().contains("Test message"));
-    }
-
-    @Test
-    void errorResponseParsingRootLevel() {
-        // Test error at root level (no detail)
-        String rootError = "{\"message\":\"Root level error\"}";
-        mockServer.enqueue(new MockResponse.Builder().code(400).body(rootError).build());
-
-        CompletableFuture<VoicePort.TranscriptionResult> future = adapter.transcribe(new byte[] { 1 },
-                AudioFormat.OGG_OPUS);
-        Exception ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
-        assertTrue(ex.getMessage().contains("Root level error") || ex.getCause().getMessage().contains("Root level"));
-    }
-
-    @Test
-    void errorResponseParsingMalformed() {
-        // Test malformed JSON error (fallback)
-        String malformedError = "Not valid JSON at all";
-        mockServer.enqueue(new MockResponse.Builder().code(500).body(malformedError).build());
-
-        CompletableFuture<VoicePort.TranscriptionResult> future = adapter.transcribe(new byte[] { 1 },
-                AudioFormat.OGG_OPUS);
-        assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
     }
 }
