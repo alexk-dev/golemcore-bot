@@ -28,7 +28,7 @@
         <feign.version>13.5</feign.version>
         <okhttp.version>4.12.0</okhttp.version>
         <telegram.version>9.3.0</telegram.version>
-        <langchain4j.version>1.0.0-beta1</langchain4j.version>
+        <langchain4j.version>1.11.0</langchain4j.version>
         <playwright.version>1.49.0</playwright.version>
 
         <spotbugs.version>4.9.8.2</spotbugs.version>
