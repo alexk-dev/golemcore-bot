@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/alexk-dev/golemcore-bot/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/alexk-dev/golemcore-bot/actions/workflows/docker-publish.yml)
 [![Java](https://img.shields.io/badge/Java-17+-orange.svg)](https://www.oracle.com/java/)
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.4.2-brightgreen.svg)](https://spring.io/projects/spring-boot)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0.2-brightgreen.svg)](https://spring.io/projects/spring-boot)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-1292%20passing-success.svg)](https://github.com/alexk-dev/golemcore-bot/actions)
 
@@ -514,7 +514,7 @@ The bot processes messages through ordered pipeline stages:
 | Component | Technology | Version |
 |-----------|-----------|---------|
 | **Language** | Java | 17+ |
-| **Framework** | Spring Boot | 3.4.2 |
+| **Framework** | Spring Boot | 4.0.2 |
 | **LLM Integration** | LangChain4j | 1.0.0-beta1 |
 | **HTTP Client** | Feign + OkHttp | 13.5 + 4.12 |
 | **Messaging** | Telegram Bots | 8.2.0 |
