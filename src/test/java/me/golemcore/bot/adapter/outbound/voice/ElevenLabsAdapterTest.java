@@ -89,6 +89,16 @@ class ElevenLabsAdapterTest {
     }
 
     @Test
+    void transcribeApiErrorWithoutBody() {
+        mockServer.enqueue(new MockResponse.Builder().code(500).build());
+
+        CompletableFuture<VoicePort.TranscriptionResult> future = adapter.transcribe(new byte[] { 1 },
+                AudioFormat.OGG_OPUS);
+        Exception ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
+        assertTrue(ex.getMessage().contains("Transcription failed") || ex.getCause().getMessage().contains("500"));
+    }
+
+    @Test
     void synthesizeSuccess() throws Exception {
         byte[] mp3Bytes = new byte[] { 0x49, 0x44, 0x33, 1, 2, 3 }; // fake MP3
         mockServer.enqueue(new MockResponse.Builder()
@@ -133,6 +143,26 @@ class ElevenLabsAdapterTest {
         CompletableFuture<byte[]> future = adapter.synthesize("Test", config);
         Exception ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
         assertTrue(ex.getMessage().contains("Synthesis failed") || ex.getCause().getMessage().contains("500"));
+    }
+
+    @Test
+    void synthesizeApiErrorWithoutBody() {
+        mockServer.enqueue(new MockResponse.Builder().code(503).build());
+
+        VoicePort.VoiceConfig config = VoicePort.VoiceConfig.defaultConfig();
+        CompletableFuture<byte[]> future = adapter.synthesize("Test", config);
+        Exception ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
+        assertTrue(ex.getMessage().contains("Synthesis failed") || ex.getCause().getMessage().contains("503"));
+    }
+
+    @Test
+    void synthesizeNetworkError() throws IOException {
+        mockServer.close();
+
+        VoicePort.VoiceConfig config = VoicePort.VoiceConfig.defaultConfig();
+        CompletableFuture<byte[]> future = adapter.synthesize("Test", config);
+        Exception ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
+        assertTrue(ex.getMessage().contains("Synthesis failed") || ex.getCause() instanceof IOException);
     }
 
     @Test
