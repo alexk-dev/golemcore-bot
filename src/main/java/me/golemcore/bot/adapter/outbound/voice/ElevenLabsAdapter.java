@@ -62,6 +62,7 @@ public class ElevenLabsAdapter implements VoicePort {
 
     private static final String DEFAULT_STT_URL = "https://api.elevenlabs.io/v1/speech-to-text";
     private static final String DEFAULT_TTS_URL_TEMPLATE = "https://api.elevenlabs.io/v1/text-to-speech/%s";
+    private static final int HTTP_PAYMENT_REQUIRED = 402;
 
     private static final ExecutorService VOICE_EXECUTOR = Executors.newFixedThreadPool(2,
             r -> {
@@ -115,6 +116,7 @@ public class ElevenLabsAdapter implements VoicePort {
      * @throws InterruptedException
      *             if interrupted during retry backoff
      */
+    @SuppressWarnings("PMD.CloseResource") // ResponseBody is closed when Response is closed in try-with-resources
     private <T> T executeWithRetry(Request request, String operationName, Function<Response, T> processor)
             throws IOException, InterruptedException {
         long startTime = System.currentTimeMillis();
@@ -189,9 +191,7 @@ public class ElevenLabsAdapter implements VoicePort {
             throw new IllegalStateException("ElevenLabs STT interrupted", e);
         } catch (UncheckedIOException e) {
             log.error("[ElevenLabs] STT network error: {}", e.getMessage(), e);
-            IOException cause = e.getCause() instanceof IOException ? (IOException) e.getCause() : null;
-            throw new UncheckedIOException("Transcription failed: " + e.getMessage(),
-                    cause != null ? cause : new IOException(e));
+            throw new UncheckedIOException("Transcription failed: " + e.getMessage(), e.getCause());
         } catch (IOException e) {
             log.error("[ElevenLabs] STT network error: {}", e.getMessage(), e);
             throw new UncheckedIOException("Transcription failed: " + e.getMessage(), e);
@@ -262,9 +262,7 @@ public class ElevenLabsAdapter implements VoicePort {
             throw new IllegalStateException("ElevenLabs TTS interrupted", e);
         } catch (UncheckedIOException e) {
             log.error("[ElevenLabs] TTS network error: {}", e.getMessage(), e);
-            IOException cause = e.getCause() instanceof IOException ? (IOException) e.getCause() : null;
-            throw new UncheckedIOException("Synthesis failed: " + e.getMessage(),
-                    cause != null ? cause : new IOException(e));
+            throw new UncheckedIOException("Synthesis failed: " + e.getMessage(), e.getCause());
         } catch (IOException e) {
             log.error("[ElevenLabs] TTS network error: {}", e.getMessage(), e);
             throw new UncheckedIOException("Synthesis failed: " + e.getMessage(), e);
@@ -327,6 +325,8 @@ public class ElevenLabsAdapter implements VoicePort {
      * Exception for quota/payment issues that should be shown to the user.
      */
     public static class QuotaExceededException extends IllegalStateException {
+        private static final long serialVersionUID = 1L;
+
         public QuotaExceededException(String message) {
             super(message);
         }
@@ -385,7 +385,7 @@ public class ElevenLabsAdapter implements VoicePort {
                 operation, code, elapsed, errorMessage, context);
 
         // Special handling for quota exceeded - throw custom exception
-        if (code == 402) {
+        if (code == HTTP_PAYMENT_REQUIRED) {
             throw new QuotaExceededException(
                     String.format("ElevenLabs quota exceeded: %s. %s", errorMessage, context));
         }
