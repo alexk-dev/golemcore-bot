@@ -545,4 +545,26 @@ class ElevenLabsAdapterTest {
             assertTrue(message != null && message.contains(expectedSubstring));
         }
     }
+
+    @Test
+    void transcribeInterruptedDuringRetry() throws Exception {
+        // Enqueue error that triggers retry
+        mockServer.enqueue(new MockResponse.Builder().code(429).body("{\"message\":\"Rate limited\"}").build());
+
+        Thread testThread = new Thread(() -> {
+            try {
+                adapter.transcribe(new byte[] { 1 }, AudioFormat.OGG_OPUS).get(10, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                // Expected
+            }
+        });
+
+        testThread.start();
+        Thread.sleep(100); // Let it start retry logic
+        testThread.interrupt();
+        testThread.join(5000);
+
+        // Verify thread was interrupted
+        assertFalse(testThread.isAlive());
+    }
 }
