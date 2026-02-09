@@ -69,6 +69,8 @@ import java.util.regex.Pattern;
 @Slf4j
 public class LlmSkillClassifier {
 
+    private static final String DEFAULT_MODEL_TIER = "balanced";
+
     private final BotProperties properties;
     private final ObjectMapper objectMapper;
 
@@ -153,7 +155,7 @@ public class LlmSkillClassifier {
                     return new ClassificationResult(
                             top.getName(),
                             top.getSemanticScore(),
-                            "balanced",
+                            DEFAULT_MODEL_TIER,
                             "Fallback to semantic match (LLM failed)");
                 }
                 return new ClassificationResult(null, 0, "fast", "No match found");
@@ -166,7 +168,7 @@ public class LlmSkillClassifier {
                     return new ClassificationResult(
                             top.getName(),
                             top.getSemanticScore(),
-                            "balanced",
+                            DEFAULT_MODEL_TIER,
                             "Fallback to semantic match (LLM failed)");
                 }
                 return new ClassificationResult(null, 0, "fast", "No match found");
@@ -219,7 +221,7 @@ public class LlmSkillClassifier {
 
             String parsedSkill = node.has("skill") ? node.get("skill").asText() : null;
             double confidence = node.has("confidence") ? node.get("confidence").asDouble() : 0.8;
-            String modelTier = node.has("model_tier") ? node.get("model_tier").asText() : "balanced";
+            String modelTier = node.has("model_tier") ? node.get("model_tier").asText() : DEFAULT_MODEL_TIER;
             String reason = node.has("reason") ? node.get("reason").asText() : "LLM classification";
 
             // Validate skill exists in candidates
@@ -246,7 +248,7 @@ public class LlmSkillClassifier {
                 return new ClassificationResult(
                         top.getName(),
                         top.getSemanticScore(),
-                        "balanced",
+                        DEFAULT_MODEL_TIER,
                         "Parse failed, using semantic top");
             }
 

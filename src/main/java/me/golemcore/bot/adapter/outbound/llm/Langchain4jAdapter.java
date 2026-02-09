@@ -86,6 +86,8 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     private static final int MAX_RETRIES = 5;
     private static final long INITIAL_BACKOFF_MS = 5_000;
     private static final double BACKOFF_MULTIPLIER = 2.0;
+    private static final String PROVIDER_ANTHROPIC = "anthropic";
+    private static final String SCHEMA_KEY_PROPERTIES = "properties";
 
     private final BotProperties properties;
     private final ModelConfigService modelConfig;
@@ -153,7 +155,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         BotProperties.ProviderProperties config = getProviderConfig(provider);
         String modelName = stripProviderPrefix(model);
 
-        if ("anthropic".equals(provider)) {
+        if (PROVIDER_ANTHROPIC.equals(provider)) {
             return createAnthropicModel(modelName, config);
         } else {
             // All non-Anthropic providers use OpenAI-compatible API
@@ -453,7 +455,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         // Convert input schema to tool parameters
         if (tool.getInputSchema() != null) {
             Map<String, Object> schema = tool.getInputSchema();
-            Map<String, Object> properties = (Map<String, Object>) schema.get("properties");
+            Map<String, Object> properties = (Map<String, Object>) schema.get(SCHEMA_KEY_PROPERTIES);
             List<String> required = (List<String>) schema.get("required");
 
             if (properties != null) {
@@ -498,9 +500,9 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         }
 
         // Handle nested object properties
-        if ("object".equals(type) && paramSchema.containsKey("properties")) {
-            Map<String, Object> nestedProps = (Map<String, Object>) paramSchema.get("properties");
-            props.add(JsonSchemaProperty.from("properties", new HashMap<>(nestedProps)));
+        if ("object".equals(type) && paramSchema.containsKey(SCHEMA_KEY_PROPERTIES)) {
+            Map<String, Object> nestedProps = (Map<String, Object>) paramSchema.get(SCHEMA_KEY_PROPERTIES);
+            props.add(JsonSchemaProperty.from(SCHEMA_KEY_PROPERTIES, new HashMap<>(nestedProps)));
         }
 
         return props.toArray(new JsonSchemaProperty[0]);

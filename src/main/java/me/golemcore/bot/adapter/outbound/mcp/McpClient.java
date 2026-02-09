@@ -72,6 +72,9 @@ public class McpClient implements Closeable {
     private static final Logger log = LoggerFactory.getLogger(McpClient.class);
     private static final String JSONRPC_VERSION = "2.0";
     private static final String MCP_PROTOCOL_VERSION = "2024-11-05";
+    private static final String JSON_KEY_NAME = "name";
+    private static final String JSON_KEY_METHOD = "method";
+    private static final String JSON_KEY_TEXT = "text";
     private static final TypeReference<Map<String, Object>> MAP_TYPE_REF = new TypeReference<>() {
     };
 
@@ -135,7 +138,7 @@ public class McpClient implements Closeable {
                     "protocolVersion", MCP_PROTOCOL_VERSION,
                     "capabilities", Map.of(),
                     "clientInfo", Map.of(
-                            "name", "golemcore-bot",
+                            JSON_KEY_NAME, "golemcore-bot",
                             "version", "1.0.0")))
                     .get(timeoutSeconds, TimeUnit.SECONDS);
 
@@ -172,7 +175,7 @@ public class McpClient implements Closeable {
     public CompletableFuture<ToolResult> callTool(String name, Map<String, Object> arguments) {
         touchActivity();
         return sendRequest("tools/call", Map.of(
-                "name", name,
+                JSON_KEY_NAME, name,
                 "arguments", arguments != null ? arguments : Map.of()))
                 .thenApply(result -> parseToolCallResult(name, result))
                 .exceptionally(ex -> ToolResult.failure("MCP tool call failed: " + ex.getMessage()));
@@ -193,7 +196,7 @@ public class McpClient implements Closeable {
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("jsonrpc", JSONRPC_VERSION);
         request.put("id", id);
-        request.put("method", method);
+        request.put(JSON_KEY_METHOD, method);
         request.put("params", params);
 
         try {
@@ -218,7 +221,7 @@ public class McpClient implements Closeable {
     void sendNotification(String method, Map<String, Object> params) {
         Map<String, Object> notification = new LinkedHashMap<>();
         notification.put("jsonrpc", JSONRPC_VERSION);
-        notification.put("method", method);
+        notification.put(JSON_KEY_METHOD, method);
         if (params != null && !params.isEmpty()) {
             notification.put("params", params);
         }
@@ -242,11 +245,13 @@ public class McpClient implements Closeable {
             return;
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
-            String line;
-            while (running && (line = reader.readLine()) != null) {
+            String line = reader.readLine();
+            while (running && line != null) {
                 line = line.trim();
-                if (line.isEmpty())
+                if (line.isEmpty()) {
+                    line = reader.readLine();
                     continue;
+                }
                 log.debug("[MCP:{}] ← {}", skillName, line);
 
                 try {
@@ -271,12 +276,14 @@ public class McpClient implements Closeable {
                         }
                     } else {
                         // It's a notification from the server — log and ignore
-                        String method = message.has("method") ? message.get("method").asText() : "unknown";
+                        String method = message.has(JSON_KEY_METHOD) ? message.get(JSON_KEY_METHOD).asText()
+                                : "unknown";
                         log.debug("[MCP:{}] Server notification: {}", skillName, method);
                     }
                 } catch (JsonProcessingException e) {
                     log.warn("[MCP:{}] Failed to parse response: {}", skillName, e.getMessage());
                 }
+                line = reader.readLine();
             }
         } catch (IOException e) {
             if (running) {
@@ -297,9 +304,10 @@ public class McpClient implements Closeable {
             return;
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(p.getErrorStream(), StandardCharsets.UTF_8))) {
-            String line;
-            while (running && (line = reader.readLine()) != null) {
+            String line = reader.readLine();
+            while (running && line != null) {
                 log.debug("[MCP:{}] stderr: {}", skillName, line);
+                line = reader.readLine();
             }
         } catch (IOException e) {
             if (running) {
@@ -318,7 +326,7 @@ public class McpClient implements Closeable {
 
         List<ToolDefinition> tools = new ArrayList<>();
         for (JsonNode toolNode : toolsNode) {
-            String name = toolNode.has("name") ? toolNode.get("name").asText() : null;
+            String name = toolNode.has(JSON_KEY_NAME) ? toolNode.get(JSON_KEY_NAME).asText() : null;
             String description = toolNode.has("description") ? toolNode.get("description").asText() : "";
 
             if (name == null)
@@ -356,11 +364,11 @@ public class McpClient implements Closeable {
         JsonNode contentNode = result.get("content");
         if (contentNode != null && contentNode.isArray()) {
             for (JsonNode item : contentNode) {
-                String type = item.has("type") ? item.get("type").asText() : "text";
-                if ("text".equals(type) && item.has("text")) {
+                String type = item.has("type") ? item.get("type").asText() : JSON_KEY_TEXT;
+                if (JSON_KEY_TEXT.equals(type) && item.has(JSON_KEY_TEXT)) {
                     if (!output.isEmpty())
                         output.append("\n");
-                    output.append(item.get("text").asText());
+                    output.append(item.get(JSON_KEY_TEXT).asText());
                 }
             }
         }

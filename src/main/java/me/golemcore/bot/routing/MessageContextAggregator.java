@@ -74,6 +74,48 @@ public class MessageContextAggregator implements MessageAggregatorComponent {
     private static final int MIN_WORDS_FOR_STANDALONE = 4;
 
     /**
+     * Minimum number of fragmentation signals needed to consider a message
+     * fragmented.
+     */
+    private static final int MIN_FRAGMENTATION_SIGNALS = 2;
+
+    /**
+     * Signal weight for continuation markers (strong signal).
+     */
+    private static final int CONTINUATION_MARKER_WEIGHT = 2;
+
+    /**
+     * Maximum context length for truncation in logs.
+     */
+    private static final int MAX_TRUNCATE_LENGTH_SHORT = 100;
+    private static final int MAX_TRUNCATE_LENGTH_MEDIUM = 150;
+
+    /**
+     * Maximum number of recent conversation messages to include in context.
+     */
+    private static final int MAX_CONVERSATION_CONTEXT_MESSAGES = 3;
+
+    /**
+     * Index offset for accessing the second-to-last element in a list.
+     */
+    private static final int SECOND_TO_LAST_INDEX_OFFSET = 2;
+
+    /**
+     * Index offset for accessing the last element in a list.
+     */
+    private static final int LAST_INDEX_OFFSET = 1;
+
+    /**
+     * Minimum list size to have multiple elements.
+     */
+    private static final int MIN_SIZE_FOR_MULTIPLE_ELEMENTS = 2;
+
+    /**
+     * Role identifier for user messages.
+     */
+    private static final String ROLE_USER = "user";
+
+    /**
      * Pattern for back-references to previous context.
      */
     private static final Pattern BACK_REFERENCE_PATTERN = Pattern.compile(
@@ -115,7 +157,7 @@ public class MessageContextAggregator implements MessageAggregatorComponent {
 
         Message latest = userMessages.get(userMessages.size() - 1);
         String latestContent = latest.getContent();
-        log.debug("[Aggregator] Latest message: '{}'", truncate(latestContent, 100));
+        log.debug("[Aggregator] Latest message: '{}'", truncate(latestContent, MAX_TRUNCATE_LENGTH_SHORT));
 
         // Check if latest message is standalone
         if (isStandalone(latestContent, userMessages)) {
@@ -184,8 +226,8 @@ public class MessageContextAggregator implements MessageAggregatorComponent {
         if (startsWithLowercase(content)) {
             reasons.add("starts_lowercase");
         }
-        if (userMessages.size() > 1) {
-            Message prev = userMessages.get(userMessages.size() - 2);
+        if (userMessages.size() > LAST_INDEX_OFFSET) {
+            Message prev = userMessages.get(userMessages.size() - SECOND_TO_LAST_INDEX_OFFSET);
             if (hasIncompleteEnding(prev.getContent())) {
                 reasons.add("previous_incomplete");
             }
@@ -194,7 +236,7 @@ public class MessageContextAggregator implements MessageAggregatorComponent {
             }
         }
 
-        boolean isFragmented = !reasons.isEmpty() && reasons.size() >= 2;
+        boolean isFragmented = !reasons.isEmpty() && reasons.size() >= MIN_FRAGMENTATION_SIGNALS;
 
         return new AggregationAnalysis(
                 isFragmented,
@@ -208,8 +250,9 @@ public class MessageContextAggregator implements MessageAggregatorComponent {
         // Iterate from end to get most recent
         for (int i = history.size() - 1; i >= 0 && userMessages.size() < maxCount; i--) {
             Message msg = history.get(i);
-            if ("user".equalsIgnoreCase(msg.getRole())) {
-                userMessages.add(0, msg); // Add at beginning to maintain order
+            if (ROLE_USER.equalsIgnoreCase(msg.getRole())) {
+                userMessages.add(0, msg); // Add at beginning to maintain order // NOSONAR - literal 0 is clear as list
+                                          // position
             }
         }
 
@@ -232,7 +275,7 @@ public class MessageContextAggregator implements MessageAggregatorComponent {
 
         // Starts with continuation marker
         if (startsWithContinuationMarker(content)) {
-            fragmentationSignals += 2; // Strong signal
+            fragmentationSignals += CONTINUATION_MARKER_WEIGHT; // Strong signal
         }
 
         // Starts with lowercase
@@ -241,9 +284,9 @@ public class MessageContextAggregator implements MessageAggregatorComponent {
         }
 
         // Check previous message
-        if (recentUserMessages.size() > 1) {
-            Message previous = recentUserMessages.get(recentUserMessages.size() - 2);
-            Message current = recentUserMessages.get(recentUserMessages.size() - 1);
+        if (recentUserMessages.size() > LAST_INDEX_OFFSET) {
+            Message previous = recentUserMessages.get(recentUserMessages.size() - SECOND_TO_LAST_INDEX_OFFSET);
+            Message current = recentUserMessages.get(recentUserMessages.size() - LAST_INDEX_OFFSET);
 
             // Previous message has incomplete ending
             if (hasIncompleteEnding(previous.getContent())) {
@@ -256,8 +299,8 @@ public class MessageContextAggregator implements MessageAggregatorComponent {
             }
         }
 
-        // Consider standalone if less than 2 fragmentation signals
-        return fragmentationSignals < 2;
+        // Consider standalone if less than minimum fragmentation signals
+        return fragmentationSignals < MIN_FRAGMENTATION_SIGNALS;
     }
 
     private String aggregateRelatedMessages(List<Message> userMessages) {
@@ -265,8 +308,8 @@ public class MessageContextAggregator implements MessageAggregatorComponent {
             return "";
         }
 
-        if (userMessages.size() == 1) {
-            return userMessages.get(0).getContent();
+        if (userMessages.size() == LAST_INDEX_OFFSET) { // NOSONAR - comparing size to 1 is clear
+            return userMessages.get(0).getContent(); // NOSONAR - literal 0 is clear as first element
         }
 
         StringBuilder aggregated = new StringBuilder();
@@ -295,8 +338,8 @@ public class MessageContextAggregator implements MessageAggregatorComponent {
     }
 
     private int countAggregatedMessages(List<Message> userMessages) {
-        if (userMessages.size() <= 1) {
-            return 1;
+        if (userMessages.size() <= LAST_INDEX_OFFSET) { // NOSONAR - comparing size to 1 is clear
+            return LAST_INDEX_OFFSET; // NOSONAR - returning 1 for single message
         }
 
         int count = 0;

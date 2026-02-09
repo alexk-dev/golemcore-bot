@@ -45,6 +45,7 @@ import java.time.Duration;
 @Builder
 public class RateLimitResult {
 
+    @SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName") // Lombok generates isAllowed()
     private boolean allowed;
     private long remainingTokens;
     private Duration waitTime;

@@ -79,7 +79,25 @@ public class LlmUsageTrackerImpl implements UsageTrackingPort {
     private final ObjectMapper objectMapper;
 
     private static final String USAGE_DIR = "usage";
-    private static final Duration RETENTION_PERIOD = Duration.ofDays(7);
+    private static final String UNKNOWN = "unknown";
+    private static final String PROVIDER_TAG = "provider";
+    private static final String MODEL_TAG = "model";
+    private static final String LOG_PREFIX = "[Usage]";
+    private static final String JSONL_EXTENSION = ".jsonl";
+    private static final String NEWLINE = "\n";
+    private static final String METRIC_REQUESTS_TOTAL = "llm.requests.total";
+    private static final String METRIC_TOKENS_INPUT = "llm.tokens.input";
+    private static final String METRIC_TOKENS_OUTPUT = "llm.tokens.output";
+    private static final String METRIC_TOKENS_TOTAL = "llm.tokens.total";
+    private static final String METRIC_LATENCY_AVG = "llm.latency.avg_ms";
+    private static final String PATH_SEPARATOR = "/";
+
+    private static final int RETENTION_DAYS = 7;
+    private static final int EVICTION_INTERVAL_HOURS = 1;
+    private static final int EXECUTOR_TERMINATION_TIMEOUT_SECONDS = 2;
+    private static final long DEFAULT_AVERAGE_LATENCY = 0L;
+
+    private static final Duration RETENTION_PERIOD = Duration.ofDays(RETENTION_DAYS);
 
     private final Map<String, List<LlmUsage>> usageByProvider = new ConcurrentHashMap<>();
     private final Map<String, List<LlmUsage>> usageByModel = new ConcurrentHashMap<>();
@@ -94,14 +112,15 @@ public class LlmUsageTrackerImpl implements UsageTrackingPort {
     void init() {
         loadPersistedUsage();
         // Evict old records every hour
-        evictionExecutor.scheduleAtFixedRate(this::evictOldRecords, 1, 1, TimeUnit.HOURS);
+        evictionExecutor.scheduleAtFixedRate(this::evictOldRecords,
+                EVICTION_INTERVAL_HOURS, EVICTION_INTERVAL_HOURS, TimeUnit.HOURS);
     }
 
     @PreDestroy
     void destroy() {
         evictionExecutor.shutdownNow();
         try {
-            evictionExecutor.awaitTermination(2, TimeUnit.SECONDS);
+            evictionExecutor.awaitTermination(EXECUTOR_TERMINATION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
@@ -115,20 +134,20 @@ public class LlmUsageTrackerImpl implements UsageTrackingPort {
         try {
             List<String> files = storagePort.listObjects(USAGE_DIR, "").join();
             if (files == null || files.isEmpty()) {
-                log.debug("[Usage] No persisted usage files found");
+                log.debug("{} No persisted usage files found", LOG_PREFIX);
                 return;
             }
 
             int loaded = 0;
             int skippedOld = 0;
             for (String file : files) {
-                if (!file.endsWith(".jsonl"))
+                if (!file.endsWith(JSONL_EXTENSION))
                     continue;
                 try {
                     String content = storagePort.getText(USAGE_DIR, file).join();
                     if (content == null || content.isBlank())
                         continue;
-                    for (String line : content.split("\n")) {
+                    for (String line : content.split(NEWLINE)) {
                         if (line.isBlank())
                             continue;
                         try {
@@ -141,23 +160,23 @@ public class LlmUsageTrackerImpl implements UsageTrackingPort {
                             indexUsage(usage);
                             loaded++;
                         } catch (JsonProcessingException e) {
-                            log.debug("[Usage] Skipping malformed line in {}: {}", file, e.getMessage());
+                            log.debug("{} Skipping malformed line in {}: {}", LOG_PREFIX, file, e.getMessage());
                         }
                     }
                 } catch (RuntimeException e) {
-                    log.warn("[Usage] Failed to read file {}: {}", file, e.getMessage());
+                    log.warn("{} Failed to read file {}: {}", LOG_PREFIX, file, e.getMessage());
                 }
             }
-            log.info("[Usage] Loaded {} usage records from storage (skipped {} old records beyond {}d retention)",
-                    loaded, skippedOld, RETENTION_PERIOD.toDays());
+            log.info("{} Loaded {} usage records from storage (skipped {} old records beyond {}d retention)",
+                    LOG_PREFIX, loaded, skippedOld, RETENTION_PERIOD.toDays());
         } catch (RuntimeException e) {
-            log.warn("[Usage] Failed to load persisted usage", e);
+            log.warn("{} Failed to load persisted usage", LOG_PREFIX, e);
         }
     }
 
     private void indexUsage(LlmUsage usage) {
-        String provider = usage.getProviderId() != null ? usage.getProviderId() : "unknown";
-        String model = usage.getModel() != null ? usage.getModel() : "unknown";
+        String provider = usage.getProviderId() != null ? usage.getProviderId() : UNKNOWN;
+        String model = usage.getModel() != null ? usage.getModel() : UNKNOWN;
 
         usageByProvider.computeIfAbsent(provider, k -> new CopyOnWriteArrayList<>()).add(usage);
         usageByModel.computeIfAbsent(model, k -> new CopyOnWriteArrayList<>()).add(usage);
@@ -173,7 +192,7 @@ public class LlmUsageTrackerImpl implements UsageTrackingPort {
             list.removeIf(u -> u.getTimestamp() != null && u.getTimestamp().isBefore(cutoff));
         }
         if (evicted > 0) {
-            log.debug("[Usage] Evicted old records beyond {}d retention", RETENTION_PERIOD.toDays());
+            log.debug("{} Evicted old records beyond {}d retention", LOG_PREFIX, RETENTION_PERIOD.toDays());
         }
     }
 
@@ -190,7 +209,7 @@ public class LlmUsageTrackerImpl implements UsageTrackingPort {
         }
 
         indexUsage(usage);
-        String safeProviderId = usage.getProviderId() != null ? usage.getProviderId() : "unknown";
+        String safeProviderId = usage.getProviderId() != null ? usage.getProviderId() : UNKNOWN;
         persistUsage(safeProviderId, usage);
 
         log.debug("Recorded usage: provider={}, model={}, tokens={}, latency={}ms",
@@ -224,9 +243,9 @@ public class LlmUsageTrackerImpl implements UsageTrackingPort {
 
         Map<String, List<LlmUsage>> grouped = filtered.stream()
                 .collect(Collectors.groupingBy(u -> {
-                    String provider = u.getProviderId() != null ? u.getProviderId() : "unknown";
-                    String model = u.getModel() != null ? u.getModel() : "unknown";
-                    return provider + "/" + model;
+                    String provider = u.getProviderId() != null ? u.getProviderId() : UNKNOWN;
+                    String model = u.getModel() != null ? u.getModel() : UNKNOWN;
+                    return provider + PATH_SEPARATOR + model;
                 }));
 
         Map<String, UsageStats> result = new HashMap<>();
@@ -244,23 +263,23 @@ public class LlmUsageTrackerImpl implements UsageTrackingPort {
             String providerId = entry.getKey();
             UsageStats stats = aggregateUsages(providerId, entry.getValue());
 
-            metrics.add(UsageMetric.of("llm.requests.total", stats.getTotalRequests(),
-                    "provider", providerId));
-            metrics.add(UsageMetric.of("llm.tokens.input", stats.getTotalInputTokens(),
-                    "provider", providerId));
-            metrics.add(UsageMetric.of("llm.tokens.output", stats.getTotalOutputTokens(),
-                    "provider", providerId));
-            metrics.add(UsageMetric.of("llm.tokens.total", stats.getTotalTokens(),
-                    "provider", providerId));
-            metrics.add(UsageMetric.of("llm.latency.avg_ms", stats.getAvgLatency().toMillis(),
-                    "provider", providerId));
+            metrics.add(UsageMetric.of(METRIC_REQUESTS_TOTAL, stats.getTotalRequests(),
+                    PROVIDER_TAG, providerId));
+            metrics.add(UsageMetric.of(METRIC_TOKENS_INPUT, stats.getTotalInputTokens(),
+                    PROVIDER_TAG, providerId));
+            metrics.add(UsageMetric.of(METRIC_TOKENS_OUTPUT, stats.getTotalOutputTokens(),
+                    PROVIDER_TAG, providerId));
+            metrics.add(UsageMetric.of(METRIC_TOKENS_TOTAL, stats.getTotalTokens(),
+                    PROVIDER_TAG, providerId));
+            metrics.add(UsageMetric.of(METRIC_LATENCY_AVG, stats.getAvgLatency().toMillis(),
+                    PROVIDER_TAG, providerId));
         }
 
         for (Map.Entry<String, List<LlmUsage>> entry : usageByModel.entrySet()) {
             String model = entry.getKey();
             long tokens = entry.getValue().stream().mapToLong(LlmUsage::getTotalTokens).sum();
-            metrics.add(UsageMetric.of("llm.tokens.total", tokens, "model", model));
-            metrics.add(UsageMetric.of("llm.requests.total", entry.getValue().size(), "model", model));
+            metrics.add(UsageMetric.of(METRIC_TOKENS_TOTAL, tokens, MODEL_TAG, model));
+            metrics.add(UsageMetric.of(METRIC_REQUESTS_TOTAL, entry.getValue().size(), MODEL_TAG, model));
         }
 
         return metrics;
@@ -285,7 +304,7 @@ public class LlmUsageTrackerImpl implements UsageTrackingPort {
                 .filter(u -> u.getLatency() != null)
                 .mapToLong(u -> u.getLatency().toMillis())
                 .average()
-                .orElse(0);
+                .orElse(DEFAULT_AVERAGE_LATENCY);
 
         Map<String, Long> requestsByModel = usages.stream()
                 .filter(u -> u.getModel() != null)
@@ -323,7 +342,7 @@ public class LlmUsageTrackerImpl implements UsageTrackingPort {
                     providerId,
                     java.time.LocalDate.now().toString());
 
-            String json = objectMapper.writeValueAsString(usage) + "\n";
+            String json = objectMapper.writeValueAsString(usage) + NEWLINE;
             storagePort.appendText(USAGE_DIR, key, json);
         } catch (Exception e) {
             log.warn("Failed to persist usage record", e);
