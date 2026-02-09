@@ -54,6 +54,8 @@ import java.util.Map;
 @Slf4j
 public class ContextBuildingSystem implements AgentSystem {
 
+    private static final String DOUBLE_NEWLINE = "\n\n";
+
     private final MemoryComponent memoryComponent;
     private final SkillComponent skillComponent;
     private final List<ToolComponent> toolComponents;
@@ -179,27 +181,27 @@ public class ContextBuildingSystem implements AgentSystem {
             for (PromptSection section : promptSectionService.getEnabledSections()) {
                 String rendered = promptSectionService.renderSection(section, vars);
                 if (rendered != null && !rendered.isBlank()) {
-                    sb.append(rendered).append("\n\n");
+                    sb.append(rendered).append(DOUBLE_NEWLINE);
                 }
             }
         }
 
         // 2. Fallback if no sections loaded
         if (sb.isEmpty()) {
-            sb.append("You are a helpful AI assistant.\n\n");
+            sb.append("You are a helpful AI assistant.").append(DOUBLE_NEWLINE);
         }
 
         if (context.getMemoryContext() != null && !context.getMemoryContext().isBlank()) {
             sb.append("# Memory\n");
             sb.append(context.getMemoryContext());
-            sb.append("\n\n");
+            sb.append(DOUBLE_NEWLINE);
         }
 
         String ragContext = context.getAttribute("rag.context");
         if (ragContext != null && !ragContext.isBlank()) {
             sb.append("# Relevant Memory\n");
             sb.append(ragContext);
-            sb.append("\n\n");
+            sb.append(DOUBLE_NEWLINE);
         }
 
         // If a specific skill was selected by routing, inject its full content
@@ -211,7 +213,7 @@ public class ContextBuildingSystem implements AgentSystem {
                 skillContent = templateEngine.render(skillContent, vars);
             }
             sb.append(skillContent);
-            sb.append("\n\n");
+            sb.append(DOUBLE_NEWLINE);
 
             // Add pipeline info if skill has transitions
             if (context.getActiveSkill().hasPipeline()) {
@@ -233,7 +235,7 @@ public class ContextBuildingSystem implements AgentSystem {
             // Otherwise show skills summary for progressive loading
             sb.append("# Available Skills\n");
             sb.append(context.getSkillsSummary());
-            sb.append("\n\n");
+            sb.append(DOUBLE_NEWLINE);
         }
 
         if (context.getAvailableTools() != null && !context.getAvailableTools().isEmpty()) {

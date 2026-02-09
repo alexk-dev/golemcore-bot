@@ -152,10 +152,7 @@ export BOT_ROUTER_SKILL_MATCHER_SKIP_CLASSIFIER_THRESHOLD=0.95
 export BOT_ROUTER_SKILL_MATCHER_CACHE_TTL_MINUTES=60
 ```
 
-**Performance:**
-- Semantic search: ~5ms
-- LLM classifier: ~200ms
-- Cache hit: <1ms
+Cached results are near-instant. The classifier is skipped for high-confidence semantic matches (score > 0.95).
 
 ---
 
@@ -219,7 +216,7 @@ User must approve destructive operations (file delete, risky shell commands).
 
 ## Rate Limiting
 
-### Per-User Limits
+### Request Limits
 
 ```bash
 export BOT_RATE_LIMIT_USER_REQUESTS_PER_MINUTE=20

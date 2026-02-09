@@ -4,7 +4,7 @@
 
 ```bash
 ./mvnw clean package -DskipTests   # build
-./mvnw test                         # 878 tests
+./mvnw test                         # run tests
 ./mvnw clean verify -P strict       # full check (tests + PMD + SpotBugs)
 ```
 
@@ -204,7 +204,7 @@ BREAKING CHANGE: skill YAML files must use next_skill instead of nextSkill.
 
 ## Testing
 
-878 tests. Tests mirror main source structure.
+Tests mirror main source structure.
 
 - Test class: `*Test` suffix
 - Test method: `shouldDoSomethingWhenCondition()` — no `test` prefix

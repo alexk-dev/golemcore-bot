@@ -307,7 +307,7 @@ public class CustomLlmAdapter implements LlmProviderAdapter, LlmComponent {
         }
         try {
             return JSON_MAPPER.readValue(json, Map.class);
-        } catch (Exception e) {
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             return Collections.emptyMap();
         }
     }

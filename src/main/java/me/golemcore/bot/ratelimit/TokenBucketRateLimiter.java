@@ -18,19 +18,23 @@ package me.golemcore.bot.ratelimit;
  * Contact: alex@kuleshov.tech
  */
 
+import me.golemcore.bot.domain.model.BucketState;
+import me.golemcore.bot.domain.model.RateLimitResult;
 import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.port.outbound.RateLimitPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Token bucket based rate limiter with three-tier limits.
  *
  * <p>
- * Implements {@link RateLimiter} interface with separate buckets for:
+ * Implements {@link RateLimitPort} interface with separate buckets for:
  * <ul>
  * <li><b>Global user limit</b> - requests per minute (default 20/min)</li>
  * <li><b>Channel limit</b> - messages per second per channel (default
@@ -52,11 +56,11 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 @RequiredArgsConstructor
 @Slf4j
-public class TokenBucketRateLimiter implements RateLimiter {
+public class TokenBucketRateLimiter implements RateLimitPort {
 
     private final BotProperties properties;
 
-    private final ConcurrentHashMap<String, TokenBucket> buckets = new ConcurrentHashMap<>();
+    private final Map<String, TokenBucket> buckets = new ConcurrentHashMap<>();
 
     @Override
     public RateLimitResult tryConsume() {
