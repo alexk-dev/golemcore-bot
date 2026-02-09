@@ -1,4 +1,4 @@
-package me.golemcore.bot.ratelimit;
+package me.golemcore.bot.domain.model;
 
 /*
  * Copyright 2026 Aleksei Kuleshov
@@ -45,6 +45,7 @@ import java.time.Duration;
 @Builder
 public class RateLimitResult {
 
+    @SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName") // Lombok generates isAllowed()
     private boolean allowed;
     private long remainingTokens;
     private Duration waitTime;

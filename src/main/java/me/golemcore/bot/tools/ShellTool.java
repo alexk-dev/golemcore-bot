@@ -75,6 +75,12 @@ import java.util.regex.Pattern;
 @Slf4j
 public class ShellTool implements ToolComponent {
 
+    private static final String PARAM_TYPE = "type";
+    private static final String PARAM_COMMAND = "command";
+    private static final String TYPE_STRING = "string";
+    private static final String TYPE_INTEGER = "integer";
+    private static final String TYPE_OBJECT = "object";
+
     private static final int MAX_OUTPUT_LENGTH = 100_000;
 
     // Blocked commands and patterns for security
@@ -151,18 +157,18 @@ public class ShellTool implements ToolComponent {
                                 Only dangerous system commands are blocked (rm -rf /, shutdown, passwd, etc.).
                                 """)
                 .inputSchema(Map.of(
-                        "type", "object",
+                        PARAM_TYPE, TYPE_OBJECT,
                         "properties", Map.of(
-                                "command", Map.of(
-                                        "type", "string",
+                                PARAM_COMMAND, Map.of(
+                                        PARAM_TYPE, TYPE_STRING,
                                         "description", "Shell command to execute"),
                                 "timeout", Map.of(
-                                        "type", "integer",
+                                        PARAM_TYPE, TYPE_INTEGER,
                                         "description", "Timeout in seconds (default: 30, max: 300)"),
                                 "workdir", Map.of(
-                                        "type", "string",
+                                        PARAM_TYPE, TYPE_STRING,
                                         "description", "Working directory relative to workspace (optional)")),
-                        "required", List.of("command")))
+                        "required", List.of(PARAM_COMMAND)))
                 .build();
     }
 
@@ -177,7 +183,7 @@ public class ShellTool implements ToolComponent {
             }
 
             try {
-                String command = (String) parameters.get("command");
+                String command = (String) parameters.get(PARAM_COMMAND);
                 if (command == null || command.isBlank()) {
                     log.warn("[Shell] Missing command parameter");
                     return ToolResult.failure("Missing required parameter: command");
@@ -314,11 +320,12 @@ public class ShellTool implements ToolComponent {
                 StringBuilder output = new StringBuilder();
                 try (BufferedReader reader = new BufferedReader(
                         new InputStreamReader(process.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
-                    String line;
-                    while ((line = reader.readLine()) != null) {
+                    String line = reader.readLine();
+                    while (line != null) {
                         if (output.length() < MAX_OUTPUT_LENGTH) {
                             output.append(line).append("\n");
                         }
+                        line = reader.readLine();
                     }
                 }
                 return output.toString();
@@ -349,7 +356,7 @@ public class ShellTool implements ToolComponent {
             Map<String, Object> data = Map.of(
                     "exitCode", exitCode,
                     "duration", duration,
-                    "command", command,
+                    PARAM_COMMAND, command,
                     "workdir", workDir.toString());
 
             if (exitCode == 0) {

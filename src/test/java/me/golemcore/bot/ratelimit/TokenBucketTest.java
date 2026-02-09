@@ -1,5 +1,7 @@
 package me.golemcore.bot.ratelimit;
 
+import me.golemcore.bot.domain.model.BucketState;
+import me.golemcore.bot.domain.model.RateLimitResult;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;

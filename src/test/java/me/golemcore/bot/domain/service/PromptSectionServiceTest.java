@@ -368,4 +368,109 @@ class PromptSectionServiceTest {
         assertEquals("UTC", vars.get("USER_TIMEZONE"));
         assertNotNull(vars.get("DATE"));
     }
+
+    // ===== Edge cases for loadSection null guard =====
+
+    @Test
+    void reload_skipsNullContentFromStorage() {
+        when(storagePort.listObjects("prompts", ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of("BAD.md")));
+        when(storagePort.getText("prompts", "BAD.md"))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        service.reload();
+
+        assertTrue(service.getEnabledSections().isEmpty());
+    }
+
+    @Test
+    void reload_skipsBlankContentFromStorage() {
+        when(storagePort.listObjects("prompts", ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of("EMPTY.md")));
+        when(storagePort.getText("prompts", "EMPTY.md"))
+                .thenReturn(CompletableFuture.completedFuture("   "));
+
+        service.reload();
+
+        assertTrue(service.getEnabledSections().isEmpty());
+    }
+
+    @Test
+    void reload_handlesGetTextException() {
+        when(storagePort.listObjects("prompts", ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of("CRASH.md")));
+        when(storagePort.getText("prompts", "CRASH.md"))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("storage read error")));
+
+        assertDoesNotThrow(() -> service.reload());
+        assertTrue(service.getEnabledSections().isEmpty());
+    }
+
+    @Test
+    void reload_malformedFrontmatterStillCreatesSection() {
+        String content = "---\norder: [bad yaml!!!\n---\nContent body after bad yaml";
+
+        when(storagePort.listObjects("prompts", ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of("MALFORMED.md")));
+        when(storagePort.getText("prompts", "MALFORMED.md"))
+                .thenReturn(CompletableFuture.completedFuture(content));
+
+        service.reload();
+
+        // Should still load with default order (100) from the body portion
+        Optional<PromptSection> section = service.getSection("malformed");
+        assertTrue(section.isPresent());
+        assertEquals(100, section.get().getOrder());
+        assertEquals("Content body after bad yaml", section.get().getContent());
+    }
+
+    @Test
+    void reload_continuesAfterSingleFileFailure() {
+        String goodContent = "---\norder: 10\n---\nGood content";
+
+        when(storagePort.listObjects("prompts", ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of("BAD.md", "GOOD.md")));
+        when(storagePort.getText("prompts", "BAD.md"))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("read error")));
+        when(storagePort.getText("prompts", "GOOD.md"))
+                .thenReturn(CompletableFuture.completedFuture(goodContent));
+
+        service.reload();
+
+        assertEquals(1, service.getEnabledSections().size());
+        assertEquals("good", service.getEnabledSections().get(0).getName());
+    }
+
+    @Test
+    void renderSection_sectionWithNullContent() {
+        PromptSection section = PromptSection.builder()
+                .name("test")
+                .content(null)
+                .build();
+
+        assertNull(service.renderSection(section, Map.of()));
+    }
+
+    @Test
+    void reload_extractsNameFromSubdirectoryPath() {
+        String content = "---\norder: 10\n---\nContent";
+
+        when(storagePort.listObjects("prompts", ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of("subdir/CUSTOM.md")));
+        when(storagePort.getText("prompts", "subdir/CUSTOM.md"))
+                .thenReturn(CompletableFuture.completedFuture(content));
+
+        service.reload();
+
+        assertTrue(service.getSection("custom").isPresent());
+    }
+
+    @Test
+    void reload_handlesListObjectsFailure() {
+        when(storagePort.listObjects("prompts", ""))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("list failed")));
+
+        assertDoesNotThrow(() -> service.reload());
+        assertTrue(service.getEnabledSections().isEmpty());
+    }
 }

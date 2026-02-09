@@ -28,8 +28,8 @@ import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.domain.system.AgentSystem;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.ChannelPort;
-import me.golemcore.bot.ratelimit.RateLimiter;
-import me.golemcore.bot.ratelimit.RateLimitResult;
+import me.golemcore.bot.port.outbound.RateLimitPort;
+import me.golemcore.bot.domain.model.RateLimitResult;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
@@ -60,7 +60,7 @@ import java.util.concurrent.TimeUnit;
 public class AgentLoop {
 
     private final SessionPort sessionService;
-    private final RateLimiter rateLimiter;
+    private final RateLimitPort rateLimiter;
     private final BotProperties properties;
     private final List<AgentSystem> systems;
     private final UserPreferencesService preferencesService;
@@ -86,7 +86,7 @@ public class AgentLoop {
         }
     }
 
-    public AgentLoop(SessionPort sessionService, RateLimiter rateLimiter,
+    public AgentLoop(SessionPort sessionService, RateLimitPort rateLimiter,
             BotProperties properties, List<AgentSystem> systems,
             List<ChannelPort> channelPorts, UserPreferencesService preferencesService,
             Clock clock) {

@@ -125,8 +125,8 @@ public class MemoryService implements MemoryComponent {
                             .content(content)
                             .build());
                 }
-            } catch (Exception e) {
-                // Day doesn't exist, skip
+            } catch (RuntimeException e) {
+                log.trace("No memory file for date {}, skipping", date);
             }
         }
 
