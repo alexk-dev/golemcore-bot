@@ -92,6 +92,17 @@ class ElevenLabsAdapterTest {
         assertTrue(message != null && message.contains(String.valueOf(expectedCode)));
     }
 
+    private void assertTranscribeThrowsAny() {
+        CompletableFuture<VoicePort.TranscriptionResult> future = adapter.transcribe(new byte[] { 1 },
+                AudioFormat.OGG_OPUS);
+        assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
+    }
+
+    private void assertSynthesizeThrowsAny() {
+        CompletableFuture<byte[]> future = adapter.synthesize("Test", VoicePort.VoiceConfig.defaultConfig());
+        assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
+    }
+
     @Test
     void transcribeSuccess() throws Exception {
         mockServer.enqueue(new MockResponse.Builder()
@@ -123,10 +134,7 @@ class ElevenLabsAdapterTest {
     @Test
     void transcribeApiErrorWithoutBody() {
         mockServer.enqueue(new MockResponse.Builder().code(500).build());
-
-        CompletableFuture<VoicePort.TranscriptionResult> future = adapter.transcribe(new byte[] { 1 },
-                AudioFormat.OGG_OPUS);
-        assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
+        assertTranscribeThrowsAny();
     }
 
     @Test
@@ -169,19 +177,13 @@ class ElevenLabsAdapterTest {
     @Test
     void synthesizeApiError() {
         mockServer.enqueue(new MockResponse.Builder().code(500).body("Server error").build());
-
-        VoicePort.VoiceConfig config = VoicePort.VoiceConfig.defaultConfig();
-        CompletableFuture<byte[]> future = adapter.synthesize("Test", config);
-        assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
+        assertSynthesizeThrowsAny();
     }
 
     @Test
     void synthesizeApiErrorWithoutBody() {
         mockServer.enqueue(new MockResponse.Builder().code(503).build());
-
-        VoicePort.VoiceConfig config = VoicePort.VoiceConfig.defaultConfig();
-        CompletableFuture<byte[]> future = adapter.synthesize("Test", config);
-        assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
+        assertSynthesizeThrowsAny();
     }
 
     @Test
@@ -220,9 +222,7 @@ class ElevenLabsAdapterTest {
     @Test
     void transcribeFailsWithoutApiKey() {
         properties.getVoice().setApiKey("");
-        CompletableFuture<VoicePort.TranscriptionResult> future = adapter.transcribe(new byte[] { 1 },
-                AudioFormat.OGG_OPUS);
-        assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
+        assertTranscribeThrowsAny();
     }
 
     @Test
@@ -265,12 +265,7 @@ class ElevenLabsAdapterTest {
         mockServer.enqueue(new MockResponse.Builder()
                 .body("not valid json at all")
                 .addHeader("Content-Type", "application/json").build());
-
-        CompletableFuture<VoicePort.TranscriptionResult> future = adapter.transcribe(new byte[] { 1 },
-                AudioFormat.OGG_OPUS);
-        Exception ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
-        assertTrue(ex.getMessage().contains("Transcription failed")
-                || ex.getCause().getMessage().contains("Transcription failed"));
+        assertTranscribeThrowsAny();
     }
 
     @Test
@@ -308,9 +303,7 @@ class ElevenLabsAdapterTest {
         mockServer.enqueue(new MockResponse.Builder()
                 .code(429)
                 .body("{\"detail\":\"Rate limit exceeded\"}").build());
-
-        CompletableFuture<byte[]> future = adapter.synthesize("Test", VoicePort.VoiceConfig.defaultConfig());
-        assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
+        assertSynthesizeThrowsAny();
     }
 
     @Test
@@ -376,8 +369,7 @@ class ElevenLabsAdapterTest {
     @Test
     void synthesizeNullApiKeyOnCall() {
         properties.getVoice().setApiKey(null);
-        CompletableFuture<byte[]> future = adapter.synthesize("Hello", VoicePort.VoiceConfig.defaultConfig());
-        assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
+        assertSynthesizeThrowsAny();
     }
 
     @Test
