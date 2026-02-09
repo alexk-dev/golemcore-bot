@@ -60,6 +60,39 @@ import java.util.concurrent.CompletableFuture;
 @Slf4j
 public class WeatherTool implements ToolComponent {
 
+    // JSON Schema constants
+    private static final String SCHEMA_TYPE = "type";
+    private static final String SCHEMA_OBJECT = "object";
+    private static final String SCHEMA_STRING = "string";
+    private static final String SCHEMA_PROPERTIES = "properties";
+    private static final String SCHEMA_REQUIRED = "required";
+
+    // Parameter names
+    private static final String PARAM_LOCATION = "location";
+
+    // Weather codes
+    private static final int CODE_CLEAR = 0;
+    private static final int CODE_PARTLY_CLOUDY_MIN = 1;
+    private static final int CODE_PARTLY_CLOUDY_MAX = 3;
+    private static final int CODE_FOGGY_MIN = 45;
+    private static final int CODE_FOGGY_MAX = 48;
+    private static final int CODE_DRIZZLE_MIN = 51;
+    private static final int CODE_DRIZZLE_MAX = 55;
+    private static final int CODE_RAIN_MIN = 61;
+    private static final int CODE_RAIN_MAX = 65;
+    private static final int CODE_FREEZING_RAIN_MIN = 66;
+    private static final int CODE_FREEZING_RAIN_MAX = 67;
+    private static final int CODE_SNOW_MIN = 71;
+    private static final int CODE_SNOW_MAX = 75;
+    private static final int CODE_SNOW_GRAINS = 77;
+    private static final int CODE_RAIN_SHOWERS_MIN = 80;
+    private static final int CODE_RAIN_SHOWERS_MAX = 82;
+    private static final int CODE_SNOW_SHOWERS_MIN = 85;
+    private static final int CODE_SNOW_SHOWERS_MAX = 86;
+    private static final int CODE_THUNDERSTORM = 95;
+    private static final int CODE_THUNDERSTORM_HAIL_MIN = 96;
+    private static final int CODE_THUNDERSTORM_HAIL_MAX = 99;
+
     private final FeignClientFactory feignClientFactory;
 
     private GeocodingApi geocodingApi;
@@ -77,19 +110,19 @@ public class WeatherTool implements ToolComponent {
                 .name("weather")
                 .description("Get current weather for a location. Uses Open-Meteo free API.")
                 .inputSchema(Map.of(
-                        "type", "object",
-                        "properties", Map.of(
-                                "location", Map.of(
-                                        "type", "string",
+                        SCHEMA_TYPE, SCHEMA_OBJECT,
+                        SCHEMA_PROPERTIES, Map.of(
+                                PARAM_LOCATION, Map.of(
+                                        SCHEMA_TYPE, SCHEMA_STRING,
                                         "description", "City name or location (e.g., 'London', 'New York', 'Tokyo')")),
-                        "required", List.of("location")))
+                        SCHEMA_REQUIRED, List.of(PARAM_LOCATION)))
                 .build();
     }
 
     @Override
     public CompletableFuture<ToolResult> execute(Map<String, Object> parameters) {
         return CompletableFuture.supplyAsync(() -> {
-            String location = (String) parameters.get("location");
+            String location = (String) parameters.get(PARAM_LOCATION);
             if (location == null || location.isBlank()) {
                 return ToolResult.failure("Location is required");
             }
@@ -146,21 +179,33 @@ public class WeatherTool implements ToolComponent {
     }
 
     private String getWeatherDescription(int code) {
-        return switch (code) {
-        case 0 -> "Clear sky";
-        case 1, 2, 3 -> "Partly cloudy";
-        case 45, 48 -> "Foggy";
-        case 51, 53, 55 -> "Drizzle";
-        case 61, 63, 65 -> "Rain";
-        case 66, 67 -> "Freezing rain";
-        case 71, 73, 75 -> "Snow";
-        case 77 -> "Snow grains";
-        case 80, 81, 82 -> "Rain showers";
-        case 85, 86 -> "Snow showers";
-        case 95 -> "Thunderstorm";
-        case 96, 99 -> "Thunderstorm with hail";
-        default -> "Unknown";
-        };
+        if (code == CODE_CLEAR) {
+            return "Clear sky";
+        } else if (code >= CODE_PARTLY_CLOUDY_MIN && code <= CODE_PARTLY_CLOUDY_MAX) {
+            return "Partly cloudy";
+        } else if (code >= CODE_FOGGY_MIN && code <= CODE_FOGGY_MAX) {
+            return "Foggy";
+        } else if (code >= CODE_DRIZZLE_MIN && code <= CODE_DRIZZLE_MAX) {
+            return "Drizzle";
+        } else if (code >= CODE_RAIN_MIN && code <= CODE_RAIN_MAX) {
+            return "Rain";
+        } else if (code >= CODE_FREEZING_RAIN_MIN && code <= CODE_FREEZING_RAIN_MAX) {
+            return "Freezing rain";
+        } else if (code >= CODE_SNOW_MIN && code <= CODE_SNOW_MAX) {
+            return "Snow";
+        } else if (code == CODE_SNOW_GRAINS) {
+            return "Snow grains";
+        } else if (code >= CODE_RAIN_SHOWERS_MIN && code <= CODE_RAIN_SHOWERS_MAX) {
+            return "Rain showers";
+        } else if (code >= CODE_SNOW_SHOWERS_MIN && code <= CODE_SNOW_SHOWERS_MAX) {
+            return "Snow showers";
+        } else if (code == CODE_THUNDERSTORM) {
+            return "Thunderstorm";
+        } else if (code >= CODE_THUNDERSTORM_HAIL_MIN && code <= CODE_THUNDERSTORM_HAIL_MAX) {
+            return "Thunderstorm with hail";
+        } else {
+            return "Unknown";
+        }
     }
 
     // Feign API interfaces

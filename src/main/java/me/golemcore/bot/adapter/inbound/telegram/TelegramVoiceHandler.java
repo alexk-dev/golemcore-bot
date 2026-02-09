@@ -1,4 +1,4 @@
-package me.golemcore.bot.voice;
+package me.golemcore.bot.adapter.inbound.telegram;
 
 /*
  * Copyright 2026 Aleksei Kuleshov
@@ -30,30 +30,11 @@ import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Telegram-specific handler for voice message processing.
+ * Telegram-specific handler for incoming voice messages (STT).
  *
  * <p>
- * Provides two main operations:
- * <ul>
- * <li><b>Incoming voice</b> - Transcribe OGG Opus voice messages to text via
- * Whisper</li>
- * <li><b>Outgoing voice</b> - Synthesize text to OGG Opus voice messages
- * (TTS)</li>
- * </ul>
- *
- * <p>
- * Telegram uses OGG Opus format for voice messages. This handler manages the
- * integration between Telegram's format and the underlying {@link VoicePort}
- * implementations (Whisper STT, TTS providers).
- *
- * <p>
- * Gracefully degrades when voice processing is disabled or unavailable,
- * returning placeholder text instead of failing.
- *
- * <p>
- * Always available as a Spring bean, but checks {@code bot.voice.enabled}.
- *
- * @since 1.0
+ * Transcribes OGG Opus voice messages via {@link VoicePort} (ElevenLabs STT).
+ * Gracefully degrades when voice processing is disabled or unavailable.
  */
 @Component
 @RequiredArgsConstructor
@@ -64,54 +45,42 @@ public class TelegramVoiceHandler {
     private final BotProperties properties;
 
     /**
-     * Process incoming voice message and return text transcription.
+     * Transcribe incoming OGG Opus voice message to text.
      */
     public CompletableFuture<String> handleIncomingVoice(byte[] voiceData) {
         if (!properties.getVoice().isEnabled()) {
+            log.debug("[Voice] Incoming voice skipped: voice feature disabled");
             return CompletableFuture.completedFuture("[Voice messages disabled]");
         }
 
         if (!voicePort.isAvailable()) {
+            log.warn("[Voice] Incoming voice skipped: voice service unavailable (API key missing?)");
             return CompletableFuture.completedFuture("[Voice processing unavailable]");
         }
 
+        log.info("[Voice] Transcribing incoming voice: {} bytes, format=OGG_OPUS", voiceData.length);
+
         return voicePort.transcribe(voiceData, AudioFormat.OGG_OPUS)
                 .thenApply(result -> {
-                    log.debug("Transcribed voice message: {} chars, language: {}",
-                            result.text().length(), result.language());
+                    String preview = result.text() != null && result.text().length() > 200
+                            ? result.text().substring(0, 200) + "..."
+                            : result.text();
+                    log.info("[Voice] Transcription result: \"{}\" ({} chars, language={})",
+                            preview, result.text() != null ? result.text().length() : 0, result.language());
                     return result.text();
                 })
                 .exceptionally(e -> {
-                    log.error("Voice transcription failed", e);
+                    log.error("[Voice] Transcription failed: {}", e.getMessage(), e);
                     return "[Failed to transcribe voice message]";
                 });
     }
 
     /**
-     * Synthesize text to voice for sending.
-     */
-    public CompletableFuture<byte[]> synthesizeForTelegram(String text) {
-        if (!properties.getVoice().isEnabled()) {
-            return CompletableFuture.failedFuture(new RuntimeException("Voice disabled"));
-        }
-
-        VoicePort.VoiceConfig config = new VoicePort.VoiceConfig(
-                properties.getVoice().getTts().getVoiceId(),
-                "en",
-                properties.getVoice().getTts().getSpeed(),
-                0f,
-                AudioFormat.OGG_OPUS);
-
-        return voicePort.synthesize(text, config);
-    }
-
-    /**
      * Process voice message and return a Message with transcription.
      */
-    public CompletableFuture<Message> processVoiceMessage(
-            String chatId,
-            byte[] voiceData,
-            boolean respondWithVoice) {
+    public CompletableFuture<Message> processVoiceMessage(String chatId, byte[] voiceData) {
+        log.info("[Voice] Processing voice message: chatId={}, {} bytes", chatId, voiceData.length);
+
         return handleIncomingVoice(voiceData)
                 .thenApply(transcription -> Message.builder()
                         .channelType("telegram")

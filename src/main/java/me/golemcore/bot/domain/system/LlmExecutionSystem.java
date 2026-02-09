@@ -22,7 +22,7 @@ import me.golemcore.bot.domain.model.*;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import me.golemcore.bot.port.outbound.LlmPort;
-import me.golemcore.bot.usage.LlmUsageTracker;
+import me.golemcore.bot.port.outbound.UsageTrackingPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -49,7 +49,7 @@ import java.util.concurrent.TimeUnit;
 public class LlmExecutionSystem implements AgentSystem {
 
     private final LlmPort llmPort;
-    private final LlmUsageTracker usageTracker;
+    private final UsageTrackingPort usageTracker;
     private final BotProperties properties;
     private final ModelConfigService modelConfigService;
     private final Clock clock;
@@ -57,6 +57,7 @@ public class LlmExecutionSystem implements AgentSystem {
     private static final long TIMEOUT_SECONDS = 120;
     private static final int MAX_EMPTY_RETRIES = 1;
     private static final double CHARS_PER_TOKEN = 3.5;
+    private static final String ATTR_LLM_ERROR = "llm.error";
 
     @Override
     public String getName() {
@@ -115,7 +116,7 @@ public class LlmExecutionSystem implements AgentSystem {
             if (isEmptyResponse(response)) {
                 log.warn("[LLM] Empty response after retries (output tokens: {})",
                         response.getUsage() != null ? response.getUsage().getOutputTokens() : 0);
-                context.setAttribute("llm.error", "LLM returned empty response");
+                context.setAttribute(ATTR_LLM_ERROR, "LLM returned empty response");
             }
 
         } catch (Exception e) {
@@ -135,19 +136,19 @@ public class LlmExecutionSystem implements AgentSystem {
                         }
                         log.info("[LLM] Retry after truncation succeeded in {}ms", latency.toMillis());
                         if (isEmptyResponse(retryResponse)) {
-                            context.setAttribute("llm.error", "LLM returned empty response");
+                            context.setAttribute(ATTR_LLM_ERROR, "LLM returned empty response");
                         }
                         return context;
                     } catch (Exception retryEx) {
                         log.error("[LLM] Retry after truncation also failed: {}", retryEx.getMessage());
-                        context.setAttribute("llm.error", retryEx.getMessage());
+                        context.setAttribute(ATTR_LLM_ERROR, retryEx.getMessage());
                         return context;
                     }
                 }
             }
             log.error("[LLM] FAILED after {}ms: {}",
                     Duration.between(start, clock.instant()).toMillis(), e.getMessage(), e);
-            context.setAttribute("llm.error", e.getMessage());
+            context.setAttribute(ATTR_LLM_ERROR, e.getMessage());
         }
 
         return context;

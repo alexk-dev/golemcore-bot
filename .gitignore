@@ -35,6 +35,15 @@ build/
 ### local workspace ###
 workspace/
 
+### Wiki (separate git repo) ###
+wiki/
+
+### Logs ###
+logs/
+
+### LightRAG data ###
+lightrag/data/
+
 ### Code quality tools ###
 # PMD
 .pmd
