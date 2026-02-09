@@ -19,6 +19,7 @@
 package me.golemcore.bot.adapter.inbound.telegram;
 
 import me.golemcore.bot.adapter.outbound.confirmation.TelegramConfirmationAdapter;
+import me.golemcore.bot.port.outbound.ConfirmationPort;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AudioFormat;
 import me.golemcore.bot.domain.model.Message;
@@ -103,7 +104,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
     private final UserPreferencesService preferencesService;
     private final MessageService messageService;
     private final CommandPort commandRouter;
-    private final TelegramConfirmationAdapter telegramConfirmationAdapter;
+    private final ConfirmationPort confirmationPort;
     private final TelegramVoiceHandler voiceHandler;
 
     private TelegramClient telegramClient;
@@ -141,7 +142,9 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
             return;
         }
         this.telegramClient = new OkHttpTelegramClient(token);
-        telegramConfirmationAdapter.setTelegramClient(this.telegramClient);
+        if (confirmationPort instanceof TelegramConfirmationAdapter telegramConfirmation) {
+            telegramConfirmation.setTelegramClient(this.telegramClient);
+        }
         initialized = true;
     }
 
@@ -236,7 +239,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
         String confirmationId = parts[1];
         boolean approved = "yes".equals(parts[2]);
 
-        boolean resolved = telegramConfirmationAdapter.resolve(confirmationId, approved);
+        boolean resolved = confirmationPort.resolve(confirmationId, approved);
 
         if (resolved) {
             String statusText = approved ? "\u2705 Confirmed" : "\u274c Cancelled";

@@ -21,9 +21,12 @@ package me.golemcore.bot.routing;
 import me.golemcore.bot.adapter.outbound.llm.LlmAdapterFactory;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.Skill;
+import me.golemcore.bot.domain.model.SkillCandidate;
+import me.golemcore.bot.domain.model.SkillMatchResult;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.EmbeddingPort;
 import me.golemcore.bot.port.outbound.LlmPort;
+import me.golemcore.bot.port.outbound.SkillMatcherPort;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
@@ -32,8 +35,18 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Hybrid skill matcher that combines semantic search with LLM classification.
@@ -71,7 +84,7 @@ import java.util.concurrent.*;
 @Component
 @RequiredArgsConstructor
 @Slf4j
-public class HybridSkillMatcher implements SkillMatcher {
+public class HybridSkillMatcher implements SkillMatcherPort {
 
     private final BotProperties properties;
     private final EmbeddingPort embeddingPort;
@@ -258,7 +271,25 @@ public class HybridSkillMatcher implements SkillMatcher {
 
             return result;
 
-        } catch (Exception e) {
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("[SkillMatcher] LLM classifier FAILED, using semantic fallback: {}", e.getMessage());
+
+            // Fallback to semantic result
+            SkillCandidate top = candidates.get(0);
+            SkillMatchResult result = SkillMatchResult.builder()
+                    .selectedSkill(top.getName())
+                    .confidence(top.getSemanticScore())
+                    .modelTier("balanced")
+                    .reason("LLM classifier unavailable, semantic fallback")
+                    .candidates(candidates)
+                    .llmClassifierUsed(false)
+                    .latencyMs(System.currentTimeMillis() - startTime)
+                    .build();
+
+            cacheResult(cacheKey, result);
+            return result;
+        } catch (ExecutionException | TimeoutException e) {
             log.warn("[SkillMatcher] LLM classifier FAILED, using semantic fallback: {}", e.getMessage());
 
             // Fallback to semantic result
@@ -308,7 +339,11 @@ public class HybridSkillMatcher implements SkillMatcher {
                     config.getTopK(),
                     config.getMinScore());
 
-        } catch (Exception e) {
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("Semantic search failed", e);
+            return Collections.emptyList();
+        } catch (ExecutionException | TimeoutException e) {
             log.error("Semantic search failed", e);
             return Collections.emptyList();
         }

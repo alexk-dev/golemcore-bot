@@ -1,6 +1,6 @@
 package me.golemcore.bot.adapter.inbound.telegram;
 
-import me.golemcore.bot.adapter.outbound.confirmation.TelegramConfirmationAdapter;
+import me.golemcore.bot.port.outbound.ConfirmationPort;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
@@ -50,7 +50,7 @@ class TelegramAdapterAuthTest {
                 mock(UserPreferencesService.class),
                 messageService,
                 mock(CommandPort.class),
-                mock(TelegramConfirmationAdapter.class),
+                mock(ConfirmationPort.class),
                 mock(TelegramVoiceHandler.class));
         adapter.setTelegramClient(telegramClient);
 

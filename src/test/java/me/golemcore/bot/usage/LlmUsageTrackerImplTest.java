@@ -1,6 +1,8 @@
 package me.golemcore.bot.usage;
 
 import me.golemcore.bot.domain.model.LlmUsage;
+import me.golemcore.bot.domain.model.UsageMetric;
+import me.golemcore.bot.domain.model.UsageStats;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.StoragePort;
 import com.fasterxml.jackson.databind.ObjectMapper;

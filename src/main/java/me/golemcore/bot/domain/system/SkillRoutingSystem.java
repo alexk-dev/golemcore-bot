@@ -18,14 +18,14 @@ package me.golemcore.bot.domain.system;
  * Contact: alex@kuleshov.tech
  */
 
+import me.golemcore.bot.domain.component.MessageAggregator;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.Skill;
+import me.golemcore.bot.domain.model.SkillMatchResult;
 import me.golemcore.bot.infrastructure.config.BotProperties;
-import me.golemcore.bot.routing.MessageContextAggregator;
-import me.golemcore.bot.routing.SkillMatchResult;
-import me.golemcore.bot.routing.SkillMatcher;
+import me.golemcore.bot.port.outbound.SkillMatcherPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -38,19 +38,19 @@ import java.util.concurrent.TimeUnit;
  * System for intelligent skill routing using hybrid semantic + LLM
  * classification (order=15). Runs before ContextBuildingSystem to select the
  * appropriate skill for the request. Supports fragmented input detection via
- * {@link routing.MessageContextAggregator} and two-stage matching (embeddings
- * pre-filter + LLM classifier). Sets activeSkill and modelTier in the context
- * for downstream systems.
+ * {@link MessageAggregator} and two-stage matching (embeddings pre-filter + LLM
+ * classifier). Sets activeSkill and modelTier in the context for downstream
+ * systems.
  */
 @Component
 @RequiredArgsConstructor
 @Slf4j
 public class SkillRoutingSystem implements AgentSystem {
 
-    private final SkillMatcher skillMatcher;
+    private final SkillMatcherPort skillMatcher;
     private final SkillComponent skillComponent;
     private final BotProperties properties;
-    private final MessageContextAggregator messageAggregator;
+    private final MessageAggregator messageAggregator;
 
     @Override
     public String getName() {
@@ -103,7 +103,7 @@ public class SkillRoutingSystem implements AgentSystem {
         log.debug("[SkillRouting] Routing query: '{}'", truncate(routingQuery, 100));
 
         // Analyze fragmentation for logging
-        MessageContextAggregator.AggregationAnalysis analysis = messageAggregator.analyze(context.getMessages());
+        MessageAggregator.AggregationAnalysis analysis = messageAggregator.analyze(context.getMessages());
         log.debug("[SkillRouting] Fragmentation analysis: fragmented={}, signals={}",
                 analysis.isFragmented(), analysis.signals());
 

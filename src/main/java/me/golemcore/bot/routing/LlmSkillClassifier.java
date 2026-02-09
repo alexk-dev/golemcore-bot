@@ -21,8 +21,10 @@ package me.golemcore.bot.routing;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.SkillCandidate;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.LlmPort;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -31,7 +33,9 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -139,7 +143,21 @@ public class LlmSkillClassifier {
                         result.skill(), String.format("%.2f", result.confidence()), result.modelTier());
                 return result;
 
-            } catch (Exception e) {
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.warn("[Classifier] LLM classification FAILED: {}", e.getMessage());
+                // Fallback to top semantic candidate
+                if (!candidates.isEmpty()) {
+                    SkillCandidate top = candidates.get(0);
+                    log.info("[Classifier] Fallback to semantic top: {}", top.getName());
+                    return new ClassificationResult(
+                            top.getName(),
+                            top.getSemanticScore(),
+                            "balanced",
+                            "Fallback to semantic match (LLM failed)");
+                }
+                return new ClassificationResult(null, 0, "fast", "No match found");
+            } catch (ExecutionException | TimeoutException e) {
                 log.warn("[Classifier] LLM classification FAILED: {}", e.getMessage());
                 // Fallback to top semantic candidate
                 if (!candidates.isEmpty()) {
@@ -206,7 +224,7 @@ public class LlmSkillClassifier {
 
             // Validate skill exists in candidates
             String selectedSkill = null;
-            if (parsedSkill != null && !parsedSkill.equalsIgnoreCase("none")) {
+            if (parsedSkill != null && !"none".equalsIgnoreCase(parsedSkill)) {
                 final String skillToFind = parsedSkill;
                 boolean found = candidates.stream()
                         .anyMatch(c -> c.getName().equalsIgnoreCase(skillToFind));
@@ -219,7 +237,7 @@ public class LlmSkillClassifier {
 
             return new ClassificationResult(selectedSkill, confidence, modelTier, reason);
 
-        } catch (Exception e) {
+        } catch (JsonProcessingException e) {
             log.warn("Failed to parse LLM response: {}", e.getMessage());
 
             // Fallback to top candidate

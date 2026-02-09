@@ -2,6 +2,7 @@ package me.golemcore.bot.routing;
 
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
+import me.golemcore.bot.domain.model.SkillCandidate;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.LlmPort;
 import com.fasterxml.jackson.databind.ObjectMapper;

@@ -22,7 +22,7 @@ import me.golemcore.bot.domain.model.*;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import me.golemcore.bot.port.outbound.LlmPort;
-import me.golemcore.bot.usage.LlmUsageTracker;
+import me.golemcore.bot.port.outbound.UsageTrackingPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -49,7 +49,7 @@ import java.util.concurrent.TimeUnit;
 public class LlmExecutionSystem implements AgentSystem {
 
     private final LlmPort llmPort;
-    private final LlmUsageTracker usageTracker;
+    private final UsageTrackingPort usageTracker;
     private final BotProperties properties;
     private final ModelConfigService modelConfigService;
     private final Clock clock;

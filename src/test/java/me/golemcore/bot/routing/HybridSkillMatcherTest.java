@@ -2,6 +2,8 @@ package me.golemcore.bot.routing;
 
 import me.golemcore.bot.adapter.outbound.llm.LlmAdapterFactory;
 import me.golemcore.bot.domain.model.Skill;
+import me.golemcore.bot.domain.model.SkillCandidate;
+import me.golemcore.bot.domain.model.SkillMatchResult;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.EmbeddingPort;
 import me.golemcore.bot.port.outbound.LlmPort;
@@ -223,7 +225,7 @@ class HybridSkillMatcherTest {
 
         matcher.indexSkills(mixed);
 
-        verify(embeddingStore).indexSkills(argThat(list -> list.size() == 1 && list.get(0).getName().equals("ok")));
+        verify(embeddingStore).indexSkills(argThat(list -> list.size() == 1 && "ok".equals(list.get(0).getName())));
     }
 
     @Test

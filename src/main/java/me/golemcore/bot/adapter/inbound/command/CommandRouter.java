@@ -18,9 +18,9 @@
 
 package me.golemcore.bot.adapter.inbound.command;
 
-import me.golemcore.bot.auto.AutoModeScheduler;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
+import me.golemcore.bot.domain.model.AutoModeChannelRegisteredEvent;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.DiaryEntry;
 import me.golemcore.bot.domain.model.Goal;
@@ -32,10 +32,10 @@ import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.CommandPort;
-import me.golemcore.bot.usage.LlmUsageTracker;
-import me.golemcore.bot.usage.UsageStats;
+import me.golemcore.bot.domain.model.UsageStats;
+import me.golemcore.bot.port.outbound.UsageTrackingPort;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.annotation.Lazy;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
@@ -78,11 +78,11 @@ public class CommandRouter implements CommandPort {
     private final SkillComponent skillComponent;
     private final List<ToolComponent> toolComponents;
     private final SessionPort sessionService;
-    private final LlmUsageTracker usageTracker;
+    private final UsageTrackingPort usageTracker;
     private final UserPreferencesService preferencesService;
     private final CompactionService compactionService;
     private final AutoModeService autoModeService;
-    private final AutoModeScheduler autoModeScheduler;
+    private final ApplicationEventPublisher eventPublisher;
     private final BotProperties properties;
 
     private static final List<String> KNOWN_COMMANDS = List.of(
@@ -93,11 +93,11 @@ public class CommandRouter implements CommandPort {
             SkillComponent skillComponent,
             List<ToolComponent> toolComponents,
             SessionPort sessionService,
-            LlmUsageTracker usageTracker,
+            UsageTrackingPort usageTracker,
             UserPreferencesService preferencesService,
             CompactionService compactionService,
             AutoModeService autoModeService,
-            @Lazy AutoModeScheduler autoModeScheduler,
+            ApplicationEventPublisher eventPublisher,
             BotProperties properties) {
         this.skillComponent = skillComponent;
         this.toolComponents = toolComponents;
@@ -106,7 +106,7 @@ public class CommandRouter implements CommandPort {
         this.preferencesService = preferencesService;
         this.compactionService = compactionService;
         this.autoModeService = autoModeService;
-        this.autoModeScheduler = autoModeScheduler;
+        this.eventPublisher = eventPublisher;
         this.properties = properties;
         log.info("CommandRouter initialized with commands: {}", KNOWN_COMMANDS);
     }
@@ -353,7 +353,7 @@ public class CommandRouter implements CommandPort {
             case "on" -> {
                 autoModeService.enableAutoMode();
                 if (channelType != null && chatId != null) {
-                    autoModeScheduler.registerChannel(channelType, chatId);
+                    eventPublisher.publishEvent(new AutoModeChannelRegisteredEvent(channelType, chatId));
                 }
                 int interval = properties.getAuto().getIntervalMinutes();
                 yield CommandResult.success(msg("command.auto.enabled", interval));

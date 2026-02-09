@@ -19,8 +19,12 @@ package me.golemcore.bot.usage;
  */
 
 import me.golemcore.bot.domain.model.LlmUsage;
+import me.golemcore.bot.domain.model.UsageMetric;
+import me.golemcore.bot.domain.model.UsageStats;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.StoragePort;
+import me.golemcore.bot.port.outbound.UsageTrackingPort;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -30,7 +34,11 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
@@ -64,7 +72,7 @@ import java.util.stream.Collectors;
 @Component
 @RequiredArgsConstructor
 @Slf4j
-public class LlmUsageTrackerImpl implements LlmUsageTracker {
+public class LlmUsageTrackerImpl implements UsageTrackingPort {
 
     private final StoragePort storagePort;
     private final BotProperties properties;
@@ -132,17 +140,17 @@ public class LlmUsageTrackerImpl implements LlmUsageTracker {
                             }
                             indexUsage(usage);
                             loaded++;
-                        } catch (Exception e) {
+                        } catch (JsonProcessingException e) {
                             log.debug("[Usage] Skipping malformed line in {}: {}", file, e.getMessage());
                         }
                     }
-                } catch (Exception e) {
+                } catch (RuntimeException e) {
                     log.warn("[Usage] Failed to read file {}: {}", file, e.getMessage());
                 }
             }
             log.info("[Usage] Loaded {} usage records from storage (skipped {} old records beyond {}d retention)",
                     loaded, skippedOld, RETENTION_PERIOD.toDays());
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.warn("[Usage] Failed to load persisted usage", e);
         }
     }

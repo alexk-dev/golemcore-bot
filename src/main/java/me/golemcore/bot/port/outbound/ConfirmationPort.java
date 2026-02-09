@@ -45,4 +45,18 @@ public interface ConfirmationPort {
      * connected).
      */
     boolean isAvailable();
+
+    /**
+     * Resolve a pending confirmation. Called when a callback is received from the
+     * user (e.g. inline keyboard button press).
+     *
+     * @param confirmationId
+     *            the confirmation ID from the callback data
+     * @param approved
+     *            true if confirmed, false if cancelled
+     * @return true if the confirmation was found and resolved
+     */
+    default boolean resolve(String confirmationId, boolean approved) {
+        return false;
+    }
 }
