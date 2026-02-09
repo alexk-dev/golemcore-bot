@@ -89,7 +89,7 @@ public class ResponseRoutingSystem implements AgentSystem {
 
         // Auto-mode: store response in session only, don't send to channel.
         if (isAutoModeMessage(context)) {
-            LlmResponse response = context.getAttribute("llm.response");
+            LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
             if (response != null && response.getContent() != null && !response.getContent().isBlank()) {
                 context.getSession().addMessage(Message.builder()
                         .role("assistant")
@@ -100,10 +100,10 @@ public class ResponseRoutingSystem implements AgentSystem {
             return context;
         }
 
-        LlmResponse response = context.getAttribute("llm.response");
+        LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
 
         // Handle LLM errors — send error message to user
-        String llmError = context.getAttribute("llm.error");
+        String llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
         if (llmError != null) {
             sendErrorToUser(context, llmError);
             sendPendingAttachments(context);
@@ -129,7 +129,7 @@ public class ResponseRoutingSystem implements AgentSystem {
         }
 
         // Don't route if there are pending tool calls
-        Boolean toolsExecuted = context.getAttribute("tools.executed");
+        Boolean toolsExecuted = context.getAttribute(ContextAttributes.TOOLS_EXECUTED);
         if (Boolean.TRUE.equals(toolsExecuted) && response.hasToolCalls()) {
             log.debug("[Response] Tools executed with pending tool calls, waiting for next LLM iteration");
             return context;
@@ -156,16 +156,24 @@ public class ResponseRoutingSystem implements AgentSystem {
             String textToSpeak = (prefixVoiceText != null && !prefixVoiceText.isBlank())
                     ? prefixVoiceText
                     : stripVoicePrefix(content);
-            log.debug("[Response] Voice prefix detected, sending voice: {} chars (from {})",
-                    textToSpeak.length(), prefixVoiceText != null ? "tool" : "prefix");
-            if (voiceHandler.trySendVoice(channel, chatId, textToSpeak)) {
-                addAssistantMessage(session, textToSpeak, response.getToolCalls());
+            // Skip TTS for blank text (e.g. "🔊 " with no actual content)
+            if (!textToSpeak.isBlank()) {
+                log.debug("[Response] Voice prefix detected, sending voice: {} chars (from {})",
+                        textToSpeak.length(), prefixVoiceText != null ? "tool" : "prefix");
+                if (voiceHandler.trySendVoice(channel, chatId, textToSpeak)) {
+                    addAssistantMessage(session, textToSpeak, response.getToolCalls());
+                    sendPendingAttachments(context);
+                    return context;
+                }
+            }
+            // TTS failed or blank — fall through to send text without prefix
+            content = textToSpeak;
+            if (content.isBlank()) {
+                log.debug("[Response] Voice prefix with no content, nothing to send");
                 sendPendingAttachments(context);
                 return context;
             }
-            // TTS failed — fall through to send text without prefix
-            content = textToSpeak;
-            log.debug("[Response] TTS failed, falling back to text: {} chars", content.length());
+            log.debug("[Response] TTS skipped/failed, falling back to text: {} chars", content.length());
         }
 
         try {
@@ -342,8 +350,8 @@ public class ResponseRoutingSystem implements AgentSystem {
 
     @Override
     public boolean shouldProcess(AgentContext context) {
-        LlmResponse response = context.getAttribute("llm.response");
-        String llmError = context.getAttribute("llm.error");
+        LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
+        String llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
         List<?> pending = context.getAttribute("pendingAttachments");
         Boolean voiceRequested = context.getAttribute(ContextAttributes.VOICE_REQUESTED);
         return response != null || llmError != null || (pending != null && !pending.isEmpty())

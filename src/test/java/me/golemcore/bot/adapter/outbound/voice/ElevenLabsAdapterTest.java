@@ -13,6 +13,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -81,8 +82,9 @@ class ElevenLabsAdapterTest {
     void transcribeApiError() {
         mockServer.enqueue(new MockResponse().setResponseCode(401).setBody("Unauthorized"));
 
-        var future = adapter.transcribe(new byte[] { 1 }, AudioFormat.OGG_OPUS);
-        var ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
+        CompletableFuture<VoicePort.TranscriptionResult> future = adapter.transcribe(new byte[] { 1 },
+                AudioFormat.OGG_OPUS);
+        Exception ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
         assertTrue(ex.getMessage().contains("Transcription failed") || ex.getCause().getMessage().contains("401"));
     }
 
@@ -127,8 +129,8 @@ class ElevenLabsAdapterTest {
         mockServer.enqueue(new MockResponse().setResponseCode(500).setBody("Server error"));
 
         VoicePort.VoiceConfig config = VoicePort.VoiceConfig.defaultConfig();
-        var future = adapter.synthesize("Test", config);
-        var ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
+        CompletableFuture<byte[]> future = adapter.synthesize("Test", config);
+        Exception ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
         assertTrue(ex.getMessage().contains("Synthesis failed") || ex.getCause().getMessage().contains("500"));
     }
 
@@ -158,14 +160,15 @@ class ElevenLabsAdapterTest {
     @Test
     void transcribeFailsWithoutApiKey() {
         properties.getVoice().setApiKey("");
-        var future = adapter.transcribe(new byte[] { 1 }, AudioFormat.OGG_OPUS);
+        CompletableFuture<VoicePort.TranscriptionResult> future = adapter.transcribe(new byte[] { 1 },
+                AudioFormat.OGG_OPUS);
         assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
     }
 
     @Test
     void synthesizeFailsWithoutApiKey() {
         properties.getVoice().setApiKey("");
-        var future = adapter.synthesize("Hello", VoicePort.VoiceConfig.defaultConfig());
+        CompletableFuture<byte[]> future = adapter.synthesize("Hello", VoicePort.VoiceConfig.defaultConfig());
         assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
     }
 
@@ -203,8 +206,9 @@ class ElevenLabsAdapterTest {
                 .setBody("not valid json at all")
                 .addHeader("Content-Type", "application/json"));
 
-        var future = adapter.transcribe(new byte[] { 1 }, AudioFormat.OGG_OPUS);
-        var ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
+        CompletableFuture<VoicePort.TranscriptionResult> future = adapter.transcribe(new byte[] { 1 },
+                AudioFormat.OGG_OPUS);
+        Exception ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
         assertTrue(ex.getMessage().contains("Transcription failed")
                 || ex.getCause().getMessage().contains("Transcription failed"));
     }
@@ -245,8 +249,8 @@ class ElevenLabsAdapterTest {
                 .setResponseCode(429)
                 .setBody("{\"detail\":\"Rate limit exceeded\"}"));
 
-        var future = adapter.synthesize("Test", VoicePort.VoiceConfig.defaultConfig());
-        var ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
+        CompletableFuture<byte[]> future = adapter.synthesize("Test", VoicePort.VoiceConfig.defaultConfig());
+        Exception ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
         assertTrue(ex.getMessage().contains("429") || ex.getCause().getMessage().contains("429"));
     }
 
@@ -279,5 +283,73 @@ class ElevenLabsAdapterTest {
         assertNotNull(request);
         String body = request.getBody().readUtf8();
         assertTrue(body.contains("audio.mp3"));
+    }
+
+    @Test
+    void transcribeNullText() throws Exception {
+        mockServer.enqueue(new MockResponse()
+                .setBody("{\"text\":null,\"language_code\":\"en\"}")
+                .addHeader("Content-Type", "application/json"));
+
+        VoicePort.TranscriptionResult result = adapter.transcribe(
+                new byte[] { 1 }, AudioFormat.OGG_OPUS).get(5, TimeUnit.SECONDS);
+
+        assertNull(result.text());
+        assertEquals("en", result.language());
+    }
+
+    @Test
+    void transcribeLongTextPreview() throws Exception {
+        String longText = "A".repeat(300);
+        mockServer.enqueue(new MockResponse()
+                .setBody("{\"text\":\"" + longText + "\",\"language_code\":\"en\"}")
+                .addHeader("Content-Type", "application/json"));
+
+        VoicePort.TranscriptionResult result = adapter.transcribe(
+                new byte[] { 1 }, AudioFormat.OGG_OPUS).get(5, TimeUnit.SECONDS);
+
+        assertEquals(300, result.text().length());
+    }
+
+    @Test
+    void synthesizeNullApiKeyOnCall() {
+        properties.getVoice().setApiKey(null);
+        CompletableFuture<byte[]> future = adapter.synthesize("Hello", VoicePort.VoiceConfig.defaultConfig());
+        assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
+    }
+
+    @Test
+    void synthesizeUsesDefaultModelAndSpeed() throws Exception {
+        mockServer.enqueue(new MockResponse()
+                .setBody(new okio.Buffer().write(new byte[] { 1 }))
+                .addHeader("Content-Type", "audio/mpeg"));
+
+        VoicePort.VoiceConfig config = new VoicePort.VoiceConfig(null, null, 0f, AudioFormat.MP3);
+
+        adapter.synthesize("Test", config).get(5, TimeUnit.SECONDS);
+
+        RecordedRequest request = mockServer.takeRequest(1, TimeUnit.SECONDS);
+        assertNotNull(request);
+        String body = request.getBody().readUtf8();
+        // Should use default model from properties
+        assertTrue(body.contains("eleven_multilingual_v2"));
+        // Should use default voice from properties
+        assertTrue(request.getPath().contains("test-voice-id"));
+    }
+
+    @Test
+    void initLogsWarnWhenEnabledButNoKey() {
+        properties.getVoice().setEnabled(true);
+        properties.getVoice().setApiKey("");
+        // init() should not throw, just log warn
+        assertDoesNotThrow(() -> adapter.init());
+    }
+
+    @Test
+    void initLogsWhenDisabled() {
+        properties.getVoice().setEnabled(false);
+        properties.getVoice().setApiKey("");
+        // init() should not throw even when disabled
+        assertDoesNotThrow(() -> adapter.init());
     }
 }

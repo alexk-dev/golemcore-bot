@@ -645,7 +645,6 @@ class ResponseRoutingSystemTest {
     @Test
     void voicePrefixWithWhitespaceOnlyAfterEmoji() {
         when(voiceHandler.isAvailable()).thenReturn(true);
-        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(true);
 
         AgentContext context = createContext();
         LlmResponse response = LlmResponse.builder().content("\uD83D\uDD0A   ").build();
@@ -653,8 +652,9 @@ class ResponseRoutingSystemTest {
 
         system.process(context);
 
-        // stripVoicePrefix returns "" → trySendVoice called with empty string
-        verify(voiceHandler).trySendVoice(eq(channelPort), eq("chat1"), eq(""));
+        // stripVoicePrefix returns "" → blank text skips TTS and skips text send
+        verify(voiceHandler, never()).trySendVoice(any(), anyString(), anyString());
+        verify(channelPort, never()).sendMessage(anyString(), anyString());
     }
 
     @Test
@@ -780,5 +780,110 @@ class ResponseRoutingSystemTest {
 
         // Explicit tool request overrides config
         assertTrue(system.shouldRespondWithVoice(context));
+    }
+
+    // ===== Additional boundary coverage =====
+
+    @Test
+    void voiceOnlySkippedWhenNoChannel() {
+        AgentContext context = createContext();
+        context.getSession().setChannelType("unknown_channel");
+        LlmResponse response = LlmResponse.builder().content("").build();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+        context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
+        context.setAttribute(ContextAttributes.VOICE_TEXT, "Voice text");
+
+        assertDoesNotThrow(() -> system.process(context));
+        verify(voiceHandler, never()).sendVoiceWithFallback(any(), anyString(), anyString());
+    }
+
+    @Test
+    void hasIncomingVoice_nullMessages() {
+        AgentContext context = createContext();
+        context.getMessages().clear();
+        assertFalse(system.shouldRespondWithVoice(context));
+    }
+
+    @Test
+    void hasIncomingVoice_noUserMessages() {
+        properties.getVoice().getTelegram().setRespondWithVoice(true);
+        AgentContext context = createContext();
+        context.getMessages().add(Message.builder()
+                .role("assistant")
+                .content("response")
+                .timestamp(Instant.now())
+                .build());
+        assertFalse(system.shouldRespondWithVoice(context));
+    }
+
+    @Test
+    void hasIncomingVoice_userMessageWithoutVoice() {
+        properties.getVoice().getTelegram().setRespondWithVoice(true);
+        AgentContext context = createContext();
+        context.getMessages().add(Message.builder()
+                .role("user")
+                .content("text message")
+                .timestamp(Instant.now())
+                .build());
+        assertFalse(system.shouldRespondWithVoice(context));
+    }
+
+    @Test
+    void stripVoicePrefix_nullReturnsEmpty() {
+        assertEquals("", system.stripVoicePrefix(null));
+    }
+
+    @Test
+    void sendErrorToUser_unknownChannelDoesNotThrow() {
+        AgentContext context = createContext();
+        context.getSession().setChannelType("unknown_channel");
+        context.setAttribute(ContextAttributes.LLM_ERROR, "some error");
+
+        assertDoesNotThrow(() -> system.process(context));
+        verify(channelPort, never()).sendMessage(anyString(), anyString());
+    }
+
+    @Test
+    void registerChannelAddsNewChannel() {
+        ChannelPort newChannel = mock(ChannelPort.class);
+        when(newChannel.getChannelType()).thenReturn("slack");
+        when(newChannel.sendMessage(anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        system.registerChannel(newChannel);
+
+        AgentContext context = createContext();
+        context.getSession().setChannelType("slack");
+        context.getSession().setChatId("slack-chat");
+        LlmResponse response = LlmResponse.builder().content("hello slack").build();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+
+        system.process(context);
+
+        verify(newChannel).sendMessage(eq("slack-chat"), eq("hello slack"));
+    }
+
+    @Test
+    void voicePrefixFallbackWithToolsExecuted() {
+        when(voiceHandler.isAvailable()).thenReturn(true);
+        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(true);
+
+        AgentContext context = createContext();
+        LlmResponse response = LlmResponse.builder()
+                .content("\uD83D\uDD0A Voice after tools")
+                .build();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+        context.setAttribute(ContextAttributes.TOOLS_EXECUTED, true);
+
+        system.process(context);
+
+        verify(voiceHandler).trySendVoice(eq(channelPort), eq("chat1"), eq("Voice after tools"));
+        verify(channelPort, never()).sendMessage(anyString(), anyString());
+    }
+
+    @Test
+    void shouldProcessFalseWhenAllNull() {
+        AgentContext context = createContext();
+        assertFalse(system.shouldProcess(context));
     }
 }

@@ -27,7 +27,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import okhttp3.*;
+import okhttp3.MediaType;
+import okhttp3.MultipartBody;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
 import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PostConstruct;
@@ -36,6 +41,8 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * ElevenLabs adapter for both STT and TTS via ElevenLabs API.
@@ -52,6 +59,13 @@ public class ElevenLabsAdapter implements VoicePort {
 
     private static final String DEFAULT_STT_URL = "https://api.elevenlabs.io/v1/speech-to-text";
     private static final String DEFAULT_TTS_URL_TEMPLATE = "https://api.elevenlabs.io/v1/text-to-speech/%s";
+
+    private static final ExecutorService VOICE_EXECUTOR = Executors.newFixedThreadPool(2,
+            r -> {
+                Thread t = new Thread(r, "elevenlabs-voice");
+                t.setDaemon(true);
+                return t;
+            });
 
     private final OkHttpClient okHttpClient;
     private final BotProperties properties;
@@ -119,9 +133,13 @@ public class ElevenLabsAdapter implements VoicePort {
                     String language = sttResponse.getLanguageCode() != null
                             ? sttResponse.getLanguageCode()
                             : "unknown";
-                    int textLength = sttResponse.getText() != null ? sttResponse.getText().length() : 0;
-                    log.info("[ElevenLabs] STT success: {} chars, language={}, {}ms",
-                            textLength, language, elapsed);
+                    String text = sttResponse.getText();
+                    int textLength = text != null ? text.length() : 0;
+                    String preview = text != null && text.length() > 200
+                            ? text.substring(0, 200) + "..."
+                            : text;
+                    log.info("[ElevenLabs] STT success: \"{}\" ({} chars, language={}, {}ms)",
+                            preview, textLength, language, elapsed);
 
                     return new TranscriptionResult(
                             sttResponse.getText(),
@@ -134,7 +152,7 @@ public class ElevenLabsAdapter implements VoicePort {
                 log.error("[ElevenLabs] STT network error: {}", e.getMessage(), e);
                 throw new RuntimeException("Transcription failed: " + e.getMessage(), e);
             }
-        });
+        }, VOICE_EXECUTOR);
     }
 
     @Override
@@ -187,7 +205,7 @@ public class ElevenLabsAdapter implements VoicePort {
                 log.error("[ElevenLabs] TTS network error: {}", e.getMessage(), e);
                 throw new RuntimeException("Synthesis failed: " + e.getMessage(), e);
             }
-        });
+        }, VOICE_EXECUTOR);
     }
 
     @Override

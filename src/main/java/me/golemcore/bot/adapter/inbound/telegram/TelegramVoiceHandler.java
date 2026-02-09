@@ -62,8 +62,11 @@ public class TelegramVoiceHandler {
 
         return voicePort.transcribe(voiceData, AudioFormat.OGG_OPUS)
                 .thenApply(result -> {
-                    log.info("[Voice] Transcription complete: {} chars, language={}",
-                            result.text().length(), result.language());
+                    String preview = result.text() != null && result.text().length() > 200
+                            ? result.text().substring(0, 200) + "..."
+                            : result.text();
+                    log.info("[Voice] Transcription result: \"{}\" ({} chars, language={})",
+                            preview, result.text() != null ? result.text().length() : 0, result.language());
                     return result.text();
                 })
                 .exceptionally(e -> {

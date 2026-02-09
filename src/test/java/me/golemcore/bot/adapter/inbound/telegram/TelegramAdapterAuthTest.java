@@ -34,7 +34,7 @@ class TelegramAdapterAuthTest {
     @SuppressWarnings("unchecked")
     void setUp() {
         BotProperties properties = mock(BotProperties.class);
-        var telegramProps = new BotProperties.ChannelProperties();
+        BotProperties.ChannelProperties telegramProps = new BotProperties.ChannelProperties();
         telegramProps.setEnabled(true);
         when(properties.getChannels()).thenReturn(java.util.Map.of("telegram", telegramProps));
 
@@ -50,7 +50,8 @@ class TelegramAdapterAuthTest {
                 mock(UserPreferencesService.class),
                 messageService,
                 mock(CommandPort.class),
-                mock(TelegramConfirmationAdapter.class));
+                mock(TelegramConfirmationAdapter.class),
+                mock(TelegramVoiceHandler.class));
         adapter.setTelegramClient(telegramClient);
 
         messageHandler = mock(Consumer.class);
@@ -110,10 +111,12 @@ class TelegramAdapterAuthTest {
         User user = mock(User.class);
         when(user.getId()).thenReturn(userId);
 
-        var chat = mock(org.telegram.telegrambots.meta.api.objects.chat.Chat.class);
+        org.telegram.telegrambots.meta.api.objects.chat.Chat chat = mock(
+                org.telegram.telegrambots.meta.api.objects.chat.Chat.class);
         when(chat.getId()).thenReturn(chatId);
 
-        var telegramMsg = mock(org.telegram.telegrambots.meta.api.objects.message.Message.class);
+        org.telegram.telegrambots.meta.api.objects.message.Message telegramMsg = mock(
+                org.telegram.telegrambots.meta.api.objects.message.Message.class);
         when(telegramMsg.getChatId()).thenReturn(chatId);
         when(telegramMsg.getFrom()).thenReturn(user);
         when(telegramMsg.getMessageId()).thenReturn(1);

@@ -104,6 +104,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
     private final MessageService messageService;
     private final CommandPort commandRouter;
     private final TelegramConfirmationAdapter telegramConfirmationAdapter;
+    private final TelegramVoiceHandler voiceHandler;
 
     private TelegramClient telegramClient;
     private volatile Consumer<Message> messageHandler;
@@ -354,13 +355,27 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
         // Handle voice messages
         if (telegramMessage.hasVoice()) {
             try {
-                byte[] voiceData = downloadVoice(telegramMessage.getVoice().getFileId());
+                var voice = telegramMessage.getVoice();
+                byte[] voiceData = downloadVoice(voice.getFileId());
+                int duration = voice.getDuration() != null ? voice.getDuration() : 0;
+                log.info("[Voice] Received voice message: {} bytes, {}s duration", voiceData.length, duration);
+
                 messageBuilder
                         .voiceData(voiceData)
-                        .audioFormat(AudioFormat.OGG_OPUS)
-                        .content("[Voice message]");
+                        .audioFormat(AudioFormat.OGG_OPUS);
+
+                // Transcribe via ElevenLabs STT
+                String transcription = voiceHandler.handleIncomingVoice(voiceData).get();
+                if (transcription != null && !transcription.startsWith("[")) {
+                    log.info("[Voice] Decoded: \"{}\" ({} chars, {} bytes audio)",
+                            truncateForLog(transcription, 100), transcription.length(), voiceData.length);
+                    messageBuilder.content(transcription).voiceTranscription(transcription);
+                } else {
+                    log.warn("[Voice] Transcription unavailable, using placeholder: {}", transcription);
+                    messageBuilder.content(transcription != null ? transcription : "[Voice message]");
+                }
             } catch (Exception e) {
-                log.error("Failed to download voice message", e);
+                log.error("[Voice] Failed to process voice message", e);
                 messageBuilder.content("[Failed to process voice message]");
             }
         }
@@ -576,6 +591,12 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
         if (caption.length() <= 1024)
             return caption;
         return caption.substring(0, 1021) + "...";
+    }
+
+    private static String truncateForLog(String text, int maxLen) {
+        if (text == null || text.length() <= maxLen)
+            return text;
+        return text.substring(0, maxLen) + "...";
     }
 
     @Override
