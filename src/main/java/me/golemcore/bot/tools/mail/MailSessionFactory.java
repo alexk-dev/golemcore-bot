@@ -76,6 +76,7 @@ public final class MailSessionFactory {
         } else if (security == MailSecurity.STARTTLS) {
             props.put(MAIL_PREFIX + "imap.starttls.enable", TRUE_VALUE);
             props.put(MAIL_PREFIX + "imap.starttls.required", TRUE_VALUE);
+            props.put(MAIL_PREFIX + "imap.ssl.trust", "*");
         }
 
         return Session.getInstance(props, createAuthenticator(username, password));
@@ -119,6 +120,7 @@ public final class MailSessionFactory {
         } else if (security == MailSecurity.STARTTLS) {
             props.put(MAIL_PREFIX + "smtp.starttls.enable", TRUE_VALUE);
             props.put(MAIL_PREFIX + "smtp.starttls.required", TRUE_VALUE);
+            props.put(MAIL_PREFIX + "smtp.ssl.trust", "*");
         }
 
         return Session.getInstance(props, createAuthenticator(username, password));

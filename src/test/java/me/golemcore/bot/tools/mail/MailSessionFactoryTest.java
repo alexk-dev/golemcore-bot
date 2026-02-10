@@ -43,6 +43,7 @@ class MailSessionFactoryTest {
         assertEquals("143", props.getProperty("mail.imap.port"));
         assertEquals(TRUE_STR, props.getProperty("mail.imap.starttls.enable"));
         assertEquals(TRUE_STR, props.getProperty("mail.imap.starttls.required"));
+        assertEquals("*", props.getProperty("mail.imap.ssl.trust"));
         assertEquals("5000", props.getProperty("mail.imap.connectiontimeout"));
         assertEquals("15000", props.getProperty("mail.imap.timeout"));
     }
@@ -88,6 +89,7 @@ class MailSessionFactoryTest {
         assertEquals(TRUE_STR, props.getProperty("mail.smtp.auth"));
         assertEquals(TRUE_STR, props.getProperty("mail.smtp.starttls.enable"));
         assertEquals(TRUE_STR, props.getProperty("mail.smtp.starttls.required"));
+        assertEquals("*", props.getProperty("mail.smtp.ssl.trust"));
         assertEquals("5000", props.getProperty("mail.smtp.connectiontimeout"));
         assertEquals("15000", props.getProperty("mail.smtp.timeout"));
     }
