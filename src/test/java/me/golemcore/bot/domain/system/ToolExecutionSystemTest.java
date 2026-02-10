@@ -609,26 +609,6 @@ class ToolExecutionSystemTest {
     }
 
     @Test
-    void longToolCallIdNormalized() {
-        String longId = "call_" + "a".repeat(50);
-        Message.ToolCall toolCall = Message.ToolCall.builder()
-                .id(longId)
-                .name(TOOL_DATETIME)
-                .arguments(Map.of(ARG_OPERATION, ARG_NOW))
-                .build();
-
-        when(confirmationPolicy.requiresConfirmation(toolCall)).thenReturn(false);
-        when(dateTimeTool.execute(any())).thenReturn(CompletableFuture.completedFuture(ToolResult.success("ok")));
-
-        AgentContext context = createContextWithToolCalls(List.of(toolCall));
-        system.process(context);
-
-        // Tool result message should have normalized (shorter) ID
-        Message toolMsg = context.getMessages().get(1);
-        assertTrue(toolMsg.getToolCallId().length() <= 40);
-    }
-
-    @Test
     void confirmationFailureDefaultsToDeny() {
         Message.ToolCall toolCall = Message.ToolCall.builder()
                 .id(TOOL_CALL_ID)

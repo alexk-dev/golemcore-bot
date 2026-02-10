@@ -19,7 +19,12 @@
 package me.golemcore.bot.adapter.outbound.llm;
 
 import me.golemcore.bot.domain.component.LlmComponent;
-import me.golemcore.bot.domain.model.*;
+import me.golemcore.bot.domain.model.LlmChunk;
+import me.golemcore.bot.domain.model.LlmRequest;
+import me.golemcore.bot.domain.model.LlmResponse;
+import me.golemcore.bot.domain.model.LlmUsage;
+import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import me.golemcore.bot.port.outbound.LlmPort;
@@ -46,9 +51,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 /**
  * LLM adapter using the langchain4j library.
@@ -398,36 +406,18 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
 
     private static final TypeReference<Map<String, Object>> MAP_TYPE_REF = new TypeReference<>() {
     };
-    private static final int MAX_TOOL_CALL_ID_LENGTH = 40;
-    private static final java.util.regex.Pattern VALID_FUNCTION_NAME = java.util.regex.Pattern
-            .compile("^[a-zA-Z0-9_-]+$");
 
     private List<ChatMessage> convertMessages(LlmRequest request) {
         List<ChatMessage> messages = new ArrayList<>();
-
-        // Build consistent ID remapping for tool call IDs that exceed provider limits
-        // or contain invalid characters (e.g. dots from non-OpenAI providers).
-        // This ensures assistant tool_calls[].id and tool result toolCallId always
-        // match.
-        Map<String, String> idRemap = new HashMap<>();
-        for (Message msg : request.getMessages()) {
-            if (msg.hasToolCalls()) {
-                for (var tc : msg.getToolCalls()) {
-                    if (tc.getId() != null && (tc.getId().length() > MAX_TOOL_CALL_ID_LENGTH
-                            || !VALID_FUNCTION_NAME.matcher(tc.getId()).matches())) {
-                        idRemap.computeIfAbsent(tc.getId(),
-                                k -> "call_" + UUID.randomUUID().toString().replace("-", "").substring(0, 24));
-                    }
-                }
-            }
-        }
 
         // Add system message
         if (request.getSystemPrompt() != null && !request.getSystemPrompt().isBlank()) {
             messages.add(SystemMessage.from(request.getSystemPrompt()));
         }
 
-        // Convert conversation messages
+        // Convert conversation messages — tool call IDs and names are passed through
+        // as-is. Model switches are handled upstream by LlmExecutionSystem which
+        // flattens tool messages to plain text before they reach the adapter.
         for (Message msg : request.getMessages()) {
             switch (msg.getRole()) {
             case "user" -> messages.add(UserMessage.from(msg.getContent()));
@@ -435,8 +425,8 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 if (msg.hasToolCalls()) {
                     List<ToolExecutionRequest> toolRequests = msg.getToolCalls().stream()
                             .map(tc -> ToolExecutionRequest.builder()
-                                    .id(idRemap.getOrDefault(tc.getId(), tc.getId()))
-                                    .name(sanitizeFunctionName(tc.getName()))
+                                    .id(tc.getId())
+                                    .name(tc.getName())
                                     .arguments(convertArgsToJson(tc.getArguments()))
                                     .build())
                             .toList();
@@ -447,8 +437,8 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             }
             case "tool" -> {
                 messages.add(ToolExecutionResultMessage.from(
-                        idRemap.getOrDefault(msg.getToolCallId(), msg.getToolCallId()),
-                        sanitizeFunctionName(msg.getToolName()),
+                        msg.getToolCallId(),
+                        msg.getToolName(),
                         msg.getContent()));
             }
             case "system" -> messages.add(SystemMessage.from(msg.getContent()));
@@ -457,26 +447,6 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         }
 
         return messages;
-    }
-
-    /**
-     * Sanitize function/tool names to match OpenAI's required pattern:
-     * ^[a-zA-Z0-9_-]+$ Non-OpenAI providers (e.g. deepinfra) may generate names
-     * with dots or other characters that get stored in conversation history. When
-     * the model switches mid-conversation, the new provider may reject these names.
-     */
-    private String sanitizeFunctionName(String name) {
-        if (name == null) {
-            return "unknown";
-        }
-        if (VALID_FUNCTION_NAME.matcher(name).matches()) {
-            return name;
-        }
-        String sanitized = name.replaceAll("[^a-zA-Z0-9_-]", "_");
-        if (sanitized.isEmpty()) {
-            return "unknown";
-        }
-        return sanitized;
     }
 
     private List<ToolSpecification> convertTools(LlmRequest request) {

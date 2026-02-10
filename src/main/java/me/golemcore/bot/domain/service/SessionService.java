@@ -132,9 +132,12 @@ public class SessionService implements SessionPort {
         }
 
         int toRemove = total - keepLast;
-        messages.subList(0, toRemove).clear();
+        List<Message> kept = Message.flattenToolMessages(
+                new ArrayList<>(messages.subList(toRemove, total)));
+        messages.clear();
+        messages.addAll(kept);
         save(session);
-        log.info("Compacted session {}: removed {} messages, kept {}", sessionId, toRemove, keepLast);
+        log.info("Compacted session {}: removed {} messages, kept {}", sessionId, toRemove, kept.size());
         return toRemove;
     }
 
@@ -151,13 +154,14 @@ public class SessionService implements SessionPort {
         }
 
         int toRemove = total - keepLast;
-        List<Message> kept = new ArrayList<>(messages.subList(toRemove, total));
+        List<Message> kept = Message.flattenToolMessages(
+                new ArrayList<>(messages.subList(toRemove, total)));
         messages.clear();
         messages.add(summaryMessage);
         messages.addAll(kept);
         save(session);
         log.info("Compacted session {} with summary: removed {} messages, kept {} + summary",
-                sessionId, toRemove, keepLast);
+                sessionId, toRemove, kept.size());
         return toRemove;
     }
 
