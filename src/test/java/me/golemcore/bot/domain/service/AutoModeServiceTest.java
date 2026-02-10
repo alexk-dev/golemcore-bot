@@ -26,6 +26,7 @@ class AutoModeServiceTest {
     private static final String GOAL_ID = "goal-1";
     private static final String TASK_ID = "task-1";
     private static final String DIARY_PREFIX = "diary/";
+    private static final String TEST_GOAL_TITLE = "Test Goal";
 
     private StoragePort storagePort;
     private ObjectMapper objectMapper;
@@ -112,7 +113,7 @@ class AutoModeServiceTest {
     void addTask_addsTaskToGoal() throws Exception {
         Goal goal = Goal.builder()
                 .id(GOAL_ID)
-                .title("Test Goal")
+                .title(TEST_GOAL_TITLE)
                 .status(Goal.GoalStatus.ACTIVE)
                 .tasks(new ArrayList<>())
                 .createdAt(Instant.now())
@@ -181,7 +182,7 @@ class AutoModeServiceTest {
                 .build();
         Goal goal = Goal.builder()
                 .id(GOAL_ID)
-                .title("Test Goal")
+                .title(TEST_GOAL_TITLE)
                 .status(Goal.GoalStatus.ACTIVE)
                 .tasks(new ArrayList<>(List.of(task)))
                 .createdAt(Instant.now())
@@ -351,6 +352,141 @@ class AutoModeServiceTest {
 
         properties.getAuto().setEnabled(false);
         assertFalse(service.isFeatureEnabled());
+    }
+
+    @Test
+    void deleteGoal_removesGoalAndSaves() throws Exception {
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title("To Delete")
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>())
+                .createdAt(Instant.now())
+                .build();
+        String goalsJson = objectMapper.writeValueAsString(List.of(goal));
+        when(storagePort.getText(AUTO_DIR, GOALS_FILE))
+                .thenReturn(CompletableFuture.completedFuture(goalsJson));
+
+        service.deleteGoal(GOAL_ID);
+
+        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+        verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq(GOALS_FILE), captor.capture());
+        List<Goal> savedGoals = objectMapper.readValue(captor.getValue(), new TypeReference<>() {
+        });
+        assertTrue(savedGoals.isEmpty());
+
+        // Verify diary entry written
+        verify(storagePort).appendText(eq(AUTO_DIR), contains(DIARY_PREFIX), anyString());
+    }
+
+    @Test
+    void deleteGoal_throwsIfNotFound() throws Exception {
+        when(storagePort.getText(AUTO_DIR, GOALS_FILE))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.deleteGoal("nonexistent"));
+    }
+
+    @Test
+    void deleteTask_removesTaskFromGoal() throws Exception {
+        AutoTask task = AutoTask.builder()
+                .id(TASK_ID)
+                .goalId(GOAL_ID)
+                .title("Task to remove")
+                .status(AutoTask.TaskStatus.PENDING)
+                .order(1)
+                .createdAt(Instant.now())
+                .build();
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(TEST_GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>(List.of(task)))
+                .createdAt(Instant.now())
+                .build();
+        String goalsJson = objectMapper.writeValueAsString(List.of(goal));
+        when(storagePort.getText(AUTO_DIR, GOALS_FILE))
+                .thenReturn(CompletableFuture.completedFuture(goalsJson));
+
+        service.deleteTask(GOAL_ID, TASK_ID);
+
+        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+        verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq(GOALS_FILE), captor.capture());
+        List<Goal> savedGoals = objectMapper.readValue(captor.getValue(), new TypeReference<>() {
+        });
+        assertTrue(savedGoals.get(0).getTasks().isEmpty());
+    }
+
+    @Test
+    void deleteTask_throwsIfGoalNotFound() throws Exception {
+        when(storagePort.getText(AUTO_DIR, GOALS_FILE))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.deleteTask("no-goal", "no-task"));
+    }
+
+    @Test
+    void deleteTask_throwsIfTaskNotFound() throws Exception {
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(TEST_GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>())
+                .createdAt(Instant.now())
+                .build();
+        String goalsJson = objectMapper.writeValueAsString(List.of(goal));
+        when(storagePort.getText(AUTO_DIR, GOALS_FILE))
+                .thenReturn(CompletableFuture.completedFuture(goalsJson));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.deleteTask(GOAL_ID, "nonexistent-task"));
+    }
+
+    @Test
+    void clearCompletedGoals_removesCompletedAndCancelledGoals() throws Exception {
+        List<Goal> goals = new ArrayList<>(List.of(
+                Goal.builder().id("g1").title("Active")
+                        .status(Goal.GoalStatus.ACTIVE).tasks(new ArrayList<>()).createdAt(Instant.now()).build(),
+                Goal.builder().id("g2").title("Completed")
+                        .status(Goal.GoalStatus.COMPLETED).tasks(new ArrayList<>()).createdAt(Instant.now()).build(),
+                Goal.builder().id("g3").title("Cancelled")
+                        .status(Goal.GoalStatus.CANCELLED).tasks(new ArrayList<>()).createdAt(Instant.now()).build(),
+                Goal.builder().id("g4").title("Paused")
+                        .status(Goal.GoalStatus.PAUSED).tasks(new ArrayList<>()).createdAt(Instant.now()).build()));
+        String goalsJson = objectMapper.writeValueAsString(goals);
+        when(storagePort.getText(AUTO_DIR, GOALS_FILE))
+                .thenReturn(CompletableFuture.completedFuture(goalsJson));
+
+        int removed = service.clearCompletedGoals();
+
+        assertEquals(2, removed);
+        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+        verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq(GOALS_FILE), captor.capture());
+        List<Goal> savedGoals = objectMapper.readValue(captor.getValue(), new TypeReference<>() {
+        });
+        assertEquals(2, savedGoals.size());
+        assertTrue(savedGoals.stream().noneMatch(g -> g.getStatus() == Goal.GoalStatus.COMPLETED));
+        assertTrue(savedGoals.stream().noneMatch(g -> g.getStatus() == Goal.GoalStatus.CANCELLED));
+    }
+
+    @Test
+    void clearCompletedGoals_returnsZeroWhenNothingToRemove() throws Exception {
+        Goal goal = Goal.builder()
+                .id("g1")
+                .title("Active")
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>())
+                .createdAt(Instant.now())
+                .build();
+        String goalsJson = objectMapper.writeValueAsString(List.of(goal));
+        when(storagePort.getText(AUTO_DIR, GOALS_FILE))
+                .thenReturn(CompletableFuture.completedFuture(goalsJson));
+
+        int removed = service.clearCompletedGoals();
+
+        assertEquals(0, removed);
     }
 
     @Test

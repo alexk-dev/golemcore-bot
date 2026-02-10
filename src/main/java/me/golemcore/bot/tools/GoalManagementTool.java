@@ -95,6 +95,8 @@ public class GoalManagementTool implements ToolComponent {
     private static final String PARAM_CONTENT = "content";
     private static final String PARAM_DIARY_TYPE = "diary_type";
 
+    private static final String ERR_MISSING_GOAL_ID = "Missing required parameter: goal_id";
+
     private final AutoModeService autoModeService;
     private final boolean enabled;
 
@@ -121,7 +123,8 @@ public class GoalManagementTool implements ToolComponent {
                 .name("goal_management")
                 .description("""
                         Manage goals, tasks, and diary for autonomous work mode.
-                        Operations: create_goal, list_goals, plan_tasks, update_task_status, write_diary, complete_goal.
+                        Operations: create_goal, list_goals, plan_tasks, update_task_status, write_diary, \
+                        complete_goal, delete_goal, delete_task, clear_completed.
                         """)
                 .inputSchema(Map.of(
                         SCHEMA_TYPE, SCHEMA_OBJECT,
@@ -135,7 +138,8 @@ public class GoalManagementTool implements ToolComponent {
         props.put(PARAM_OPERATION, Map.of(
                 SCHEMA_TYPE, SCHEMA_STRING,
                 SCHEMA_ENUM, List.of("create_goal", "list_goals", "plan_tasks",
-                        "update_task_status", "write_diary", "complete_goal"),
+                        "update_task_status", "write_diary", "complete_goal",
+                        "delete_goal", "delete_task", "clear_completed"),
                 SCHEMA_DESCRIPTION, "Operation to perform"));
         props.put(PARAM_GOAL_ID,
                 Map.of(SCHEMA_TYPE, SCHEMA_STRING, SCHEMA_DESCRIPTION, "Goal ID (for task operations)"));
@@ -184,9 +188,12 @@ public class GoalManagementTool implements ToolComponent {
                 case "update_task_status" -> updateTaskStatus(parameters);
                 case "write_diary" -> writeDiary(parameters);
                 case "complete_goal" -> completeGoal(parameters);
+                case "delete_goal" -> deleteGoal(parameters);
+                case "delete_task" -> deleteTask(parameters);
+                case "clear_completed" -> clearCompleted();
                 default -> ToolResult.failure("Unknown operation: " + operation);
                 };
-            } catch (Exception e) {
+            } catch (RuntimeException e) {
                 log.error("[GoalManagement] Error: {}", e.getMessage(), e);
                 return ToolResult.failure("Error: " + e.getMessage());
             }
@@ -232,7 +239,7 @@ public class GoalManagementTool implements ToolComponent {
     private ToolResult planTasks(Map<String, Object> params) {
         String goalId = (String) params.get(PARAM_GOAL_ID);
         if (goalId == null || goalId.isBlank()) {
-            return ToolResult.failure("Missing required parameter: goal_id");
+            return ToolResult.failure(ERR_MISSING_GOAL_ID);
         }
 
         Object tasksObj = params.get(PARAM_TASKS);
@@ -280,7 +287,7 @@ public class GoalManagementTool implements ToolComponent {
         String result = (String) params.get(PARAM_RESULT);
 
         if (goalId == null || goalId.isBlank()) {
-            return ToolResult.failure("Missing required parameter: goal_id");
+            return ToolResult.failure(ERR_MISSING_GOAL_ID);
         }
         if (taskId == null || taskId.isBlank()) {
             return ToolResult.failure("Missing required parameter: task_id");
@@ -350,7 +357,7 @@ public class GoalManagementTool implements ToolComponent {
     private ToolResult completeGoal(Map<String, Object> params) {
         String goalId = (String) params.get(PARAM_GOAL_ID);
         if (goalId == null || goalId.isBlank()) {
-            return ToolResult.failure("Missing required parameter: goal_id");
+            return ToolResult.failure(ERR_MISSING_GOAL_ID);
         }
 
         autoModeService.completeGoal(goalId);
@@ -364,6 +371,36 @@ public class GoalManagementTool implements ToolComponent {
         }
 
         return ToolResult.success("Goal marked as completed.");
+    }
+
+    private ToolResult deleteGoal(Map<String, Object> params) {
+        String goalId = (String) params.get(PARAM_GOAL_ID);
+        if (goalId == null || goalId.isBlank()) {
+            return ToolResult.failure(ERR_MISSING_GOAL_ID);
+        }
+
+        autoModeService.deleteGoal(goalId);
+        return ToolResult.success("Goal deleted: " + goalId);
+    }
+
+    private ToolResult deleteTask(Map<String, Object> params) {
+        String goalId = (String) params.get(PARAM_GOAL_ID);
+        String taskId = (String) params.get(PARAM_TASK_ID);
+
+        if (goalId == null || goalId.isBlank()) {
+            return ToolResult.failure(ERR_MISSING_GOAL_ID);
+        }
+        if (taskId == null || taskId.isBlank()) {
+            return ToolResult.failure("Missing required parameter: task_id");
+        }
+
+        autoModeService.deleteTask(goalId, taskId);
+        return ToolResult.success("Task deleted: " + taskId + " from goal: " + goalId);
+    }
+
+    private ToolResult clearCompleted() {
+        int removed = autoModeService.clearCompletedGoals();
+        return ToolResult.success("Cleared " + removed + " completed/cancelled goals.");
     }
 
     public record MilestoneEvent(String message) {

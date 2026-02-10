@@ -489,6 +489,74 @@ class GoalManagementToolTest {
         assertTrue(result.getError().contains(TITLE));
     }
 
+    // ===== delete_goal =====
+
+    @Test
+    void deleteGoalSuccess() throws Exception {
+        ToolResult result = tool.execute(Map.of(
+                OPERATION, "delete_goal",
+                GOAL_ID, GOAL_ID_G1)).get();
+
+        assertTrue(result.isSuccess());
+        assertTrue(result.getOutput().contains("deleted"));
+        verify(autoModeService).deleteGoal(GOAL_ID_G1);
+    }
+
+    @Test
+    void deleteGoalMissingGoalId() throws Exception {
+        ToolResult result = tool.execute(Map.of(
+                OPERATION, "delete_goal")).get();
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains(GOAL_ID));
+        verifyNoInteractions(autoModeService);
+    }
+
+    // ===== delete_task =====
+
+    @Test
+    void deleteTaskSuccess() throws Exception {
+        ToolResult result = tool.execute(Map.of(
+                OPERATION, "delete_task",
+                GOAL_ID, GOAL_ID_G1,
+                TASK_ID, TASK_ID_T1)).get();
+
+        assertTrue(result.isSuccess());
+        assertTrue(result.getOutput().contains("deleted"));
+        verify(autoModeService).deleteTask(GOAL_ID_G1, TASK_ID_T1);
+    }
+
+    @Test
+    void deleteTaskMissingParams() throws Exception {
+        ToolResult result = tool.execute(Map.of(
+                OPERATION, "delete_task",
+                GOAL_ID, GOAL_ID_G1)).get();
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains(TASK_ID));
+
+        ToolResult result2 = tool.execute(Map.of(
+                OPERATION, "delete_task",
+                TASK_ID, TASK_ID_T1)).get();
+
+        assertFalse(result2.isSuccess());
+        assertTrue(result2.getError().contains(GOAL_ID));
+    }
+
+    // ===== clear_completed =====
+
+    @Test
+    void clearCompletedSuccess() throws Exception {
+        when(autoModeService.clearCompletedGoals()).thenReturn(3);
+
+        ToolResult result = tool.execute(Map.of(
+                OPERATION, "clear_completed")).get();
+
+        assertTrue(result.isSuccess());
+        assertTrue(result.getOutput().contains("3"));
+        verify(autoModeService).clearCompletedGoals();
+    }
+
     // ===== getDefinition =====
 
     @Test
