@@ -54,6 +54,7 @@ import java.util.*;
 public class AutoModeService {
 
     private static final String AUTO_DIR = "auto";
+    private static final String GOAL_NOT_FOUND = "Goal not found: ";
     private static final TypeReference<List<Goal>> GOAL_LIST_TYPE_REF = new TypeReference<>() {
     };
 
@@ -141,7 +142,7 @@ public class AutoModeService {
 
     public AutoTask addTask(String goalId, String title, String description, int order) {
         Goal goal = getGoal(goalId)
-                .orElseThrow(() -> new IllegalArgumentException("Goal not found: " + goalId));
+                .orElseThrow(() -> new IllegalArgumentException(GOAL_NOT_FOUND + goalId));
 
         if (goal.getTasks().size() >= properties.getAuto().getMaxTasksPerGoal()) {
             throw new IllegalStateException(
@@ -169,7 +170,7 @@ public class AutoModeService {
     public void updateTaskStatus(String goalId, String taskId,
             AutoTask.TaskStatus status, String result) {
         Goal goal = getGoal(goalId)
-                .orElseThrow(() -> new IllegalArgumentException("Goal not found: " + goalId));
+                .orElseThrow(() -> new IllegalArgumentException(GOAL_NOT_FOUND + goalId));
 
         AutoTask task = goal.getTasks().stream()
                 .filter(t -> t.getId().equals(taskId))
@@ -207,7 +208,7 @@ public class AutoModeService {
 
     public void completeGoal(String goalId) {
         Goal goal = getGoal(goalId)
-                .orElseThrow(() -> new IllegalArgumentException("Goal not found: " + goalId));
+                .orElseThrow(() -> new IllegalArgumentException(GOAL_NOT_FOUND + goalId));
 
         goal.setStatus(Goal.GoalStatus.COMPLETED);
         goal.setUpdatedAt(Instant.now());
@@ -221,6 +222,53 @@ public class AutoModeService {
                 .build());
 
         log.info("[AutoMode] Completed goal '{}'", goal.getTitle());
+    }
+
+    public void deleteGoal(String goalId) {
+        List<Goal> goals = getGoals();
+        boolean removed = goals.removeIf(g -> g.getId().equals(goalId));
+        if (!removed) {
+            throw new IllegalArgumentException(GOAL_NOT_FOUND + goalId);
+        }
+        saveGoals(goals);
+
+        writeDiary(DiaryEntry.builder()
+                .timestamp(Instant.now())
+                .type(DiaryEntry.DiaryType.DECISION)
+                .content("Goal deleted: " + goalId)
+                .goalId(goalId)
+                .build());
+
+        log.info("[AutoMode] Deleted goal '{}'", goalId);
+    }
+
+    public void deleteTask(String goalId, String taskId) {
+        Goal goal = getGoal(goalId)
+                .orElseThrow(() -> new IllegalArgumentException(GOAL_NOT_FOUND + goalId));
+
+        boolean removed = goal.getTasks().removeIf(t -> t.getId().equals(taskId));
+        if (!removed) {
+            throw new IllegalArgumentException("Task not found: " + taskId);
+        }
+
+        goal.setUpdatedAt(Instant.now());
+        saveGoals(getGoals());
+        log.info("[AutoMode] Deleted task '{}' from goal '{}'", taskId, goal.getTitle());
+    }
+
+    public int clearCompletedGoals() {
+        List<Goal> goals = getGoals();
+        int before = goals.size();
+        goals.removeIf(g -> g.getStatus() == Goal.GoalStatus.COMPLETED
+                || g.getStatus() == Goal.GoalStatus.CANCELLED);
+        int removed = before - goals.size();
+
+        if (removed > 0) {
+            saveGoals(goals);
+            log.info("[AutoMode] Cleared {} completed/cancelled goals", removed);
+        }
+
+        return removed;
     }
 
     // ==================== Diary ====================
