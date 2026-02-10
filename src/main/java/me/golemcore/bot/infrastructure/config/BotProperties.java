@@ -300,8 +300,8 @@ public class BotProperties {
         private String codingModelReasoning = "medium";
 
         /** PhD-level reasoning: proofs, scientific analysis, deep calculations */
-        private String deepModel = "openai/o3";
-        private String deepModelReasoning = "high";
+        private String deepModel = "openai/gpt-5.2";
+        private String deepModelReasoning = "xhigh";
 
         /**
          * Dynamically upgrade model tier to "coding" when coding activity is detected

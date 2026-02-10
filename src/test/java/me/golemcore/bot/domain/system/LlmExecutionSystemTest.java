@@ -46,8 +46,10 @@ class LlmExecutionSystemTest {
     private static final String ATTR_LLM_ERROR = "llm.error";
     private static final String TOOL_CALL_ID = "tc1";
     private static final String OPENAI_MODEL = "openai/gpt-5.1";
+    private static final String OPENAI_MODEL_52 = "openai/gpt-5.2";
     private static final String REASONING_MEDIUM = "medium";
     private static final String REASONING_HIGH = "high";
+    private static final String REASONING_XHIGH = "xhigh";
     private static final String TOOL_SHELL = "shell";
     private static final String ARG_COMMAND = "command";
 
@@ -372,8 +374,8 @@ class LlmExecutionSystemTest {
 
     @Test
     void selectsDeepModelForDeepTier() {
-        properties.getRouter().setDeepModel("openai/o3");
-        properties.getRouter().setDeepModelReasoning(REASONING_HIGH);
+        properties.getRouter().setDeepModel(OPENAI_MODEL_52);
+        properties.getRouter().setDeepModelReasoning(REASONING_XHIGH);
 
         when(llmPort.getProviderId()).thenReturn(PROVIDER_ID);
         when(llmPort.getCurrentModel()).thenReturn(MODEL_NAME);
@@ -390,12 +392,13 @@ class LlmExecutionSystemTest {
 
         // Verify the request was built with deep model
         verify(llmPort).chat(
-                argThat(req -> "openai/o3".equals(req.getModel()) && REASONING_HIGH.equals(req.getReasoningEffort())));
+                argThat(req -> OPENAI_MODEL_52.equals(req.getModel())
+                        && REASONING_XHIGH.equals(req.getReasoningEffort())));
     }
 
     @Test
     void selectsCodingModelForCodingTier() {
-        properties.getRouter().setCodingModel("openai/gpt-5.2");
+        properties.getRouter().setCodingModel(OPENAI_MODEL_52);
         properties.getRouter().setCodingModelReasoning(REASONING_MEDIUM);
 
         when(llmPort.getProviderId()).thenReturn(PROVIDER_ID);
@@ -408,7 +411,7 @@ class LlmExecutionSystemTest {
         system.process(ctx);
 
         verify(llmPort).chat(
-                argThat(req -> "openai/gpt-5.2".equals(req.getModel())
+                argThat(req -> OPENAI_MODEL_52.equals(req.getModel())
                         && REASONING_MEDIUM.equals(req.getReasoningEffort())));
     }
 
