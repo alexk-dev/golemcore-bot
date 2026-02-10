@@ -18,7 +18,6 @@ import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -42,7 +41,6 @@ import static org.mockito.Mockito.when;
 
 class Langchain4jAdapterTest {
 
-    private static final String SANITIZE_FN_NAME = "sanitizeFunctionName";
     private static final String CONVERT_ARGS_TO_JSON = "convertArgsToJson";
     private static final String PARSE_JSON_ARGS = "parseJsonArgs";
     private static final String IS_RATE_LIMIT_ERROR = "isRateLimitError";
@@ -161,35 +159,6 @@ class Langchain4jAdapterTest {
     @Test
     void shouldReturnSelfAsLlmPort() {
         assertSame(adapter, adapter.getLlmPort());
-    }
-
-    // ===== sanitizeFunctionName =====
-
-    @ParameterizedTest
-    @CsvSource({
-            "valid_name, valid_name",
-            "valid-name, valid-name",
-            "validName123, validName123",
-            "name.with.dots, name_with_dots",
-            "name with spaces, name_with_spaces",
-            "name@special#chars, name_special_chars"
-    })
-    void shouldSanitizeFunctionName(String input, String expected) {
-        String result = ReflectionTestUtils.invokeMethod(adapter, SANITIZE_FN_NAME, input);
-        assertEquals(expected, result);
-    }
-
-    @Test
-    void shouldReturnUnknownForNullFunctionName() {
-        String result = ReflectionTestUtils.invokeMethod(adapter, SANITIZE_FN_NAME, (String) null);
-        assertEquals("unknown", result);
-    }
-
-    @Test
-    void shouldReturnUnknownForAllInvalidCharsFunctionName() {
-        // "..." should become "___" which is not empty
-        String result = ReflectionTestUtils.invokeMethod(adapter, SANITIZE_FN_NAME, "...");
-        assertEquals("___", result);
     }
 
     // ===== convertArgsToJson =====
@@ -394,10 +363,10 @@ class Langchain4jAdapterTest {
         assertEquals(1, result.size());
     }
 
-    // ===== convertMessages ID remapping =====
+    // ===== convertMessages passthrough =====
 
     @Test
-    void shouldNotRemapShortValidIds() {
+    void shouldPassThroughToolCallIdsUnchanged() {
         Message assistantMsg = Message.builder()
                 .role(ROLE_ASSISTANT)
                 .toolCalls(List.of(Message.ToolCall.builder()
@@ -680,61 +649,6 @@ class Langchain4jAdapterTest {
 
         LlmResponse response = adapter.chat(request).get();
         assertEquals("Weather is sunny", response.getContent());
-    }
-
-    @Test
-    void shouldRemapLongToolCallIds() {
-        String longId = "call_" + "a".repeat(50); // > 40 chars
-        Message assistantMsg = Message.builder()
-                .role(ROLE_ASSISTANT)
-                .toolCalls(List.of(Message.ToolCall.builder()
-                        .id(longId)
-                        .name(TEST_TOOL)
-                        .arguments(Map.of())
-                        .build()))
-                .build();
-
-        Message toolResultMsg = Message.builder()
-                .role(ROLE_TOOL)
-                .content("result")
-                .toolCallId(longId)
-                .toolName(TEST_TOOL)
-                .build();
-
-        LlmRequest request = LlmRequest.builder()
-                .messages(List.of(
-                        Message.builder().role(ROLE_USER).content(TEST).build(),
-                        assistantMsg,
-                        toolResultMsg))
-                .build();
-
-        @SuppressWarnings(SUPPRESS_UNCHECKED)
-        List<Object> messages = (List<Object>) ReflectionTestUtils.invokeMethod(adapter, CONVERT_MESSAGES, request);
-        // Should have 3 messages: user + assistant + tool
-        assertEquals(3, messages.size());
-    }
-
-    @Test
-    void shouldRemapIdsWithInvalidChars() {
-        String invalidId = "call.with.dots.123"; // dots are invalid
-        Message assistantMsg = Message.builder()
-                .role(ROLE_ASSISTANT)
-                .toolCalls(List.of(Message.ToolCall.builder()
-                        .id(invalidId)
-                        .name(TEST)
-                        .arguments(Map.of())
-                        .build()))
-                .build();
-
-        LlmRequest request = LlmRequest.builder()
-                .messages(List.of(
-                        Message.builder().role(ROLE_USER).content(TEST).build(),
-                        assistantMsg))
-                .build();
-
-        @SuppressWarnings(SUPPRESS_UNCHECKED)
-        List<Object> messages = (List<Object>) ReflectionTestUtils.invokeMethod(adapter, CONVERT_MESSAGES, request);
-        assertEquals(2, messages.size());
     }
 
     // ===== chatStream =====

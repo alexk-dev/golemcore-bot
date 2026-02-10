@@ -18,7 +18,12 @@ package me.golemcore.bot.domain.system;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.model.*;
+import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.LlmRequest;
+import me.golemcore.bot.domain.model.LlmResponse;
+import me.golemcore.bot.domain.model.LlmUsage;
+import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import me.golemcore.bot.port.outbound.LlmPort;
@@ -203,6 +208,10 @@ public class LlmExecutionSystem implements AgentSystem {
                 selection.model,
                 selection.reasoning != null ? selection.reasoning : "none");
 
+        // Flatten tool messages on model switch to avoid provider-specific metadata
+        // issues
+        flattenOnModelSwitch(context, selection.model);
+
         return LlmRequest.builder()
                 .model(selection.model)
                 .reasoningEffort(selection.reasoning)
@@ -212,6 +221,44 @@ public class LlmExecutionSystem implements AgentSystem {
                 .toolResults(context.getToolResults())
                 .sessionId(context.getSession().getId())
                 .build();
+    }
+
+    /**
+     * Detects model switches and flattens tool call messages to plain text when the
+     * LLM model changes. This prevents sending provider-specific tool call IDs and
+     * metadata to a different provider that may reject them.
+     */
+    void flattenOnModelSwitch(AgentContext context, String currentModel) {
+        java.util.Map<String, Object> metadata = context.getSession().getMetadata();
+        String previousModel = metadata != null ? (String) metadata.get(ContextAttributes.LLM_MODEL) : null;
+
+        boolean needsFlatten = false;
+        if (previousModel != null && !previousModel.equals(currentModel)) {
+            log.info("[LLM] Model switch detected: {} -> {}, flattening tool messages", previousModel, currentModel);
+            needsFlatten = true;
+        } else if (previousModel == null && hasToolMessages(context.getMessages())) {
+            log.info("[LLM] Legacy session with tool messages, flattening for model: {}", currentModel);
+            needsFlatten = true;
+        }
+
+        if (needsFlatten) {
+            List<Message> flattened = Message.flattenToolMessages(context.getMessages());
+            context.getMessages().clear();
+            context.getMessages().addAll(flattened);
+
+            List<Message> sessionFlattened = Message.flattenToolMessages(context.getSession().getMessages());
+            context.getSession().getMessages().clear();
+            context.getSession().getMessages().addAll(sessionFlattened);
+        }
+
+        // Track current model for next request
+        if (metadata != null) {
+            metadata.put(ContextAttributes.LLM_MODEL, currentModel);
+        }
+    }
+
+    private boolean hasToolMessages(List<Message> messages) {
+        return messages.stream().anyMatch(m -> m.hasToolCalls() || m.isToolMessage());
     }
 
     private ModelSelection selectModel(String tier) {

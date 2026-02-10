@@ -2,6 +2,7 @@ package me.golemcore.bot.domain.system;
 
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.LlmUsage;
 import me.golemcore.bot.domain.model.Message;
@@ -16,7 +17,9 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
@@ -44,6 +47,8 @@ class LlmExecutionSystemTest {
     private static final String TOOL_CALL_ID = "tc1";
     private static final String OPENAI_MODEL = "openai/gpt-5.1";
     private static final String REASONING_MEDIUM = "medium";
+    private static final String TOOL_SHELL = "shell";
+    private static final String ARG_COMMAND = "command";
 
     private LlmPort llmPort;
     private UsageTrackingPort usageTracker;
@@ -129,7 +134,7 @@ class LlmExecutionSystemTest {
         messages.add(
                 Message.builder().id(MSG_ID_1).role(ROLE_USER).content(CONTENT_HELLO).timestamp(Instant.now()).build());
         messages.add(Message.builder().id("m2").role(ROLE_TOOL).content(hugeContent).toolCallId(TOOL_CALL_ID)
-                .toolName("shell").timestamp(Instant.now()).build());
+                .toolName(TOOL_SHELL).timestamp(Instant.now()).build());
         messages.add(
                 Message.builder().id("m3").role(ROLE_ASSISTANT).content(CONTENT_OK).timestamp(Instant.now()).build());
 
@@ -157,7 +162,7 @@ class LlmExecutionSystemTest {
         assertEquals(CONTENT_OK, context.getMessages().get(2).getContent());
         // Metadata preserved
         assertEquals(TOOL_CALL_ID, context.getMessages().get(1).getToolCallId());
-        assertEquals("shell", context.getMessages().get(1).getToolName());
+        assertEquals(TOOL_SHELL, context.getMessages().get(1).getToolName());
     }
 
     @Test
@@ -450,7 +455,7 @@ class LlmExecutionSystemTest {
         when(llmPort.getCurrentModel()).thenReturn(MODEL_NAME);
 
         List<Message.ToolCall> toolCalls = List.of(
-                Message.ToolCall.builder().id(TOOL_CALL_ID).name("shell").arguments(java.util.Map.of("command", "ls"))
+                Message.ToolCall.builder().id(TOOL_CALL_ID).name(TOOL_SHELL).arguments(Map.of(ARG_COMMAND, "ls"))
                         .build());
         LlmResponse response = LlmResponse.builder().content(null).toolCalls(toolCalls).build();
         when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(response));
@@ -554,11 +559,15 @@ class LlmExecutionSystemTest {
         List<Message> messages = new ArrayList<>();
         messages.add(
                 Message.builder().id(MSG_ID_1).role(ROLE_USER).content(CONTENT_HELLO).timestamp(Instant.now()).build());
-        messages.add(Message.builder().id("m2").role(ROLE_TOOL).content(hugeContent).timestamp(Instant.now()).build());
+        messages.add(Message.builder().id("m2").role(ROLE_USER).content(hugeContent).timestamp(Instant.now()).build());
+
+        // Pre-set model in metadata so flattening doesn't interfere
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put(ContextAttributes.LLM_MODEL, OPENAI_MODEL);
 
         AgentContext ctx = AgentContext.builder()
                 .session(AgentSession.builder().id("s1").chatId("ch1").channelType(CHANNEL_TYPE)
-                        .messages(new ArrayList<>(messages)).build())
+                        .messages(new ArrayList<>(messages)).metadata(metadata).build())
                 .messages(new ArrayList<>(messages))
                 .modelTier(TIER_FAST)
                 .build();
@@ -580,6 +589,187 @@ class LlmExecutionSystemTest {
                 .messages(new ArrayList<>(messages))
                 .modelTier(tier)
                 .build();
+    }
+
+    // ===== Existing truncation tests below =====
+
+    // ===== Model Tracking & Flattening =====
+
+    @Test
+    void shouldTrackModelInSessionMetadata() {
+        AgentSession session = AgentSession.builder()
+                .id(SESSION_ID)
+                .chatId(CHAT_ID)
+                .channelType(CHANNEL_TYPE)
+                .messages(new ArrayList<>())
+                .metadata(new HashMap<>())
+                .build();
+
+        AgentContext context = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>(List.of(
+                        Message.builder().id(MSG_ID_1).role(ROLE_USER).content(CONTENT_HELLO).timestamp(Instant.now())
+                                .build())))
+                .modelTier(TIER_FAST)
+                .build();
+
+        system.flattenOnModelSwitch(context, OPENAI_MODEL);
+
+        assertEquals(OPENAI_MODEL, session.getMetadata().get(ContextAttributes.LLM_MODEL));
+    }
+
+    @Test
+    void shouldFlattenToolMessagesOnModelSwitch() {
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put(ContextAttributes.LLM_MODEL, "old-model");
+
+        List<Message> messages = new ArrayList<>(List.of(
+                Message.builder().id(MSG_ID_1).role(ROLE_USER).content(CONTENT_HELLO).timestamp(Instant.now()).build(),
+                Message.builder().id("m2").role(ROLE_ASSISTANT)
+                        .toolCalls(List.of(Message.ToolCall.builder()
+                                .id(TOOL_CALL_ID).name(TOOL_SHELL)
+                                .arguments(Map.of(ARG_COMMAND, "ls"))
+                                .build()))
+                        .timestamp(Instant.now()).build(),
+                Message.builder().id("m3").role(ROLE_TOOL)
+                        .toolCallId(TOOL_CALL_ID).toolName(TOOL_SHELL)
+                        .content("file1.txt")
+                        .timestamp(Instant.now()).build()));
+
+        AgentSession session = AgentSession.builder()
+                .id(SESSION_ID)
+                .chatId(CHAT_ID)
+                .channelType(CHANNEL_TYPE)
+                .messages(new ArrayList<>(messages))
+                .metadata(metadata)
+                .build();
+
+        AgentContext context = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>(messages))
+                .modelTier(TIER_FAST)
+                .build();
+
+        system.flattenOnModelSwitch(context, "new-model");
+
+        // Tool messages should be flattened
+        assertEquals(2, context.getMessages().size());
+        assertTrue(context.getMessages().get(1).getContent().contains("[Tool: shell"));
+        assertFalse(context.getMessages().stream().anyMatch(Message::isToolMessage));
+
+        // Session messages also flattened
+        assertEquals(2, session.getMessages().size());
+
+        // Model updated in metadata
+        assertEquals("new-model", metadata.get(ContextAttributes.LLM_MODEL));
+    }
+
+    @Test
+    void shouldNotFlattenWhenSameModel() {
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put(ContextAttributes.LLM_MODEL, OPENAI_MODEL);
+
+        List<Message> messages = new ArrayList<>(List.of(
+                Message.builder().id(MSG_ID_1).role(ROLE_ASSISTANT)
+                        .toolCalls(List.of(Message.ToolCall.builder()
+                                .id(TOOL_CALL_ID).name(TOOL_SHELL)
+                                .arguments(Map.of(ARG_COMMAND, "ls"))
+                                .build()))
+                        .timestamp(Instant.now()).build(),
+                Message.builder().id("m2").role(ROLE_TOOL)
+                        .toolCallId(TOOL_CALL_ID).toolName(TOOL_SHELL)
+                        .content("files")
+                        .timestamp(Instant.now()).build()));
+
+        AgentSession session = AgentSession.builder()
+                .id(SESSION_ID)
+                .chatId(CHAT_ID)
+                .channelType(CHANNEL_TYPE)
+                .messages(new ArrayList<>(messages))
+                .metadata(metadata)
+                .build();
+
+        AgentContext context = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>(messages))
+                .modelTier(TIER_FAST)
+                .build();
+
+        system.flattenOnModelSwitch(context, OPENAI_MODEL);
+
+        // Tool messages should NOT be flattened — same model
+        assertEquals(2, context.getMessages().size());
+        assertTrue(context.getMessages().get(0).hasToolCalls());
+        assertTrue(context.getMessages().get(1).isToolMessage());
+    }
+
+    @Test
+    void shouldFlattenLegacySessionWithToolMessages() {
+        Map<String, Object> metadata = new HashMap<>();
+        // No previous model stored
+
+        List<Message> messages = new ArrayList<>(List.of(
+                Message.builder().id(MSG_ID_1).role(ROLE_ASSISTANT)
+                        .toolCalls(List.of(Message.ToolCall.builder()
+                                .id(TOOL_CALL_ID).name(TOOL_SHELL)
+                                .arguments(Map.of(ARG_COMMAND, "ls"))
+                                .build()))
+                        .timestamp(Instant.now()).build(),
+                Message.builder().id("m2").role(ROLE_TOOL)
+                        .toolCallId(TOOL_CALL_ID).toolName(TOOL_SHELL)
+                        .content("files")
+                        .timestamp(Instant.now()).build()));
+
+        AgentSession session = AgentSession.builder()
+                .id(SESSION_ID)
+                .chatId(CHAT_ID)
+                .channelType(CHANNEL_TYPE)
+                .messages(new ArrayList<>(messages))
+                .metadata(metadata)
+                .build();
+
+        AgentContext context = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>(messages))
+                .modelTier(TIER_FAST)
+                .build();
+
+        system.flattenOnModelSwitch(context, OPENAI_MODEL);
+
+        // Legacy session with tool messages should be flattened
+        assertEquals(1, context.getMessages().size());
+        assertTrue(context.getMessages().get(0).getContent().contains("[Tool: shell"));
+    }
+
+    @Test
+    void shouldNotFlattenFirstRunWithoutToolMessages() {
+        Map<String, Object> metadata = new HashMap<>();
+
+        List<Message> messages = new ArrayList<>(List.of(
+                Message.builder().id(MSG_ID_1).role(ROLE_USER).content(CONTENT_HELLO).timestamp(Instant.now())
+                        .build()));
+
+        AgentSession session = AgentSession.builder()
+                .id(SESSION_ID)
+                .chatId(CHAT_ID)
+                .channelType(CHANNEL_TYPE)
+                .messages(new ArrayList<>(messages))
+                .metadata(metadata)
+                .build();
+
+        AgentContext context = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>(messages))
+                .modelTier(TIER_FAST)
+                .build();
+
+        system.flattenOnModelSwitch(context, OPENAI_MODEL);
+
+        // No flattening needed — no tool messages
+        assertEquals(1, context.getMessages().size());
+        assertEquals(CONTENT_HELLO, context.getMessages().get(0).getContent());
+        // Model should still be tracked
+        assertEquals(OPENAI_MODEL, metadata.get(ContextAttributes.LLM_MODEL));
     }
 
     // ===== Existing truncation tests below =====

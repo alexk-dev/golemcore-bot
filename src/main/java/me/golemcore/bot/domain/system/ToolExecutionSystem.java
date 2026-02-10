@@ -103,12 +103,6 @@ public class ToolExecutionSystem implements AgentSystem {
 
         log.info("[Tools] Executing {} tool call(s)", toolCalls.size());
 
-        // Normalize tool call IDs to max 40 chars (OpenAI limit).
-        // Some providers generate longer IDs; we remap at source so history is always
-        // valid.
-        toolCalls = normalizeToolCallIds(toolCalls);
-        context.setAttribute("llm.toolCalls", toolCalls);
-
         // Set context for tools that need it (e.g. SkillTransitionTool)
         AgentContextHolder.set(context);
 
@@ -307,29 +301,6 @@ public class ToolExecutionSystem implements AgentSystem {
             log.warn("[Tools] Sanitized tool name: '{}' -> '{}'", name, sanitized);
         }
         return sanitized;
-    }
-
-    private static final int MAX_TOOL_CALL_ID_LENGTH = 40;
-
-    private List<Message.ToolCall> normalizeToolCallIds(List<Message.ToolCall> toolCalls) {
-        boolean needsNormalization = toolCalls.stream()
-                .anyMatch(tc -> tc.getId() != null && tc.getId().length() > MAX_TOOL_CALL_ID_LENGTH);
-        if (!needsNormalization)
-            return toolCalls;
-
-        return toolCalls.stream()
-                .map(tc -> {
-                    if (tc.getId() == null || tc.getId().length() <= MAX_TOOL_CALL_ID_LENGTH)
-                        return tc;
-                    String shortId = "call_" + UUID.randomUUID().toString().replace("-", "").substring(0, 24);
-                    log.debug("[Tools] Normalized tool call ID: {} -> {}", tc.getId(), shortId);
-                    return Message.ToolCall.builder()
-                            .id(shortId)
-                            .name(tc.getName())
-                            .arguments(tc.getArguments())
-                            .build();
-                })
-                .toList();
     }
 
     @SuppressWarnings("unchecked")

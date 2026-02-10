@@ -49,4 +49,10 @@ public final class ContextAttributes {
 
     /** List&lt;Attachment&gt; — attachments pending delivery to channel. */
     public static final String PENDING_ATTACHMENTS = "pendingAttachments";
+
+    /**
+     * String — LLM model name that last generated tool calls in the session
+     * (persisted in session metadata).
+     */
+    public static final String LLM_MODEL = "llm.model";
 }
