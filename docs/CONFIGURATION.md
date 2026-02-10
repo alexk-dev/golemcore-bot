@@ -362,6 +362,46 @@ export BOT_VOICE_TELEGRAM_TRANSCRIBE_INCOMING=true   # Transcribe incoming voice
 
 ---
 
+## Browser Tool
+
+The Browse tool uses Playwright/Chromium for web page rendering, screenshots, and text extraction.
+
+### Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BOT_TOOL_BROWSE_ENABLED` | `true` | Enable/disable browse tool |
+| `BOT_TOOL_BROWSE_TIMEOUT_SECONDS` | `30` | Maximum time for page load/processing |
+| `PLAYWRIGHT_BROWSERS_PATH` | `/opt/playwright` | Path to Playwright browsers (pre-installed in image) |
+| `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD` | `1` | Skip browser download (already bundled) |
+| `DEBUG` | — | Set to `pw:api` for Playwright debug logs |
+| `DBUS_SESSION_BUS_ADDRESS` | — | Set to `/dev/null` to suppress DBUS warnings in containers |
+
+### Docker Requirements
+
+Chromium inside Docker requires extra settings — without them the browser will crash or time out:
+
+```bash
+docker run -d \
+  --shm-size=256m \
+  --cap-add=SYS_ADMIN \
+  ...
+```
+
+```yaml
+# docker-compose.yml
+services:
+  golemcore-bot:
+    shm_size: '256m'
+    cap_add:
+      - SYS_ADMIN
+```
+
+- **`shm_size: 256m`** — Chromium uses `/dev/shm` for rendering; Docker defaults to 64MB which causes crashes
+- **`cap_add: SYS_ADMIN`** — required for Chrome's sandbox (user namespaces) inside containers
+
+---
+
 ## Streaming
 
 ```bash

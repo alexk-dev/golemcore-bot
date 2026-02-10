@@ -53,6 +53,7 @@
 - [Commands](#-commands)
 - [Development](#-development)
 - [Architecture](#-architecture)
+- [Troubleshooting](#-troubleshooting)
 - [Contributing](#-contributing)
 - [License](#-license)
 
@@ -97,6 +98,8 @@ export ANTHROPIC_API_KEY=sk-ant-...        # Anthropic (Claude Opus/Sonnet)
 # Run container
 docker run -d \
   --name golemcore-bot \
+  --shm-size=256m \
+  --cap-add=SYS_ADMIN \
   -e OPENAI_API_KEY \
   -v golemcore-bot-data:/app/workspace \
   -p 8080:8080 \
@@ -118,6 +121,9 @@ services:
     image: golemcore-bot:latest
     container_name: golemcore-bot
     restart: unless-stopped
+    shm_size: '256m'
+    cap_add:
+      - SYS_ADMIN
     environment:
       # LLM (choose one or multiple)
       OPENAI_API_KEY: ${OPENAI_API_KEY}
@@ -250,6 +256,8 @@ docker run -e OPENAI_API_KEY=sk-proj-... golemcore-bot:latest
 
 # Telegram bot
 docker run -d \
+  --shm-size=256m \
+  --cap-add=SYS_ADMIN \
   -e OPENAI_API_KEY=sk-proj-... \
   -e TELEGRAM_ENABLED=true \
   -e TELEGRAM_BOT_TOKEN=123456:ABC-DEF... \
@@ -523,6 +531,42 @@ The bot processes messages through ordered pipeline stages:
 | **Voice** | ElevenLabs (STT + TTS) | API v1 |
 | **Testing** | JUnit 5 + Mockito | — |
 | **Code Quality** | SpotBugs + PMD + JaCoCo | — |
+
+---
+
+## 🐛 Troubleshooting
+
+### Browse Tool in Docker
+
+The Browse tool uses Playwright/Chromium which requires additional Docker settings:
+
+| Setting | Required | Purpose |
+|---------|----------|---------|
+| `--shm-size=256m` | Yes | Chromium needs >64MB shared memory (Docker default) |
+| `--cap-add=SYS_ADMIN` | Yes | Chrome sandboxing in containers |
+| `BOT_TOOL_BROWSE_TIMEOUT_SECONDS=60` | Optional | Increase timeout (default: 30s) |
+| `DBUS_SESSION_BUS_ADDRESS=/dev/null` | Optional | Suppress DBUS warnings |
+
+**Symptoms without these settings:**
+- Browse tool timeouts after 30 seconds
+- `TimeoutException` errors in logs
+- Chromium fails to start
+
+**Docker run:**
+```bash
+docker run -d --shm-size=256m --cap-add=SYS_ADMIN ...
+```
+
+**Docker Compose:**
+```yaml
+services:
+  golemcore-bot:
+    shm_size: '256m'
+    cap_add:
+      - SYS_ADMIN
+    environment:
+      DBUS_SESSION_BUS_ADDRESS: /dev/null  # optional
+```
 
 ---
 
