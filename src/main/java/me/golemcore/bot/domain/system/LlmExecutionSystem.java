@@ -41,7 +41,7 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * System for executing LLM chat completion requests with model tier selection
- * (order=30). Selects model based on tier (fast/default/smart/coding) from
+ * (order=30). Selects model based on tier (balanced/smart/coding/deep) from
  * SkillRoutingSystem or DynamicTierSystem, constructs LlmRequest with system
  * prompt and conversation history, handles context overflow errors with
  * emergency truncation and retry, detects empty responses, and tracks usage via
@@ -265,7 +265,7 @@ public class LlmExecutionSystem implements AgentSystem {
         var router = properties.getRouter();
 
         return switch (tier != null ? tier : "balanced") {
-        case "fast" -> new ModelSelection(router.getFastModel(), router.getFastModelReasoning());
+        case "deep" -> new ModelSelection(router.getDeepModel(), router.getDeepModelReasoning());
         case "coding" -> new ModelSelection(router.getCodingModel(), router.getCodingModelReasoning());
         case "smart" -> new ModelSelection(router.getSmartModel(), router.getSmartModelReasoning());
         default -> new ModelSelection(router.getDefaultModel(), router.getDefaultModelReasoning());

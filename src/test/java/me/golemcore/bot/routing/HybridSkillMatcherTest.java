@@ -23,7 +23,7 @@ class HybridSkillMatcherTest {
     private static final String SKILL_CODE_REVIEW = "code-review";
     private static final String DESC_HANDLE_GREETINGS = "Handle greetings";
     private static final String DESC_REVIEW_CODE = "Review code";
-    private static final String TIER_FAST = "fast";
+    private static final String TIER_BALANCED = "balanced";
     private static final String QUERY_HELLO = "hello";
 
     private BotProperties properties;
@@ -122,14 +122,14 @@ class HybridSkillMatcherTest {
         when(llmAdapterFactory.getActiveAdapter()).thenReturn(classifierLlm);
         when(llmClassifier.classify(anyString(), anyList(), anyList(), any()))
                 .thenReturn(CompletableFuture.completedFuture(
-                        new LlmSkillClassifier.ClassificationResult(SKILL_GREETING, 0.9, TIER_FAST,
+                        new LlmSkillClassifier.ClassificationResult(SKILL_GREETING, 0.9, TIER_BALANCED,
                                 "Greeting detected")));
 
         SkillMatchResult result = matcher.match("hello world", List.of(), skills).get(5, TimeUnit.SECONDS);
 
         assertEquals(SKILL_GREETING, result.getSelectedSkill());
         assertEquals(0.9, result.getConfidence(), 0.01);
-        assertEquals(TIER_FAST, result.getModelTier());
+        assertEquals(TIER_BALANCED, result.getModelTier());
         assertTrue(result.isLlmClassifierUsed());
     }
 
@@ -191,7 +191,7 @@ class HybridSkillMatcherTest {
         SkillMatchResult result = matcher.match("something", List.of(), skills).get(5, TimeUnit.SECONDS);
 
         assertNull(result.getSelectedSkill());
-        assertEquals(TIER_FAST, result.getModelTier());
+        assertEquals(TIER_BALANCED, result.getModelTier());
     }
 
     // ===== Re-indexing =====
@@ -225,7 +225,7 @@ class HybridSkillMatcherTest {
         SkillMatchResult result = matcher.match(QUERY_HELLO, List.of(), skills).get(5, TimeUnit.SECONDS);
 
         assertNull(result.getSelectedSkill());
-        assertEquals(TIER_FAST, result.getModelTier());
+        assertEquals(TIER_BALANCED, result.getModelTier());
     }
 
     // ===== Index/ready/enabled =====
@@ -307,7 +307,7 @@ class HybridSkillMatcherTest {
         SkillMatchResult result = matcher.match(QUERY_HELLO, List.of(), skills).get(5, TimeUnit.SECONDS);
 
         assertNull(result.getSelectedSkill());
-        assertEquals(TIER_FAST, result.getModelTier());
+        assertEquals(TIER_BALANCED, result.getModelTier());
     }
 
     // ===== Classifier disabled → semantic only =====

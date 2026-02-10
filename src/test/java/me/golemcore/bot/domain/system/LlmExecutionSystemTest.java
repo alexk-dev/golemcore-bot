@@ -32,7 +32,7 @@ class LlmExecutionSystemTest {
     private static final String CHAT_ID = "chat1";
     private static final String CHANNEL_TYPE = "telegram";
     private static final String TIER_BALANCED = "balanced";
-    private static final String TIER_FAST = "fast";
+    private static final String TIER_DEEP = "deep";
     private static final String PROVIDER_ID = "langchain4j";
     private static final String MODEL_NAME = "gpt-5.1";
     private static final String MSG_ID_1 = "m1";
@@ -47,6 +47,7 @@ class LlmExecutionSystemTest {
     private static final String TOOL_CALL_ID = "tc1";
     private static final String OPENAI_MODEL = "openai/gpt-5.1";
     private static final String REASONING_MEDIUM = "medium";
+    private static final String REASONING_HIGH = "high";
     private static final String TOOL_SHELL = "shell";
     private static final String ARG_COMMAND = "command";
 
@@ -370,9 +371,9 @@ class LlmExecutionSystemTest {
     // ===== Model Selection =====
 
     @Test
-    void selectsFastModelForFastTier() {
-        properties.getRouter().setFastModel(OPENAI_MODEL);
-        properties.getRouter().setFastModelReasoning("low");
+    void selectsDeepModelForDeepTier() {
+        properties.getRouter().setDeepModel("openai/o3");
+        properties.getRouter().setDeepModelReasoning(REASONING_HIGH);
 
         when(llmPort.getProviderId()).thenReturn(PROVIDER_ID);
         when(llmPort.getCurrentModel()).thenReturn(MODEL_NAME);
@@ -380,16 +381,16 @@ class LlmExecutionSystemTest {
         LlmResponse response = LlmResponse.builder().content("Hello!").build();
         when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(response));
 
-        AgentContext ctx = createContextWithTier(TIER_FAST);
+        AgentContext ctx = createContextWithTier(TIER_DEEP);
         system.process(ctx);
 
         LlmResponse result = ctx.getAttribute(ATTR_LLM_RESPONSE);
         assertNotNull(result);
         assertNull(ctx.getAttribute(ATTR_LLM_ERROR));
 
-        // Verify the request was built with fast model
+        // Verify the request was built with deep model
         verify(llmPort).chat(
-                argThat(req -> OPENAI_MODEL.equals(req.getModel()) && "low".equals(req.getReasoningEffort())));
+                argThat(req -> "openai/o3".equals(req.getModel()) && REASONING_HIGH.equals(req.getReasoningEffort())));
     }
 
     @Test
@@ -414,7 +415,7 @@ class LlmExecutionSystemTest {
     @Test
     void selectsSmartModelForSmartTier() {
         properties.getRouter().setSmartModel(OPENAI_MODEL);
-        properties.getRouter().setSmartModelReasoning("high");
+        properties.getRouter().setSmartModelReasoning(REASONING_HIGH);
 
         when(llmPort.getProviderId()).thenReturn(PROVIDER_ID);
         when(llmPort.getCurrentModel()).thenReturn(MODEL_NAME);
@@ -425,7 +426,7 @@ class LlmExecutionSystemTest {
         AgentContext ctx = createContextWithTier("smart");
         system.process(ctx);
 
-        verify(llmPort).chat(argThat(req -> "high".equals(req.getReasoningEffort())));
+        verify(llmPort).chat(argThat(req -> REASONING_HIGH.equals(req.getReasoningEffort())));
     }
 
     @Test
@@ -460,7 +461,7 @@ class LlmExecutionSystemTest {
         LlmResponse response = LlmResponse.builder().content(null).toolCalls(toolCalls).build();
         when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(response));
 
-        AgentContext ctx = createContextWithTier(TIER_FAST);
+        AgentContext ctx = createContextWithTier(TIER_BALANCED);
         system.process(ctx);
 
         LlmResponse result = ctx.getAttribute(ATTR_LLM_RESPONSE);
@@ -478,7 +479,7 @@ class LlmExecutionSystemTest {
         LlmResponse response = LlmResponse.builder().content("Hi").usage(usage).build();
         when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(response));
 
-        AgentContext ctx = createContextWithTier(TIER_FAST);
+        AgentContext ctx = createContextWithTier(TIER_BALANCED);
         system.process(ctx);
 
         verify(usageTracker).recordUsage(eq(PROVIDER_ID), eq(MODEL_NAME), any(LlmUsage.class));
@@ -497,7 +498,7 @@ class LlmExecutionSystemTest {
                 .thenReturn(CompletableFuture.completedFuture(empty))
                 .thenReturn(CompletableFuture.completedFuture(good));
 
-        AgentContext ctx = createContextWithTier(TIER_FAST);
+        AgentContext ctx = createContextWithTier(TIER_BALANCED);
         system.process(ctx);
 
         LlmResponse result = ctx.getAttribute(ATTR_LLM_RESPONSE);
@@ -514,7 +515,7 @@ class LlmExecutionSystemTest {
         LlmResponse empty = LlmResponse.builder().content(null).build();
         when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(empty));
 
-        AgentContext ctx = createContextWithTier(TIER_FAST);
+        AgentContext ctx = createContextWithTier(TIER_BALANCED);
         system.process(ctx);
 
         assertNotNull(ctx.getAttribute(ATTR_LLM_ERROR));
@@ -530,7 +531,7 @@ class LlmExecutionSystemTest {
         when(llmPort.chat(any()))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("Connection refused")));
 
-        AgentContext ctx = createContextWithTier(TIER_FAST);
+        AgentContext ctx = createContextWithTier(TIER_BALANCED);
         system.process(ctx);
 
         assertNotNull(ctx.getAttribute(ATTR_LLM_ERROR));
@@ -569,7 +570,7 @@ class LlmExecutionSystemTest {
                 .session(AgentSession.builder().id("s1").chatId("ch1").channelType(CHANNEL_TYPE)
                         .messages(new ArrayList<>(messages)).metadata(metadata).build())
                 .messages(new ArrayList<>(messages))
-                .modelTier(TIER_FAST)
+                .modelTier(TIER_BALANCED)
                 .build();
 
         system.process(ctx);
@@ -610,7 +611,7 @@ class LlmExecutionSystemTest {
                 .messages(new ArrayList<>(List.of(
                         Message.builder().id(MSG_ID_1).role(ROLE_USER).content(CONTENT_HELLO).timestamp(Instant.now())
                                 .build())))
-                .modelTier(TIER_FAST)
+                .modelTier(TIER_BALANCED)
                 .build();
 
         system.flattenOnModelSwitch(context, OPENAI_MODEL);
@@ -647,7 +648,7 @@ class LlmExecutionSystemTest {
         AgentContext context = AgentContext.builder()
                 .session(session)
                 .messages(new ArrayList<>(messages))
-                .modelTier(TIER_FAST)
+                .modelTier(TIER_BALANCED)
                 .build();
 
         system.flattenOnModelSwitch(context, "new-model");
@@ -692,7 +693,7 @@ class LlmExecutionSystemTest {
         AgentContext context = AgentContext.builder()
                 .session(session)
                 .messages(new ArrayList<>(messages))
-                .modelTier(TIER_FAST)
+                .modelTier(TIER_BALANCED)
                 .build();
 
         system.flattenOnModelSwitch(context, OPENAI_MODEL);
@@ -731,7 +732,7 @@ class LlmExecutionSystemTest {
         AgentContext context = AgentContext.builder()
                 .session(session)
                 .messages(new ArrayList<>(messages))
-                .modelTier(TIER_FAST)
+                .modelTier(TIER_BALANCED)
                 .build();
 
         system.flattenOnModelSwitch(context, OPENAI_MODEL);
@@ -760,7 +761,7 @@ class LlmExecutionSystemTest {
         AgentContext context = AgentContext.builder()
                 .session(session)
                 .messages(new ArrayList<>(messages))
-                .modelTier(TIER_FAST)
+                .modelTier(TIER_BALANCED)
                 .build();
 
         system.flattenOnModelSwitch(context, OPENAI_MODEL);

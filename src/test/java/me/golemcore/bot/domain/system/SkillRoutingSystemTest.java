@@ -148,7 +148,7 @@ class SkillRoutingSystemTest {
         SkillMatchResult noMatch = SkillMatchResult.builder()
                 .selectedSkill(null)
                 .confidence(0.5)
-                .modelTier("fast")
+                .modelTier("balanced")
                 .reason("No match")
                 .build();
         when(skillMatcher.match(anyString(), anyList(), anyList()))
@@ -157,7 +157,7 @@ class SkillRoutingSystemTest {
         system.process(ctx);
 
         assertNull(ctx.getActiveSkill());
-        assertEquals("fast", ctx.getModelTier());
+        assertEquals("balanced", ctx.getModelTier());
     }
 
     @Test

@@ -86,6 +86,8 @@ import java.util.concurrent.TimeoutException;
 @Slf4j
 public class HybridSkillMatcher implements SkillMatcherPort {
 
+    private static final String TIER_BALANCED = "balanced";
+
     private final BotProperties properties;
     private final EmbeddingPort embeddingPort;
     private final SkillEmbeddingStore embeddingStore;
@@ -165,7 +167,7 @@ public class HybridSkillMatcher implements SkillMatcherPort {
                     return SkillMatchResult.builder()
                             .selectedSkill(null)
                             .confidence(1.0)
-                            .modelTier("fast")
+                            .modelTier(TIER_BALANCED)
                             .reason("No matching skills found")
                             .latencyMs(System.currentTimeMillis() - startTime)
                             .build();
@@ -227,7 +229,7 @@ public class HybridSkillMatcher implements SkillMatcherPort {
                 return SkillMatchResult.builder()
                         .selectedSkill(null)
                         .confidence(0)
-                        .modelTier("fast")
+                        .modelTier(TIER_BALANCED)
                         .reason("Error: " + e.getMessage())
                         .latencyMs(System.currentTimeMillis() - startTime)
                         .build();
@@ -280,7 +282,7 @@ public class HybridSkillMatcher implements SkillMatcherPort {
             SkillMatchResult result = SkillMatchResult.builder()
                     .selectedSkill(top.getName())
                     .confidence(top.getSemanticScore())
-                    .modelTier("balanced")
+                    .modelTier(TIER_BALANCED)
                     .reason("LLM classifier unavailable, semantic fallback")
                     .candidates(candidates)
                     .llmClassifierUsed(false)
@@ -297,7 +299,7 @@ public class HybridSkillMatcher implements SkillMatcherPort {
             SkillMatchResult result = SkillMatchResult.builder()
                     .selectedSkill(top.getName())
                     .confidence(top.getSemanticScore())
-                    .modelTier("balanced")
+                    .modelTier(TIER_BALANCED)
                     .reason("LLM classifier unavailable, semantic fallback")
                     .candidates(candidates)
                     .llmClassifierUsed(false)

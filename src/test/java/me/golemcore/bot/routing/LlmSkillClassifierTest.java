@@ -19,7 +19,7 @@ class LlmSkillClassifierTest {
 
     private static final String SKILL_CODE_REVIEW = "code-review";
     private static final String TIER_BALANCED = "balanced";
-    private static final String TIER_FAST = "fast";
+    private static final String TIER_BALANCED_FALLBACK = "balanced";
     private static final String TEST_MESSAGE = "Test message";
 
     private LlmSkillClassifier classifier;
@@ -94,7 +94,7 @@ class LlmSkillClassifierTest {
     @Test
     void classify_handlesNoneSkill() throws Exception {
         String jsonResponse = """
-                {"skill": "none", "confidence": 0.90, "model_tier": "fast", "reason": "No matching skill"}
+                {"skill": "none", "confidence": 0.90, "model_tier": "balanced", "reason": "No matching skill"}
                 """;
 
         when(mockLlmPort.chat(any(LlmRequest.class)))
@@ -107,7 +107,7 @@ class LlmSkillClassifierTest {
 
         assertNull(result.skill());
         assertEquals(0.90, result.confidence());
-        assertEquals(TIER_FAST, result.modelTier());
+        assertEquals(TIER_BALANCED_FALLBACK, result.modelTier());
     }
 
     @Test
@@ -209,7 +209,7 @@ class LlmSkillClassifierTest {
 
         assertNull(result.skill());
         assertEquals(0, result.confidence());
-        assertEquals(TIER_FAST, result.modelTier());
+        assertEquals(TIER_BALANCED_FALLBACK, result.modelTier());
     }
 
     @Test
@@ -224,8 +224,28 @@ class LlmSkillClassifierTest {
                 .join();
 
         assertNull(result.skill());
-        assertEquals(TIER_FAST, result.modelTier());
+        assertEquals(TIER_BALANCED_FALLBACK, result.modelTier());
         assertTrue(result.reason().contains("Parse failed"));
+    }
+
+    @Test
+    void classify_handlesDeepTier() throws Exception {
+        String jsonResponse = """
+                {"skill": "none", "confidence": 0.95, "model_tier": "deep", "reason": "PhD-level math proof required"}
+                """;
+
+        when(mockLlmPort.chat(any(LlmRequest.class)))
+                .thenReturn(CompletableFuture.completedFuture(
+                        LlmResponse.builder().content(jsonResponse).build()));
+
+        LlmSkillClassifier.ClassificationResult result = classifier
+                .classify("Prove Fermat's last theorem", List.of(), candidates, mockLlmPort)
+                .join();
+
+        assertNull(result.skill());
+        assertEquals(0.95, result.confidence());
+        assertEquals("deep", result.modelTier());
+        assertEquals("PhD-level math proof required", result.reason());
     }
 
     @Test

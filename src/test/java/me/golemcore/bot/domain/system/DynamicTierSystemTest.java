@@ -63,6 +63,12 @@ class DynamicTierSystemTest {
     }
 
     @Test
+    void shouldNotProcessWhenAlreadyDeep() {
+        AgentContext context = buildContext(1, "deep", List.of());
+        assertFalse(system.shouldProcess(context));
+    }
+
+    @Test
     void shouldProcessIteration1WithDefaultTier() {
         AgentContext context = buildContext(1, TIER_DEFAULT, List.of());
         assertTrue(system.shouldProcess(context));
@@ -148,7 +154,7 @@ class DynamicTierSystemTest {
                 Message.builder().role(ROLE_USER).content("Install express").build(),
                 Message.builder().role(ROLE_ASSISTANT).toolCalls(List.of(toolCall)).build());
 
-        AgentContext context = buildContext(1, "fast", messages);
+        AgentContext context = buildContext(1, "balanced", messages);
         AgentContext result = system.process(context);
 
         assertEquals(TIER_CODING, result.getModelTier());

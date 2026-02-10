@@ -16,7 +16,7 @@ class SkillMatchResultTest {
 
         assertNull(result.getSelectedSkill());
         assertEquals(1.0, result.getConfidence());
-        assertEquals("fast", result.getModelTier());
+        assertEquals("balanced", result.getModelTier());
         assertEquals("Test reason", result.getReason());
         assertFalse(result.hasMatch());
     }

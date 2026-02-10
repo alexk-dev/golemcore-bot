@@ -83,7 +83,8 @@ public class DynamicTierSystem implements AgentSystem {
     @Override
     public boolean shouldProcess(AgentContext context) {
         return context.getCurrentIteration() > 0
-                && !"coding".equals(context.getModelTier());
+                && !"coding".equals(context.getModelTier())
+                && !"deep".equals(context.getModelTier());
     }
 
     @Override

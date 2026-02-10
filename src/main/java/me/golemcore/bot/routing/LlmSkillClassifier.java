@@ -48,7 +48,7 @@ import java.util.regex.Pattern;
  * <ul>
  * <li>Analyze user intent and conversation context</li>
  * <li>Select the most appropriate skill from candidates</li>
- * <li>Determine the recommended model tier (fast/balanced/smart/coding)</li>
+ * <li>Determine the recommended model tier (balanced/smart/coding/deep)</li>
  * <li>Provide reasoning for the selection</li>
  * </ul>
  *
@@ -84,10 +84,10 @@ public class LlmSkillClassifier {
             1. Analyze the user's intent
             2. Select the BEST matching skill from candidates (or "none" if no skill fits)
             3. Determine the appropriate model tier:
-               - "fast": Simple tasks, greetings, quick answers, translations
-               - "balanced": Standard tasks, summarization, general questions
+               - "balanced": Standard tasks, greetings, quick answers, translations, summarization, general questions
                - "coding": Programming tasks: code generation, debugging, refactoring, code review, writing tests
                - "smart": Complex reasoning, architecture decisions, security analysis, multi-step planning
+               - "deep": PhD-level reasoning: mathematical proofs, scientific analysis, deep calculations, architectural planning before coding
             4. Respond ONLY with valid JSON (no markdown, no explanation):
 
             {"skill": "skill_name", "confidence": 0.95, "model_tier": "coding", "reason": "Brief explanation"}
@@ -158,7 +158,7 @@ public class LlmSkillClassifier {
                             DEFAULT_MODEL_TIER,
                             "Fallback to semantic match (LLM failed)");
                 }
-                return new ClassificationResult(null, 0, "fast", "No match found");
+                return new ClassificationResult(null, 0, DEFAULT_MODEL_TIER, "No match found");
             } catch (ExecutionException | TimeoutException e) {
                 log.warn("[Classifier] LLM classification FAILED: {}", e.getMessage());
                 // Fallback to top semantic candidate
@@ -171,7 +171,7 @@ public class LlmSkillClassifier {
                             DEFAULT_MODEL_TIER,
                             "Fallback to semantic match (LLM failed)");
                 }
-                return new ClassificationResult(null, 0, "fast", "No match found");
+                return new ClassificationResult(null, 0, DEFAULT_MODEL_TIER, "No match found");
             }
         });
     }
@@ -252,7 +252,7 @@ public class LlmSkillClassifier {
                         "Parse failed, using semantic top");
             }
 
-            return new ClassificationResult(null, 0, "fast", "Parse failed, no match");
+            return new ClassificationResult(null, 0, DEFAULT_MODEL_TIER, "Parse failed, no match");
         }
     }
 

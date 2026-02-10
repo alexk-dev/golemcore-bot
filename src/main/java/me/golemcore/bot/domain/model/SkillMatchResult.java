@@ -32,7 +32,7 @@ import java.util.List;
  * <ul>
  * <li>Selected skill - the best matching skill name (or null if no match)</li>
  * <li>Confidence - matching confidence score (0-1)</li>
- * <li>Model tier - recommended LLM tier (fast/balanced/smart/coding)</li>
+ * <li>Model tier - recommended LLM tier (balanced/smart/coding/deep)</li>
  * <li>Reason - explanation for the selection</li>
  * <li>Candidates - all candidates considered during matching</li>
  * <li>Performance metrics - latency, cache status, classifier usage</li>
@@ -60,7 +60,7 @@ public class SkillMatchResult {
     private double confidence;
 
     /**
-     * Recommended model tier: fast, balanced, smart, coding.
+     * Recommended model tier: balanced, smart, coding, deep.
      */
     private String modelTier;
 
@@ -98,7 +98,7 @@ public class SkillMatchResult {
         return SkillMatchResult.builder()
                 .selectedSkill(null)
                 .confidence(1.0)
-                .modelTier("fast")
+                .modelTier("balanced")
                 .reason(reason)
                 .build();
     }

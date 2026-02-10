@@ -143,7 +143,7 @@ public class AutoCompactionSystem implements AgentSystem {
     private String resolveModelName(String tier) {
         var router = properties.getRouter();
         return switch (tier != null ? tier : "balanced") {
-        case "fast" -> router.getFastModel();
+        case "deep" -> router.getDeepModel();
         case "coding" -> router.getCodingModel();
         case "smart" -> router.getSmartModel();
         default -> router.getDefaultModel();

@@ -264,12 +264,14 @@ public class BotProperties {
      * <p>
      * Model tiers (selected by SkillRoutingSystem based on task complexity):
      * <ul>
-     * <li><b>fast</b> - Simple tasks: greetings, short answers, translations, quick
-     * lookups</li>
-     * <li><b>default</b> - Standard tasks: general questions, summarization, basic
-     * coding</li>
-     * <li><b>smart</b> - Complex tasks: architecture decisions, deep analysis,
+     * <li><b>balanced</b> - Standard tasks: general questions, greetings,
+     * summarization, basic coding (default/fallback)</li>
+     * <li><b>smart</b> - Complex tasks: architecture decisions, analysis,
      * multi-step reasoning</li>
+     * <li><b>coding</b> - Programming tasks: code generation, debugging,
+     * refactoring</li>
+     * <li><b>deep</b> - PhD-level reasoning: mathematical proofs, scientific
+     * analysis, architectural planning before coding</li>
      * </ul>
      * <p>
      * Reasoning effort (low/medium/high) - required for gpt-5.1, controls thinking
@@ -281,10 +283,6 @@ public class BotProperties {
 
         /** Temperature for models that support it (0.0-2.0) */
         private double temperature = 0.7;
-
-        /** Simple tasks: greetings, short answers, translations */
-        private String fastModel = DEFAULT_GPT_5_1_MODEL;
-        private String fastModelReasoning = "low";
 
         /**
          * Standard tasks: general questions, summarization, basic coding (used as
@@ -300,6 +298,10 @@ public class BotProperties {
         /** Coding tasks: code generation, debugging, refactoring, code review */
         private String codingModel = "openai/gpt-5.2";
         private String codingModelReasoning = "medium";
+
+        /** PhD-level reasoning: proofs, scientific analysis, deep calculations */
+        private String deepModel = "openai/o3";
+        private String deepModelReasoning = "high";
 
         /**
          * Dynamically upgrade model tier to "coding" when coding activity is detected
