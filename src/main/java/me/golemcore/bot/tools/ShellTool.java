@@ -33,11 +33,21 @@ import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * Tool for executing shell commands within a sandboxed environment.
@@ -106,20 +116,26 @@ public class ShellTool implements ToolComponent {
             Pattern.compile("/etc/passwd"),
             Pattern.compile("/etc/shadow"));
 
+    private static final Set<String> DEFAULT_ALLOWED_ENV_VARS = Set.of(
+            "PATH", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TMPDIR",
+            "TZ", "SHELL", "USER", "LOGNAME");
+
     private final Path workspaceRoot;
     private final InjectionGuard injectionGuard;
     private final boolean enabled;
     private final int defaultTimeout;
     private final int maxTimeout;
+    private final Set<String> allowedEnvVars;
     private final ExecutorService executor;
 
     public ShellTool(BotProperties properties, InjectionGuard injectionGuard) {
-        var config = properties.getTools().getShell();
+        BotProperties.ShellToolProperties config = properties.getTools().getShell();
         this.enabled = config.isEnabled();
         this.defaultTimeout = config.getDefaultTimeout();
         this.maxTimeout = config.getMaxTimeout();
         this.workspaceRoot = Paths.get(config.getWorkspace()).toAbsolutePath().normalize();
         this.injectionGuard = injectionGuard;
+        this.allowedEnvVars = buildAllowedEnvVars(config.getAllowedEnvVars());
         this.executor = Executors.newCachedThreadPool();
 
         // Ensure workspace exists
@@ -287,6 +303,19 @@ public class ShellTool implements ToolComponent {
         return ToolResult.success("OK");
     }
 
+    private static Set<String> buildAllowedEnvVars(String configValue) {
+        if (configValue == null || configValue.isBlank()) {
+            return DEFAULT_ALLOWED_ENV_VARS;
+        }
+        Set<String> merged = new HashSet<>(DEFAULT_ALLOWED_ENV_VARS);
+        Set<String> custom = Arrays.stream(configValue.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .collect(Collectors.toSet());
+        merged.addAll(custom);
+        return Collections.unmodifiableSet(merged);
+    }
+
     private ToolResult executeCommand(String command, Path workDir, int timeoutSeconds) {
         ProcessBuilder pb = new ProcessBuilder();
 
@@ -303,9 +332,6 @@ public class ShellTool implements ToolComponent {
 
         // Sanitize environment: only keep safe vars, block LD_PRELOAD etc.
         Map<String, String> env = pb.environment();
-        Set<String> allowedEnvVars = Set.of(
-                "PATH", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TMPDIR",
-                "TZ", "SHELL", "USER", "LOGNAME");
         env.keySet().retainAll(allowedEnvVars);
         env.put("HOME", workspaceRoot.toString());
         env.put("PWD", workDir.toString());
