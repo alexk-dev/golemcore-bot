@@ -95,6 +95,8 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     private static final double BACKOFF_MULTIPLIER = 2.0;
     private static final String PROVIDER_ANTHROPIC = "anthropic";
     private static final String SCHEMA_KEY_PROPERTIES = "properties";
+    private static final java.util.regex.Pattern RESET_SECONDS_PATTERN = java.util.regex.Pattern
+            .compile("\"reset_seconds\"\\s*:\\s*(\\d+)");
 
     private final BotProperties properties;
     private final ModelConfigService modelConfig;
@@ -248,9 +250,14 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                     return convertResponse(response);
                 } catch (Exception e) {
                     if (isRateLimitError(e) && attempt < MAX_RETRIES) {
-                        long backoffMs = (long) (INITIAL_BACKOFF_MS * Math.pow(BACKOFF_MULTIPLIER, attempt));
-                        log.warn("[LLM] Rate limit hit (attempt {}/{}), retrying in {}ms...",
-                                attempt + 1, MAX_RETRIES, backoffMs);
+                        long exponentialBackoffMs = (long) (INITIAL_BACKOFF_MS * Math.pow(BACKOFF_MULTIPLIER, attempt));
+                        long resetSeconds = extractResetSeconds(e);
+                        long backoffMs = resetSeconds > 0
+                                ? Math.max(resetSeconds * 1000 + 1000, exponentialBackoffMs)
+                                : exponentialBackoffMs;
+                        log.warn("[LLM] Rate limit hit (attempt {}/{}), retrying in {}ms{}...",
+                                attempt + 1, MAX_RETRIES, backoffMs,
+                                resetSeconds > 0 ? " (server requested " + resetSeconds + "s)" : "");
                         try {
                             Thread.sleep(backoffMs);
                         } catch (InterruptedException ie) {
@@ -271,15 +278,43 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         // Walk the cause chain looking for rate limit indicators
         Throwable current = e;
         while (current != null) {
+            // langchain4j maps HTTP 429 to RateLimitException regardless of body content
+            if (current instanceof dev.langchain4j.exception.RateLimitException) {
+                return true;
+            }
             String msg = current.getMessage();
             if (msg != null && (msg.contains("rate_limit") || msg.contains("token_quota_exceeded")
                     || msg.contains("too_many_tokens") || msg.contains("Too Many Requests")
-                    || msg.contains("429"))) {
+                    || msg.contains("429") || msg.contains("model_cooldown")
+                    || msg.contains("cooling down"))) {
                 return true;
             }
             current = current.getCause();
         }
         return false;
+    }
+
+    /**
+     * Extract reset_seconds from rate limit error JSON body (e.g. cli-proxy-api
+     * cooldown). Returns -1 if not found.
+     */
+    private long extractResetSeconds(Throwable e) {
+        Throwable current = e;
+        while (current != null) {
+            String msg = current.getMessage();
+            if (msg != null && msg.contains("reset_seconds")) {
+                java.util.regex.Matcher matcher = RESET_SECONDS_PATTERN.matcher(msg);
+                if (matcher.find()) {
+                    try {
+                        return Long.parseLong(matcher.group(1));
+                    } catch (NumberFormatException ignored) {
+                        // fall through
+                    }
+                }
+            }
+            current = current.getCause();
+        }
+        return -1;
     }
 
     private ChatModel getModelForRequest(LlmRequest request) {
