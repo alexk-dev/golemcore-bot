@@ -376,6 +376,8 @@ public class BotProperties {
         private BraveSearchToolProperties braveSearch = new BraveSearchToolProperties();
         private GoalManagementToolProperties goalManagement = new GoalManagementToolProperties();
         private SkillTransitionToolProperties skillTransition = new SkillTransitionToolProperties();
+        private ImapToolProperties imap = new ImapToolProperties();
+        private SmtpToolProperties smtp = new SmtpToolProperties();
     }
 
     @Data
@@ -413,6 +415,32 @@ public class BotProperties {
     @Data
     public static class SkillTransitionToolProperties {
         private boolean enabled = true;
+    }
+
+    @Data
+    public static class ImapToolProperties {
+        private boolean enabled = false;
+        private String host = "";
+        private int port = 993;
+        private String username = "";
+        private String password = "";
+        private String security = "ssl";
+        private int connectTimeout = 10000;
+        private int readTimeout = 30000;
+        private int maxBodyLength = 50000;
+        private int defaultMessageLimit = 20;
+    }
+
+    @Data
+    public static class SmtpToolProperties {
+        private boolean enabled = false;
+        private String host = "";
+        private int port = 587;
+        private String username = "";
+        private String password = "";
+        private String security = "starttls";
+        private int connectTimeout = 10000;
+        private int readTimeout = 30000;
     }
 
     // ==================== MCP CLIENT ====================
