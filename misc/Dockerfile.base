@@ -1,0 +1,65 @@
+# GolemCore Bot — multiarch base image (amd64 + arm64)
+# Build:
+#   docker buildx build --platform linux/amd64,linux/arm64 \
+#     -t ghcr.io/alexk-dev/java-ai-bot-base:latest --push -f misc/Dockerfile.base misc/
+FROM ubuntu:24.04
+
+LABEL org.opencontainers.image.description="GolemCore Bot base image with JRE 17, Node.js 22, Python 3, Chromium, CLI tools"
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# ── 1. Core packages + Adoptium JRE 17 ──────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl wget gnupg apt-transport-https software-properties-common \
+        git jq tree zip unzip procps make tini \
+    && install -m 0755 -d /etc/apt/keyrings \
+    # Adoptium (Eclipse Temurin JRE 17)
+    && curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public \
+       | gpg --dearmor -o /etc/apt/keyrings/adoptium.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/adoptium.gpg] \
+       https://packages.adoptium.net/artifactory/deb $(. /etc/os-release && echo $VERSION_CODENAME) main" \
+       > /etc/apt/sources.list.d/adoptium.list \
+    && apt-get update && apt-get install -y --no-install-recommends temurin-17-jre \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── 2. Node.js 22 LTS ───────────────────────────────────────────────────────
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── 3. Python 3 + pip + native build deps ───────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3 python3-pip python3-venv python3-dev gcc g++ \
+    && pip3 install --no-cache-dir --break-system-packages \
+        pandas numpy scipy scikit-learn matplotlib \
+        requests pyyaml httpx rich loguru tenacity pydantic python-dotenv uv \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── 4. CLI tools: gh, ripgrep, fd-find, yq ──────────────────────────────────
+RUN ARCH=$(dpkg --print-architecture) \
+    # GitHub CLI
+    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+       | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=${ARCH} signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] \
+       https://cli.github.com/packages stable main" \
+       > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update && apt-get install -y --no-install-recommends \
+       gh ripgrep fd-find \
+    # yq (binary release — not in Ubuntu repos)
+    && YQ_ARCH=$([ "${ARCH}" = "amd64" ] && echo "amd64" || echo "arm64") \
+    && curl -fsSL "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${YQ_ARCH}" \
+       -o /usr/local/bin/yq && chmod +x /usr/local/bin/yq \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── 5. Chromium via Playwright CLI ──────────────────────────────────────────
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
+RUN npx playwright@1.49.0 install --with-deps chromium \
+    && rm -rf /root/.npm /tmp/npx*
+
+# ── 6. Non-root user ────────────────────────────────────────────────────────
+RUN useradd -m -s /bin/bash botuser \
+    && mkdir -p /home/botuser/.golemcore/workspace /home/botuser/.golemcore/sandbox \
+    && chown -R botuser:botuser /home/botuser/.golemcore
+
+USER botuser
+WORKDIR /home/botuser
