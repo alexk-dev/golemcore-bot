@@ -395,6 +395,7 @@ public class BotProperties {
         private String workspace = "${user.home}/.golemcore/sandbox";
         private int defaultTimeout = 30;
         private int maxTimeout = 300;
+        private String allowedEnvVars = "";
     }
 
     @Data

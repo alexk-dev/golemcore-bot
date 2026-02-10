@@ -312,4 +312,50 @@ class ShellToolTest {
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("Missing"));
     }
+
+    // ===== Configurable env var whitelist =====
+
+    @Test
+    @DisabledOnOs(OS.WINDOWS)
+    void shouldPreserveDefaultEnvVarsInProcess() throws Exception {
+        // PATH is in the default allowed set and should be preserved
+        ToolResult result = tool.execute(Map.of(COMMAND, "env")).get();
+        assertTrue(result.isSuccess());
+        assertTrue(result.getOutput().contains("PATH="));
+    }
+
+    @Test
+    @DisabledOnOs(OS.WINDOWS)
+    void shouldStripEnvVarsNotInWhitelist() throws Exception {
+        // LD_PRELOAD is NOT in the allowed set and should be stripped
+        ToolResult result = tool.execute(Map.of(COMMAND, "env")).get();
+        assertTrue(result.isSuccess());
+        assertFalse(result.getOutput().contains("LD_PRELOAD="));
+    }
+
+    @Test
+    @DisabledOnOs(OS.WINDOWS)
+    void shouldPreserveDefaultEnvVarsWithEmptyConfig() throws Exception {
+        BotProperties props = createTestProperties(tempDir.toString(), true);
+        props.getTools().getShell().setAllowedEnvVars("");
+        ShellTool defaultTool = new ShellTool(props, new InjectionGuard());
+
+        // PATH should still be available with empty custom config
+        ToolResult result = defaultTool.execute(Map.of(COMMAND, "env")).get();
+        assertTrue(result.isSuccess());
+        assertTrue(result.getOutput().contains("PATH="));
+    }
+
+    @Test
+    @DisabledOnOs(OS.WINDOWS)
+    void shouldHandleWhitespaceInAllowedEnvVars() throws Exception {
+        BotProperties props = createTestProperties(tempDir.toString(), true);
+        props.getTools().getShell().setAllowedEnvVars(" MY_CUSTOM_VAR , JAVA_HOME , ");
+        ShellTool customTool = new ShellTool(props, new InjectionGuard());
+
+        // Tool should initialize and work correctly with whitespace-padded config
+        ToolResult result = customTool.execute(Map.of(COMMAND, "echo ok")).get();
+        assertTrue(result.isSuccess());
+        assertTrue(result.getOutput().contains("ok"));
+    }
 }
