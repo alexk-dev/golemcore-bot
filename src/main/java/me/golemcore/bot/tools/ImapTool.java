@@ -205,7 +205,8 @@ public class ImapTool implements ToolComponent {
         Session session = MailSessionFactory.createImapSession(
                 config.getHost(), config.getPort(),
                 config.getUsername(), config.getPassword(),
-                security, config.getConnectTimeout(), config.getReadTimeout());
+                security, config.getSslTrust(),
+                config.getConnectTimeout(), config.getReadTimeout());
 
         String protocol = (security == MailSecurity.SSL) ? "imaps" : "imap";
         Store store = session.getStore(protocol);

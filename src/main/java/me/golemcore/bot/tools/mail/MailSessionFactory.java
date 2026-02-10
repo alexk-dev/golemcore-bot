@@ -52,6 +52,9 @@ public final class MailSessionFactory {
      *            authentication password
      * @param security
      *            connection security mode
+     * @param sslTrust
+     *            SSL trust setting — empty for strict verification, "*" to trust
+     *            all, or space-separated hostnames
      * @param connectTimeout
      *            connection timeout in milliseconds
      * @param readTimeout
@@ -59,7 +62,7 @@ public final class MailSessionFactory {
      * @return configured Mail Session
      */
     public static Session createImapSession(String host, int port, String username, String password,
-            MailSecurity security, int connectTimeout, int readTimeout) {
+            MailSecurity security, String sslTrust, int connectTimeout, int readTimeout) {
 
         Properties props = new Properties();
         String protocol = (security == MailSecurity.SSL) ? "imaps" : "imap";
@@ -76,7 +79,10 @@ public final class MailSessionFactory {
         } else if (security == MailSecurity.STARTTLS) {
             props.put(MAIL_PREFIX + "imap.starttls.enable", TRUE_VALUE);
             props.put(MAIL_PREFIX + "imap.starttls.required", TRUE_VALUE);
-            props.put(MAIL_PREFIX + "imap.ssl.trust", "*");
+        }
+
+        if (sslTrust != null && !sslTrust.isBlank()) {
+            props.put(prefix + "ssl.trust", sslTrust);
         }
 
         return Session.getInstance(props, createAuthenticator(username, password));
@@ -95,6 +101,9 @@ public final class MailSessionFactory {
      *            authentication password
      * @param security
      *            connection security mode
+     * @param sslTrust
+     *            SSL trust setting — empty for strict verification, "*" to trust
+     *            all, or space-separated hostnames
      * @param connectTimeout
      *            connection timeout in milliseconds
      * @param readTimeout
@@ -102,7 +111,7 @@ public final class MailSessionFactory {
      * @return configured Mail Session
      */
     public static Session createSmtpSession(String host, int port, String username, String password,
-            MailSecurity security, int connectTimeout, int readTimeout) {
+            MailSecurity security, String sslTrust, int connectTimeout, int readTimeout) {
 
         Properties props = new Properties();
         String protocol = (security == MailSecurity.SSL) ? "smtps" : "smtp";
@@ -120,7 +129,10 @@ public final class MailSessionFactory {
         } else if (security == MailSecurity.STARTTLS) {
             props.put(MAIL_PREFIX + "smtp.starttls.enable", TRUE_VALUE);
             props.put(MAIL_PREFIX + "smtp.starttls.required", TRUE_VALUE);
-            props.put(MAIL_PREFIX + "smtp.ssl.trust", "*");
+        }
+
+        if (sslTrust != null && !sslTrust.isBlank()) {
+            props.put(prefix + "ssl.trust", sslTrust);
         }
 
         return Session.getInstance(props, createAuthenticator(username, password));

@@ -214,7 +214,8 @@ public class SmtpTool implements ToolComponent {
         Session session = MailSessionFactory.createSmtpSession(
                 config.getHost(), config.getPort(),
                 config.getUsername(), config.getPassword(),
-                security, config.getConnectTimeout(), config.getReadTimeout());
+                security, config.getSslTrust(),
+                config.getConnectTimeout(), config.getReadTimeout());
 
         MimeMessage message = new MimeMessage(session);
         message.setFrom(new InternetAddress(config.getUsername()));

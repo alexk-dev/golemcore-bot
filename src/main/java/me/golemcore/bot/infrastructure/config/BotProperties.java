@@ -425,6 +425,7 @@ public class BotProperties {
         private String username = "";
         private String password = "";
         private String security = "ssl";
+        private String sslTrust = "";
         private int connectTimeout = 10000;
         private int readTimeout = 30000;
         private int maxBodyLength = 50000;
@@ -439,6 +440,7 @@ public class BotProperties {
         private String username = "";
         private String password = "";
         private String security = "starttls";
+        private String sslTrust = "";
         private int connectTimeout = 10000;
         private int readTimeout = 30000;
     }
