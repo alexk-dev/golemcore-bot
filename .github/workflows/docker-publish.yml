@@ -102,8 +102,9 @@ jobs:
           ./mvnw clean verify sonar:sonar
           -DskipGitHooks=true
 
-  build-and-push:
-    name: Push to GHCR
+  # ── Build per-arch app images via Jib ────────────────────────────────────
+  build-app-images:
+    name: App (${{ matrix.arch }})
     runs-on: ubuntu-latest
     needs: [test, code-quality]
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
@@ -111,6 +112,10 @@ jobs:
     permissions:
       contents: read
       packages: write
+
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
 
     steps:
       - name: Checkout
@@ -127,38 +132,84 @@ jobs:
         id: tags
         run: |
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          APP_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          ARCH="${{ matrix.arch }}"
+
+          echo "app-image=${APP_IMAGE}" >> $GITHUB_OUTPUT
+          echo "sha-arch-tag=${SHORT_SHA}-${ARCH}" >> $GITHUB_OUTPUT
+
           if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            echo "tags=latest,${SHORT_SHA}" >> $GITHUB_OUTPUT
-            echo "image=${IMAGE}:${SHORT_SHA}" >> $GITHUB_OUTPUT
+            echo "jib-tags=${SHORT_SHA}-${ARCH},latest-${ARCH}" >> $GITHUB_OUTPUT
           else
-            echo "tags=dev-${SHORT_SHA}" >> $GITHUB_OUTPUT
-            echo "image=${IMAGE}:dev-${SHORT_SHA}" >> $GITHUB_OUTPUT
+            echo "jib-tags=${SHORT_SHA}-${ARCH}" >> $GITHUB_OUTPUT
           fi
 
-      - name: Build and push image to GHCR
+      - name: Build and push app image (${{ matrix.arch }})
         run: |
           ./mvnw compile jib:build \
             -DskipTests \
             -DskipGitHooks=true \
-            -Djib.target.image=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }} \
-            -Djib.to.tags=${{ steps.tags.outputs.tags }} \
+            -Djib.from.image=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-base:latest \
+            -Djib.platform.arch=${{ matrix.arch }} \
+            -Djib.target.image=${{ steps.tags.outputs.app-image }} \
+            -Djib.to.tags=${{ steps.tags.outputs.jib-tags }} \
             -Djib.to.auth.username=${{ github.actor }} \
             -Djib.to.auth.password=${{ secrets.GITHUB_TOKEN }}
 
+  # ── Stitch multiarch manifest ────────────────────────────────────────────
+  create-manifest:
+    name: Multiarch Manifest
+    runs-on: ubuntu-latest
+    needs: [build-app-images]
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push multiarch manifest
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+
+          # SHA-tagged manifest
+          docker manifest create "${IMAGE}:${SHORT_SHA}" \
+            "${IMAGE}:${SHORT_SHA}-amd64" \
+            "${IMAGE}:${SHORT_SHA}-arm64"
+          docker manifest push "${IMAGE}:${SHORT_SHA}"
+
+          # Latest manifest (main branch only)
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            docker manifest create "${IMAGE}:latest" \
+              "${IMAGE}:latest-amd64" \
+              "${IMAGE}:latest-arm64"
+            docker manifest push "${IMAGE}:latest"
+          fi
+
       - name: Job Summary
         run: |
-          echo "## Docker Image Published" >> $GITHUB_STEP_SUMMARY
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+
+          echo "## Multiarch Docker Image Published" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Image** | \`${{ steps.tags.outputs.image }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Tags** | \`${{ steps.tags.outputs.tags }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Registry** | ${{ env.REGISTRY }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Image** | \`${IMAGE}:${SHORT_SHA}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Architectures** | \`amd64\`, \`arm64\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Base image** | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-base:latest\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Branch** | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Commit** | \`$(echo "${{ github.sha }}" | cut -c1-7)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit** | \`${SHORT_SHA}\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Pull command" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ steps.tags.outputs.image }}" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${IMAGE}:${SHORT_SHA}" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

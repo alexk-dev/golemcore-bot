@@ -36,6 +36,8 @@
         <jacoco.version>0.8.14</jacoco.version>
         <jib.version>3.5.1</jib.version>
         <jib.target.image>ghcr.io/${env.GITHUB_REPOSITORY}</jib.target.image>
+        <jib.from.image>ghcr.io/alexk-dev/java-ai-bot-base:latest</jib.from.image>
+        <jib.platform.arch>amd64</jib.platform.arch>
 
         <!-- SonarCloud -->
         <sonar.organization>alexk-dev</sonar.organization>
@@ -289,19 +291,34 @@
                 <version>${jib.version}</version>
                 <configuration>
                     <from>
-                        <image>eclipse-temurin:17-jre-jammy</image>
+                        <image>${jib.from.image}</image>
+                        <platforms>
+                            <platform>
+                                <architecture>${jib.platform.arch}</architecture>
+                                <os>linux</os>
+                            </platform>
+                        </platforms>
                     </from>
                     <to>
                         <image>${jib.target.image}</image>
                     </to>
                     <container>
+                        <entrypoint>
+                            <arg>/usr/bin/tini</arg>
+                            <arg>--</arg>
+                            <arg>java</arg>
+                            <arg>-cp</arg>
+                            <arg>@/app/jib-classpath-file</arg>
+                            <arg>me.golemcore.bot.BotApplication</arg>
+                        </entrypoint>
                         <environment>
                             <JAVA_TOOL_OPTIONS>-XX:+UseG1GC -XX:MaxRAMPercentage=75.0</JAVA_TOOL_OPTIONS>
+                            <PLAYWRIGHT_BROWSERS_PATH>/opt/playwright</PLAYWRIGHT_BROWSERS_PATH>
                         </environment>
-                        <mainClass>me.golemcore.bot.BotApplication</mainClass>
                         <ports>
                             <port>8080</port>
                         </ports>
+                        <user>botuser</user>
                         <creationTime>USE_CURRENT_TIMESTAMP</creationTime>
                     </container>
                 </configuration>

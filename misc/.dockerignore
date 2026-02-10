@@ -1,0 +1,4 @@
+# Only misc/ is used as Docker context for the base image build.
+# Exclude everything except the Dockerfile itself.
+*
+!Dockerfile.base
