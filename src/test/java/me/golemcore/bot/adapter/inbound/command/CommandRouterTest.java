@@ -7,13 +7,16 @@ import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.DiaryEntry;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.UsageStats;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.CompactionService;
+import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.port.inbound.CommandPort;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,6 +29,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -33,6 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -51,6 +56,11 @@ class CommandRouterTest {
     private static final String CMD_GOALS = "goals";
     private static final String CMD_GOAL = "goal";
     private static final String CMD_DIARY = "diary";
+    private static final String CMD_SCHEDULE = "schedule";
+    private static final String TEST_GOAL_ID = "goal-abc";
+    private static final String TEST_GOAL_TITLE = "Test";
+    private static final String TEST_TASK_ID = "task-xyz";
+    private static final String TEST_SCHED_ID = "sched-goal-abc";
 
     private SkillComponent skillComponent;
     private SessionPort sessionService;
@@ -58,6 +68,7 @@ class CommandRouterTest {
     private UserPreferencesService preferencesService;
     private CompactionService compactionService;
     private AutoModeService autoModeService;
+    private ScheduleService scheduleService;
     private ApplicationEventPublisher eventPublisher;
     private CommandRouter router;
 
@@ -96,6 +107,7 @@ class CommandRouterTest {
         });
 
         autoModeService = mock(AutoModeService.class);
+        scheduleService = mock(ScheduleService.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
 
         ToolComponent tool1 = mockTool("filesystem", "File system operations", true);
@@ -112,6 +124,7 @@ class CommandRouterTest {
                 preferencesService,
                 compactionService,
                 autoModeService,
+                scheduleService,
                 eventPublisher,
                 properties);
     }
@@ -140,13 +153,14 @@ class CommandRouterTest {
         assertTrue(router.hasCommand(CMD_GOAL));
         assertTrue(router.hasCommand(CMD_DIARY));
         assertTrue(router.hasCommand("tasks"));
+        assertTrue(router.hasCommand(CMD_SCHEDULE));
         assertFalse(router.hasCommand("unknown"));
         assertFalse(router.hasCommand("settings"));
     }
 
     @Test
     void listCommands() {
-        var commands = router.listCommands();
+        List<CommandPort.CommandDefinition> commands = router.listCommands();
         assertEquals(7, commands.size());
     }
 
@@ -156,7 +170,7 @@ class CommandRouterTest {
                 Skill.builder().name("greeting").description("Greets users").available(true).build(),
                 Skill.builder().name("code-review").description("Reviews code").available(true).build()));
 
-        var result = router.execute("skills", List.of(), CTX).get();
+        CommandPort.CommandResult result = router.execute("skills", List.of(), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("greeting"));
         assertTrue(result.output().contains("code-review"));
@@ -166,14 +180,14 @@ class CommandRouterTest {
     void skillsCommandEmpty() throws Exception {
         when(skillComponent.getAvailableSkills()).thenReturn(List.of());
 
-        var result = router.execute("skills", List.of(), CTX).get();
+        CommandPort.CommandResult result = router.execute("skills", List.of(), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.skills.empty"));
     }
 
     @Test
     void toolsCommand() throws Exception {
-        var result = router.execute("tools", List.of(), CTX).get();
+        CommandPort.CommandResult result = router.execute("tools", List.of(), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("filesystem"));
         assertTrue(result.output().contains("shell"));
@@ -192,7 +206,7 @@ class CommandRouterTest {
         when(usageTracker.getStatsByModel(any(Duration.class)))
                 .thenReturn(byModel);
 
-        var result = router.execute("status", List.of(), CTX).get();
+        CommandPort.CommandResult result = router.execute("status", List.of(), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("42"));
         assertTrue(result.output().contains("gpt-5.1"));
@@ -208,7 +222,7 @@ class CommandRouterTest {
         when(usageTracker.getStatsByModel(any(Duration.class)))
                 .thenReturn(Collections.emptyMap());
 
-        var result = router.execute("status", List.of(), CTX).get();
+        CommandPort.CommandResult result = router.execute("status", List.of(), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("3"));
         assertTrue(result.output().contains("command.status.usage.empty"));
@@ -216,34 +230,32 @@ class CommandRouterTest {
 
     @Test
     void newCommand() throws Exception {
-        var result = router.execute("new", List.of(), CTX).get();
+        CommandPort.CommandResult result = router.execute("new", List.of(), CTX).get();
         assertTrue(result.success());
         verify(sessionService).clearMessages(SESSION_ID);
     }
 
     @Test
     void resetCommand() throws Exception {
-        var result = router.execute("reset", List.of(), CTX).get();
+        CommandPort.CommandResult result = router.execute("reset", List.of(), CTX).get();
         assertTrue(result.success());
         verify(sessionService).clearMessages(SESSION_ID);
     }
 
     @Test
     void compactWithSummary() throws Exception {
-        // Messages to be compacted
         List<Message> oldMessages = List.of(
                 Message.builder().role("user").content("Hello").timestamp(Instant.now()).build(),
                 Message.builder().role("assistant").content("Hi there!").timestamp(Instant.now()).build());
         when(sessionService.getMessagesToCompact(SESSION_ID, 10)).thenReturn(oldMessages);
 
-        // LLM returns a summary
         when(compactionService.summarize(oldMessages)).thenReturn("User greeted the bot.");
         Message summaryMsg = Message.builder().role("system").content("[Conversation summary]\nUser greeted the bot.")
                 .build();
         when(compactionService.createSummaryMessage("User greeted the bot.")).thenReturn(summaryMsg);
         when(sessionService.compactWithSummary(SESSION_ID, 10, summaryMsg)).thenReturn(20);
 
-        var result = router.execute(CMD_COMPACT, List.of(), CTX).get();
+        CommandPort.CommandResult result = router.execute(CMD_COMPACT, List.of(), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("20"));
         assertTrue(result.output().contains("command.compact.done.summary"));
@@ -253,16 +265,14 @@ class CommandRouterTest {
 
     @Test
     void compactFallbackWhenLlmUnavailable() throws Exception {
-        // Messages exist to compact
         List<Message> oldMessages = List.of(
                 Message.builder().role("user").content("Hello").timestamp(Instant.now()).build());
         when(sessionService.getMessagesToCompact(SESSION_ID, 10)).thenReturn(oldMessages);
 
-        // LLM returns null (unavailable)
         when(compactionService.summarize(oldMessages)).thenReturn(null);
         when(sessionService.compactMessages(SESSION_ID, 10)).thenReturn(15);
 
-        var result = router.execute(CMD_COMPACT, List.of(), CTX).get();
+        CommandPort.CommandResult result = router.execute(CMD_COMPACT, List.of(), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("15"));
         assertTrue(result.output().contains("command.compact.done "));
@@ -278,7 +288,7 @@ class CommandRouterTest {
         when(compactionService.summarize(oldMessages)).thenReturn(null);
         when(sessionService.compactMessages(SESSION_ID, 5)).thenReturn(15);
 
-        var result = router.execute(CMD_COMPACT, List.of("5"), CTX).get();
+        CommandPort.CommandResult result = router.execute(CMD_COMPACT, List.of("5"), CTX).get();
         assertTrue(result.success());
         verify(sessionService).compactMessages(SESSION_ID, 5);
     }
@@ -288,21 +298,21 @@ class CommandRouterTest {
         when(sessionService.getMessagesToCompact(SESSION_ID, 10)).thenReturn(List.of());
         when(sessionService.getMessageCount(SESSION_ID)).thenReturn(5);
 
-        var result = router.execute(CMD_COMPACT, List.of(), CTX).get();
+        CommandPort.CommandResult result = router.execute(CMD_COMPACT, List.of(), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.compact.nothing"));
     }
 
     @Test
     void helpCommand() throws Exception {
-        var result = router.execute("help", List.of(), CTX).get();
+        CommandPort.CommandResult result = router.execute("help", List.of(), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.help.text"));
     }
 
     @Test
     void unknownCommand() throws Exception {
-        var result = router.execute("foobar", List.of(), CTX).get();
+        CommandPort.CommandResult result = router.execute("foobar", List.of(), CTX).get();
         assertFalse(result.success());
         assertTrue(result.output().contains("command.unknown"));
     }
@@ -318,7 +328,7 @@ class CommandRouterTest {
     void autoOnEnablesAutoMode() throws Exception {
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
 
-        var result = router.execute(CMD_AUTO, List.of("on"), CTX_WITH_CHANNEL).get();
+        CommandPort.CommandResult result = router.execute(CMD_AUTO, List.of("on"), CTX_WITH_CHANNEL).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.auto.enabled"));
         verify(autoModeService).enableAutoMode();
@@ -329,7 +339,7 @@ class CommandRouterTest {
     void autoOffDisablesAutoMode() throws Exception {
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
 
-        var result = router.execute(CMD_AUTO, List.of("off"), CTX_WITH_CHANNEL).get();
+        CommandPort.CommandResult result = router.execute(CMD_AUTO, List.of("off"), CTX_WITH_CHANNEL).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.auto.disabled"));
         verify(autoModeService).disableAutoMode();
@@ -340,7 +350,7 @@ class CommandRouterTest {
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
         when(autoModeService.isAutoModeEnabled()).thenReturn(true);
 
-        var result = router.execute(CMD_AUTO, List.of(), CTX).get();
+        CommandPort.CommandResult result = router.execute(CMD_AUTO, List.of(), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.auto.status"));
         assertTrue(result.output().contains("ON"));
@@ -350,7 +360,7 @@ class CommandRouterTest {
     void autoReturnsNotAvailableWhenDisabled() throws Exception {
         when(autoModeService.isFeatureEnabled()).thenReturn(false);
 
-        var result = router.execute(CMD_AUTO, List.of("on"), CTX).get();
+        CommandPort.CommandResult result = router.execute(CMD_AUTO, List.of("on"), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.auto.not-available"));
     }
@@ -359,7 +369,7 @@ class CommandRouterTest {
     void autoInvalidSubcommand() throws Exception {
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
 
-        var result = router.execute(CMD_AUTO, List.of("invalid"), CTX).get();
+        CommandPort.CommandResult result = router.execute(CMD_AUTO, List.of("invalid"), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.auto.usage"));
     }
@@ -375,7 +385,7 @@ class CommandRouterTest {
                                 .build()))
                         .build()));
 
-        var result = router.execute(CMD_GOALS, List.of(), CTX).get();
+        CommandPort.CommandResult result = router.execute(CMD_GOALS, List.of(), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("Build API"));
         assertTrue(result.output().contains("ACTIVE"));
@@ -386,7 +396,7 @@ class CommandRouterTest {
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
         when(autoModeService.getGoals()).thenReturn(List.of());
 
-        var result = router.execute(CMD_GOALS, List.of(), CTX).get();
+        CommandPort.CommandResult result = router.execute(CMD_GOALS, List.of(), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.goals.empty"));
     }
@@ -400,7 +410,7 @@ class CommandRouterTest {
                 .thenReturn(
                         Goal.builder().title("Build REST API").status(Goal.GoalStatus.ACTIVE).tasks(List.of()).build());
 
-        var result = router.execute(CMD_GOAL, List.of("Build", "REST", "API"), CTX).get();
+        CommandPort.CommandResult result = router.execute(CMD_GOAL, List.of("Build", "REST", "API"), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.goal.created"));
     }
@@ -409,7 +419,7 @@ class CommandRouterTest {
     void goalWithoutArgsShowsEmpty() throws Exception {
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
 
-        var result = router.execute(CMD_GOAL, List.of(), CTX).get();
+        CommandPort.CommandResult result = router.execute(CMD_GOAL, List.of(), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.goals.empty"));
     }
@@ -420,7 +430,7 @@ class CommandRouterTest {
         when(autoModeService.createGoal(anyString(), any()))
                 .thenThrow(new IllegalStateException("Max goals reached"));
 
-        var result = router.execute(CMD_GOAL, List.of("Another", "goal"), CTX).get();
+        CommandPort.CommandResult result = router.execute(CMD_GOAL, List.of("Another", CMD_GOAL), CTX).get();
         assertFalse(result.success());
         assertTrue(result.output().contains("command.goal.limit"));
     }
@@ -437,7 +447,7 @@ class CommandRouterTest {
                         AutoTask.builder().title("Implement").status(AutoTask.TaskStatus.IN_PROGRESS).order(2).build()))
                         .build()));
 
-        var result = router.execute("tasks", List.of(), CTX).get();
+        CommandPort.CommandResult result = router.execute("tasks", List.of(), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("Design endpoints"));
         assertTrue(result.output().contains("Implement"));
@@ -448,7 +458,7 @@ class CommandRouterTest {
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
         when(autoModeService.getGoals()).thenReturn(List.of());
 
-        var result = router.execute("tasks", List.of(), CTX).get();
+        CommandPort.CommandResult result = router.execute("tasks", List.of(), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.tasks.empty"));
     }
@@ -465,7 +475,7 @@ class CommandRouterTest {
                         .timestamp(Instant.parse("2026-02-07T10:00:00Z"))
                         .build()));
 
-        var result = router.execute(CMD_DIARY, List.of(), CTX).get();
+        CommandPort.CommandResult result = router.execute(CMD_DIARY, List.of(), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("Started working on API design"));
         assertTrue(result.output().contains("OBSERVATION"));
@@ -485,7 +495,7 @@ class CommandRouterTest {
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
         when(autoModeService.getRecentDiary(10)).thenReturn(List.of());
 
-        var result = router.execute(CMD_DIARY, List.of(), CTX).get();
+        CommandPort.CommandResult result = router.execute(CMD_DIARY, List.of(), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.diary.empty"));
     }
@@ -526,11 +536,12 @@ class CommandRouterTest {
     void listCommandsIncludesAutoWhenEnabled() {
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
 
-        var commands = router.listCommands();
+        List<CommandPort.CommandDefinition> commands = router.listCommands();
         assertTrue(commands.stream().anyMatch(c -> CMD_AUTO.equals(c.name())));
         assertTrue(commands.stream().anyMatch(c -> CMD_GOALS.equals(c.name())));
         assertTrue(commands.stream().anyMatch(c -> CMD_DIARY.equals(c.name())));
-        assertEquals(12, commands.size());
+        assertTrue(commands.stream().anyMatch(c -> CMD_SCHEDULE.equals(c.name())));
+        assertEquals(13, commands.size());
     }
 
     // ===== formatTokens =====
@@ -548,5 +559,209 @@ class CommandRouterTest {
     @Test
     void formatTokensSmall() {
         assertEquals("999", CommandRouter.formatTokens(999));
+    }
+
+    // ===== Schedule commands =====
+
+    @Test
+    void shouldHandleScheduleGoalCommand() throws Exception {
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(autoModeService.getGoal(TEST_GOAL_ID)).thenReturn(Optional.of(
+                Goal.builder().id(TEST_GOAL_ID).title(TEST_GOAL_TITLE).status(Goal.GoalStatus.ACTIVE).tasks(List.of())
+                        .build()));
+
+        ScheduleEntry createdEntry = ScheduleEntry.builder()
+                .id("sched-goal-12345678")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId(TEST_GOAL_ID)
+                .cronExpression("0 0 9 * * MON-FRI")
+                .enabled(true)
+                .build();
+        when(scheduleService.createSchedule(
+                eq(ScheduleEntry.ScheduleType.GOAL), eq(TEST_GOAL_ID),
+                eq("0 9 * * MON-FRI"), eq(-1)))
+                .thenReturn(createdEntry);
+
+        CommandPort.CommandResult result = router.execute(CMD_SCHEDULE,
+                List.of(CMD_GOAL, TEST_GOAL_ID, "0", "9", "*", "*", "MON-FRI"), CTX).get();
+        assertTrue(result.success());
+        assertTrue(result.output().contains("command.schedule.created"));
+    }
+
+    @Test
+    void shouldHandleScheduleTaskCommand() throws Exception {
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(autoModeService.findGoalForTask(TEST_TASK_ID)).thenReturn(Optional.of(
+                Goal.builder().id("goal-1").title(TEST_GOAL_TITLE).tasks(List.of()).build()));
+
+        ScheduleEntry createdEntry = ScheduleEntry.builder()
+                .id("sched-task-12345678")
+                .type(ScheduleEntry.ScheduleType.TASK)
+                .targetId(TEST_TASK_ID)
+                .cronExpression("0 */30 * * * *")
+                .enabled(true)
+                .build();
+        when(scheduleService.createSchedule(
+                eq(ScheduleEntry.ScheduleType.TASK), eq(TEST_TASK_ID),
+                eq("*/30 * * * *"), eq(-1)))
+                .thenReturn(createdEntry);
+
+        CommandPort.CommandResult result = router.execute(CMD_SCHEDULE,
+                List.of("task", TEST_TASK_ID, "*/30", "*", "*", "*", "*"), CTX).get();
+        assertTrue(result.success());
+        assertTrue(result.output().contains("command.schedule.created"));
+    }
+
+    @Test
+    void shouldHandleScheduleListCommand() throws Exception {
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(scheduleService.getSchedules()).thenReturn(List.of(
+                ScheduleEntry.builder()
+                        .id(TEST_SCHED_ID)
+                        .type(ScheduleEntry.ScheduleType.GOAL)
+                        .targetId("goal-1")
+                        .cronExpression("0 0 9 * * MON-FRI")
+                        .enabled(true)
+                        .maxExecutions(-1)
+                        .executionCount(3)
+                        .nextExecutionAt(Instant.parse("2026-02-12T09:00:00Z"))
+                        .build()));
+
+        CommandPort.CommandResult result = router.execute(CMD_SCHEDULE, List.of("list"), CTX).get();
+        assertTrue(result.success());
+        assertTrue(result.output().contains(TEST_SCHED_ID));
+        assertTrue(result.output().contains("GOAL"));
+    }
+
+    @Test
+    void shouldHandleScheduleListEmptyCommand() throws Exception {
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(scheduleService.getSchedules()).thenReturn(List.of());
+
+        CommandPort.CommandResult result = router.execute(CMD_SCHEDULE, List.of("list"), CTX).get();
+        assertTrue(result.success());
+        assertTrue(result.output().contains("command.schedule.list.empty"));
+    }
+
+    @Test
+    void shouldHandleScheduleDefaultListWhenNoArgs() throws Exception {
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(scheduleService.getSchedules()).thenReturn(List.of());
+
+        CommandPort.CommandResult result = router.execute(CMD_SCHEDULE, List.of(), CTX).get();
+        assertTrue(result.success());
+        assertTrue(result.output().contains("command.schedule.list.empty"));
+    }
+
+    @Test
+    void shouldHandleScheduleDeleteCommand() throws Exception {
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+
+        CommandPort.CommandResult result = router.execute(CMD_SCHEDULE,
+                List.of("delete", TEST_SCHED_ID), CTX).get();
+        assertTrue(result.success());
+        assertTrue(result.output().contains("command.schedule.deleted"));
+        verify(scheduleService).deleteSchedule(TEST_SCHED_ID);
+    }
+
+    @Test
+    void shouldRejectInvalidCronInScheduleCommand() throws Exception {
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(autoModeService.getGoal(TEST_GOAL_ID)).thenReturn(Optional.of(
+                Goal.builder().id(TEST_GOAL_ID).title(TEST_GOAL_TITLE).tasks(List.of()).build()));
+        when(scheduleService.createSchedule(any(), anyString(), anyString(), anyInt()))
+                .thenThrow(new IllegalArgumentException("Invalid cron expression"));
+
+        CommandPort.CommandResult result = router.execute(CMD_SCHEDULE,
+                List.of(CMD_GOAL, TEST_GOAL_ID, "bad", "cron"), CTX).get();
+        assertFalse(result.success());
+        assertTrue(result.output().contains("command.schedule.invalid-cron"));
+    }
+
+    @Test
+    void shouldReturnScheduleHelpText() throws Exception {
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+
+        CommandPort.CommandResult result = router.execute(CMD_SCHEDULE, List.of("help"), CTX).get();
+        assertTrue(result.success());
+        assertTrue(result.output().contains("command.schedule.help.text"));
+    }
+
+    @Test
+    void shouldRejectScheduleWhenAutoModeDisabled() throws Exception {
+        when(autoModeService.isFeatureEnabled()).thenReturn(false);
+
+        CommandPort.CommandResult result = router.execute(CMD_SCHEDULE, List.of("list"), CTX).get();
+        assertTrue(result.success());
+        assertTrue(result.output().contains("command.auto.not-available"));
+    }
+
+    @Test
+    void shouldHandleScheduleGoalNotFound() throws Exception {
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(autoModeService.getGoal("missing-goal")).thenReturn(Optional.empty());
+
+        CommandPort.CommandResult result = router.execute(CMD_SCHEDULE,
+                List.of(CMD_GOAL, "missing-goal", "0", "9", "*", "*", "*"), CTX).get();
+        assertFalse(result.success());
+        assertTrue(result.output().contains("command.schedule.goal.not-found"));
+    }
+
+    @Test
+    void shouldHandleScheduleTaskNotFound() throws Exception {
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(autoModeService.findGoalForTask("missing-task")).thenReturn(Optional.empty());
+
+        CommandPort.CommandResult result = router.execute(CMD_SCHEDULE,
+                List.of("task", "missing-task", "0", "9", "*", "*", "*"), CTX).get();
+        assertFalse(result.success());
+        assertTrue(result.output().contains("command.schedule.task.not-found"));
+    }
+
+    @Test
+    void shouldHandleScheduleGoalWithRepeatCount() throws Exception {
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(autoModeService.getGoal(TEST_GOAL_ID)).thenReturn(Optional.of(
+                Goal.builder().id(TEST_GOAL_ID).title(TEST_GOAL_TITLE).tasks(List.of()).build()));
+
+        ScheduleEntry createdEntry = ScheduleEntry.builder()
+                .id("sched-goal-12345678")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId(TEST_GOAL_ID)
+                .cronExpression("0 0 12 * * *")
+                .enabled(true)
+                .maxExecutions(3)
+                .build();
+        when(scheduleService.createSchedule(
+                eq(ScheduleEntry.ScheduleType.GOAL), eq(TEST_GOAL_ID),
+                eq("0 12 * * *"), eq(3)))
+                .thenReturn(createdEntry);
+
+        CommandPort.CommandResult result = router.execute(CMD_SCHEDULE,
+                List.of(CMD_GOAL, TEST_GOAL_ID, "0", "12", "*", "*", "*", "3"), CTX).get();
+        assertTrue(result.success());
+        assertTrue(result.output().contains("command.schedule.created"));
+    }
+
+    @Test
+    void shouldHandleScheduleDeleteNotFound() throws Exception {
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        org.mockito.Mockito.doThrow(new IllegalArgumentException("not found"))
+                .when(scheduleService).deleteSchedule("nonexistent");
+
+        CommandPort.CommandResult result = router.execute(CMD_SCHEDULE,
+                List.of("delete", "nonexistent"), CTX).get();
+        assertFalse(result.success());
+        assertTrue(result.output().contains("command.schedule.not-found"));
+    }
+
+    @Test
+    void shouldShowScheduleGoalUsageWhenTooFewArgs() throws Exception {
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+
+        CommandPort.CommandResult result = router.execute(CMD_SCHEDULE,
+                List.of(CMD_GOAL, TEST_GOAL_ID), CTX).get();
+        assertTrue(result.success());
+        assertTrue(result.output().contains("command.schedule.goal.usage"));
     }
 }

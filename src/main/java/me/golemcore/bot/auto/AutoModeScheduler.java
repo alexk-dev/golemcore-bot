@@ -20,8 +20,12 @@ package me.golemcore.bot.auto;
 
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AutoModeChannelRegisteredEvent;
+import me.golemcore.bot.domain.model.AutoTask;
+import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.service.AutoModeService;
+import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.tools.GoalManagementTool;
@@ -34,6 +38,7 @@ import org.springframework.stereotype.Component;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
@@ -42,32 +47,28 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Scheduler for autonomous mode that periodically triggers goal-driven agent
- * work.
+ * Scheduler for autonomous mode that periodically evaluates cron-based
+ * schedules and triggers goal/task-driven agent work.
  *
  * <p>
  * This component runs a background thread that:
  * <ul>
- * <li>Checks for active goals at configured intervals (default 30 minutes)</li>
- * <li>Sends synthetic messages to the agent loop to trigger autonomous
- * work</li>
+ * <li>Ticks at a configurable interval (default 30 seconds)</li>
+ * <li>Checks for due schedules via {@link ScheduleService}</li>
+ * <li>Sends synthetic messages to the agent loop for due goals/tasks</li>
  * <li>Sends milestone notifications to configured channels</li>
- * <li>Loads and persists auto mode state (goals, tasks, diary)</li>
  * </ul>
  *
  * <p>
- * The scheduler is single-user (no per-user partitioning) and creates messages
- * marked with {@code metadata["auto.mode"] = true} to distinguish them from
- * user input.
- *
- * <p>
- * Only runs if {@code bot.auto.enabled=true}. Gracefully shuts down on
- * application stop.
+ * Execution is non-interruptible: if a tick is already processing, subsequent
+ * ticks are skipped until the current one completes.
  *
  * @since 1.0
  * @see AutoModeService
+ * @see ScheduleService
  * @see GoalManagementTool
  */
 @Component
@@ -75,10 +76,12 @@ import java.util.concurrent.TimeoutException;
 public class AutoModeScheduler {
 
     private final AutoModeService autoModeService;
+    private final ScheduleService scheduleService;
     private final AgentLoop agentLoop;
     private final BotProperties properties;
     private final GoalManagementTool goalManagementTool;
     private final Map<String, ChannelPort> channelRegistry = new ConcurrentHashMap<>();
+    private final AtomicBoolean executing = new AtomicBoolean(false);
 
     // Single channel info for milestone notifications
     private volatile ChannelInfo channelInfo;
@@ -86,10 +89,11 @@ public class AutoModeScheduler {
     private ScheduledExecutorService scheduler;
     private ScheduledFuture<?> tickTask;
 
-    public AutoModeScheduler(AutoModeService autoModeService, AgentLoop agentLoop,
-            BotProperties properties, GoalManagementTool goalManagementTool,
-            List<ChannelPort> channelPorts) {
+    public AutoModeScheduler(AutoModeService autoModeService, ScheduleService scheduleService,
+            AgentLoop agentLoop, BotProperties properties,
+            GoalManagementTool goalManagementTool, List<ChannelPort> channelPorts) {
         this.autoModeService = autoModeService;
+        this.scheduleService = scheduleService;
         this.agentLoop = agentLoop;
         this.properties = properties;
         this.goalManagementTool = goalManagementTool;
@@ -109,20 +113,25 @@ public class AutoModeScheduler {
 
         autoModeService.loadState();
 
+        if (properties.getAuto().isAutoStart() && !autoModeService.isAutoModeEnabled()) {
+            autoModeService.enableAutoMode();
+            log.info("[AutoScheduler] Auto-started auto mode");
+        }
+
         scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "auto-mode-scheduler");
             t.setDaemon(true);
             return t;
         });
 
-        int intervalMinutes = properties.getAuto().getIntervalMinutes();
+        int tickIntervalSeconds = properties.getAuto().getTickIntervalSeconds();
         tickTask = scheduler.scheduleAtFixedRate(
                 this::tick,
-                intervalMinutes,
-                intervalMinutes,
-                TimeUnit.MINUTES);
+                tickIntervalSeconds,
+                tickIntervalSeconds,
+                TimeUnit.SECONDS);
 
-        log.info("[AutoScheduler] Started with interval: {} minutes", intervalMinutes);
+        log.info("[AutoScheduler] Started with tick interval: {}s", tickIntervalSeconds);
     }
 
     @PreDestroy
@@ -194,61 +203,133 @@ public class AutoModeScheduler {
                 return;
             }
 
-            log.info("[AutoScheduler] Tick: processing auto mode");
-            // Run with timeout to prevent blocking the scheduler thread indefinitely
-            CompletableFuture.runAsync(this::processAutoTick)
-                    .get(5, TimeUnit.MINUTES);
-        } catch (TimeoutException e) {
-            log.error("[AutoScheduler] Tick timed out after 5 minutes");
+            if (!executing.compareAndSet(false, true)) {
+                log.debug("[AutoScheduler] Tick skipped: previous execution still in progress");
+                return;
+            }
+
+            try {
+                List<ScheduleEntry> dueSchedules = scheduleService.getDueSchedules();
+                if (dueSchedules.isEmpty()) {
+                    return;
+                }
+
+                log.info("[AutoScheduler] Tick: {} due schedules", dueSchedules.size());
+
+                int taskTimeoutMinutes = properties.getAuto().getTaskTimeoutMinutes();
+                for (ScheduleEntry schedule : dueSchedules) {
+                    processSchedule(schedule, taskTimeoutMinutes);
+                    scheduleService.recordExecution(schedule.getId());
+                }
+            } finally {
+                executing.set(false);
+            }
         } catch (Exception e) {
+            executing.set(false);
             log.error("[AutoScheduler] Tick failed: {}", e.getMessage(), e);
         }
     }
 
-    private void processAutoTick() {
-        var activeGoals = autoModeService.getActiveGoals();
-        if (activeGoals.isEmpty()) {
-            log.debug("[AutoScheduler] No active goals, skipping");
-            return;
-        }
-
-        var nextTask = autoModeService.getNextPendingTask();
-        String messageContent;
-
-        if (nextTask.isPresent()) {
-            // Work on existing task
-            messageContent = "[AUTO] Continue working on task: " + nextTask.get().getTitle();
-        } else {
-            // Find goals needing task planning
-            var unplanned = activeGoals.stream()
-                    .filter(g -> g.getTasks().isEmpty())
-                    .toList();
-            if (unplanned.isEmpty()) {
-                log.debug("[AutoScheduler] All goals have tasks and all are done, skipping");
+    private void processSchedule(ScheduleEntry schedule, int timeoutMinutes) {
+        try {
+            String messageContent = buildMessageForSchedule(schedule);
+            if (messageContent == null) {
+                log.debug("[AutoScheduler] No action for schedule {}", schedule.getId());
                 return;
             }
-            messageContent = "[AUTO] Plan tasks for goal: " + unplanned.get(0).getTitle()
-                    + " (goal_id: " + unplanned.get(0).getId() + ")";
+
+            log.info("[AutoScheduler] Processing schedule {}: {}", schedule.getId(), messageContent);
+
+            ChannelInfo info = channelInfo;
+            String chatId = info != null ? info.chatId() : "auto";
+            String channelType = info != null ? info.channelType() : "auto";
+
+            Message syntheticMessage = Message.builder()
+                    .role("user")
+                    .content(messageContent)
+                    .channelType(channelType)
+                    .chatId(chatId)
+                    .senderId("auto")
+                    .metadata(Map.of("auto.mode", true))
+                    .timestamp(Instant.now())
+                    .build();
+
+            CompletableFuture.runAsync(() -> agentLoop.processMessage(syntheticMessage))
+                    .get(timeoutMinutes, TimeUnit.MINUTES);
+        } catch (TimeoutException e) {
+            log.error("[AutoScheduler] Schedule {} timed out after {} minutes",
+                    schedule.getId(), timeoutMinutes);
+        } catch (Exception e) {
+            log.error("[AutoScheduler] Failed to process schedule {}: {}",
+                    schedule.getId(), e.getMessage(), e);
+        }
+    }
+
+    private String buildMessageForSchedule(ScheduleEntry schedule) {
+        if (schedule.getType() == ScheduleEntry.ScheduleType.GOAL) {
+            return buildGoalMessage(schedule.getTargetId());
+        } else if (schedule.getType() == ScheduleEntry.ScheduleType.TASK) {
+            return buildTaskMessage(schedule.getTargetId());
+        }
+        return null;
+    }
+
+    private String buildGoalMessage(String goalId) {
+        Optional<Goal> goalOpt = autoModeService.getGoal(goalId);
+        if (goalOpt.isEmpty()) {
+            log.warn("[AutoScheduler] Goal not found for schedule: {}", goalId);
+            return null;
         }
 
-        log.info("[AutoScheduler] Sending: {}", messageContent);
+        Goal goal = goalOpt.get();
+        if (goal.getStatus() != Goal.GoalStatus.ACTIVE) {
+            log.debug("[AutoScheduler] Goal {} is not active ({}), skipping", goalId, goal.getStatus());
+            return null;
+        }
 
-        // Use registered channel for chatId or fallback to "auto"
-        ChannelInfo info = channelInfo;
-        String chatId = info != null ? info.chatId() : "auto";
-        String channelType = info != null ? info.channelType() : "auto";
+        Optional<AutoTask> nextTask = goal.getTasks().stream()
+                .filter(t -> t.getStatus() == AutoTask.TaskStatus.PENDING)
+                .min(java.util.Comparator.comparingInt(AutoTask::getOrder));
 
-        Message syntheticMessage = Message.builder()
-                .role("user")
-                .content(messageContent)
-                .channelType(channelType)
-                .chatId(chatId)
-                .senderId("auto")
-                .metadata(Map.of("auto.mode", true))
-                .timestamp(Instant.now())
-                .build();
+        if (nextTask.isPresent()) {
+            return "[AUTO] Continue working on task: " + nextTask.get().getTitle()
+                    + " (goal: " + goal.getTitle() + ", goal_id: " + goalId + ")";
+        }
 
-        agentLoop.processMessage(syntheticMessage);
+        if (goal.getTasks().isEmpty()) {
+            return "[AUTO] Plan tasks for goal: " + goal.getTitle()
+                    + " (goal_id: " + goalId + ")";
+        }
+
+        log.debug("[AutoScheduler] All tasks for goal {} are done, skipping", goalId);
+        return null;
+    }
+
+    private String buildTaskMessage(String taskId) {
+        Optional<Goal> goalOpt = autoModeService.findGoalForTask(taskId);
+        if (goalOpt.isEmpty()) {
+            log.warn("[AutoScheduler] Task not found: {}", taskId);
+            return null;
+        }
+
+        Goal goal = goalOpt.get();
+        Optional<AutoTask> taskOpt = goal.getTasks().stream()
+                .filter(t -> t.getId().equals(taskId))
+                .findFirst();
+
+        if (taskOpt.isEmpty()) {
+            return null;
+        }
+
+        AutoTask task = taskOpt.get();
+        if (task.getStatus() == AutoTask.TaskStatus.COMPLETED
+                || task.getStatus() == AutoTask.TaskStatus.SKIPPED) {
+            log.debug("[AutoScheduler] Task {} already finished ({}), skipping", taskId, task.getStatus());
+            return null;
+        }
+
+        return "[AUTO] Work on task: " + task.getTitle()
+                + " (goal: " + goal.getTitle() + ", task_id: " + taskId + ")";
     }
 
     public record ChannelInfo(String channelType, String chatId) {

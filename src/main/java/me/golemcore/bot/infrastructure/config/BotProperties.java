@@ -472,7 +472,9 @@ public class BotProperties {
     @Data
     public static class AutoModeProperties {
         private boolean enabled = false;
-        private int intervalMinutes = 15;
+        private int tickIntervalSeconds = 30;
+        private int taskTimeoutMinutes = 10;
+        private boolean autoStart = true;
         private int maxGoals = 3;
         private String modelTier = "default";
         private boolean notifyMilestones = true;
