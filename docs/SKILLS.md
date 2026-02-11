@@ -407,7 +407,7 @@ Generate an embedding of the user's message and compare it against pre-indexed s
 
 ### Stage 2: LLM Classifier
 
-A fast LLM picks the best skill from the semantic candidates and assigns a **model tier** (fast/default/smart/coding).
+A fast LLM picks the best skill from the semantic candidates and assigns a **model tier** (balanced/smart/coding/deep).
 
 The classifier is **skipped** if the semantic score exceeds the threshold (default: 0.95).
 

@@ -143,7 +143,7 @@ Available when `AUTO_MODE_ENABLED=true`:
 
 ### Skill Routing (Semantic + LLM)
 
-Enables intelligent model tier selection (fast/default/smart/coding) and skill matching. See [Model Routing Guide](MODEL_ROUTING.md) for how the 3-stage routing pipeline works.
+Enables intelligent model tier selection (balanced/smart/coding/deep) and skill matching. See [Model Routing Guide](MODEL_ROUTING.md) for how the 3-stage routing pipeline works.
 
 ```bash
 docker run -d \

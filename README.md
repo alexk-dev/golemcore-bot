@@ -6,7 +6,7 @@
 [![Java](https://img.shields.io/badge/Java-17+-orange.svg)](https://www.oracle.com/java/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0.2-brightgreen.svg)](https://spring.io/projects/spring-boot)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-1292%20passing-success.svg)](https://github.com/alexk-dev/golemcore-bot/actions)
+[![Tests](https://img.shields.io/badge/tests-1451%20passing-success.svg)](https://github.com/alexk-dev/golemcore-bot/actions)
 
 ---
 
@@ -19,7 +19,7 @@
 - **Fragmented Input Detection** — Aggregates split messages using temporal and linguistic signals
 
 ### 🛠️ Powerful Tools
-- **10 Built-in Tools** — Filesystem, Shell, Web Search, Browser, Weather, Skill Management, Goal Management, Transitions, DateTime, Voice
+- **12 Built-in Tools** — Filesystem, Shell, Web Search, Browser, Weather, IMAP, SMTP, Skill Management, Goal Management, Transitions, DateTime, Voice
 - **MCP Protocol Support** — Model Context Protocol for stdio-based tool servers (GitHub, Slack, etc.)
 - **Sandboxed Execution** — Isolated workspace with path traversal protection
 - **Tool Confirmation** — User approval workflow for destructive operations
@@ -188,7 +188,7 @@ The loop iterates up to 20 times while the LLM requests tool calls.
 
 ### Skill Routing & Model Selection
 
-3-stage hybrid matching: fragmented input detection, semantic search, LLM classifier. 4 model tiers (fast/default/smart/coding) with automatic escalation to coding tier when code activity is detected.
+3-stage hybrid matching: fragmented input detection, semantic search, LLM classifier. 4 model tiers (balanced/smart/coding/deep) with automatic escalation to coding tier when code activity is detected.
 
 See **[Model Routing Guide](docs/MODEL_ROUTING.md)** for the full end-to-end flow, tier architecture, dynamic upgrades, tool ID remapping, context overflow protection, and debugging tips.
 
@@ -238,11 +238,13 @@ See the [Tools & Integrations](#-tools--integrations) section below for configur
 | `AUTO_MODE_ENABLED` | Autonomous goal execution | `false` |
 | `MCP_ENABLED` | Model Context Protocol client | `true` |
 | `BRAVE_SEARCH_ENABLED` | Web search via Brave | `false` |
+| `IMAP_TOOL_ENABLED` | Email reading via IMAP | `false` |
+| `SMTP_TOOL_ENABLED` | Email sending via SMTP | `false` |
 | `VOICE_ENABLED` | Voice processing (ElevenLabs STT/TTS) | `false` |
 | `ELEVENLABS_API_KEY` | ElevenLabs API key for voice | — |
 | `BOT_ROUTER_DYNAMIC_TIER_ENABLED` | Auto-upgrade to coding tier | `true` |
 
-For the complete list of 80+ environment variables (model routing, security, rate limiting, storage, tools, voice, streaming, HTTP, etc.), see the **[Configuration Guide](docs/CONFIGURATION.md)**.
+For the complete list of 90+ environment variables (model routing, security, rate limiting, storage, tools, email, voice, streaming, HTTP, etc.), see the **[Configuration Guide](docs/CONFIGURATION.md)**.
 
 ---
 
@@ -269,9 +271,10 @@ docker run -d \
 docker run -d \
   -e OPENAI_API_KEY=sk-proj-... \
   -e ANTHROPIC_API_KEY=sk-ant-... \
-  -e BOT_ROUTER_FAST_MODEL=openai/gpt-5.1 \
+  -e BOT_ROUTER_DEFAULT_MODEL=openai/gpt-5.1 \
   -e BOT_ROUTER_SMART_MODEL=anthropic/claude-opus-4-6 \
   -e BOT_ROUTER_CODING_MODEL=openai/gpt-5.2 \
+  -e BOT_ROUTER_DEEP_MODEL=openai/gpt-5.2 \
   golemcore-bot:latest
 ```
 
@@ -285,7 +288,7 @@ See **[Configuration Guide](docs/CONFIGURATION.md)** for all settings, **[Quick 
 
 ## 🛠️ Tools & Integrations
 
-### Built-in Tools (10)
+### Built-in Tools (12)
 
 | Tool | Operations | Requires | Notes |
 |------|------------|----------|-------|
@@ -296,6 +299,8 @@ See **[Configuration Guide](docs/CONFIGURATION.md)** for all settings, **[Quick 
 | **GoalManagement** | create_goal, list_goals, plan_tasks, update_task_status, write_diary, complete_goal | — | Auto-mode only |
 | **Browser** | browse | Playwright | Modes: text, html, screenshot |
 | **BraveSearch** | search | `BRAVE_SEARCH_API_KEY` | 2000 free queries/month |
+| **IMAP** | list_folders, list_messages, read_message, search_messages | Mail credentials | SSL/STARTTLS/none, configurable ssl-trust |
+| **SMTP** | send_email, reply_email | Mail credentials | Reply threading, email validation |
 | **Weather** | get_weather | — | Open-Meteo API (free) |
 | **DateTime** | current_time, convert_timezone, date_math | — | — |
 | **VoiceResponse** | send_voice | `ELEVENLABS_API_KEY` | LLM-initiated TTS synthesis |
@@ -453,7 +458,7 @@ src/main/java/me/golemcore/bot/
 ├── auto/                      # Auto-mode scheduler
 ├── routing/                   # Hybrid skill matcher
 ├── security/                  # Security layers
-├── tools/                     # 10 built-in tools
+├── tools/                     # 12 built-in tools
 └── usage/                     # Usage tracking
 ```
 

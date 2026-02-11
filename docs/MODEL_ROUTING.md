@@ -17,7 +17,7 @@ The bot uses a **4-tier model selection** strategy that automatically picks the 
 User Message
     |
     v
-[SkillRoutingSystem]  ─── Sets initial modelTier (fast/default/smart/coding)
+[SkillRoutingSystem]  ─── Sets initial modelTier (balanced/smart/coding/deep)
     |                      via semantic search + LLM classifier
     v
 [ContextBuildingSystem]
@@ -40,21 +40,17 @@ Four tiers map task complexity to model capabilities:
 
 | Tier | Reasoning | Typical Use Cases | Default Model |
 |------|-----------|-------------------|---------------|
-| **fast** | `low` | Greetings, simple Q&A, translations | `openai/gpt-5.1` |
-| **default** | `medium` | General questions, summarization | `openai/gpt-5.1` |
+| **balanced** | `medium` | Greetings, general questions, summarization (default/fallback) | `openai/gpt-5.1` |
 | **smart** | `high` | Complex analysis, architecture decisions, multi-step planning | `openai/gpt-5.1` |
 | **coding** | `medium` | Code generation, debugging, refactoring, code review | `openai/gpt-5.2` |
+| **deep** | `xhigh` | PhD-level reasoning: proofs, scientific analysis, deep calculations | `openai/gpt-5.2` |
 
 Each tier is independently configurable — you can assign any model from any supported provider to any tier. See [Multi-Provider Setup](#multi-provider-setup) below.
 
 ### Configuration
 
 ```bash
-# Fast tier
-BOT_ROUTER_FAST_MODEL=openai/gpt-5.1
-BOT_ROUTER_FAST_MODEL_REASONING=low
-
-# Default tier
+# Balanced tier (default/fallback)
 BOT_ROUTER_DEFAULT_MODEL=openai/gpt-5.1
 BOT_ROUTER_DEFAULT_MODEL_REASONING=medium
 
@@ -65,6 +61,10 @@ BOT_ROUTER_SMART_MODEL_REASONING=high
 # Coding tier
 BOT_ROUTER_CODING_MODEL=openai/gpt-5.2
 BOT_ROUTER_CODING_MODEL_REASONING=medium
+
+# Deep tier (PhD-level reasoning)
+BOT_ROUTER_DEEP_MODEL=openai/gpt-5.2
+BOT_ROUTER_DEEP_MODEL_REASONING=xhigh
 
 # Temperature (used only by models that support it — see models.json)
 BOT_ROUTER_TEMPERATURE=0.7
@@ -116,15 +116,15 @@ The LLM classifier determines the model tier using these guidelines from its sys
 
 | Tier | Classifier Criteria |
 |------|-------------------|
-| `fast` | Simple tasks, greetings, quick answers, translations |
-| `balanced` | Standard tasks, summarization, general questions |
+| `balanced` | Standard tasks, greetings, summarization, general questions (default/fallback) |
 | `coding` | Programming tasks: code generation, debugging, refactoring, code review, writing tests |
 | `smart` | Complex reasoning, architecture decisions, security analysis, multi-step planning |
+| `deep` | PhD-level reasoning: mathematical proofs, scientific analysis, deep calculations |
 
 > **Source:** `LlmSkillClassifier.java:36-50`
 
 **Fallback behavior:**
-- If no semantic candidates found and classifier is disabled: tier defaults to `fast`
+- If no semantic candidates found and classifier is disabled: tier defaults to `balanced`
 - If LLM classifier fails: falls back to semantic top candidate with tier `balanced`
 - If skill matcher is entirely disabled: tier is `null`, which maps to `default` in `LlmExecutionSystem`
 
@@ -158,9 +158,9 @@ The LLM classifier determines the model tier using these guidelines from its sys
 ```java
 // LlmExecutionSystem.java:215-224
 switch (tier != null ? tier : "balanced") {
-    case "fast"   -> (fastModel, fastModelReasoning)
     case "coding" -> (codingModel, codingModelReasoning)
     case "smart"  -> (smartModel, smartModelReasoning)
+    case "deep"   -> (deepModel, deepModelReasoning)
     default       -> (defaultModel, defaultModelReasoning)   // "balanced" or null
 }
 ```
@@ -186,9 +186,9 @@ LlmRequest {
 You can mix different LLM providers across tiers for cost optimization or capability access:
 
 ```bash
-# Use fast/cheap model for simple tasks
-BOT_ROUTER_FAST_MODEL=openai/gpt-5.1
-BOT_ROUTER_FAST_MODEL_REASONING=low
+# Use balanced tier for standard tasks (default/fallback)
+BOT_ROUTER_DEFAULT_MODEL=openai/gpt-5.1
+BOT_ROUTER_DEFAULT_MODEL_REASONING=medium
 
 # Use Anthropic for complex reasoning
 BOT_ROUTER_SMART_MODEL=anthropic/claude-opus-4-6
@@ -388,7 +388,7 @@ Where `charsPerToken` defaults to 3.5 and `systemPromptOverheadTokens` defaults 
 4. If model lookup fails, fall back to `bot.auto-compact.max-context-tokens` (default 128K)
 
 **Compaction strategy:**
-- Summarize old messages via LLM (fast model, low reasoning) using `CompactionService`
+- Summarize old messages via LLM (balanced model, low reasoning) using `CompactionService`
 - Replace old messages with a `[Conversation summary]` system message + last N messages (default N=10)
 - If LLM unavailable, fall back to simple truncation (drop oldest, keep last N)
 
@@ -559,17 +559,17 @@ Use `/status` in Telegram to check active configuration, including current model
 
 ## Examples
 
-### Greeting (fast tier)
+### Greeting (balanced tier)
 
 ```
 User: "Hi, how are you?"
 
 SkillRoutingSystem:
   Semantic search: no candidates above min_score 0.6
-  LLM classifier: {"skill": "none", "model_tier": "fast", "reason": "Simple greeting"}
+  LLM classifier: {"skill": "none", "model_tier": "balanced", "reason": "Simple greeting"}
 
 LlmExecutionSystem:
-  Tier: fast → openai/gpt-5.1 (reasoning: low)
+  Tier: balanced → openai/gpt-5.1 (reasoning: medium)
 ```
 
 ### Code generation (coding tier from classifier)

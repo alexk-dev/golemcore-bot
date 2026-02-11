@@ -80,7 +80,7 @@ Sessions are cached in a `ConcurrentHashMap` for fast access. Disk persistence h
 When conversation history grows too large for the model's context window, it can be compacted:
 
 **Manual compaction** — `/compact [N]` command:
-1. `CompactionService.summarize()` sends old messages to a fast LLM model
+1. `CompactionService.summarize()` sends old messages to the default (balanced) LLM model
 2. LLM produces a concise summary
 3. `SessionService.compactWithSummary()` replaces old messages with a summary message + last N messages
 
@@ -101,7 +101,7 @@ User discussed deploying a Spring Boot app with Docker. Key decisions:
 The summary is stored as a `system` role message at the beginning of the conversation history.
 
 **CompactionService details:**
-- Model: fast tier (low reasoning, temperature 0.3)
+- Model: balanced tier (low reasoning, temperature 0.3)
 - Max output: 500 tokens
 - Timeout: 15 seconds
 - Filters out tool result messages for cleaner summaries
