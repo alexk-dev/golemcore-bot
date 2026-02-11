@@ -75,8 +75,9 @@ services:
       TELEGRAM_ALLOWED_USERS: ${TELEGRAM_ALLOWED_USERS:-}
 
       # Model routing (configure based on your provider)
-      BOT_ROUTER_FAST_MODEL: ${BOT_ROUTER_FAST_MODEL:-openai/gpt-5.1}
+      BOT_ROUTER_DEFAULT_MODEL: ${BOT_ROUTER_DEFAULT_MODEL:-openai/gpt-5.1}
       BOT_ROUTER_CODING_MODEL: ${BOT_ROUTER_CODING_MODEL:-openai/gpt-5.2}
+      BOT_ROUTER_DEEP_MODEL: ${BOT_ROUTER_DEEP_MODEL:-openai/gpt-5.2}
 
       # Features
       SKILL_MATCHER_ENABLED: ${SKILL_MATCHER_ENABLED:-false}
@@ -221,12 +222,14 @@ BOT_RATE_LIMIT_USER_REQUESTS_PER_HOUR=50
 BOT_RATE_LIMIT_USER_REQUESTS_PER_DAY=200
 
 # === MODEL ROUTING (see docs/MODEL_ROUTING.md for details) ===
-BOT_ROUTER_FAST_MODEL=openai/gpt-5.1
-BOT_ROUTER_FAST_MODEL_REASONING=low
 BOT_ROUTER_DEFAULT_MODEL=openai/gpt-5.1
 BOT_ROUTER_DEFAULT_MODEL_REASONING=medium
+BOT_ROUTER_SMART_MODEL=openai/gpt-5.1
+BOT_ROUTER_SMART_MODEL_REASONING=high
 BOT_ROUTER_CODING_MODEL=openai/gpt-5.2
 BOT_ROUTER_CODING_MODEL_REASONING=medium
+BOT_ROUTER_DEEP_MODEL=openai/gpt-5.2
+BOT_ROUTER_DEEP_MODEL_REASONING=xhigh
 BOT_ROUTER_DYNAMIC_TIER_ENABLED=true
 
 # === FEATURES ===
@@ -401,7 +404,7 @@ docker stats golemcore-bot
 - Tool execution time
 
 **Fix:**
-- Use faster models for fast tier
+- Use lighter models for balanced tier
 - Enable caching (`SKILL_MATCHER_CACHE_ENABLED=true`)
 - Disable RAG if not needed
 

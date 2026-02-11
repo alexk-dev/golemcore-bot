@@ -410,7 +410,7 @@ BOT_AUTO_MAX_GOALS=3                           # max concurrent ACTIVE goals (de
 BOT_AUTO_MAX_TASKS_PER_GOAL=20                 # max tasks per goal (default: 20)
 
 # Model tier for auto-mode messages
-BOT_AUTO_MODEL_TIER=default                    # fast/default/smart/coding (default: default)
+BOT_AUTO_MODEL_TIER=default                    # balanced/smart/coding/deep (default: default)
 
 # Notifications
 BOT_AUTO_NOTIFY_MILESTONES=true                # send task/goal completion notifications (default: true)

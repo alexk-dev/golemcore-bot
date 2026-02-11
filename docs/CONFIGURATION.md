@@ -10,12 +10,12 @@ Comprehensive guide to configuring GolemCore Bot.
 # Docker
 docker run \
   -e OPENAI_API_KEY=sk-proj-... \
-  -e BOT_ROUTER_FAST_MODEL=openai/gpt-5.1 \
+  -e BOT_ROUTER_DEFAULT_MODEL=openai/gpt-5.1 \
   golemcore-bot:latest
 
 # JAR
 export OPENAI_API_KEY=sk-proj-...
-export BOT_ROUTER_FAST_MODEL=openai/gpt-5.1
+export BOT_ROUTER_DEFAULT_MODEL=openai/gpt-5.1
 java -jar golemcore-bot.jar
 ```
 
@@ -28,7 +28,7 @@ services:
     image: golemcore-bot:latest
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
-      BOT_ROUTER_FAST_MODEL: openai/gpt-5.1
+      BOT_ROUTER_DEFAULT_MODEL: openai/gpt-5.1
 ```
 
 ### 3. Application Properties (Build-Time)
@@ -36,7 +36,7 @@ services:
 Edit `src/main/resources/application.properties`:
 
 ```properties
-bot.router.fast-model=openai/gpt-5.1
+bot.router.default-model=openai/gpt-5.1
 ```
 
 Then rebuild image: `./mvnw compile jib:dockerBuild`
@@ -54,21 +54,21 @@ Then rebuild image: `./mvnw compile jib:dockerBuild`
 The bot selects models based on task complexity:
 
 ```properties
-# Fast tier (greetings, simple Q&A)
-BOT_ROUTER_FAST_MODEL=openai/gpt-5.1
-BOT_ROUTER_FAST_MODEL_REASONING=low
-
-# Default tier (general questions)
+# Balanced tier (greetings, general questions, summarization — default/fallback)
 BOT_ROUTER_DEFAULT_MODEL=openai/gpt-5.1
 BOT_ROUTER_DEFAULT_MODEL_REASONING=medium
 
-# Smart tier (complex analysis)
+# Smart tier (complex analysis, architecture decisions)
 BOT_ROUTER_SMART_MODEL=openai/gpt-5.1
 BOT_ROUTER_SMART_MODEL_REASONING=high
 
-# Coding tier (code generation)
+# Coding tier (code generation, debugging, refactoring)
 BOT_ROUTER_CODING_MODEL=openai/gpt-5.2
 BOT_ROUTER_CODING_MODEL_REASONING=medium
+
+# Deep tier (PhD-level reasoning: proofs, scientific analysis)
+BOT_ROUTER_DEEP_MODEL=openai/gpt-5.2
+BOT_ROUTER_DEEP_MODEL_REASONING=xhigh
 ```
 
 ### Dynamic Tier Escalation
@@ -93,9 +93,10 @@ Mix different LLM providers across tiers for cost optimization or feature access
 docker run -d \
   -e OPENAI_API_KEY=sk-proj-... \
   -e ANTHROPIC_API_KEY=sk-ant-... \
-  -e BOT_ROUTER_FAST_MODEL=openai/gpt-5.1 \
+  -e BOT_ROUTER_DEFAULT_MODEL=openai/gpt-5.1 \
   -e BOT_ROUTER_SMART_MODEL=anthropic/claude-opus-4-6 \
   -e BOT_ROUTER_CODING_MODEL=openai/gpt-5.2 \
+  -e BOT_ROUTER_DEEP_MODEL=openai/gpt-5.2 \
   golemcore-bot:latest
 ```
 
@@ -107,9 +108,10 @@ services:
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      BOT_ROUTER_FAST_MODEL: openai/gpt-5.1
+      BOT_ROUTER_DEFAULT_MODEL: openai/gpt-5.1
       BOT_ROUTER_SMART_MODEL: anthropic/claude-opus-4-6
       BOT_ROUTER_CODING_MODEL: openai/gpt-5.2
+      BOT_ROUTER_DEEP_MODEL: openai/gpt-5.2
 ```
 
 ### Custom Endpoints
@@ -362,6 +364,49 @@ export BOT_VOICE_TELEGRAM_TRANSCRIBE_INCOMING=true   # Transcribe incoming voice
 
 ---
 
+## Email (IMAP + SMTP)
+
+Read and send email. Credentials are hidden from the LLM (single-account design).
+
+### IMAP (Reading)
+
+```bash
+export IMAP_TOOL_ENABLED=true
+export MAIL_IMAP_HOST=imap.example.com
+export MAIL_IMAP_PORT=993
+export MAIL_IMAP_USERNAME=user@example.com
+export MAIL_IMAP_PASSWORD=app-password
+export MAIL_IMAP_SECURITY=ssl              # ssl | starttls | none
+export MAIL_IMAP_SSL_TRUST=                # "" = strict, "*" = trust all, "host1 host2" = specific
+export MAIL_IMAP_CONNECT_TIMEOUT=10000     # ms
+export MAIL_IMAP_READ_TIMEOUT=30000        # ms
+export MAIL_IMAP_MAX_BODY_LENGTH=50000     # chars
+export MAIL_IMAP_DEFAULT_MESSAGE_LIMIT=20
+```
+
+### SMTP (Sending)
+
+```bash
+export SMTP_TOOL_ENABLED=true
+export MAIL_SMTP_HOST=smtp.example.com
+export MAIL_SMTP_PORT=587
+export MAIL_SMTP_USERNAME=user@example.com
+export MAIL_SMTP_PASSWORD=app-password
+export MAIL_SMTP_SECURITY=starttls         # ssl | starttls | none
+export MAIL_SMTP_SSL_TRUST=                # "" = strict, "*" = trust all, "host1 host2" = specific
+export MAIL_SMTP_CONNECT_TIMEOUT=10000     # ms
+export MAIL_SMTP_READ_TIMEOUT=30000        # ms
+```
+
+### SSL Trust
+
+The `ssl-trust` property maps directly to Jakarta Mail's `ssl.trust` setting:
+- `""` (default) — strict certificate verification
+- `"*"` — trust all certificates (useful for mail bridges with self-signed certs)
+- `"localhost"` or `"host1 host2"` — trust only specific hosts (space-separated)
+
+---
+
 ## Browser Tool
 
 The Browse tool uses Playwright/Chromium for web page rendering, screenshots, and text extraction.
@@ -522,7 +567,7 @@ Edit `models.json` in working directory to add custom models:
 Then reference in config:
 
 ```bash
-export BOT_ROUTER_FAST_MODEL=custom/my-model
+export BOT_ROUTER_DEFAULT_MODEL=custom/my-model
 ```
 
 ---
