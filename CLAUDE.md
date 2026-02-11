@@ -45,10 +45,12 @@ me.golemcore.bot
 | 20    | `ContextBuildingSystem`   | System prompt, memory, skills, tools, MCP |
 | 25    | `DynamicTierSystem`       | Upgrade model tier mid-conversation if needed |
 | 30    | `LlmExecutionSystem`     | Model selection by tier, LLM call, usage tracking |
+| 35    | `PlanInterceptSystem`     | Plan mode: intercept tool calls into plan steps |
 | 40    | `ToolExecutionSystem`     | Execute tool calls, loop back to LLM |
 | 50    | `MemoryPersistSystem`     | Persist memory |
 | 55    | `SkillPipelineSystem`     | Auto-transition between skills |
 | 55    | `RagIndexingSystem`       | Index conversations for RAG |
+| 58    | `PlanFinalizationSystem`  | Plan mode: detect plan completion, publish approval event |
 | 60    | `ResponseRoutingSystem`   | Send response to channel |
 
 Max iterations: `bot.agent.max-iterations=20`.

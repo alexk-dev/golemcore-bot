@@ -17,10 +17,11 @@ GolemCore Bot is an AI assistant framework with intelligent skill routing, multi
 
 1. **Hybrid Skill Routing** — 2-stage semantic + LLM classifier for accurate intent matching
 2. **Dynamic Model Tier Selection** — Automatic escalation from GPT-5.1 → GPT-5.2 based on task
-3. **MCP Protocol Support** — Connect stdio-based tool servers (GitHub, Slack, etc.)
-4. **Auto Mode** — Autonomous goal-driven execution
-5. **Context Overflow Protection** — Smart truncation handles 50K+ token conversations
-6. **Production-ready** — Security layers, rate limiting, monitoring
+3. **Plan Mode** — Review-before-execute workflow with Telegram approval UI
+4. **MCP Protocol Support** — Connect stdio-based tool servers (GitHub, Slack, etc.)
+5. **Auto Mode** — Autonomous goal-driven execution
+6. **Context Overflow Protection** — Smart truncation handles 50K+ token conversations
+7. **Production-ready** — Security layers, rate limiting, monitoring
 
 ---
 
@@ -134,6 +135,30 @@ Enable:
 ```bash
 export SKILL_MATCHER_ENABLED=true
 ```
+
+### What is "plan mode"?
+
+**Plan mode** = review-before-execute workflow for multi-step operations.
+
+**How it works:**
+1. User enables plan mode: `/plan on smart`
+2. User sends a request (e.g., "Refactor the auth module")
+3. LLM proposes tool calls — but they are **intercepted, not executed**
+4. LLM responds with a numbered plan summary
+5. User clicks **Approve** or **Cancel** via Telegram inline buttons
+6. Approved plans execute step-by-step with status tracking
+
+**Enable:**
+```bash
+export PLAN_MODE_ENABLED=true
+```
+
+**Use cases:**
+- Reviewing destructive multi-step operations before execution
+- Complex refactoring workflows
+- Any operation where you want to see the plan before it runs
+
+**Commands:** `/plan on [tier]`, `/plan off`, `/plan approve`, `/plan cancel`, `/plan resume`, `/plan status`, `/plans`
 
 ### What is "auto mode"?
 

@@ -6,7 +6,7 @@
 [![Java](https://img.shields.io/badge/Java-17+-orange.svg)](https://www.oracle.com/java/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0.2-brightgreen.svg)](https://spring.io/projects/spring-boot)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-1451%20passing-success.svg)](https://github.com/alexk-dev/golemcore-bot/actions)
+[![Tests](https://img.shields.io/badge/tests-1588%20passing-success.svg)](https://github.com/alexk-dev/golemcore-bot/actions)
 
 ---
 
@@ -25,6 +25,7 @@
 - **Tool Confirmation** — User approval workflow for destructive operations
 
 ### 🔄 Advanced Capabilities
+- **Plan Mode** — Review-before-execute workflow: LLM proposes tool calls, user approves via Telegram buttons, then plan executes
 - **Auto Mode** — Autonomous goal-driven execution with periodic synthetic messages
 - **Skill Pipelines** — Sequential skill transitions with conditional routing
 - **RAG Integration** — LightRAG for long-term memory via knowledge graphs
@@ -164,7 +165,7 @@ See [Deployment Guide](docs/DEPLOYMENT.md) for production setups (Docker Compose
 
 ## 🎯 Core Capabilities
 
-### Processing Pipeline (11 Systems)
+### Processing Pipeline (13 Systems)
 
 Messages flow through an ordered pipeline of specialized systems:
 
@@ -177,10 +178,12 @@ User Message
 [20] ContextBuildingSystem        — Prompt assembly, MCP startup
 [25] DynamicTierSystem            — Coding activity detection
 [30] LlmExecutionSystem           — LLM API call with retry
+[35] PlanInterceptSystem          — Plan mode: intercept tool calls
 [40] ToolExecutionSystem          — Tool calls + confirmation
 [50] MemoryPersistSystem          — Conversation persistence
 [55] RagIndexingSystem            — Long-term memory indexing
 [57] SkillPipelineSystem          — Auto-transitions
+[58] PlanFinalizationSystem       — Plan mode: detect plan completion
 [60] ResponseRoutingSystem        — Send response to user
 ```
 
@@ -191,6 +194,10 @@ The loop iterates up to 20 times while the LLM requests tool calls.
 3-stage hybrid matching: fragmented input detection, semantic search, LLM classifier. 4 model tiers (balanced/smart/coding/deep) with automatic escalation to coding tier when code activity is detected.
 
 See **[Model Routing Guide](docs/MODEL_ROUTING.md)** for the full end-to-end flow, tier architecture, dynamic upgrades, tool ID remapping, context overflow protection, and debugging tips.
+
+### Plan Mode (Review Before Execute)
+
+LLM proposes tool calls → intercepted into a structured plan → user reviews via Telegram inline buttons → approved plan executes step-by-step. Supports model tier forcing, stop-on-failure, and resume from partially completed plans.
 
 ### Auto Mode (Autonomous Execution)
 
@@ -235,6 +242,7 @@ See the [Tools & Integrations](#-tools--integrations) section below for configur
 |----------|-------------|---------|
 | `SKILL_MATCHER_ENABLED` | Hybrid skill routing (semantic + LLM) | `false` |
 | `RAG_ENABLED` | LightRAG long-term memory | `false` |
+| `PLAN_MODE_ENABLED` | Plan mode (review-before-execute) | `false` |
 | `AUTO_MODE_ENABLED` | Autonomous goal execution | `false` |
 | `MCP_ENABLED` | Model Context Protocol client | `true` |
 | `BRAVE_SEARCH_ENABLED` | Web search via Brave | `false` |
@@ -413,6 +421,12 @@ Max depth: 5 (prevents infinite loops)
 | `/goal <desc>` | Create a new goal |
 | `/tasks` | List tasks for active goals |
 | `/diary [N]` | Show last N diary entries |
+| `/plan [on\|off]` | Toggle plan mode (review-before-execute) |
+| `/plan approve` | Approve the most recent ready plan |
+| `/plan cancel` | Cancel a plan |
+| `/plan resume` | Resume a partially completed plan |
+| `/plan status` | Show detailed plan status |
+| `/plans` | List all plans with statuses |
 
 ---
 
@@ -447,11 +461,12 @@ src/main/java/me/golemcore/bot/
 │       ├── llm/              # LLM providers (Langchain4j, Custom, NoOp)
 │       ├── storage/          # Local filesystem
 │       ├── mcp/              # MCP client
+│       ├── plan/             # Plan approval UI
 │       ├── rag/              # RAG integration
 │       └── voice/            # ElevenLabs STT + TTS
 ├── domain/                    # Core business logic
 │   ├── loop/                 # Agent loop orchestration
-│   ├── system/               # Processing pipeline (11 systems)
+│   ├── system/               # Processing pipeline (13 systems)
 │   ├── component/            # Component interfaces
 │   ├── model/                # Domain models
 │   └── service/              # Business services
