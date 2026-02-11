@@ -55,4 +55,10 @@ public final class ContextAttributes {
      * (persisted in session metadata).
      */
     public static final String LLM_MODEL = "llm.model";
+
+    /** Boolean — plan mode is active for the current session. */
+    public static final String PLAN_MODE_ACTIVE = "plan.mode.active";
+
+    /** String — plan ID that needs user approval before execution. */
+    public static final String PLAN_APPROVAL_NEEDED = "plan.approval.needed";
 }

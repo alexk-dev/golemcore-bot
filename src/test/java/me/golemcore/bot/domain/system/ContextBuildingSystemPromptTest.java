@@ -12,6 +12,7 @@ import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
+import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
 import me.golemcore.bot.domain.service.SkillTemplateEngine;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -44,6 +45,7 @@ class ContextBuildingSystemPromptTest {
     private RagPort ragPort;
     private BotProperties properties;
     private AutoModeService autoModeService;
+    private PlanService planService;
     private PromptSectionService promptSectionService;
     private UserPreferencesService userPreferencesService;
     private ContextBuildingSystem system;
@@ -58,6 +60,7 @@ class ContextBuildingSystemPromptTest {
         ragPort = mock(RagPort.class);
         properties = new BotProperties();
         autoModeService = mock(AutoModeService.class);
+        planService = mock(PlanService.class);
         promptSectionService = mock(PromptSectionService.class);
         userPreferencesService = mock(UserPreferencesService.class);
 
@@ -77,6 +80,7 @@ class ContextBuildingSystemPromptTest {
                 ragPort,
                 properties,
                 autoModeService,
+                planService,
                 promptSectionService,
                 userPreferencesService);
     }
@@ -196,6 +200,7 @@ class ContextBuildingSystemPromptTest {
                 ragPort,
                 properties,
                 autoModeService,
+                planService,
                 promptSectionService,
                 userPreferencesService);
 

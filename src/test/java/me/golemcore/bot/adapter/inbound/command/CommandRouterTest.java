@@ -13,6 +13,8 @@ import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.UsageStats;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.CompactionService;
+import me.golemcore.bot.domain.service.PlanExecutionService;
+import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
@@ -68,6 +70,8 @@ class CommandRouterTest {
     private UserPreferencesService preferencesService;
     private CompactionService compactionService;
     private AutoModeService autoModeService;
+    private PlanService planService;
+    private PlanExecutionService planExecutionService;
     private ScheduleService scheduleService;
     private ApplicationEventPublisher eventPublisher;
     private CommandRouter router;
@@ -107,6 +111,8 @@ class CommandRouterTest {
         });
 
         autoModeService = mock(AutoModeService.class);
+        planService = mock(PlanService.class);
+        planExecutionService = mock(PlanExecutionService.class);
         scheduleService = mock(ScheduleService.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
 
@@ -124,6 +130,8 @@ class CommandRouterTest {
                 preferencesService,
                 compactionService,
                 autoModeService,
+                planService,
+                planExecutionService,
                 scheduleService,
                 eventPublisher,
                 properties);
@@ -154,6 +162,8 @@ class CommandRouterTest {
         assertTrue(router.hasCommand(CMD_DIARY));
         assertTrue(router.hasCommand("tasks"));
         assertTrue(router.hasCommand(CMD_SCHEDULE));
+        assertTrue(router.hasCommand("plan"));
+        assertTrue(router.hasCommand("plans"));
         assertFalse(router.hasCommand("unknown"));
         assertFalse(router.hasCommand("settings"));
     }
@@ -541,7 +551,17 @@ class CommandRouterTest {
         assertTrue(commands.stream().anyMatch(c -> CMD_GOALS.equals(c.name())));
         assertTrue(commands.stream().anyMatch(c -> CMD_DIARY.equals(c.name())));
         assertTrue(commands.stream().anyMatch(c -> CMD_SCHEDULE.equals(c.name())));
-        assertEquals(13, commands.size());
+        assertEquals(13, commands.size()); // 7 base + 6 auto mode
+    }
+
+    @Test
+    void listCommandsIncludesPlanWhenEnabled() {
+        when(planService.isFeatureEnabled()).thenReturn(true);
+
+        List<CommandPort.CommandDefinition> commands = router.listCommands();
+        assertTrue(commands.stream().anyMatch(c -> "plan".equals(c.name())));
+        assertTrue(commands.stream().anyMatch(c -> "plans".equals(c.name())));
+        assertEquals(9, commands.size()); // 7 base + 2 plan
     }
 
     // ===== formatTokens =====

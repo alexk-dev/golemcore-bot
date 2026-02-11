@@ -27,6 +27,7 @@ import me.golemcore.bot.domain.model.PromptSection;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
+import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
 import me.golemcore.bot.domain.service.SkillTemplateEngine;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -65,6 +66,7 @@ public class ContextBuildingSystem implements AgentSystem {
     private final RagPort ragPort;
     private final BotProperties properties;
     private final AutoModeService autoModeService;
+    private final PlanService planService;
     private final PromptSectionService promptSectionService;
     private final UserPreferencesService userPreferencesService;
 
@@ -254,6 +256,20 @@ public class ContextBuildingSystem implements AgentSystem {
             if (autoContext != null && !autoContext.isBlank()) {
                 sb.append("\n").append(autoContext).append("\n");
             }
+        }
+
+        // Inject plan mode context and set model tier override
+        if (planService.isPlanModeActive()) {
+            String planContext = planService.buildPlanContext();
+            if (planContext != null && !planContext.isBlank()) {
+                sb.append("\n").append(planContext).append("\n");
+            }
+            // Override model tier if plan specifies one
+            planService.getActivePlan().ifPresent(plan -> {
+                if (plan.getModelTier() != null && context.getModelTier() == null) {
+                    context.setModelTier(plan.getModelTier());
+                }
+            });
         }
 
         return sb.toString().trim();

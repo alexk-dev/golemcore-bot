@@ -37,6 +37,7 @@ class ResponseRoutingSystemTest {
     private static final String VOICE_PREFIX = "\uD83D\uDD0A";
     private static final String FILENAME_DOC_PDF = "doc.pdf";
     private static final String ROLE_USER = "user";
+    private static final String MSG_VOICE_QUOTA = "Voice quota exceeded!";
     private static final String CONTENT_RESPONSE = "response";
 
     private ResponseRoutingSystem system;
@@ -913,7 +914,7 @@ class ResponseRoutingSystemTest {
     void voicePrefixQuotaExceededSendsNotificationAndFallsBackToText() {
         when(voiceHandler.isAvailable()).thenReturn(true);
         when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.QUOTA_EXCEEDED);
-        when(preferencesService.getMessage("voice.error.quota")).thenReturn("Voice quota exceeded!");
+        when(preferencesService.getMessage("voice.error.quota")).thenReturn(MSG_VOICE_QUOTA);
 
         AgentContext context = createContext();
         LlmResponse response = LlmResponse.builder().content(VOICE_PREFIX + " Hello voice").build();
@@ -924,14 +925,14 @@ class ResponseRoutingSystemTest {
         // Falls back to text
         verify(channelPort).sendMessage(eq(CHAT_ID), eq("Hello voice"));
         // Sends quota notification
-        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Voice quota exceeded!"));
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq(MSG_VOICE_QUOTA));
     }
 
     @Test
     void voiceOnlyQuotaExceededSendsNotification() {
         when(voiceHandler.sendVoiceWithFallback(any(), anyString(), anyString()))
                 .thenReturn(VoiceSendResult.QUOTA_EXCEEDED);
-        when(preferencesService.getMessage("voice.error.quota")).thenReturn("Voice quota exceeded!");
+        when(preferencesService.getMessage("voice.error.quota")).thenReturn(MSG_VOICE_QUOTA);
 
         AgentContext context = createContext();
         LlmResponse response = LlmResponse.builder().content("").build();
@@ -942,7 +943,7 @@ class ResponseRoutingSystemTest {
         system.process(context);
 
         verify(voiceHandler).sendVoiceWithFallback(eq(channelPort), eq(CHAT_ID), eq("Speak this"));
-        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Voice quota exceeded!"));
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq(MSG_VOICE_QUOTA));
         // Assistant message still added since text fallback succeeded
         assertFalse(context.getSession().getMessages().isEmpty());
     }
@@ -951,7 +952,7 @@ class ResponseRoutingSystemTest {
     void voiceAfterTextQuotaExceededSendsNotification() {
         when(voiceHandler.isAvailable()).thenReturn(true);
         when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.QUOTA_EXCEEDED);
-        when(preferencesService.getMessage("voice.error.quota")).thenReturn("Voice quota exceeded!");
+        when(preferencesService.getMessage("voice.error.quota")).thenReturn(MSG_VOICE_QUOTA);
 
         AgentContext context = createContext();
         LlmResponse response = LlmResponse.builder().content("Text response").build();
@@ -963,6 +964,6 @@ class ResponseRoutingSystemTest {
         // Text always sent
         verify(channelPort).sendMessage(eq(CHAT_ID), eq("Text response"));
         // Quota notification sent after
-        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Voice quota exceeded!"));
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq(MSG_VOICE_QUOTA));
     }
 }

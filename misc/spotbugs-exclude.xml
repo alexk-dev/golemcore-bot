@@ -26,7 +26,10 @@
     -->
     <Match>
         <Bug pattern="REC_CATCH_EXCEPTION" />
-        <Class name="~me\.golemcore\.bot\.domain\.system\..*" />
+        <Or>
+            <Class name="~me\.golemcore\.bot\.domain\.system\..*" />
+            <Class name="me.golemcore.bot.domain.service.PlanExecutionService" />
+        </Or>
     </Match>
     <!--
         Returning null from getObject() is intentional — null means "file not found".
@@ -36,6 +39,14 @@
     <Match>
         <Bug pattern="PZLA_PREFER_ZERO_LENGTH_ARRAYS" />
         <Class name="me.golemcore.bot.adapter.outbound.storage.LocalStorageAdapter" />
+    </Match>
+    <!--
+        ElevenLabsAdapter.isQuotaExceededMessage() uses toLowerCase() without Locale.
+        This is intentional — matching English error messages from the API, not user text.
+    -->
+    <Match>
+        <Bug pattern="DM_CONVERT_CASE" />
+        <Class name="me.golemcore.bot.adapter.outbound.voice.ElevenLabsAdapter" />
     </Match>
     <!--
         Response.body() null checks are defensive.
