@@ -37,6 +37,10 @@ class PlanInterceptSystemTest {
     private static final String TOOL_SHELL = "shell";
     private static final String TC_1 = "tc1";
     private static final String OP_WRITE = "write";
+    private static final String OP_READ = "read";
+    private static final String KEY_COMMAND = "command";
+    private static final String LLM_TOOL_CALLS = "llm.toolCalls";
+    private static final String TOOL_BROWSER = "browser";
 
     private PlanInterceptSystem system;
     private PlanService planService;
@@ -99,7 +103,7 @@ class PlanInterceptSystemTest {
         Message.ToolCall tc2 = Message.ToolCall.builder()
                 .id("tc2")
                 .name(TOOL_SHELL)
-                .arguments(Map.of("command", "echo hello"))
+                .arguments(Map.of(KEY_COMMAND, "echo hello"))
                 .build();
 
         AgentContext context = createContext(List.of(tc1, tc2));
@@ -121,13 +125,13 @@ class PlanInterceptSystemTest {
         Message.ToolCall toolCall = Message.ToolCall.builder()
                 .id(TC_1)
                 .name(TOOL_FILESYSTEM)
-                .arguments(Map.of("op", "read"))
+                .arguments(Map.of("op", OP_READ))
                 .build();
 
         AgentContext context = createContext(List.of(toolCall));
         system.process(context);
 
-        List<Message.ToolCall> toolCalls = context.getAttribute("llm.toolCalls");
+        List<Message.ToolCall> toolCalls = context.getAttribute(LLM_TOOL_CALLS);
         assertNull(toolCalls);
     }
 
@@ -166,7 +170,7 @@ class PlanInterceptSystemTest {
         Message.ToolCall tc2 = Message.ToolCall.builder()
                 .id("tc2")
                 .name(TOOL_SHELL)
-                .arguments(Map.of("command", "ls"))
+                .arguments(Map.of(KEY_COMMAND, "ls"))
                 .build();
 
         AgentContext context = createContext(List.of(tc1, tc2));
@@ -233,6 +237,228 @@ class PlanInterceptSystemTest {
         assertTrue(system.isEnabled());
     }
 
+    @Test
+    void shouldReturnEarlyWhenActivePlanIdIsNull() {
+        when(planService.isPlanModeActive()).thenReturn(true);
+        when(planService.getActivePlanId()).thenReturn(null);
+
+        Message.ToolCall toolCall = Message.ToolCall.builder()
+                .id(TC_1).name(TOOL_FILESYSTEM)
+                .arguments(Map.of("op", OP_WRITE)).build();
+        AgentContext context = createContext(List.of(toolCall));
+
+        system.process(context);
+
+        verify(planService).getActivePlanId();
+        // No steps should be added because planId is null
+        verify(planService, org.mockito.Mockito.never()).addStep(anyString(), anyString(), anyMap(), anyString());
+    }
+
+    @Test
+    void shouldHandleAddStepException() {
+        when(planService.isPlanModeActive()).thenReturn(true);
+        when(planService.getActivePlanId()).thenReturn(PLAN_ID);
+        when(planService.addStep(anyString(), anyString(), anyMap(), anyString()))
+                .thenThrow(new IllegalStateException("Max steps reached"));
+
+        Message.ToolCall toolCall = Message.ToolCall.builder()
+                .id(TC_1).name(TOOL_FILESYSTEM)
+                .arguments(Map.of("op", OP_WRITE)).build();
+        AgentContext context = createContext(List.of(toolCall));
+
+        system.process(context);
+
+        // Should still add synthetic messages and clear tool calls despite exception
+        assertNull(context.getAttribute(LLM_TOOL_CALLS));
+        Boolean toolsExecuted = context.getAttribute(ContextAttributes.TOOLS_EXECUTED);
+        assertTrue(toolsExecuted);
+    }
+
+    @Test
+    void shouldBuildDescriptionWithNullArgs() {
+        when(planService.isPlanModeActive()).thenReturn(true);
+        when(planService.getActivePlanId()).thenReturn(PLAN_ID);
+        when(planService.addStep(anyString(), anyString(), any(), anyString()))
+                .thenReturn(PlanStep.builder().id(STEP_ID).build());
+
+        Message.ToolCall toolCall = Message.ToolCall.builder()
+                .id(TC_1).name(TOOL_FILESYSTEM)
+                .arguments(null).build();
+        AgentContext context = createContext(List.of(toolCall));
+
+        system.process(context);
+
+        // Description should fallback to tool name when args are null
+        verify(planService).addStep(eq(PLAN_ID), eq(TOOL_FILESYSTEM), any(), eq(TOOL_FILESYSTEM));
+    }
+
+    @Test
+    void shouldBuildDescriptionWithEmptyArgs() {
+        when(planService.isPlanModeActive()).thenReturn(true);
+        when(planService.getActivePlanId()).thenReturn(PLAN_ID);
+        when(planService.addStep(anyString(), anyString(), anyMap(), anyString()))
+                .thenReturn(PlanStep.builder().id(STEP_ID).build());
+
+        Message.ToolCall toolCall = Message.ToolCall.builder()
+                .id(TC_1).name(TOOL_FILESYSTEM)
+                .arguments(Map.of()).build();
+        AgentContext context = createContext(List.of(toolCall));
+
+        system.process(context);
+
+        verify(planService).addStep(eq(PLAN_ID), eq(TOOL_FILESYSTEM), anyMap(), eq(TOOL_FILESYSTEM));
+    }
+
+    @Test
+    void shouldBuildDescriptionWithOperationOnly() {
+        when(planService.isPlanModeActive()).thenReturn(true);
+        when(planService.getActivePlanId()).thenReturn(PLAN_ID);
+        when(planService.addStep(anyString(), anyString(), anyMap(), anyString()))
+                .thenReturn(PlanStep.builder().id(STEP_ID).build());
+
+        Message.ToolCall toolCall = Message.ToolCall.builder()
+                .id(TC_1).name(TOOL_FILESYSTEM)
+                .arguments(Map.of("operation", OP_READ)).build();
+        AgentContext context = createContext(List.of(toolCall));
+
+        system.process(context);
+
+        verify(planService).addStep(eq(PLAN_ID), eq(TOOL_FILESYSTEM), anyMap(), eq(OP_READ));
+    }
+
+    @Test
+    void shouldBuildDescriptionWithCommandAndUrl() {
+        when(planService.isPlanModeActive()).thenReturn(true);
+        when(planService.getActivePlanId()).thenReturn(PLAN_ID);
+        when(planService.addStep(anyString(), anyString(), anyMap(), anyString()))
+                .thenReturn(PlanStep.builder().id(STEP_ID).build());
+
+        Message.ToolCall toolCall = Message.ToolCall.builder()
+                .id(TC_1).name(TOOL_BROWSER)
+                .arguments(Map.of(KEY_COMMAND, "fetch", "url", "https://example.com")).build();
+        AgentContext context = createContext(List.of(toolCall));
+
+        system.process(context);
+
+        verify(planService).addStep(eq(PLAN_ID), eq(TOOL_BROWSER), anyMap(),
+                eq("fetch https://example.com"));
+    }
+
+    @Test
+    void shouldBuildDescriptionWithPathWhenSbEmpty() {
+        when(planService.isPlanModeActive()).thenReturn(true);
+        when(planService.getActivePlanId()).thenReturn(PLAN_ID);
+        when(planService.addStep(anyString(), anyString(), anyMap(), anyString()))
+                .thenReturn(PlanStep.builder().id(STEP_ID).build());
+
+        Message.ToolCall toolCall = Message.ToolCall.builder()
+                .id(TC_1).name(TOOL_FILESYSTEM)
+                .arguments(Map.of("path", "/tmp/test.txt")).build();
+        AgentContext context = createContext(List.of(toolCall));
+
+        system.process(context);
+
+        verify(planService).addStep(eq(PLAN_ID), eq(TOOL_FILESYSTEM), anyMap(), eq("/tmp/test.txt"));
+    }
+
+    @Test
+    void shouldBuildDescriptionWithUrlWhenSbEmpty() {
+        when(planService.isPlanModeActive()).thenReturn(true);
+        when(planService.getActivePlanId()).thenReturn(PLAN_ID);
+        when(planService.addStep(anyString(), anyString(), anyMap(), anyString()))
+                .thenReturn(PlanStep.builder().id(STEP_ID).build());
+
+        Message.ToolCall toolCall = Message.ToolCall.builder()
+                .id(TC_1).name(TOOL_BROWSER)
+                .arguments(Map.of("url", "https://example.com")).build();
+        AgentContext context = createContext(List.of(toolCall));
+
+        system.process(context);
+
+        verify(planService).addStep(eq(PLAN_ID), eq(TOOL_BROWSER), anyMap(),
+                eq("https://example.com"));
+    }
+
+    @Test
+    void shouldBuildDescriptionWithUnrecognizedArgs() {
+        when(planService.isPlanModeActive()).thenReturn(true);
+        when(planService.getActivePlanId()).thenReturn(PLAN_ID);
+        when(planService.addStep(anyString(), anyString(), anyMap(), anyString()))
+                .thenReturn(PlanStep.builder().id(STEP_ID).build());
+
+        Message.ToolCall toolCall = Message.ToolCall.builder()
+                .id(TC_1).name(TOOL_FILESYSTEM)
+                .arguments(Map.of("foo", "bar", "baz", "qux")).build();
+        AgentContext context = createContext(List.of(toolCall));
+
+        system.process(context);
+
+        // None of the recognized keys → sb is empty → fallback to tool name
+        verify(planService).addStep(eq(PLAN_ID), eq(TOOL_FILESYSTEM), anyMap(), eq(TOOL_FILESYSTEM));
+    }
+
+    @Test
+    void shouldTruncateLongCommandInDescription() {
+        when(planService.isPlanModeActive()).thenReturn(true);
+        when(planService.getActivePlanId()).thenReturn(PLAN_ID);
+        when(planService.addStep(anyString(), anyString(), anyMap(), anyString()))
+                .thenReturn(PlanStep.builder().id(STEP_ID).build());
+
+        String longCommand = "A".repeat(100);
+        Message.ToolCall toolCall = Message.ToolCall.builder()
+                .id(TC_1).name(TOOL_SHELL)
+                .arguments(Map.of(KEY_COMMAND, longCommand)).build();
+        AgentContext context = createContext(List.of(toolCall));
+
+        system.process(context);
+
+        verify(planService).addStep(eq(PLAN_ID), eq(TOOL_SHELL), anyMap(),
+                eq(longCommand.substring(0, 80) + "..."));
+    }
+
+    @Test
+    void shouldBuildDescriptionWithOperationAndPath() {
+        when(planService.isPlanModeActive()).thenReturn(true);
+        when(planService.getActivePlanId()).thenReturn(PLAN_ID);
+        when(planService.addStep(anyString(), anyString(), anyMap(), anyString()))
+                .thenReturn(PlanStep.builder().id(STEP_ID).build());
+
+        Message.ToolCall toolCall = Message.ToolCall.builder()
+                .id(TC_1).name(TOOL_FILESYSTEM)
+                .arguments(Map.of("operation", OP_READ, "path", "/tmp/test.txt")).build();
+        AgentContext context = createContext(List.of(toolCall));
+
+        system.process(context);
+
+        verify(planService).addStep(eq(PLAN_ID), eq(TOOL_FILESYSTEM), anyMap(),
+                eq("read /tmp/test.txt"));
+    }
+
+    @Test
+    void shouldHandleNullLlmResponse() {
+        when(planService.isPlanModeActive()).thenReturn(true);
+        when(planService.getActivePlanId()).thenReturn(PLAN_ID);
+        when(planService.addStep(anyString(), anyString(), anyMap(), anyString()))
+                .thenReturn(PlanStep.builder().id(STEP_ID).build());
+
+        Message.ToolCall toolCall = Message.ToolCall.builder()
+                .id(TC_1).name(TOOL_FILESYSTEM)
+                .arguments(Map.of("op", OP_WRITE)).build();
+
+        AgentContext context = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>())
+                .build();
+        context.setAttribute(LLM_TOOL_CALLS, List.of(toolCall));
+        // No LLM_RESPONSE set — null content in assistant message
+
+        system.process(context);
+
+        Message assistantMsg = context.getMessages().get(0);
+        assertEquals("assistant", assistantMsg.getRole());
+        assertNull(assistantMsg.getContent());
+    }
+
     // ===== Helper Methods =====
 
     private AgentContext createContext(List<Message.ToolCall> toolCalls) {
@@ -242,7 +468,7 @@ class PlanInterceptSystemTest {
                 .build();
 
         if (toolCalls != null) {
-            context.setAttribute("llm.toolCalls", toolCalls);
+            context.setAttribute(LLM_TOOL_CALLS, toolCalls);
         }
 
         LlmResponse llmResponse = LlmResponse.builder()

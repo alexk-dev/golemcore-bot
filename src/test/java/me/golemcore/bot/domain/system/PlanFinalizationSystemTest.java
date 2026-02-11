@@ -29,6 +29,7 @@ class PlanFinalizationSystemTest {
 
     private static final String PLAN_ID = "plan-123";
     private static final String CHAT_ID = "chat-456";
+    private static final String TOOL_FILESYSTEM = "filesystem";
 
     private PlanService planService;
     private ApplicationEventPublisher eventPublisher;
@@ -112,7 +113,7 @@ class PlanFinalizationSystemTest {
         when(planService.isPlanModeActive()).thenReturn(true);
 
         List<PlanStep> steps = List.of(
-                PlanStep.builder().id("s1").toolName("filesystem").description("write file").order(0).build(),
+                PlanStep.builder().id("s1").toolName(TOOL_FILESYSTEM).description("write file").order(0).build(),
                 PlanStep.builder().id("s2").toolName("shell").description("run tests").order(1).build());
 
         Plan plan = Plan.builder()
@@ -138,7 +139,7 @@ class PlanFinalizationSystemTest {
         when(planService.isPlanModeActive()).thenReturn(true);
 
         List<PlanStep> steps = List.of(
-                PlanStep.builder().id("s1").toolName("filesystem").description("write file").order(0).build());
+                PlanStep.builder().id("s1").toolName(TOOL_FILESYSTEM).description("write file").order(0).build());
 
         Plan plan = Plan.builder()
                 .id(PLAN_ID)
@@ -152,7 +153,7 @@ class PlanFinalizationSystemTest {
 
         LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
         assertTrue(response.getContent().contains("Original response"));
-        assertTrue(response.getContent().contains("filesystem"));
+        assertTrue(response.getContent().contains(TOOL_FILESYSTEM));
         assertTrue(response.getContent().contains("Waiting for approval"));
     }
 
@@ -166,6 +167,78 @@ class PlanFinalizationSystemTest {
 
         verify(planService).deactivatePlanMode();
         verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void shouldNotProcessWhenResponseContentIsNull() {
+        when(planService.isPlanModeActive()).thenReturn(true);
+        AgentContext context = buildContext(null);
+        // Explicitly set a response with null content (different from no response)
+        LlmResponse response = LlmResponse.builder().content(null).build();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+        assertFalse(system.shouldProcess(context));
+    }
+
+    @Test
+    void shouldNotProcessWhenResponseContentIsBlank() {
+        when(planService.isPlanModeActive()).thenReturn(true);
+        AgentContext context = buildContext(null);
+        LlmResponse response = LlmResponse.builder().content("   ").build();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+        assertFalse(system.shouldProcess(context));
+    }
+
+    @Test
+    void shouldProcessWhenToolCallsListIsEmpty() {
+        when(planService.isPlanModeActive()).thenReturn(true);
+        AgentContext context = buildContext("Some text response");
+        context.setAttribute("llm.toolCalls", List.of());
+        assertTrue(system.shouldProcess(context));
+    }
+
+    @Test
+    void shouldHandleStepWithNullDescription() {
+        when(planService.isPlanModeActive()).thenReturn(true);
+
+        List<PlanStep> steps = List.of(
+                PlanStep.builder().id("s1").toolName(TOOL_FILESYSTEM).description(null).order(0).build());
+
+        Plan plan = Plan.builder()
+                .id(PLAN_ID)
+                .status(Plan.PlanStatus.COLLECTING)
+                .steps(new ArrayList<>(steps))
+                .build();
+        when(planService.getActivePlan()).thenReturn(Optional.of(plan));
+
+        AgentContext context = buildContext("Plan summary here");
+        system.process(context);
+
+        LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
+        assertTrue(response.getContent().contains(TOOL_FILESYSTEM));
+        assertFalse(response.getContent().contains(" — null"));
+    }
+
+    @Test
+    void shouldHandleStepWithBlankDescription() {
+        when(planService.isPlanModeActive()).thenReturn(true);
+
+        List<PlanStep> steps = List.of(
+                PlanStep.builder().id("s1").toolName(TOOL_FILESYSTEM).description("   ").order(0).build());
+
+        Plan plan = Plan.builder()
+                .id(PLAN_ID)
+                .status(Plan.PlanStatus.COLLECTING)
+                .steps(new ArrayList<>(steps))
+                .build();
+        when(planService.getActivePlan()).thenReturn(Optional.of(plan));
+
+        AgentContext context = buildContext("Plan summary here");
+        system.process(context);
+
+        LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
+        assertTrue(response.getContent().contains(TOOL_FILESYSTEM));
+        // Blank description should not have " — " separator
+        assertFalse(response.getContent().contains(" — "));
     }
 
     private AgentContext buildContext(String responseContent) {

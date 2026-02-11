@@ -20,6 +20,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -38,6 +39,8 @@ class PlanExecutionServiceTest {
     private static final String TOOL_FILESYSTEM = "filesystem";
     private static final String TOOL_SHELL = "shell";
     private static final String RESULT_DONE = "Done";
+    private static final String NONEXISTENT = "nonexistent";
+    private static final String BACKTICK_FILESYSTEM = "`filesystem`";
     private static final Instant NOW = Instant.parse("2026-02-11T10:00:00Z");
 
     private PlanService planService;
@@ -266,9 +269,9 @@ class PlanExecutionServiceTest {
 
     @Test
     void shouldThrowWhenResumingNonExistentPlan() {
-        when(planService.getPlan("nonexistent")).thenReturn(Optional.empty());
+        when(planService.getPlan(NONEXISTENT)).thenReturn(Optional.empty());
 
-        assertThrows(IllegalArgumentException.class, () -> service.resumePlan("nonexistent"));
+        assertThrows(IllegalArgumentException.class, () -> service.resumePlan(NONEXISTENT));
     }
 
     @Test
@@ -291,7 +294,7 @@ class PlanExecutionServiceTest {
         String summary = service.buildExecutionSummary(plan);
 
         assertTrue(summary.contains("Plan Execution Complete"));
-        assertTrue(summary.contains("`filesystem`"));
+        assertTrue(summary.contains(BACKTICK_FILESYSTEM));
         assertTrue(summary.contains("`shell`"));
         assertTrue(summary.contains("2/2 completed"));
     }
@@ -336,6 +339,155 @@ class PlanExecutionServiceTest {
 
         verify(planService).markStepCompleted(eq(PLAN_ID), eq("s1"),
                 eq(longOutput.substring(0, 200) + "..."));
+    }
+
+    @Test
+    void shouldSkipAlreadySkippedSteps() throws Exception {
+        Plan plan = buildPlan(Plan.PlanStatus.APPROVED, List.of(
+                buildStep("s1", TOOL_FILESYSTEM, 0, PlanStep.StepStatus.SKIPPED),
+                buildStep("s2", TOOL_SHELL, 1, PlanStep.StepStatus.PENDING)));
+        when(planService.getPlan(PLAN_ID)).thenReturn(Optional.of(plan));
+
+        when(shellTool.execute(any()))
+                .thenReturn(CompletableFuture.completedFuture(ToolResult.success(RESULT_DONE)));
+
+        service.executePlan(PLAN_ID).get(5, TimeUnit.SECONDS);
+
+        verify(planService, never()).markStepInProgress(PLAN_ID, "s1");
+        verify(planService).markStepInProgress(PLAN_ID, "s2");
+        verify(planService).completePlan(PLAN_ID);
+    }
+
+    @Test
+    void shouldBuildSummaryWithAllStepStatuses() {
+        Plan plan = Plan.builder()
+                .id(PLAN_ID)
+                .chatId(CHAT_ID)
+                .status(Plan.PlanStatus.PARTIALLY_COMPLETED)
+                .steps(new ArrayList<>(List.of(
+                        PlanStep.builder().id("s1").toolName(TOOL_FILESYSTEM).description("completed step")
+                                .order(0).status(PlanStep.StepStatus.COMPLETED).result(RESULT_DONE).createdAt(NOW)
+                                .build(),
+                        PlanStep.builder().id("s2").toolName(TOOL_SHELL).description("failed step")
+                                .order(1).status(PlanStep.StepStatus.FAILED).result("Error msg").createdAt(NOW).build(),
+                        PlanStep.builder().id("s3").toolName(TOOL_SHELL).description("pending step")
+                                .order(2).status(PlanStep.StepStatus.PENDING).createdAt(NOW).build(),
+                        PlanStep.builder().id("s4").toolName(TOOL_SHELL).description("in progress step")
+                                .order(3).status(PlanStep.StepStatus.IN_PROGRESS).createdAt(NOW).build(),
+                        PlanStep.builder().id("s5").toolName(TOOL_SHELL).description("skipped step")
+                                .order(4).status(PlanStep.StepStatus.SKIPPED).createdAt(NOW).build())))
+                .createdAt(NOW)
+                .updatedAt(NOW)
+                .build();
+
+        String summary = service.buildExecutionSummary(plan);
+
+        assertTrue(summary.contains("\u2705")); // COMPLETED icon
+        assertTrue(summary.contains("\u274C")); // FAILED icon
+        assertTrue(summary.contains("\u23F3")); // PENDING icon
+        assertTrue(summary.contains("\u25B6\uFE0F")); // IN_PROGRESS icon
+        assertTrue(summary.contains("\u23ED\uFE0F")); // SKIPPED icon
+    }
+
+    @Test
+    void shouldHandleNullErrorInFailedToolResult() throws Exception {
+        when(filesystemTool.execute(any()))
+                .thenReturn(CompletableFuture.completedFuture(ToolResult.failure(null)));
+
+        PlanStep step = buildStep("s1", TOOL_FILESYSTEM, 0, PlanStep.StepStatus.PENDING);
+        Plan plan = buildPlan(Plan.PlanStatus.APPROVED, List.of(step));
+        when(planService.getPlan(PLAN_ID)).thenReturn(Optional.of(plan));
+
+        service.executePlan(PLAN_ID).get(5, TimeUnit.SECONDS);
+
+        verify(planService).markStepFailed(PLAN_ID, "s1", "Unknown error");
+    }
+
+    @Test
+    void shouldBuildSummaryWithNullStepDescription() {
+        Plan plan = Plan.builder()
+                .id(PLAN_ID)
+                .chatId(CHAT_ID)
+                .status(Plan.PlanStatus.COMPLETED)
+                .steps(new ArrayList<>(List.of(
+                        PlanStep.builder().id("s1").toolName(TOOL_FILESYSTEM).description(null)
+                                .order(0).status(PlanStep.StepStatus.COMPLETED).result(RESULT_DONE).createdAt(NOW)
+                                .build())))
+                .createdAt(NOW)
+                .updatedAt(NOW)
+                .build();
+
+        String summary = service.buildExecutionSummary(plan);
+
+        assertTrue(summary.contains(BACKTICK_FILESYSTEM));
+        assertFalse(summary.contains(" — null"));
+    }
+
+    @Test
+    void shouldBuildSummaryWithNullStepResult() {
+        Plan plan = Plan.builder()
+                .id(PLAN_ID)
+                .chatId(CHAT_ID)
+                .status(Plan.PlanStatus.COMPLETED)
+                .steps(new ArrayList<>(List.of(
+                        PlanStep.builder().id("s1").toolName(TOOL_FILESYSTEM).description("write")
+                                .order(0).status(PlanStep.StepStatus.COMPLETED).result(null).createdAt(NOW)
+                                .build())))
+                .createdAt(NOW)
+                .updatedAt(NOW)
+                .build();
+
+        String summary = service.buildExecutionSummary(plan);
+
+        assertTrue(summary.contains(BACKTICK_FILESYSTEM));
+        assertTrue(summary.contains("1/1 completed"));
+    }
+
+    @Test
+    void shouldBuildSummaryWithBlankStepResult() {
+        Plan plan = Plan.builder()
+                .id(PLAN_ID)
+                .chatId(CHAT_ID)
+                .status(Plan.PlanStatus.COMPLETED)
+                .steps(new ArrayList<>(List.of(
+                        PlanStep.builder().id("s1").toolName(TOOL_FILESYSTEM).description("write")
+                                .order(0).status(PlanStep.StepStatus.COMPLETED).result("   ").createdAt(NOW)
+                                .build())))
+                .createdAt(NOW)
+                .updatedAt(NOW)
+                .build();
+
+        String summary = service.buildExecutionSummary(plan);
+
+        assertTrue(summary.contains(BACKTICK_FILESYSTEM));
+        assertTrue(summary.contains("1/1 completed"));
+    }
+
+    @Test
+    void shouldCompleteWithHasFailureWhenStopOnFailureDisabled() throws Exception {
+        properties.getPlan().setStopOnFailure(false);
+
+        Plan plan = buildPlan(Plan.PlanStatus.APPROVED, List.of(
+                buildStep("s1", TOOL_FILESYSTEM, 0, PlanStep.StepStatus.PENDING)));
+        when(planService.getPlan(PLAN_ID)).thenReturn(Optional.of(plan));
+
+        when(filesystemTool.execute(any()))
+                .thenReturn(CompletableFuture.completedFuture(ToolResult.failure("Error")));
+
+        service.executePlan(PLAN_ID).get(5, TimeUnit.SECONDS);
+
+        // hasFailure=true but stopOnFailure=false → completePlan (not
+        // partiallyCompleted)
+        verify(planService).completePlan(PLAN_ID);
+        verify(planService, never()).markPlanPartiallyCompleted(PLAN_ID);
+    }
+
+    @Test
+    void shouldHandlePlanNotFound() {
+        when(planService.getPlan(NONEXISTENT)).thenReturn(Optional.empty());
+
+        assertThrows(Exception.class,
+                () -> service.executePlan(NONEXISTENT).get(5, TimeUnit.SECONDS));
     }
 
     // ===== Helper Methods =====
