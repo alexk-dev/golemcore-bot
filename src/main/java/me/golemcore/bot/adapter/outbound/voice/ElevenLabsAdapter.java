@@ -363,7 +363,7 @@ public class ElevenLabsAdapter implements VoicePort {
         if (message == null) {
             return false;
         }
-        String lower = message.toLowerCase();
+        String lower = message.toLowerCase(java.util.Locale.ROOT);
         return lower.contains("exceeds your quota") || lower.contains("quota exceeded")
                 || lower.contains("credits remaining");
     }

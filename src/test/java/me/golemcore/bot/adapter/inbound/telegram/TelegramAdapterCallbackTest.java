@@ -1,6 +1,7 @@
 package me.golemcore.bot.adapter.inbound.telegram;
 
 import me.golemcore.bot.domain.model.ConfirmationCallbackEvent;
+import me.golemcore.bot.domain.model.PlanApprovalCallbackEvent;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.i18n.MessageService;
@@ -137,6 +138,56 @@ class TelegramAdapterCallbackTest {
         ArgumentCaptor<ConfirmationCallbackEvent> captor = ArgumentCaptor.forClass(ConfirmationCallbackEvent.class);
         verify(eventPublisher).publishEvent(captor.capture());
         assertFalse(captor.getValue().approved());
+    }
+
+    // ===== Plan callbacks =====
+
+    @Test
+    void shouldPublishPlanApprovalEvent() {
+        Update update = createCallbackUpdate(CHAT_ID_100, 42, "plan:plan-abc:approve");
+
+        adapter.consume(update);
+
+        ArgumentCaptor<PlanApprovalCallbackEvent> captor = ArgumentCaptor.forClass(PlanApprovalCallbackEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        PlanApprovalCallbackEvent event = captor.getValue();
+
+        assertEquals("plan-abc", event.planId());
+        assertEquals("approve", event.action());
+        assertEquals(CHAT_ID_100, event.chatId());
+        assertEquals("42", event.messageId());
+    }
+
+    @Test
+    void shouldPublishPlanCancelEvent() {
+        Update update = createCallbackUpdate("200", 99, "plan:plan-xyz:cancel");
+
+        adapter.consume(update);
+
+        ArgumentCaptor<PlanApprovalCallbackEvent> captor = ArgumentCaptor.forClass(PlanApprovalCallbackEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        PlanApprovalCallbackEvent event = captor.getValue();
+
+        assertEquals("plan-xyz", event.planId());
+        assertEquals("cancel", event.action());
+    }
+
+    @Test
+    void shouldIgnoreInvalidPlanCallbackFormat() {
+        Update update = createCallbackUpdate(CHAT_ID_100, 1, "plan:abc");
+
+        adapter.consume(update);
+
+        verify(eventPublisher, never()).publishEvent(any(PlanApprovalCallbackEvent.class));
+    }
+
+    @Test
+    void shouldIgnorePlanCallbackWithTooManyParts() {
+        Update update = createCallbackUpdate(CHAT_ID_100, 1, "plan:a:b:c");
+
+        adapter.consume(update);
+
+        verify(eventPublisher, never()).publishEvent(any(PlanApprovalCallbackEvent.class));
     }
 
     private Update createCallbackUpdate(String chatId, int messageId, String data) {

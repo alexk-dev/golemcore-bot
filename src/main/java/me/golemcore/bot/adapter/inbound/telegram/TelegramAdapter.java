@@ -19,6 +19,7 @@
 package me.golemcore.bot.adapter.inbound.telegram;
 
 import me.golemcore.bot.domain.model.ConfirmationCallbackEvent;
+import me.golemcore.bot.domain.model.PlanApprovalCallbackEvent;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AudioFormat;
 import me.golemcore.bot.domain.model.Message;
@@ -220,6 +221,8 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
 
         if (data.startsWith("confirm:")) {
             handleConfirmationCallback(chatId, messageId, data);
+        } else if (data.startsWith("plan:")) {
+            handlePlanCallback(chatId, messageId, data);
         } else if (data.startsWith("lang:")) {
             String lang = data.substring(5);
             preferencesService.setLanguage(lang);
@@ -242,6 +245,21 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
 
         eventPublisher.publishEvent(new ConfirmationCallbackEvent(
                 confirmationId, approved, chatId, messageId.toString()));
+    }
+
+    private void handlePlanCallback(String chatId, Integer messageId, String data) {
+        // Format: plan:<planId>:<action> (approve or cancel)
+        String[] parts = data.split(":");
+        if (parts.length != CALLBACK_DATA_PARTS_COUNT) {
+            log.warn("Invalid plan callback data: {}", data);
+            return;
+        }
+
+        String planId = parts[1];
+        String action = parts[2];
+
+        eventPublisher.publishEvent(new PlanApprovalCallbackEvent(
+                planId, action, chatId, messageId.toString()));
     }
 
     private void updateSettingsMessage(String chatId, Integer messageId, String statusMessage) {

@@ -312,6 +312,37 @@ export BOT_RAG_INDEX_MIN_LENGTH=50
 
 ---
 
+## Plan Mode
+
+Review-before-execute workflow. LLM tool calls are intercepted into a structured plan for user approval before execution.
+
+```bash
+export PLAN_MODE_ENABLED=true
+export BOT_PLAN_MAX_PLANS=5                # Max concurrent active plans
+export BOT_PLAN_MAX_STEPS=50               # Max steps per plan
+export BOT_PLAN_STOP_ON_FAILURE=true       # Stop execution on step failure
+export BOT_PLAN_DEFAULT_MODEL_TIER=smart   # Default model tier for plans
+```
+
+**Usage:**
+```
+/plan on smart     # Enable plan mode with smart tier
+                   # Send your request — tool calls will be collected, not executed
+                   # LLM responds with a plan summary
+                   # Approve or cancel via Telegram inline buttons
+/plan resume       # Resume a partially completed plan
+/plans             # List all plans with statuses
+```
+
+**How it works:**
+1. `PlanInterceptSystem` (order=35) intercepts LLM tool calls during collection
+2. Synthetic `[Planned]` results keep the LLM proposing more steps
+3. `PlanFinalizationSystem` (order=58) detects when planning is done
+4. User approves via Telegram inline keyboard
+5. `PlanExecutionService` runs steps sequentially with failure handling
+
+---
+
 ## Auto Mode
 
 > **Deep dive:** See [Auto Mode Guide](AUTO_MODE.md) for the tick cycle, goal/task lifecycle, diary format, system prompt injection, and pipeline integration.

@@ -25,11 +25,15 @@ import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.DiaryEntry;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.Plan;
+import me.golemcore.bot.domain.model.PlanStep;
 import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.UsageStats;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.CompactionService;
+import me.golemcore.bot.domain.service.PlanExecutionService;
+import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
@@ -89,8 +93,11 @@ public class CommandRouter implements CommandPort {
     private static final String DOUBLE_NEWLINE = "\n\n";
     private static final String TABLE_SEPARATOR = " | ";
     private static final String MSG_AUTO_NOT_AVAILABLE = "command.auto.not-available";
+    private static final String MSG_PLAN_NOT_AVAILABLE = "command.plan.not-available";
     private static final String CMD_HELP = "help";
     private static final String CMD_GOAL = "goal";
+    private static final String CMD_PLAN = "plan";
+    private static final String CMD_STATUS = "status";
     private static final int MIN_SCHEDULE_ARGS = 2;
     private static final int MIN_CRON_PARTS_FOR_REPEAT_CHECK = 1;
 
@@ -101,13 +108,16 @@ public class CommandRouter implements CommandPort {
     private final UserPreferencesService preferencesService;
     private final CompactionService compactionService;
     private final AutoModeService autoModeService;
+    private final PlanService planService;
+    private final PlanExecutionService planExecutionService;
     private final ScheduleService scheduleService;
     private final ApplicationEventPublisher eventPublisher;
     private final BotProperties properties;
 
     private static final List<String> KNOWN_COMMANDS = List.of(
-            "skills", "tools", "status", "new", "reset", "compact", CMD_HELP,
-            "auto", "goals", CMD_GOAL, "diary", "tasks", "schedule");
+            "skills", "tools", CMD_STATUS, "new", "reset", "compact", CMD_HELP,
+            "auto", "goals", CMD_GOAL, "diary", "tasks", "schedule",
+            CMD_PLAN, "plans");
 
     public CommandRouter(
             SkillComponent skillComponent,
@@ -117,6 +127,8 @@ public class CommandRouter implements CommandPort {
             UserPreferencesService preferencesService,
             CompactionService compactionService,
             AutoModeService autoModeService,
+            PlanService planService,
+            PlanExecutionService planExecutionService,
             ScheduleService scheduleService,
             ApplicationEventPublisher eventPublisher,
             BotProperties properties) {
@@ -127,6 +139,8 @@ public class CommandRouter implements CommandPort {
         this.preferencesService = preferencesService;
         this.compactionService = compactionService;
         this.autoModeService = autoModeService;
+        this.planService = planService;
+        this.planExecutionService = planExecutionService;
         this.scheduleService = scheduleService;
         this.eventPublisher = eventPublisher;
         this.properties = properties;
@@ -144,7 +158,7 @@ public class CommandRouter implements CommandPort {
             return switch (command) {
             case "skills" -> handleSkills();
             case "tools" -> handleTools();
-            case "status" -> handleStatus(sessionId);
+            case CMD_STATUS -> handleStatus(sessionId);
             case "new", "reset" -> handleNew(sessionId);
             case "compact" -> handleCompact(sessionId, args);
             case CMD_HELP -> handleHelp();
@@ -154,6 +168,8 @@ public class CommandRouter implements CommandPort {
             case "diary" -> handleDiary(args);
             case "tasks" -> handleTasks();
             case "schedule" -> handleSchedule(args);
+            case CMD_PLAN -> handlePlan(args, chatId);
+            case "plans" -> handlePlans();
             default -> CommandResult.failure(msg("command.unknown", command));
             };
         });
@@ -169,7 +185,7 @@ public class CommandRouter implements CommandPort {
         List<CommandDefinition> commands = new ArrayList<>(List.of(
                 new CommandDefinition("skills", "List available skills", "/skills"),
                 new CommandDefinition("tools", "List enabled tools", "/tools"),
-                new CommandDefinition("status", "Show session status", "/status"),
+                new CommandDefinition(CMD_STATUS, "Show session status", "/status"),
                 new CommandDefinition("new", "Start a new conversation", "/new"),
                 new CommandDefinition("reset", "Reset conversation", "/reset"),
                 new CommandDefinition("compact", "Compact conversation history", "/compact [keep]"),
@@ -181,6 +197,11 @@ public class CommandRouter implements CommandPort {
             commands.add(new CommandDefinition("tasks", "List tasks", "/tasks"));
             commands.add(new CommandDefinition("diary", "Show diary entries", "/diary [count]"));
             commands.add(new CommandDefinition("schedule", "Manage schedules", "/schedule [help]"));
+        }
+        if (planService.isFeatureEnabled()) {
+            commands.add(new CommandDefinition(CMD_PLAN, "Plan mode control",
+                    "/plan [on|off|status|approve|cancel|resume]"));
+            commands.add(new CommandDefinition("plans", "List plans", "/plans"));
         }
         return commands;
     }
@@ -221,7 +242,7 @@ public class CommandRouter implements CommandPort {
         for (ToolComponent t : enabledTools) {
             String name = t.getDefinition().getName();
             String desc = t.getDefinition().getDescription().trim()
-                    .replaceAll("[ \\t]*\\n[ \\t]*", " ");
+                    .replace('\n', ' ').replace('\t', ' ');
             int dotIdx = desc.indexOf(". ");
             if (dotIdx > 0 && dotIdx < MAX_TOOL_DESC_LENGTH) {
                 desc = desc.substring(0, dotIdx + 1);
@@ -514,6 +535,214 @@ public class CommandRouter implements CommandPort {
         }
 
         return CommandResult.success(sb.toString());
+    }
+
+    // ==================== Plan Mode Commands ====================
+
+    private CommandResult handlePlan(List<String> args, String chatId) {
+        if (!planService.isFeatureEnabled()) {
+            return CommandResult.success(msg(MSG_PLAN_NOT_AVAILABLE));
+        }
+
+        if (args.isEmpty()) {
+            boolean active = planService.isPlanModeActive();
+            return CommandResult.success(msg("command.plan.status", active ? "ON" : "OFF"));
+        }
+
+        String subcommand = args.get(0).toLowerCase(Locale.ROOT);
+        return switch (subcommand) {
+        case "on" -> handlePlanOn(args, chatId);
+        case "off" -> handlePlanOff();
+        case "approve" -> handlePlanApprove(args);
+        case "cancel" -> handlePlanCancel(args);
+        case "resume" -> handlePlanResume(args);
+        case CMD_STATUS -> handlePlanStatus(args);
+        default -> CommandResult.success(msg("command.plan.usage"));
+        };
+    }
+
+    private CommandResult handlePlanOn(List<String> args, String chatId) {
+        if (planService.isPlanModeActive()) {
+            return CommandResult.success(msg("command.plan.already-active"));
+        }
+
+        String modelTier = args.size() > 1 ? args.get(1).toLowerCase(Locale.ROOT) : null;
+        try {
+            planService.activatePlanMode(chatId, modelTier);
+            String tierMsg = modelTier != null ? " (tier: " + modelTier + ")" : "";
+            return CommandResult.success(msg("command.plan.enabled") + tierMsg);
+        } catch (IllegalStateException e) {
+            return CommandResult.failure(msg("command.plan.limit", properties.getPlan().getMaxPlans()));
+        }
+    }
+
+    private CommandResult handlePlanOff() {
+        if (!planService.isPlanModeActive()) {
+            return CommandResult.success(msg("command.plan.not-active"));
+        }
+
+        planService.getActivePlan().ifPresent(plan -> {
+            if (plan.getSteps().isEmpty()) {
+                planService.cancelPlan(plan.getId());
+            } else {
+                planService.finalizePlan(plan.getId());
+            }
+        });
+
+        return CommandResult.success(msg("command.plan.disabled"));
+    }
+
+    private CommandResult handlePlanApprove(List<String> args) {
+        String planId = args.size() > 1 ? args.get(1) : findMostRecentReadyPlanId();
+        if (planId == null) {
+            return CommandResult.failure(msg("command.plan.no-ready"));
+        }
+
+        try {
+            planService.approvePlan(planId);
+            planExecutionService.executePlan(planId);
+            return CommandResult.success(msg("command.plan.approved", planId));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return CommandResult.failure(e.getMessage());
+        }
+    }
+
+    private CommandResult handlePlanCancel(List<String> args) {
+        String planId = args.size() > 1 ? args.get(1) : findMostRecentActivePlanId();
+        if (planId == null) {
+            return CommandResult.failure(msg("command.plan.no-active-plan"));
+        }
+
+        try {
+            planService.cancelPlan(planId);
+            return CommandResult.success(msg("command.plan.cancelled", planId));
+        } catch (IllegalArgumentException e) {
+            return CommandResult.failure(e.getMessage());
+        }
+    }
+
+    private CommandResult handlePlanResume(List<String> args) {
+        String planId = args.size() > 1 ? args.get(1) : findMostRecentPartialPlanId();
+        if (planId == null) {
+            return CommandResult.failure(msg("command.plan.no-partial"));
+        }
+
+        try {
+            planExecutionService.resumePlan(planId);
+            return CommandResult.success(msg("command.plan.resumed", planId));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return CommandResult.failure(e.getMessage());
+        }
+    }
+
+    private CommandResult handlePlanStatus(List<String> args) {
+        String planId = args.size() > 1 ? args.get(1) : findMostRecentActivePlanId();
+        if (planId == null) {
+            // Show most recent plan of any status
+            List<Plan> plans = planService.getPlans();
+            if (plans.isEmpty()) {
+                return CommandResult.success(msg("command.plans.empty"));
+            }
+            planId = plans.get(plans.size() - 1).getId();
+        }
+
+        return planService.getPlan(planId)
+                .map(this::formatPlanStatus)
+                .map(CommandResult::success)
+                .orElse(CommandResult.failure(msg("command.plan.not-found", planId)));
+    }
+
+    private CommandResult handlePlans() {
+        if (!planService.isFeatureEnabled()) {
+            return CommandResult.success(msg(MSG_PLAN_NOT_AVAILABLE));
+        }
+
+        List<Plan> plans = planService.getPlans();
+        if (plans.isEmpty()) {
+            return CommandResult.success(msg("command.plans.empty"));
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(msg("command.plans.title", plans.size())).append(DOUBLE_NEWLINE);
+
+        for (Plan plan : plans) {
+            long completed = plan.getCompletedStepCount();
+            int total = plan.getSteps().size();
+            String statusIcon = switch (plan.getStatus()) {
+            case COLLECTING -> "\u270D\uFE0F";
+            case READY -> "\u23F3";
+            case APPROVED -> "\u2705";
+            case EXECUTING -> "\u25B6\uFE0F";
+            case COMPLETED -> "\u2705";
+            case PARTIALLY_COMPLETED -> "\u26A0\uFE0F";
+            case CANCELLED -> "\u274C";
+            };
+            sb.append(String.format("%s `%s` [%s] (%d/%d steps)%n",
+                    statusIcon, plan.getId().substring(0, 8), plan.getStatus(), completed, total));
+            if (plan.getTitle() != null) {
+                sb.append("  ").append(plan.getTitle()).append("\n");
+            }
+        }
+
+        return CommandResult.success(sb.toString());
+    }
+
+    private String formatPlanStatus(Plan plan) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("**Plan** `").append(plan.getId().substring(0, 8)).append("`\n");
+        sb.append("Status: ").append(plan.getStatus()).append("\n");
+        if (plan.getModelTier() != null) {
+            sb.append("Tier: ").append(plan.getModelTier()).append("\n");
+        }
+        sb.append("Steps: ").append(plan.getSteps().size()).append("\n\n");
+
+        List<PlanStep> sortedSteps = plan.getSteps().stream()
+                .sorted(Comparator.comparingInt(PlanStep::getOrder))
+                .toList();
+
+        for (PlanStep step : sortedSteps) {
+            String icon = switch (step.getStatus()) {
+            case PENDING -> "[ ]";
+            case IN_PROGRESS -> "[>]";
+            case COMPLETED -> "[x]";
+            case FAILED -> "[!]";
+            case SKIPPED -> "[-]";
+            };
+            sb.append("  ").append(icon).append(" `").append(step.getToolName()).append("`");
+            if (step.getDescription() != null) {
+                sb.append(" — ").append(step.getDescription());
+            }
+            sb.append("\n");
+        }
+
+        return sb.toString();
+    }
+
+    private String findMostRecentReadyPlanId() {
+        return planService.getPlans().stream()
+                .filter(p -> p.getStatus() == Plan.PlanStatus.READY)
+                .reduce((first, second) -> second)
+                .map(Plan::getId)
+                .orElse(null);
+    }
+
+    private String findMostRecentActivePlanId() {
+        return planService.getPlans().stream()
+                .filter(p -> p.getStatus() == Plan.PlanStatus.COLLECTING
+                        || p.getStatus() == Plan.PlanStatus.READY
+                        || p.getStatus() == Plan.PlanStatus.APPROVED
+                        || p.getStatus() == Plan.PlanStatus.EXECUTING)
+                .reduce((first, second) -> second)
+                .map(Plan::getId)
+                .orElse(null);
+    }
+
+    private String findMostRecentPartialPlanId() {
+        return planService.getPlans().stream()
+                .filter(p -> p.getStatus() == Plan.PlanStatus.PARTIALLY_COMPLETED)
+                .reduce((first, second) -> second)
+                .map(Plan::getId)
+                .orElse(null);
     }
 
     // ==================== Schedule Commands ====================

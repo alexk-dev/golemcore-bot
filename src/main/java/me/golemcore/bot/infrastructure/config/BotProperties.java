@@ -79,6 +79,7 @@ public class BotProperties {
     private AutoModeProperties auto = new AutoModeProperties();
     private PromptsProperties prompts = new PromptsProperties();
     private AutoCompactProperties autoCompact = new AutoCompactProperties();
+    private PlanProperties plan = new PlanProperties();
 
     @Data
     public static class AgentProperties {
@@ -496,6 +497,17 @@ public class BotProperties {
          * truncated.
          */
         private int maxToolResultChars = 100000;
+    }
+
+    // ==================== PLAN MODE ====================
+
+    @Data
+    public static class PlanProperties {
+        private boolean enabled = false;
+        private int maxPlans = 5;
+        private int maxStepsPerPlan = 50;
+        private boolean stopOnFailure = true;
+        private String defaultModelTier = "smart";
     }
 
     // ==================== PROMPTS (system prompt sections) ====================

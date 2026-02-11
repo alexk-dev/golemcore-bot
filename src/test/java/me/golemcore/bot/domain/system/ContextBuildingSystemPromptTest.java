@@ -7,11 +7,13 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.McpConfig;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.PromptSection;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
+import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
 import me.golemcore.bot.domain.service.SkillTemplateEngine;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -26,6 +28,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -44,6 +47,7 @@ class ContextBuildingSystemPromptTest {
     private RagPort ragPort;
     private BotProperties properties;
     private AutoModeService autoModeService;
+    private PlanService planService;
     private PromptSectionService promptSectionService;
     private UserPreferencesService userPreferencesService;
     private ContextBuildingSystem system;
@@ -58,6 +62,7 @@ class ContextBuildingSystemPromptTest {
         ragPort = mock(RagPort.class);
         properties = new BotProperties();
         autoModeService = mock(AutoModeService.class);
+        planService = mock(PlanService.class);
         promptSectionService = mock(PromptSectionService.class);
         userPreferencesService = mock(UserPreferencesService.class);
 
@@ -77,6 +82,7 @@ class ContextBuildingSystemPromptTest {
                 ragPort,
                 properties,
                 autoModeService,
+                planService,
                 promptSectionService,
                 userPreferencesService);
     }
@@ -196,6 +202,7 @@ class ContextBuildingSystemPromptTest {
                 ragPort,
                 properties,
                 autoModeService,
+                planService,
                 promptSectionService,
                 userPreferencesService);
 
@@ -345,7 +352,7 @@ class ContextBuildingSystemPromptTest {
                 .content("You process data")
                 .available(true)
                 .build();
-        when(skillComponent.findByName(SKILL_PROCESSING)).thenReturn(java.util.Optional.of(targetSkill));
+        when(skillComponent.findByName(SKILL_PROCESSING)).thenReturn(Optional.of(targetSkill));
 
         AgentContext ctx = createContext();
         ctx.setAttribute("skill.transition.target", SKILL_PROCESSING);
@@ -378,5 +385,91 @@ class ContextBuildingSystemPromptTest {
 
         assertEquals("smart", ctx.getModelTier());
         assertTrue(ctx.getSystemPrompt().contains("# Goals"));
+    }
+
+    // ===== Plan mode context =====
+
+    @Test
+    void injectsPlanContextWhenPlanModeActive() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(planService.isPlanModeActive()).thenReturn(true);
+        when(planService.buildPlanContext()).thenReturn("# Plan Mode\nCollecting tool calls for plan.");
+        when(planService.getActivePlan()).thenReturn(Optional.empty());
+
+        AgentContext ctx = createContext();
+        system.process(ctx);
+
+        String prompt = ctx.getSystemPrompt();
+        assertTrue(prompt.contains("# Plan Mode"));
+        assertTrue(prompt.contains("Collecting tool calls for plan."));
+    }
+
+    @Test
+    void setsPlanModelTierWhenPlanHasTier() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(planService.isPlanModeActive()).thenReturn(true);
+        when(planService.buildPlanContext()).thenReturn("Plan context");
+        Plan plan = Plan.builder().id("p1").modelTier("deep").build();
+        when(planService.getActivePlan()).thenReturn(Optional.of(plan));
+
+        AgentContext ctx = createContext();
+        system.process(ctx);
+
+        assertEquals("deep", ctx.getModelTier());
+    }
+
+    @Test
+    void doesNotOverrideExistingModelTierFromPlan() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(planService.isPlanModeActive()).thenReturn(true);
+        when(planService.buildPlanContext()).thenReturn("Plan context");
+        Plan plan = Plan.builder().id("p1").modelTier("deep").build();
+        when(planService.getActivePlan()).thenReturn(Optional.of(plan));
+
+        AgentContext ctx = createContext();
+        ctx.setModelTier("coding");
+        system.process(ctx);
+
+        assertEquals("coding", ctx.getModelTier());
+    }
+
+    @Test
+    void skipsPlanContextWhenPlanModeInactive() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(planService.isPlanModeActive()).thenReturn(false);
+
+        AgentContext ctx = createContext();
+        system.process(ctx);
+
+        verify(planService, never()).buildPlanContext();
+        assertFalse(ctx.getSystemPrompt().contains("Plan"));
+    }
+
+    @Test
+    void skipsPlanContextWhenBuildReturnsBlank() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(planService.isPlanModeActive()).thenReturn(true);
+        when(planService.buildPlanContext()).thenReturn("   ");
+        when(planService.getActivePlan()).thenReturn(Optional.empty());
+
+        AgentContext ctx = createContext();
+        system.process(ctx);
+
+        // Blank plan context should not appear in prompt
+        String prompt = ctx.getSystemPrompt();
+        assertFalse(prompt.contains("Plan Mode"));
+    }
+
+    @Test
+    void skipsPlanContextWhenBuildReturnsNull() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(planService.isPlanModeActive()).thenReturn(true);
+        when(planService.buildPlanContext()).thenReturn(null);
+        when(planService.getActivePlan()).thenReturn(Optional.empty());
+
+        AgentContext ctx = createContext();
+        system.process(ctx);
+
+        assertFalse(ctx.getSystemPrompt().contains("Plan"));
     }
 }
