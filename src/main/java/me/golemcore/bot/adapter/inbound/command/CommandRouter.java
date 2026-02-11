@@ -25,21 +25,29 @@ import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.DiaryEntry;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.model.Skill;
+import me.golemcore.bot.domain.model.UsageStats;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.CompactionService;
+import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.CommandPort;
-import me.golemcore.bot.domain.model.UsageStats;
+import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
-import java.util.*;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -58,9 +66,10 @@ import java.util.concurrent.CompletableFuture;
  * <li>/help - Show available commands
  * <li>/auto [on|off] - Toggle auto mode (if enabled)
  * <li>/goals - List goals (if auto mode enabled)
- * <li>/goal <desc> - Create goal (if auto mode enabled)
+ * <li>/goal &lt;desc&gt; - Create goal (if auto mode enabled)
  * <li>/tasks - List tasks (if auto mode enabled)
  * <li>/diary [N] - Show diary entries (if auto mode enabled)
+ * <li>/schedule - Manage cron-based schedules (if auto mode enabled)
  * </ul>
  *
  * <p>
@@ -80,6 +89,10 @@ public class CommandRouter implements CommandPort {
     private static final String DOUBLE_NEWLINE = "\n\n";
     private static final String TABLE_SEPARATOR = " | ";
     private static final String MSG_AUTO_NOT_AVAILABLE = "command.auto.not-available";
+    private static final String CMD_HELP = "help";
+    private static final String CMD_GOAL = "goal";
+    private static final int MIN_SCHEDULE_ARGS = 2;
+    private static final int MIN_CRON_PARTS_FOR_REPEAT_CHECK = 1;
 
     private final SkillComponent skillComponent;
     private final List<ToolComponent> toolComponents;
@@ -88,12 +101,13 @@ public class CommandRouter implements CommandPort {
     private final UserPreferencesService preferencesService;
     private final CompactionService compactionService;
     private final AutoModeService autoModeService;
+    private final ScheduleService scheduleService;
     private final ApplicationEventPublisher eventPublisher;
     private final BotProperties properties;
 
     private static final List<String> KNOWN_COMMANDS = List.of(
-            "skills", "tools", "status", "new", "reset", "compact", "help",
-            "auto", "goals", "goal", "diary", "tasks");
+            "skills", "tools", "status", "new", "reset", "compact", CMD_HELP,
+            "auto", "goals", CMD_GOAL, "diary", "tasks", "schedule");
 
     public CommandRouter(
             SkillComponent skillComponent,
@@ -103,6 +117,7 @@ public class CommandRouter implements CommandPort {
             UserPreferencesService preferencesService,
             CompactionService compactionService,
             AutoModeService autoModeService,
+            ScheduleService scheduleService,
             ApplicationEventPublisher eventPublisher,
             BotProperties properties) {
         this.skillComponent = skillComponent;
@@ -112,6 +127,7 @@ public class CommandRouter implements CommandPort {
         this.preferencesService = preferencesService;
         this.compactionService = compactionService;
         this.autoModeService = autoModeService;
+        this.scheduleService = scheduleService;
         this.eventPublisher = eventPublisher;
         this.properties = properties;
         log.info("CommandRouter initialized with commands: {}", KNOWN_COMMANDS);
@@ -131,12 +147,13 @@ public class CommandRouter implements CommandPort {
             case "status" -> handleStatus(sessionId);
             case "new", "reset" -> handleNew(sessionId);
             case "compact" -> handleCompact(sessionId, args);
-            case "help" -> handleHelp();
+            case CMD_HELP -> handleHelp();
             case "auto" -> handleAuto(args, channelType, chatId);
             case "goals" -> handleGoals();
-            case "goal" -> handleGoal(args);
+            case CMD_GOAL -> handleGoal(args);
             case "diary" -> handleDiary(args);
             case "tasks" -> handleTasks();
+            case "schedule" -> handleSchedule(args);
             default -> CommandResult.failure(msg("command.unknown", command));
             };
         });
@@ -156,13 +173,14 @@ public class CommandRouter implements CommandPort {
                 new CommandDefinition("new", "Start a new conversation", "/new"),
                 new CommandDefinition("reset", "Reset conversation", "/reset"),
                 new CommandDefinition("compact", "Compact conversation history", "/compact [keep]"),
-                new CommandDefinition("help", "Show available commands", "/help")));
+                new CommandDefinition(CMD_HELP, "Show available commands", "/help")));
         if (autoModeService.isFeatureEnabled()) {
             commands.add(new CommandDefinition("auto", "Toggle auto mode", "/auto [on|off]"));
             commands.add(new CommandDefinition("goals", "List goals", "/goals"));
-            commands.add(new CommandDefinition("goal", "Create a goal", "/goal <description>"));
+            commands.add(new CommandDefinition(CMD_GOAL, "Create a goal", "/goal <description>"));
             commands.add(new CommandDefinition("tasks", "List tasks", "/tasks"));
             commands.add(new CommandDefinition("diary", "Show diary entries", "/diary [count]"));
+            commands.add(new CommandDefinition("schedule", "Manage schedules", "/schedule [help]"));
         }
         return commands;
     }
@@ -240,7 +258,7 @@ public class CommandRouter implements CommandPort {
             sb.append("\n");
             if (autoModeService.isAutoModeEnabled()) {
                 sb.append(msg("command.status.auto.title")).append("\n");
-                var activeGoals = autoModeService.getActiveGoals();
+                List<Goal> activeGoals = autoModeService.getActiveGoals();
                 sb.append(msg("command.status.auto.goals", activeGoals.size())).append("\n");
                 autoModeService.getNextPendingTask()
                         .ifPresent(task -> sb.append(msg("command.status.auto.task", task.getTitle())).append("\n"));
@@ -362,8 +380,7 @@ public class CommandRouter implements CommandPort {
                 if (channelType != null && chatId != null) {
                     eventPublisher.publishEvent(new AutoModeChannelRegisteredEvent(channelType, chatId));
                 }
-                int interval = properties.getAuto().getIntervalMinutes();
-                yield CommandResult.success(msg("command.auto.enabled", interval));
+                yield CommandResult.success(msg("command.auto.enabled"));
             }
             case "off" -> {
                 autoModeService.disableAutoMode();
@@ -487,8 +504,8 @@ public class CommandRouter implements CommandPort {
         StringBuilder sb = new StringBuilder();
         sb.append(msg("command.diary.title", entries.size())).append(DOUBLE_NEWLINE);
 
-        java.time.format.DateTimeFormatter timeFormat = java.time.format.DateTimeFormatter.ofPattern("HH:mm")
-                .withZone(java.time.ZoneOffset.UTC);
+        DateTimeFormatter timeFormat = DateTimeFormatter.ofPattern("HH:mm")
+                .withZone(ZoneOffset.UTC);
 
         for (DiaryEntry entry : entries) {
             sb.append("[").append(timeFormat.format(entry.getTimestamp())).append("] ");
@@ -497,6 +514,128 @@ public class CommandRouter implements CommandPort {
         }
 
         return CommandResult.success(sb.toString());
+    }
+
+    // ==================== Schedule Commands ====================
+
+    private CommandResult handleSchedule(List<String> args) {
+        if (!autoModeService.isFeatureEnabled()) {
+            return CommandResult.success(msg(MSG_AUTO_NOT_AVAILABLE));
+        }
+
+        if (args.isEmpty()) {
+            return handleScheduleList();
+        }
+
+        String subcommand = args.get(0).toLowerCase(Locale.ROOT);
+        List<String> subArgs = args.subList(1, args.size());
+
+        return switch (subcommand) {
+        case CMD_GOAL -> handleScheduleGoal(subArgs);
+        case "task" -> handleScheduleTask(subArgs);
+        case "list" -> handleScheduleList();
+        case "delete" -> handleScheduleDelete(subArgs);
+        case CMD_HELP -> CommandResult.success(msg("command.schedule.help.text"));
+        default -> CommandResult.success(msg("command.schedule.usage"));
+        };
+    }
+
+    private CommandResult handleScheduleGoal(List<String> args) {
+        if (args.size() < MIN_SCHEDULE_ARGS) {
+            return CommandResult.success(msg("command.schedule.goal.usage"));
+        }
+
+        String goalId = args.get(0);
+        if (autoModeService.getGoal(goalId).isEmpty()) {
+            return CommandResult.failure(msg("command.schedule.goal.not-found", goalId));
+        }
+
+        return createScheduleFromArgs(ScheduleEntry.ScheduleType.GOAL, goalId, args.subList(1, args.size()));
+    }
+
+    private CommandResult handleScheduleTask(List<String> args) {
+        if (args.size() < MIN_SCHEDULE_ARGS) {
+            return CommandResult.success(msg("command.schedule.task.usage"));
+        }
+
+        String taskId = args.get(0);
+        if (autoModeService.findGoalForTask(taskId).isEmpty()) {
+            return CommandResult.failure(msg("command.schedule.task.not-found", taskId));
+        }
+
+        return createScheduleFromArgs(ScheduleEntry.ScheduleType.TASK, taskId, args.subList(1, args.size()));
+    }
+
+    private CommandResult createScheduleFromArgs(ScheduleEntry.ScheduleType type,
+            String targetId, List<String> cronAndRepeat) {
+        int maxExecutions = -1;
+
+        // Check if last arg is a numeric repeat count
+        List<String> cronParts = new ArrayList<>(cronAndRepeat);
+        if (cronParts.size() > MIN_CRON_PARTS_FOR_REPEAT_CHECK) {
+            String lastArg = cronParts.get(cronParts.size() - 1);
+            try {
+                maxExecutions = Integer.parseInt(lastArg);
+                cronParts = cronParts.subList(0, cronParts.size() - 1);
+            } catch (NumberFormatException ignored) {
+                // Last arg is part of cron expression
+            }
+        }
+
+        String cronExpression = String.join(" ", cronParts);
+
+        try {
+            ScheduleEntry entry = scheduleService.createSchedule(type, targetId, cronExpression, maxExecutions);
+            return CommandResult.success(msg("command.schedule.created",
+                    entry.getId(), entry.getCronExpression()));
+        } catch (IllegalArgumentException e) {
+            return CommandResult.failure(msg("command.schedule.invalid-cron", e.getMessage()));
+        }
+    }
+
+    private CommandResult handleScheduleList() {
+        List<ScheduleEntry> schedules = scheduleService.getSchedules();
+        if (schedules.isEmpty()) {
+            return CommandResult.success(msg("command.schedule.list.empty"));
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(msg("command.schedule.list.title", schedules.size())).append(DOUBLE_NEWLINE);
+
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+                .withZone(ZoneOffset.UTC);
+
+        for (ScheduleEntry entry : schedules) {
+            String enabledIcon = entry.isEnabled() ? "\u2705" : "\u274C";
+            sb.append(String.format("%s `%s` [%s] -> %s%n",
+                    enabledIcon, entry.getId(), entry.getType(), entry.getTargetId()));
+            sb.append("  Cron: `").append(entry.getCronExpression()).append("`");
+            if (entry.getMaxExecutions() > 0) {
+                sb.append(String.format(" (%d/%d runs)", entry.getExecutionCount(), entry.getMaxExecutions()));
+            } else {
+                sb.append(String.format(" (%d runs)", entry.getExecutionCount()));
+            }
+            sb.append("\n");
+            if (entry.getNextExecutionAt() != null) {
+                sb.append("  Next: ").append(formatter.format(entry.getNextExecutionAt())).append(" UTC\n");
+            }
+        }
+
+        return CommandResult.success(sb.toString());
+    }
+
+    private CommandResult handleScheduleDelete(List<String> args) {
+        if (args.isEmpty()) {
+            return CommandResult.success(msg("command.schedule.delete.usage"));
+        }
+
+        String scheduleId = args.get(0);
+        try {
+            scheduleService.deleteSchedule(scheduleId);
+            return CommandResult.success(msg("command.schedule.deleted", scheduleId));
+        } catch (IllegalArgumentException e) {
+            return CommandResult.failure(msg("command.schedule.not-found", scheduleId));
+        }
     }
 
     private String msg(String key, Object... args) {
