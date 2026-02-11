@@ -20,6 +20,7 @@ package me.golemcore.bot.domain.system;
 
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,8 +36,8 @@ import java.util.Set;
  * current agent loop run (not old history) for signals like FileSystem
  * operations on code files, Shell execution of code commands, or stack traces
  * in tool results. Runs after ContextBuildingSystem, before LlmExecutionSystem.
- * Only runs on iteration > 0 (iteration 0 handled by SkillRoutingSystem). Only
- * upgrades tier, never downgrades, to prevent oscillation.
+ * Only runs on iteration > 0. Only upgrades tier, never downgrades, to prevent
+ * oscillation. Skipped entirely when user has tier force enabled.
  */
 @Component
 @RequiredArgsConstructor
@@ -44,6 +45,7 @@ import java.util.Set;
 public class DynamicTierSystem implements AgentSystem {
 
     private final BotProperties properties;
+    private final UserPreferencesService userPreferencesService;
 
     private static final String TOOL_NAME_SHELL = "shell";
     private static final Set<String> CODE_EXTENSIONS = Set.of(
@@ -82,6 +84,9 @@ public class DynamicTierSystem implements AgentSystem {
 
     @Override
     public boolean shouldProcess(AgentContext context) {
+        if (userPreferencesService.getPreferences().isTierForce()) {
+            return false;
+        }
         return context.getCurrentIteration() > 0
                 && !"coding".equals(context.getModelTier())
                 && !"deep".equals(context.getModelTier());

@@ -434,8 +434,8 @@ class LlmExecutionSystemTest {
 
     @Test
     void usesDefaultModelForNullTier() {
-        properties.getRouter().setDefaultModel(OPENAI_MODEL);
-        properties.getRouter().setDefaultModelReasoning(REASONING_MEDIUM);
+        properties.getRouter().setBalancedModel(OPENAI_MODEL);
+        properties.getRouter().setBalancedModelReasoning(REASONING_MEDIUM);
 
         when(llmPort.getProviderId()).thenReturn(PROVIDER_ID);
         when(llmPort.getCurrentModel()).thenReturn(MODEL_NAME);

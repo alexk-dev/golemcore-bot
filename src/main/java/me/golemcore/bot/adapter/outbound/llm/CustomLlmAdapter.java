@@ -86,7 +86,7 @@ public class CustomLlmAdapter implements LlmProviderAdapter, LlmComponent {
         try {
             BotProperties.CustomLlmProperties customProps = properties.getLlm().getCustom();
             this.apiKey = customProps.getApiKey();
-            this.currentModel = properties.getRouter().getDefaultModel();
+            this.currentModel = properties.getRouter().getBalancedModel();
 
             if (customProps.getApiUrl() != null && !customProps.getApiUrl().isBlank()) {
                 this.client = feignClientFactory.create(CustomLlmApi.class, customProps.getApiUrl());

@@ -119,9 +119,9 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         if (initialized)
             return;
 
-        // Use default model from router config
-        String model = properties.getRouter().getDefaultModel();
-        String reasoning = properties.getRouter().getDefaultModelReasoning();
+        // Use balanced model from router config
+        String model = properties.getRouter().getBalancedModel();
+        String reasoning = properties.getRouter().getBalancedModelReasoning();
         this.currentModel = model;
 
         try {

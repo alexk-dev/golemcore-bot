@@ -10,12 +10,12 @@ Comprehensive guide to configuring GolemCore Bot.
 # Docker
 docker run \
   -e OPENAI_API_KEY=sk-proj-... \
-  -e BOT_ROUTER_DEFAULT_MODEL=openai/gpt-5.1 \
+  -e BOT_ROUTER_BALANCED_MODEL=openai/gpt-5.1 \
   golemcore-bot:latest
 
 # JAR
 export OPENAI_API_KEY=sk-proj-...
-export BOT_ROUTER_DEFAULT_MODEL=openai/gpt-5.1
+export BOT_ROUTER_BALANCED_MODEL=openai/gpt-5.1
 java -jar golemcore-bot.jar
 ```
 
@@ -28,7 +28,7 @@ services:
     image: golemcore-bot:latest
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
-      BOT_ROUTER_DEFAULT_MODEL: openai/gpt-5.1
+      BOT_ROUTER_BALANCED_MODEL: openai/gpt-5.1
 ```
 
 ### 3. Application Properties (Build-Time)
@@ -36,7 +36,7 @@ services:
 Edit `src/main/resources/application.properties`:
 
 ```properties
-bot.router.default-model=openai/gpt-5.1
+bot.router.balanced-model=openai/gpt-5.1
 ```
 
 Then rebuild image: `./mvnw compile jib:dockerBuild`
@@ -51,12 +51,12 @@ Then rebuild image: `./mvnw compile jib:dockerBuild`
 
 ### Model Tiers
 
-The bot selects models based on task complexity:
+The bot selects models based on task complexity. Set the tier manually via `/tier` command or let skills override it via `model_tier` frontmatter.
 
 ```properties
 # Balanced tier (greetings, general questions, summarization — default/fallback)
-BOT_ROUTER_DEFAULT_MODEL=openai/gpt-5.1
-BOT_ROUTER_DEFAULT_MODEL_REASONING=medium
+BOT_ROUTER_BALANCED_MODEL=openai/gpt-5.1
+BOT_ROUTER_BALANCED_MODEL_REASONING=medium
 
 # Smart tier (complex analysis, architecture decisions)
 BOT_ROUTER_SMART_MODEL=openai/gpt-5.1
@@ -93,7 +93,7 @@ Mix different LLM providers across tiers for cost optimization or feature access
 docker run -d \
   -e OPENAI_API_KEY=sk-proj-... \
   -e ANTHROPIC_API_KEY=sk-ant-... \
-  -e BOT_ROUTER_DEFAULT_MODEL=openai/gpt-5.1 \
+  -e BOT_ROUTER_BALANCED_MODEL=openai/gpt-5.1 \
   -e BOT_ROUTER_SMART_MODEL=anthropic/claude-opus-4-6 \
   -e BOT_ROUTER_CODING_MODEL=openai/gpt-5.2 \
   -e BOT_ROUTER_DEEP_MODEL=openai/gpt-5.2 \
@@ -108,7 +108,7 @@ services:
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      BOT_ROUTER_DEFAULT_MODEL: openai/gpt-5.1
+      BOT_ROUTER_BALANCED_MODEL: openai/gpt-5.1
       BOT_ROUTER_SMART_MODEL: anthropic/claude-opus-4-6
       BOT_ROUTER_CODING_MODEL: openai/gpt-5.2
       BOT_ROUTER_DEEP_MODEL: openai/gpt-5.2
@@ -126,35 +126,31 @@ Must be OpenAI-compatible API.
 
 ---
 
-## Skill Routing
+## Tier Management
 
-> **Deep dive:** See [Model Routing Guide](MODEL_ROUTING.md#how-tier-assignment-works) for the 3-stage routing pipeline, fragmented input detection, and classifier details.
+> **Deep dive:** See [Model Routing Guide](MODEL_ROUTING.md#how-tier-assignment-works) for tier priority resolution, `/tier` command, `set_tier` tool, and skill `model_tier` overrides.
 
-### Basic Routing (Default)
-
-Uses first available skill or general chat.
-
-### Hybrid Routing (Advanced)
-
-2-stage semantic + LLM classifier:
+### `/tier` Command
 
 ```bash
-export SKILL_MATCHER_ENABLED=true
-
-# Semantic search
-export BOT_ROUTER_SKILL_MATCHER_EMBEDDING_MODEL=text-embedding-3-small
-export BOT_ROUTER_SKILL_MATCHER_SEMANTIC_SEARCH_TOP_K=5
-export BOT_ROUTER_SKILL_MATCHER_SEMANTIC_SEARCH_MIN_SCORE=0.6
-
-# LLM classifier
-export BOT_ROUTER_SKILL_MATCHER_CLASSIFIER_MODEL=openai/gpt-5-mini
-export BOT_ROUTER_SKILL_MATCHER_SKIP_CLASSIFIER_THRESHOLD=0.95
-
-# Cache
-export BOT_ROUTER_SKILL_MATCHER_CACHE_TTL_MINUTES=60
+/tier                    # Show current tier and force status
+/tier coding             # Set tier to coding (clears force)
+/tier smart force        # Lock tier to smart (ignores skill overrides + dynamic upgrades)
 ```
 
-Cached results are near-instant. The classifier is skipped for high-confidence semantic matches (score > 0.95).
+### Skill Model Tier Override
+
+Skills can declare a preferred tier in YAML frontmatter:
+
+```yaml
+---
+name: code-review
+description: Review code changes
+model_tier: coding
+---
+```
+
+When a skill with `model_tier` is active, the skill's tier is used (unless the user has force enabled).
 
 ---
 
@@ -546,7 +542,6 @@ export LOGGING_LEVEL_DEV_LANGCHAIN4J=WARN
 
 ```bash
 # Fast, minimal
-export SKILL_MATCHER_ENABLED=false
 export RAG_ENABLED=false
 export AUTO_MODE_ENABLED=false
 export MCP_ENABLED=false
@@ -598,7 +593,7 @@ Edit `models.json` in working directory to add custom models:
 Then reference in config:
 
 ```bash
-export BOT_ROUTER_DEFAULT_MODEL=custom/my-model
+export BOT_ROUTER_BALANCED_MODEL=custom/my-model
 ```
 
 ---

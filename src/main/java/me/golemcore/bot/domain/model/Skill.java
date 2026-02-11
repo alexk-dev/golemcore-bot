@@ -55,6 +55,9 @@ public class Skill {
 
     private McpConfig mcpConfig;
 
+    /** Recommended model tier from YAML frontmatter "model_tier" */
+    private String modelTier;
+
     // Pipeline support
     private String nextSkill;
 

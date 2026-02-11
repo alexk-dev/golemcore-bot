@@ -79,8 +79,8 @@ public class CompactionService {
         String conversation = formatConversation(messages);
 
         LlmRequest request = LlmRequest.builder()
-                .model(properties.getRouter().getDefaultModel())
-                .reasoningEffort(properties.getRouter().getDefaultModelReasoning())
+                .model(properties.getRouter().getBalancedModel())
+                .reasoningEffort(properties.getRouter().getBalancedModelReasoning())
                 .systemPrompt(SYSTEM_PROMPT)
                 .messages(List.of(Message.builder()
                         .role("user")

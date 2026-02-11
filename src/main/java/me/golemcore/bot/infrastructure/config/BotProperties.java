@@ -40,7 +40,7 @@ import java.util.Map;
  * <li>{@link ChannelProperties} - input channels (Telegram, etc.)</li>
  * <li>{@link StorageProperties} - persistence configuration</li>
  * <li>{@link SecurityProperties} - security and access control</li>
- * <li>{@link ModelRouterProperties} - skill routing and model selection</li>
+ * <li>{@link ModelRouterProperties} - model tier selection</li>
  * <li>{@link ToolsProperties} - tool enablement and configuration</li>
  * <li>{@link McpClientProperties} - MCP client settings</li>
  * <li>{@link RagProperties} - RAG integration</li>
@@ -261,9 +261,9 @@ public class BotProperties {
     // ==================== SKILL ROUTING ====================
 
     /**
-     * Model router configuration for intelligent model selection.
+     * Model router configuration for model tier selection.
      * <p>
-     * Model tiers (selected by SkillRoutingSystem based on task complexity):
+     * Model tiers:
      * <ul>
      * <li><b>balanced</b> - Standard tasks: general questions, greetings,
      * summarization, basic coding (default/fallback)</li>
@@ -289,8 +289,8 @@ public class BotProperties {
          * Standard tasks: general questions, summarization, basic coding (used as
          * fallback)
          */
-        private String defaultModel = DEFAULT_GPT_5_1_MODEL;
-        private String defaultModelReasoning = "medium";
+        private String balancedModel = DEFAULT_GPT_5_1_MODEL;
+        private String balancedModelReasoning = "medium";
 
         /** Complex tasks: architecture, deep analysis, multi-step reasoning */
         private String smartModel = DEFAULT_GPT_5_1_MODEL;
@@ -309,62 +309,6 @@ public class BotProperties {
          * mid-conversation
          */
         private boolean dynamicTierEnabled = true;
-
-        private SkillMatcherProperties skillMatcher = new SkillMatcherProperties();
-    }
-
-    @Data
-    public static class SkillMatcherProperties {
-        private boolean enabled = false;
-
-        // Embedding settings
-        private EmbeddingProperties embedding = new EmbeddingProperties();
-
-        // Semantic search settings
-        private SemanticSearchProperties semanticSearch = new SemanticSearchProperties();
-
-        // LLM classifier settings
-        private ClassifierProperties classifier = new ClassifierProperties();
-
-        // Caching
-        private CacheProperties cache = new CacheProperties();
-
-        // Thresholds
-        private double skipClassifierThreshold = 0.95; // Skip LLM if semantic score > this
-        private double minSemanticScore = 0.6; // Min score to consider a candidate
-
-        // Overall routing timeout (must be > classifier timeout + embedding time)
-        private long routingTimeoutMs = 15000;
-    }
-
-    @Data
-    public static class EmbeddingProperties {
-        private String provider = "openai";
-        private String model = "text-embedding-3-small";
-        private int dimension = 1536;
-    }
-
-    @Data
-    public static class SemanticSearchProperties {
-        private int topK = 5;
-        private double minScore = 0.6;
-    }
-
-    @Data
-    public static class ClassifierProperties {
-        private boolean enabled = true;
-        private String model = ModelRouterProperties.DEFAULT_GPT_5_1_MODEL; // Fast model for classification
-        private String modelReasoning = "low"; // Low reasoning for speed
-        private double temperature = 0.1; // Low for consistency
-        private int maxTokens = 200;
-        private long timeoutMs = 10000;
-    }
-
-    @Data
-    public static class CacheProperties {
-        private boolean enabled = true;
-        private int ttlMinutes = 60;
-        private int maxSize = 1000;
     }
 
     // ==================== TOOLS ====================
@@ -377,6 +321,7 @@ public class BotProperties {
         private BraveSearchToolProperties braveSearch = new BraveSearchToolProperties();
         private GoalManagementToolProperties goalManagement = new GoalManagementToolProperties();
         private SkillTransitionToolProperties skillTransition = new SkillTransitionToolProperties();
+        private TierToolProperties tier = new TierToolProperties();
         private ImapToolProperties imap = new ImapToolProperties();
         private SmtpToolProperties smtp = new SmtpToolProperties();
     }
@@ -415,6 +360,11 @@ public class BotProperties {
 
     @Data
     public static class SkillTransitionToolProperties {
+        private boolean enabled = true;
+    }
+
+    @Data
+    public static class TierToolProperties {
         private boolean enabled = true;
     }
 

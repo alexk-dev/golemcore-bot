@@ -18,15 +18,19 @@ package me.golemcore.bot.domain.model;
  * Contact: alex@kuleshov.tech
  */
 
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 /**
- * User preferences for language, notifications, and timezone. Persisted to
- * storage and loaded on session initialization.
+ * User preferences for language, notifications, timezone, and model tier.
+ * Persisted to storage and loaded on session initialization.
  */
 @Data
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class UserPreferences {
 
     @Builder.Default
@@ -37,4 +41,12 @@ public class UserPreferences {
 
     @Builder.Default
     private String timezone = "UTC";
+
+    /** User-selected model tier (null = use "balanced" default) */
+    @Builder.Default
+    private String modelTier = null;
+
+    /** When true, locks the tier — ignores skill overrides and DynamicTierSystem */
+    @Builder.Default
+    private boolean tierForce = false;
 }
