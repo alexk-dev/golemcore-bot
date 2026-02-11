@@ -32,6 +32,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -66,7 +67,7 @@ public class PlanService {
     // In-memory state
     private volatile boolean planModeActive = false;
     private volatile String activePlanId;
-    private volatile List<Plan> plansCache;
+    private final AtomicReference<List<Plan>> plansCache = new AtomicReference<>();
 
     public PlanService(StoragePort storagePort, ObjectMapper objectMapper,
             BotProperties properties, Clock clock) {
@@ -138,10 +139,12 @@ public class PlanService {
     }
 
     public synchronized List<Plan> getPlans() {
-        if (plansCache == null) {
-            plansCache = loadPlans();
+        List<Plan> cached = plansCache.get();
+        if (cached == null) {
+            cached = loadPlans();
+            plansCache.set(cached);
         }
-        return plansCache;
+        return cached;
     }
 
     public Optional<Plan> getPlan(String planId) {
@@ -361,7 +364,7 @@ public class PlanService {
         try {
             String json = objectMapper.writeValueAsString(plans);
             storagePort.putText(AUTO_DIR, PLANS_FILE, json).join();
-            plansCache = plans;
+            plansCache.set(plans);
         } catch (Exception e) {
             log.error("[PlanMode] Failed to save plans", e);
         }

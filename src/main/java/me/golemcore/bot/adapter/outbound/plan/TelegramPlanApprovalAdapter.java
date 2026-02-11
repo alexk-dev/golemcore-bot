@@ -27,6 +27,8 @@ import me.golemcore.bot.domain.model.PlanStep;
 import me.golemcore.bot.domain.service.PlanExecutionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
+
+import java.util.concurrent.atomic.AtomicReference;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.client.okhttp.OkHttpTelegramClient;
@@ -54,7 +56,7 @@ public class TelegramPlanApprovalAdapter {
     private final PlanExecutionService planExecutionService;
     private final BotProperties properties;
 
-    private volatile TelegramClient telegramClient;
+    private final AtomicReference<TelegramClient> telegramClient = new AtomicReference<>();
 
     public TelegramPlanApprovalAdapter(PlanService planService,
             PlanExecutionService planExecutionService,
@@ -68,7 +70,7 @@ public class TelegramPlanApprovalAdapter {
      * Set the TelegramClient instance. Package-private for testing.
      */
     void setTelegramClient(TelegramClient client) {
-        this.telegramClient = client;
+        this.telegramClient.set(client);
     }
 
     @EventListener
@@ -212,7 +214,7 @@ public class TelegramPlanApprovalAdapter {
     }
 
     private TelegramClient getOrCreateClient() {
-        TelegramClient client = this.telegramClient;
+        TelegramClient client = this.telegramClient.get();
         if (client != null) {
             return client;
         }
@@ -224,9 +226,10 @@ public class TelegramPlanApprovalAdapter {
         if (token == null || token.isBlank()) {
             return null;
         }
-        this.telegramClient = new OkHttpTelegramClient(token);
+        TelegramClient newClient = new OkHttpTelegramClient(token);
+        this.telegramClient.set(newClient);
         log.debug("[PlanApproval] TelegramClient lazily initialized");
-        return this.telegramClient;
+        return newClient;
     }
 
     private String escapeHtml(String text) {
