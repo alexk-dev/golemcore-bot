@@ -321,17 +321,6 @@ public class ElevenLabsAdapter implements VoicePort {
         private String message;
     }
 
-    /**
-     * Exception for quota/payment issues that should be shown to the user.
-     */
-    public static class QuotaExceededException extends IllegalStateException {
-        private static final long serialVersionUID = 1L;
-
-        public QuotaExceededException(String message) {
-            super(message);
-        }
-    }
-
     private ErrorResponse parseErrorResponse(String errorBody) {
         try {
             return objectMapper.readValue(errorBody, ErrorResponse.class);
@@ -370,6 +359,15 @@ public class ElevenLabsAdapter implements VoicePort {
         return code == 429 || code == 500 || code == 503 || code == 504;
     }
 
+    private boolean isQuotaExceededMessage(String message) {
+        if (message == null) {
+            return false;
+        }
+        String lower = message.toLowerCase();
+        return lower.contains("exceeds your quota") || lower.contains("quota exceeded")
+                || lower.contains("credits remaining");
+    }
+
     private void handleErrorResponse(Response response, ResponseBody body, long elapsed, String operation)
             throws IOException {
         int code = response.code();
@@ -385,8 +383,9 @@ public class ElevenLabsAdapter implements VoicePort {
                 operation, code, elapsed, errorMessage, context);
 
         // Special handling for quota exceeded - throw custom exception
-        if (code == HTTP_PAYMENT_REQUIRED) {
-            throw new QuotaExceededException(
+        // ElevenLabs may return 402 or 401 with "exceeds your quota" for quota issues
+        if (code == HTTP_PAYMENT_REQUIRED || isQuotaExceededMessage(errorMessage)) {
+            throw new VoicePort.QuotaExceededException(
                     String.format("ElevenLabs quota exceeded: %s. %s", errorMessage, context));
         }
 

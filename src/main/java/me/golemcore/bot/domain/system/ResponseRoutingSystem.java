@@ -26,6 +26,7 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
+import me.golemcore.bot.domain.service.VoiceResponseHandler.VoiceSendResult;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import lombok.extern.slf4j.Slf4j;
@@ -162,10 +163,14 @@ public class ResponseRoutingSystem implements AgentSystem {
         if (!textToSpeak.isBlank()) {
             log.debug("[Response] Voice prefix detected, sending voice: {} chars (from {})",
                     textToSpeak.length(), prefixVoiceText != null ? "tool" : "prefix");
-            if (voiceHandler.trySendVoice(channel, chatId, textToSpeak)) {
+            VoiceSendResult voiceResult = voiceHandler.trySendVoice(channel, chatId, textToSpeak);
+            if (voiceResult == VoiceSendResult.SUCCESS) {
                 addAssistantMessage(session, textToSpeak, response.getToolCalls());
                 sendPendingAttachments(context);
                 return context;
+            }
+            if (voiceResult == VoiceSendResult.QUOTA_EXCEEDED) {
+                sendVoiceQuotaNotification(channel, chatId);
             }
         }
 
@@ -260,9 +265,12 @@ public class ResponseRoutingSystem implements AgentSystem {
         }
 
         String chatId = session.getChatId();
-        boolean sent = voiceHandler.sendVoiceWithFallback(channel, chatId, textToSpeak);
-        if (sent) {
+        VoiceSendResult result = voiceHandler.sendVoiceWithFallback(channel, chatId, textToSpeak);
+        if (result != VoiceSendResult.FAILED) {
             addAssistantMessage(session, textToSpeak, null);
+        }
+        if (result == VoiceSendResult.QUOTA_EXCEEDED) {
+            sendVoiceQuotaNotification(channel, chatId);
         }
     }
 
@@ -286,7 +294,10 @@ public class ResponseRoutingSystem implements AgentSystem {
         String textToSpeak = (voiceText != null && !voiceText.isBlank()) ? voiceText : responseText;
 
         log.debug("[Response] Sending voice after text: {} chars, chatId={}", textToSpeak.length(), chatId);
-        voiceHandler.trySendVoice(channel, chatId, textToSpeak);
+        VoiceSendResult result = voiceHandler.trySendVoice(channel, chatId, textToSpeak);
+        if (result == VoiceSendResult.QUOTA_EXCEEDED) {
+            sendVoiceQuotaNotification(channel, chatId);
+        }
     }
 
     boolean shouldRespondWithVoice(AgentContext context) {
@@ -309,6 +320,21 @@ public class ResponseRoutingSystem implements AgentSystem {
             }
         }
         return false;
+    }
+
+    // --- Quota notification ---
+
+    private void sendVoiceQuotaNotification(ChannelPort channel, String chatId) {
+        String message = preferencesService.getMessage("voice.error.quota");
+        try {
+            channel.sendMessage(chatId, message).get(30, TimeUnit.SECONDS);
+            log.info("[Response] Sent voice quota notification to {}", chatId);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("[Response] Failed to send quota notification (interrupted): {}", e.getMessage());
+        } catch (Exception e) {
+            log.error("[Response] Failed to send quota notification: {}", e.getMessage());
+        }
     }
 
     // --- Message helpers ---

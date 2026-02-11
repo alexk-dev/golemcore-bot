@@ -46,6 +46,17 @@ public interface VoicePort {
     boolean isAvailable();
 
     /**
+     * Thrown when the voice service quota is exceeded (insufficient credits).
+     */
+    class QuotaExceededException extends IllegalStateException {
+        private static final long serialVersionUID = 1L;
+
+        public QuotaExceededException(String message) {
+            super(message);
+        }
+    }
+
+    /**
      * Result of speech-to-text transcription including text, metadata, and word-level timestamps.
      */
     record TranscriptionResult(
