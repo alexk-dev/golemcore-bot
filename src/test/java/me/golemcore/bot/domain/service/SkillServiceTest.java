@@ -389,6 +389,45 @@ class SkillServiceTest {
         assertFalse(skill.get().getConditionalNextSkills().containsKey("key2"));
     }
 
+    // ==================== model_tier ====================
+
+    @Test
+    void parseSkillWithModelTier() {
+        loadSkills("coder/" + SKILL_FILE);
+        stubSkillContent("coder/" + SKILL_FILE, """
+                ---
+                name: coder
+                description: Coding skill
+                model_tier: coding
+                ---
+                You are a coding assistant.
+                """);
+
+        service.reload();
+
+        Optional<Skill> skill = service.findByName("coder");
+        assertTrue(skill.isPresent());
+        assertEquals("coding", skill.get().getModelTier());
+    }
+
+    @Test
+    void parseSkillWithoutModelTierReturnsNull() {
+        loadSkills("plain/" + SKILL_FILE);
+        stubSkillContent("plain/" + SKILL_FILE, """
+                ---
+                name: plain
+                description: Plain skill
+                ---
+                Plain content.
+                """);
+
+        service.reload();
+
+        Optional<Skill> skill = service.findByName("plain");
+        assertTrue(skill.isPresent());
+        assertNull(skill.get().getModelTier());
+    }
+
     // ==================== Requirements ====================
 
     @Test

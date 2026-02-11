@@ -38,6 +38,12 @@ class ContextBuildingSystemPromptTest {
 
     private static final String SECTION_IDENTITY = "identity";
     private static final String SKILL_PROCESSING = "processing";
+    private static final String SKILL_CODE_REVIEW = "code-review";
+    private static final String TIER_SMART = "smart";
+    private static final String TIER_DEEP = "deep";
+    private static final String TIER_CODING = "coding";
+    private static final String SKILL_TEST = "test";
+    private static final String CONTENT_TEST = "test";
 
     private MemoryComponent memoryComponent;
     private SkillComponent skillComponent;
@@ -224,7 +230,7 @@ class ContextBuildingSystemPromptTest {
         when(promptSectionService.isEnabled()).thenReturn(false);
 
         Skill skill = Skill.builder()
-                .name("code-review")
+                .name(SKILL_CODE_REVIEW)
                 .description("Review code")
                 .content("You are a code reviewer. Analyze code carefully.")
                 .available(true)
@@ -235,7 +241,7 @@ class ContextBuildingSystemPromptTest {
         system.process(ctx);
 
         String prompt = ctx.getSystemPrompt();
-        assertTrue(prompt.contains("# Active Skill: code-review"));
+        assertTrue(prompt.contains("# Active Skill: " + SKILL_CODE_REVIEW));
         assertTrue(prompt.contains("You are a code reviewer"));
     }
 
@@ -368,7 +374,7 @@ class ContextBuildingSystemPromptTest {
     @Test
     void setsAutoModeTierForAutoMessages() {
         when(promptSectionService.isEnabled()).thenReturn(false);
-        properties.getAuto().setModelTier("smart");
+        properties.getAuto().setModelTier(TIER_SMART);
 
         Map<String, Object> meta = new HashMap<>();
         meta.put("auto.mode", true);
@@ -383,7 +389,7 @@ class ContextBuildingSystemPromptTest {
 
         system.process(ctx);
 
-        assertEquals("smart", ctx.getModelTier());
+        assertEquals(TIER_SMART, ctx.getModelTier());
         assertTrue(ctx.getSystemPrompt().contains("# Goals"));
     }
 
@@ -409,13 +415,13 @@ class ContextBuildingSystemPromptTest {
         when(promptSectionService.isEnabled()).thenReturn(false);
         when(planService.isPlanModeActive()).thenReturn(true);
         when(planService.buildPlanContext()).thenReturn("Plan context");
-        Plan plan = Plan.builder().id("p1").modelTier("deep").build();
+        Plan plan = Plan.builder().id("p1").modelTier(TIER_DEEP).build();
         when(planService.getActivePlan()).thenReturn(Optional.of(plan));
 
         AgentContext ctx = createContext();
         system.process(ctx);
 
-        assertEquals("deep", ctx.getModelTier());
+        assertEquals(TIER_DEEP, ctx.getModelTier());
     }
 
     @Test
@@ -423,14 +429,14 @@ class ContextBuildingSystemPromptTest {
         when(promptSectionService.isEnabled()).thenReturn(false);
         when(planService.isPlanModeActive()).thenReturn(true);
         when(planService.buildPlanContext()).thenReturn("Plan context");
-        Plan plan = Plan.builder().id("p1").modelTier("deep").build();
+        Plan plan = Plan.builder().id("p1").modelTier(TIER_DEEP).build();
         when(planService.getActivePlan()).thenReturn(Optional.of(plan));
 
         AgentContext ctx = createContext();
-        ctx.setModelTier("coding");
+        ctx.setModelTier(TIER_CODING);
         system.process(ctx);
 
-        assertEquals("coding", ctx.getModelTier());
+        assertEquals(TIER_CODING, ctx.getModelTier());
     }
 
     @Test
@@ -471,5 +477,149 @@ class ContextBuildingSystemPromptTest {
         system.process(ctx);
 
         assertFalse(ctx.getSystemPrompt().contains("Plan"));
+    }
+
+    // ===== resolveTier =====
+
+    @Test
+    void resolveTier_skipsWhenIterationNotZero() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(userPreferencesService.getPreferences()).thenReturn(
+                UserPreferences.builder().modelTier(TIER_SMART).build());
+
+        AgentContext ctx = createContext();
+        ctx.setCurrentIteration(2);
+        system.process(ctx);
+
+        assertNull(ctx.getModelTier());
+    }
+
+    @Test
+    void resolveTier_forceTierTakesPriority() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(userPreferencesService.getPreferences()).thenReturn(
+                UserPreferences.builder().modelTier(TIER_SMART).tierForce(true).build());
+
+        Skill skill = Skill.builder().name(SKILL_TEST).description(CONTENT_TEST)
+                .content(CONTENT_TEST).modelTier(TIER_CODING).available(true).build();
+
+        AgentContext ctx = createContext();
+        ctx.setActiveSkill(skill);
+        system.process(ctx);
+
+        assertEquals(TIER_SMART, ctx.getModelTier());
+    }
+
+    @Test
+    void resolveTier_skillTierOverridesUserTier() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(userPreferencesService.getPreferences()).thenReturn(
+                UserPreferences.builder().modelTier("balanced").build());
+
+        Skill skill = Skill.builder().name("coder").description("code")
+                .content("instructions").modelTier(TIER_CODING).available(true).build();
+
+        AgentContext ctx = createContext();
+        ctx.setActiveSkill(skill);
+        system.process(ctx);
+
+        assertEquals(TIER_CODING, ctx.getModelTier());
+    }
+
+    @Test
+    void resolveTier_userTierFallbackWhenSkillHasNoTier() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(userPreferencesService.getPreferences()).thenReturn(
+                UserPreferences.builder().modelTier(TIER_DEEP).build());
+
+        Skill skill = Skill.builder().name("generic").description(CONTENT_TEST)
+                .content("content").available(true).build();
+
+        AgentContext ctx = createContext();
+        ctx.setActiveSkill(skill);
+        system.process(ctx);
+
+        assertEquals(TIER_DEEP, ctx.getModelTier());
+    }
+
+    @Test
+    void resolveTier_nullFallbackWhenNoPrefsNoSkill() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(userPreferencesService.getPreferences()).thenReturn(
+                UserPreferences.builder().build());
+
+        AgentContext ctx = createContext();
+        system.process(ctx);
+
+        assertNull(ctx.getModelTier());
+    }
+
+    @Test
+    void resolveTier_forceWithNullTierDoesNotForce() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(userPreferencesService.getPreferences()).thenReturn(
+                UserPreferences.builder().tierForce(true).build());
+
+        Skill skill = Skill.builder().name("coder").description("code")
+                .content("instructions").modelTier(TIER_CODING).available(true).build();
+
+        AgentContext ctx = createContext();
+        ctx.setActiveSkill(skill);
+        system.process(ctx);
+
+        // force=true but userTier=null → falls through to skill tier
+        assertEquals(TIER_CODING, ctx.getModelTier());
+    }
+
+    // ===== Tier awareness instruction in prompt =====
+
+    @Test
+    void tierAwarenessInstructionIncludedWhenSkillHasTier() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(userPreferencesService.getPreferences()).thenReturn(
+                UserPreferences.builder().build());
+
+        Skill skill = Skill.builder().name(SKILL_CODE_REVIEW).description("Review code")
+                .content("Review the code.").modelTier(TIER_CODING).available(true).build();
+
+        AgentContext ctx = createContext();
+        ctx.setActiveSkill(skill);
+        system.process(ctx);
+
+        assertTrue(ctx.getSystemPrompt().contains("# Model Tier"));
+        assertTrue(ctx.getSystemPrompt().contains(SKILL_CODE_REVIEW));
+        assertTrue(ctx.getSystemPrompt().contains(TIER_CODING));
+    }
+
+    @Test
+    void tierAwarenessInstructionOmittedWhenForced() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(userPreferencesService.getPreferences()).thenReturn(
+                UserPreferences.builder().modelTier(TIER_SMART).tierForce(true).build());
+
+        Skill skill = Skill.builder().name(SKILL_CODE_REVIEW).description("Review code")
+                .content("Review the code.").modelTier(TIER_CODING).available(true).build();
+
+        AgentContext ctx = createContext();
+        ctx.setActiveSkill(skill);
+        system.process(ctx);
+
+        assertFalse(ctx.getSystemPrompt().contains("# Model Tier"));
+    }
+
+    @Test
+    void tierAwarenessInstructionOmittedWhenSkillHasNoTier() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(userPreferencesService.getPreferences()).thenReturn(
+                UserPreferences.builder().build());
+
+        Skill skill = Skill.builder().name("generic").description("Generic")
+                .content("Do stuff.").available(true).build();
+
+        AgentContext ctx = createContext();
+        ctx.setActiveSkill(skill);
+        system.process(ctx);
+
+        assertFalse(ctx.getSystemPrompt().contains("# Model Tier"));
     }
 }

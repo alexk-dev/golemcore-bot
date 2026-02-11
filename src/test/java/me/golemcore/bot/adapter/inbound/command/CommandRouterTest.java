@@ -13,6 +13,7 @@ import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.UsageStats;
+import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.CompactionService;
 import me.golemcore.bot.domain.service.PlanExecutionService;
@@ -68,6 +69,10 @@ class CommandRouterTest {
     private static final String TEST_SCHED_ID = "sched-goal-abc";
     private static final String TOOL_FILESYSTEM = "filesystem";
     private static final String TOOL_SHELL = "shell";
+    private static final String CMD_TIER = "tier";
+    private static final String TIER_BALANCED = "balanced";
+    private static final String TIER_CODING = "coding";
+    private static final String TIER_SMART = "smart";
     private static final String SUB_STATUS = "status";
     private static final String SUB_OFF = "off";
     private static final String SUB_APPROVE = "approve";
@@ -639,10 +644,10 @@ class CommandRouterTest {
         when(planService.isFeatureEnabled()).thenReturn(true);
         when(planService.isPlanModeActive()).thenReturn(false);
 
-        CommandPort.CommandResult result = router.execute(CMD_PLAN, List.of("on", "smart"), CTX_WITH_CHANNEL).get();
+        CommandPort.CommandResult result = router.execute(CMD_PLAN, List.of("on", TIER_SMART), CTX_WITH_CHANNEL).get();
         assertTrue(result.success());
-        assertTrue(result.output().contains("tier: smart"));
-        verify(planService).activatePlanMode(CHAT_ID, "smart");
+        assertTrue(result.output().contains("tier: " + TIER_SMART));
+        verify(planService).activatePlanMode(CHAT_ID, TIER_SMART);
     }
 
     @Test
@@ -975,6 +980,92 @@ class CommandRouterTest {
         assertTrue(result.output().contains("[ ]")); // PENDING
         assertTrue(result.output().contains("[>]")); // IN_PROGRESS
         assertTrue(result.output().contains("[-]")); // SKIPPED
+    }
+
+    // ===== Tier commands =====
+
+    @Test
+    void tierNoArgsShowsCurrentDefault() throws Exception {
+        when(preferencesService.getPreferences()).thenReturn(
+                UserPreferences.builder().build()); // modelTier=null, tierForce=false
+
+        CommandPort.CommandResult result = router.execute(CMD_TIER, List.of(), CTX).get();
+        assertTrue(result.success());
+        assertTrue(result.output().contains("command.tier.current"));
+        assertTrue(result.output().contains(TIER_BALANCED));
+        assertTrue(result.output().contains("off"));
+    }
+
+    @Test
+    void tierNoArgsShowsCurrentWithForce() throws Exception {
+        when(preferencesService.getPreferences()).thenReturn(
+                UserPreferences.builder().modelTier(TIER_SMART).tierForce(true).build());
+
+        CommandPort.CommandResult result = router.execute(CMD_TIER, List.of(), CTX).get();
+        assertTrue(result.success());
+        assertTrue(result.output().contains(TIER_SMART));
+        assertTrue(result.output().contains("on"));
+    }
+
+    @Test
+    void tierSetsCodingTier() throws Exception {
+        UserPreferences prefs = UserPreferences.builder().build();
+        when(preferencesService.getPreferences()).thenReturn(prefs);
+
+        CommandPort.CommandResult result = router.execute(CMD_TIER, List.of(TIER_CODING), CTX).get();
+        assertTrue(result.success());
+        assertTrue(result.output().contains("command.tier.set"));
+        assertTrue(result.output().contains(TIER_CODING));
+        assertEquals(TIER_CODING, prefs.getModelTier());
+        assertFalse(prefs.isTierForce());
+        verify(preferencesService).savePreferences(prefs);
+    }
+
+    @Test
+    void tierSetsWithForce() throws Exception {
+        UserPreferences prefs = UserPreferences.builder().build();
+        when(preferencesService.getPreferences()).thenReturn(prefs);
+
+        CommandPort.CommandResult result = router.execute(CMD_TIER, List.of(TIER_SMART, "force"), CTX).get();
+        assertTrue(result.success());
+        assertTrue(result.output().contains("command.tier.set.force"));
+        assertTrue(result.output().contains(TIER_SMART));
+        assertEquals(TIER_SMART, prefs.getModelTier());
+        assertTrue(prefs.isTierForce());
+        verify(preferencesService).savePreferences(prefs);
+    }
+
+    @Test
+    void tierClearsForceWhenSettingWithoutForce() throws Exception {
+        UserPreferences prefs = UserPreferences.builder().modelTier(TIER_SMART).tierForce(true).build();
+        when(preferencesService.getPreferences()).thenReturn(prefs);
+
+        CommandPort.CommandResult result = router.execute(CMD_TIER, List.of(TIER_BALANCED), CTX).get();
+        assertTrue(result.success());
+        assertEquals(TIER_BALANCED, prefs.getModelTier());
+        assertFalse(prefs.isTierForce());
+    }
+
+    @Test
+    void tierRejectsInvalidTier() throws Exception {
+        when(preferencesService.getPreferences()).thenReturn(UserPreferences.builder().build());
+
+        CommandPort.CommandResult result = router.execute(CMD_TIER, List.of("turbo"), CTX).get();
+        assertTrue(result.success());
+        assertTrue(result.output().contains("command.tier.invalid"));
+        verify(preferencesService, never()).savePreferences(any());
+    }
+
+    @Test
+    void tierAcceptsAllValidTiers() throws Exception {
+        for (String tier : List.of(TIER_BALANCED, TIER_SMART, TIER_CODING, "deep")) {
+            UserPreferences prefs = UserPreferences.builder().build();
+            when(preferencesService.getPreferences()).thenReturn(prefs);
+
+            CommandPort.CommandResult result = router.execute(CMD_TIER, List.of(tier), CTX).get();
+            assertTrue(result.success());
+            assertEquals(tier, prefs.getModelTier());
+        }
     }
 
     // ===== formatTokens =====
