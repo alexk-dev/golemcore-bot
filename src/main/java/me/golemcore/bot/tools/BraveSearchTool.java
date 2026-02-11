@@ -21,9 +21,11 @@ package me.golemcore.bot.tools;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.http.FeignClientFactory;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import feign.FeignException;
 import feign.Headers;
 import feign.Param;
 import feign.RequestLine;
@@ -70,8 +72,14 @@ public class BraveSearchTool implements ToolComponent {
     private static final String TYPE_INTEGER = "integer";
     private static final String TYPE_OBJECT = "object";
 
+    private static final int MAX_RETRIES = 3;
+    private static final long INITIAL_BACKOFF_MS = 2000;
+    private static final double BACKOFF_MULTIPLIER = 2.0;
+    private static final int HTTP_TOO_MANY_REQUESTS = 429;
+
     private final FeignClientFactory feignClientFactory;
     private final BotProperties properties;
+    private final UserPreferencesService userPreferencesService;
 
     private BraveSearchApi searchApi;
     private boolean enabled;
@@ -136,45 +144,74 @@ public class BraveSearchTool implements ToolComponent {
                 }
             }
 
-            try {
-                log.debug("Brave Search: query='{}', count={}", query, count);
-
-                BraveSearchResponse response = searchApi.search(
-                        apiKey,
-                        query,
-                        count);
-
-                if (response.getWeb() == null || response.getWeb().getResults() == null
-                        || response.getWeb().getResults().isEmpty()) {
-                    return ToolResult.success("No results found for: " + query);
-                }
-
-                List<WebResult> results = response.getWeb().getResults();
-
-                String output = results.stream()
-                        .map(r -> String.format("**%s**%n%s%n%s",
-                                r.getTitle(),
-                                r.getUrl(),
-                                r.getDescription() != null ? r.getDescription() : ""))
-                        .collect(Collectors.joining("\n\n"));
-
-                String header = String.format("Search results for \"%s\" (%d results):%n%n", query, results.size());
-
-                return ToolResult.success(header + output, Map.of(
-                        PARAM_QUERY, query,
-                        PARAM_COUNT, results.size(),
-                        "results", results.stream()
-                                .map(r -> Map.of(
-                                        "title", r.getTitle() != null ? r.getTitle() : "",
-                                        "url", r.getUrl() != null ? r.getUrl() : "",
-                                        "description", r.getDescription() != null ? r.getDescription() : ""))
-                                .toList()));
-
-            } catch (Exception e) {
-                log.error("Brave Search failed for query: {}", query, e);
-                return ToolResult.failure("Search failed: " + e.getMessage());
-            }
+            return executeWithRetry(query, count);
         });
+    }
+
+    private ToolResult executeWithRetry(String query, int count) {
+        for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                log.debug("Brave Search: query='{}', count={}, attempt={}", query, count, attempt);
+
+                BraveSearchResponse response = searchApi.search(apiKey, query, count);
+                return buildSuccessResult(query, response);
+
+            } catch (FeignException e) {
+                if (e.status() == HTTP_TOO_MANY_REQUESTS && attempt < MAX_RETRIES) {
+                    long backoffMs = (long) (INITIAL_BACKOFF_MS * Math.pow(BACKOFF_MULTIPLIER, attempt));
+                    log.warn("[BraveSearch] Rate limit hit (attempt {}/{}), retrying in {}ms",
+                            attempt + 1, MAX_RETRIES, backoffMs);
+                    sleep(backoffMs);
+                } else if (e.status() == HTTP_TOO_MANY_REQUESTS) {
+                    log.error("[BraveSearch] Rate limit exceeded after {} retries for query: {}", MAX_RETRIES, query);
+                    return ToolResult.failure(userPreferencesService.getMessage("tool.brave.rate_limit"));
+                } else {
+                    log.error("[BraveSearch] API error (status {}) for query: {}", e.status(), query, e);
+                    return ToolResult.failure(userPreferencesService.getMessage("tool.brave.error"));
+                }
+            } catch (Exception e) { // NOSONAR - broad catch for unexpected errors
+                log.error("[BraveSearch] Unexpected error for query: {}", query, e);
+                return ToolResult.failure(userPreferencesService.getMessage("tool.brave.error"));
+            }
+        }
+        return ToolResult.failure(userPreferencesService.getMessage("tool.brave.error"));
+    }
+
+    private ToolResult buildSuccessResult(String query, BraveSearchResponse response) {
+        if (response.getWeb() == null || response.getWeb().getResults() == null
+                || response.getWeb().getResults().isEmpty()) {
+            return ToolResult.success("No results found for: " + query);
+        }
+
+        List<WebResult> results = response.getWeb().getResults();
+
+        String output = results.stream()
+                .map(r -> String.format("**%s**%n%s%n%s",
+                        r.getTitle(),
+                        r.getUrl(),
+                        r.getDescription() != null ? r.getDescription() : ""))
+                .collect(Collectors.joining("\n\n"));
+
+        String header = String.format("Search results for \"%s\" (%d results):%n%n", query, results.size());
+
+        return ToolResult.success(header + output, Map.of(
+                PARAM_QUERY, query,
+                PARAM_COUNT, results.size(),
+                "results", results.stream()
+                        .map(r -> Map.of(
+                                "title", r.getTitle() != null ? r.getTitle() : "",
+                                "url", r.getUrl() != null ? r.getUrl() : "",
+                                "description", r.getDescription() != null ? r.getDescription() : ""))
+                        .toList()));
+    }
+
+    private void sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("[BraveSearch] Retry sleep interrupted");
+        }
     }
 
     // Feign API interface
