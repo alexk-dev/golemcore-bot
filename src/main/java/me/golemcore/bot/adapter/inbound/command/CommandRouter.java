@@ -221,7 +221,7 @@ public class CommandRouter implements CommandPort {
         for (ToolComponent t : enabledTools) {
             String name = t.getDefinition().getName();
             String desc = t.getDefinition().getDescription().trim()
-                    .replaceAll("\\s*\\n\\s*", " ");
+                    .replaceAll("[ \\t]*\\n[ \\t]*", " ");
             int dotIdx = desc.indexOf(". ");
             if (dotIdx > 0 && dotIdx < MAX_TOOL_DESC_LENGTH) {
                 desc = desc.substring(0, dotIdx + 1);
