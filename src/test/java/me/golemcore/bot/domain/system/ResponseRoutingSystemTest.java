@@ -9,6 +9,7 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
+import me.golemcore.bot.domain.service.VoiceResponseHandler.VoiceSendResult;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import org.junit.jupiter.api.BeforeEach;
@@ -376,7 +377,7 @@ class ResponseRoutingSystemTest {
     @Test
     void sendsVoiceAfterTextWhenVoiceRequested() {
         when(voiceHandler.isAvailable()).thenReturn(true);
-        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(true);
+        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
 
         AgentContext context = createContext();
         LlmResponse response = LlmResponse.builder().content("Hello there").build();
@@ -392,7 +393,7 @@ class ResponseRoutingSystemTest {
     @Test
     void sendsVoiceWithCustomTextFromTool() {
         when(voiceHandler.isAvailable()).thenReturn(true);
-        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(true);
+        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
 
         AgentContext context = createContext();
         LlmResponse response = LlmResponse.builder().content("Full response with details").build();
@@ -408,7 +409,7 @@ class ResponseRoutingSystemTest {
     @Test
     void sendsVoiceForIncomingVoiceMessage() {
         when(voiceHandler.isAvailable()).thenReturn(true);
-        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(true);
+        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
         properties.getVoice().getTelegram().setRespondWithVoice(true);
 
         AgentContext context = createContext();
@@ -450,7 +451,7 @@ class ResponseRoutingSystemTest {
     @Test
     void voiceSynthesisFailureDoesNotBreakResponse() {
         when(voiceHandler.isAvailable()).thenReturn(true);
-        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(false);
+        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.FAILED);
 
         AgentContext context = createContext();
         LlmResponse response = LlmResponse.builder().content("response text").build();
@@ -466,7 +467,7 @@ class ResponseRoutingSystemTest {
     @Test
     void voicePrefixSendsVoiceInsteadOfText() {
         when(voiceHandler.isAvailable()).thenReturn(true);
-        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(true);
+        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
 
         AgentContext context = createContext();
         LlmResponse response = LlmResponse.builder().content(VOICE_PREFIX + " Hello, this is voice").build();
@@ -483,7 +484,7 @@ class ResponseRoutingSystemTest {
     @Test
     void voicePrefixWithTtsFailureFallsBackToText() {
         when(voiceHandler.isAvailable()).thenReturn(true);
-        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(false);
+        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.FAILED);
 
         AgentContext context = createContext();
         LlmResponse response = LlmResponse.builder().content(VOICE_PREFIX + " Fallback text").build();
@@ -525,7 +526,7 @@ class ResponseRoutingSystemTest {
     @Test
     void voicePrefixPrefersToolVoiceText() {
         when(voiceHandler.isAvailable()).thenReturn(true);
-        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(true);
+        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
 
         AgentContext context = createContext();
         LlmResponse response = LlmResponse.builder().content(
@@ -548,7 +549,7 @@ class ResponseRoutingSystemTest {
 
     @Test
     void voiceOnlyResponseSendsVoiceWhenNoLlmContent() {
-        when(voiceHandler.sendVoiceWithFallback(any(), anyString(), anyString())).thenReturn(true);
+        when(voiceHandler.sendVoiceWithFallback(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
 
         AgentContext context = createContext();
         LlmResponse response = LlmResponse.builder()
@@ -569,7 +570,7 @@ class ResponseRoutingSystemTest {
 
     @Test
     void voiceOnlyFallsBackToTextWhenVoiceNotAvailable() {
-        when(voiceHandler.sendVoiceWithFallback(any(), anyString(), anyString())).thenReturn(true);
+        when(voiceHandler.sendVoiceWithFallback(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
 
         AgentContext context = createContext();
         LlmResponse response = LlmResponse.builder().content("").build();
@@ -586,7 +587,7 @@ class ResponseRoutingSystemTest {
 
     @Test
     void voiceOnlyFallsBackToTextOnTtsFailure() {
-        when(voiceHandler.sendVoiceWithFallback(any(), anyString(), anyString())).thenReturn(false);
+        when(voiceHandler.sendVoiceWithFallback(any(), anyString(), anyString())).thenReturn(VoiceSendResult.FAILED);
 
         AgentContext context = createContext();
         LlmResponse response = LlmResponse.builder().content(null).build();
@@ -679,7 +680,7 @@ class ResponseRoutingSystemTest {
     @Test
     void voiceAndAttachmentsTogether() {
         when(voiceHandler.isAvailable()).thenReturn(true);
-        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(true);
+        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
 
         AgentContext context = createContext();
         LlmResponse response = LlmResponse.builder().content("Text with voice and attachment").build();
@@ -708,7 +709,7 @@ class ResponseRoutingSystemTest {
 
     @Test
     void voiceOnlyWithAttachments() {
-        when(voiceHandler.sendVoiceWithFallback(any(), anyString(), anyString())).thenReturn(true);
+        when(voiceHandler.sendVoiceWithFallback(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
 
         AgentContext context = createContext();
         LlmResponse response = LlmResponse.builder().content("").build();
@@ -885,7 +886,7 @@ class ResponseRoutingSystemTest {
     @Test
     void voicePrefixFallbackWithToolsExecuted() {
         when(voiceHandler.isAvailable()).thenReturn(true);
-        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(true);
+        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
 
         AgentContext context = createContext();
         LlmResponse response = LlmResponse.builder()
@@ -904,5 +905,64 @@ class ResponseRoutingSystemTest {
     void shouldProcessFalseWhenAllNull() {
         AgentContext context = createContext();
         assertFalse(system.shouldProcess(context));
+    }
+
+    // ===== Voice Quota Exceeded Tests =====
+
+    @Test
+    void voicePrefixQuotaExceededSendsNotificationAndFallsBackToText() {
+        when(voiceHandler.isAvailable()).thenReturn(true);
+        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.QUOTA_EXCEEDED);
+        when(preferencesService.getMessage("voice.error.quota")).thenReturn("Voice quota exceeded!");
+
+        AgentContext context = createContext();
+        LlmResponse response = LlmResponse.builder().content(VOICE_PREFIX + " Hello voice").build();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+
+        system.process(context);
+
+        // Falls back to text
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Hello voice"));
+        // Sends quota notification
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Voice quota exceeded!"));
+    }
+
+    @Test
+    void voiceOnlyQuotaExceededSendsNotification() {
+        when(voiceHandler.sendVoiceWithFallback(any(), anyString(), anyString()))
+                .thenReturn(VoiceSendResult.QUOTA_EXCEEDED);
+        when(preferencesService.getMessage("voice.error.quota")).thenReturn("Voice quota exceeded!");
+
+        AgentContext context = createContext();
+        LlmResponse response = LlmResponse.builder().content("").build();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+        context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
+        context.setAttribute(ContextAttributes.VOICE_TEXT, "Speak this");
+
+        system.process(context);
+
+        verify(voiceHandler).sendVoiceWithFallback(eq(channelPort), eq(CHAT_ID), eq("Speak this"));
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Voice quota exceeded!"));
+        // Assistant message still added since text fallback succeeded
+        assertFalse(context.getSession().getMessages().isEmpty());
+    }
+
+    @Test
+    void voiceAfterTextQuotaExceededSendsNotification() {
+        when(voiceHandler.isAvailable()).thenReturn(true);
+        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.QUOTA_EXCEEDED);
+        when(preferencesService.getMessage("voice.error.quota")).thenReturn("Voice quota exceeded!");
+
+        AgentContext context = createContext();
+        LlmResponse response = LlmResponse.builder().content("Text response").build();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+        context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
+
+        system.process(context);
+
+        // Text always sent
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Text response"));
+        // Quota notification sent after
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Voice quota exceeded!"));
     }
 }

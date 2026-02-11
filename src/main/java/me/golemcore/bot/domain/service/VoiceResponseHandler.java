@@ -26,6 +26,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -45,7 +46,14 @@ public class VoiceResponseHandler {
     private final BotProperties properties;
 
     /**
-     * Try to synthesize and send voice. Returns true on success.
+     * Result of a voice send attempt.
+     */
+    public enum VoiceSendResult {
+        SUCCESS, FAILED, QUOTA_EXCEEDED
+    }
+
+    /**
+     * Try to synthesize and send voice.
      *
      * @param channel
      *            the channel to send through
@@ -53,12 +61,12 @@ public class VoiceResponseHandler {
      *            target chat
      * @param text
      *            text to synthesize
-     * @return true if voice was sent successfully
+     * @return result indicating success, failure, or quota exceeded
      */
-    public boolean trySendVoice(ChannelPort channel, String chatId, String text) {
+    public VoiceSendResult trySendVoice(ChannelPort channel, String chatId, String text) {
         if (!voicePort.isAvailable()) {
             log.debug("[Voice] Not available, skipping synthesis");
-            return false;
+            return VoiceSendResult.FAILED;
         }
         try {
             BotProperties.VoiceProperties voice = properties.getVoice();
@@ -70,14 +78,21 @@ public class VoiceResponseHandler {
             byte[] audioData = voicePort.synthesize(text, config).get(60, TimeUnit.SECONDS);
             channel.sendVoice(chatId, audioData).get(30, TimeUnit.SECONDS);
             log.info("[Voice] Sent: {} chars → {} bytes audio, chatId={}", text.length(), audioData.length, chatId);
-            return true;
+            return VoiceSendResult.SUCCESS;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error("[Voice] TTS/send interrupted: {}", e.getMessage());
-            return false;
+            return VoiceSendResult.FAILED;
+        } catch (ExecutionException e) {
+            if (isQuotaExceeded(e.getCause())) {
+                log.warn("[Voice] TTS quota exceeded: {}", e.getCause().getMessage());
+                return VoiceSendResult.QUOTA_EXCEEDED;
+            }
+            log.error("[Voice] TTS/send failed, caller should fall back to text: {}", e.getMessage());
+            return VoiceSendResult.FAILED;
         } catch (Exception e) {
             log.error("[Voice] TTS/send failed, caller should fall back to text: {}", e.getMessage());
-            return false;
+            return VoiceSendResult.FAILED;
         }
     }
 
@@ -90,25 +105,30 @@ public class VoiceResponseHandler {
      *            target chat
      * @param text
      *            text to synthesize / send as fallback
-     * @return true if something was sent (voice or text), false if both failed
+     * @return result indicating success, failure, or quota exceeded
      */
-    public boolean sendVoiceWithFallback(ChannelPort channel, String chatId, String text) {
-        if (trySendVoice(channel, chatId, text)) {
-            return true;
+    public VoiceSendResult sendVoiceWithFallback(ChannelPort channel, String chatId, String text) {
+        VoiceSendResult voiceResult = trySendVoice(channel, chatId, text);
+        if (voiceResult == VoiceSendResult.SUCCESS) {
+            return VoiceSendResult.SUCCESS;
         }
         // Fallback to text
         try {
             channel.sendMessage(chatId, text).get(30, TimeUnit.SECONDS);
             log.info("[Voice] Fallback text sent: {} chars, chatId={}", text.length(), chatId);
-            return true;
+            return voiceResult; // Preserve QUOTA_EXCEEDED so caller can notify
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error("[Voice] Fallback text interrupted: {}", e.getMessage());
-            return false;
+            return VoiceSendResult.FAILED;
         } catch (Exception e) {
             log.error("[Voice] Fallback text also failed: {}", e.getMessage());
-            return false;
+            return VoiceSendResult.FAILED;
         }
+    }
+
+    private boolean isQuotaExceeded(Throwable cause) {
+        return cause instanceof VoicePort.QuotaExceededException;
     }
 
     public boolean isAvailable() {

@@ -1,6 +1,7 @@
 package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.model.AudioFormat;
+import me.golemcore.bot.domain.service.VoiceResponseHandler.VoiceSendResult;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.VoicePort;
@@ -49,9 +50,9 @@ class VoiceResponseHandlerTest {
         when(voicePort.synthesize(anyString(), any(VoicePort.VoiceConfig.class)))
                 .thenReturn(CompletableFuture.completedFuture(new byte[] { 1, 2, 3 }));
 
-        boolean result = handler.trySendVoice(channel, CHAT_ID, TEXT_HELLO);
+        VoiceSendResult result = handler.trySendVoice(channel, CHAT_ID, TEXT_HELLO);
 
-        assertTrue(result);
+        assertEquals(VoiceSendResult.SUCCESS, result);
         verify(voicePort).synthesize(eq(TEXT_HELLO), any(VoicePort.VoiceConfig.class));
         verify(channel).sendVoice(eq(CHAT_ID), eq(new byte[] { 1, 2, 3 }));
     }
@@ -60,9 +61,9 @@ class VoiceResponseHandlerTest {
     void trySendVoice_voiceNotAvailable() {
         when(voicePort.isAvailable()).thenReturn(false);
 
-        boolean result = handler.trySendVoice(channel, CHAT_ID, TEXT_HELLO);
+        VoiceSendResult result = handler.trySendVoice(channel, CHAT_ID, TEXT_HELLO);
 
-        assertFalse(result);
+        assertEquals(VoiceSendResult.FAILED, result);
         verify(voicePort, never()).synthesize(anyString(), any());
         verify(channel, never()).sendVoice(anyString(), any(byte[].class));
     }
@@ -73,9 +74,9 @@ class VoiceResponseHandlerTest {
         when(voicePort.synthesize(anyString(), any(VoicePort.VoiceConfig.class)))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("TTS error")));
 
-        boolean result = handler.trySendVoice(channel, CHAT_ID, TEXT_HELLO);
+        VoiceSendResult result = handler.trySendVoice(channel, CHAT_ID, TEXT_HELLO);
 
-        assertFalse(result);
+        assertEquals(VoiceSendResult.FAILED, result);
         verify(channel, never()).sendVoice(anyString(), any(byte[].class));
     }
 
@@ -87,9 +88,22 @@ class VoiceResponseHandlerTest {
         when(channel.sendVoice(anyString(), any(byte[].class)))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("send failed")));
 
-        boolean result = handler.trySendVoice(channel, CHAT_ID, TEXT_HELLO);
+        VoiceSendResult result = handler.trySendVoice(channel, CHAT_ID, TEXT_HELLO);
 
-        assertFalse(result);
+        assertEquals(VoiceSendResult.FAILED, result);
+    }
+
+    @Test
+    void trySendVoice_quotaExceeded() {
+        when(voicePort.isAvailable()).thenReturn(true);
+        when(voicePort.synthesize(anyString(), any(VoicePort.VoiceConfig.class)))
+                .thenReturn(CompletableFuture.failedFuture(
+                        new VoicePort.QuotaExceededException("Quota exceeded")));
+
+        VoiceSendResult result = handler.trySendVoice(channel, CHAT_ID, TEXT_HELLO);
+
+        assertEquals(VoiceSendResult.QUOTA_EXCEEDED, result);
+        verify(channel, never()).sendVoice(anyString(), any(byte[].class));
     }
 
     @Test
@@ -122,9 +136,9 @@ class VoiceResponseHandlerTest {
         when(voicePort.synthesize(anyString(), any(VoicePort.VoiceConfig.class)))
                 .thenReturn(CompletableFuture.completedFuture(new byte[] { 1, 2 }));
 
-        boolean result = handler.sendVoiceWithFallback(channel, CHAT_ID, TEXT_HELLO);
+        VoiceSendResult result = handler.sendVoiceWithFallback(channel, CHAT_ID, TEXT_HELLO);
 
-        assertTrue(result);
+        assertEquals(VoiceSendResult.SUCCESS, result);
         verify(channel).sendVoice(eq(CHAT_ID), any(byte[].class));
         verify(channel, never()).sendMessage(anyString(), anyString());
     }
@@ -135,9 +149,9 @@ class VoiceResponseHandlerTest {
         when(voicePort.synthesize(anyString(), any(VoicePort.VoiceConfig.class)))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("TTS failed")));
 
-        boolean result = handler.sendVoiceWithFallback(channel, CHAT_ID, TEXT_HELLO);
+        VoiceSendResult result = handler.sendVoiceWithFallback(channel, CHAT_ID, TEXT_HELLO);
 
-        assertTrue(result);
+        assertEquals(VoiceSendResult.FAILED, result);
         verify(channel).sendMessage(eq(CHAT_ID), eq(TEXT_HELLO));
     }
 
@@ -145,9 +159,9 @@ class VoiceResponseHandlerTest {
     void sendVoiceWithFallback_voiceUnavailableFallsBackToText() {
         when(voicePort.isAvailable()).thenReturn(false);
 
-        boolean result = handler.sendVoiceWithFallback(channel, CHAT_ID, TEXT_HELLO);
+        VoiceSendResult result = handler.sendVoiceWithFallback(channel, CHAT_ID, TEXT_HELLO);
 
-        assertTrue(result);
+        assertEquals(VoiceSendResult.FAILED, result);
         verify(channel, never()).sendVoice(anyString(), any(byte[].class));
         verify(channel).sendMessage(eq(CHAT_ID), eq(TEXT_HELLO));
     }
@@ -160,9 +174,22 @@ class VoiceResponseHandlerTest {
         when(channel.sendMessage(anyString(), anyString()))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("text send failed")));
 
-        boolean result = handler.sendVoiceWithFallback(channel, CHAT_ID, TEXT_HELLO);
+        VoiceSendResult result = handler.sendVoiceWithFallback(channel, CHAT_ID, TEXT_HELLO);
 
-        assertFalse(result);
+        assertEquals(VoiceSendResult.FAILED, result);
+    }
+
+    @Test
+    void sendVoiceWithFallback_quotaExceededFallsBackToTextAndPreservesResult() {
+        when(voicePort.isAvailable()).thenReturn(true);
+        when(voicePort.synthesize(anyString(), any(VoicePort.VoiceConfig.class)))
+                .thenReturn(CompletableFuture.failedFuture(
+                        new VoicePort.QuotaExceededException("Quota exceeded")));
+
+        VoiceSendResult result = handler.sendVoiceWithFallback(channel, CHAT_ID, TEXT_HELLO);
+
+        assertEquals(VoiceSendResult.QUOTA_EXCEEDED, result);
+        verify(channel).sendMessage(eq(CHAT_ID), eq(TEXT_HELLO));
     }
 
     @Test

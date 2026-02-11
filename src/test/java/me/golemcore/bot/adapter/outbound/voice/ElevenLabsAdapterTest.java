@@ -443,7 +443,7 @@ class ElevenLabsAdapterTest {
                 AudioFormat.OGG_OPUS);
         Exception ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
         Throwable cause = ex.getCause();
-        assertTrue(cause instanceof ElevenLabsAdapter.QuotaExceededException
+        assertTrue(cause instanceof VoicePort.QuotaExceededException
                 || (cause != null && cause.getMessage().contains("quota")));
     }
 
@@ -453,8 +453,41 @@ class ElevenLabsAdapterTest {
         CompletableFuture<byte[]> future = adapter.synthesize(TTS_TEXT, VoicePort.VoiceConfig.defaultConfig());
         Exception ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
         Throwable cause = ex.getCause();
-        assertTrue(cause instanceof ElevenLabsAdapter.QuotaExceededException
+        assertTrue(cause instanceof VoicePort.QuotaExceededException
                 || (cause != null && cause.getMessage().contains("quota")));
+    }
+
+    @Test
+    void synthesize401QuotaExceededInMessage() {
+        enqueueErrorResponse(401,
+                "{\"detail\":{\"status\":\"quota_error\",\"message\":\"This request exceeds your quota of 10000. You have 463 credits remaining, while 593 credits are required.\"}}");
+        CompletableFuture<byte[]> future = adapter.synthesize(TTS_TEXT, VoicePort.VoiceConfig.defaultConfig());
+        Exception ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
+        Throwable cause = ex.getCause();
+        assertTrue(cause instanceof VoicePort.QuotaExceededException,
+                "Expected QuotaExceededException but got: " + cause);
+    }
+
+    @Test
+    void transcribe401QuotaExceededInMessage() {
+        enqueueErrorResponse(401,
+                "{\"detail\":{\"message\":\"You have 0 credits remaining\"}}");
+        CompletableFuture<VoicePort.TranscriptionResult> future = adapter.transcribe(new byte[] { 1 },
+                AudioFormat.OGG_OPUS);
+        Exception ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
+        Throwable cause = ex.getCause();
+        assertTrue(cause instanceof VoicePort.QuotaExceededException,
+                "Expected QuotaExceededException but got: " + cause);
+    }
+
+    @Test
+    void synthesize401WithoutQuotaMessageIsNotQuotaException() {
+        enqueueErrorResponse(401, "{\"detail\":{\"message\":\"Invalid API key\"}}");
+        CompletableFuture<byte[]> future = adapter.synthesize(TTS_TEXT, VoicePort.VoiceConfig.defaultConfig());
+        Exception ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
+        Throwable cause = ex.getCause();
+        assertFalse(cause instanceof VoicePort.QuotaExceededException,
+                "Expected regular exception for auth error, not QuotaExceededException");
     }
 
     @Test
