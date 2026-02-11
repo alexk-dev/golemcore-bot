@@ -268,7 +268,7 @@ public class LlmExecutionSystem implements AgentSystem {
         case "deep" -> new ModelSelection(router.getDeepModel(), router.getDeepModelReasoning());
         case "coding" -> new ModelSelection(router.getCodingModel(), router.getCodingModelReasoning());
         case "smart" -> new ModelSelection(router.getSmartModel(), router.getSmartModelReasoning());
-        default -> new ModelSelection(router.getDefaultModel(), router.getDefaultModelReasoning());
+        default -> new ModelSelection(router.getBalancedModel(), router.getBalancedModelReasoning());
         };
     }
 

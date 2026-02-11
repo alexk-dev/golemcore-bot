@@ -125,6 +125,7 @@ Send `/help` to your bot on Telegram to see available commands.
 | `/status` | Show session info + usage stats |
 | `/new` or `/reset` | Start new conversation |
 | `/compact [N]` | Compact conversation history, keep last N messages (default: 10) |
+| `/tier [tier] [force]` | Set model tier (balanced/smart/coding/deep) |
 | `/settings` | Change language (Telegram only) |
 
 ### Auto Mode Commands
@@ -141,17 +142,17 @@ Available when `AUTO_MODE_ENABLED=true`:
 
 ## Enable Advanced Features
 
-### Skill Routing (Semantic + LLM)
+### Model Tier Management
 
-Enables intelligent model tier selection (balanced/smart/coding/deep) and skill matching. See [Model Routing Guide](MODEL_ROUTING.md) for how the 3-stage routing pipeline works.
+Control which model handles your requests. See [Model Routing Guide](MODEL_ROUTING.md) for tier priority, skill overrides, and dynamic upgrades.
 
 ```bash
-docker run -d \
-  -e OPENAI_API_KEY=sk-... \
-  -e SKILL_MATCHER_ENABLED=true \
-  -v golemcore-bot-data:/app/workspace \
-  golemcore-bot:latest
+# In chat:
+/tier coding             # Switch to coding-optimized model
+/tier smart force        # Lock to smart model (ignores skill overrides)
 ```
+
+Skills can also declare a preferred tier via `model_tier` in their YAML frontmatter.
 
 ### Web Search (Brave)
 
@@ -207,7 +208,6 @@ services:
       TELEGRAM_ALLOWED_USERS: ${TELEGRAM_ALLOWED_USERS}
 
       # Advanced Features
-      SKILL_MATCHER_ENABLED: true
       BRAVE_SEARCH_ENABLED: true
       BRAVE_SEARCH_API_KEY: ${BRAVE_SEARCH_API_KEY}
       AUTO_MODE_ENABLED: true

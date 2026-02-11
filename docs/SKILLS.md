@@ -22,7 +22,7 @@ workspace/skills/
 └── variables.json          # global variables
 ```
 
-When a user sends a message, the [routing system](#skill-routing) automatically selects the best skill based on the message content. The selected skill's content becomes part of the system prompt sent to the LLM.
+When a skill is activated (via `skill_transition` tool or pipeline), its content becomes part of the system prompt sent to the LLM.
 
 ---
 
@@ -79,10 +79,13 @@ The frontmatter is separated from the content by `---` delimiters.
 
 ```yaml
 name: my-skill              # Unique identifier (auto-extracted from folder name if omitted)
-description: Brief summary   # Shown in /skills list and used for routing
+description: Brief summary   # Shown in /skills list
+model_tier: coding           # Optional: preferred model tier (balanced/smart/coding/deep)
 ```
 
 If `name` is omitted, it's extracted from the directory path (e.g., `skills/code-review/SKILL.md` becomes `code-review`).
+
+The `model_tier` field sets the preferred model tier when this skill is active. It is overridden if the user has `tierForce` enabled via `/tier <tier> force`. See [Model Routing Guide](MODEL_ROUTING.md#skill-model_tier-override).
 
 ### Requirements
 
@@ -381,39 +384,28 @@ If unsure, let the automatic transition handle it.
 
 ---
 
-## Skill Routing
+## Skill Activation
 
-The bot uses a **2-stage hybrid routing** system to select the best skill for each message:
+Skills are activated through explicit mechanisms:
 
-### Stage 0: Fragmented Input Detection
+### LLM-Initiated Transition
 
-Before routing, `MessageContextAggregator` checks if the user's message is a fragment of a larger thought (e.g., the user sent "and also" as a follow-up). Signals detected:
+The LLM can activate a skill using the `skill_transition` tool:
 
-- Message is very short
-- Contains back-references ("this", "that", "it")
-- Starts with a continuation word ("and", "also", "but")
-- Starts with a lowercase letter
-- Previous message was incomplete
-- Sent within 60 seconds of the previous message
+```json
+{
+  "target_skill": "code-review",
+  "reason": "User wants a code review"
+}
+```
 
-If 2+ signals are detected, the message is aggregated with recent context for better matching.
+### Pipeline Transitions
 
-### Stage 1: Semantic Search
+Skills can chain to the next skill automatically via `next_skill` or conditionally via `conditional_next_skills`. See [Skill Pipelines](#skill-pipelines).
 
-Generate an embedding of the user's message and compare it against pre-indexed skill embeddings (name + description). Returns top-K candidates ranked by cosine similarity.
+### No Active Skill
 
-- Top-K: 5 (configurable)
-- Minimum score: 0.6
-
-### Stage 2: LLM Classifier
-
-A fast LLM picks the best skill from the semantic candidates and assigns a **model tier** (balanced/smart/coding/deep).
-
-The classifier is **skipped** if the semantic score exceeds the threshold (default: 0.95).
-
-### No Match
-
-If no skill matches with sufficient confidence, the bot runs without a skill — using only the base system prompt.
+When no skill is active, the bot runs with the base system prompt and includes a summary of all available skills (name + description) so the LLM can decide when to transition.
 
 ---
 
@@ -523,19 +515,10 @@ bot.skills.enabled=true
 bot.skills.directory=skills
 bot.skills.progressive-loading=true
 
-# Skill routing
-bot.router.skill-matcher.enabled=false
-bot.router.skill-matcher.semantic-search.top-k=5
-bot.router.skill-matcher.semantic-search.min-score=0.6
-bot.router.skill-matcher.classifier.enabled=true
-bot.router.skill-matcher.classifier.model=openai/gpt-5-mini
-bot.router.skill-matcher.skip-classifier-threshold=0.95
-bot.router.skill-matcher.cache.enabled=true
-bot.router.skill-matcher.cache.ttl-minutes=60
-
 # Skill tools
 bot.tools.skill-management.enabled=true
 bot.tools.skill-transition.enabled=true
+bot.tools.tier.enabled=true
 
 # MCP
 bot.mcp.enabled=true

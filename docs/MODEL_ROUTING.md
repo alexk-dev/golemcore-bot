@@ -1,6 +1,6 @@
 # Model Routing Guide
 
-How the bot selects the right LLM model for each request through intelligent tier-based routing.
+How the bot selects the right LLM model for each request through tier-based routing.
 
 > **See also:** [Configuration Guide](CONFIGURATION.md#model-configuration) for environment variables, [Quick Start](QUICKSTART.md#enable-advanced-features) for basic setup, [Deployment Guide](DEPLOYMENT.md) for production configuration.
 
@@ -8,25 +8,24 @@ How the bot selects the right LLM model for each request through intelligent tie
 
 ## Overview
 
-The bot uses a **4-tier model selection** strategy that automatically picks the most appropriate model based on task complexity. The tier is determined in two phases:
+The bot uses a **4-tier model selection** strategy that picks the most appropriate model based on task complexity. The tier is determined from multiple sources with clear priority:
 
-1. **Initial assignment** (iteration 0) — `SkillRoutingSystem` uses hybrid semantic + LLM classification to set the tier
-2. **Dynamic upgrade** (iteration > 0) — `DynamicTierSystem` can promote to the `coding` tier when code-related activity is detected mid-conversation
+1. **User preference** — set via `/tier` command or `set_tier` tool
+2. **Skill override** — `model_tier` field in skill YAML frontmatter
+3. **Dynamic upgrade** — `DynamicTierSystem` promotes to `coding` when code activity is detected mid-conversation
+4. **Fallback** — `"balanced"` when no tier is explicitly set
 
 ```
 User Message
     |
     v
-[SkillRoutingSystem]  ─── Sets initial modelTier (balanced/smart/coding/deep)
-    |                      via semantic search + LLM classifier
+[ContextBuildingSystem]  --- Resolves tier from user prefs / active skill
+    |                        Priority: force+user > skill > user pref > balanced
     v
-[ContextBuildingSystem]
-    |
+[DynamicTierSystem]      --- May upgrade to "coding" if code activity detected
+    |                        (only on iteration > 0, never downgrades)
     v
-[DynamicTierSystem]   ─── May upgrade to "coding" if code activity detected
-    |                      (only on iteration > 0, never downgrades)
-    v
-[LlmExecutionSystem]  ─── Selects model + reasoning level based on modelTier
+[LlmExecutionSystem]    --- Selects model + reasoning level based on modelTier
     |
     v
 LLM API Call
@@ -51,8 +50,8 @@ Each tier is independently configurable — you can assign any model from any su
 
 ```bash
 # Balanced tier (default/fallback)
-BOT_ROUTER_DEFAULT_MODEL=openai/gpt-5.1
-BOT_ROUTER_DEFAULT_MODEL_REASONING=medium
+BOT_ROUTER_BALANCED_MODEL=openai/gpt-5.1
+BOT_ROUTER_BALANCED_MODEL_REASONING=medium
 
 # Smart tier
 BOT_ROUTER_SMART_MODEL=openai/gpt-5.1
@@ -76,59 +75,64 @@ BOT_ROUTER_TEMPERATURE=0.7
 
 ## How Tier Assignment Works
 
-### Phase 1: Skill Routing (Iteration 0)
+### Tier Priority
 
-On the first iteration of the agent loop, `SkillRoutingSystem` (order=15) determines both the active skill and the model tier. It runs **before** `ContextBuildingSystem` (order=20).
+The tier is resolved in `ContextBuildingSystem` (order=20) on iteration 0 with the following priority:
 
-The routing follows a 3-stage hybrid approach:
+| Priority | Source | Condition |
+|----------|--------|-----------|
+| 1 (highest) | **User preference + force** | `tierForce=true` and `modelTier` set in user preferences |
+| 2 | **Skill `model_tier`** | Active skill has `model_tier` in YAML frontmatter |
+| 3 | **User preference** | `modelTier` set in user preferences (without force) |
+| 4 (lowest) | **Fallback** | `"balanced"` — when no tier is explicitly set |
+
+**Force mode** locks the tier, preventing both skill overrides and DynamicTierSystem upgrades. This is useful when you want a specific model regardless of context.
+
+### Setting Tier via `/tier` Command
 
 ```
-User Message
-    |
-    v
-[Stage 0: Fragmented Input Detection]
-    |  MessageContextAggregator aggregates split messages
-    |  using 6 signals: too_short, back_reference, time_window,
-    |  continuation, lowercase_start, previous_incomplete
-    |  Threshold: >= 2 signals = fragmented
-    v
-[Stage 1: Semantic Pre-filter]
-    |  Query embedding via EmbeddingPort (text-embedding-3-small)
-    |  Cosine similarity against indexed skill embeddings
-    |  Returns top-K candidates (K=5, min_score=0.6)
-    v
-    +-- Score >= 0.95? --> Skip LLM, use semantic result (tier="balanced")
-    |
-    +-- Score < 0.95 and classifier enabled?
-        |
-        v
-[Stage 2: LLM Classifier]
-        |  Fast model (e.g., gpt-5-mini) receives:
-        |  - Candidate skills with descriptions and scores
-        |  - Last 3 conversation messages for context
-        |  - User's (possibly aggregated) query
-        |  Returns JSON: {"skill", "confidence", "model_tier", "reason"}
-        v
-    SkillMatchResult with selectedSkill + modelTier
+/tier                    # Show current tier and force status
+/tier coding             # Set tier to coding, clears force
+/tier smart force        # Lock tier to smart (ignores skill overrides + dynamic upgrades)
 ```
 
-The LLM classifier determines the model tier using these guidelines from its system prompt:
+**Key behavior:**
+- `/tier <tier>` always clears the force flag (even if it was previously on)
+- `/tier <tier> force` sets both the tier and locks it
+- The setting persists across conversations (stored in user preferences)
 
-| Tier | Classifier Criteria |
-|------|-------------------|
-| `balanced` | Standard tasks, greetings, summarization, general questions (default/fallback) |
-| `coding` | Programming tasks: code generation, debugging, refactoring, code review, writing tests |
-| `smart` | Complex reasoning, architecture decisions, security analysis, multi-step planning |
-| `deep` | PhD-level reasoning: mathematical proofs, scientific analysis, deep calculations |
+### Setting Tier via `set_tier` Tool
 
-> **Source:** `LlmSkillClassifier.java:36-50`
+The LLM can switch tiers mid-conversation using the `set_tier` tool:
 
-**Fallback behavior:**
-- If no semantic candidates found and classifier is disabled: tier defaults to `balanced`
-- If LLM classifier fails: falls back to semantic top candidate with tier `balanced`
-- If skill matcher is entirely disabled: tier is `null`, which maps to `default` in `LlmExecutionSystem`
+```json
+{
+  "tier": "coding"
+}
+```
 
-### Phase 2: Dynamic Tier Upgrade (Iteration > 0)
+- If the user has `tierForce=true`, the tool returns an error: "Tier is locked by user"
+- Otherwise, the tier is applied immediately for the current conversation
+- The tool does NOT persist the change to user preferences (session-only)
+
+### Skill `model_tier` Override
+
+Skills can declare a preferred model tier in their YAML frontmatter:
+
+```yaml
+---
+name: code-review
+description: Review code changes
+model_tier: coding
+---
+```
+
+When a skill with `model_tier` is active:
+- If the user has `tierForce=true`, the skill's tier is ignored
+- Otherwise, the skill's tier takes precedence over the user's default preference
+- A system prompt instruction informs the LLM about the tier switch
+
+### Dynamic Tier Upgrade (Iteration > 0)
 
 `DynamicTierSystem` (order=25) runs on subsequent iterations of the agent loop (after tool calls). It scans **only messages from the current loop run** (after the last user message) to detect coding activity.
 
@@ -144,10 +148,11 @@ The LLM classifier determines the model tier using these guidelines from its sys
 
 **Rules:**
 - Only **upgrades** to `coding` — never downgrades (prevents oscillation)
-- Skips if current tier is already `coding`
+- Skips if current tier is already `coding` or `deep`
+- Skips if user has `tierForce=true`
 - Only runs when `bot.router.dynamic-tier-enabled=true` (default)
 
-> **Source:** `DynamicTierSystem.java:46-66`
+> **Source:** `DynamicTierSystem.java`
 
 ---
 
@@ -156,12 +161,11 @@ The LLM classifier determines the model tier using these guidelines from its sys
 `LlmExecutionSystem` (order=30) translates the `modelTier` string into an actual model name and reasoning effort:
 
 ```java
-// LlmExecutionSystem.java:215-224
 switch (tier != null ? tier : "balanced") {
     case "coding" -> (codingModel, codingModelReasoning)
     case "smart"  -> (smartModel, smartModelReasoning)
     case "deep"   -> (deepModel, deepModelReasoning)
-    default       -> (defaultModel, defaultModelReasoning)   // "balanced" or null
+    default       -> (balancedModel, balancedModelReasoning)   // "balanced" or null
 }
 ```
 
@@ -177,7 +181,7 @@ LlmRequest {
 }
 ```
 
-> **Note:** The tier name `"balanced"` from the classifier maps to `default` in the switch. If no tier is set (null), the default tier is used.
+> **Note:** The tier name `"balanced"` maps to the balanced model config. If no tier is set (null), the balanced tier is used.
 
 ---
 
@@ -187,8 +191,8 @@ You can mix different LLM providers across tiers for cost optimization or capabi
 
 ```bash
 # Use balanced tier for standard tasks (default/fallback)
-BOT_ROUTER_DEFAULT_MODEL=openai/gpt-5.1
-BOT_ROUTER_DEFAULT_MODEL_REASONING=medium
+BOT_ROUTER_BALANCED_MODEL=openai/gpt-5.1
+BOT_ROUTER_BALANCED_MODEL_REASONING=medium
 
 # Use Anthropic for complex reasoning
 BOT_ROUTER_SMART_MODEL=anthropic/claude-opus-4-6
@@ -265,45 +269,11 @@ The `maxInputTokens` value is used by:
 
 ---
 
-## Skill Matcher Configuration
-
-The hybrid skill routing system is opt-in and requires an embedding provider (typically OpenAI):
-
-```bash
-# Enable skill routing
-SKILL_MATCHER_ENABLED=true
-
-# Semantic search (Stage 1)
-BOT_ROUTER_SKILL_MATCHER_EMBEDDING_MODEL=text-embedding-3-small
-BOT_ROUTER_SKILL_MATCHER_SEMANTIC_SEARCH_TOP_K=5
-BOT_ROUTER_SKILL_MATCHER_SEMANTIC_SEARCH_MIN_SCORE=0.6
-
-# LLM classifier (Stage 2)
-BOT_ROUTER_SKILL_MATCHER_CLASSIFIER_ENABLED=true
-BOT_ROUTER_SKILL_MATCHER_CLASSIFIER_MODEL=openai/gpt-5-mini
-BOT_ROUTER_SKILL_MATCHER_SKIP_CLASSIFIER_THRESHOLD=0.95
-
-# Cache
-BOT_ROUTER_SKILL_MATCHER_CACHE_ENABLED=true
-BOT_ROUTER_SKILL_MATCHER_CACHE_TTL_MINUTES=60
-BOT_ROUTER_SKILL_MATCHER_CACHE_MAX_SIZE=1000
-
-# Timeouts
-BOT_ROUTER_SKILL_MATCHER_ROUTING_TIMEOUT_MS=15000
-BOT_ROUTER_SKILL_MATCHER_CLASSIFIER_TIMEOUT_MS=10000
-```
-
-Cached results are near-instant. The classifier is skipped for high-confidence semantic matches (score > 0.95).
-
-> **See:** [Configuration Guide — Skill Routing](CONFIGURATION.md#skill-routing) for a concise reference.
-
----
-
 ## Tool Call ID Remapping
 
 LLM providers have strict requirements for tool call identifiers and function names. When models switch mid-conversation (e.g., from a non-OpenAI provider to OpenAI due to tier change), stored tool call IDs and names from the previous provider may be incompatible with the new one. `Langchain4jAdapter` handles this transparently.
 
-> **Source:** `Langchain4jAdapter.java:345-422`
+> **Source:** `Langchain4jAdapter.java`
 
 ### Function Name Sanitization
 
@@ -407,7 +377,7 @@ BOT_AUTO_COMPACT_CHARS_PER_TOKEN=3.5
 
 `ToolExecutionSystem` (order=40) truncates individual tool results that exceed `maxToolResultChars` **before** they are added to conversation history.
 
-> **Source:** `ToolExecutionSystem.java:229-241`
+> **Source:** `ToolExecutionSystem.java`
 
 When a tool result's content exceeds the limit (default 100,000 characters):
 
@@ -431,7 +401,7 @@ BOT_AUTO_COMPACT_MAX_TOOL_RESULT_CHARS=100000  # default: 100K chars
 
 `LlmExecutionSystem` (order=30) catches context overflow errors from the LLM provider and applies emergency per-message truncation as a last resort.
 
-> **Source:** `LlmExecutionSystem.java:231-315`
+> **Source:** `LlmExecutionSystem.java`
 
 **Error detection** — matches these patterns in the exception message chain:
 - `exceeds maximum input length`
@@ -508,15 +478,13 @@ Layer 3: Emergency Truncation
 
 | Class | Package | Order | Purpose |
 |-------|---------|-------|---------|
-| `SkillRoutingSystem` | `domain.system` | 15 | Initial tier + skill assignment via hybrid matcher |
-| `AutoCompactionSystem` | `domain.system` | 18 | Preventive context compaction before LLM call |
+| `ContextBuildingSystem` | `domain.system` | 20 | Resolves tier from user prefs / skill, builds system prompt |
 | `DynamicTierSystem` | `domain.system` | 25 | Mid-conversation upgrade to coding tier |
 | `LlmExecutionSystem` | `domain.system` | 30 | Model selection by tier, LLM API call, emergency truncation |
 | `ToolExecutionSystem` | `domain.system` | 40 | Tool execution, result truncation, attachment extraction |
-| `HybridSkillMatcher` | `routing` | — | Two-stage semantic + LLM matching with cache |
-| `LlmSkillClassifier` | `routing` | — | LLM-based skill/tier classification |
-| `SkillEmbeddingStore` | `routing` | — | In-memory skill embedding index |
-| `MessageContextAggregator` | `routing` | — | Fragmented input detection and aggregation |
+| `AutoCompactionSystem` | `domain.system` | 18 | Preventive context compaction before LLM call |
+| `TierTool` | `tools` | — | LLM tool for switching tier mid-conversation |
+| `CommandRouter` | `adapter.inbound.command` | — | `/tier` command handler |
 | `LlmAdapterFactory` | `adapter.outbound.llm` | — | Provider adapter selection |
 | `Langchain4jAdapter` | `adapter.outbound.llm` | — | OpenAI/Anthropic integration, ID remapping, name sanitization |
 | `ModelConfigService` | `infrastructure.config` | — | Model capability lookups from models.json |
@@ -531,16 +499,7 @@ Layer 3: Emergency Truncation
 The routing system produces detailed logs at INFO level:
 
 ```
-[SkillRouting] Routing query: 'write a Python function for sorting'
-[SkillRouting] Fragmentation analysis: fragmented=false, signals=[]
-[SkillMatcher] Stage 1: Running semantic search...
-[SkillMatcher] Semantic search returned 3 candidates
-[SkillMatcher] Top candidate: coding-assistant (score: 0.870), threshold: 0.95
-[SkillMatcher] Stage 2: Running LLM classifier...
-[Classifier] Sending request to LLM...
-[Classifier] LLM responded
-[Classifier] Parsed result: skill=coding-assistant, confidence=0.92, tier=coding
-[SkillRouting] MATCHED: skill=coding-assistant, confidence=0.92, tier=coding, cached=false, llmUsed=true
+[ContextBuilding] Resolved tier: coding (source: skill 'code-review')
 [LLM] Model tier: coding, selected model: openai/gpt-5.2, reasoning: medium
 ```
 
@@ -551,47 +510,85 @@ On subsequent iterations with dynamic upgrade:
 [LLM] Model tier: coding, selected model: openai/gpt-5.2, reasoning: medium
 ```
 
+User-initiated tier changes:
+
+```
+[TierTool] Tier changed to: smart
+[LLM] Model tier: smart, selected model: openai/gpt-5.1, reasoning: high
+```
+
 ### The `/status` command
 
-Use `/status` in Telegram to check active configuration, including current model tier and routing state. See [Configuration Guide — Configuration Validation](CONFIGURATION.md#configuration-validation).
+Use `/status` in Telegram to check active configuration, including current model tier. See [Configuration Guide — Configuration Validation](CONFIGURATION.md#configuration-validation).
+
+### The `/tier` command
+
+Use `/tier` to check or change the current tier:
+
+```
+/tier              # Show current: "Tier: balanced, Force: off"
+/tier coding       # Switch to coding tier
+/tier smart force  # Lock to smart tier (ignores skill overrides + dynamic upgrades)
+```
 
 ---
 
 ## Examples
 
-### Greeting (balanced tier)
+### Greeting (balanced tier — default)
 
 ```
 User: "Hi, how are you?"
 
-SkillRoutingSystem:
-  Semantic search: no candidates above min_score 0.6
-  LLM classifier: {"skill": "none", "model_tier": "balanced", "reason": "Simple greeting"}
+ContextBuildingSystem:
+  No user tier preference, no active skill
+  Tier: null → balanced (fallback)
 
 LlmExecutionSystem:
   Tier: balanced → openai/gpt-5.1 (reasoning: medium)
 ```
 
-### Code generation (coding tier from classifier)
+### Code generation (coding tier from skill)
 
 ```
-User: "Write a Python function to parse CSV files"
+Skill "code-review" has model_tier: coding
 
-SkillRoutingSystem:
-  Semantic: coding-assistant (0.87), general (0.62)
-  LLM classifier: {"skill": "coding-assistant", "model_tier": "coding", "reason": "Code generation task"}
+User: "Review this PR"
+
+ContextBuildingSystem:
+  Active skill: code-review (model_tier: coding)
+  No user force → use skill tier
+  Tier: coding
 
 LlmExecutionSystem:
   Tier: coding → openai/gpt-5.2 (reasoning: medium)
 ```
 
-### Dynamic upgrade (default -> coding)
+### User-forced tier overrides skill
+
+```
+User ran: /tier smart force
+
+Skill "code-review" has model_tier: coding
+
+User: "Review this PR"
+
+ContextBuildingSystem:
+  User preference: smart (force=true)
+  → Skill's coding tier is ignored
+  Tier: smart
+
+LlmExecutionSystem:
+  Tier: smart → openai/gpt-5.1 (reasoning: high)
+```
+
+### Dynamic upgrade (balanced -> coding)
 
 ```
 User: "Help me with this project"
 
-SkillRoutingSystem:
-  LLM classifier: {"skill": "general", "model_tier": "balanced", "reason": "General help request"}
+ContextBuildingSystem:
+  No user tier, no skill tier → balanced
 
 LlmExecutionSystem (iteration 0):
   Tier: balanced → openai/gpt-5.1 (reasoning: medium)
@@ -605,18 +602,14 @@ LlmExecutionSystem (iteration 1):
   Tier: coding → openai/gpt-5.2 (reasoning: medium)
 ```
 
-### Fragmented input aggregation
+### LLM switches tier via tool
 
 ```
-User: "check the code"        (t=0s)
-User: "in main.py"            (t=3s)
-User: "find bugs"             (t=7s)
+User: "This needs deep analysis"
 
-MessageContextAggregator:
-  Signals: [too_short, within_time_window, starts_lowercase]
-  → FRAGMENTED (3 signals >= 2)
-  Aggregated query: "check the code in main.py find bugs"
+LLM calls set_tier({"tier": "deep"})
+  → context.modelTier = "deep"
 
-SkillRoutingSystem:
-  Uses aggregated query for routing → skill=debug, tier=coding
+LlmExecutionSystem (next iteration):
+  Tier: deep → openai/gpt-5.2 (reasoning: xhigh)
 ```

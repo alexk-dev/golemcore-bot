@@ -47,18 +47,14 @@ class UserPreferencesServiceTest {
     }
 
     @Test
-    void getPreferencesFallsBackToDefaultWhenStorageJsonInvalid() {
-        // UserPreferences lacks @NoArgsConstructor so Jackson deserialization
-        // fails gracefully and service creates defaults
+    void getPreferencesDeserializesStoredJson() {
         when(storagePort.getText(PREFS_DIR, SETTINGS_FILE))
                 .thenReturn(CompletableFuture.completedFuture("{\"language\":\"ru\"}"));
 
         UserPreferences prefs = service.getPreferences();
 
-        // Falls back to default "en" because @Data @Builder without @NoArgsConstructor
-        // prevents Jackson deserialization
         assertNotNull(prefs);
-        assertEquals(LANG_EN, prefs.getLanguage());
+        assertEquals("ru", prefs.getLanguage());
     }
 
     @Test

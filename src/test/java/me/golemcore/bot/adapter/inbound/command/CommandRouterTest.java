@@ -181,7 +181,7 @@ class CommandRouterTest {
     @Test
     void listCommands() {
         List<CommandPort.CommandDefinition> commands = router.listCommands();
-        assertEquals(7, commands.size());
+        assertEquals(8, commands.size());
     }
 
     @Test
@@ -561,7 +561,7 @@ class CommandRouterTest {
         assertTrue(commands.stream().anyMatch(c -> CMD_GOALS.equals(c.name())));
         assertTrue(commands.stream().anyMatch(c -> CMD_DIARY.equals(c.name())));
         assertTrue(commands.stream().anyMatch(c -> CMD_SCHEDULE.equals(c.name())));
-        assertEquals(13, commands.size()); // 7 base + 6 auto mode
+        assertEquals(14, commands.size()); // 8 base + 6 auto mode
     }
 
     @Test
@@ -571,7 +571,7 @@ class CommandRouterTest {
         List<CommandPort.CommandDefinition> commands = router.listCommands();
         assertTrue(commands.stream().anyMatch(c -> "plan".equals(c.name())));
         assertTrue(commands.stream().anyMatch(c -> "plans".equals(c.name())));
-        assertEquals(9, commands.size()); // 7 base + 2 plan
+        assertEquals(10, commands.size()); // 8 base + 2 plan
     }
 
     // ===== Plan commands =====

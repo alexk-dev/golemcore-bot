@@ -146,7 +146,7 @@ public class AutoCompactionSystem implements AgentSystem {
         case "deep" -> router.getDeepModel();
         case "coding" -> router.getCodingModel();
         case "smart" -> router.getSmartModel();
-        default -> router.getDefaultModel();
+        default -> router.getBalancedModel();
         };
     }
 }

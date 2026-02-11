@@ -30,6 +30,7 @@ import me.golemcore.bot.domain.model.PlanStep;
 import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.UsageStats;
+import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.CompactionService;
 import me.golemcore.bot.domain.service.PlanExecutionService;
@@ -116,8 +117,11 @@ public class CommandRouter implements CommandPort {
 
     private static final List<String> KNOWN_COMMANDS = List.of(
             "skills", "tools", CMD_STATUS, "new", "reset", "compact", CMD_HELP,
-            "auto", "goals", CMD_GOAL, "diary", "tasks", "schedule",
+            "tier", "auto", "goals", CMD_GOAL, "diary", "tasks", "schedule",
             CMD_PLAN, "plans");
+
+    private static final java.util.Set<String> VALID_TIERS = java.util.Set.of(
+            "balanced", "smart", "coding", "deep");
 
     public CommandRouter(
             SkillComponent skillComponent,
@@ -162,6 +166,7 @@ public class CommandRouter implements CommandPort {
             case "new", "reset" -> handleNew(sessionId);
             case "compact" -> handleCompact(sessionId, args);
             case CMD_HELP -> handleHelp();
+            case "tier" -> handleTier(args);
             case "auto" -> handleAuto(args, channelType, chatId);
             case "goals" -> handleGoals();
             case CMD_GOAL -> handleGoal(args);
@@ -189,7 +194,8 @@ public class CommandRouter implements CommandPort {
                 new CommandDefinition("new", "Start a new conversation", "/new"),
                 new CommandDefinition("reset", "Reset conversation", "/reset"),
                 new CommandDefinition("compact", "Compact conversation history", "/compact [keep]"),
-                new CommandDefinition(CMD_HELP, "Show available commands", "/help")));
+                new CommandDefinition(CMD_HELP, "Show available commands", "/help"),
+                new CommandDefinition("tier", "Set model tier", "/tier [balanced|smart|coding|deep] [force]")));
         if (autoModeService.isFeatureEnabled()) {
             commands.add(new CommandDefinition("auto", "Toggle auto mode", "/auto [on|off]"));
             commands.add(new CommandDefinition("goals", "List goals", "/goals"));
@@ -380,6 +386,34 @@ public class CommandRouter implements CommandPort {
 
     private CommandResult handleHelp() {
         return CommandResult.success(msg("command.help.text"));
+    }
+
+    // ==================== Tier Command ====================
+
+    private CommandResult handleTier(List<String> args) {
+        UserPreferences prefs = preferencesService.getPreferences();
+
+        if (args.isEmpty()) {
+            String tier = prefs.getModelTier() != null ? prefs.getModelTier() : "balanced";
+            String force = prefs.isTierForce() ? "on" : "off";
+            return CommandResult.success(msg("command.tier.current", tier, force));
+        }
+
+        String tierArg = args.get(0).toLowerCase(Locale.ROOT);
+        if (!VALID_TIERS.contains(tierArg)) {
+            return CommandResult.success(msg("command.tier.invalid"));
+        }
+
+        boolean force = args.size() > 1 && "force".equalsIgnoreCase(args.get(1));
+
+        prefs.setModelTier(tierArg);
+        prefs.setTierForce(force);
+        preferencesService.savePreferences(prefs);
+
+        if (force) {
+            return CommandResult.success(msg("command.tier.set.force", tierArg));
+        }
+        return CommandResult.success(msg("command.tier.set", tierArg));
     }
 
     // ==================== Auto Mode Commands ====================

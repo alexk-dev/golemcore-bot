@@ -116,7 +116,7 @@ class CustomLlmAdapterTest {
 
     @Test
     void shouldReturnCurrentModelInSupportedModels() {
-        properties.getRouter().setDefaultModel(TEST_MODEL);
+        properties.getRouter().setBalancedModel(TEST_MODEL);
         properties.getLlm().getCustom().setApiUrl(API_URL);
         properties.getLlm().getCustom().setApiKey(API_KEY_VALUE);
 
@@ -144,7 +144,7 @@ class CustomLlmAdapterTest {
 
     @Test
     void shouldReturnModelAfterInit() {
-        properties.getRouter().setDefaultModel("my-model");
+        properties.getRouter().setBalancedModel("my-model");
         properties.getLlm().getCustom().setApiUrl(API_URL);
         properties.getLlm().getCustom().setApiKey(API_KEY_VALUE);
 
@@ -160,7 +160,7 @@ class CustomLlmAdapterTest {
 
     @Test
     void shouldInitializeOnlyOnce() {
-        properties.getRouter().setDefaultModel("model");
+        properties.getRouter().setBalancedModel("model");
         properties.getLlm().getCustom().setApiUrl(API_URL);
         properties.getLlm().getCustom().setApiKey(API_KEY_VALUE);
 
@@ -462,7 +462,7 @@ class CustomLlmAdapterTest {
     // ===== Helpers =====
 
     private void setupInitializedAdapter() {
-        properties.getRouter().setDefaultModel(TEST_MODEL);
+        properties.getRouter().setBalancedModel(TEST_MODEL);
         properties.getLlm().getCustom().setApiUrl(API_URL);
         properties.getLlm().getCustom().setApiKey(TEST_KEY);
 

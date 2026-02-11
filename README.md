@@ -1,25 +1,24 @@
 # GolemCore Bot
 
-> AI assistant framework with intelligent skill routing, multi-LLM support, and autonomous execution capabilities
+> AI assistant framework with multi-LLM support, manual tier management, and autonomous execution capabilities
 
 [![CI](https://github.com/alexk-dev/golemcore-bot/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/alexk-dev/golemcore-bot/actions/workflows/docker-publish.yml)
 [![Java](https://img.shields.io/badge/Java-17+-orange.svg)](https://www.oracle.com/java/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0.2-brightgreen.svg)](https://spring.io/projects/spring-boot)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-1588%20passing-success.svg)](https://github.com/alexk-dev/golemcore-bot/actions)
+[![Tests](https://img.shields.io/badge/tests-1613%20passing-success.svg)](https://github.com/alexk-dev/golemcore-bot/actions)
 
 ---
 
 ## 🚀 Key Features
 
 ### 🧠 Intelligent Processing
-- **Hybrid Skill Routing** — 2-stage semantic search + LLM classifier
+- **Manual Tier Management** — 4 model tiers (balanced/smart/coding/deep) controlled via `/tier` command, `set_tier` tool, or skill `model_tier` frontmatter
 - **Dynamic Model Tier Selection** — Automatic escalation to coding-tier model when code activity detected
-- **Context Overflow Protection** — Smart truncation with emergency recovery, handles 50K+ token conversations
-- **Fragmented Input Detection** — Aggregates split messages using temporal and linguistic signals
+- **Context Overflow Protection** — Smart truncation with emergency recovery, configurable token limit for long conversations
 
 ### 🛠️ Powerful Tools
-- **12 Built-in Tools** — Filesystem, Shell, Web Search, Browser, Weather, IMAP, SMTP, Skill Management, Goal Management, Transitions, DateTime, Voice
+- **13 Built-in Tools** — Filesystem, Shell, Web Search, Browser, Weather, IMAP, SMTP, Skill Management, Goal Management, Transitions, Tier, DateTime, Voice
 - **MCP Protocol Support** — Model Context Protocol for stdio-based tool servers (GitHub, Slack, etc.)
 - **Sandboxed Execution** — Isolated workspace with path traversal protection
 - **Tool Confirmation** — User approval workflow for destructive operations
@@ -63,7 +62,7 @@
 - **[Quick Start Guide](docs/QUICKSTART.md)** — Get running in 5 minutes
 - **[Coding Guide](docs/CODING_GUIDE.md)** — Code style, conventions, commit messages
 - **[Configuration Guide](docs/CONFIGURATION.md)** — All settings and environment variables
-- **[Model Routing Guide](docs/MODEL_ROUTING.md)** — Tier selection, hybrid routing, dynamic upgrades, context overflow
+- **[Model Routing Guide](docs/MODEL_ROUTING.md)** — Tier selection, manual tier management, dynamic upgrades, context overflow
 - **[Auto Mode Guide](docs/AUTO_MODE.md)** — Goals, tasks, tick cycle, diary
 - **[RAG Guide](docs/RAG.md)** — LightRAG integration, indexing, retrieval
 - **[Memory Guide](docs/MEMORY.md)** — Sessions, daily notes, long-term memory, compaction
@@ -165,7 +164,7 @@ See [Deployment Guide](docs/DEPLOYMENT.md) for production setups (Docker Compose
 
 ## 🎯 Core Capabilities
 
-### Processing Pipeline (13 Systems)
+### Processing Pipeline (12 Systems)
 
 Messages flow through an ordered pipeline of specialized systems:
 
@@ -173,27 +172,26 @@ Messages flow through an ordered pipeline of specialized systems:
 User Message
     ↓
 [10] InputSanitizationSystem     — Unicode normalization, length check
-[15] SkillRoutingSystem           — Hybrid skill matching
 [18] AutoCompactionSystem         — Context overflow prevention
-[20] ContextBuildingSystem        — Prompt assembly, MCP startup
+[20] ContextBuildingSystem        — Prompt assembly, tier resolution, MCP startup
 [25] DynamicTierSystem            — Coding activity detection
 [30] LlmExecutionSystem           — LLM API call with retry
 [35] PlanInterceptSystem          — Plan mode: intercept tool calls
 [40] ToolExecutionSystem          — Tool calls + confirmation
 [50] MemoryPersistSystem          — Conversation persistence
 [55] RagIndexingSystem            — Long-term memory indexing
-[57] SkillPipelineSystem          — Auto-transitions
+[55] SkillPipelineSystem          — Auto-transitions
 [58] PlanFinalizationSystem       — Plan mode: detect plan completion
 [60] ResponseRoutingSystem        — Send response to user
 ```
 
 The loop iterates up to 20 times while the LLM requests tool calls.
 
-### Skill Routing & Model Selection
+### Model Tier Selection
 
-3-stage hybrid matching: fragmented input detection, semantic search, LLM classifier. 4 model tiers (balanced/smart/coding/deep) with automatic escalation to coding tier when code activity is detected.
+4 model tiers (balanced/smart/coding/deep) with priority-based resolution: user force > skill `model_tier` > user preference > "balanced" default. Dynamic escalation to coding tier when code activity is detected. LLM can switch tiers via `set_tier` tool.
 
-See **[Model Routing Guide](docs/MODEL_ROUTING.md)** for the full end-to-end flow, tier architecture, dynamic upgrades, tool ID remapping, context overflow protection, and debugging tips.
+See **[Model Routing Guide](docs/MODEL_ROUTING.md)** for tier architecture, dynamic upgrades, tool ID remapping, context overflow protection, and debugging tips.
 
 ### Plan Mode (Review Before Execute)
 
@@ -240,7 +238,6 @@ See the [Tools & Integrations](#-tools--integrations) section below for configur
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `SKILL_MATCHER_ENABLED` | Hybrid skill routing (semantic + LLM) | `false` |
 | `RAG_ENABLED` | LightRAG long-term memory | `false` |
 | `PLAN_MODE_ENABLED` | Plan mode (review-before-execute) | `false` |
 | `AUTO_MODE_ENABLED` | Autonomous goal execution | `false` |
@@ -279,7 +276,7 @@ docker run -d \
 docker run -d \
   -e OPENAI_API_KEY=sk-proj-... \
   -e ANTHROPIC_API_KEY=sk-ant-... \
-  -e BOT_ROUTER_DEFAULT_MODEL=openai/gpt-5.1 \
+  -e BOT_ROUTER_BALANCED_MODEL=openai/gpt-5.1 \
   -e BOT_ROUTER_SMART_MODEL=anthropic/claude-opus-4-6 \
   -e BOT_ROUTER_CODING_MODEL=openai/gpt-5.2 \
   -e BOT_ROUTER_DEEP_MODEL=openai/gpt-5.2 \
@@ -296,7 +293,7 @@ See **[Configuration Guide](docs/CONFIGURATION.md)** for all settings, **[Quick 
 
 ## 🛠️ Tools & Integrations
 
-### Built-in Tools (12)
+### Built-in Tools (13)
 
 | Tool | Operations | Requires | Notes |
 |------|------------|----------|-------|
@@ -304,6 +301,7 @@ See **[Configuration Guide](docs/CONFIGURATION.md)** for all settings, **[Quick 
 | **Shell** | execute | — | Timeout: 30s-300s, blocklist: `rm -rf /`, `sudo su` |
 | **SkillManagement** | create_skill, list_skills, get_skill, delete_skill | — | YAML frontmatter parser |
 | **SkillTransition** | transition_to_skill | — | For skill pipelines |
+| **Tier** | set_tier | — | LLM-initiated model tier switching |
 | **GoalManagement** | create_goal, list_goals, plan_tasks, update_task_status, write_diary, complete_goal | — | Auto-mode only |
 | **Browser** | browse | Playwright | Modes: text, html, screenshot |
 | **BraveSearch** | search | `BRAVE_SEARCH_API_KEY` | 2000 free queries/month |
@@ -350,6 +348,7 @@ Skills are Markdown files with YAML frontmatter:
 name: code-reviewer
 description: Reviews code for bugs, style, and best practices
 tags: [coding, review]
+model_tier: coding
 requires:
   env: [OPENAI_API_KEY]
 vars:
@@ -415,6 +414,7 @@ Max depth: 5 (prevents infinite loops)
 | `/status` | Session info + 24h usage stats |
 | `/new`, `/reset` | Start new conversation |
 | `/compact [N]` | Summarize old messages, keep last N (default: 10) |
+| `/tier [tier] [force]` | Set model tier (balanced/smart/coding/deep) |
 | `/settings` | Language selection (Telegram only) |
 | `/auto [on\|off]` | Toggle autonomous mode |
 | `/goals` | List active goals |
@@ -466,14 +466,13 @@ src/main/java/me/golemcore/bot/
 │       └── voice/            # ElevenLabs STT + TTS
 ├── domain/                    # Core business logic
 │   ├── loop/                 # Agent loop orchestration
-│   ├── system/               # Processing pipeline (13 systems)
+│   ├── system/               # Processing pipeline (12 systems)
 │   ├── component/            # Component interfaces
 │   ├── model/                # Domain models
 │   └── service/              # Business services
 ├── auto/                      # Auto-mode scheduler
-├── routing/                   # Hybrid skill matcher
 ├── security/                  # Security layers
-├── tools/                     # 12 built-in tools
+├── tools/                     # 13 built-in tools
 └── usage/                     # Usage tracking
 ```
 
@@ -516,26 +515,26 @@ After running checks:
 │  ┌─────────────────────────────────────────────────────┐  │
 │  │              Agent Processing Loop                  │  │
 │  │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐   │  │
-│  │  │  Skill   │  │ Context  │  │ Tool Execution + │   │  │
-│  │  │ Routing  │  │ Building │  │   LLM Calls      │   │  │
+│  │  │  Tier    │  │ Context  │  │ Tool Execution + │   │  │
+│  │  │ Resolve  │  │ Building │  │   LLM Calls      │   │  │
 │  │  └──────────┘  └──────────┘  └──────────────────┘   │  │
 │  └─────────────────────────────────────────────────────┘  │
 │                                                           │
-│        │                │                 │               │
-├────────┼────────────────┼─────────────────┼───────────────┤
-│        ▼                ▼                 ▼               │
-│  ┌───────────────┐ ┌───────────┐ ┌───────────────────┐    │
-│  │     LLM       │ │  Storage  │ │     Embedding     │    │
-│  │ (Langchain4j) │ │  (Local)  │ │     (OpenAI)      │    │
-│  └───────────────┘ └───────────┘ └───────────────────┘    │
+│                  │                 │                       │
+├──────────────────┼─────────────────┼──────────────────────┤
+│                  ▼                 ▼                       │
+│           ┌───────────────┐ ┌───────────┐                  │
+│           │     LLM       │ │  Storage  │                  │
+│           │ (Langchain4j) │ │  (Local)  │                  │
+│           └───────────────┘ └───────────┘                  │
 │                     Service Layer                         │
 └───────────────────────────────────────────────────────────┘
 ```
 
 The bot processes messages through ordered pipeline stages:
-- **Skill Routing** — matches user intent to skills
+- **Tier Resolution** — resolves model tier from user preferences, skill config, or force flag
 - **Context Building** — assembles system prompt, memory, skill context
-- **Tool Execution** — handles LLM tool calls
+- **Tool Execution** — handles LLM tool calls (including `set_tier` for dynamic tier switching)
 
 ### Tech Stack
 

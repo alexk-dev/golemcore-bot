@@ -22,17 +22,16 @@ Spring Boot 4.0.2, Java 17, Hexagonal Architecture (Ports & Adapters).
 ```
 me.golemcore.bot
 ├── adapter/inbound/          Telegram (TelegramAdapter, TelegramVoiceHandler), CommandRouter
-├── adapter/outbound/         LLM, storage, browser, MCP, voice (ElevenLabsAdapter), embeddings
+├── adapter/outbound/         LLM, storage, browser, MCP, voice (ElevenLabsAdapter)
 ├── domain/component/         Interfaces: ToolComponent, SkillComponent, etc.
 ├── domain/loop/              AgentLoop, AgentContextHolder
 ├── domain/model/             AgentContext, AgentSession, Message, Skill, ToolDefinition, ContextAttributes, etc.
 ├── domain/service/           SessionService, SkillService, CompactionService, VoiceResponseHandler, etc.
 ├── domain/system/            Ordered pipeline systems (see below)
 ├── port/inbound/             ChannelPort, CommandPort
-├── port/outbound/            LlmPort, StoragePort, EmbeddingPort, BrowserPort, VoicePort, McpPort, SessionPort, RagPort, ConfirmationPort
-├── routing/                  HybridSkillMatcher, LlmSkillClassifier, MessageContextAggregator
+├── port/outbound/            LlmPort, StoragePort, BrowserPort, VoicePort, McpPort, SessionPort, RagPort, ConfirmationPort
 ├── security/                 InjectionGuard, InputSanitizer, AllowlistValidator
-└── tools/                    FileSystemTool, ShellTool, BrowserTool, VoiceResponseTool, etc.
+└── tools/                    FileSystemTool, ShellTool, BrowserTool, TierTool, VoiceResponseTool, etc.
 ```
 
 ### Agent Loop Pipeline
@@ -40,9 +39,8 @@ me.golemcore.bot
 | Order | System                    | Purpose |
 |-------|--------------------------|---------|
 | 10    | `InputSanitizationSystem` | Sanitization, injection detection |
-| 15    | `SkillRoutingSystem`      | Fragmented input aggregation, semantic search, LLM classifier |
 | 18    | `AutoCompactionSystem`    | Auto-compact when context nears limit |
-| 20    | `ContextBuildingSystem`   | System prompt, memory, skills, tools, MCP |
+| 20    | `ContextBuildingSystem`   | System prompt, memory, skills, tools, MCP, tier resolution |
 | 25    | `DynamicTierSystem`       | Upgrade model tier mid-conversation if needed |
 | 30    | `LlmExecutionSystem`     | Model selection by tier, LLM call, usage tracking |
 | 35    | `PlanInterceptSystem`     | Plan mode: intercept tool calls into plan steps |
@@ -181,7 +179,7 @@ Follow [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.
 
 ### Scope
 
-Use module/area name: `llm`, `telegram`, `tools`, `skills`, `mcp`, `auto`, `routing`, `security`, `storage`, `loop`, `voice`.
+Use module/area name: `llm`, `telegram`, `tools`, `skills`, `mcp`, `auto`, `security`, `storage`, `loop`, `voice`.
 
 ### Rules
 
@@ -194,7 +192,7 @@ Use module/area name: `llm`, `telegram`, `tools`, `skills`, `mcp`, `auto`, `rout
 ```
 feat(tools): add BrowserTool screenshot mode
 fix(llm): handle empty response from Anthropic API
-refactor(routing): extract MessageContextAggregator from HybridSkillMatcher
+refactor(llm): extract tier resolution from ContextBuildingSystem
 test(mcp): add McpClient lifecycle tests
 chore: upgrade langchain4j to 1.11.0
 feat(skills)!: rename nextSkill field to next_skill in YAML frontmatter

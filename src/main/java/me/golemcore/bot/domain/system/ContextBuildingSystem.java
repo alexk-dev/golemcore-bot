@@ -24,6 +24,7 @@ import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.PromptSection;
+import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
@@ -94,6 +95,10 @@ public class ContextBuildingSystem implements AgentSystem {
             context.setAttribute("skill.transition.target", null);
         }
 
+        // Resolve model tier from user preferences and active skill
+        UserPreferences prefs = userPreferencesService.getPreferences();
+        resolveTier(context, prefs);
+
         // Build memory context
         String memoryContext = memoryComponent.getMemoryContext();
         context.setMemoryContext(memoryContext);
@@ -161,7 +166,7 @@ public class ContextBuildingSystem implements AgentSystem {
         }
 
         // Build system prompt
-        String systemPrompt = buildSystemPrompt(context);
+        String systemPrompt = buildSystemPrompt(context, prefs);
         context.setSystemPrompt(systemPrompt);
 
         log.info("[Context] Built context: {} tools, memory={}, skills={}, systemPrompt={} chars",
@@ -173,12 +178,11 @@ public class ContextBuildingSystem implements AgentSystem {
         return context;
     }
 
-    private String buildSystemPrompt(AgentContext context) {
+    private String buildSystemPrompt(AgentContext context, UserPreferences prefs) {
         StringBuilder sb = new StringBuilder();
 
         // 1. Render file-based prompt sections (identity, rules, etc.)
         if (promptSectionService.isEnabled()) {
-            UserPreferences prefs = resolveUserPreferences(context);
             Map<String, String> vars = promptSectionService.buildTemplateVariables(prefs);
             for (PromptSection section : promptSectionService.getEnabledSections()) {
                 String rendered = promptSectionService.renderSection(section, vars);
@@ -250,6 +254,15 @@ public class ContextBuildingSystem implements AgentSystem {
             sb.append("\n");
         }
 
+        // Tier awareness instruction (only when not forced and skill specifies tier)
+        if (!prefs.isTierForce() && context.getActiveSkill() != null
+                && context.getActiveSkill().getModelTier() != null) {
+            sb.append("# Model Tier\n");
+            sb.append("The active skill '").append(context.getActiveSkill().getName())
+                    .append("' recommends the '").append(context.getActiveSkill().getModelTier())
+                    .append("' model tier. The system has switched to this tier.\n\n");
+        }
+
         // Inject auto-mode context (goals, tasks, diary)
         if (isAutoModeMessage(context)) {
             String autoContext = autoModeService.buildAutoContext();
@@ -275,8 +288,27 @@ public class ContextBuildingSystem implements AgentSystem {
         return sb.toString().trim();
     }
 
-    private UserPreferences resolveUserPreferences(AgentContext context) {
-        return userPreferencesService.getPreferences();
+    private void resolveTier(AgentContext context, UserPreferences prefs) {
+        // Only resolve on iteration 0 (DynamicTierSystem handles later iterations)
+        if (context.getCurrentIteration() != 0) {
+            return;
+        }
+
+        boolean force = prefs.isTierForce();
+        String userTier = prefs.getModelTier();
+
+        if (force && userTier != null) {
+            context.setModelTier(userTier);
+            return;
+        }
+
+        Skill activeSkill = context.getActiveSkill();
+        if (activeSkill != null && activeSkill.getModelTier() != null) {
+            context.setModelTier(activeSkill.getModelTier());
+        } else if (userTier != null) {
+            context.setModelTier(userTier);
+        }
+        // else: null → "balanced" in LlmExecutionSystem
     }
 
     private boolean isAutoModeMessage(AgentContext context) {

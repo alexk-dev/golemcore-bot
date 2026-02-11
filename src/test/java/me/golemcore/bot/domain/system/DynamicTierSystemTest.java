@@ -3,6 +3,8 @@ package me.golemcore.bot.domain.system;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.UserPreferences;
+import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -13,6 +15,8 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class DynamicTierSystemTest {
 
@@ -28,13 +32,16 @@ class DynamicTierSystemTest {
     private static final String ARG_COMMAND = "command";
 
     private BotProperties properties;
+    private UserPreferencesService preferencesService;
     private DynamicTierSystem system;
 
     @BeforeEach
     void setUp() {
         properties = new BotProperties();
         properties.getRouter().setDynamicTierEnabled(true);
-        system = new DynamicTierSystem(properties);
+        preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getPreferences()).thenReturn(UserPreferences.builder().build());
+        system = new DynamicTierSystem(properties, preferencesService);
     }
 
     @Test
@@ -48,6 +55,14 @@ class DynamicTierSystemTest {
         assertTrue(system.isEnabled());
         properties.getRouter().setDynamicTierEnabled(false);
         assertFalse(system.isEnabled());
+    }
+
+    @Test
+    void shouldNotProcessWhenTierForceEnabled() {
+        when(preferencesService.getPreferences()).thenReturn(
+                UserPreferences.builder().modelTier("smart").tierForce(true).build());
+        AgentContext context = buildContext(1, "smart", List.of());
+        assertFalse(system.shouldProcess(context));
     }
 
     @Test
