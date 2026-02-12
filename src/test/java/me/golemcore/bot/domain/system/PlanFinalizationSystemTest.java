@@ -8,6 +8,7 @@ import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.PlanReadyEvent;
 import me.golemcore.bot.domain.model.PlanStep;
 import me.golemcore.bot.domain.service.PlanService;
+import me.golemcore.bot.domain.service.UserPreferencesService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
@@ -33,13 +34,21 @@ class PlanFinalizationSystemTest {
 
     private PlanService planService;
     private ApplicationEventPublisher eventPublisher;
+    private UserPreferencesService preferencesService;
     private PlanFinalizationSystem system;
 
     @BeforeEach
     void setUp() {
         planService = mock(PlanService.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
-        system = new PlanFinalizationSystem(planService, eventPublisher);
+        preferencesService = mock(UserPreferencesService.class);
+
+        // Avoid coupling tests to i18n message catalog contents
+        when(preferencesService.getMessage(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(Object[].class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        system = new PlanFinalizationSystem(planService, eventPublisher, preferencesService);
     }
 
     @Test
@@ -154,7 +163,7 @@ class PlanFinalizationSystemTest {
         LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
         assertTrue(response.getContent().contains("Original response"));
         assertTrue(response.getContent().contains(TOOL_FILESYSTEM));
-        assertTrue(response.getContent().contains("Waiting for approval"));
+        assertTrue(response.getContent().contains("plan.ready.card.waiting"));
     }
 
     @Test
