@@ -126,7 +126,8 @@ public class PlanFinalizationSystem implements AgentSystem {
     private String buildPlanSummary(Plan plan) {
         StringBuilder sb = new StringBuilder();
         sb.append("---\n");
-        sb.append("**Plan** (").append(plan.getSteps().size()).append(" steps):\n");
+        sb.append("**Plan** `").append(plan.getId().substring(0, 8)).append("` ")
+                .append("(").append(plan.getSteps().size()).append(" steps):\n");
         for (int i = 0; i < plan.getSteps().size(); i++) {
             PlanStep step = plan.getSteps().get(i);
             sb.append(String.format("%d. `%s`", i + 1, step.getToolName()));
@@ -135,7 +136,13 @@ public class PlanFinalizationSystem implements AgentSystem {
             }
             sb.append("\n");
         }
-        sb.append("\n_Waiting for approval..._");
+
+        sb.append("\n_Waiting for approval..._\n");
+        sb.append("\nQuick commands:\n");
+        sb.append("- Approve: `/plan approve `").append(plan.getId()).append("\n");
+        sb.append("- Cancel (reset): `/plan cancel `").append(plan.getId()).append("\n");
+        sb.append("- Show status: `/plan status`\n");
+        sb.append("- List all plans: `/plans`\n");
         return sb.toString();
     }
 }
