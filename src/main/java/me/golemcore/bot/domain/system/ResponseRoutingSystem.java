@@ -165,6 +165,7 @@ public class ResponseRoutingSystem implements AgentSystem {
                     textToSpeak.length(), prefixVoiceText != null ? "tool" : "prefix");
             VoiceSendResult voiceResult = voiceHandler.trySendVoice(channel, chatId, textToSpeak);
             if (voiceResult == VoiceSendResult.SUCCESS) {
+                context.setAttribute(ContextAttributes.RESPONSE_SENT, true);
                 addAssistantMessage(session, textToSpeak, response.getToolCalls());
                 sendPendingAttachments(context);
                 return context;
@@ -193,6 +194,7 @@ public class ResponseRoutingSystem implements AgentSystem {
 
         try {
             channel.sendMessage(chatId, content).get(30, TimeUnit.SECONDS);
+            context.setAttribute(ContextAttributes.RESPONSE_SENT, true);
 
             if (!Boolean.TRUE.equals(toolsExecuted)) {
                 addAssistantMessage(session, content, response.getToolCalls());
@@ -267,6 +269,7 @@ public class ResponseRoutingSystem implements AgentSystem {
         String chatId = session.getChatId();
         VoiceSendResult result = voiceHandler.sendVoiceWithFallback(channel, chatId, textToSpeak);
         if (result != VoiceSendResult.FAILED) {
+            context.setAttribute(ContextAttributes.RESPONSE_SENT, true);
             addAssistantMessage(session, textToSpeak, null);
         }
         if (result == VoiceSendResult.QUOTA_EXCEEDED) {
@@ -400,6 +403,7 @@ public class ResponseRoutingSystem implements AgentSystem {
         log.warn("[Response] Sending LLM error: {}", error);
         try {
             channel.sendMessage(chatId, errorMessage).get(30, TimeUnit.SECONDS);
+            context.setAttribute(ContextAttributes.RESPONSE_SENT, true);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error("[Response] Failed to send error message (interrupted): {}", e.getMessage());

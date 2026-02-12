@@ -78,7 +78,7 @@ public class LlmExecutionSystem implements AgentSystem {
     public AgentContext process(AgentContext context) {
         String providerId = llmPort.getProviderId();
         String model = llmPort.getCurrentModel();
-        log.debug("[LLM] Starting request to {} ({})", providerId, model);
+        log.info("[LLM] Starting request to {} ({})", providerId, model);
 
         LlmRequest request = buildRequest(context);
         log.trace("[LLM] System prompt length: {} chars",
@@ -108,7 +108,7 @@ public class LlmExecutionSystem implements AgentSystem {
             if (response.hasToolCalls()) {
                 context.setAttribute("llm.toolCalls", response.getToolCalls());
                 log.info("[LLM] Tool calls requested: {}",
-                        response.getToolCalls().stream().map(tc -> tc.getName()).toList());
+                        response.getToolCalls().stream().map(Message.ToolCall::getName).toList());
             }
 
             log.info("[LLM] Response received in {}ms, content length: {}, tool_calls: {}",
@@ -203,7 +203,7 @@ public class LlmExecutionSystem implements AgentSystem {
         String modelTier = context.getModelTier();
         ModelSelection selection = selectModel(modelTier);
 
-        log.debug("[LLM] Model tier: {}, selected model: {}, reasoning: {}",
+        log.info("[LLM] Model tier: {}, selected model: {}, reasoning: {}",
                 modelTier != null ? modelTier : "default",
                 selection.model,
                 selection.reasoning != null ? selection.reasoning : "none");
@@ -262,7 +262,7 @@ public class LlmExecutionSystem implements AgentSystem {
     }
 
     private ModelSelection selectModel(String tier) {
-        var router = properties.getRouter();
+        BotProperties.ModelRouterProperties router = properties.getRouter();
 
         return switch (tier != null ? tier : "balanced") {
         case "deep" -> new ModelSelection(router.getDeepModel(), router.getDeepModelReasoning());
