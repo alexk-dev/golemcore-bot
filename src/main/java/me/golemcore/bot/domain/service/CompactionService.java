@@ -55,11 +55,26 @@ public class CompactionService {
     private static final long SUMMARY_TIMEOUT_MS = 15_000;
     private static final int MAX_SUMMARY_TOKENS = 500;
 
+    /**
+     * Continuation-oriented summary prompt optimized for resuming work after compaction.
+     *
+     * Goal: produce a "working memory" recap that helps the assistant continue work seamlessly
+     * after compaction (what we did, what we're doing, what to do next).
+     */
     private static final String SYSTEM_PROMPT = """
-            You are a conversation summarizer. Summarize the conversation below into a concise recap.
-            Focus on: key topics discussed, decisions made, user preferences revealed, and any ongoing tasks.
-            Keep it factual and brief. Write in the same language the conversation uses.
-            Do NOT include greetings or meta-commentary — just the essential context.""";
+            Provide a detailed but concise summary of the conversation above.
+            Focus on information that would be helpful for continuing the conversation.
+
+            Include, when applicable:
+            - what we did / what has been accomplished
+            - what we're doing right now
+            - decisions made and their rationale
+            - user preferences and constraints
+            - important details such as referenced files, commands, settings, IDs/URLs
+            - open questions, blockers, and what we should do next
+
+            Keep it factual. Write in the same language the conversation uses.
+            Do NOT include greetings, apologies, or meta-commentary. Output only the summary.""";
 
     /**
      * Summarize a list of messages into a single summary text.
@@ -84,7 +99,11 @@ public class CompactionService {
                 .systemPrompt(SYSTEM_PROMPT)
                 .messages(List.of(Message.builder()
                         .role("user")
-                        .content("Summarize this conversation:\n\n" + conversation)
+                        // Continuation-oriented prompt: preserve enough context to resume work after compaction.
+                        .content("Provide a detailed but concise summary of our conversation above. "
+                                + "Focus on information that would be helpful for continuing the conversation, "
+                                + "including what we did, what we're doing, which files we're working on, and what we're going to do next.\n\n"
+                                + conversation)
                         .build()))
                 .maxTokens(MAX_SUMMARY_TOKENS)
                 .temperature(0.3)
