@@ -527,14 +527,13 @@ class PlanServiceTest {
         when(storagePort.getText(AUTO_DIR, PLANS_FILE))
                 .thenReturn(CompletableFuture.completedFuture(plansJson));
 
-        // Re-set plan mode state manually by activating and noting we have a different
-        // plan ID
-        // Since we recreated the service, plan mode is not active
-        // We test: cancelling "plan-other" should NOT affect plan mode state
+        // Recovery restores plan mode from the persisted COLLECTING plan
+        // Cancelling "plan-other" (READY) should NOT affect the recovered plan mode
+        // state
         service.cancelPlan("plan-other");
 
-        // Assert — plan mode remains inactive (since service was recreated)
-        assertFalse(service.isPlanModeActive());
+        // Assert — plan mode remains active (recovered from the COLLECTING plan)
+        assertTrue(service.isPlanModeActive());
     }
 
     // ==================== 10. shouldGetNextPendingStep ====================
@@ -1129,8 +1128,10 @@ class PlanServiceTest {
 
     @Test
     void shouldCountOnlyActiveStatusesForMaxPlansCheck() throws Exception {
-        // Arrange — mix of statuses: COLLECTING, READY, APPROVED, EXECUTING count;
-        // COMPLETED, CANCELLED, PARTIALLY_COMPLETED do not
+        // Arrange — mix of statuses: COLLECTING, READY, APPROVED count as active;
+        // COMPLETED, CANCELLED, PARTIALLY_COMPLETED do not.
+        // Note: EXECUTING plans get recovered to PARTIALLY_COMPLETED on first load,
+        // so we use a second READY instead to keep 4 active plans.
         List<Plan> plans = new ArrayList<>();
         plans.add(Plan.builder().id("p1").status(Plan.PlanStatus.COLLECTING).steps(new ArrayList<>())
                 .createdAt(FIXED_INSTANT).updatedAt(FIXED_INSTANT).build());
@@ -1138,7 +1139,7 @@ class PlanServiceTest {
                 .createdAt(FIXED_INSTANT).updatedAt(FIXED_INSTANT).build());
         plans.add(Plan.builder().id("p3").status(Plan.PlanStatus.APPROVED).steps(new ArrayList<>())
                 .createdAt(FIXED_INSTANT).updatedAt(FIXED_INSTANT).build());
-        plans.add(Plan.builder().id("p4").status(Plan.PlanStatus.EXECUTING).steps(new ArrayList<>())
+        plans.add(Plan.builder().id("p4").status(Plan.PlanStatus.READY).steps(new ArrayList<>())
                 .createdAt(FIXED_INSTANT).updatedAt(FIXED_INSTANT).build());
         plans.add(Plan.builder().id("p5").status(Plan.PlanStatus.COMPLETED).steps(new ArrayList<>())
                 .createdAt(FIXED_INSTANT).updatedAt(FIXED_INSTANT).build());
@@ -1156,7 +1157,6 @@ class PlanServiceTest {
         assertNotNull(newPlan);
 
         // Now 5 active plans — next one should fail
-        // Need to re-read from storage with the new plan added
         // The service caches plans in-memory after save, so calling createPlan again
         // will check cached list
         assertThrows(IllegalStateException.class,
