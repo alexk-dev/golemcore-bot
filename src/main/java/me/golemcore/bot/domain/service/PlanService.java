@@ -361,40 +361,54 @@ public class PlanService {
     }
 
     private synchronized void recoverRuntimeState(List<Plan> plans) {
-        if (activePlanId == null || !planModeActive) {
-            plans.stream()
-                    .filter(p -> p.getStatus() == Plan.PlanStatus.COLLECTING)
-                    .reduce((first, second) -> second)
-                    .ifPresent(plan -> {
-                        activePlanId = plan.getId();
-                        planModeActive = true;
-                        log.info("[PlanMode] Recovered active collecting plan '{}' after restart", activePlanId);
-                    });
-        }
+        recoverActivePlanMode(plans);
 
         boolean changed = false;
         for (Plan plan : plans) {
             if (plan.getStatus() == Plan.PlanStatus.EXECUTING) {
-                plan.setStatus(Plan.PlanStatus.PARTIALLY_COMPLETED);
-                plan.setUpdatedAt(Instant.now(clock));
-                for (PlanStep step : plan.getSteps()) {
-                    if (step.getStatus() == PlanStep.StepStatus.IN_PROGRESS) {
-                        step.setStatus(PlanStep.StepStatus.FAILED);
-                        if (step.getResult() == null || step.getResult().isBlank()) {
-                            step.setResult(RECOVERY_INTERRUPTED_MSG);
-                        }
-                        if (step.getExecutedAt() == null) {
-                            step.setExecutedAt(Instant.now(clock));
-                        }
-                    }
-                }
+                recoverExecutingPlan(plan);
                 changed = true;
-                log.warn("[PlanMode] Recovered stale EXECUTING plan '{}' as PARTIALLY_COMPLETED", plan.getId());
             }
         }
 
         if (changed) {
             savePlans(plans);
+        }
+    }
+
+    private void recoverActivePlanMode(List<Plan> plans) {
+        if (activePlanId != null && planModeActive) {
+            return;
+        }
+        plans.stream()
+                .filter(p -> p.getStatus() == Plan.PlanStatus.COLLECTING)
+                .reduce((first, second) -> second)
+                .ifPresent(plan -> {
+                    activePlanId = plan.getId();
+                    planModeActive = true;
+                    log.info("[PlanMode] Recovered active collecting plan '{}' after restart", activePlanId);
+                });
+    }
+
+    private void recoverExecutingPlan(Plan plan) {
+        plan.setStatus(Plan.PlanStatus.PARTIALLY_COMPLETED);
+        plan.setUpdatedAt(Instant.now(clock));
+        for (PlanStep step : plan.getSteps()) {
+            recoverInterruptedStep(step);
+        }
+        log.warn("[PlanMode] Recovered stale EXECUTING plan '{}' as PARTIALLY_COMPLETED", plan.getId());
+    }
+
+    private void recoverInterruptedStep(PlanStep step) {
+        if (step.getStatus() != PlanStep.StepStatus.IN_PROGRESS) {
+            return;
+        }
+        step.setStatus(PlanStep.StepStatus.FAILED);
+        if (step.getResult() == null || step.getResult().isBlank()) {
+            step.setResult(RECOVERY_INTERRUPTED_MSG);
+        }
+        if (step.getExecutedAt() == null) {
+            step.setExecutedAt(Instant.now(clock));
         }
     }
 

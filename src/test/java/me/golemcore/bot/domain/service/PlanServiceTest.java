@@ -1128,10 +1128,8 @@ class PlanServiceTest {
 
     @Test
     void shouldCountOnlyActiveStatusesForMaxPlansCheck() throws Exception {
-        // Arrange — mix of statuses: COLLECTING, READY, APPROVED count as active;
-        // COMPLETED, CANCELLED, PARTIALLY_COMPLETED do not.
-        // Note: EXECUTING plans get recovered to PARTIALLY_COMPLETED on first load,
-        // so we use a second READY instead to keep 4 active plans.
+        // Arrange — 4 active plans (two READY plus COLLECTING and APPROVED) and 3
+        // terminal plans
         List<Plan> plans = new ArrayList<>();
         plans.add(Plan.builder().id("p1").status(Plan.PlanStatus.COLLECTING).steps(new ArrayList<>())
                 .createdAt(FIXED_INSTANT).updatedAt(FIXED_INSTANT).build());
