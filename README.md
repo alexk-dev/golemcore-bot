@@ -1,6 +1,6 @@
 # GolemCore Bot
 
-> AI assistant framework for building **autonomous coding agents** on Java — skills, MCP tools, tiered multi-LLM routing, and sandboxed tool execution.
+> **Autonomous agent + framework** on Java — skill-driven behavior, MCP tool servers, tiered multi-LLM routing, and sandboxed tool execution.
 
 [![CI](https://github.com/alexk-dev/golemcore-bot/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/alexk-dev/golemcore-bot/actions/workflows/docker-publish.yml)
 [![Java](https://img.shields.io/badge/Java-17+-orange.svg)](https://www.oracle.com/java/)
@@ -10,15 +10,22 @@
 
 ---
 
-## What makes it useful (coding-agent focus)
+## What it is (agent *and* framework)
 
-- **Skills as files** — Markdown `SKILL.md` with YAML frontmatter, variables, and progressive loading.
+Use it in two ways:
+
+1. **As an autonomous agent** — run it and talk to it (CLI / Telegram). Enable Auto Mode to execute goals/tasks on a schedule.
+2. **As a framework** — build your own agents by composing skills + tools + MCP integrations + routing/tier rules.
+
+### What makes it useful
+
+- **Skills as files** — Markdown `SKILL.md` with YAML frontmatter, variables, pipelines, and progressive loading.
 - **MCP (Model Context Protocol)** — attach external tool servers via stdio (GitHub, Slack, custom tooling, LSP bridges, etc.).
 - **Hybrid routing + model tiers** — semantic pre-filter + LLM classifier picks both **skill** and **tier** (`balanced/smart/coding/deep`), with dynamic upgrade to `coding` when code activity is detected.
 - **Tooling + sandbox** — built-in tools like filesystem/shell/browser/search/email with safety rails (confirmation for destructive actions).
 - **Autonomy primitives** — Auto Mode (goals/tasks/diary) + memory and optional RAG.
 
-If you want the full deep-dive: start with **[Skills](docs/SKILLS.md)** and **[Model Routing](docs/MODEL_ROUTING.md)**.
+If you want the deep-dive: start with **[Skills](docs/SKILLS.md)** and **[Model Routing](docs/MODEL_ROUTING.md)**.
 
 ---
 
@@ -112,7 +119,7 @@ Full reference (90+ variables, examples, mail/voice/rate limits/security): **[do
 
 ---
 
-## Documentation (recommended path for the “platform” features)
+## Documentation (recommended path)
 
 1. **[Quick Start](docs/QUICKSTART.md)**
 2. **[Skills](docs/SKILLS.md)** (SKILL.md format, variables, pipelines, MCP)
