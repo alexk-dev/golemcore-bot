@@ -123,6 +123,16 @@ export CUSTOM_LLM_API_KEY=your-key
 ```
 
 Must be OpenAI-compatible API.
+### LangChain4j Model Timeout
+
+Controls request timeout passed directly to LangChain4j chat model builders (OpenAI and Anthropic).
+
+export BOT_LLM_LANGCHAIN4J_TIMEOUT_MS=300000
+
+- Default: 300000 ms (300 seconds)
+- Applies to model-level timeout in LangChain4j
+- Independent from generic bot.http.* client timeouts
+
 
 ---
 
