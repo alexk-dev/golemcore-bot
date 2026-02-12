@@ -21,7 +21,7 @@ Use it in two ways:
 
 - **Skills as files** — Markdown `SKILL.md` with YAML frontmatter, variables, pipelines, and progressive loading.
 - **MCP (Model Context Protocol)** — attach external tool servers via stdio (GitHub, Slack, custom tooling, LSP bridges, etc.).
-- **Hybrid routing + model tiers** — semantic pre-filter + LLM classifier picks both **skill** and **tier** (`balanced/smart/coding/deep`), with dynamic upgrade to `coding` when code activity is detected.
+- **Tiered multi-LLM routing** — configure separate models for different workloads (`balanced/smart/coding/deep`).
 - **Tooling + sandbox** — built-in tools like filesystem/shell/browser/search/email with safety rails (confirmation for destructive actions).
 - **Autonomy primitives** — Auto Mode (goals/tasks/diary) + memory and optional RAG.
 
@@ -110,7 +110,6 @@ More options (Compose, production, systemd): **[Deployment](docs/DEPLOYMENT.md)*
 
 | Variable | Purpose |
 |---|---|
-| `SKILL_MATCHER_ENABLED` | Enable hybrid routing (semantic + LLM classifier) |
 | `MCP_ENABLED` | Enable MCP client (per-skill MCP servers) |
 | `AUTO_MODE_ENABLED` | Enable autonomous goals/ticks |
 | `RAG_ENABLED` | Enable LightRAG integration |
@@ -123,7 +122,7 @@ Full reference (90+ variables, examples, mail/voice/rate limits/security): **[do
 
 1. **[Quick Start](docs/QUICKSTART.md)**
 2. **[Skills](docs/SKILLS.md)** (SKILL.md format, variables, pipelines, MCP)
-3. **[Model Routing](docs/MODEL_ROUTING.md)** (tiers, classifier, dynamic upgrade, context overflow handling)
+3. **[Model Routing](docs/MODEL_ROUTING.md)** (tiers)
 4. **[Auto Mode](docs/AUTO_MODE.md)**
 5. **[Memory](docs/MEMORY.md)** + **[RAG](docs/RAG.md)**
 6. **[Deployment](docs/DEPLOYMENT.md)**
