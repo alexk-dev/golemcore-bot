@@ -406,7 +406,6 @@ Skills can chain to the next skill automatically via `next_skill` or conditional
 ### No Active Skill
 
 When no skill is active, the bot runs with the base system prompt and includes a summary of all available skills (name + description) so the LLM can decide when to transition.
-
 ---
 
 ## Progressive Loading

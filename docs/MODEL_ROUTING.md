@@ -14,14 +14,12 @@ The bot uses a **4-tier model selection** strategy that picks the most appropria
 2. **Skill override** — `model_tier` field in skill YAML frontmatter
 3. **Dynamic upgrade** — `DynamicTierSystem` promotes to `coding` when code activity is detected mid-conversation
 4. **Fallback** — `"balanced"` when no tier is explicitly set
-
 ```
 User Message
     |
     v
 [ContextBuildingSystem]  --- Resolves tier from user prefs / active skill
-    |                        Priority: force+user > skill > user pref > balanced
-    v
+    |                        Priority: force+user > skill > user pref > balanced    v
 [DynamicTierSystem]      --- May upgrade to "coding" if code activity detected
     |                        (only on iteration > 0, never downgrades)
     v
@@ -89,7 +87,6 @@ The tier is resolved in `ContextBuildingSystem` (order=20) on iteration 0 with t
 **Force mode** locks the tier, preventing both skill overrides and DynamicTierSystem upgrades. This is useful when you want a specific model regardless of context.
 
 ### Setting Tier via `/tier` Command
-
 ```
 /tier                    # Show current tier and force status
 /tier coding             # Set tier to coding, clears force
@@ -110,7 +107,6 @@ The LLM can switch tiers mid-conversation using the `set_tier` tool:
   "tier": "coding"
 }
 ```
-
 - If the user has `tierForce=true`, the tool returns an error: "Tier is locked by user"
 - Otherwise, the tier is applied immediately for the current conversation
 - The tool does NOT persist the change to user preferences (session-only)
@@ -266,6 +262,23 @@ The `maxInputTokens` value is used by:
 - `LlmExecutionSystem` — emergency truncation limits each message to 25% of context window (minimum 10K characters)
 
 > **See:** [Configuration Guide — Advanced: models.json](CONFIGURATION.md#advanced-modelsjson) for adding custom models.
+
+---
+
+## Routing Configuration
+
+Model routing is primarily configured by choosing models for each tier and enabling optional dynamic upgrades.
+
+```bash
+# Tier models
+BOT_ROUTER_DEFAULT_MODEL=openai/gpt-5.1
+BOT_ROUTER_SMART_MODEL=openai/gpt-5.1
+BOT_ROUTER_CODING_MODEL=openai/gpt-5.2
+BOT_ROUTER_DEEP_MODEL=openai/gpt-5.2
+
+# Optional: upgrade to coding tier when coding activity is detected mid-run
+BOT_ROUTER_DYNAMIC_TIER_ENABLED=true
+```
 
 ---
 
@@ -484,8 +497,7 @@ Layer 3: Emergency Truncation
 | `ToolExecutionSystem` | `domain.system` | 40 | Tool execution, result truncation, attachment extraction |
 | `AutoCompactionSystem` | `domain.system` | 18 | Preventive context compaction before LLM call |
 | `TierTool` | `tools` | — | LLM tool for switching tier mid-conversation |
-| `CommandRouter` | `adapter.inbound.command` | — | `/tier` command handler |
-| `LlmAdapterFactory` | `adapter.outbound.llm` | — | Provider adapter selection |
+| `CommandRouter` | `adapter.inbound.command` | — | `/tier` command handler || `LlmAdapterFactory` | `adapter.outbound.llm` | — | Provider adapter selection |
 | `Langchain4jAdapter` | `adapter.outbound.llm` | — | OpenAI/Anthropic integration, ID remapping, name sanitization |
 | `ModelConfigService` | `infrastructure.config` | — | Model capability lookups from models.json |
 | `AgentContext` | `domain.model` | — | Runtime state: holds `modelTier`, `activeSkill` |

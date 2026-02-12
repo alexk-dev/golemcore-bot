@@ -258,7 +258,7 @@ public class BotProperties {
         private boolean transcribeIncoming = true;
     }
 
-    // ==================== SKILL ROUTING ====================
+    // ==================== MODEL ROUTING ====================
 
     /**
      * Model router configuration for model tier selection.
