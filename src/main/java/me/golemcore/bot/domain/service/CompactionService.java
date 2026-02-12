@@ -56,10 +56,11 @@ public class CompactionService {
     private static final int MAX_SUMMARY_TOKENS = 500;
 
     /**
-     * Continuation-oriented summary prompt optimized for resuming work after compaction.
+     * Continuation-oriented summary prompt optimized for resuming work after
+     * compaction.
      *
-     * Goal: produce a "working memory" recap that helps the assistant continue work seamlessly
-     * after compaction (what we did, what we're doing, what to do next).
+     * Goal: produce a "working memory" recap that helps the assistant continue work
+     * seamlessly after compaction (what we did, what we're doing, what to do next).
      */
     private static final String SYSTEM_PROMPT = """
             Provide a detailed but concise summary of the conversation above.
@@ -99,7 +100,8 @@ public class CompactionService {
                 .systemPrompt(SYSTEM_PROMPT)
                 .messages(List.of(Message.builder()
                         .role("user")
-                        // Continuation-oriented prompt: preserve enough context to resume work after compaction.
+                        // Continuation-oriented prompt: preserve enough context to resume work after
+                        // compaction.
                         .content("Provide a detailed but concise summary of our conversation above. "
                                 + "Focus on information that would be helpful for continuing the conversation, "
                                 + "including what we did, what we're doing, which files we're working on, and what we're going to do next.\n\n"
