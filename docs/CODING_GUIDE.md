@@ -42,7 +42,7 @@ feat(tools): add BrowserTool screenshot mode
 
 fix(llm): handle empty response from Anthropic API
 
-refactor(routing): extract MessageContextAggregator from HybridSkillMatcher
+refactor(routing): extract MessageContextAggregator from SkillRoutingSystem
 
 test(mcp): add McpClient lifecycle tests
 
