@@ -61,4 +61,7 @@ public final class ContextAttributes {
 
     /** String — plan ID that needs user approval before execution. */
     public static final String PLAN_APPROVAL_NEEDED = "plan.approval.needed";
+
+    /** Boolean — a response was successfully sent to the user in this loop run. */
+    public static final String RESPONSE_SENT = "response.sent";
 }

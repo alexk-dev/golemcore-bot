@@ -39,6 +39,7 @@ class ResponseRoutingSystemTest {
     private static final String ROLE_USER = "user";
     private static final String MSG_VOICE_QUOTA = "Voice quota exceeded!";
     private static final String CONTENT_RESPONSE = "response";
+    private static final String VOICE_TEXT_CONTENT = "Voice text";
 
     private ResponseRoutingSystem system;
     private ChannelPort channelPort;
@@ -716,7 +717,7 @@ class ResponseRoutingSystemTest {
         LlmResponse response = LlmResponse.builder().content("").build();
         context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
         context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
-        context.setAttribute(ContextAttributes.VOICE_TEXT, "Voice text");
+        context.setAttribute(ContextAttributes.VOICE_TEXT, VOICE_TEXT_CONTENT);
 
         List<Attachment> pending = new ArrayList<>();
         pending.add(Attachment.builder()
@@ -729,7 +730,7 @@ class ResponseRoutingSystemTest {
 
         system.process(context);
 
-        verify(voiceHandler).sendVoiceWithFallback(eq(channelPort), eq(CHAT_ID), eq("Voice text"));
+        verify(voiceHandler).sendVoiceWithFallback(channelPort, CHAT_ID, VOICE_TEXT_CONTENT);
         verify(channelPort).sendDocument(eq(CHAT_ID), any(byte[].class), eq(FILENAME_DOC_PDF), isNull());
         assertNull(context.getAttribute(ATTR_PENDING_ATTACHMENTS));
     }
@@ -803,6 +804,57 @@ class ResponseRoutingSystemTest {
         assertTrue(system.shouldRespondWithVoice(context));
     }
 
+    // ===== RESPONSE_SENT tracking =====
+
+    @Test
+    void shouldSetResponseSentOnSuccessfulTextSend() {
+        AgentContext context = createContext();
+        LlmResponse response = LlmResponse.builder().content("hello").build();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+
+        system.process(context);
+
+        assertEquals(true, context.getAttribute(ContextAttributes.RESPONSE_SENT));
+    }
+
+    @Test
+    void shouldSetResponseSentOnErrorSend() {
+        AgentContext context = createContext();
+        context.setAttribute(ContextAttributes.LLM_ERROR, "model crashed");
+
+        system.process(context);
+
+        assertEquals(true, context.getAttribute(ContextAttributes.RESPONSE_SENT));
+    }
+
+    @Test
+    void shouldNotSetResponseSentOnSendFailure() {
+        when(channelPort.sendMessage(anyString(), anyString()))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("send failed")));
+
+        AgentContext context = createContext();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, LlmResponse.builder().content(CONTENT_RESPONSE).build());
+
+        system.process(context);
+
+        assertNull(context.getAttribute(ContextAttributes.RESPONSE_SENT));
+    }
+
+    @Test
+    void shouldSetResponseSentOnVoiceSend() {
+        when(voiceHandler.sendVoiceWithFallback(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
+
+        AgentContext context = createContext();
+        LlmResponse response = LlmResponse.builder().content("").build();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+        context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
+        context.setAttribute(ContextAttributes.VOICE_TEXT, VOICE_TEXT_CONTENT);
+
+        system.process(context);
+
+        assertEquals(true, context.getAttribute(ContextAttributes.RESPONSE_SENT));
+    }
+
     // ===== Additional boundary coverage =====
 
     @Test
@@ -812,7 +864,7 @@ class ResponseRoutingSystemTest {
         LlmResponse response = LlmResponse.builder().content("").build();
         context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
         context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
-        context.setAttribute(ContextAttributes.VOICE_TEXT, "Voice text");
+        context.setAttribute(ContextAttributes.VOICE_TEXT, VOICE_TEXT_CONTENT);
 
         assertDoesNotThrow(() -> system.process(context));
         verify(voiceHandler, never()).sendVoiceWithFallback(any(), anyString(), anyString());

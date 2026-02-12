@@ -28,7 +28,9 @@ import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.domain.system.AgentSystem;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.RateLimitPort;
+import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.RateLimitResult;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -44,8 +46,10 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Core orchestrator managing the agent processing pipeline for incoming
@@ -64,6 +68,7 @@ public class AgentLoop {
     private final BotProperties properties;
     private final List<AgentSystem> systems;
     private final UserPreferencesService preferencesService;
+    private final LlmPort llmPort;
     private final Clock clock;
     private final Map<String, ChannelPort> channelRegistry = new ConcurrentHashMap<>();
     private final ScheduledExecutorService typingExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -89,12 +94,13 @@ public class AgentLoop {
     public AgentLoop(SessionPort sessionService, RateLimitPort rateLimiter,
             BotProperties properties, List<AgentSystem> systems,
             List<ChannelPort> channelPorts, UserPreferencesService preferencesService,
-            Clock clock) {
+            LlmPort llmPort, Clock clock) {
         this.sessionService = sessionService;
         this.rateLimiter = rateLimiter;
         this.properties = properties;
         this.systems = systems;
         this.preferencesService = preferencesService;
+        this.llmPort = llmPort;
         this.clock = clock;
         for (ChannelPort port : channelPorts) {
             channelRegistry.put(port.getChannelType(), port);
@@ -142,6 +148,7 @@ public class AgentLoop {
         log.debug("Starting agent loop (max iterations: {})", context.getMaxIterations());
         try {
             runLoop(context);
+            ensureFeedback(context);
         } finally {
             if (typingTask != null) {
                 typingTask.cancel(false);
@@ -237,8 +244,12 @@ public class AgentLoop {
         if (channel != null) {
             try {
                 channel.sendMessage(session.getChatId(), message).get();
+                context.setAttribute(ContextAttributes.RESPONSE_SENT, true);
                 log.info("[AgentLoop] Sent iteration limit notification");
-            } catch (Exception e) {
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.error("[AgentLoop] Failed to send iteration limit notification: {}", e.getMessage());
+            } catch (ExecutionException e) {
                 log.error("[AgentLoop] Failed to send iteration limit notification: {}", e.getMessage());
             }
         }
@@ -259,6 +270,143 @@ public class AgentLoop {
         }
 
         return false;
+    }
+
+    private void ensureFeedback(AgentContext context) {
+        Boolean responseSent = context.getAttribute(ContextAttributes.RESPONSE_SENT);
+        if (Boolean.TRUE.equals(responseSent)) {
+            return;
+        }
+
+        if (isAutoModeContext(context)) {
+            return;
+        }
+
+        AgentSession session = context.getSession();
+        ChannelPort channel = channelRegistry.get(session.getChannelType());
+        if (channel == null) {
+            return;
+        }
+
+        if (tryUnsentLlmResponse(context, channel, session)) {
+            return;
+        }
+
+        if (tryErrorFeedback(context, channel, session)) {
+            return;
+        }
+
+        // Last resort: generic feedback
+        String generic = preferencesService.getMessage("system.error.generic.feedback");
+        log.info("[AgentLoop] Feedback guarantee: sending generic feedback");
+        trySendAndRecord(channel, session, generic);
+    }
+
+    private boolean tryUnsentLlmResponse(AgentContext context, ChannelPort channel, AgentSession session) {
+        LlmResponse llmResponse = context.getAttribute(ContextAttributes.LLM_RESPONSE);
+        if (llmResponse != null && llmResponse.getContent() != null && !llmResponse.getContent().isBlank()) {
+            log.info("[AgentLoop] Feedback guarantee: sending unsent LLM response");
+            return trySendAndRecord(channel, session, llmResponse.getContent());
+        }
+        return false;
+    }
+
+    private boolean tryErrorFeedback(AgentContext context, ChannelPort channel, AgentSession session) {
+        List<String> errors = collectErrors(context);
+        if (errors.isEmpty() || !llmPort.isAvailable()) {
+            return false;
+        }
+
+        String interpretation = tryInterpretErrors(errors);
+        if (interpretation != null) {
+            String message = preferencesService.getMessage("system.error.feedback", interpretation);
+            log.info("[AgentLoop] Feedback guarantee: sending LLM-interpreted error");
+            if (trySendAndRecord(channel, session, message)) {
+                return true;
+            }
+        }
+
+        // LLM interpretation failed — send formatted error
+        String formatted = preferencesService.getMessage("system.error.feedback", String.join("; ", errors));
+        log.info("[AgentLoop] Feedback guarantee: sending formatted error");
+        return trySendAndRecord(channel, session, formatted);
+    }
+
+    private List<String> collectErrors(AgentContext context) {
+        List<String> errors = new ArrayList<>();
+        String llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
+        if (llmError != null) {
+            errors.add(llmError);
+        }
+        for (Map.Entry<String, Object> entry : context.getAttributes().entrySet()) {
+            if (entry.getKey().startsWith("system.error.") && entry.getValue() instanceof String errorMsg) {
+                errors.add(errorMsg);
+            }
+        }
+        String routingError = context.getAttribute("routing.error");
+        if (routingError != null) {
+            errors.add(routingError);
+        }
+        return errors;
+    }
+
+    private String tryInterpretErrors(List<String> errors) {
+        try {
+            String errorSummary = String.join("\n", errors);
+            LlmRequest request = LlmRequest.builder()
+                    .model(properties.getRouter().getBalancedModel())
+                    .systemPrompt(
+                            "You are a helpful assistant. Explain the following error in 1-2 sentences for the user.")
+                    .messages(List.of(Message.builder()
+                            .role("user")
+                            .content(errorSummary)
+                            .timestamp(clock.instant())
+                            .build()))
+                    .build();
+            LlmResponse response = llmPort.chat(request).get(10, TimeUnit.SECONDS);
+            if (response != null && response.getContent() != null && !response.getContent().isBlank()) {
+                return response.getContent();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.debug("[AgentLoop] LLM error interpretation interrupted: {}", e.getMessage());
+        } catch (ExecutionException | TimeoutException e) {
+            log.debug("[AgentLoop] LLM error interpretation failed: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    private boolean trySendAndRecord(ChannelPort channel, AgentSession session, String content) {
+        try {
+            channel.sendMessage(session.getChatId(), content).get(10, TimeUnit.SECONDS);
+            addFeedbackMessage(session, content);
+            return true;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("[AgentLoop] Feedback send interrupted: {}", e.getMessage());
+            return false;
+        } catch (ExecutionException | TimeoutException e) {
+            log.error("[AgentLoop] Feedback send failed: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    private void addFeedbackMessage(AgentSession session, String content) {
+        session.addMessage(Message.builder()
+                .role("assistant")
+                .content(content)
+                .channelType(session.getChannelType())
+                .chatId(session.getChatId())
+                .timestamp(clock.instant())
+                .build());
+    }
+
+    private boolean isAutoModeContext(AgentContext context) {
+        if (context.getMessages() == null || context.getMessages().isEmpty()) {
+            return false;
+        }
+        Message last = context.getMessages().get(context.getMessages().size() - 1);
+        return last.getMetadata() != null && Boolean.TRUE.equals(last.getMetadata().get("auto.mode"));
     }
 
     private List<AgentSystem> getSortedSystems() {
