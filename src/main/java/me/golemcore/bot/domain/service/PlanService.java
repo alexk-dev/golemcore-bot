@@ -32,11 +32,11 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Core service for plan mode managing plan lifecycle, steps, and persistence.
@@ -56,6 +56,7 @@ public class PlanService {
     private static final String AUTO_DIR = "auto";
     private static final String PLANS_FILE = "plans.json";
     private static final String PLAN_NOT_FOUND = "Plan not found: ";
+    private static final String RECOVERY_INTERRUPTED_MSG = "Interrupted by restart/crash during execution";
     private static final TypeReference<List<Plan>> PLAN_LIST_TYPE_REF = new TypeReference<>() {
     };
 
@@ -142,6 +143,7 @@ public class PlanService {
         List<Plan> cached = plansCache.get();
         if (cached == null) {
             cached = loadPlans();
+            recoverRuntimeState(cached);
             plansCache.set(cached);
         }
         return cached;
@@ -358,6 +360,58 @@ public class PlanService {
         return sb.toString();
     }
 
+    private synchronized void recoverRuntimeState(List<Plan> plans) {
+        recoverActivePlanMode(plans);
+
+        boolean changed = false;
+        for (Plan plan : plans) {
+            if (plan.getStatus() == Plan.PlanStatus.EXECUTING) {
+                recoverExecutingPlan(plan);
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            savePlans(plans);
+        }
+    }
+
+    private void recoverActivePlanMode(List<Plan> plans) {
+        if (activePlanId != null && planModeActive) {
+            return;
+        }
+        plans.stream()
+                .filter(p -> p.getStatus() == Plan.PlanStatus.COLLECTING)
+                .reduce((first, second) -> second)
+                .ifPresent(plan -> {
+                    activePlanId = plan.getId();
+                    planModeActive = true;
+                    log.info("[PlanMode] Recovered active collecting plan '{}' after restart", activePlanId);
+                });
+    }
+
+    private void recoverExecutingPlan(Plan plan) {
+        plan.setStatus(Plan.PlanStatus.PARTIALLY_COMPLETED);
+        plan.setUpdatedAt(Instant.now(clock));
+        for (PlanStep step : plan.getSteps()) {
+            recoverInterruptedStep(step);
+        }
+        log.warn("[PlanMode] Recovered stale EXECUTING plan '{}' as PARTIALLY_COMPLETED", plan.getId());
+    }
+
+    private void recoverInterruptedStep(PlanStep step) {
+        if (step.getStatus() != PlanStep.StepStatus.IN_PROGRESS) {
+            return;
+        }
+        step.setStatus(PlanStep.StepStatus.FAILED);
+        if (step.getResult() == null || step.getResult().isBlank()) {
+            step.setResult(RECOVERY_INTERRUPTED_MSG);
+        }
+        if (step.getExecutedAt() == null) {
+            step.setExecutedAt(Instant.now(clock));
+        }
+    }
+
     // ==================== Persistence ====================
 
     private void savePlans(List<Plan> plans) {
@@ -367,6 +421,7 @@ public class PlanService {
             plansCache.set(plans);
         } catch (Exception e) {
             log.error("[PlanMode] Failed to save plans", e);
+            throw new IllegalStateException("Failed to persist plans", e);
         }
     }
 

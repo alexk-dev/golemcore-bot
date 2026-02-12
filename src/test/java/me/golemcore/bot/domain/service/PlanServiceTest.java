@@ -527,14 +527,13 @@ class PlanServiceTest {
         when(storagePort.getText(AUTO_DIR, PLANS_FILE))
                 .thenReturn(CompletableFuture.completedFuture(plansJson));
 
-        // Re-set plan mode state manually by activating and noting we have a different
-        // plan ID
-        // Since we recreated the service, plan mode is not active
-        // We test: cancelling "plan-other" should NOT affect plan mode state
+        // Recovery restores plan mode from the persisted COLLECTING plan
+        // Cancelling "plan-other" (READY) should NOT affect the recovered plan mode
+        // state
         service.cancelPlan("plan-other");
 
-        // Assert — plan mode remains inactive (since service was recreated)
-        assertFalse(service.isPlanModeActive());
+        // Assert — plan mode remains active (recovered from the COLLECTING plan)
+        assertTrue(service.isPlanModeActive());
     }
 
     // ==================== 10. shouldGetNextPendingStep ====================
@@ -1129,8 +1128,8 @@ class PlanServiceTest {
 
     @Test
     void shouldCountOnlyActiveStatusesForMaxPlansCheck() throws Exception {
-        // Arrange — mix of statuses: COLLECTING, READY, APPROVED, EXECUTING count;
-        // COMPLETED, CANCELLED, PARTIALLY_COMPLETED do not
+        // Arrange — 4 active plans (two READY plus COLLECTING and APPROVED) and 3
+        // terminal plans
         List<Plan> plans = new ArrayList<>();
         plans.add(Plan.builder().id("p1").status(Plan.PlanStatus.COLLECTING).steps(new ArrayList<>())
                 .createdAt(FIXED_INSTANT).updatedAt(FIXED_INSTANT).build());
@@ -1138,7 +1137,7 @@ class PlanServiceTest {
                 .createdAt(FIXED_INSTANT).updatedAt(FIXED_INSTANT).build());
         plans.add(Plan.builder().id("p3").status(Plan.PlanStatus.APPROVED).steps(new ArrayList<>())
                 .createdAt(FIXED_INSTANT).updatedAt(FIXED_INSTANT).build());
-        plans.add(Plan.builder().id("p4").status(Plan.PlanStatus.EXECUTING).steps(new ArrayList<>())
+        plans.add(Plan.builder().id("p4").status(Plan.PlanStatus.READY).steps(new ArrayList<>())
                 .createdAt(FIXED_INSTANT).updatedAt(FIXED_INSTANT).build());
         plans.add(Plan.builder().id("p5").status(Plan.PlanStatus.COMPLETED).steps(new ArrayList<>())
                 .createdAt(FIXED_INSTANT).updatedAt(FIXED_INSTANT).build());
@@ -1156,7 +1155,6 @@ class PlanServiceTest {
         assertNotNull(newPlan);
 
         // Now 5 active plans — next one should fail
-        // Need to re-read from storage with the new plan added
         // The service caches plans in-memory after save, so calling createPlan again
         // will check cached list
         assertThrows(IllegalStateException.class,
@@ -1175,5 +1173,98 @@ class PlanServiceTest {
         assertNull(plan.getTitle());
         assertNull(plan.getDescription());
         assertEquals(Plan.PlanStatus.COLLECTING, plan.getStatus());
+    }
+
+    @Test
+    void shouldRecoverCollectingPlanAsActiveOnFirstLoadAfterRestart() throws Exception {
+        Plan collecting = Plan.builder()
+                .id("plan-recover")
+                .status(Plan.PlanStatus.COLLECTING)
+                .steps(new ArrayList<>())
+                .createdAt(FIXED_INSTANT)
+                .updatedAt(FIXED_INSTANT)
+                .build();
+
+        String plansJson = objectMapper.writeValueAsString(List.of(collecting));
+        when(storagePort.getText(AUTO_DIR, PLANS_FILE))
+                .thenReturn(CompletableFuture.completedFuture(plansJson));
+
+        List<Plan> plans = service.getPlans();
+
+        assertEquals(1, plans.size());
+        assertTrue(service.isPlanModeActive());
+        assertEquals("plan-recover", service.getActivePlanId());
+    }
+
+    @Test
+    void shouldRecoverExecutingPlanAsPartiallyCompletedWithFailedInProgressStep() throws Exception {
+        PlanStep inProgress = PlanStep.builder()
+                .id("step-in-progress")
+                .planId("plan-executing")
+                .toolName(TOOL_SHELL)
+                .description("Running tests")
+                .order(0)
+                .status(PlanStep.StepStatus.IN_PROGRESS)
+                .createdAt(FIXED_INSTANT)
+                .build();
+
+        Plan executing = Plan.builder()
+                .id("plan-executing")
+                .status(Plan.PlanStatus.EXECUTING)
+                .steps(new ArrayList<>(List.of(inProgress)))
+                .createdAt(FIXED_INSTANT)
+                .updatedAt(FIXED_INSTANT)
+                .build();
+
+        String plansJson = objectMapper.writeValueAsString(List.of(executing));
+        when(storagePort.getText(AUTO_DIR, PLANS_FILE))
+                .thenReturn(CompletableFuture.completedFuture(plansJson));
+
+        List<Plan> plans = service.getPlans();
+
+        assertEquals(1, plans.size());
+        Plan recovered = plans.get(0);
+        assertEquals(Plan.PlanStatus.PARTIALLY_COMPLETED, recovered.getStatus());
+        assertEquals(FIXED_INSTANT, recovered.getUpdatedAt());
+        assertEquals(1, recovered.getSteps().size());
+        PlanStep recoveredStep = recovered.getSteps().get(0);
+        assertEquals(PlanStep.StepStatus.FAILED, recoveredStep.getStatus());
+        assertEquals("Interrupted by restart/crash during execution", recoveredStep.getResult());
+        assertEquals(FIXED_INSTANT, recoveredStep.getExecutedAt());
+
+        verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq(PLANS_FILE), anyString());
+    }
+
+    @Test
+    void shouldNotOverwriteExistingStepResultDuringRecovery() throws Exception {
+        PlanStep inProgressWithResult = PlanStep.builder()
+                .id("step-keep-result")
+                .planId("plan-executing-2")
+                .toolName(TOOL_FILESYSTEM)
+                .description("Write file")
+                .order(0)
+                .status(PlanStep.StepStatus.IN_PROGRESS)
+                .result("Partial output already captured")
+                .createdAt(FIXED_INSTANT)
+                .build();
+
+        Plan executing = Plan.builder()
+                .id("plan-executing-2")
+                .status(Plan.PlanStatus.EXECUTING)
+                .steps(new ArrayList<>(List.of(inProgressWithResult)))
+                .createdAt(FIXED_INSTANT)
+                .updatedAt(FIXED_INSTANT)
+                .build();
+
+        String plansJson = objectMapper.writeValueAsString(List.of(executing));
+        when(storagePort.getText(AUTO_DIR, PLANS_FILE))
+                .thenReturn(CompletableFuture.completedFuture(plansJson));
+
+        Plan recovered = service.getPlans().get(0);
+        PlanStep recoveredStep = recovered.getSteps().get(0);
+
+        assertEquals(PlanStep.StepStatus.FAILED, recoveredStep.getStatus());
+        assertEquals("Partial output already captured", recoveredStep.getResult());
+        assertEquals(FIXED_INSTANT, recoveredStep.getExecutedAt());
     }
 }
