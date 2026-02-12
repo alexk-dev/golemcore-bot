@@ -51,6 +51,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -185,7 +186,8 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 .apiKey(config.getApiKey())
                 .modelName(modelName)
                 .maxRetries(0) // Retry handled by our backoff logic
-                .maxTokens(4096);
+                .maxTokens(4096)
+                .timeout(Duration.ofMillis(properties.getLlm().getLangchain4j().getTimeoutMs()));
 
         if (config.getBaseUrl() != null) {
             builder.baseUrl(config.getBaseUrl());
@@ -203,7 +205,8 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         var builder = OpenAiChatModel.builder()
                 .apiKey(config.getApiKey())
                 .modelName(modelName)
-                .maxRetries(0); // Retry handled by our backoff logic
+                .maxRetries(0) // Retry handled by our backoff logic
+                .timeout(Duration.ofMillis(properties.getLlm().getLangchain4j().getTimeoutMs()));
 
         if (config.getBaseUrl() != null) {
             builder.baseUrl(config.getBaseUrl());

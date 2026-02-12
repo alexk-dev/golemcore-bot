@@ -105,6 +105,7 @@ public class BotProperties {
 
     @Data
     public static class Langchain4jProperties {
+        private long timeoutMs = 300000;
         private Map<String, ProviderProperties> providers = new HashMap<>();
     }
 
