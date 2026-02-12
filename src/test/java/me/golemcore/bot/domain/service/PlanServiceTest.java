@@ -1176,4 +1176,97 @@ class PlanServiceTest {
         assertNull(plan.getDescription());
         assertEquals(Plan.PlanStatus.COLLECTING, plan.getStatus());
     }
+
+    @Test
+    void shouldRecoverCollectingPlanAsActiveOnFirstLoadAfterRestart() throws Exception {
+        Plan collecting = Plan.builder()
+                .id("plan-recover")
+                .status(Plan.PlanStatus.COLLECTING)
+                .steps(new ArrayList<>())
+                .createdAt(FIXED_INSTANT)
+                .updatedAt(FIXED_INSTANT)
+                .build();
+
+        String plansJson = objectMapper.writeValueAsString(List.of(collecting));
+        when(storagePort.getText(AUTO_DIR, PLANS_FILE))
+                .thenReturn(CompletableFuture.completedFuture(plansJson));
+
+        List<Plan> plans = service.getPlans();
+
+        assertEquals(1, plans.size());
+        assertTrue(service.isPlanModeActive());
+        assertEquals("plan-recover", service.getActivePlanId());
+    }
+
+    @Test
+    void shouldRecoverExecutingPlanAsPartiallyCompletedWithFailedInProgressStep() throws Exception {
+        PlanStep inProgress = PlanStep.builder()
+                .id("step-in-progress")
+                .planId("plan-executing")
+                .toolName(TOOL_SHELL)
+                .description("Running tests")
+                .order(0)
+                .status(PlanStep.StepStatus.IN_PROGRESS)
+                .createdAt(FIXED_INSTANT)
+                .build();
+
+        Plan executing = Plan.builder()
+                .id("plan-executing")
+                .status(Plan.PlanStatus.EXECUTING)
+                .steps(new ArrayList<>(List.of(inProgress)))
+                .createdAt(FIXED_INSTANT)
+                .updatedAt(FIXED_INSTANT)
+                .build();
+
+        String plansJson = objectMapper.writeValueAsString(List.of(executing));
+        when(storagePort.getText(AUTO_DIR, PLANS_FILE))
+                .thenReturn(CompletableFuture.completedFuture(plansJson));
+
+        List<Plan> plans = service.getPlans();
+
+        assertEquals(1, plans.size());
+        Plan recovered = plans.get(0);
+        assertEquals(Plan.PlanStatus.PARTIALLY_COMPLETED, recovered.getStatus());
+        assertEquals(FIXED_INSTANT, recovered.getUpdatedAt());
+        assertEquals(1, recovered.getSteps().size());
+        PlanStep recoveredStep = recovered.getSteps().get(0);
+        assertEquals(PlanStep.StepStatus.FAILED, recoveredStep.getStatus());
+        assertEquals("Interrupted by restart/crash during execution", recoveredStep.getResult());
+        assertEquals(FIXED_INSTANT, recoveredStep.getExecutedAt());
+
+        verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq(PLANS_FILE), anyString());
+    }
+
+    @Test
+    void shouldNotOverwriteExistingStepResultDuringRecovery() throws Exception {
+        PlanStep inProgressWithResult = PlanStep.builder()
+                .id("step-keep-result")
+                .planId("plan-executing-2")
+                .toolName(TOOL_FILESYSTEM)
+                .description("Write file")
+                .order(0)
+                .status(PlanStep.StepStatus.IN_PROGRESS)
+                .result("Partial output already captured")
+                .createdAt(FIXED_INSTANT)
+                .build();
+
+        Plan executing = Plan.builder()
+                .id("plan-executing-2")
+                .status(Plan.PlanStatus.EXECUTING)
+                .steps(new ArrayList<>(List.of(inProgressWithResult)))
+                .createdAt(FIXED_INSTANT)
+                .updatedAt(FIXED_INSTANT)
+                .build();
+
+        String plansJson = objectMapper.writeValueAsString(List.of(executing));
+        when(storagePort.getText(AUTO_DIR, PLANS_FILE))
+                .thenReturn(CompletableFuture.completedFuture(plansJson));
+
+        Plan recovered = service.getPlans().get(0);
+        PlanStep recoveredStep = recovered.getSteps().get(0);
+
+        assertEquals(PlanStep.StepStatus.FAILED, recoveredStep.getStatus());
+        assertEquals("Partial output already captured", recoveredStep.getResult());
+        assertEquals(FIXED_INSTANT, recoveredStep.getExecutedAt());
+    }
 }
