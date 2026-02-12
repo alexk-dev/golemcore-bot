@@ -27,6 +27,7 @@ import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.PlanReadyEvent;
 import me.golemcore.bot.domain.model.PlanStep;
 import me.golemcore.bot.domain.service.PlanService;
+import me.golemcore.bot.domain.service.UserPreferencesService;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
@@ -54,6 +55,7 @@ public class PlanFinalizationSystem implements AgentSystem {
 
     private final PlanService planService;
     private final ApplicationEventPublisher eventPublisher;
+    private final UserPreferencesService preferencesService;
 
     @Override
     public String getName() {
@@ -126,8 +128,12 @@ public class PlanFinalizationSystem implements AgentSystem {
     private String buildPlanSummary(Plan plan) {
         StringBuilder sb = new StringBuilder();
         sb.append("---\n");
-        sb.append("**Plan** `").append(plan.getId().substring(0, 8)).append("` ")
-                .append("(").append(plan.getSteps().size()).append(" steps):\n");
+
+        String shortId = plan.getId().substring(0, 8);
+        sb.append("**")
+                .append(msg("plan.ready.card.title", shortId, plan.getSteps().size()))
+                .append("**\n");
+
         for (int i = 0; i < plan.getSteps().size(); i++) {
             PlanStep step = plan.getSteps().get(i);
             sb.append(String.format("%d. `%s`", i + 1, step.getToolName()));
@@ -137,12 +143,17 @@ public class PlanFinalizationSystem implements AgentSystem {
             sb.append("\n");
         }
 
-        sb.append("\n_Waiting for approval..._\n");
-        sb.append("\nQuick commands:\n");
-        sb.append("- Approve: `/plan approve `").append(plan.getId()).append("\n");
-        sb.append("- Cancel (reset): `/plan cancel `").append(plan.getId()).append("\n");
-        sb.append("- Show status: `/plan status`\n");
-        sb.append("- List all plans: `/plans`\n");
+        sb.append("\n_").append(msg("plan.ready.card.waiting")).append("_\n");
+        sb.append("\n**").append(msg("plan.ready.card.quick.title")).append("**\n");
+        sb.append(msg("plan.ready.card.quick.approve", plan.getId())).append("\n");
+        sb.append(msg("plan.ready.card.quick.cancel", plan.getId())).append("\n");
+        sb.append(msg("plan.ready.card.quick.status")).append("\n");
+        sb.append(msg("plan.ready.card.quick.list")).append("\n");
+
         return sb.toString();
+    }
+
+    private String msg(String key, Object... args) {
+        return preferencesService.getMessage(key, args);
     }
 }
