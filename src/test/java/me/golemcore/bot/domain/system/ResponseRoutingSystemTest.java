@@ -360,18 +360,17 @@ class ResponseRoutingSystemTest {
     }
 
     @Test
-    void toolCallsPendingSkipsResponse() {
+    void toolCallsPresentDoesNotBlockRouting() {
         AgentContext context = createContext();
         LlmResponse response = LlmResponse.builder()
                 .content("Let me check")
                 .toolCalls(List.of(Message.ToolCall.builder().id("tc1").name("shell").build()))
                 .build();
         context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-        context.setAttribute(ContextAttributes.TOOLS_EXECUTED, true);
 
         system.process(context);
 
-        verify(channelPort, never()).sendMessage(anyString(), anyString());
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Let me check"));
     }
 
     // ===== Voice Response Tests =====
@@ -946,7 +945,6 @@ class ResponseRoutingSystemTest {
                 .content(VOICE_PREFIX + " Voice after tools")
                 .build();
         context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-        context.setAttribute(ContextAttributes.TOOLS_EXECUTED, true);
 
         system.process(context);
 

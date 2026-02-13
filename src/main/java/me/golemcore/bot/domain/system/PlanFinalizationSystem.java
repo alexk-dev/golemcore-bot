@@ -79,7 +79,13 @@ public class PlanFinalizationSystem implements AgentSystem {
         }
 
         LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
-        return response != null && response.getContent() != null && !response.getContent().isBlank();
+        if (response == null || response.getContent() == null || response.getContent().isBlank()) {
+            return false;
+        }
+
+        // During plan mode we only finalize once the LLM produced plain text (no tool
+        // calls).
+        return response.getToolCalls() == null || response.getToolCalls().isEmpty();
     }
 
     @Override

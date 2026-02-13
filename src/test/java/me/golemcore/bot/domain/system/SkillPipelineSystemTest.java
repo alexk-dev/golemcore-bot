@@ -23,7 +23,6 @@ class SkillPipelineSystemTest {
     private static final String ATTR_LLM_RESPONSE = ContextAttributes.LLM_RESPONSE;
     private static final String ATTR_TRANSITION_TARGET = ContextAttributes.SKILL_TRANSITION_TARGET;
     private static final String ATTR_PIPELINE_DEPTH = "skill.pipeline.depth";
-    private static final String ATTR_TOOLS_EXECUTED = ContextAttributes.TOOLS_EXECUTED;
     private static final String SKILL_EXECUTOR = "executor";
 
     private SkillComponent skillComponent;
@@ -132,8 +131,6 @@ class SkillPipelineSystemTest {
         assertEquals(SKILL_EXECUTOR, ctx.getAttribute(ATTR_TRANSITION_TARGET));
         // Pipeline depth incremented
         assertEquals(1, (int) ctx.getAttribute(ATTR_PIPELINE_DEPTH));
-        // Loop continuation forced
-        assertEquals(true, ctx.getAttribute(ATTR_TOOLS_EXECUTED));
         // Response cleared
         assertNull(ctx.getAttribute(ATTR_LLM_RESPONSE));
         // Intermediate response stored in session

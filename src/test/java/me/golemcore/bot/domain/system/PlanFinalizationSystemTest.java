@@ -79,9 +79,13 @@ class PlanFinalizationSystemTest {
     @Test
     void shouldNotProcessWhenToolCallsPresent() {
         when(planService.isPlanModeActive()).thenReturn(true);
-        AgentContext context = buildContext("Some response");
-        List<Object> toolCalls = List.of("tc1");
-        context.setAttribute(ContextAttributes.LLM_TOOL_CALLS, toolCalls);
+        LlmResponse responseWithTools = LlmResponse.builder()
+                .content("Some response")
+                .toolCalls(List.of(me.golemcore.bot.domain.model.Message.ToolCall.builder()
+                        .id("tc1").name("shell").build()))
+                .build();
+        AgentContext context = buildContext(null);
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, responseWithTools);
         assertFalse(system.shouldProcess(context));
     }
 
@@ -201,7 +205,6 @@ class PlanFinalizationSystemTest {
     void shouldProcessWhenToolCallsListIsEmpty() {
         when(planService.isPlanModeActive()).thenReturn(true);
         AgentContext context = buildContext("Some text response");
-        context.setAttribute(ContextAttributes.LLM_TOOL_CALLS, List.of());
         assertTrue(system.shouldProcess(context));
     }
 

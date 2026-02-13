@@ -113,55 +113,6 @@ class AgentLoopTest {
         assertEquals(List.of("A", "B", "C"), callOrder);
         verify(sessionPort).save(session);
     }
-
-    // ===== Loop continuation with tool calls =====
-
-    @Test
-    void loopContinuesWhenToolsExecuted() {
-        List<Integer> iterations = new ArrayList<>();
-
-        // System that simulates tool execution on first iteration
-        AgentSystem toolSystem = new AgentSystem() {
-            @Override
-            public String getName() {
-                return "ToolSim";
-            }
-
-            @Override
-            public int getOrder() {
-                return 40;
-            }
-
-            @Override
-            public AgentContext process(AgentContext context) {
-                iterations.add(context.getCurrentIteration());
-                if (context.getCurrentIteration() == 0) {
-                    // Simulate: LLM returned tool calls, tools were executed
-                    LlmResponse response = LlmResponse.builder()
-                            .content("")
-                            .toolCalls(List
-                                    .of(Message.ToolCall.builder().id("tc1").name("test").arguments(Map.of()).build()))
-                            .build();
-                    context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-                    context.setAttribute(ContextAttributes.TOOLS_EXECUTED, true);
-                }
-                return context;
-            }
-        };
-
-        AgentSession session = createSession();
-        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
-
-        AgentLoop loop = createLoop(List.of(toolSystem));
-        loop.processMessage(createUserMessage());
-
-        // Should have run at least 2 iterations (iteration 0 with tool calls, iteration
-        // 1 without)
-        assertTrue(iterations.size() >= 2, "Expected at least 2 iterations, got " + iterations.size());
-        assertEquals(0, iterations.get(0));
-        assertEquals(1, iterations.get(1));
-    }
-
     // ===== Loop stops when no tool calls =====
 
     @Test
@@ -202,11 +153,11 @@ class AgentLoopTest {
         properties.getAgent().setMaxIterations(3);
         List<Integer> iterations = new ArrayList<>();
 
-        // System that always triggers another loop iteration
-        AgentSystem infiniteTools = new AgentSystem() {
+        // System that always requests another iteration via skill pipeline transition
+        AgentSystem infiniteLoop = new AgentSystem() {
             @Override
             public String getName() {
-                return "InfiniteTools";
+                return "InfiniteLoop";
             }
 
             @Override
@@ -217,13 +168,8 @@ class AgentLoopTest {
             @Override
             public AgentContext process(AgentContext context) {
                 iterations.add(context.getCurrentIteration());
-                LlmResponse response = LlmResponse.builder()
-                        .content("")
-                        .toolCalls(
-                                List.of(Message.ToolCall.builder().id("tc1").name("test").arguments(Map.of()).build()))
-                        .build();
-                context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-                context.setAttribute(ContextAttributes.TOOLS_EXECUTED, true);
+                context.setAttribute(ContextAttributes.SKILL_TRANSITION_TARGET, "skill-next");
+                context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, Boolean.FALSE);
                 return context;
             }
         };
@@ -231,7 +177,7 @@ class AgentLoopTest {
         AgentSession session = createSession();
         when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
 
-        AgentLoop loop = createLoop(List.of(infiniteTools));
+        AgentLoop loop = createLoop(List.of(infiniteLoop));
         loop.processMessage(createUserMessage());
 
         assertEquals(3, iterations.size(), "Should stop after max iterations");
@@ -464,7 +410,6 @@ class AgentLoopTest {
                                 Message.ToolCall.builder().id("tc1").name("send_voice").arguments(Map.of()).build()))
                         .build();
                 context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-                context.setAttribute(ContextAttributes.TOOLS_EXECUTED, true);
                 context.setAttribute(ContextAttributes.LOOP_COMPLETE, true);
                 return context;
             }
