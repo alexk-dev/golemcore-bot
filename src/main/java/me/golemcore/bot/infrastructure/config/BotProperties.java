@@ -472,6 +472,17 @@ public class BotProperties {
          * (ToolResult.success=false).
          */
         private boolean stopOnToolFailure = false;
+
+        /**
+         * Stop the loop when a tool execution was denied by the user (confirmation
+         * declined).
+         */
+        private boolean stopOnConfirmationDenied = true;
+
+        /**
+         * Stop the loop when a tool was blocked by policy (disabled/unknown/etc).
+         */
+        private boolean stopOnToolPolicyDenied = false;
     }
 
     // ==================== PLAN MODE ====================

@@ -494,4 +494,114 @@ class ToolLoopSystemBddTest {
                 && m.getContent() != null
                 && m.getContent().contains("Tool loop stopped")));
     }
+
+    @Test
+    void shouldStopWhenConfirmationDeniedAccordingToPolicy() {
+        // GIVEN
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType("telegram")
+                .chatId("chat1")
+                .build();
+        session.addMessage(Message.builder().role("user").content("hi").build());
+
+        AgentContext ctx = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>(session.getMessages()))
+                .build();
+
+        LlmPort llmPort = mock(LlmPort.class);
+        LlmResponse toolCall = LlmResponse.builder()
+                .content("calling tool")
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("tc1")
+                        .name("shell")
+                        .arguments(Map.of("command", "echo sensitive"))
+                        .build()))
+                .build();
+        when(llmPort.chat(any(LlmRequest.class))).thenReturn(CompletableFuture.completedFuture(toolCall));
+
+        ToolExecutorPort toolExecutor = mock(ToolExecutorPort.class);
+        when(toolExecutor.execute(any(AgentContext.class), any(Message.ToolCall.class)))
+                .thenReturn(new ToolExecutionOutcome(
+                        "tc1",
+                        "shell",
+                        ToolResult.failure("Cancelled by user"),
+                        "Error: Cancelled by user",
+                        false));
+
+        BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
+        settings.setMaxLlmCalls(10);
+        settings.setMaxToolExecutions(10);
+        settings.setDeadlineMs(30000);
+        settings.setStopOnConfirmationDenied(true);
+
+        DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
+        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, settings);
+
+        // WHEN
+        ToolLoopTurnResult result = toolLoop.processTurn(ctx);
+
+        // THEN
+        assertTrue(result.finalAnswerReady());
+        verify(llmPort, times(1)).chat(any(LlmRequest.class));
+        assertTrue(session.getMessages().stream().anyMatch(m -> "assistant".equals(m.getRole())
+                && m.getContent() != null
+                && m.getContent().contains("confirmation denied")));
+    }
+
+    @Test
+    void shouldStopWhenToolIsDeniedByPolicyAccordingToPolicy() {
+        // GIVEN
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType("telegram")
+                .chatId("chat1")
+                .build();
+        session.addMessage(Message.builder().role("user").content("hi").build());
+
+        AgentContext ctx = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>(session.getMessages()))
+                .build();
+
+        LlmPort llmPort = mock(LlmPort.class);
+        LlmResponse toolCall = LlmResponse.builder()
+                .content("calling tool")
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("tc1")
+                        .name("forbidden")
+                        .arguments(Map.of())
+                        .build()))
+                .build();
+        when(llmPort.chat(any(LlmRequest.class))).thenReturn(CompletableFuture.completedFuture(toolCall));
+
+        ToolExecutorPort toolExecutor = mock(ToolExecutorPort.class);
+        when(toolExecutor.execute(any(AgentContext.class), any(Message.ToolCall.class)))
+                .thenReturn(new ToolExecutionOutcome(
+                        "tc1",
+                        "forbidden",
+                        ToolResult.failure("Unknown tool: forbidden"),
+                        "Error: Unknown tool: forbidden",
+                        false));
+
+        BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
+        settings.setMaxLlmCalls(10);
+        settings.setMaxToolExecutions(10);
+        settings.setDeadlineMs(30000);
+        settings.setStopOnToolPolicyDenied(true);
+
+        DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
+        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, settings);
+
+        // WHEN
+        ToolLoopTurnResult result = toolLoop.processTurn(ctx);
+
+        // THEN
+        assertTrue(result.finalAnswerReady());
+        verify(llmPort, times(1)).chat(any(LlmRequest.class));
+        assertTrue(session.getMessages().stream().anyMatch(m -> "assistant".equals(m.getRole())
+                && m.getContent() != null
+                && m.getContent().contains("tool denied by policy")));
+    }
 }

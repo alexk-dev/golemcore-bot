@@ -58,6 +58,8 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         int maxToolExecutions = settings != null ? settings.getMaxToolExecutions() : 50;
         long deadlineMs = settings != null ? settings.getDeadlineMs() : 30000L;
         boolean stopOnToolFailure = settings != null && settings.isStopOnToolFailure();
+        boolean stopOnConfirmationDenied = settings == null || settings.isStopOnConfirmationDenied();
+        boolean stopOnToolPolicyDenied = settings != null && settings.isStopOnToolPolicyDenied();
 
         Instant deadline = clock.instant().plusMillis(deadlineMs);
 
@@ -98,6 +100,19 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 }
                 if (outcome != null) {
                     historyWriter.appendToolResult(context, outcome);
+                    if (outcome.toolResult() != null && !outcome.toolResult().isSuccess()) {
+                        String err = outcome.toolResult().getError();
+                        if (stopOnConfirmationDenied && err != null
+                                && err.toLowerCase().contains("cancelled by user")) {
+                            return stopTurn(context, context.getAttribute(ContextAttributes.LLM_RESPONSE),
+                                    response.getToolCalls(), "confirmation denied", llmCalls, toolExecutions);
+                        }
+                        if (stopOnToolPolicyDenied && err != null && (err.toLowerCase().contains("unknown tool")
+                                || err.toLowerCase().contains("tool is disabled"))) {
+                            return stopTurn(context, context.getAttribute(ContextAttributes.LLM_RESPONSE),
+                                    response.getToolCalls(), "tool denied by policy", llmCalls, toolExecutions);
+                        }
+                    }
                     if (stopOnToolFailure && outcome.toolResult() != null && !outcome.toolResult().isSuccess()) {
                         return stopTurn(context, context.getAttribute(ContextAttributes.LLM_RESPONSE),
                                 response.getToolCalls(),
