@@ -99,14 +99,9 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 if (outcome != null) {
                     historyWriter.appendToolResult(context, outcome);
                     if (stopOnToolFailure && outcome.toolResult() != null && !outcome.toolResult().isSuccess()) {
-                        String reason = "tool failure (" + outcome.toolName() + ")";
-                        historyWriter.appendFinalAssistantAnswer(
-                                context,
-                                context.getAttribute(ContextAttributes.LLM_RESPONSE),
-                                "Tool loop stopped: " + reason + ".");
-                        context.setAttribute(ContextAttributes.LOOP_COMPLETE, true);
-                        context.setAttribute(FINAL_ANSWER_READY, true);
-                        return new ToolLoopTurnResult(context, true, llmCalls, toolExecutions);
+                        return stopTurn(context, context.getAttribute(ContextAttributes.LLM_RESPONSE),
+                                response.getToolCalls(),
+                                "tool failure (" + outcome.toolName() + ")", llmCalls, toolExecutions);
                     }
                 }
             }
@@ -115,9 +110,21 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         String stopReason = buildStopReason(llmCalls, maxLlmCalls, toolExecutions, maxToolExecutions, deadline);
 
         LlmResponse last = context.getAttribute(ContextAttributes.LLM_RESPONSE);
-        if (last != null && last.hasToolCalls()) {
-            for (Message.ToolCall tc : last.getToolCalls()) {
-                ToolExecutionOutcome synthetic = ToolExecutionOutcome.synthetic(tc, "Tool loop stopped: " + stopReason);
+        List<Message.ToolCall> pending = last != null ? last.getToolCalls() : null;
+        return stopTurn(context, last, pending, stopReason, llmCalls, toolExecutions);
+
+    }
+
+    private ToolLoopTurnResult stopTurn(AgentContext context, LlmResponse lastResponse,
+            List<Message.ToolCall> pendingToolCalls, String reason, int llmCalls, int toolExecutions) {
+        if (pendingToolCalls != null) {
+            for (Message.ToolCall tc : pendingToolCalls) {
+                // Avoid writing duplicate synthetic results for the same tool_call_id if a real
+                // outcome was already recorded.
+                if (context.getToolResults() != null && context.getToolResults().containsKey(tc.getId())) {
+                    continue;
+                }
+                ToolExecutionOutcome synthetic = ToolExecutionOutcome.synthetic(tc, "Tool loop stopped: " + reason);
                 context.addToolResult(synthetic.toolCallId(), synthetic.toolResult());
                 historyWriter.appendToolResult(context, synthetic);
             }
@@ -125,8 +132,8 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
 
         historyWriter.appendFinalAssistantAnswer(
                 context,
-                last,
-                "Tool loop stopped: " + stopReason + " Please retry or reduce complexity.");
+                lastResponse,
+                "Tool loop stopped: " + reason + ".");
 
         context.setAttribute(ContextAttributes.LOOP_COMPLETE, true);
         context.setAttribute(FINAL_ANSWER_READY, true);
