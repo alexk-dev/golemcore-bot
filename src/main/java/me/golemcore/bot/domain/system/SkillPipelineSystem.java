@@ -125,11 +125,8 @@ public class SkillPipelineSystem implements AgentSystem {
         // Set transition target for ContextBuildingSystem to pick up
         context.setAttribute(ContextAttributes.SKILL_TRANSITION_TARGET, nextSkillName);
         context.setAttribute(PIPELINE_DEPTH_KEY, depth + 1);
-
-        // Force loop continuation by marking tools as executed and clearing response
-        context.setAttribute(ContextAttributes.TOOLS_EXECUTED, true);
         context.setAttribute(ContextAttributes.LLM_RESPONSE, null);
-        context.setAttribute(ContextAttributes.LLM_TOOL_CALLS, null);
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, Boolean.FALSE);
 
         return context;
     }

@@ -120,7 +120,7 @@ class TelegramVoiceHandlerTest {
         when(voicePort.transcribe(any(byte[].class), any(AudioFormat.class)))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("STT error")));
 
-        Message msg = handler.processVoiceMessage("chat1", new byte[] { 1 }).join();
+        Message msg = assertDoesNotThrow(() -> handler.processVoiceMessage("chat1", new byte[] { 1 }).join());
 
         assertEquals("[Failed to transcribe voice message]", msg.getContent());
         assertEquals("[Failed to transcribe voice message]", msg.getVoiceTranscription());

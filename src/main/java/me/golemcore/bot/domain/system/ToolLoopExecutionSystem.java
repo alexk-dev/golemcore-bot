@@ -19,8 +19,7 @@ import org.springframework.stereotype.Component;
  * Order:
  * <ul>
  * <li>After ContextBuildingSystem (20) and DynamicTierSystem (25)
- * <li>Before PlanInterceptSystem (35) / ToolExecutionSystem (40) /
- * ResponseRoutingSystem (60)
+ * <li>Before ResponseRoutingSystem (60)
  * </ul>
  */
 @Component
@@ -55,20 +54,6 @@ public class ToolLoopExecutionSystem implements AgentSystem {
         if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.LOOP_COMPLETE))) {
             return false;
         }
-
-        // Plan mode should keep using LlmExecutionSystem + PlanInterceptSystem for now,
-        // because PlanIntercept expects llm.toolCalls produced by LlmExecutionSystem.
-        Boolean planMode = context.getAttribute(ContextAttributes.PLAN_MODE_ACTIVE);
-        if (Boolean.TRUE.equals(planMode)) {
-            return false;
-        }
-
-        // If response exists but still has tool calls, something legacy is in play.
-        LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
-        if (response != null && response.hasToolCalls()) {
-            return false;
-        }
-
         return true;
     }
 
@@ -79,8 +64,6 @@ public class ToolLoopExecutionSystem implements AgentSystem {
         toolLoopSystem.processTurn(context);
 
         // Ensure old loop continuation doesn't kick in.
-        context.setAttribute(ContextAttributes.TOOLS_EXECUTED, false);
-        context.setAttribute(ContextAttributes.LLM_TOOL_CALLS, null);
 
         return context;
     }

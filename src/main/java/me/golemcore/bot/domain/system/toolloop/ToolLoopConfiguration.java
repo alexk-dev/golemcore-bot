@@ -18,7 +18,7 @@ public class ToolLoopConfiguration {
         // Intentionally keep ToolLoopSystem depending on a stable port.
         // This adapter provides a transitional bridge to the current tool execution
         // wiring.
-        return new ToolExecutionSystemToolExecutorAdapter(toolCallExecutionService);
+        return new ToolCallExecutionServiceToolExecutorAdapter(toolCallExecutionService);
     }
 
     @Bean

@@ -16,6 +16,7 @@ import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
 import me.golemcore.bot.domain.service.SkillTemplateEngine;
+import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.McpPort;
@@ -50,7 +51,7 @@ class ContextBuildingSystemPromptTest {
     private SkillComponent skillComponent;
     private SkillTemplateEngine templateEngine;
     private McpPort mcpPort;
-    private ToolExecutionSystem toolExecutionSystem;
+    private ToolCallExecutionService toolCallExecutionService;
     private RagPort ragPort;
     private BotProperties properties;
     private AutoModeService autoModeService;
@@ -65,7 +66,7 @@ class ContextBuildingSystemPromptTest {
         skillComponent = mock(SkillComponent.class);
         templateEngine = new SkillTemplateEngine();
         mcpPort = mock(McpPort.class);
-        toolExecutionSystem = mock(ToolExecutionSystem.class);
+        toolCallExecutionService = mock(ToolCallExecutionService.class);
         ragPort = mock(RagPort.class);
         properties = new BotProperties();
         autoModeService = mock(AutoModeService.class);
@@ -85,7 +86,7 @@ class ContextBuildingSystemPromptTest {
                 List.of(),
                 templateEngine,
                 mcpPort,
-                toolExecutionSystem,
+                toolCallExecutionService,
                 ragPort,
                 properties,
                 autoModeService,
@@ -205,7 +206,7 @@ class ContextBuildingSystemPromptTest {
                 List.of(tool),
                 templateEngine,
                 mcpPort,
-                toolExecutionSystem,
+                toolCallExecutionService,
                 ragPort,
                 properties,
                 autoModeService,
@@ -342,7 +343,7 @@ class ContextBuildingSystemPromptTest {
         ctx.setActiveSkill(skill);
         system.process(ctx);
 
-        verify(toolExecutionSystem).registerTool(mcpAdapter);
+        verify(toolCallExecutionService).registerTool(mcpAdapter);
         assertTrue(ctx.getAvailableTools().contains(mcpTool));
         assertTrue(ctx.getSystemPrompt().contains("github_search"));
     }

@@ -21,6 +21,7 @@ package me.golemcore.bot.domain.system;
 import me.golemcore.bot.domain.component.MemoryComponent;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
+import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.PromptSection;
@@ -64,7 +65,7 @@ public class ContextBuildingSystem implements AgentSystem {
     private final List<ToolComponent> toolComponents;
     private final SkillTemplateEngine templateEngine;
     private final McpPort mcpPort;
-    private final ToolExecutionSystem toolExecutionSystem;
+    private final ToolCallExecutionService toolCallExecutionService;
     private final RagPort ragPort;
     private final BotProperties properties;
     private final AutoModeService autoModeService;
@@ -125,7 +126,7 @@ public class ContextBuildingSystem implements AgentSystem {
                 for (ToolDefinition mcpTool : mcpTools) {
                     ToolComponent adapter = mcpPort.createToolAdapter(
                             context.getActiveSkill().getName(), mcpTool);
-                    toolExecutionSystem.registerTool(adapter);
+                    toolCallExecutionService.registerTool(adapter);
                     tools.add(mcpTool);
                 }
                 log.info("[Context] Registered {} MCP tools from skill '{}'",

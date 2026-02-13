@@ -115,12 +115,6 @@ public class ResponseRoutingSystem implements AgentSystem {
             return context;
         }
 
-        Boolean toolsExecuted = context.getAttribute(ContextAttributes.TOOLS_EXECUTED);
-        if (Boolean.TRUE.equals(toolsExecuted) && response.hasToolCalls()) {
-            log.debug("[Response] Tools executed with pending tool calls, waiting for next LLM iteration");
-            return context;
-        }
-
         AgentSession session = context.getSession();
         ChannelPort channel = resolveChannel(session);
         if (channel == null) {
@@ -135,7 +129,7 @@ public class ResponseRoutingSystem implements AgentSystem {
             return handleVoicePrefixResponse(context, session, channel, response);
         }
 
-        return sendTextResponse(context, session, channel, response, content, toolsExecuted);
+        return sendTextResponse(context, session, channel, response, content, false);
     }
 
     // --- Extracted response handlers ---
@@ -183,12 +177,11 @@ public class ResponseRoutingSystem implements AgentSystem {
         }
 
         log.debug("[Response] TTS skipped/failed, falling back to text: {} chars", textToSpeak.length());
-        Boolean toolsExecuted = context.getAttribute(ContextAttributes.TOOLS_EXECUTED);
-        return sendTextResponse(context, session, channel, response, textToSpeak, toolsExecuted);
+        return sendTextResponse(context, session, channel, response, textToSpeak, false);
     }
 
     private AgentContext sendTextResponse(AgentContext context, AgentSession session,
-            ChannelPort channel, LlmResponse response, String content, Boolean toolsExecuted) {
+            ChannelPort channel, LlmResponse response, String content, boolean skipAssistantHistory) {
         String chatId = session.getChatId();
         String channelType = session.getChannelType();
 
@@ -196,7 +189,7 @@ public class ResponseRoutingSystem implements AgentSystem {
             channel.sendMessage(chatId, content).get(30, TimeUnit.SECONDS);
             context.setAttribute(ContextAttributes.RESPONSE_SENT, true);
 
-            if (!Boolean.TRUE.equals(toolsExecuted)) {
+            if (!skipAssistantHistory) {
                 addAssistantMessage(session, content, response.getToolCalls());
             } else {
                 addAssistantMessage(session, content, null);

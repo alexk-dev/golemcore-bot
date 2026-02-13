@@ -45,7 +45,6 @@ public final class ContextAttributes {
     public static final String LLM_ERROR = "llm.error";
 
     /** List<Message.ToolCall> ? last tool calls requested by the LLM. */
-    public static final String LLM_TOOL_CALLS = "llm.toolCalls";
 
     /** Boolean ? final answer is ready and legacy systems should not run. */
     public static final String FINAL_ANSWER_READY = "llm.final.ready";
@@ -54,7 +53,6 @@ public final class ContextAttributes {
     public static final String LLM_LATENCY = "llm.latency";
 
     /** Boolean — tools were executed in this iteration. */
-    public static final String TOOLS_EXECUTED = "tools.executed";
 
     /** List&lt;Attachment&gt; — attachments pending delivery to channel. */
     public static final String PENDING_ATTACHMENTS = "pendingAttachments";

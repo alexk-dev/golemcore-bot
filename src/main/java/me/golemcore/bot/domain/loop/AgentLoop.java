@@ -216,9 +216,8 @@ public class AgentLoop {
                 break;
             }
 
-            log.debug("Continuing to next iteration (tools were executed)");
-            context.setAttribute(ContextAttributes.LLM_TOOL_CALLS, null);
-            context.setAttribute(ContextAttributes.TOOLS_EXECUTED, false);
+            log.debug("Continuing to next iteration");
+            context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, Boolean.FALSE);
             context.setAttribute(ContextAttributes.SKILL_TRANSITION_TARGET, null); // reset transition
             context.getToolResults().clear();
         }
@@ -261,15 +260,16 @@ public class AgentLoop {
             return false;
         }
 
-        Boolean toolsExecuted = context.getAttribute(ContextAttributes.TOOLS_EXECUTED);
-        if (Boolean.TRUE.equals(toolsExecuted)) {
-            LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
-            if (response != null && response.hasToolCalls()) {
-                return true;
-            }
+        // SkillPipelineSystem sets SKILL_TRANSITION_TARGET to request a new iteration.
+        String transitionTarget = context.getAttribute(ContextAttributes.SKILL_TRANSITION_TARGET);
+        if (transitionTarget != null) {
+            return true;
         }
 
-        return false;
+        // ToolLoopSystem owns the internal LLM?tools loop and sets FINAL_ANSWER_READY
+        // to true once the turn is finalized.
+        Boolean finalAnswerReady = context.getAttribute(ContextAttributes.FINAL_ANSWER_READY);
+        return Boolean.FALSE.equals(finalAnswerReady);
     }
 
     private void ensureFeedback(AgentContext context) {
