@@ -79,6 +79,7 @@ public class BotProperties {
     private AutoModeProperties auto = new AutoModeProperties();
     private PromptsProperties prompts = new PromptsProperties();
     private AutoCompactProperties autoCompact = new AutoCompactProperties();
+    private ToolLoopProperties toolLoop = new ToolLoopProperties();
     private PlanProperties plan = new PlanProperties();
 
     @Data
@@ -448,6 +449,24 @@ public class BotProperties {
          * truncated.
          */
         private int maxToolResultChars = 100000;
+    }
+
+    // ==================== TOOL LOOP ====================
+
+    @Data
+    public static class ToolLoopProperties {
+        /**
+         * Max number of internal LLM calls allowed within a single pipeline pass.
+         */
+        private int maxLlmCalls = 6;
+        /**
+         * Max number of tool executions allowed within a single pipeline pass.
+         */
+        private int maxToolExecutions = 50;
+        /**
+         * Max wall-clock time budget for the internal loop (ms).
+         */
+        private long deadlineMs = 30000;
     }
 
     // ==================== PLAN MODE ====================

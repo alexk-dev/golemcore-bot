@@ -1,5 +1,6 @@
 package me.golemcore.bot.domain.system.toolloop;
 
+import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolResult;
 
 /**
@@ -16,4 +17,6 @@ import me.golemcore.bot.domain.model.ToolResult;
  * @param synthetic
  *            whether this result was produced without executing the tool
  */
-public record ToolExecutionOutcome(String toolCallId,String toolName,ToolResult toolResult,String messageContent,boolean synthetic){}
+public record ToolExecutionOutcome(String toolCallId,String toolName,ToolResult toolResult,String messageContent,boolean synthetic){
+
+public static ToolExecutionOutcome synthetic(Message.ToolCall toolCall,String reason){return new ToolExecutionOutcome(toolCall.getId(),toolCall.getName(),ToolResult.failure(reason),reason,true);}}

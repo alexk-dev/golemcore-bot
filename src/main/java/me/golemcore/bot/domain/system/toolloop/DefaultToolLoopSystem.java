@@ -10,6 +10,11 @@ import me.golemcore.bot.port.outbound.LlmPort;
 import java.util.ArrayList;
 import java.util.List;
 
+import java.time.Clock;
+import java.time.Instant;
+
+import me.golemcore.bot.infrastructure.config.BotProperties;
+
 /**
  * Tool loop orchestrator (single-turn internal loop).
  *
@@ -24,11 +29,22 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
     private final LlmPort llmPort;
     private final ToolExecutorPort toolExecutor;
     private final HistoryWriter historyWriter;
+    private final BotProperties.ToolLoopProperties settings;
+    private final Clock clock;
 
-    public DefaultToolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutor, HistoryWriter historyWriter) {
+    public DefaultToolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutor, HistoryWriter historyWriter,
+            BotProperties.ToolLoopProperties settings) {
+        this(llmPort, toolExecutor, historyWriter, settings, Clock.systemUTC());
+    }
+
+    // Visible for testing
+    public DefaultToolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutor, HistoryWriter historyWriter,
+            BotProperties.ToolLoopProperties settings, Clock clock) {
         this.llmPort = llmPort;
         this.toolExecutor = toolExecutor;
         this.historyWriter = historyWriter;
+        this.settings = settings;
+        this.clock = clock;
     }
 
     @Override
@@ -37,9 +53,14 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
 
         int llmCalls = 0;
         int toolExecutions = 0;
-        int maxLlmCalls = 6; // TODO: make configurable (tool-loop specific)
 
-        while (llmCalls < maxLlmCalls) {
+        int maxLlmCalls = settings != null ? settings.getMaxLlmCalls() : 6;
+        int maxToolExecutions = settings != null ? settings.getMaxToolExecutions() : 50;
+        long deadlineMs = settings != null ? settings.getDeadlineMs() : 30000L;
+
+        Instant deadline = clock.instant().plusMillis(deadlineMs);
+
+        while (llmCalls < maxLlmCalls && toolExecutions < maxToolExecutions && clock.instant().isBefore(deadline)) {
             // 1) LLM call
             LlmResponse response = llmPort.chat(buildRequest(context)).join();
             llmCalls++;
@@ -69,18 +90,27 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 if (outcome != null && outcome.toolResult() != null) {
                     context.addToolResult(outcome.toolCallId(), outcome.toolResult());
                 }
-                historyWriter.appendToolResult(context, outcome);
+                if (outcome != null) {
+                    historyWriter.appendToolResult(context, outcome);
+                }
             }
         }
 
-        // Stop: max LLM calls reached. We must not leave the user without feedback.
-        // TODO: replace with configurable limits + synthetic tool outcomes for any
-        // pending calls.
+        String stopReason = buildStopReason(llmCalls, maxLlmCalls, toolExecutions, maxToolExecutions, deadline);
+
+        LlmResponse last = context.getAttribute(ContextAttributes.LLM_RESPONSE);
+        if (last != null && last.hasToolCalls()) {
+            for (Message.ToolCall tc : last.getToolCalls()) {
+                ToolExecutionOutcome synthetic = ToolExecutionOutcome.synthetic(tc, "Tool loop stopped: " + stopReason);
+                context.addToolResult(synthetic.toolCallId(), synthetic.toolResult());
+                historyWriter.appendToolResult(context, synthetic);
+            }
+        }
+
         historyWriter.appendFinalAssistantAnswer(
                 context,
-                context.getAttribute(ContextAttributes.LLM_RESPONSE),
-                "Tool loop stopped: reached max internal LLM calls (" + maxLlmCalls + ")."
-                        + " Please retry or reduce complexity.");
+                last,
+                "Tool loop stopped: " + stopReason + " Please retry or reduce complexity.");
 
         context.setAttribute(ContextAttributes.LOOP_COMPLETE, true);
         context.setAttribute(FINAL_ANSWER_READY, true);
@@ -94,6 +124,20 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         if (context.getSession() != null && context.getSession().getMessages() == null) {
             context.getSession().setMessages(new ArrayList<>());
         }
+    }
+
+    private String buildStopReason(int llmCalls, int maxLlmCalls, int toolExecutions, int maxToolExecutions,
+            Instant deadline) {
+        if (llmCalls >= maxLlmCalls) {
+            return "reached max internal LLM calls (" + maxLlmCalls + ")";
+        }
+        if (toolExecutions >= maxToolExecutions) {
+            return "reached max tool executions (" + maxToolExecutions + ")";
+        }
+        if (!clock.instant().isBefore(deadline)) {
+            return "deadline exceeded";
+        }
+        return "stopped by guard";
     }
 
     private LlmRequest buildRequest(AgentContext context) {

@@ -7,6 +7,8 @@ import org.springframework.context.annotation.Configuration;
 
 import java.time.Clock;
 
+import me.golemcore.bot.infrastructure.config.BotProperties;
+
 /** Spring wiring for ToolLoopSystem (domain orchestrator + ports). */
 @Configuration
 public class ToolLoopConfiguration {
@@ -26,7 +28,8 @@ public class ToolLoopConfiguration {
 
     @Bean
     public ToolLoopSystem toolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutorPort,
-            HistoryWriter historyWriter) {
-        return new DefaultToolLoopSystem(llmPort, toolExecutorPort, historyWriter);
+            HistoryWriter historyWriter, BotProperties botProperties) {
+        return new DefaultToolLoopSystem(llmPort, toolExecutorPort, historyWriter,
+                botProperties.getToolLoop());
     }
 }

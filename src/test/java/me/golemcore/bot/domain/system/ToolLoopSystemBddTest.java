@@ -11,11 +11,13 @@ import me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem;
 import me.golemcore.bot.domain.system.toolloop.ToolExecutionOutcome;
 import me.golemcore.bot.domain.system.toolloop.ToolExecutorPort;
 import me.golemcore.bot.domain.system.toolloop.ToolLoopTurnResult;
+import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.LlmPort;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
@@ -94,7 +96,7 @@ class ToolLoopSystemBddTest {
                         false));
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter);
+        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, null);
 
         // WHEN: we process one turn
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
@@ -200,7 +202,7 @@ class ToolLoopSystemBddTest {
                 });
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter);
+        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, null);
 
         // WHEN
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
@@ -279,7 +281,7 @@ class ToolLoopSystemBddTest {
                         false));
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter);
+        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, null);
 
         // WHEN
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
@@ -289,5 +291,83 @@ class ToolLoopSystemBddTest {
         assertTrue(session.getMessages().stream().anyMatch(m -> "assistant".equals(m.getRole())
                 && m.getContent() != null
                 && m.getContent().contains("Tool loop stopped")));
+    }
+
+    @Test
+    void shouldStopByDeadlineAndProduceSyntheticToolResults() {
+        // GIVEN
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType("telegram")
+                .chatId("chat1")
+                .build();
+        session.addMessage(Message.builder()
+                .role("user")
+                .content("hi")
+                .build());
+
+        AgentContext ctx = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>(session.getMessages()))
+                .build();
+
+        LlmPort llmPort = mock(LlmPort.class);
+        LlmResponse toolCall = LlmResponse.builder()
+                .content("calling tool")
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("tc1")
+                        .name("shell")
+                        .arguments(Map.of("command", "echo hi"))
+                        .build()))
+                .build();
+        when(llmPort.chat(any(LlmRequest.class))).thenReturn(CompletableFuture.completedFuture(toolCall));
+
+        ToolExecutorPort toolExecutor = mock(ToolExecutorPort.class);
+
+        BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
+        settings.setMaxLlmCalls(100);
+        settings.setMaxToolExecutions(100);
+        settings.setDeadlineMs(5000);
+
+        Instant start = NOW;
+        Clock fastClock = new Clock() {
+            int calls = 0;
+
+            @Override
+            public ZoneId getZone() {
+                return ZoneOffset.UTC;
+            }
+
+            @Override
+            public Clock withZone(ZoneId zone) {
+                return this;
+            }
+
+            @Override
+            public Instant instant() {
+                // Call sequence in ToolLoop:
+                // 1) compute deadline (start)
+                // 2) while condition before first iteration (start)
+                // 3) while condition before second iteration (expired)
+                calls++;
+                if (calls <= 2) {
+                    return start;
+                }
+                return start.plusSeconds(10);
+            }
+        };
+
+        DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
+        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, settings,
+                fastClock);
+
+        // WHEN
+        ToolLoopTurnResult result = toolLoop.processTurn(ctx);
+
+        // THEN
+        assertTrue(result.finalAnswerReady());
+        verify(toolExecutor, times(1)).execute(any(), any());
+        assertTrue(session.getMessages().stream().anyMatch(m -> "tool".equals(m.getRole()) && m.getContent() != null
+                && m.getContent().contains("deadline")));
     }
 }
