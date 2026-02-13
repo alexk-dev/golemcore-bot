@@ -97,7 +97,18 @@ class ToolLoopSystemBddTest {
                         false));
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, null, null);
+        BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
+        BotProperties.ModelRouterProperties router = new BotProperties.ModelRouterProperties();
+
+        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
+                llmPort,
+                toolExecutor,
+                historyWriter,
+                new me.golemcore.bot.domain.system.toolloop.view.DefaultLlmRequestViewBuilder(
+                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
+                settings,
+                router,
+                Clock.fixed(Instant.parse("2026-02-01T00:00:00Z"), ZoneOffset.UTC));
 
         // WHEN: we process one turn
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
@@ -203,7 +214,18 @@ class ToolLoopSystemBddTest {
                 });
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, null, null);
+        BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
+        BotProperties.ModelRouterProperties router = new BotProperties.ModelRouterProperties();
+
+        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
+                llmPort,
+                toolExecutor,
+                historyWriter,
+                new me.golemcore.bot.domain.system.toolloop.view.DefaultLlmRequestViewBuilder(
+                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
+                settings,
+                router,
+                Clock.fixed(Instant.parse("2026-02-01T00:00:00Z"), ZoneOffset.UTC));
 
         // WHEN
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
@@ -282,7 +304,18 @@ class ToolLoopSystemBddTest {
                         false));
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, null, null);
+        BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
+        BotProperties.ModelRouterProperties router = new BotProperties.ModelRouterProperties();
+
+        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
+                llmPort,
+                toolExecutor,
+                historyWriter,
+                new me.golemcore.bot.domain.system.toolloop.view.DefaultLlmRequestViewBuilder(
+                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
+                settings,
+                router,
+                Clock.fixed(Instant.parse("2026-02-01T00:00:00Z"), ZoneOffset.UTC));
 
         // WHEN
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
@@ -359,7 +392,15 @@ class ToolLoopSystemBddTest {
         };
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, settings, null,
+        BotProperties.ModelRouterProperties router = new BotProperties.ModelRouterProperties();
+        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
+                llmPort,
+                toolExecutor,
+                historyWriter,
+                new me.golemcore.bot.domain.system.toolloop.view.DefaultLlmRequestViewBuilder(
+                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
+                settings,
+                router,
                 fastClock);
 
         // WHEN
@@ -414,8 +455,16 @@ class ToolLoopSystemBddTest {
         settings.setDeadlineMs(30000);
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, settings,
-                null);
+        BotProperties.ModelRouterProperties router = new BotProperties.ModelRouterProperties();
+        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
+                llmPort,
+                toolExecutor,
+                historyWriter,
+                new me.golemcore.bot.domain.system.toolloop.view.DefaultLlmRequestViewBuilder(
+                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
+                settings,
+                router,
+                Clock.fixed(Instant.parse("2026-02-01T00:00:00Z"), ZoneOffset.UTC));
 
         // WHEN
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
@@ -484,8 +533,16 @@ class ToolLoopSystemBddTest {
         settings.setStopOnToolFailure(true);
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, settings,
-                null);
+        BotProperties.ModelRouterProperties router = new BotProperties.ModelRouterProperties();
+        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
+                llmPort,
+                toolExecutor,
+                historyWriter,
+                new me.golemcore.bot.domain.system.toolloop.view.DefaultLlmRequestViewBuilder(
+                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
+                settings,
+                router,
+                Clock.fixed(Instant.parse("2026-02-01T00:00:00Z"), ZoneOffset.UTC));
 
         // WHEN
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
@@ -540,8 +597,16 @@ class ToolLoopSystemBddTest {
         settings.setStopOnConfirmationDenied(true);
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, settings,
-                null);
+        BotProperties.ModelRouterProperties router = new BotProperties.ModelRouterProperties();
+        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
+                llmPort,
+                toolExecutor,
+                historyWriter,
+                new me.golemcore.bot.domain.system.toolloop.view.DefaultLlmRequestViewBuilder(
+                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
+                settings,
+                router,
+                Clock.fixed(Instant.parse("2026-02-01T00:00:00Z"), ZoneOffset.UTC));
 
         // WHEN
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
@@ -596,8 +661,16 @@ class ToolLoopSystemBddTest {
         settings.setStopOnToolPolicyDenied(true);
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, settings,
-                null);
+        BotProperties.ModelRouterProperties router = new BotProperties.ModelRouterProperties();
+        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
+                llmPort,
+                toolExecutor,
+                historyWriter,
+                new me.golemcore.bot.domain.system.toolloop.view.DefaultLlmRequestViewBuilder(
+                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
+                settings,
+                router,
+                Clock.fixed(Instant.parse("2026-02-01T00:00:00Z"), ZoneOffset.UTC));
 
         // WHEN
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);

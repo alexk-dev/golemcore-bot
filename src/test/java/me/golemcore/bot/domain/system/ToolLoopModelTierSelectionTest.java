@@ -7,6 +7,7 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.system.toolloop.DefaultHistoryWriter;
 import me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem;
 import me.golemcore.bot.domain.system.toolloop.ToolExecutorPort;
+import me.golemcore.bot.domain.system.toolloop.view.DefaultLlmRequestViewBuilder;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.LlmPort;
 import org.junit.jupiter.api.Test;
@@ -56,7 +57,17 @@ class ToolLoopModelTierSelectionTest {
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(
                 Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC));
 
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, null, router);
+        BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
+
+        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
+                llmPort,
+                toolExecutor,
+                historyWriter,
+                new DefaultLlmRequestViewBuilder(
+                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
+                settings,
+                router,
+                Clock.fixed(Instant.parse("2026-02-01T00:00:00Z"), ZoneOffset.UTC));
 
         // WHEN
         toolLoop.processTurn(ctx);

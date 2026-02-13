@@ -6,13 +6,13 @@ import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolFailureKind;
+import me.golemcore.bot.domain.system.toolloop.view.LlmRequestViewBuilder;
 import me.golemcore.bot.port.outbound.LlmPort;
-
-import java.util.ArrayList;
-import java.util.List;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 import me.golemcore.bot.infrastructure.config.BotProperties;
 
@@ -28,21 +28,25 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
     private final LlmPort llmPort;
     private final ToolExecutorPort toolExecutor;
     private final HistoryWriter historyWriter;
+    private final LlmRequestViewBuilder viewBuilder;
     private final BotProperties.ToolLoopProperties settings;
     private final BotProperties.ModelRouterProperties router;
     private final Clock clock;
 
     public DefaultToolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutor, HistoryWriter historyWriter,
-            BotProperties.ToolLoopProperties settings, BotProperties.ModelRouterProperties router) {
-        this(llmPort, toolExecutor, historyWriter, settings, router, Clock.systemUTC());
+            LlmRequestViewBuilder viewBuilder, BotProperties.ToolLoopProperties settings,
+            BotProperties.ModelRouterProperties router) {
+        this(llmPort, toolExecutor, historyWriter, viewBuilder, settings, router, Clock.systemUTC());
     }
 
     // Visible for testing
     public DefaultToolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutor, HistoryWriter historyWriter,
-            BotProperties.ToolLoopProperties settings, BotProperties.ModelRouterProperties router, Clock clock) {
+            LlmRequestViewBuilder viewBuilder, BotProperties.ToolLoopProperties settings,
+            BotProperties.ModelRouterProperties router, Clock clock) {
         this.llmPort = llmPort;
         this.toolExecutor = toolExecutor;
         this.historyWriter = historyWriter;
+        this.viewBuilder = viewBuilder;
         this.settings = settings;
         this.router = router;
         this.clock = clock;
@@ -183,7 +187,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
     private LlmRequest buildRequest(AgentContext context) {
         ModelSelection selection = selectModel(context.getModelTier());
 
-        List<Message> view = buildMessagesView(context, selection.model);
+        List<Message> view = viewBuilder.buildMessagesView(context, selection.model);
 
         // Track current model for next request (persisted in session metadata)
         storeSelectedModel(context, selection.model);
@@ -197,36 +201,6 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 .toolResults(context.getToolResults())
                 .sessionId(context.getSession() != null ? context.getSession().getId() : null)
                 .build();
-    }
-
-    private List<Message> buildMessagesView(AgentContext context, String currentModel) {
-        List<Message> messages = context.getMessages() != null ? context.getMessages() : List.of();
-        if (context.getSession() == null) {
-            return new ArrayList<>(messages);
-        }
-
-        java.util.Map<String, Object> metadata = context.getSession().getMetadata();
-        String previousModel = metadata != null ? (String) metadata.get(ContextAttributes.LLM_MODEL) : null;
-
-        boolean needsFlatten = false;
-        if (previousModel != null && currentModel != null && !previousModel.equals(currentModel)) {
-            needsFlatten = true;
-        } else if (previousModel == null && hasToolMessages(messages)) {
-            // Legacy session / restored raw history containing tool messages without a
-            // tracked model.
-            needsFlatten = true;
-        }
-
-        if (!needsFlatten) {
-            return new ArrayList<>(messages);
-        }
-
-        // IMPORTANT: do NOT mutate raw history here. Build a safe request-time view.
-        return new ArrayList<>(Message.flattenToolMessages(messages));
-    }
-
-    private boolean hasToolMessages(List<Message> messages) {
-        return messages != null && messages.stream().anyMatch(m -> m.hasToolCalls() || m.isToolMessage());
     }
 
     private void storeSelectedModel(AgentContext context, String model) {
