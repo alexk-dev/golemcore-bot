@@ -7,6 +7,7 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Attachment;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.ConfirmationPort;
@@ -65,7 +66,7 @@ public class ToolCallExecutionService {
             if (requiresConfirmation(toolCall)) {
                 boolean approved = requestConfirmation(context, toolCall);
                 if (!approved) {
-                    ToolResult denied = ToolResult.failure("Cancelled by user");
+                    ToolResult denied = ToolResult.failure(ToolFailureKind.CONFIRMATION_DENIED, "Cancelled by user");
                     String content = truncateToolResult("Error: Cancelled by user", toolCall.getName());
                     context.addToolResult(toolCall.getId(), denied);
                     return new ToolCallExecutionResult(toolCall.getId(), toolCall.getName(), denied, content);
@@ -128,11 +129,12 @@ public class ToolCallExecutionService {
 
         if (tool == null) {
             String available = String.join(", ", toolRegistry.keySet());
-            return ToolResult.failure("Unknown tool: " + toolName + ". Available tools: " + available);
+            return ToolResult.failure(ToolFailureKind.POLICY_DENIED,
+                    "Unknown tool: " + toolName + ". Available tools: " + available);
         }
 
         if (!tool.isEnabled()) {
-            return ToolResult.failure("Tool is disabled: " + toolCall.getName());
+            return ToolResult.failure(ToolFailureKind.POLICY_DENIED, "Tool is disabled: " + toolCall.getName());
         }
 
         try {
@@ -140,7 +142,7 @@ public class ToolCallExecutionService {
             return future.get(TOOL_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         } catch (Exception e) {
             log.error("Tool execution failed: {}", toolCall.getName(), e);
-            return ToolResult.failure("Tool execution failed: " + e.getMessage());
+            return ToolResult.failure(ToolFailureKind.EXECUTION_FAILED, "Tool execution failed: " + e.getMessage());
         }
     }
 

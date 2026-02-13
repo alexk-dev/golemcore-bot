@@ -6,6 +6,7 @@ import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.system.toolloop.DefaultHistoryWriter;
 import me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem;
 import me.golemcore.bot.domain.system.toolloop.ToolExecutionOutcome;
@@ -526,7 +527,7 @@ class ToolLoopSystemBddTest {
                 .thenReturn(new ToolExecutionOutcome(
                         "tc1",
                         "shell",
-                        ToolResult.failure("Cancelled by user"),
+                        ToolResult.failure(ToolFailureKind.CONFIRMATION_DENIED, "Cancelled by user"),
                         "Error: Cancelled by user",
                         false));
 
@@ -581,7 +582,7 @@ class ToolLoopSystemBddTest {
                 .thenReturn(new ToolExecutionOutcome(
                         "tc1",
                         "forbidden",
-                        ToolResult.failure("Unknown tool: forbidden"),
+                        ToolResult.failure(ToolFailureKind.POLICY_DENIED, "Unknown tool: forbidden"),
                         "Error: Unknown tool: forbidden",
                         false));
 

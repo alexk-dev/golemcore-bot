@@ -5,6 +5,7 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.port.outbound.LlmPort;
 
 import java.util.ArrayList;
@@ -91,7 +92,8 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 try {
                     outcome = toolExecutor.execute(context, tc);
                 } catch (Exception e) {
-                    outcome = ToolExecutionOutcome.synthetic(tc, "Tool execution failed: " + e.getMessage());
+                    outcome = ToolExecutionOutcome.synthetic(tc, ToolFailureKind.EXECUTION_FAILED,
+                            "Tool execution failed: " + e.getMessage());
                 }
                 toolExecutions++;
 
@@ -101,14 +103,13 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 if (outcome != null) {
                     historyWriter.appendToolResult(context, outcome);
                     if (outcome.toolResult() != null && !outcome.toolResult().isSuccess()) {
-                        String err = outcome.toolResult().getError();
-                        if (stopOnConfirmationDenied && err != null
-                                && err.toLowerCase().contains("cancelled by user")) {
+                        ToolFailureKind kind = outcome.toolResult().getFailureKind();
+
+                        if (stopOnConfirmationDenied && kind == ToolFailureKind.CONFIRMATION_DENIED) {
                             return stopTurn(context, context.getAttribute(ContextAttributes.LLM_RESPONSE),
                                     response.getToolCalls(), "confirmation denied", llmCalls, toolExecutions);
                         }
-                        if (stopOnToolPolicyDenied && err != null && (err.toLowerCase().contains("unknown tool")
-                                || err.toLowerCase().contains("tool is disabled"))) {
+                        if (stopOnToolPolicyDenied && kind == ToolFailureKind.POLICY_DENIED) {
                             return stopTurn(context, context.getAttribute(ContextAttributes.LLM_RESPONSE),
                                     response.getToolCalls(), "tool denied by policy", llmCalls, toolExecutions);
                         }
@@ -139,7 +140,8 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 if (context.getToolResults() != null && context.getToolResults().containsKey(tc.getId())) {
                     continue;
                 }
-                ToolExecutionOutcome synthetic = ToolExecutionOutcome.synthetic(tc, "Tool loop stopped: " + reason);
+                ToolExecutionOutcome synthetic = ToolExecutionOutcome.synthetic(tc, ToolFailureKind.EXECUTION_FAILED,
+                        "Tool loop stopped: " + reason);
                 context.addToolResult(synthetic.toolCallId(), synthetic.toolResult());
                 historyWriter.appendToolResult(context, synthetic);
             }
