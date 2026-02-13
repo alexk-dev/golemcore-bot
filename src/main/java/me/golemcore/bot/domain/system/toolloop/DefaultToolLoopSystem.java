@@ -73,7 +73,15 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             }
         }
 
-        // Stop: max LLM calls reached (temporary behavior).
+        // Stop: max LLM calls reached. We must not leave the user without feedback.
+        // TODO: replace with configurable limits + synthetic tool outcomes for any
+        // pending calls.
+        historyWriter.appendFinalAssistantAnswer(
+                context,
+                context.getAttribute(ContextAttributes.LLM_RESPONSE),
+                "Tool loop stopped: reached max internal LLM calls (" + maxLlmCalls + ")."
+                        + " Please retry or reduce complexity.");
+
         context.setAttribute(ContextAttributes.LOOP_COMPLETE, true);
         context.setAttribute(FINAL_ANSWER_READY, true);
         return new ToolLoopTurnResult(context, true, llmCalls, toolExecutions);

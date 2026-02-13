@@ -232,4 +232,62 @@ class ToolLoopSystemBddTest {
 
         verify(toolExecutor, times(2)).execute(any(), any());
     }
+
+    @Test
+    void scenarioStop_maxLlmCalls_shouldProduceFinalAssistantFeedback() {
+        // GIVEN: an LLM that always requests the same tool call (never reaches a final
+        // answer)
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType("telegram")
+                .chatId("chat1")
+                .messages(new ArrayList<>())
+                .build();
+
+        session.addMessage(Message.builder()
+                .role("user")
+                .content("Loop forever")
+                .timestamp(NOW)
+                .channelType("telegram")
+                .chatId("chat1")
+                .build());
+
+        AgentContext ctx = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>(session.getMessages()))
+                .build();
+
+        LlmPort llmPort = mock(LlmPort.class);
+        LlmResponse toolCall = LlmResponse.builder()
+                .content("calling tool")
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("tc1")
+                        .name("shell")
+                        .arguments(Map.of("command", "echo hi"))
+                        .build()))
+                .build();
+
+        when(llmPort.chat(any(LlmRequest.class))).thenReturn(CompletableFuture.completedFuture(toolCall));
+
+        ToolExecutorPort toolExecutor = mock(ToolExecutorPort.class);
+        when(toolExecutor.execute(any(AgentContext.class), any(Message.ToolCall.class)))
+                .thenReturn(new ToolExecutionOutcome(
+                        "tc1",
+                        "shell",
+                        ToolResult.success("hi\n"),
+                        "hi\n",
+                        false));
+
+        DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
+        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter);
+
+        // WHEN
+        ToolLoopTurnResult result = toolLoop.processTurn(ctx);
+
+        // THEN: loop ends with a final assistant feedback message
+        assertTrue(result.finalAnswerReady());
+        assertTrue(session.getMessages().stream().anyMatch(m -> "assistant".equals(m.getRole())
+                && m.getContent() != null
+                && m.getContent().contains("Tool loop stopped")));
+    }
 }
