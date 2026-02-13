@@ -84,7 +84,12 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
 
             // 4) Execute tools and append results
             for (Message.ToolCall tc : response.getToolCalls()) {
-                ToolExecutionOutcome outcome = toolExecutor.execute(context, tc);
+                ToolExecutionOutcome outcome;
+                try {
+                    outcome = toolExecutor.execute(context, tc);
+                } catch (Exception e) {
+                    outcome = ToolExecutionOutcome.synthetic(tc, "Tool execution failed: " + e.getMessage());
+                }
                 toolExecutions++;
 
                 if (outcome != null && outcome.toolResult() != null) {

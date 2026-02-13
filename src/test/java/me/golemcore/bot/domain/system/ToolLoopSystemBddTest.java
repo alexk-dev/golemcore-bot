@@ -370,4 +370,66 @@ class ToolLoopSystemBddTest {
         assertTrue(session.getMessages().stream().anyMatch(m -> "tool".equals(m.getRole()) && m.getContent() != null
                 && m.getContent().contains("deadline")));
     }
+
+    @Test
+    void shouldConvertToolExecutorExceptionToToolFailureAndContinueLoop() {
+        // GIVEN
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType("telegram")
+                .chatId("chat1")
+                .build();
+        session.addMessage(Message.builder().role("user").content("hi").build());
+
+        AgentContext ctx = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>(session.getMessages()))
+                .build();
+
+        LlmPort llmPort = mock(LlmPort.class);
+        LlmResponse toolCall = LlmResponse.builder()
+                .content("calling tool")
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("tc1")
+                        .name("shell")
+                        .arguments(Map.of("command", "boom"))
+                        .build()))
+                .build();
+        LlmResponse finalAnswer = LlmResponse.builder()
+                .content("ok after failure")
+                .build();
+
+        when(llmPort.chat(any(LlmRequest.class))).thenReturn(
+                CompletableFuture.completedFuture(toolCall),
+                CompletableFuture.completedFuture(finalAnswer));
+
+        ToolExecutorPort toolExecutor = mock(ToolExecutorPort.class);
+        when(toolExecutor.execute(any(AgentContext.class), any(Message.ToolCall.class)))
+                .thenThrow(new RuntimeException("kaboom"));
+
+        BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
+        settings.setMaxLlmCalls(5);
+        settings.setMaxToolExecutions(5);
+        settings.setDeadlineMs(30000);
+
+        DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
+        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, settings);
+
+        // WHEN
+        ToolLoopTurnResult result = toolLoop.processTurn(ctx);
+
+        // THEN
+        assertTrue(result.finalAnswerReady());
+        verify(llmPort, times(2)).chat(any(LlmRequest.class));
+
+        assertTrue(session.getMessages().stream().anyMatch(m -> "tool".equals(m.getRole())
+                && m.getToolCallId() != null
+                && m.getToolCallId().equals("tc1")
+                && m.getContent() != null
+                && m.getContent().contains("Tool execution failed")));
+
+        assertTrue(session.getMessages().stream().anyMatch(m -> "assistant".equals(m.getRole())
+                && m.getContent() != null
+                && m.getContent().contains("ok after failure")));
+    }
 }
