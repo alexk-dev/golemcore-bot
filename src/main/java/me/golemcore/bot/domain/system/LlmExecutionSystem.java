@@ -28,6 +28,7 @@ import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
+import me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -62,7 +63,7 @@ public class LlmExecutionSystem implements AgentSystem {
     private static final long TIMEOUT_SECONDS = 120;
     private static final int MAX_EMPTY_RETRIES = 1;
     private static final double CHARS_PER_TOKEN = 3.5;
-    private static final String ATTR_LLM_ERROR = "llm.error";
+    private static final String ATTR_LLM_ERROR = ContextAttributes.LLM_ERROR;
 
     @Override
     public String getName() {
@@ -72,6 +73,32 @@ public class LlmExecutionSystem implements AgentSystem {
     @Override
     public int getOrder() {
         return 30; // After context building
+    }
+
+    @Override
+    public boolean shouldProcess(AgentContext context) {
+        // ToolLoopExecutionSystem (order=30) is the new owner of the tool loop.
+        // When it runs, it marks loop.complete/llm.final.ready.
+        // In that case the legacy LlmExecutionSystem must not run again.
+        if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.LOOP_COMPLETE))) {
+            return false;
+        }
+        if (Boolean.TRUE.equals(context.getAttribute(DefaultToolLoopSystem.FINAL_ANSWER_READY))) {
+            return false;
+        }
+
+        // During plan mode we still use legacy LLM -> PlanIntercept flow.
+        Boolean planMode = context.getAttribute(ContextAttributes.PLAN_MODE_ACTIVE);
+        if (Boolean.TRUE.equals(planMode)) {
+            return true;
+        }
+
+        // Safety net: if ToolLoop already produced a response, do not override it.
+        if (context.getAttribute(ContextAttributes.LLM_RESPONSE) != null) {
+            return false;
+        }
+
+        return true;
     }
 
     @Override
@@ -101,7 +128,7 @@ public class LlmExecutionSystem implements AgentSystem {
             Duration latency = Duration.between(start, clock.instant());
 
             // Store response in context
-            context.setAttribute("llm.response", response);
+            context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
             context.setAttribute("llm.latency", latency);
 
             // If there are tool calls, store them for ToolExecutionSystem
@@ -134,7 +161,7 @@ public class LlmExecutionSystem implements AgentSystem {
                         LlmResponse retryResponse = callLlmWithRetry(llmPort, retryRequest,
                                 providerId, model, context);
                         Duration latency = Duration.between(start, clock.instant());
-                        context.setAttribute("llm.response", retryResponse);
+                        context.setAttribute(ContextAttributes.LLM_RESPONSE, retryResponse);
                         context.setAttribute("llm.latency", latency);
                         if (retryResponse.hasToolCalls()) {
                             context.setAttribute("llm.toolCalls", retryResponse.getToolCalls());
