@@ -37,18 +37,32 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
 
         int llmCalls = 0;
         int toolExecutions = 0;
+        int maxLlmCalls = 6; // TODO: make configurable (tool-loop specific)
 
-        // 1) LLM call
-        LlmResponse first = llmPort.chat(buildRequest(context)).join();
-        llmCalls++;
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, first);
+        while (llmCalls < maxLlmCalls) {
+            // 1) LLM call
+            LlmResponse response = llmPort.chat(buildRequest(context)).join();
+            llmCalls++;
+            context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
 
-        if (first != null && first.hasToolCalls()) {
-            // 2) Append assistant message with tool calls
-            historyWriter.appendAssistantToolCalls(context, first, first.getToolCalls());
+            // 2) Final answer (no tool calls)
+            if (response == null || !response.hasToolCalls()) {
+                // History append of final answer is currently owned by ResponseRoutingSystem
+                // in legacy flow. For ToolLoop flow we append here to preserve raw history.
+                if (response != null) {
+                    historyWriter.appendFinalAssistantAnswer(context, response, response.getContent());
+                }
 
-            // 3) Execute tools and append results
-            for (Message.ToolCall tc : first.getToolCalls()) {
+                context.setAttribute(ContextAttributes.LOOP_COMPLETE, true);
+                context.setAttribute(FINAL_ANSWER_READY, true);
+                return new ToolLoopTurnResult(context, true, llmCalls, toolExecutions);
+            }
+
+            // 3) Append assistant message with tool calls
+            historyWriter.appendAssistantToolCalls(context, response, response.getToolCalls());
+
+            // 4) Execute tools and append results
+            for (Message.ToolCall tc : response.getToolCalls()) {
                 ToolExecutionOutcome outcome = toolExecutor.execute(context, tc);
                 toolExecutions++;
 
@@ -57,22 +71,11 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 }
                 historyWriter.appendToolResult(context, outcome);
             }
-
-            // 4) Second LLM call
-            LlmResponse second = llmPort.chat(buildRequest(context)).join();
-            llmCalls++;
-            context.setAttribute(ContextAttributes.LLM_RESPONSE, second);
-
-            // 5) Append final answer
-            historyWriter.appendFinalAssistantAnswer(context, second, second != null ? second.getContent() : null);
-        } else {
-            // No tool calls -> treat as final. (History append is owned by
-            // ResponseRoutingSystem today.)
         }
 
+        // Stop: max LLM calls reached (temporary behavior).
         context.setAttribute(ContextAttributes.LOOP_COMPLETE, true);
         context.setAttribute(FINAL_ANSWER_READY, true);
-
         return new ToolLoopTurnResult(context, true, llmCalls, toolExecutions);
     }
 

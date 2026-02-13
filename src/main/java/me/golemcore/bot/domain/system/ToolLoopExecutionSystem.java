@@ -58,7 +58,7 @@ public class ToolLoopExecutionSystem implements AgentSystem {
 
         // Plan mode should keep using LlmExecutionSystem + PlanInterceptSystem for now,
         // because PlanIntercept expects llm.toolCalls produced by LlmExecutionSystem.
-        Boolean planMode = context.getAttribute("plan.mode.active");
+        Boolean planMode = context.getAttribute(ContextAttributes.PLAN_MODE_ACTIVE);
         if (Boolean.TRUE.equals(planMode)) {
             return false;
         }

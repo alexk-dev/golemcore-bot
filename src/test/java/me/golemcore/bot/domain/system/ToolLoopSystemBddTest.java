@@ -128,4 +128,108 @@ class ToolLoopSystemBddTest {
         // AND: tool was executed once
         verify(toolExecutor, times(1)).execute(any(), any());
     }
+
+    @Test
+    void scenarioA2_multiStep_toolCallThenToolResult_repeated_untilFinalAnswer_insideOneTurn() {
+        // GIVEN: a session with an incoming user message
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType("telegram")
+                .chatId("chat1")
+                .messages(new ArrayList<>())
+                .build();
+
+        Message user = Message.builder()
+                .role("user")
+                .content("Do two tool steps")
+                .timestamp(NOW)
+                .channelType("telegram")
+                .chatId("chat1")
+                .build();
+        session.addMessage(user);
+
+        AgentContext ctx = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>(session.getMessages()))
+                .build();
+
+        // AND: scripted LLM responses: 1) tool call, 2) tool call, 3) final answer
+        LlmPort llmPort = mock(LlmPort.class);
+        AtomicInteger llmCalls = new AtomicInteger();
+
+        LlmResponse r1 = LlmResponse.builder()
+                .content("step 1")
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("tc1")
+                        .name("shell")
+                        .arguments(Map.of("command", "echo one"))
+                        .build()))
+                .build();
+
+        LlmResponse r2 = LlmResponse.builder()
+                .content("step 2")
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("tc2")
+                        .name("shell")
+                        .arguments(Map.of("command", "echo two"))
+                        .build()))
+                .build();
+
+        LlmResponse r3 = LlmResponse.builder()
+                .content("final")
+                .toolCalls(List.of())
+                .finishReason("stop")
+                .build();
+
+        when(llmPort.chat(any(LlmRequest.class))).thenAnswer(inv -> {
+            int n = llmCalls.incrementAndGet();
+            return CompletableFuture.completedFuture(n == 1 ? r1 : (n == 2 ? r2 : r3));
+        });
+
+        ToolExecutorPort toolExecutor = mock(ToolExecutorPort.class);
+        when(toolExecutor.execute(any(AgentContext.class), any(Message.ToolCall.class)))
+                .thenAnswer(inv -> {
+                    Message.ToolCall tc = inv.getArgument(1);
+                    String out = tc.getId().equals("tc1") ? "one\n" : "two\n";
+                    return new ToolExecutionOutcome(
+                            tc.getId(),
+                            tc.getName(),
+                            ToolResult.success(out),
+                            out,
+                            false);
+                });
+
+        DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
+        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter);
+
+        // WHEN
+        ToolLoopTurnResult result = toolLoop.processTurn(ctx);
+
+        // THEN
+        assertEquals(3, llmCalls.get());
+        assertEquals(3, result.llmCalls());
+        assertTrue(result.finalAnswerReady());
+
+        List<Message> history = session.getMessages();
+        // user + (assistant tc1) + (tool tc1) + (assistant tc2) + (tool tc2) +
+        // (assistant final)
+        assertEquals(6, history.size());
+
+        assertEquals("user", history.get(0).getRole());
+
+        assertEquals("assistant", history.get(1).getRole());
+        assertEquals("tc1", history.get(1).getToolCalls().get(0).getId());
+        assertEquals("tool", history.get(2).getRole());
+        assertEquals("tc1", history.get(2).getToolCallId());
+
+        assertEquals("assistant", history.get(3).getRole());
+        assertEquals("tc2", history.get(3).getToolCalls().get(0).getId());
+        assertEquals("tool", history.get(4).getRole());
+        assertEquals("tc2", history.get(4).getToolCallId());
+
+        assertEquals("assistant", history.get(5).getRole());
+        assertEquals("final", history.get(5).getContent());
+
+        verify(toolExecutor, times(2)).execute(any(), any());
+    }
 }
