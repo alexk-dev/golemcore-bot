@@ -587,33 +587,39 @@ Shows:
 
 ## Advanced: models.json
 
-Edit `models.json` in working directory to add custom models:
+Edit `models.json` in working directory to add custom models.
+
+> Note: `models.json` is a **map** (object) keyed by model name, not an array.
 
 ```json
 {
-  "models": [
-    {
-      "id": "openai/gpt-5.1",
+  "models": {
+    "gpt-5.1": {
       "provider": "openai",
-      "requiresReasoning": true,
+      "reasoningRequired": true,
       "supportsTemperature": false,
       "maxInputTokens": 128000
     },
-    {
-      "id": "openai-compatible/my-model",
-      "provider": "openai-compatible",
-      "requiresReasoning": false,
+    "my-model": {
+      "provider": "custom",
+      "reasoningRequired": false,
       "supportsTemperature": true,
       "maxInputTokens": 32000
     }
-  ]
+  },
+  "defaults": {
+    "provider": "openai",
+    "reasoningRequired": false,
+    "supportsTemperature": true,
+    "maxInputTokens": 128000
+  }
 }
 ```
 
 Then reference in config:
 
 ```bash
-export BOT_ROUTER_BALANCED_MODEL=openai-compatible/my-model
+export BOT_ROUTER_BALANCED_MODEL=custom/my-model
 ```
 
 ---
