@@ -29,8 +29,8 @@
 
 ### Where the loop currently “lives”
 - `AgentLoop` performs iterations and decides whether to continue based on:
-  - `ContextAttributes.TOOLS_EXECUTED` and
-  - whether the last `LlmResponse` contains tool calls.
+  - `ContextAttributes.FINAL_ANSWER_READY` and
+  - whether the last `LlmResponse` contains tool calls (`LlmResponse.hasToolCalls()`).
 
 ### Existing model-switch masking (important requirement)
 - `LlmExecutionSystem` currently performs `flattenOnModelSwitch()` which:
@@ -230,7 +230,7 @@ Add/Update `docs/TOOL_LOOP.md`:
 - conversation history writing (assistant tool-call message + tool result messages)
 - attachment extraction (base64 screenshot / file_bytes)
 - truncation (`maxToolResultChars`)
-- loop continuation signaling (`ContextAttributes.TOOLS_EXECUTED`)
+- loop continuation signaling (`ContextAttributes.FINAL_ANSWER_READY`) (legacy `TOOLS_EXECUTED` removed)
 
 **Action:** split into smaller services so `ToolLoopSystem` can own loop decisions and history formation.
 
@@ -521,7 +521,7 @@ Notes:
 
 ### 21.1 ToolExecutionSystem currently does orchestration + persistence + UX
 Observations:
-- Reads tool calls from `context["llm.toolCalls"]`.
+- Reads tool calls from `context[ContextAttributes.LLM_RESPONSE]` (via `LlmResponse.getToolCalls()`).
 - Adds **assistant** message with toolCalls to both `context.messages` and `session.messages`.
 - Executes tools sequentially, handling:
   - confirmation policy + async user confirmation
@@ -530,7 +530,7 @@ Observations:
   - attachment extraction
   - truncation of tool output to `autoCompact.maxToolResultChars`
 - Adds **tool** result messages to both `context.messages` and `session.messages`.
-- Sets `context["tools.executed"]=true` for loop continuation.
+- Legacy: used to set `context["tools.executed"]=true` for loop continuation (attribute removed).
 
 This is a lot of responsibilities; ToolLoopSystem should own the orchestration/loop, while ToolExecutionSystem should become a lower-level executor (or adapter) that:
 - executes a *single* tool call and returns `ToolResult` (+ attachments)
@@ -581,8 +581,8 @@ ToolLoopSystem should decide execution strategy:
 ### 22.2 Current continuation contract (problematic for ToolLoopSystem)
 `shouldContinueLoop()` continues only when:
 - `ContextAttributes.LOOP_COMPLETE != true`, and
-- `tools.executed == true`, and
-- `context["llm.response"].hasToolCalls() == true`
+- `ContextAttributes.FINAL_ANSWER_READY == false`, and
+- `ContextAttributes.LLM_RESPONSE.hasToolCalls() == true`
 
 Implications:
 - The “continue” signal is **overloaded** onto `tools.executed` even when no tools were executed (e.g. skill auto-transition, plan intercept).
@@ -990,14 +990,17 @@ Skill transitions are conceptually similar to tool execution as “step outcomes
 ## 29) Implementation roadmap (checkboxes) — migrate to ToolLoopSystem with Raw History + request-time views
 
 ### 29.1 Phase 0 — invariants, terminology, and attribute key cleanup
+
+**Status update (done by design):**
+- We **do not** store tool calls in a separate context attribute (`llm.toolCalls`). Tool calls live inside `ContextAttributes.LLM_RESPONSE` as `LlmResponse.toolCalls`.
+- We **do not** use `tools.executed` as a loop continuation signal anymore.
+
 - [ ] Introduce canonical `ContextAttributes` keys for:
-  - [ ] `LLM_RESPONSE` (and remove `"llm.response"` usage)
-  - [ ] `LLM_TOOL_CALLS` (and remove `"llm.toolCalls"` usage)
-  - [ ] `TOOLS_EXECUTED` (remove `"tools.executed"` usage)
-  - [ ] `FINAL_RESPONSE_READY` (new)
-  - [ ] `LOOP_DECISION` (new, structured) or `NEEDS_ANOTHER_LLM_PASS` (boolean)
-- [ ] Add temporary compatibility shim(s): read old key, write new key, log deprecation.
-- [ ] Add regression tests that prevent re-introduction of string-literal keys.
+  - [ ] `LLM_RESPONSE` (and remove `"llm.response"` usage everywhere)
+  - [ ] `FINAL_ANSWER_READY` (already exists) — the canonical finality flag for a single pipeline pass
+  - [ ] `LOOP_DECISION` (optional; structured) or `NEEDS_ANOTHER_LLM_PASS` (boolean) — only if we still need multi-pass orchestration outside ToolLoop
+- [ ] Remove remaining legacy string-literal usages of `"llm.toolCalls"` and `"tools.executed"` from docs/tests (code usage already removed).
+- [ ] Add regression tests that prevent re-introduction of legacy string-literal keys.
 
 ### 29.2 Phase 1 — data model support for provider-specific tool-call metadata (Variant A)
 - [ ] Extend `Message.ToolCall` to preserve provider-specific fields:
