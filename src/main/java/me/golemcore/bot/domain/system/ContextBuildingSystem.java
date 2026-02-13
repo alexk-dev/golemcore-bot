@@ -42,6 +42,7 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import me.golemcore.bot.domain.model.ContextAttributes;
 
 /**
  * System for assembling the complete LLM system prompt with memory, skills,
@@ -86,13 +87,13 @@ public class ContextBuildingSystem implements AgentSystem {
         log.debug("[Context] Building context...");
 
         // Handle skill transitions (from SkillTransitionTool or SkillPipelineSystem)
-        String transitionTarget = context.getAttribute("skill.transition.target");
+        String transitionTarget = context.getAttribute(ContextAttributes.SKILL_TRANSITION_TARGET);
         if (transitionTarget != null) {
             skillComponent.findByName(transitionTarget).ifPresent(skill -> {
                 context.setActiveSkill(skill);
                 log.info("[Context] Skill transition: → {}", skill.getName());
             });
-            context.setAttribute("skill.transition.target", null);
+            context.setAttribute(ContextAttributes.SKILL_TRANSITION_TARGET, null);
         }
 
         // Resolve model tier from user preferences and active skill
@@ -151,7 +152,7 @@ public class ContextBuildingSystem implements AgentSystem {
                 try {
                     String ragContext = ragPort.query(userQuery, properties.getRag().getQueryMode()).join();
                     if (ragContext != null && !ragContext.isBlank()) {
-                        context.setAttribute("rag.context", ragContext);
+                        context.setAttribute(ContextAttributes.RAG_CONTEXT, ragContext);
                         log.debug("[Context] RAG context: {} chars", ragContext.length());
                     }
                 } catch (Exception e) {
@@ -203,7 +204,7 @@ public class ContextBuildingSystem implements AgentSystem {
             sb.append(DOUBLE_NEWLINE);
         }
 
-        String ragContext = context.getAttribute("rag.context");
+        String ragContext = context.getAttribute(ContextAttributes.RAG_CONTEXT);
         if (ragContext != null && !ragContext.isBlank()) {
             sb.append("# Relevant Memory\n");
             sb.append(ragContext);

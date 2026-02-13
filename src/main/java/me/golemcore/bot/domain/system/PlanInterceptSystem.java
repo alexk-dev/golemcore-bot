@@ -77,7 +77,7 @@ public class PlanInterceptSystem implements AgentSystem {
         if (!planService.isPlanModeActive()) {
             return false;
         }
-        List<Message.ToolCall> toolCalls = context.getAttribute("llm.toolCalls");
+        List<Message.ToolCall> toolCalls = context.getAttribute(ContextAttributes.LLM_TOOL_CALLS);
         return toolCalls != null && !toolCalls.isEmpty();
     }
 
@@ -90,7 +90,7 @@ public class PlanInterceptSystem implements AgentSystem {
         }
 
         @SuppressWarnings("unchecked")
-        List<Message.ToolCall> toolCalls = context.getAttribute("llm.toolCalls");
+        List<Message.ToolCall> toolCalls = context.getAttribute(ContextAttributes.LLM_TOOL_CALLS);
         LlmResponse llmResponse = context.getAttribute(ContextAttributes.LLM_RESPONSE);
 
         log.info("[PlanIntercept] Intercepting {} tool call(s) for plan '{}'", toolCalls.size(), planId);
@@ -131,7 +131,7 @@ public class PlanInterceptSystem implements AgentSystem {
         }
 
         // Clear tool calls to prevent ToolExecutionSystem from executing them
-        context.setAttribute("llm.toolCalls", null);
+        context.setAttribute(ContextAttributes.LLM_TOOL_CALLS, null);
 
         // Signal that tools were "handled" so the loop continues for more planning
         context.setAttribute(ContextAttributes.TOOLS_EXECUTED, true);

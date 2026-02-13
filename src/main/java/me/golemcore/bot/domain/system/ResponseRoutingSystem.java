@@ -80,7 +80,7 @@ public class ResponseRoutingSystem implements AgentSystem {
 
     @Override
     public AgentContext process(AgentContext context) {
-        String transitionTarget = context.getAttribute("skill.transition.target");
+        String transitionTarget = context.getAttribute(ContextAttributes.SKILL_TRANSITION_TARGET);
         if (transitionTarget != null) {
             log.debug("[Response] Pipeline transition pending (→ {}), skipping response routing", transitionTarget);
             return context;
@@ -206,10 +206,10 @@ public class ResponseRoutingSystem implements AgentSystem {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error("[Response] FAILED to send (interrupted): {}", e.getMessage(), e);
-            context.setAttribute("routing.error", e.getMessage());
+            context.setAttribute(ContextAttributes.ROUTING_ERROR, e.getMessage());
         } catch (Exception e) {
             log.error("[Response] FAILED to send: {}", e.getMessage(), e);
-            context.setAttribute("routing.error", e.getMessage());
+            context.setAttribute(ContextAttributes.ROUTING_ERROR, e.getMessage());
         }
 
         sendPendingAttachments(context);

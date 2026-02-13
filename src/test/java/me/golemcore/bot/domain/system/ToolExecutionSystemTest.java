@@ -3,6 +3,7 @@ package me.golemcore.bot.domain.system;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Attachment;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
@@ -92,8 +93,8 @@ class ToolExecutionSystemTest {
                 .messages(new ArrayList<>())
                 .build();
 
-        context.setAttribute("llm.toolCalls", toolCalls);
-        context.setAttribute("llm.response", llmResponse);
+        context.setAttribute(ContextAttributes.LLM_TOOL_CALLS, toolCalls);
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, llmResponse);
         return context;
     }
 
@@ -555,7 +556,7 @@ class ToolExecutionSystemTest {
     @Test
     void noToolCallsDoesNothing() {
         AgentContext context = createContextWithToolCalls(List.of());
-        context.setAttribute("llm.toolCalls", null);
+        context.setAttribute(ContextAttributes.LLM_TOOL_CALLS, null);
 
         AgentContext result = system.process(context);
 
@@ -588,7 +589,7 @@ class ToolExecutionSystemTest {
         assertEquals(3, context.getMessages().size());
         verify(shellTool).execute(any());
         verify(dateTimeTool).execute(any());
-        assertTrue((Boolean) context.getAttribute("tools.executed"));
+        assertTrue((Boolean) context.getAttribute(ContextAttributes.TOOLS_EXECUTED));
     }
 
     @Test

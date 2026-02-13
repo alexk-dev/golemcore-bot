@@ -80,7 +80,7 @@ public class ToolLoopExecutionSystem implements AgentSystem {
 
         // Ensure old loop continuation doesn't kick in.
         context.setAttribute(ContextAttributes.TOOLS_EXECUTED, false);
-        context.setAttribute("llm.toolCalls", null);
+        context.setAttribute(ContextAttributes.LLM_TOOL_CALLS, null);
 
         return context;
     }

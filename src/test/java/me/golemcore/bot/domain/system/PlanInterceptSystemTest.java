@@ -39,7 +39,7 @@ class PlanInterceptSystemTest {
     private static final String OP_WRITE = "write";
     private static final String OP_READ = "read";
     private static final String KEY_COMMAND = "command";
-    private static final String LLM_TOOL_CALLS = "llm.toolCalls";
+    private static final String LLM_TOOL_CALLS = ContextAttributes.LLM_TOOL_CALLS;
     private static final String TOOL_BROWSER = "browser";
 
     private PlanInterceptSystem system;

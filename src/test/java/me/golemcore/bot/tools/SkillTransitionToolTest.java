@@ -17,6 +17,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
+import me.golemcore.bot.domain.model.ContextAttributes;
 
 class SkillTransitionToolTest {
 
@@ -77,7 +78,7 @@ class SkillTransitionToolTest {
 
         // Verify the context was updated
         AgentContext ctx = AgentContextHolder.get();
-        assertEquals(CODE_WRITER, ctx.getAttribute("skill.transition.target"));
+        assertEquals(CODE_WRITER, ctx.getAttribute(ContextAttributes.SKILL_TRANSITION_TARGET));
     }
 
     @Test

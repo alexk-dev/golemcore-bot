@@ -103,7 +103,7 @@ class RagIndexingSystemTest {
         AgentContext context = AgentContext.builder()
                 .messages(new ArrayList<>())
                 .build();
-        context.setAttribute("llm.response", LlmResponse.builder().content("response").build());
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, LlmResponse.builder().content("response").build());
 
         system.process(context);
         verify(ragPort, never()).index(anyString());
@@ -124,7 +124,7 @@ class RagIndexingSystemTest {
     void skipsWhenLlmResponseEmpty() {
         AgentContext context = buildContext("test question about something", "");
         // Override the response to have blank content
-        context.setAttribute("llm.response", LlmResponse.builder().content("").build());
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, LlmResponse.builder().content("").build());
 
         system.process(context);
         verify(ragPort, never()).index(anyString());
@@ -167,7 +167,7 @@ class RagIndexingSystemTest {
         AgentContext context = AgentContext.builder()
                 .messages(messages)
                 .build();
-        context.setAttribute("llm.response",
+        context.setAttribute(ContextAttributes.LLM_RESPONSE,
                 LlmResponse.builder().content(assistantText).build());
         return context;
     }

@@ -81,7 +81,7 @@ class PlanFinalizationSystemTest {
         when(planService.isPlanModeActive()).thenReturn(true);
         AgentContext context = buildContext("Some response");
         List<Object> toolCalls = List.of("tc1");
-        context.setAttribute("llm.toolCalls", toolCalls);
+        context.setAttribute(ContextAttributes.LLM_TOOL_CALLS, toolCalls);
         assertFalse(system.shouldProcess(context));
     }
 
@@ -201,7 +201,7 @@ class PlanFinalizationSystemTest {
     void shouldProcessWhenToolCallsListIsEmpty() {
         when(planService.isPlanModeActive()).thenReturn(true);
         AgentContext context = buildContext("Some text response");
-        context.setAttribute("llm.toolCalls", List.of());
+        context.setAttribute(ContextAttributes.LLM_TOOL_CALLS, List.of());
         assertTrue(system.shouldProcess(context));
     }
 

@@ -2,6 +2,7 @@ package me.golemcore.bot.domain.system;
 
 import me.golemcore.bot.domain.component.MemoryComponent;
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
@@ -22,7 +23,7 @@ class MemoryPersistSystemTest {
     private static final String CONTENT_REPLY = "reply";
     private static final String CONTENT_RESPONSE = "response";
     private static final String SESSION_ID = "test";
-    private static final String ATTR_LLM_RESPONSE = "llm.response";
+    private static final String ATTR_LLM_RESPONSE = ContextAttributes.LLM_RESPONSE;
 
     private MemoryComponent memoryComponent;
     private MemoryPersistSystem system;

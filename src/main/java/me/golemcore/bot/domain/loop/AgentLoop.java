@@ -201,7 +201,7 @@ public class AgentLoop {
                 } catch (Exception e) {
                     log.error("System '{}' FAILED after {}ms: {}", system.getName(), clock.millis() - startMs,
                             e.getMessage(), e);
-                    context.setAttribute("system.error." + system.getName(), e.getMessage());
+                    context.setAttribute(ContextAttributes.SYSTEM_ERROR + system.getName(), e.getMessage());
                 }
             }
 
@@ -217,14 +217,14 @@ public class AgentLoop {
             }
 
             log.debug("Continuing to next iteration (tools were executed)");
-            context.setAttribute("llm.toolCalls", null);
-            context.setAttribute("tools.executed", false);
-            context.setAttribute("skill.transition.target", null); // reset transition
+            context.setAttribute(ContextAttributes.LLM_TOOL_CALLS, null);
+            context.setAttribute(ContextAttributes.TOOLS_EXECUTED, false);
+            context.setAttribute(ContextAttributes.SKILL_TRANSITION_TARGET, null); // reset transition
             context.getToolResults().clear();
         }
 
         if (reachedLimit) {
-            context.setAttribute("iteration.limit.reached", true);
+            context.setAttribute(ContextAttributes.ITERATION_LIMIT_REACHED, true);
             String limitMessage = preferencesService.getMessage("system.iteration.limit", maxIterations);
 
             context.getSession().addMessage(Message.builder()
@@ -261,9 +261,9 @@ public class AgentLoop {
             return false;
         }
 
-        Boolean toolsExecuted = context.getAttribute("tools.executed");
+        Boolean toolsExecuted = context.getAttribute(ContextAttributes.TOOLS_EXECUTED);
         if (Boolean.TRUE.equals(toolsExecuted)) {
-            LlmResponse response = context.getAttribute("llm.response");
+            LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
             if (response != null && response.hasToolCalls()) {
                 return true;
             }
@@ -339,11 +339,12 @@ public class AgentLoop {
             errors.add(llmError);
         }
         for (Map.Entry<String, Object> entry : context.getAttributes().entrySet()) {
-            if (entry.getKey().startsWith("system.error.") && entry.getValue() instanceof String errorMsg) {
+            if (entry.getKey().startsWith(ContextAttributes.SYSTEM_ERROR)
+                    && entry.getValue() instanceof String errorMsg) {
                 errors.add(errorMsg);
             }
         }
-        String routingError = context.getAttribute("routing.error");
+        String routingError = context.getAttribute(ContextAttributes.ROUTING_ERROR);
         if (routingError != null) {
             errors.add(routingError);
         }

@@ -97,7 +97,7 @@ class ToolLoopSystemBddTest {
                         false));
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, null);
+        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, null, null);
 
         // WHEN: we process one turn
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
@@ -203,7 +203,7 @@ class ToolLoopSystemBddTest {
                 });
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, null);
+        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, null, null);
 
         // WHEN
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
@@ -282,7 +282,7 @@ class ToolLoopSystemBddTest {
                         false));
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, null);
+        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, null, null);
 
         // WHEN
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
@@ -359,7 +359,7 @@ class ToolLoopSystemBddTest {
         };
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, settings,
+        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, settings, null,
                 fastClock);
 
         // WHEN
@@ -414,7 +414,8 @@ class ToolLoopSystemBddTest {
         settings.setDeadlineMs(30000);
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, settings);
+        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, settings,
+                null);
 
         // WHEN
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
@@ -483,7 +484,8 @@ class ToolLoopSystemBddTest {
         settings.setStopOnToolFailure(true);
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, settings);
+        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, settings,
+                null);
 
         // WHEN
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
@@ -538,7 +540,8 @@ class ToolLoopSystemBddTest {
         settings.setStopOnConfirmationDenied(true);
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, settings);
+        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, settings,
+                null);
 
         // WHEN
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
@@ -593,7 +596,8 @@ class ToolLoopSystemBddTest {
         settings.setStopOnToolPolicyDenied(true);
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, settings);
+        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, settings,
+                null);
 
         // WHEN
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);

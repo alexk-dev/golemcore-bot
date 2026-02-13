@@ -142,8 +142,8 @@ class AgentLoopTest {
                             .toolCalls(List
                                     .of(Message.ToolCall.builder().id("tc1").name("test").arguments(Map.of()).build()))
                             .build();
-                    context.setAttribute("llm.response", response);
-                    context.setAttribute("tools.executed", true);
+                    context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+                    context.setAttribute(ContextAttributes.TOOLS_EXECUTED, true);
                 }
                 return context;
             }
@@ -222,8 +222,8 @@ class AgentLoopTest {
                         .toolCalls(
                                 List.of(Message.ToolCall.builder().id("tc1").name("test").arguments(Map.of()).build()))
                         .build();
-                context.setAttribute("llm.response", response);
-                context.setAttribute("tools.executed", true);
+                context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+                context.setAttribute(ContextAttributes.TOOLS_EXECUTED, true);
                 return context;
             }
         };
@@ -463,9 +463,9 @@ class AgentLoopTest {
                         .toolCalls(List.of(
                                 Message.ToolCall.builder().id("tc1").name("send_voice").arguments(Map.of()).build()))
                         .build();
-                context.setAttribute("llm.response", response);
-                context.setAttribute("tools.executed", true);
-                context.setAttribute("loop.complete", true);
+                context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+                context.setAttribute(ContextAttributes.TOOLS_EXECUTED, true);
+                context.setAttribute(ContextAttributes.LOOP_COMPLETE, true);
                 return context;
             }
         };
@@ -774,7 +774,7 @@ class AgentLoopTest {
 
             @Override
             public AgentContext process(AgentContext context) {
-                context.setAttribute("routing.error", "Connection reset");
+                context.setAttribute(ContextAttributes.ROUTING_ERROR, "Connection reset");
                 return context;
             }
         };

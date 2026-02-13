@@ -30,6 +30,6 @@ public class ToolLoopConfiguration {
     public ToolLoopSystem toolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutorPort,
             HistoryWriter historyWriter, BotProperties botProperties) {
         return new DefaultToolLoopSystem(llmPort, toolExecutorPort, historyWriter,
-                botProperties.getToolLoop());
+                botProperties.getToolLoop(), botProperties.getRouter());
     }
 }

@@ -261,7 +261,7 @@ class ResponseRoutingSystemTest {
         AgentContext context = createContext();
         LlmResponse response = LlmResponse.builder().content("response text").build();
         context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-        context.setAttribute("skill.transition.target", "next-skill");
+        context.setAttribute(ContextAttributes.SKILL_TRANSITION_TARGET, "next-skill");
 
         system.process(context);
 
@@ -354,7 +354,7 @@ class ResponseRoutingSystemTest {
 
         system.process(context);
 
-        String error = (String) context.getAttribute("routing.error");
+        String error = (String) context.getAttribute(ContextAttributes.ROUTING_ERROR);
         assertNotNull(error);
         assertTrue(error.contains("send failed"));
     }

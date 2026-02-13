@@ -33,6 +33,7 @@ import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
+import me.golemcore.bot.domain.model.ContextAttributes;
 
 class ContextBuildingSystemPromptTest {
 
@@ -361,11 +362,11 @@ class ContextBuildingSystemPromptTest {
         when(skillComponent.findByName(SKILL_PROCESSING)).thenReturn(Optional.of(targetSkill));
 
         AgentContext ctx = createContext();
-        ctx.setAttribute("skill.transition.target", SKILL_PROCESSING);
+        ctx.setAttribute(ContextAttributes.SKILL_TRANSITION_TARGET, SKILL_PROCESSING);
         system.process(ctx);
 
         assertEquals(targetSkill, ctx.getActiveSkill());
-        assertNull(ctx.getAttribute("skill.transition.target")); // cleared after transition
+        assertNull(ctx.getAttribute(ContextAttributes.SKILL_TRANSITION_TARGET)); // cleared after transition
         assertTrue(ctx.getSystemPrompt().contains("# Active Skill: processing"));
     }
 

@@ -21,6 +21,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import me.golemcore.bot.domain.model.ContextAttributes;
 
 /**
  * Pure tool-call execution service: executes tools + confirmation gating +
@@ -246,10 +247,10 @@ public class ToolCallExecutionService {
         }
 
         if (attachment != null) {
-            List<Attachment> pending = context.getAttribute("pendingAttachments");
+            List<Attachment> pending = context.getAttribute(ContextAttributes.PENDING_ATTACHMENTS);
             if (pending == null) {
                 pending = new ArrayList<>();
-                context.setAttribute("pendingAttachments", pending);
+                context.setAttribute(ContextAttributes.PENDING_ATTACHMENTS, pending);
             }
             pending.add(attachment);
             log.debug("[Tools] Queued attachment: {} ({}, {} bytes)",

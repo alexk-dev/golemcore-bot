@@ -19,6 +19,7 @@ package me.golemcore.bot.domain.system;
  */
 
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.infrastructure.config.BotProperties;
@@ -76,7 +77,7 @@ public class RagIndexingSystem implements AgentSystem {
             return context;
         }
 
-        LlmResponse response = context.getAttribute("llm.response");
+        LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
         if (response == null || response.getContent() == null || response.getContent().isBlank()) {
             return context;
         }

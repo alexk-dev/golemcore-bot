@@ -34,6 +34,7 @@ import org.springframework.stereotype.Component;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import me.golemcore.bot.domain.model.ContextAttributes;
 
 /**
  * Tool for explicit skill transitions within a pipeline.
@@ -114,7 +115,7 @@ public class SkillTransitionTool implements ToolComponent {
             return CompletableFuture.completedFuture(ToolResult.failure("No agent context available"));
         }
 
-        context.setAttribute("skill.transition.target", targetSkill);
+        context.setAttribute(ContextAttributes.SKILL_TRANSITION_TARGET, targetSkill);
 
         log.info("[SkillTransition] Transitioning to skill '{}' (reason: {})", targetSkill, reason);
 

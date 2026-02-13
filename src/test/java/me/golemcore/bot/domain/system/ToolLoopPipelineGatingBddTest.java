@@ -119,7 +119,7 @@ class ToolLoopPipelineGatingBddTest {
             var context = invocation.getArgument(0, me.golemcore.bot.domain.model.AgentContext.class);
             context.setAttribute(ContextAttributes.LLM_RESPONSE, LlmResponse.builder().content("final").build());
             context.setAttribute(ContextAttributes.LOOP_COMPLETE, true);
-            context.setAttribute(DefaultToolLoopSystem.FINAL_ANSWER_READY, true);
+            context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
             return null;
         }).when(toolLoopSystem).processTurn(any());
 
@@ -223,7 +223,7 @@ class ToolLoopPipelineGatingBddTest {
                     .content("planning...")
                     .toolCalls(List.of(tc))
                     .build());
-            context.setAttribute("llm.toolCalls", List.of(tc));
+            context.setAttribute(ContextAttributes.LLM_TOOL_CALLS, List.of(tc));
             return context;
         }).when(legacyLlm).process(any());
 

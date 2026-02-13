@@ -22,7 +22,6 @@ import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
-import me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.ToolCallExecutionResult;
@@ -81,7 +80,7 @@ public class ToolExecutionSystem implements AgentSystem {
     @Override
     public AgentContext process(AgentContext context) {
         @SuppressWarnings("unchecked")
-        List<Message.ToolCall> toolCalls = context.getAttribute("llm.toolCalls");
+        List<Message.ToolCall> toolCalls = context.getAttribute(ContextAttributes.LLM_TOOL_CALLS);
 
         if (toolCalls == null || toolCalls.isEmpty()) {
             log.debug("[Tools] No tool calls to execute");
@@ -94,7 +93,7 @@ public class ToolExecutionSystem implements AgentSystem {
         // messages
         // and sets tools.executed for AgentLoop continuation.
 
-        me.golemcore.bot.domain.model.LlmResponse llmResponse = context.getAttribute("llm.response");
+        me.golemcore.bot.domain.model.LlmResponse llmResponse = context.getAttribute(ContextAttributes.LLM_RESPONSE);
         Message assistantMessage = Message.builder()
                 .id(UUID.randomUUID().toString())
                 .role("assistant")
@@ -125,7 +124,7 @@ public class ToolExecutionSystem implements AgentSystem {
             context.getSession().addMessage(toolMessage);
         }
 
-        context.setAttribute("tools.executed", true);
+        context.setAttribute(ContextAttributes.TOOLS_EXECUTED, true);
         return context;
     }
 
@@ -136,11 +135,11 @@ public class ToolExecutionSystem implements AgentSystem {
         if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.LOOP_COMPLETE))) {
             return false;
         }
-        if (Boolean.TRUE.equals(context.getAttribute(DefaultToolLoopSystem.FINAL_ANSWER_READY))) {
+        if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.FINAL_ANSWER_READY))) {
             return false;
         }
 
-        List<?> toolCalls = context.getAttribute("llm.toolCalls");
+        List<?> toolCalls = context.getAttribute(ContextAttributes.LLM_TOOL_CALLS);
         return toolCalls != null && !toolCalls.isEmpty();
     }
 

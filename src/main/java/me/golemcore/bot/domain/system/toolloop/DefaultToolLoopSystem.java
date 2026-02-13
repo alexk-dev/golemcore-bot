@@ -25,26 +25,26 @@ import me.golemcore.bot.infrastructure.config.BotProperties;
  */
 public class DefaultToolLoopSystem implements ToolLoopSystem {
 
-    public static final String FINAL_ANSWER_READY = "llm.final.ready";
-
     private final LlmPort llmPort;
     private final ToolExecutorPort toolExecutor;
     private final HistoryWriter historyWriter;
     private final BotProperties.ToolLoopProperties settings;
+    private final BotProperties.ModelRouterProperties router;
     private final Clock clock;
 
     public DefaultToolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutor, HistoryWriter historyWriter,
-            BotProperties.ToolLoopProperties settings) {
-        this(llmPort, toolExecutor, historyWriter, settings, Clock.systemUTC());
+            BotProperties.ToolLoopProperties settings, BotProperties.ModelRouterProperties router) {
+        this(llmPort, toolExecutor, historyWriter, settings, router, Clock.systemUTC());
     }
 
     // Visible for testing
     public DefaultToolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutor, HistoryWriter historyWriter,
-            BotProperties.ToolLoopProperties settings, Clock clock) {
+            BotProperties.ToolLoopProperties settings, BotProperties.ModelRouterProperties router, Clock clock) {
         this.llmPort = llmPort;
         this.toolExecutor = toolExecutor;
         this.historyWriter = historyWriter;
         this.settings = settings;
+        this.router = router;
         this.clock = clock;
     }
 
@@ -79,7 +79,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 }
 
                 context.setAttribute(ContextAttributes.LOOP_COMPLETE, true);
-                context.setAttribute(FINAL_ANSWER_READY, true);
+                context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
                 return new ToolLoopTurnResult(context, true, llmCalls, toolExecutions);
             }
 
@@ -153,7 +153,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 "Tool loop stopped: " + reason + ".");
 
         context.setAttribute(ContextAttributes.LOOP_COMPLETE, true);
-        context.setAttribute(FINAL_ANSWER_READY, true);
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
         return new ToolLoopTurnResult(context, true, llmCalls, toolExecutions);
     }
 
@@ -181,14 +181,80 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
     }
 
     private LlmRequest buildRequest(AgentContext context) {
-        List<Message> view = new ArrayList<>(context.getMessages());
+        ModelSelection selection = selectModel(context.getModelTier());
+
+        List<Message> view = buildMessagesView(context, selection.model);
+
+        // Track current model for next request (persisted in session metadata)
+        storeSelectedModel(context, selection.model);
+
         return LlmRequest.builder()
-                .model(null)
+                .model(selection.model)
+                .reasoningEffort(selection.reasoning)
                 .systemPrompt(context.getSystemPrompt())
                 .messages(view)
                 .tools(context.getAvailableTools())
                 .toolResults(context.getToolResults())
                 .sessionId(context.getSession() != null ? context.getSession().getId() : null)
                 .build();
+    }
+
+    private List<Message> buildMessagesView(AgentContext context, String currentModel) {
+        List<Message> messages = context.getMessages() != null ? context.getMessages() : List.of();
+        if (context.getSession() == null) {
+            return new ArrayList<>(messages);
+        }
+
+        java.util.Map<String, Object> metadata = context.getSession().getMetadata();
+        String previousModel = metadata != null ? (String) metadata.get(ContextAttributes.LLM_MODEL) : null;
+
+        boolean needsFlatten = false;
+        if (previousModel != null && currentModel != null && !previousModel.equals(currentModel)) {
+            needsFlatten = true;
+        } else if (previousModel == null && hasToolMessages(messages)) {
+            // Legacy session / restored raw history containing tool messages without a
+            // tracked model.
+            needsFlatten = true;
+        }
+
+        if (!needsFlatten) {
+            return new ArrayList<>(messages);
+        }
+
+        // IMPORTANT: do NOT mutate raw history here. Build a safe request-time view.
+        return new ArrayList<>(Message.flattenToolMessages(messages));
+    }
+
+    private boolean hasToolMessages(List<Message> messages) {
+        return messages != null && messages.stream().anyMatch(m -> m.hasToolCalls() || m.isToolMessage());
+    }
+
+    private void storeSelectedModel(AgentContext context, String model) {
+        if (context.getSession() == null) {
+            return;
+        }
+        java.util.Map<String, Object> metadata = context.getSession().getMetadata();
+        if (metadata == null) {
+            return;
+        }
+        metadata.put(ContextAttributes.LLM_MODEL, model);
+    }
+
+    private ModelSelection selectModel(String tier) {
+        // Keep the same tier contract as legacy LlmExecutionSystem.
+        // If router is missing (tests / minimal wiring), fall back to provider default.
+        if (router == null) {
+            return new ModelSelection(null, null);
+        }
+
+        return switch (tier != null ? tier : "balanced") {
+        case "deep" -> new ModelSelection(router.getDeepModel(), router.getDeepModelReasoning());
+        case "coding" -> new ModelSelection(router.getCodingModel(), router.getCodingModelReasoning());
+        case "smart" -> new ModelSelection(router.getSmartModel(), router.getSmartModelReasoning());
+        default -> new ModelSelection(router.getBalancedModel(), router.getBalancedModelReasoning());
+        };
+    }
+
+    private record ModelSelection(String model, String reasoning) {
     }
 }

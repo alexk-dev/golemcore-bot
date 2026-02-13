@@ -42,8 +42,8 @@ class LlmExecutionSystemTest {
     private static final String CONTENT_HELLO = "Hello";
     private static final String CONTENT_OK = "OK";
     private static final String EMERGENCY_TRUNCATED_MARKER = "[EMERGENCY TRUNCATED:";
-    private static final String ATTR_LLM_RESPONSE = "llm.response";
-    private static final String ATTR_LLM_ERROR = "llm.error";
+    private static final String ATTR_LLM_RESPONSE = ContextAttributes.LLM_RESPONSE;
+    private static final String ATTR_LLM_ERROR = ContextAttributes.LLM_ERROR;
     private static final String TOOL_CALL_ID = "tc1";
     private static final String OPENAI_MODEL = "openai/gpt-5.1";
     private static final String OPENAI_MODEL_52 = "openai/gpt-5.2";
@@ -470,7 +470,7 @@ class LlmExecutionSystemTest {
         LlmResponse result = ctx.getAttribute(ATTR_LLM_RESPONSE);
         assertNotNull(result);
         assertTrue(result.hasToolCalls());
-        assertNotNull(ctx.getAttribute("llm.toolCalls"));
+        assertNotNull(ctx.getAttribute(ContextAttributes.LLM_TOOL_CALLS));
     }
 
     @Test

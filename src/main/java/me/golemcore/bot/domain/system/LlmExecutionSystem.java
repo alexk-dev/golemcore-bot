@@ -28,7 +28,6 @@ import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
-import me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -83,14 +82,8 @@ public class LlmExecutionSystem implements AgentSystem {
         if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.LOOP_COMPLETE))) {
             return false;
         }
-        if (Boolean.TRUE.equals(context.getAttribute(DefaultToolLoopSystem.FINAL_ANSWER_READY))) {
+        if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.FINAL_ANSWER_READY))) {
             return false;
-        }
-
-        // During plan mode we still use legacy LLM -> PlanIntercept flow.
-        Boolean planMode = context.getAttribute(ContextAttributes.PLAN_MODE_ACTIVE);
-        if (Boolean.TRUE.equals(planMode)) {
-            return true;
         }
 
         // Safety net: if ToolLoop already produced a response, do not override it.
@@ -129,11 +122,11 @@ public class LlmExecutionSystem implements AgentSystem {
 
             // Store response in context
             context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-            context.setAttribute("llm.latency", latency);
+            context.setAttribute(ContextAttributes.LLM_LATENCY, latency);
 
             // If there are tool calls, store them for ToolExecutionSystem
             if (response.hasToolCalls()) {
-                context.setAttribute("llm.toolCalls", response.getToolCalls());
+                context.setAttribute(ContextAttributes.LLM_TOOL_CALLS, response.getToolCalls());
                 log.info("[LLM] Tool calls requested: {}",
                         response.getToolCalls().stream().map(Message.ToolCall::getName).toList());
             }
@@ -162,9 +155,9 @@ public class LlmExecutionSystem implements AgentSystem {
                                 providerId, model, context);
                         Duration latency = Duration.between(start, clock.instant());
                         context.setAttribute(ContextAttributes.LLM_RESPONSE, retryResponse);
-                        context.setAttribute("llm.latency", latency);
+                        context.setAttribute(ContextAttributes.LLM_LATENCY, latency);
                         if (retryResponse.hasToolCalls()) {
-                            context.setAttribute("llm.toolCalls", retryResponse.getToolCalls());
+                            context.setAttribute(ContextAttributes.LLM_TOOL_CALLS, retryResponse.getToolCalls());
                         }
                         log.info("[LLM] Retry after truncation succeeded in {}ms", latency.toMillis());
                         if (isEmptyResponse(retryResponse)) {

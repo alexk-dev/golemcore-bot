@@ -2,6 +2,7 @@ package me.golemcore.bot.domain.system;
 
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
@@ -19,10 +20,10 @@ import static org.mockito.Mockito.*;
 class SkillPipelineSystemTest {
 
     private static final String CONTENT_RESULT = "result";
-    private static final String ATTR_LLM_RESPONSE = "llm.response";
-    private static final String ATTR_TRANSITION_TARGET = "skill.transition.target";
+    private static final String ATTR_LLM_RESPONSE = ContextAttributes.LLM_RESPONSE;
+    private static final String ATTR_TRANSITION_TARGET = ContextAttributes.SKILL_TRANSITION_TARGET;
     private static final String ATTR_PIPELINE_DEPTH = "skill.pipeline.depth";
-    private static final String ATTR_TOOLS_EXECUTED = "tools.executed";
+    private static final String ATTR_TOOLS_EXECUTED = ContextAttributes.TOOLS_EXECUTED;
     private static final String SKILL_EXECUTOR = "executor";
 
     private SkillComponent skillComponent;

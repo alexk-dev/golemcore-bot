@@ -20,6 +20,7 @@ package me.golemcore.bot.domain.system;
 
 import me.golemcore.bot.domain.component.MemoryComponent;
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import lombok.RequiredArgsConstructor;
@@ -65,7 +66,7 @@ public class MemoryPersistSystem implements AgentSystem {
         }
 
         // Get the LLM response
-        LlmResponse response = context.getAttribute("llm.response");
+        LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
         if (response == null || response.getContent() == null) {
             return context;
         }

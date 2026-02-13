@@ -79,7 +79,7 @@ public class PlanFinalizationSystem implements AgentSystem {
         }
 
         // Only finalize when LLM responds with text (no tool calls)
-        List<?> toolCalls = context.getAttribute("llm.toolCalls");
+        List<?> toolCalls = context.getAttribute(ContextAttributes.LLM_TOOL_CALLS);
         if (toolCalls != null && !toolCalls.isEmpty()) {
             return false;
         }
