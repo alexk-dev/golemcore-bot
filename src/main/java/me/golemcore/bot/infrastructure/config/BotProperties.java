@@ -91,7 +91,6 @@ public class BotProperties {
     public static class LlmProperties {
         private String provider = "langchain4j";
         private Langchain4jProperties langchain4j = new Langchain4jProperties();
-        private CustomLlmProperties custom = new CustomLlmProperties();
         private Map<String, ModelConfig> models = new HashMap<>(); // Model configurations
     }
 
@@ -114,12 +113,6 @@ public class BotProperties {
     public static class ProviderProperties {
         private String apiKey;
         private String baseUrl;
-    }
-
-    @Data
-    public static class CustomLlmProperties {
-        private String apiUrl;
-        private String apiKey;
     }
 
     @Data
