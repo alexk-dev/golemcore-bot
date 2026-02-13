@@ -114,15 +114,25 @@ services:
       BOT_ROUTER_DEEP_MODEL: openai/gpt-5.2
 ```
 
-### Custom Endpoints
+### OpenAI-Compatible Endpoints (via LangChain4j)
+
+To use an OpenAI-compatible API endpoint (e.g., local gateway, self-hosted proxy), configure a provider entry and its `baseUrl`.
 
 ```bash
-export BOT_LLM_PROVIDER=custom
-export CUSTOM_LLM_API_URL=https://your-llm.com/v1
-export CUSTOM_LLM_API_KEY=your-key
+export BOT_LLM_PROVIDER=langchain4j
+
+# Example: add an "openai-compatible" provider (name is arbitrary)
+export BOT_LLM_LANGCHAIN4J_PROVIDERS_OPENAI_COMPATIBLE_API_KEY=your-key
+export BOT_LLM_LANGCHAIN4J_PROVIDERS_OPENAI_COMPATIBLE_BASE_URL=https://your-llm.com/v1
+
+# Then reference it from models.json (provider field) and/or tier routing
+# Example: BOT_ROUTER_BALANCED_MODEL=openai-compatible/my-model
 ```
 
-Must be OpenAI-compatible API.
+Notes:
+- The `provider` in `models.json` must match the provider key under `bot.llm.langchain4j.providers.*`.
+- Non-Anthropic providers are treated as OpenAI-compatible by the adapter.
+
 ### LangChain4j Model Timeout
 
 Controls request timeout passed directly to LangChain4j chat model builders (OpenAI and Anthropic).
@@ -590,8 +600,8 @@ Edit `models.json` in working directory to add custom models:
       "maxInputTokens": 128000
     },
     {
-      "id": "custom/my-model",
-      "provider": "custom",
+      "id": "openai-compatible/my-model",
+      "provider": "openai-compatible",
       "requiresReasoning": false,
       "supportsTemperature": true,
       "maxInputTokens": 32000
@@ -603,7 +613,7 @@ Edit `models.json` in working directory to add custom models:
 Then reference in config:
 
 ```bash
-export BOT_ROUTER_BALANCED_MODEL=custom/my-model
+export BOT_ROUTER_BALANCED_MODEL=openai-compatible/my-model
 ```
 
 ---
