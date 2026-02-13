@@ -432,4 +432,66 @@ class ToolLoopSystemBddTest {
                 && m.getContent() != null
                 && m.getContent().contains("ok after failure")));
     }
+
+    @Test
+    void shouldStopImmediatelyWhenStopOnToolFailureIsEnabled() {
+        // GIVEN
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType("telegram")
+                .chatId("chat1")
+                .build();
+        session.addMessage(Message.builder().role("user").content("hi").build());
+
+        AgentContext ctx = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>(session.getMessages()))
+                .build();
+
+        LlmPort llmPort = mock(LlmPort.class);
+        LlmResponse toolCall = LlmResponse.builder()
+                .content("calling tool")
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("tc1")
+                        .name("shell")
+                        .arguments(Map.of("command", "false"))
+                        .build()))
+                .build();
+
+        // If we continued the loop, we'd see this call. With stopOnToolFailure we must
+        // not.
+        LlmResponse wouldBeSecondCall = LlmResponse.builder().content("should not happen").build();
+
+        when(llmPort.chat(any(LlmRequest.class))).thenReturn(
+                CompletableFuture.completedFuture(toolCall),
+                CompletableFuture.completedFuture(wouldBeSecondCall));
+
+        ToolExecutorPort toolExecutor = mock(ToolExecutorPort.class);
+        when(toolExecutor.execute(any(AgentContext.class), any(Message.ToolCall.class)))
+                .thenReturn(new ToolExecutionOutcome(
+                        "tc1",
+                        "shell",
+                        ToolResult.failure("exit 1"),
+                        "exit 1",
+                        false));
+
+        BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
+        settings.setMaxLlmCalls(10);
+        settings.setMaxToolExecutions(10);
+        settings.setDeadlineMs(30000);
+        settings.setStopOnToolFailure(true);
+
+        DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
+        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, settings);
+
+        // WHEN
+        ToolLoopTurnResult result = toolLoop.processTurn(ctx);
+
+        // THEN
+        assertTrue(result.finalAnswerReady());
+        verify(llmPort, times(1)).chat(any(LlmRequest.class));
+        assertTrue(session.getMessages().stream().anyMatch(m -> "assistant".equals(m.getRole())
+                && m.getContent() != null
+                && m.getContent().contains("Tool loop stopped")));
+    }
 }

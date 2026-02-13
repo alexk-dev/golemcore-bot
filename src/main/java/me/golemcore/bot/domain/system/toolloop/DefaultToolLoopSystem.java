@@ -57,6 +57,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         int maxLlmCalls = settings != null ? settings.getMaxLlmCalls() : 6;
         int maxToolExecutions = settings != null ? settings.getMaxToolExecutions() : 50;
         long deadlineMs = settings != null ? settings.getDeadlineMs() : 30000L;
+        boolean stopOnToolFailure = settings != null && settings.isStopOnToolFailure();
 
         Instant deadline = clock.instant().plusMillis(deadlineMs);
 
@@ -97,6 +98,16 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 }
                 if (outcome != null) {
                     historyWriter.appendToolResult(context, outcome);
+                    if (stopOnToolFailure && outcome.toolResult() != null && !outcome.toolResult().isSuccess()) {
+                        String reason = "tool failure (" + outcome.toolName() + ")";
+                        historyWriter.appendFinalAssistantAnswer(
+                                context,
+                                context.getAttribute(ContextAttributes.LLM_RESPONSE),
+                                "Tool loop stopped: " + reason + ".");
+                        context.setAttribute(ContextAttributes.LOOP_COMPLETE, true);
+                        context.setAttribute(FINAL_ANSWER_READY, true);
+                        return new ToolLoopTurnResult(context, true, llmCalls, toolExecutions);
+                    }
                 }
             }
         }

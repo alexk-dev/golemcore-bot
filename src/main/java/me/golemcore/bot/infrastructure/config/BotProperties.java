@@ -467,6 +467,11 @@ public class BotProperties {
          * Max wall-clock time budget for the internal loop (ms).
          */
         private long deadlineMs = 30000;
+        /**
+         * If true, stop the internal loop immediately after the first tool failure
+         * (ToolResult.success=false).
+         */
+        private boolean stopOnToolFailure = false;
     }
 
     // ==================== PLAN MODE ====================
