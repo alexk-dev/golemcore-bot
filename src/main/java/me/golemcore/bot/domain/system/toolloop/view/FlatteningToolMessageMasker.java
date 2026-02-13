@@ -39,7 +39,16 @@ public class FlatteningToolMessageMasker implements ToolMessageMasker {
                 }
                 sb.append("[Tool calls were made and are masked due to model/provider switch]");
 
-                result.add(Message.builder().role("assistant").content(sb.toString()).build());
+                result.add(Message.builder()
+                        .id(message.getId())
+                        .role("assistant")
+                        .content(sb.toString())
+                        .channelType(message.getChannelType())
+                        .chatId(message.getChatId())
+                        .senderId(message.getSenderId())
+                        .metadata(message.getMetadata())
+                        .timestamp(message.getTimestamp())
+                        .build());
                 continue;
             }
 
@@ -50,7 +59,17 @@ public class FlatteningToolMessageMasker implements ToolMessageMasker {
                 String toolName = message.getToolName() != null ? message.getToolName() : "tool";
                 String toolContent = message.getContent() != null ? message.getContent() : "";
                 String text = "[Tool result: " + toolName + "]\n" + toolContent;
-                result.add(Message.builder().role("assistant").content(text).build());
+
+                result.add(Message.builder()
+                        .id(message.getId())
+                        .role("assistant")
+                        .content(text)
+                        .channelType(message.getChannelType())
+                        .chatId(message.getChatId())
+                        .senderId(message.getSenderId())
+                        .metadata(message.getMetadata())
+                        .timestamp(message.getTimestamp())
+                        .build());
                 continue;
             }
 

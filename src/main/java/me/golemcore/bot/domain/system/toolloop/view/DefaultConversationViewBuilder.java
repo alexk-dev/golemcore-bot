@@ -17,8 +17,6 @@ import java.util.Map;
  */
 public class DefaultConversationViewBuilder implements ConversationViewBuilder {
 
-    public static final String TOOL_LOOP_VIEW_DIAGNOSTICS = "toolloop.view.diagnostics";
-
     private final ToolMessageMasker toolMessageMasker;
 
     public DefaultConversationViewBuilder(ToolMessageMasker toolMessageMasker) {
@@ -40,11 +38,7 @@ public class DefaultConversationViewBuilder implements ConversationViewBuilder {
         }
 
         ToolMessageMasker.MaskingResult masked = toolMessageMasker.maskToolMessages(messages);
-        ConversationView view = new ConversationView(new ArrayList<>(masked.messages()), masked.diagnostics());
-
-        // store diagnostics for debugging/observability (not persisted)
-        context.setAttribute(TOOL_LOOP_VIEW_DIAGNOSTICS, view.diagnostics());
-        return view;
+        return new ConversationView(new ArrayList<>(masked.messages()), masked.diagnostics());
     }
 
     private String readPreviousModel(AgentContext context) {

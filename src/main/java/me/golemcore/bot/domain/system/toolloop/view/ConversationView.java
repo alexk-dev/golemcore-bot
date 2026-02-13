@@ -2,7 +2,6 @@ package me.golemcore.bot.domain.system.toolloop.view;
 
 import me.golemcore.bot.domain.model.Message;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -14,6 +13,6 @@ import java.util.List;
  */
 public record ConversationView(List<Message>messages,List<String>diagnostics){
 
-public static ConversationView ofMessages(List<Message>messages){return new ConversationView(new ArrayList<>(messages),List.of());}
+public ConversationView{messages=messages==null?List.of():List.copyOf(messages);diagnostics=diagnostics==null?List.of():List.copyOf(diagnostics);}
 
-public ConversationView{messages=messages!=null?messages:List.of();diagnostics=diagnostics!=null?diagnostics:List.of();}}
+public static ConversationView ofMessages(List<Message>messages){return new ConversationView(messages,List.of());}}
