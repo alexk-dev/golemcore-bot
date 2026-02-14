@@ -137,16 +137,6 @@ public class ResponseRoutingSystem implements AgentSystem {
 
     private AgentContext handleAutoMode(AgentContext context) {
         LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
-        if (hasResponseContent(response)) {
-            AgentSession session = context.getSession();
-            if (!isLastAssistantMessage(session, response.getContent())) {
-                session.addMessage(Message.builder()
-                        .role("assistant")
-                        .content(response.getContent())
-                        .timestamp(Instant.now())
-                        .build());
-            }
-        }
         return context;
     }
 
@@ -164,7 +154,6 @@ public class ResponseRoutingSystem implements AgentSystem {
             VoiceSendResult voiceResult = voiceHandler.trySendVoice(channel, chatId, textToSpeak);
             if (voiceResult == VoiceSendResult.SUCCESS) {
                 context.setAttribute(ContextAttributes.RESPONSE_SENT, true);
-                addAssistantMessage(session, textToSpeak, response.getToolCalls());
                 sendPendingAttachments(context);
                 return context;
             }
@@ -193,16 +182,6 @@ public class ResponseRoutingSystem implements AgentSystem {
             channel.sendMessage(chatId, content).get(30, TimeUnit.SECONDS);
             context.setAttribute(ContextAttributes.RESPONSE_SENT, true);
 
-            if (!skipAssistantHistory) {
-                if (!isLastAssistantMessage(session, content)) {
-                    addAssistantMessage(session, content, response.getToolCalls());
-                }
-            } else {
-                if (!isLastAssistantMessage(session, content)) {
-                    addAssistantMessage(session, content, null);
-                }
-            }
-
             log.info("[Response] Sent text to {}/{}", channelType, chatId);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -217,28 +196,6 @@ public class ResponseRoutingSystem implements AgentSystem {
         sendVoiceAfterText(context, content);
 
         return context;
-    }
-
-    /**
-     * Prevents duplicate assistant messages when an upstream system already
-     * persisted the final assistant message to raw history.
-     */
-    private boolean isLastAssistantMessage(AgentSession session, String content) {
-        if (session == null || session.getMessages() == null || session.getMessages().isEmpty()) {
-            return false;
-        }
-
-        Message last = session.getMessages().get(session.getMessages().size() - 1);
-        if (last == null || !"assistant".equals(last.getRole())) {
-            return false;
-        }
-
-        String lastContent = last.getContent();
-        if (lastContent == null || content == null) {
-            return false;
-        }
-
-        return lastContent.equals(content);
     }
 
     // --- Helper predicates ---
@@ -293,7 +250,6 @@ public class ResponseRoutingSystem implements AgentSystem {
         VoiceSendResult result = voiceHandler.sendVoiceWithFallback(channel, chatId, textToSpeak);
         if (result != VoiceSendResult.FAILED) {
             context.setAttribute(ContextAttributes.RESPONSE_SENT, true);
-            addAssistantMessage(session, textToSpeak, null);
         }
         if (result == VoiceSendResult.QUOTA_EXCEEDED) {
             sendVoiceQuotaNotification(channel, chatId);
@@ -363,24 +319,12 @@ public class ResponseRoutingSystem implements AgentSystem {
         }
     }
 
-    // --- Message helpers ---
-
-    private void addAssistantMessage(AgentSession session, String content, List<Message.ToolCall> toolCalls) {
-        session.addMessage(Message.builder()
-                .role("assistant")
-                .content(content)
-                .channelType(session.getChannelType())
-                .chatId(session.getChatId())
-                .timestamp(Instant.now())
-                .toolCalls(toolCalls)
-                .build());
-    }
-
     @SuppressWarnings("unchecked")
     private void sendPendingAttachments(AgentContext context) {
         List<Attachment> pending = context.getAttribute(ContextAttributes.PENDING_ATTACHMENTS);
-        if (pending == null || pending.isEmpty())
+        if (pending == null || pending.isEmpty()) {
             return;
+        }
 
         AgentSession session = context.getSession();
         ChannelPort channel = resolveChannel(session);
@@ -392,21 +336,21 @@ public class ResponseRoutingSystem implements AgentSystem {
         for (Attachment attachment : pending) {
             try {
                 if (attachment.getType() == Attachment.Type.IMAGE) {
-                    channel.sendPhoto(chatId, attachment.getData(),
-                            attachment.getFilename(), attachment.getCaption()).get(30, TimeUnit.SECONDS);
+                    channel.sendPhoto(chatId, attachment.getData(), attachment.getFilename(),
+                            attachment.getCaption()).get(30, TimeUnit.SECONDS);
                 } else {
-                    channel.sendDocument(chatId, attachment.getData(),
-                            attachment.getFilename(), attachment.getCaption()).get(30, TimeUnit.SECONDS);
+                    channel.sendDocument(chatId, attachment.getData(), attachment.getFilename(),
+                            attachment.getCaption()).get(30, TimeUnit.SECONDS);
                 }
-                log.debug("[Response] Sent attachment: {} ({} bytes)",
-                        attachment.getFilename(), attachment.getData().length);
+                log.debug("[Response] Sent attachment: {} ({} bytes)", attachment.getFilename(),
+                        attachment.getData().length);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 log.error("[Response] Failed to send attachment '{}' (interrupted): {}",
                         attachment.getFilename(), e.getMessage());
             } catch (Exception e) {
-                log.error("[Response] Failed to send attachment '{}': {}",
-                        attachment.getFilename(), e.getMessage());
+                log.error("[Response] Failed to send attachment '{}': {}", attachment.getFilename(),
+                        e.getMessage());
             }
         }
 
@@ -434,6 +378,7 @@ public class ResponseRoutingSystem implements AgentSystem {
             log.error("[Response] Failed to send error message: {}", e.getMessage());
         }
     }
+    // --- Message helpers ---
 
     @Override
     public boolean shouldProcess(AgentContext context) {

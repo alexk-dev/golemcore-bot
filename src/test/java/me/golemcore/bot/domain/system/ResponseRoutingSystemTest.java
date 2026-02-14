@@ -285,7 +285,7 @@ class ResponseRoutingSystemTest {
         system.process(context);
 
         verify(channelPort, never()).sendMessage(anyString(), anyString());
-        assertFalse(context.getSession().getMessages().isEmpty());
+        assertTrue(context.getSession().getMessages().isEmpty());
     }
 
     @Test
@@ -478,8 +478,10 @@ class ResponseRoutingSystemTest {
 
         verify(voiceHandler).trySendVoice(eq(channelPort), eq(CHAT_ID), eq("Hello, this is voice"));
         verify(channelPort, never()).sendMessage(anyString(), anyString());
-        assertFalse(context.getSession().getMessages().isEmpty());
-        assertEquals("Hello, this is voice", context.getSession().getMessages().get(0).getContent());
+        // Variant A: raw history is owned by upstream execution systems (e.g.
+        // ToolLoop).
+        // ResponseRoutingSystem must not mutate session history.
+        assertTrue(context.getSession().getMessages().isEmpty());
     }
 
     @Test
@@ -565,8 +567,10 @@ class ResponseRoutingSystemTest {
 
         verify(voiceHandler).sendVoiceWithFallback(eq(channelPort), eq(CHAT_ID), eq("Here is a joke for you"));
         verify(channelPort, never()).sendMessage(anyString(), anyString());
-        assertFalse(context.getSession().getMessages().isEmpty());
-        assertEquals("Here is a joke for you", context.getSession().getMessages().get(0).getContent());
+        // Variant A: raw history is owned by upstream execution systems (e.g.
+        // ToolLoop).
+        // ResponseRoutingSystem must not mutate session history.
+        assertTrue(context.getSession().getMessages().isEmpty());
     }
 
     @Test
@@ -582,8 +586,10 @@ class ResponseRoutingSystemTest {
         system.process(context);
 
         verify(voiceHandler).sendVoiceWithFallback(eq(channelPort), eq(CHAT_ID), eq("Fallback joke text"));
-        assertFalse(context.getSession().getMessages().isEmpty());
-        assertEquals("Fallback joke text", context.getSession().getMessages().get(0).getContent());
+        // Variant A: raw history is owned by upstream execution systems (e.g.
+        // ToolLoop).
+        // ResponseRoutingSystem must not mutate session history.
+        assertTrue(context.getSession().getMessages().isEmpty());
     }
 
     @Test
@@ -754,10 +760,7 @@ class ResponseRoutingSystemTest {
         // Auto mode stores raw content in session, never sends to channel
         verify(channelPort, never()).sendMessage(anyString(), anyString());
         verify(voiceHandler, never()).trySendVoice(any(), anyString(), anyString());
-        assertFalse(context.getSession().getMessages().isEmpty());
-        // Stores with prefix since auto mode returns early before prefix detection
-        assertEquals(VOICE_PREFIX + " Auto voice response",
-                context.getSession().getMessages().get(0).getContent());
+        assertTrue(context.getSession().getMessages().isEmpty());
     }
 
     @Test
@@ -994,8 +997,9 @@ class ResponseRoutingSystemTest {
 
         verify(voiceHandler).sendVoiceWithFallback(eq(channelPort), eq(CHAT_ID), eq("Speak this"));
         verify(channelPort).sendMessage(eq(CHAT_ID), eq(MSG_VOICE_QUOTA));
-        // Assistant message still added since text fallback succeeded
-        assertFalse(context.getSession().getMessages().isEmpty());
+        // Variant A: ResponseRoutingSystem never mutates session history; only
+        // transport concerns.
+        assertTrue(context.getSession().getMessages().isEmpty());
     }
 
     @Test
