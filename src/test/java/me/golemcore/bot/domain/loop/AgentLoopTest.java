@@ -23,6 +23,7 @@ import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.RateLimitResult;
 import me.golemcore.bot.domain.model.SkillTransitionRequest;
 import me.golemcore.bot.domain.model.ToolResult;
@@ -100,8 +101,8 @@ class AgentLoopTest {
                     context.setFinalAnswerReady(true);
                     context.setSkillTransitionRequest(SkillTransitionRequest.pipeline("next"));
                     context.addToolResult("tc1", ToolResult.success("ok"));
-                    context.setAttribute(ContextAttributes.LLM_RESPONSE,
-                            LlmResponse.builder().content("hello").build());
+                    context.setAttribute(ContextAttributes.OUTGOING_RESPONSE,
+                            OutgoingResponse.text("hello"));
                     return context;
                 }
 
@@ -185,7 +186,7 @@ class AgentLoopTest {
 
             @Override
             public AgentContext process(AgentContext context) {
-                context.setAttribute(ContextAttributes.LLM_RESPONSE, LlmResponse.builder().content("hello").build());
+                context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.text("hello"));
                 return context;
             }
         };
@@ -194,7 +195,9 @@ class AgentLoopTest {
                 sessionPort,
                 rateLimitPort,
                 props,
-                List.of(system),
+                List.of(system,
+                        new me.golemcore.bot.domain.system.ResponseRoutingSystem(List.of(channel), preferencesService,
+                                mock(me.golemcore.bot.domain.service.VoiceResponseHandler.class), props)),
                 List.of(channel),
                 preferencesService,
                 llmPort,
@@ -211,8 +214,10 @@ class AgentLoopTest {
 
         loop.processMessage(inbound);
 
-        verify(channel, never()).sendMessage(any(), any());
-        assertTrue(session.getMessages().stream().anyMatch(m -> "assistant".equals(m.getRole())
-                && "hello".equals(m.getContent())));
+        // Feedback guarantee should route via ResponseRoutingSystem when present.
+        verify(channel, atLeastOnce()).sendMessage(eq("1"), eq("hello"));
+        // NOTE: ResponseRoutingSystem is transport-only. It must not write assistant
+        // messages
+        // into raw history. (Raw history is owned by the domain execution path.)
     }
 }

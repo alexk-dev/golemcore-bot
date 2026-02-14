@@ -417,6 +417,11 @@ public class ResponseRoutingSystem implements AgentSystem {
 
     @Override
     public boolean shouldProcess(AgentContext context) {
+        OutgoingResponse outgoing = context.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        if (outgoing != null && outgoing.getText() != null && !outgoing.getText().isBlank()) {
+            return true;
+        }
+
         LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
         String llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
         List<?> pending = context.getAttribute(ContextAttributes.PENDING_ATTACHMENTS);
