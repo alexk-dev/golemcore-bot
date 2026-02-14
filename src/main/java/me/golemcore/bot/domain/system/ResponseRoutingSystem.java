@@ -486,26 +486,34 @@ public class ResponseRoutingSystem implements AgentSystem {
                 return true;
             }
             if (outgoing.isVoiceRequested()) {
-                String voiceText = outgoing.getVoiceText();
-                if (voiceText != null && !voiceText.isBlank()) {
-                    return true;
-                }
-                // voice requested but no explicit voice text: still allow if text exists
-                if (outgoing.getText() != null && !outgoing.getText().isBlank()) {
-                    return true;
-                }
-            }
-            if (outgoing.getAttachments() != null && !outgoing.getAttachments().isEmpty()) {
                 return true;
             }
+            return outgoing.getAttachments() != null && !outgoing.getAttachments().isEmpty();
         }
 
+        // Legacy path (kept while migration is in progress)
         LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
+        if (hasResponseContent(response)) {
+            return true;
+        }
+
         String llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
-        List<?> pending = context.getAttribute(ContextAttributes.PENDING_ATTACHMENTS);
+        if (llmError != null) {
+            return true;
+        }
+
         Boolean voiceRequested = context.getAttribute(ContextAttributes.VOICE_REQUESTED);
-        return response != null || llmError != null || (pending != null && !pending.isEmpty())
-                || Boolean.TRUE.equals(voiceRequested);
+        if (Boolean.TRUE.equals(voiceRequested)) {
+            return true;
+        }
+
+        String voiceText = context.getAttribute(ContextAttributes.VOICE_TEXT);
+        if (isVoiceOnlyResponse(voiceRequested, voiceText, response)) {
+            return true;
+        }
+
+        List<Attachment> pending = context.getAttribute(ContextAttributes.PENDING_ATTACHMENTS);
+        return pending != null && !pending.isEmpty();
     }
 
     public void registerChannel(ChannelPort channel) {
