@@ -162,7 +162,6 @@ public class ResponseRoutingSystem implements AgentSystem {
     }
 
     private AgentContext handleAutoMode(AgentContext context) {
-        LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
         return context;
     }
 
