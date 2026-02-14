@@ -109,13 +109,13 @@ If we still want to persist a synthetic assistant message, it should be done via
 ## Migration Plan
 
 ### Phase 1 — Introduce OutgoingResponsePreparationSystem
-- [ ] Add `OutgoingResponsePreparationSystem` (order=55)
-- [ ] Move logic from `AgentLoop.prepareOutgoingResponse(...)` into this system
-- [ ] Remove the `AgentLoop` special-case coupling by system name
-- [ ] Update tests:
-  - [ ] BDD: `OutgoingResponse` prepared when `LLM_RESPONSE` exists
-  - [ ] BDD: error path `LLM_ERROR` ⇒ outgoing error message
-  - [ ] Ensure `ResponseRoutingSystem` remains transport-only
+- [x] Add `OutgoingResponsePreparationSystem` (order=59)
+- [x] Move logic from `AgentLoop.prepareOutgoingResponse(...)` into this system
+- [x] Remove the `AgentLoop` special-case coupling by system name
+- [x] Update tests:
+  - [x] BDD: `OutgoingResponse` prepared when `LLM_RESPONSE` exists
+  - [x] BDD: error path `LLM_ERROR` ⇒ outgoing error message
+  - [x] Ensure `ResponseRoutingSystem` remains transport-only
 
 ### Phase 2 — Feedback guarantee refactor
 - [ ] Introduce `FeedbackGuaranteeSystem` (or keep in AgentLoop but stop writing raw history)

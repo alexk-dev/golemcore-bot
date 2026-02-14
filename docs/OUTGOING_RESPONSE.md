@@ -134,7 +134,7 @@ Attachments flow through the pipeline as first-class values:
 ### 6.1 Routing is now OutgoingResponse-only
 `ResponseRoutingSystem` has no legacy fallback paths. It reads exclusively from `OutgoingResponse`.
 
-Voice prefix detection and auto-voice logic are handled upstream in `AgentLoop.prepareOutgoingResponse()`, which builds the `OutgoingResponse` from LLM response attributes before routing runs.
+Voice prefix detection and auto-voice logic are handled upstream in `OutgoingResponsePreparationSystem` (order=59), which builds the `OutgoingResponse` from LLM response attributes before routing runs.
 
 ### 6.2 Tests: enforced "transport-only" invariants
 BDD/contract tests assert:

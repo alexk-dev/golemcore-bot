@@ -21,17 +21,18 @@ package me.golemcore.bot.domain.loop;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
-import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.domain.system.AgentSystem;
+import me.golemcore.bot.domain.system.ResponseRoutingSystem;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.RateLimitPort;
 import me.golemcore.bot.domain.model.LlmRequest;
+import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.RateLimitResult;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -79,7 +80,6 @@ public class AgentLoop {
     });
 
     private static final long TYPING_INTERVAL_SECONDS = 4;
-    private static final String ROUTING_SYSTEM_NAME = "ResponseRoutingSystem";
 
     private List<AgentSystem> sortedSystems;
     private AgentSystem routingSystem;
@@ -196,10 +196,6 @@ public class AgentLoop {
                     continue;
                 }
 
-                if (ROUTING_SYSTEM_NAME.equals(system.getName())) {
-                    prepareOutgoingResponse(context);
-                }
-
                 if (!system.shouldProcess(context)) {
                     log.debug("System '{}' shouldProcess=false, skipping", system.getName());
                     continue;
@@ -236,6 +232,7 @@ public class AgentLoop {
 
         if (reachedLimit) {
             context.setAttribute(ContextAttributes.ITERATION_LIMIT_REACHED, true);
+            context.clearSkillTransitionRequest();
             String limitMessage = preferencesService.getMessage("system.iteration.limit", maxIterations);
             routeSyntheticAssistantResponse(context, limitMessage, "stop");
         }
@@ -257,102 +254,6 @@ public class AgentLoop {
                     context.getAttribute(ContextAttributes.OUTGOING_RESPONSE) != null);
             routingSystem.process(context);
         }
-    }
-
-    private static final String VOICE_PREFIX = "\uD83D\uDD0A";
-
-    private void prepareOutgoingResponse(AgentContext context) {
-        if (context.getAttribute(ContextAttributes.OUTGOING_RESPONSE) != null) {
-            return;
-        }
-
-        // Error path: convert LLM_ERROR into a user-facing OutgoingResponse.
-        String llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
-        if (llmError != null) {
-            String errorMessage = preferencesService.getMessage("system.error.llm");
-            context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly(errorMessage));
-            return;
-        }
-
-        LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
-        String text = response != null ? response.getContent() : null;
-
-        Boolean voiceRequested = context.getAttribute(ContextAttributes.VOICE_REQUESTED);
-        String voiceText = context.getAttribute(ContextAttributes.VOICE_TEXT);
-
-        boolean hasText = text != null && !text.isBlank();
-        boolean hasVoice = Boolean.TRUE.equals(voiceRequested) || (voiceText != null && !voiceText.isBlank());
-
-        // Voice prefix detection: strip prefix and promote to voice request.
-        if (hasText && hasVoicePrefix(text)) {
-            String stripped = stripVoicePrefix(text);
-            if (!stripped.isBlank()) {
-                // Prefer tool-provided voiceText; otherwise use stripped prefix text.
-                String effectiveVoiceText = (voiceText != null && !voiceText.isBlank()) ? voiceText : stripped;
-                OutgoingResponse outgoing = OutgoingResponse.builder()
-                        .text(stripped)
-                        .voiceRequested(true)
-                        .voiceText(effectiveVoiceText)
-                        .build();
-                context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, outgoing);
-                return;
-            }
-            // Prefix with blank content after stripping — nothing to send.
-            return;
-        }
-
-        // Auto-respond with voice when incoming message was voice and config enabled.
-        if (hasText && !hasVoice) {
-            hasVoice = shouldAutoVoiceRespond(context);
-        }
-
-        if (!hasText && !hasVoice) {
-            return;
-        }
-
-        OutgoingResponse outgoing = OutgoingResponse.builder()
-                .text(hasText ? text : null)
-                .voiceRequested(hasVoice)
-                .voiceText(voiceText)
-                .build();
-
-        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, outgoing);
-    }
-
-    private boolean hasVoicePrefix(String content) {
-        return content != null && content.trim().startsWith(VOICE_PREFIX);
-    }
-
-    private String stripVoicePrefix(String content) {
-        if (content == null) {
-            return "";
-        }
-        String trimmed = content.trim();
-        if (trimmed.startsWith(VOICE_PREFIX)) {
-            return trimmed.substring(VOICE_PREFIX.length()).trim();
-        }
-        return trimmed;
-    }
-
-    private boolean shouldAutoVoiceRespond(AgentContext context) {
-        BotProperties.VoiceProperties voice = properties.getVoice();
-        if (!voice.getTelegram().isRespondWithVoice()) {
-            return false;
-        }
-        return hasIncomingVoice(context);
-    }
-
-    private boolean hasIncomingVoice(AgentContext context) {
-        if (context.getMessages() == null || context.getMessages().isEmpty()) {
-            return false;
-        }
-        for (int i = context.getMessages().size() - 1; i >= 0; i--) {
-            Message msg = context.getMessages().get(i);
-            if (msg.isUserMessage()) {
-                return msg.hasVoice();
-            }
-        }
-        return false;
     }
 
     private void routeSyntheticAssistantResponse(AgentContext context, String content, String finishReason) {
@@ -395,15 +296,6 @@ public class AgentLoop {
         OutgoingResponse outgoing = context.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
         if (outgoing != null && outgoing.getText() != null && !outgoing.getText().isBlank()) {
             log.info("[AgentLoop] Feedback guarantee: routing unsent OutgoingResponse");
-            routeResponse(context);
-            return true;
-        }
-
-        LlmResponse llmResponse = context.getAttribute(ContextAttributes.LLM_RESPONSE);
-        if (llmResponse != null && llmResponse.getContent() != null && !llmResponse.getContent().isBlank()) {
-            log.info("[AgentLoop] Feedback guarantee: routing unsent LLM response");
-            context.setAttribute(ContextAttributes.OUTGOING_RESPONSE,
-                    OutgoingResponse.textOnly(llmResponse.getContent()));
             routeResponse(context);
             return true;
         }
@@ -499,8 +391,7 @@ public class AgentLoop {
                     sortedSystems.stream().map(AgentSystem::getName).toList());
 
             routingSystem = sortedSystems.stream()
-                    .filter(system -> system.getName() != null
-                            && system.getName().contains(ROUTING_SYSTEM_NAME))
+                    .filter(ResponseRoutingSystem.class::isInstance)
                     .findFirst()
                     .orElse(null);
         }

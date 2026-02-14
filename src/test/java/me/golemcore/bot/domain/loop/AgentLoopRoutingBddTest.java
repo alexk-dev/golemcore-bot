@@ -20,13 +20,13 @@ package me.golemcore.bot.domain.loop;
 
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
-import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
-import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.RateLimitResult;
 import me.golemcore.bot.domain.model.SkillTransitionRequest;
 import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.system.AgentSystem;
+import me.golemcore.bot.domain.system.ResponseRoutingSystem;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.LlmPort;
@@ -122,32 +122,10 @@ class AgentLoopRoutingBddTest {
             }
         };
 
-        // Routing system stub that actually performs transport via ChannelPort.
-        AgentSystem routing = new AgentSystem() {
-            @Override
-            public String getName() {
-                return "ResponseRoutingSystem";
-            }
-
-            @Override
-            public int getOrder() {
-                return 60;
-            }
-
-            @Override
-            public boolean shouldProcess(AgentContext context) {
-                return context.getAttribute(ContextAttributes.OUTGOING_RESPONSE) != null;
-            }
-
-            @Override
-            public AgentContext process(AgentContext context) {
-                OutgoingResponse response = context.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
-                assertNotNull(response);
-                channel.sendMessage(session.getChatId(), response.getText());
-                context.setAttribute(ContextAttributes.RESPONSE_SENT, true);
-                return context;
-            }
-        };
+        // Use a real ResponseRoutingSystem so AgentLoop's instanceof check works.
+        VoiceResponseHandler voiceHandler = mock(VoiceResponseHandler.class);
+        ResponseRoutingSystem routing = new ResponseRoutingSystem(
+                List.of(channel), preferencesService, voiceHandler);
 
         AgentLoop loop = new AgentLoop(
                 sessionPort,
