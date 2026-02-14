@@ -351,7 +351,7 @@ export BOT_PLAN_DEFAULT_MODEL_TIER=smart   # Default model tier for plans
 ```
 
 **How it works:**
-1. `PlanInterceptSystem` (order=35) intercepts LLM tool calls during collection
+1. `ToolLoopExecutionSystem` (order=30) intercepts LLM tool calls during collection
 2. Synthetic `[Planned]` results keep the LLM proposing more steps
 3. `PlanFinalizationSystem` (order=58) detects when planning is done
 4. User approves via Telegram inline keyboard

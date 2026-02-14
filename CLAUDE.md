@@ -42,9 +42,7 @@ me.golemcore.bot
 | 18    | `AutoCompactionSystem`    | Auto-compact when context nears limit |
 | 20    | `ContextBuildingSystem`   | System prompt, memory, skills, tools, MCP, tier resolution |
 | 25    | `DynamicTierSystem`       | Upgrade model tier mid-conversation if needed |
-| 30    | `LlmExecutionSystem`     | Model selection by tier, LLM call, usage tracking |
-| 35    | `PlanInterceptSystem`     | Plan mode: intercept tool calls into plan steps |
-| 40    | `ToolExecutionSystem`     | Execute tool calls, loop back to LLM |
+| 30    | `ToolLoopExecutionSystem` | LLM calls, tool execution loop, plan intercept |
 | 50    | `MemoryPersistSystem`     | Persist memory |
 | 55    | `SkillPipelineSystem`     | Auto-transition between skills |
 | 55    | `RagIndexingSystem`       | Index conversations for RAG |
@@ -102,7 +100,7 @@ public class ExampleService {
 | Suffix | Layer | Example |
 |--------|-------|---------|
 | `*Service` | Domain services | `SessionService` |
-| `*System` | Pipeline systems | `LlmExecutionSystem` |
+| `*System` | Pipeline systems | `ToolLoopExecutionSystem` |
 | `*Tool` | Tool implementations | `FileSystemTool` |
 | `*Adapter` | Outbound adapters | `Langchain4jAdapter` |
 | `*Port` | Port interfaces | `LlmPort`, `StoragePort` |

@@ -23,8 +23,8 @@ User Message
 [DynamicTierSystem]      --- May upgrade to "coding" if code activity detected
     |                        (only on iteration > 0, never downgrades)
     v
-[LlmExecutionSystem]    --- Selects model + reasoning level based on modelTier
-    |
+[ToolLoopExecutionSystem] --- Selects model + reasoning level based on modelTier
+    |                         (via DefaultToolLoopSystem internal loop)
     v
 LLM API Call
 ```
@@ -152,9 +152,9 @@ When a skill with `model_tier` is active:
 
 ---
 
-## Model Selection in LlmExecutionSystem
+## Model Selection in ToolLoopExecutionSystem
 
-`LlmExecutionSystem` (order=30) translates the `modelTier` string into an actual model name and reasoning effort:
+`ToolLoopExecutionSystem` (order=30) delegates to `DefaultToolLoopSystem`, which translates the `modelTier` string into an actual model name and reasoning effort:
 
 ```java
 switch (tier != null ? tier : "balanced") {
@@ -259,7 +259,7 @@ Model capabilities are defined in `models.json` at the project root. Each entry 
 
 The `maxInputTokens` value is used by:
 - `AutoCompactionSystem` — triggers compaction at 80% of context window
-- `LlmExecutionSystem` — emergency truncation limits each message to 25% of context window (minimum 10K characters)
+- `ToolLoopExecutionSystem` — emergency truncation limits each message to 25% of context window (minimum 10K characters)
 
 > **See:** [Configuration Guide — Advanced: models.json](CONFIGURATION.md#advanced-modelsjson) for adding custom models.
 
@@ -388,9 +388,9 @@ BOT_AUTO_COMPACT_CHARS_PER_TOKEN=3.5
 
 ### Layer 2: Tool Result Truncation (Per-Result)
 
-`ToolExecutionSystem` (order=40) truncates individual tool results that exceed `maxToolResultChars` **before** they are added to conversation history.
+`DefaultToolLoopSystem` truncates individual tool results that exceed `maxToolResultChars` **before** they are added to conversation history.
 
-> **Source:** `ToolExecutionSystem.java`
+> **Source:** `DefaultToolLoopSystem.java`
 
 When a tool result's content exceeds the limit (default 100,000 characters):
 
@@ -412,9 +412,9 @@ BOT_AUTO_COMPACT_MAX_TOOL_RESULT_CHARS=100000  # default: 100K chars
 
 ### Layer 3: Emergency Truncation (Error Recovery)
 
-`LlmExecutionSystem` (order=30) catches context overflow errors from the LLM provider and applies emergency per-message truncation as a last resort.
+`ToolLoopExecutionSystem` (order=30) catches context overflow errors from the LLM provider and applies emergency per-message truncation as a last resort.
 
-> **Source:** `LlmExecutionSystem.java`
+> **Source:** `DefaultToolLoopSystem.java`
 
 **Error detection** — matches these patterns in the exception message chain:
 - `exceeds maximum input length`
@@ -465,24 +465,22 @@ Layer 1: AutoCompactionSystem (order=18)
          Strategy: LLM summary + keep last N messages.
                             |
                             v
-                     LLM Execution (order=30)
-                            |
-                            v
-              Tool Execution (order=40) ──> Loop back to LLM
-                   |
-Layer 2: Tool Result Truncation
-         Per-result. Truncates results > 100K chars.
-         Hint: "try a more specific query"
-                   |
-                   v
-              LLM Execution (retry)
-                   |
-         (if context_length_exceeded)
-                   |
-                   v
-Layer 3: Emergency Truncation
-         Error recovery. Per-message limit = 25% of context window.
-         Truncates + retries once. Persists in session history.
+              ToolLoopExecutionSystem (order=30)
+              ┌─────────────────────────────────┐
+              │  LLM call → tool execution loop │
+              │                                 │
+              │  Layer 2: Tool Result Truncation │
+              │  Per-result. Truncates > 100K.  │
+              │  Hint: "try a more specific     │
+              │  query"                         │
+              │                                 │
+              │  Layer 3: Emergency Truncation   │
+              │  On context_length_exceeded:    │
+              │  per-message limit = 25% of     │
+              │  context window. Truncates +    │
+              │  retries once. Persists in      │
+              │  session history.               │
+              └─────────────────────────────────┘
 ```
 
 ---
@@ -493,8 +491,7 @@ Layer 3: Emergency Truncation
 |-------|---------|-------|---------|
 | `ContextBuildingSystem` | `domain.system` | 20 | Resolves tier from user prefs / skill, builds system prompt |
 | `DynamicTierSystem` | `domain.system` | 25 | Mid-conversation upgrade to coding tier |
-| `LlmExecutionSystem` | `domain.system` | 30 | Model selection by tier, LLM API call, emergency truncation |
-| `ToolExecutionSystem` | `domain.system` | 40 | Tool execution, result truncation, attachment extraction |
+| `ToolLoopExecutionSystem` | `domain.system` | 30 | LLM calls, tool execution loop, plan intercept, model selection, emergency truncation |
 | `AutoCompactionSystem` | `domain.system` | 18 | Preventive context compaction before LLM call |
 | `TierTool` | `tools` | — | LLM tool for switching tier mid-conversation |
 | `CommandRouter` | `adapter.inbound.command` | — | `/tier` command handler || `LlmAdapterFactory` | `adapter.outbound.llm` | — | Provider adapter selection |
@@ -556,7 +553,7 @@ ContextBuildingSystem:
   No user tier preference, no active skill
   Tier: null → balanced (fallback)
 
-LlmExecutionSystem:
+ToolLoopExecutionSystem:
   Tier: balanced → openai/gpt-5.1 (reasoning: medium)
 ```
 
@@ -572,7 +569,7 @@ ContextBuildingSystem:
   No user force → use skill tier
   Tier: coding
 
-LlmExecutionSystem:
+ToolLoopExecutionSystem:
   Tier: coding → openai/gpt-5.2 (reasoning: medium)
 ```
 
@@ -590,7 +587,7 @@ ContextBuildingSystem:
   → Skill's coding tier is ignored
   Tier: smart
 
-LlmExecutionSystem:
+ToolLoopExecutionSystem:
   Tier: smart → openai/gpt-5.1 (reasoning: high)
 ```
 
@@ -602,7 +599,7 @@ User: "Help me with this project"
 ContextBuildingSystem:
   No user tier, no skill tier → balanced
 
-LlmExecutionSystem (iteration 0):
+ToolLoopExecutionSystem (iteration 0):
   Tier: balanced → openai/gpt-5.1 (reasoning: medium)
 
 --- LLM calls filesystem.write_file("app.py", ...) ---
@@ -610,7 +607,7 @@ LlmExecutionSystem (iteration 0):
 DynamicTierSystem (iteration 1):
   Detected: filesystem write on .py file → upgrade to "coding"
 
-LlmExecutionSystem (iteration 1):
+ToolLoopExecutionSystem (iteration 1):
   Tier: coding → openai/gpt-5.2 (reasoning: medium)
 ```
 
@@ -622,6 +619,6 @@ User: "This needs deep analysis"
 LLM calls set_tier({"tier": "deep"})
   → context.modelTier = "deep"
 
-LlmExecutionSystem (next iteration):
+ToolLoopExecutionSystem (next iteration):
   Tier: deep → openai/gpt-5.2 (reasoning: xhigh)
 ```

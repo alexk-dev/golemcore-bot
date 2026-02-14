@@ -232,7 +232,7 @@ mcp:
 5. Each MCP tool is wrapped as `McpToolAdapter` and registered for the LLM
 6. LLM can call MCP tools just like native tools
 7. After `idle_timeout` minutes without calls, the server process is stopped
-8. Tools are unregistered via `ToolExecutionSystem.unregisterTools()`
+8. Tools are unregistered via `ToolLoopExecutionSystem.unregisterTools()`
 
 ### Example: GitHub Skill with MCP
 

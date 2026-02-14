@@ -244,8 +244,7 @@ BOT_AUTO_COMPACT_KEEP_LAST_MESSAGES=10         # messages to keep after compacti
 |-------|--------|----------------|
 | 18 | `AutoCompactionSystem` | Compacts session messages if context too large |
 | 20 | `ContextBuildingSystem` | **Reads** memory context (MEMORY.md + daily notes + recent days) and injects into system prompt |
-| 30 | `LlmExecutionSystem` | System prompt includes `# Memory` section |
-| 40 | `ToolExecutionSystem` | LLM can write to `MEMORY.md` via filesystem tool |
+| 30 | `ToolLoopExecutionSystem` | LLM call + tool execution; system prompt includes `# Memory` section; LLM can write to `MEMORY.md` via filesystem tool |
 | 50 | `MemoryPersistSystem` | **Writes** today's notes — appends `[HH:mm] User: ... \| Assistant: ...` |
 | 55 | `RagIndexingSystem` | Indexes exchange to LightRAG (separate from this memory system) |
 

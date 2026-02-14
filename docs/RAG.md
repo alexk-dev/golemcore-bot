@@ -347,7 +347,7 @@ Both are injected into the system prompt. Short-term memory appears first (more 
 | Order | System | RAG Behavior |
 |-------|--------|-------------|
 | 20 | `ContextBuildingSystem` | **Queries RAG** — retrieves relevant context for the user's message |
-| 30 | `LlmExecutionSystem` | System prompt includes `# Relevant Memory` from RAG |
+| 30 | `ToolLoopExecutionSystem` | LLM call + tool execution; system prompt includes `# Relevant Memory` from RAG |
 | 50 | `MemoryPersistSystem` | Persists to short-term memory (not RAG) |
 | 55 | `RagIndexingSystem` | **Indexes to RAG** — formats and sends exchange to LightRAG |
 | 60 | `ResponseRoutingSystem` | Sends response to user |

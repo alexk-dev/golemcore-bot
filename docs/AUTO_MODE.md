@@ -437,8 +437,7 @@ Auto mode integrates with the agent loop pipeline at specific points:
 | 18 | `AutoCompactionSystem` | Processes normally (compacts if context too large) |
 | 20 | `ContextBuildingSystem` | **Sets model tier** from `bot.auto.model-tier`; **injects** goals, tasks, diary into system prompt |
 | 25 | `DynamicTierSystem` | Can upgrade to `coding` if auto work triggers code activity |
-| 30 | `LlmExecutionSystem` | Uses the tier set by ContextBuildingSystem (or upgraded by DynamicTierSystem) |
-| 40 | `ToolExecutionSystem` | Executes `goal_management` and other tool calls normally |
+| 30 | `ToolLoopExecutionSystem` | LLM calls and tool execution; uses the tier set by ContextBuildingSystem (or upgraded by DynamicTierSystem) |
 | 50 | `MemoryPersistSystem` | Persists conversation |
 | 60 | `ResponseRoutingSystem` | Sends response to channel (or no-ops if channel is "auto") |
 
