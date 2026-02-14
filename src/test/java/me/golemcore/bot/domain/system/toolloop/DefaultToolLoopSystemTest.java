@@ -29,6 +29,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -638,6 +639,32 @@ class DefaultToolLoopSystemTest {
         ToolLoopTurnResult result = system.processTurn(context);
 
         assertTrue(result.finalAnswerReady());
+    }
+
+    // ==================== LLM_RESPONSE replacement on stop ====================
+
+    @Test
+    void shouldReplaceLlmResponseWithCleanResponseOnStop() {
+        settings.setMaxLlmCalls(1);
+        AgentContext context = buildContext();
+        Message.ToolCall tc = toolCall(TOOL_CALL_ID, TOOL_NAME);
+
+        LlmResponse withTools = toolCallResponse(List.of(tc));
+        when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(withTools));
+
+        ToolExecutionOutcome outcome = new ToolExecutionOutcome(
+                TOOL_CALL_ID, TOOL_NAME, ToolResult.success("ok"), "ok", false, null);
+        when(toolExecutor.execute(any(), any())).thenReturn(outcome);
+
+        ToolLoopTurnResult result = system.processTurn(context);
+
+        assertTrue(result.finalAnswerReady());
+
+        LlmResponse replacedResponse = context.getAttribute(ContextAttributes.LLM_RESPONSE);
+        assertNotNull(replacedResponse);
+        assertFalse(replacedResponse.hasToolCalls(), "LLM_RESPONSE should have no tool calls after stop");
+        assertTrue(replacedResponse.getContent().contains("reached max internal LLM calls"),
+                "LLM_RESPONSE content should contain the stop reason");
     }
 
     // ==================== Conversation view diagnostics ====================

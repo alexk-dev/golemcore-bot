@@ -189,10 +189,16 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             }
         }
 
-        historyWriter.appendFinalAssistantAnswer(
-                context,
-                lastResponse,
-                "Tool loop stopped: " + reason + ".");
+        String stopMessage = "Tool loop stopped: " + reason + ".";
+
+        historyWriter.appendFinalAssistantAnswer(context, lastResponse, stopMessage);
+
+        // Replace LLM_RESPONSE with a clean response (no tool calls) so that
+        // OutgoingResponsePreparationSystem can produce an OutgoingResponse.
+        LlmResponse cleanResponse = LlmResponse.builder()
+                .content(stopMessage)
+                .build();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, cleanResponse);
 
         context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
         return new ToolLoopTurnResult(context, true, llmCalls, toolExecutions);

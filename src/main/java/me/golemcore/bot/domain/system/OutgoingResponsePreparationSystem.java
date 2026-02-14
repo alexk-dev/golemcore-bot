@@ -108,9 +108,10 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
         boolean hasText = text != null && !text.isBlank();
         boolean hasVoice = voiceRequested || (voiceText != null && !voiceText.isBlank());
 
-        // A response containing tool calls is not user-facing output.
-        // It will be handled by ToolLoop/other systems.
-        if (response.hasToolCalls()) {
+        // A response containing tool calls is not user-facing output — unless
+        // FINAL_ANSWER_READY is set (e.g. tool loop was stopped by internal limits).
+        Boolean finalReady = context.getAttribute(ContextAttributes.FINAL_ANSWER_READY);
+        if (response.hasToolCalls() && !Boolean.TRUE.equals(finalReady)) {
             return context;
         }
 

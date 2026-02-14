@@ -551,6 +551,42 @@ class OutgoingResponsePreparationSystemTest {
                 "Should check last user message, not earlier voice message");
     }
 
+    // ── process: FINAL_ANSWER_READY with tool calls ──
+
+    @Test
+    void shouldCreateResponseWhenFinalAnswerReadyEvenWithToolCalls() {
+        AgentContext context = buildContext();
+        LlmResponse response = LlmResponse.builder()
+                .content("Tool loop stopped: reached max internal LLM calls (2).")
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("tc-1").name("some_tool").build()))
+                .build();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
+
+        AgentContext result = system.process(context);
+
+        OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        assertNotNull(outgoing, "Should create OutgoingResponse when FINAL_ANSWER_READY is set");
+        assertEquals("Tool loop stopped: reached max internal LLM calls (2).", outgoing.getText());
+    }
+
+    @Test
+    void shouldSkipToolCallResponseWhenFinalAnswerNotReady() {
+        AgentContext context = buildContext();
+        LlmResponse response = LlmResponse.builder()
+                .content("partial")
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("tc-1").name("some_tool").build()))
+                .build();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+
+        AgentContext result = system.process(context);
+
+        assertNull(result.getAttribute(ContextAttributes.OUTGOING_RESPONSE),
+                "Should not create OutgoingResponse when tool calls present and FINAL_ANSWER_READY not set");
+    }
+
     // ── process: edge case — no attributes at all ──
 
     @Test
