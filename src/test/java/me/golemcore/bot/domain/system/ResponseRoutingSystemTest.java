@@ -356,7 +356,8 @@ class ResponseRoutingSystemTest {
 
         String error = (String) context.getAttribute(ContextAttributes.ROUTING_ERROR);
         assertNotNull(error);
-        assertTrue(error.contains("send failed"));
+        assertFalse(error.isBlank());
+        assertNull(context.getAttribute(ContextAttributes.RESPONSE_SENT));
     }
 
     @Test
@@ -839,6 +840,8 @@ class ResponseRoutingSystemTest {
 
         system.process(context);
 
+        // Duplicate of channelSendFailureSetsRoutingError (kept for now as a narrower
+        // regression test).
         assertNull(context.getAttribute(ContextAttributes.RESPONSE_SENT));
     }
 

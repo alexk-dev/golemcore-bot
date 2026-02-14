@@ -185,8 +185,18 @@ public class ResponseRoutingSystem implements AgentSystem {
             log.info("[Response] Sent text to {}/{}", channelType, chatId);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            log.error("[Response] FAILED to send (interrupted): {}", e.getMessage(), e);
+            log.warn("[Response] FAILED to send (interrupted): {}", e.getMessage());
+            log.debug("[Response] Send failure (interrupted)", e);
             context.setAttribute(ContextAttributes.ROUTING_ERROR, e.getMessage());
+        } catch (java.util.concurrent.TimeoutException e) {
+            log.warn("[Response] FAILED to send (timeout): {}", e.getMessage());
+            log.debug("[Response] Send failure (timeout)", e);
+            context.setAttribute(ContextAttributes.ROUTING_ERROR, e.getMessage());
+        } catch (java.util.concurrent.ExecutionException e) {
+            Throwable cause = (e.getCause() != null) ? e.getCause() : e;
+            log.warn("[Response] FAILED to send: {}", cause.toString());
+            log.debug("[Response] Send failure (execution)", e);
+            context.setAttribute(ContextAttributes.ROUTING_ERROR, cause.toString());
         } catch (Exception e) {
             log.error("[Response] FAILED to send: {}", e.getMessage(), e);
             context.setAttribute(ContextAttributes.ROUTING_ERROR, e.getMessage());
