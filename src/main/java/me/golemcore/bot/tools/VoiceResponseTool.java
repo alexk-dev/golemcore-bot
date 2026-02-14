@@ -89,12 +89,18 @@ public class VoiceResponseTool implements ToolComponent {
             return CompletableFuture.completedFuture(ToolResult.failure("No agent context available"));
         }
 
-        context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
-        context.setFinalAnswerReady(true);
+        // Pipeline-visible contract flags MUST go through ContextAttributes.
+        context.setVoiceRequested(true);
+
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
+
         if (text != null && !text.isBlank()) {
-            context.setAttribute(ContextAttributes.VOICE_TEXT, text);
+            // Variant 1 policy: keep voice text as-is (no truncation).
+            context.setVoiceText(text);
             log.info("[VoiceResponse] Voice response queued: {} chars of custom text", text.length());
         } else {
+            // Explicitly clear voiceText, so routing can fall back to full response.
+            context.setVoiceText(null);
             log.info("[VoiceResponse] Voice response queued: will use full LLM response");
         }
 

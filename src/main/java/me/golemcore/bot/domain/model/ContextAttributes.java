@@ -27,14 +27,6 @@ public final class ContextAttributes {
     private ContextAttributes() {
     }
 
-    /**
-     * Boolean — voice response requested by VoiceResponseTool or incoming voice.
-     */
-    public static final String VOICE_REQUESTED = "voiceRequested";
-
-    /** String — specific text to synthesize (from VoiceResponseTool). */
-    public static final String VOICE_TEXT = "voiceText";
-
     /** Boolean — signal to stop the agent loop after current iteration. */
     /** LlmResponse — response from LLM execution. */
     public static final String LLM_RESPONSE = "llm.response";
@@ -44,7 +36,8 @@ public final class ContextAttributes {
 
     /** List<Message.ToolCall> ? last tool calls requested by the LLM. */
 
-    /** Boolean ? final answer is ready and legacy systems should not run. */
+    /** Boolean ? final answer is ready and the turn can be finalized/routed. */
+    public static final String FINAL_ANSWER_READY = "llm.final.ready";
 
     /** OutgoingResponse ? response to route to the user (transport contract). */
     public static final String OUTGOING_RESPONSE = "outgoing.response";

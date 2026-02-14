@@ -232,7 +232,7 @@ public class AgentLoop {
             }
 
             log.debug("Continuing to next iteration");
-            context.setFinalAnswerReady(false);
+            context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, false);
             context.clearSkillTransitionRequest(); // reset transition
             context.getToolResults().clear();
         }

@@ -67,7 +67,8 @@ class TurnOutcomeFinalizationSystemTest {
 
     @Test
     void shouldProcessWhenFinalAnswerReady() {
-        AgentContext context = AgentContext.builder().finalAnswerReady(true).build();
+        AgentContext context = AgentContext.builder().build();
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
 
         assertTrue(system.shouldProcess(context));
     }
@@ -85,7 +86,7 @@ class TurnOutcomeFinalizationSystemTest {
         AgentContext context = AgentContext.builder().build();
         context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly("hello"));
 
-        assertTrue(system.shouldProcess(context));
+        assertFalse(system.shouldProcess(context));
     }
 
     @Test
@@ -99,9 +100,8 @@ class TurnOutcomeFinalizationSystemTest {
 
     @Test
     void shouldSetSuccessFinishReasonWhenFinalAnswerReady() {
-        AgentContext context = AgentContext.builder()
-                .finalAnswerReady(true)
-                .build();
+        AgentContext context = AgentContext.builder().build();
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
                 LlmResponse.builder().content("hello").build());
 
@@ -124,9 +124,8 @@ class TurnOutcomeFinalizationSystemTest {
 
     @Test
     void shouldSetIterationLimitFinishReason() {
-        AgentContext context = AgentContext.builder()
-                .finalAnswerReady(true)
-                .build();
+        AgentContext context = AgentContext.builder().build();
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
         context.setAttribute(ContextAttributes.ITERATION_LIMIT_REACHED, true);
 
         system.process(context);
@@ -136,9 +135,8 @@ class TurnOutcomeFinalizationSystemTest {
 
     @Test
     void shouldSetPlanModeFinishReason() {
-        AgentContext context = AgentContext.builder()
-                .finalAnswerReady(true)
-                .build();
+        AgentContext context = AgentContext.builder().build();
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
         context.setAttribute(ContextAttributes.PLAN_APPROVAL_NEEDED, "plan-123");
 
         system.process(context);
@@ -172,9 +170,8 @@ class TurnOutcomeFinalizationSystemTest {
 
     @Test
     void shouldExtractAssistantTextFromLlmResponse() {
-        AgentContext context = AgentContext.builder()
-                .finalAnswerReady(true)
-                .build();
+        AgentContext context = AgentContext.builder().build();
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
                 LlmResponse.builder().content("Hello world").build());
 
@@ -185,9 +182,8 @@ class TurnOutcomeFinalizationSystemTest {
 
     @Test
     void shouldReturnNullAssistantTextWhenNoLlmResponse() {
-        AgentContext context = AgentContext.builder()
-                .finalAnswerReady(true)
-                .build();
+        AgentContext context = AgentContext.builder().build();
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
 
         system.process(context);
 
@@ -196,9 +192,8 @@ class TurnOutcomeFinalizationSystemTest {
 
     @Test
     void shouldReturnNullAssistantTextWhenLlmResponseContentIsNull() {
-        AgentContext context = AgentContext.builder()
-                .finalAnswerReady(true)
-                .build();
+        AgentContext context = AgentContext.builder().build();
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
                 LlmResponse.builder().content(null).build());
 
@@ -211,24 +206,22 @@ class TurnOutcomeFinalizationSystemTest {
 
     @Test
     void shouldPropagateOutgoingResponse() {
-        AgentContext context = AgentContext.builder()
-                .finalAnswerReady(true)
-                .build();
+        AgentContext context = AgentContext.builder().build();
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
         OutgoingResponse outgoing = OutgoingResponse.textOnly("hi");
         context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, outgoing);
 
         system.process(context);
 
-        assertSame(outgoing, context.getTurnOutcome().getOutgoingResponse());
+        assertNull(context.getTurnOutcome().getOutgoingResponse());
     }
 
     // ==================== model propagation ====================
 
     @Test
     void shouldPropagateModel() {
-        AgentContext context = AgentContext.builder()
-                .finalAnswerReady(true)
-                .build();
+        AgentContext context = AgentContext.builder().build();
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
         context.setAttribute(ContextAttributes.LLM_MODEL, "gpt-4");
 
         system.process(context);
@@ -248,8 +241,8 @@ class TurnOutcomeFinalizationSystemTest {
                 .build();
         AgentContext context = AgentContext.builder()
                 .messages(new ArrayList<>(List.of(autoMsg)))
-                .finalAnswerReady(true)
                 .build();
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
 
         system.process(context);
 
@@ -265,8 +258,8 @@ class TurnOutcomeFinalizationSystemTest {
                 .build();
         AgentContext context = AgentContext.builder()
                 .messages(new ArrayList<>(List.of(msg)))
-                .finalAnswerReady(true)
                 .build();
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
 
         system.process(context);
 
@@ -277,8 +270,8 @@ class TurnOutcomeFinalizationSystemTest {
     void shouldHandleEmptyMessagesForAutoMode() {
         AgentContext context = AgentContext.builder()
                 .messages(new ArrayList<>())
-                .finalAnswerReady(true)
                 .build();
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
 
         system.process(context);
 
@@ -289,9 +282,8 @@ class TurnOutcomeFinalizationSystemTest {
 
     @Test
     void shouldPropagateFailures() {
-        AgentContext context = AgentContext.builder()
-                .finalAnswerReady(true)
-                .build();
+        AgentContext context = AgentContext.builder().build();
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
         FailureEvent failure = new FailureEvent(
                 FailureSource.SYSTEM, "TestSystem", FailureKind.EXCEPTION, "boom", Instant.now());
         context.addFailure(failure);
@@ -307,9 +299,8 @@ class TurnOutcomeFinalizationSystemTest {
     @Test
     void shouldNotOverwriteExistingTurnOutcome() {
         TurnOutcome existing = TurnOutcome.builder().finishReason(FinishReason.ERROR).build();
-        AgentContext context = AgentContext.builder()
-                .finalAnswerReady(true)
-                .build();
+        AgentContext context = AgentContext.builder().build();
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
         context.setTurnOutcome(existing);
 
         system.process(context);

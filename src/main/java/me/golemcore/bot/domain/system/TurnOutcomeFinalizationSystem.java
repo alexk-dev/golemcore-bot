@@ -57,13 +57,13 @@ public class TurnOutcomeFinalizationSystem implements AgentSystem {
         if (context.getTurnOutcome() != null) {
             return false;
         }
-        if (context.isFinalAnswerReady()) {
+        if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.FINAL_ANSWER_READY))) {
             return true;
         }
         if (context.getAttribute(ContextAttributes.LLM_ERROR) != null) {
             return true;
         }
-        return context.getAttribute(ContextAttributes.OUTGOING_RESPONSE) != null;
+        return context.getOutgoingResponse() != null;
     }
 
     @Override
@@ -74,7 +74,7 @@ public class TurnOutcomeFinalizationSystem implements AgentSystem {
 
         FinishReason finishReason = determineFinishReason(context);
         String assistantText = extractAssistantText(context);
-        OutgoingResponse outgoingResponse = context.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        OutgoingResponse outgoingResponse = context.getOutgoingResponse();
         String model = context.getAttribute(ContextAttributes.LLM_MODEL);
         boolean autoMode = isAutoModeContext(context);
 
@@ -113,7 +113,7 @@ public class TurnOutcomeFinalizationSystem implements AgentSystem {
             return FinishReason.PLAN_MODE;
         }
 
-        if (context.isFinalAnswerReady()) {
+        if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.FINAL_ANSWER_READY))) {
             return FinishReason.SUCCESS;
         }
 

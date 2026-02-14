@@ -37,6 +37,8 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -157,6 +159,14 @@ public class ResponseRoutingSystem implements AgentSystem {
         try {
             channel.sendMessage(chatId, outgoing.getText()).get(30, TimeUnit.SECONDS);
             return null;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("[Response] FAILED to send (interrupted): {}", e.getMessage());
+            return e.getMessage();
+        } catch (ExecutionException | TimeoutException e) {
+            log.warn("[Response] FAILED to send (OutgoingResponse): {}", e.getMessage());
+            log.debug("[Response] OutgoingResponse send failure", e);
+            return e.getMessage();
         } catch (Exception e) {
             log.warn("[Response] FAILED to send (OutgoingResponse): {}", e.getMessage());
             log.debug("[Response] OutgoingResponse send failure", e);
@@ -225,8 +235,9 @@ public class ResponseRoutingSystem implements AgentSystem {
                         attachment.getData().length);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                log.error("[Response] Failed to send attachment '{}' (interrupted): {}",
+                log.warn("[Response] Failed to send attachment '{}' (interrupted): {}",
                         attachment.getFilename(), e.getMessage());
+                return sent;
             } catch (Exception e) {
                 log.error("[Response] Failed to send attachment '{}': {}", attachment.getFilename(),
                         e.getMessage());
@@ -254,7 +265,8 @@ public class ResponseRoutingSystem implements AgentSystem {
             log.info("[Response] Sent voice quota notification to {}", chatId);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            log.error("[Response] Failed to send quota notification (interrupted): {}", e.getMessage());
+            log.warn("[Response] Failed to send quota notification (interrupted): {}", e.getMessage());
+            return;
         } catch (Exception e) {
             log.error("[Response] Failed to send quota notification: {}", e.getMessage());
         }

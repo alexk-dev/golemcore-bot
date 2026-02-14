@@ -267,7 +267,7 @@ class OutgoingResponsePreparationSystemTest {
         AgentContext context = buildContext();
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
                 LlmResponse.builder().content(VOICE_PREFIX + " Full spoken text here").build());
-        context.setAttribute(ContextAttributes.VOICE_TEXT, "Custom voice text from tool");
+        context.setVoiceText("Custom voice text from tool");
 
         AgentContext result = system.process(context);
 
@@ -283,7 +283,7 @@ class OutgoingResponsePreparationSystemTest {
         AgentContext context = buildContext();
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
                 LlmResponse.builder().content(VOICE_PREFIX + " Spoken text").build());
-        context.setAttribute(ContextAttributes.VOICE_TEXT, "   ");
+        context.setVoiceText("   ");
 
         AgentContext result = system.process(context);
 
@@ -292,14 +292,14 @@ class OutgoingResponsePreparationSystemTest {
         assertEquals("Spoken text", outgoing.getVoiceText());
     }
 
-    // ── process: explicit VOICE_REQUESTED / VOICE_TEXT (no prefix) ──
+    // ── process: explicit voiceRequested / voiceText (no prefix) ──
 
     @Test
     void shouldBuildVoiceResponseWhenVoiceRequestedAttributeSet() {
         AgentContext context = buildContext();
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
                 LlmResponse.builder().content(REPLY_TEXT).build());
-        context.setAttribute(ContextAttributes.VOICE_REQUESTED, Boolean.TRUE);
+        context.setVoiceRequested(true);
 
         AgentContext result = system.process(context);
 
@@ -314,7 +314,7 @@ class OutgoingResponsePreparationSystemTest {
         AgentContext context = buildContext();
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
                 LlmResponse.builder().content(REPLY_TEXT).build());
-        context.setAttribute(ContextAttributes.VOICE_REQUESTED, Boolean.FALSE);
+        context.setVoiceRequested(false);
 
         AgentContext result = system.process(context);
 
@@ -328,7 +328,7 @@ class OutgoingResponsePreparationSystemTest {
         AgentContext context = buildContext();
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
                 LlmResponse.builder().content(REPLY_TEXT).build());
-        context.setAttribute(ContextAttributes.VOICE_TEXT, "speak this");
+        context.setVoiceText("speak this");
 
         AgentContext result = system.process(context);
 
@@ -344,7 +344,7 @@ class OutgoingResponsePreparationSystemTest {
         AgentContext context = buildContext();
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
                 LlmResponse.builder().content(null).build());
-        context.setAttribute(ContextAttributes.VOICE_REQUESTED, Boolean.TRUE);
+        context.setVoiceRequested(true);
 
         AgentContext result = system.process(context);
 
@@ -359,7 +359,7 @@ class OutgoingResponsePreparationSystemTest {
         AgentContext context = buildContext();
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
                 LlmResponse.builder().content("").build());
-        context.setAttribute(ContextAttributes.VOICE_TEXT, "voice content");
+        context.setVoiceText("voice content");
 
         AgentContext result = system.process(context);
 
@@ -509,7 +509,7 @@ class OutgoingResponsePreparationSystemTest {
 
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
                 LlmResponse.builder().content(REPLY_TEXT).build());
-        context.setAttribute(ContextAttributes.VOICE_REQUESTED, Boolean.TRUE);
+        context.setVoiceRequested(true);
 
         AgentContext result = system.process(context);
 

@@ -63,13 +63,16 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
 
     @Override
     public boolean shouldProcess(AgentContext context) {
+        // Cross-system contract: OUTGOING_RESPONSE is stored in ContextAttributes.
         if (context.getAttribute(ContextAttributes.OUTGOING_RESPONSE) != null) {
             return false;
         }
+
         String llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
         if (llmError != null) {
             return true;
         }
+
         LlmResponse llmResponse = context.getAttribute(ContextAttributes.LLM_RESPONSE);
         return llmResponse != null;
     }
@@ -85,18 +88,31 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
         String llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
         if (llmError != null) {
             String errorMessage = preferencesService.getMessage("system.error.llm");
-            context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly(errorMessage));
+            setOutgoingResponse(context, OutgoingResponse.textOnly(errorMessage));
             return context;
         }
 
         LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
-        String text = response != null ? response.getContent() : null;
+        if (response == null) {
+            return context;
+        }
+        String text = response.getContent();
 
-        Boolean voiceRequested = context.getAttribute(ContextAttributes.VOICE_REQUESTED);
-        String voiceText = context.getAttribute(ContextAttributes.VOICE_TEXT);
+        // Voice intent is typed (backward-incompatible: no ContextAttributes.* for
+        // voice).
+
+        boolean voiceRequested = context.isVoiceRequested();
+
+        String voiceText = context.getVoiceText();
 
         boolean hasText = text != null && !text.isBlank();
-        boolean hasVoice = Boolean.TRUE.equals(voiceRequested) || (voiceText != null && !voiceText.isBlank());
+        boolean hasVoice = voiceRequested || (voiceText != null && !voiceText.isBlank());
+
+        // A response containing tool calls is not user-facing output.
+        // It will be handled by ToolLoop/other systems.
+        if (response.hasToolCalls()) {
+            return context;
+        }
 
         // Voice prefix detection: strip prefix and promote to voice request.
         if (hasText && hasVoicePrefix(text)) {
@@ -109,7 +125,7 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
                         .voiceRequested(true)
                         .voiceText(effectiveVoiceText)
                         .build();
-                context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, outgoing);
+                setOutgoingResponse(context, outgoing);
                 return context;
             }
             // Prefix with blank content after stripping — nothing to send.
@@ -131,8 +147,15 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
                 .voiceText(voiceText)
                 .build();
 
-        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, outgoing);
+        setOutgoingResponse(context, outgoing);
         return context;
+    }
+
+    private void setOutgoingResponse(AgentContext context, OutgoingResponse outgoing) {
+        // Canonical contract.
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, outgoing);
+        // Typed mirror (ergonomics) - keep consistent.
+        context.setOutgoingResponse(outgoing);
     }
 
     private boolean hasVoicePrefix(String content) {

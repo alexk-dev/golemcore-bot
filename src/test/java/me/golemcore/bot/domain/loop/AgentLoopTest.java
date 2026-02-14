@@ -112,7 +112,7 @@ class AgentLoopTest {
             @Override
             public AgentContext process(AgentContext context) {
                 if (context.getCurrentIteration() == 0) {
-                    context.setFinalAnswerReady(true);
+                    context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
                     context.setSkillTransitionRequest(SkillTransitionRequest.pipeline("next"));
                     context.addToolResult("tc1", ToolResult.success("ok"));
                     context.setAttribute(ContextAttributes.OUTGOING_RESPONSE,
@@ -120,7 +120,8 @@ class AgentLoopTest {
                     return context;
                 }
 
-                assertFalse(context.isFinalAnswerReady(), "finalAnswerReady must be reset between iterations");
+                assertFalse(Boolean.TRUE.equals(context.getAttribute(ContextAttributes.FINAL_ANSWER_READY)),
+                        "finalAnswerReady must be reset between iterations");
                 assertNull(context.getSkillTransitionRequest(),
                         "skillTransitionRequest must be cleared between iterations");
                 assertTrue(context.getToolResults().isEmpty(), "toolResults must be cleared between iterations");

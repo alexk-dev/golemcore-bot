@@ -20,6 +20,8 @@ package me.golemcore.bot.domain.model;
 
 import org.junit.jupiter.api.Test;
 
+import me.golemcore.bot.domain.model.ContextAttributes;
+
 import java.time.Instant;
 import java.util.Map;
 
@@ -68,10 +70,10 @@ class AgentContextTest {
     @Test
     void finalAnswerReadyDefaultShouldBeFalseAndCanBeSet() {
         AgentContext ctx = AgentContext.builder().build();
-        assertFalse(ctx.isFinalAnswerReady());
+        assertFalse(Boolean.TRUE.equals(ctx.getAttribute(ContextAttributes.FINAL_ANSWER_READY)));
 
-        ctx.setFinalAnswerReady(true);
-        assertTrue(ctx.isFinalAnswerReady());
+        ctx.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
+        assertTrue(Boolean.TRUE.equals(ctx.getAttribute(ContextAttributes.FINAL_ANSWER_READY)));
     }
 
     @Test

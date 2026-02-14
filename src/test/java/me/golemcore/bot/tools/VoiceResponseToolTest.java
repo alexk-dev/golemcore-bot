@@ -77,9 +77,9 @@ class VoiceResponseToolTest {
 
         assertTrue(result.isSuccess());
         assertEquals("Voice response queued", result.getOutput());
-        assertTrue((Boolean) context.getAttribute(ContextAttributes.VOICE_REQUESTED));
-        assertEquals("Hello world", context.getAttribute(ContextAttributes.VOICE_TEXT));
-        assertTrue(context.isFinalAnswerReady());
+        assertTrue(context.isVoiceRequested());
+        assertEquals("Hello world", context.getVoiceText());
+        assertTrue(Boolean.TRUE.equals(context.getAttribute(ContextAttributes.FINAL_ANSWER_READY)));
     }
 
     @Test
@@ -91,8 +91,8 @@ class VoiceResponseToolTest {
         ToolResult result = future.get();
 
         assertTrue(result.isSuccess());
-        assertTrue((Boolean) context.getAttribute(ContextAttributes.VOICE_REQUESTED));
-        assertNull(context.getAttribute(ContextAttributes.VOICE_TEXT));
+        assertTrue(context.isVoiceRequested());
+        assertNull(context.getVoiceText());
     }
 
     @Test
@@ -104,7 +104,7 @@ class VoiceResponseToolTest {
         ToolResult result = future.get();
 
         assertTrue(result.isSuccess());
-        assertNull(context.getAttribute(ContextAttributes.VOICE_TEXT));
+        assertNull(context.getVoiceText());
     }
 
     @Test
@@ -142,7 +142,7 @@ class VoiceResponseToolTest {
         ToolResult result = future.get();
 
         assertTrue(result.isSuccess());
-        assertEquals("42", context.getAttribute(ContextAttributes.VOICE_TEXT));
+        assertEquals("42", context.getVoiceText());
     }
 
     @Test
@@ -155,7 +155,7 @@ class VoiceResponseToolTest {
         ToolResult result = future.get();
 
         assertTrue(result.isSuccess());
-        assertEquals(longText, context.getAttribute(ContextAttributes.VOICE_TEXT));
+        assertEquals(longText, context.getVoiceText());
     }
 
     @Test
@@ -171,6 +171,6 @@ class VoiceResponseToolTest {
         AgentContextHolder.set(context);
 
         tool.execute(Map.of(TEXT, "test")).get();
-        assertTrue(context.isFinalAnswerReady());
+        assertTrue(Boolean.TRUE.equals(context.getAttribute(ContextAttributes.FINAL_ANSWER_READY)));
     }
 }

@@ -65,7 +65,7 @@ public class MemoryPersistSystem implements AgentSystem {
         if (outcome != null) {
             return outcome.getAssistantText() != null && !outcome.getAssistantText().isBlank();
         }
-        return context.isFinalAnswerReady();
+        return Boolean.TRUE.equals(context.getAttribute(ContextAttributes.FINAL_ANSWER_READY));
     }
 
     @Override

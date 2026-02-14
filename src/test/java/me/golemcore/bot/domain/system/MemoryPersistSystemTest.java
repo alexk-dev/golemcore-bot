@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -251,7 +252,7 @@ class MemoryPersistSystemTest {
         AgentContext ctx = AgentContext.builder()
                 .session(AgentSession.builder().id(SESSION_ID).build())
                 .messages(new ArrayList<>())
-                .finalAnswerReady(false)
+                .attributes(Map.of(ContextAttributes.FINAL_ANSWER_READY, false))
                 .build();
 
         assertFalse(system.shouldProcess(ctx));
@@ -262,7 +263,7 @@ class MemoryPersistSystemTest {
         AgentContext ctx = AgentContext.builder()
                 .session(AgentSession.builder().id(SESSION_ID).build())
                 .messages(new ArrayList<>())
-                .finalAnswerReady(true)
+                .attributes(Map.of(ContextAttributes.FINAL_ANSWER_READY, true))
                 .build();
 
         assertTrue(system.shouldProcess(ctx));

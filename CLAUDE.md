@@ -69,6 +69,13 @@ domain/ -> adapter/      PROHIBITED
 
 ## Coding Rules
 
+### Pipeline Flags & Cross-System Contracts
+
+- **Rule:** Any value used as a **contract between pipeline systems/tools** (i.e. read/written by more than one component) **must** be represented as a canonical key in `ContextAttributes`.
+- **No ad-hoc string keys** inside individual `*System`/`*Tool` classes.
+- **Typed fields / accessors in `AgentContext` are allowed** for ergonomics, but they must remain consistent with the canonical `ContextAttributes` contract when that contract is used downstream.
+- If a legacy key is removed, **update tests** to match the new contract. Tests should assert **observable behavior / contracts**, not internal implementation details.
+
 ### Java Style
 
 - **No `var`** — always declare types explicitly

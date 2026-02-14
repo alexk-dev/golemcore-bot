@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -162,7 +163,7 @@ class RagIndexingSystemTest {
     void shouldNotProcessWhenFinalAnswerNotReady() {
         AgentContext context = AgentContext.builder()
                 .messages(new ArrayList<>())
-                .finalAnswerReady(false)
+                .attributes(Map.of(ContextAttributes.FINAL_ANSWER_READY, false))
                 .build();
 
         assertFalse(system.shouldProcess(context));
@@ -172,7 +173,7 @@ class RagIndexingSystemTest {
     void shouldProcessWhenFinalAnswerReady() {
         AgentContext context = AgentContext.builder()
                 .messages(new ArrayList<>())
-                .finalAnswerReady(true)
+                .attributes(Map.of(ContextAttributes.FINAL_ANSWER_READY, true))
                 .build();
 
         assertTrue(system.shouldProcess(context));

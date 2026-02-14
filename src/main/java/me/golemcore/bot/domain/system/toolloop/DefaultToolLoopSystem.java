@@ -94,7 +94,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                     historyWriter.appendFinalAssistantAnswer(context, response, response.getContent());
                 }
 
-                context.setFinalAnswerReady(true);
+                context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
                 applyAttachments(context, accumulatedAttachments);
                 return new ToolLoopTurnResult(context, true, llmCalls, toolExecutions);
             }
@@ -194,7 +194,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 lastResponse,
                 "Tool loop stopped: " + reason + ".");
 
-        context.setFinalAnswerReady(true);
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
         return new ToolLoopTurnResult(context, true, llmCalls, toolExecutions);
     }
 
@@ -210,7 +210,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         }
         log.debug("[ToolLoop] Applying {} attachment(s) to OutgoingResponse", attachments.size());
 
-        OutgoingResponse existing = context.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        OutgoingResponse existing = context.getOutgoingResponse();
         OutgoingResponse.OutgoingResponseBuilder builder;
         if (existing != null) {
             builder = OutgoingResponse.builder()
@@ -229,7 +229,10 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             builder.attachment(a);
         }
 
-        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, builder.build());
+        OutgoingResponse updated = builder.build();
+
+        context.setOutgoingResponse(updated);
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, updated);
     }
 
     private void ensureMessageLists(AgentContext context) {

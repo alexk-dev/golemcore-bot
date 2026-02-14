@@ -505,8 +505,8 @@ class ResponseRoutingSystemTest {
         // Simulate legacy attributes that historically drove routing
         context.setAttribute("llm.response.text", "LEGACY_TEXT_SHOULD_BE_IGNORED");
         context.setAttribute("pending.attachments", List.of("LEGACY_ATTACHMENT"));
-        context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
-        context.setAttribute(ContextAttributes.VOICE_TEXT, "LEGACY_VOICE_SHOULD_BE_IGNORED");
+        context.setVoiceRequested(true);
+        context.setVoiceText("LEGACY_VOICE_SHOULD_BE_IGNORED");
 
         // Set OutgoingResponse with specific text (no voice, no attachments)
         context.setAttribute(ContextAttributes.OUTGOING_RESPONSE,

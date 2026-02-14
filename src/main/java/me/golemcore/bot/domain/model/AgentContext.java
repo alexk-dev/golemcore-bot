@@ -105,8 +105,20 @@ public class AgentContext {
     @Builder.Default
     private SkillTransitionRequest skillTransitionRequest = null;
 
+    // Voice intent (typed; replaces ContextAttributes.VOICE_REQUESTED/VOICE_TEXT)
     @Builder.Default
-    private boolean finalAnswerReady = false;
+    private boolean voiceRequested = false;
+
+    @Builder.Default
+    private String voiceText = null;
+
+    // Transport contract (typed; replaces ContextAttributes.OUTGOING_RESPONSE)
+    @Builder.Default
+    private OutgoingResponse outgoingResponse = null;
+
+    // Transport delivery result (typed; set by ResponseRoutingSystem)
+    @Builder.Default
+    private RoutingOutcome routingOutcome = null;
 
     @SuppressWarnings("PMD.NullAssignment")
     @Builder.Default
@@ -156,12 +168,38 @@ public class AgentContext {
         this.skillTransitionRequest = null;
     }
 
-    public boolean isFinalAnswerReady() {
-        return finalAnswerReady;
+    public boolean isVoiceRequested() {
+        return voiceRequested;
     }
 
-    public void setFinalAnswerReady(boolean finalAnswerReady) {
-        this.finalAnswerReady = finalAnswerReady;
+    public void setVoiceRequested(boolean voiceRequested) {
+        this.voiceRequested = voiceRequested;
+    }
+
+    public String getVoiceText() {
+        return voiceText;
+    }
+
+    public void setVoiceText(String voiceText) {
+        this.voiceText = voiceText;
+    }
+
+    public OutgoingResponse getOutgoingResponse() {
+        return outgoingResponse;
+    }
+
+    public void setOutgoingResponse(OutgoingResponse outgoingResponse) {
+        this.outgoingResponse = outgoingResponse;
+        // Keep the canonical pipeline contract in sync.
+        setAttribute(ContextAttributes.OUTGOING_RESPONSE, outgoingResponse);
+    }
+
+    public RoutingOutcome getRoutingOutcome() {
+        return routingOutcome;
+    }
+
+    public void setRoutingOutcome(RoutingOutcome routingOutcome) {
+        this.routingOutcome = routingOutcome;
     }
 
 }
