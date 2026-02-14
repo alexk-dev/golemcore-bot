@@ -79,6 +79,7 @@ public class AgentLoop {
     });
 
     private static final long TYPING_INTERVAL_SECONDS = 4;
+    private static final String ROUTING_SYSTEM_NAME = "ResponseRoutingSystem";
 
     private List<AgentSystem> sortedSystems;
     private AgentSystem routingSystem;
@@ -195,7 +196,7 @@ public class AgentLoop {
                     continue;
                 }
 
-                if ("ResponseRoutingSystem".equals(system.getName())) {
+                if (ROUTING_SYSTEM_NAME.equals(system.getName())) {
                     prepareOutgoingResponse(context);
                 }
 
@@ -269,7 +270,7 @@ public class AgentLoop {
         String llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
         if (llmError != null) {
             String errorMessage = preferencesService.getMessage("system.error.llm");
-            context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.text(errorMessage));
+            context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly(errorMessage));
             return;
         }
 
@@ -356,7 +357,7 @@ public class AgentLoop {
 
     private void routeSyntheticAssistantResponse(AgentContext context, String content, String finishReason) {
         addFeedbackMessage(context.getSession(), content);
-        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.text(content));
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly(content));
         routeResponse(context);
     }
 
@@ -401,7 +402,8 @@ public class AgentLoop {
         LlmResponse llmResponse = context.getAttribute(ContextAttributes.LLM_RESPONSE);
         if (llmResponse != null && llmResponse.getContent() != null && !llmResponse.getContent().isBlank()) {
             log.info("[AgentLoop] Feedback guarantee: routing unsent LLM response");
-            context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.text(llmResponse.getContent()));
+            context.setAttribute(ContextAttributes.OUTGOING_RESPONSE,
+                    OutgoingResponse.textOnly(llmResponse.getContent()));
             routeResponse(context);
             return true;
         }
@@ -498,7 +500,7 @@ public class AgentLoop {
 
             routingSystem = sortedSystems.stream()
                     .filter(system -> system.getName() != null
-                            && system.getName().contains("ResponseRoutingSystem"))
+                            && system.getName().contains(ROUTING_SYSTEM_NAME))
                     .findFirst()
                     .orElse(null);
         }

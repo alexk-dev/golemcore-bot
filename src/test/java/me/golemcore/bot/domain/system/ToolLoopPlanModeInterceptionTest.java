@@ -5,11 +5,9 @@ import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
-import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.system.toolloop.DefaultHistoryWriter;
 import me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem;
-import me.golemcore.bot.domain.system.toolloop.ToolExecutionOutcome;
 import me.golemcore.bot.domain.system.toolloop.ToolExecutorPort;
 import me.golemcore.bot.domain.system.toolloop.ToolLoopTurnResult;
 import me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder;
@@ -34,7 +32,6 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -48,14 +45,19 @@ class ToolLoopPlanModeInterceptionTest {
     private static final Instant NOW = Instant.parse("2026-01-01T12:00:00Z");
     private static final Instant DEADLINE = Instant.parse("2026-02-01T00:00:00Z");
     private static final String PLAN_ID = "plan-123";
+    private static final String CHANNEL_TYPE = "telegram";
+    private static final String CHAT_ID = "chat1";
+    private static final String TOOL_FILE_SYSTEM = "file_system";
+    private static final String PARAM_ACTION = "action";
+    private static final String PARAM_PATH = "path";
 
     @Test
     void shouldRecordPlanStepsAndWriteSyntheticResultsWhenPlanModeActive() {
         // GIVEN: a session with an incoming user message
         AgentSession session = AgentSession.builder()
                 .id("s1")
-                .channelType("telegram")
-                .chatId("chat1")
+                .channelType(CHANNEL_TYPE)
+                .chatId(CHAT_ID)
                 .messages(new ArrayList<>())
                 .build();
 
@@ -63,8 +65,8 @@ class ToolLoopPlanModeInterceptionTest {
                 .role("user")
                 .content("Plan: list files then read one")
                 .timestamp(NOW)
-                .channelType("telegram")
-                .chatId("chat1")
+                .channelType(CHANNEL_TYPE)
+                .chatId(CHAT_ID)
                 .build());
 
         AgentContext ctx = AgentContext.builder()
@@ -81,13 +83,13 @@ class ToolLoopPlanModeInterceptionTest {
                 .toolCalls(List.of(
                         Message.ToolCall.builder()
                                 .id("tc1")
-                                .name("file_system")
-                                .arguments(Map.of("action", "list", "path", "/tmp"))
+                                .name(TOOL_FILE_SYSTEM)
+                                .arguments(Map.of(PARAM_ACTION, "list", PARAM_PATH, "/tmp"))
                                 .build(),
                         Message.ToolCall.builder()
                                 .id("tc2")
-                                .name("file_system")
-                                .arguments(Map.of("action", "read", "path", "/tmp/a.txt"))
+                                .name(TOOL_FILE_SYSTEM)
+                                .arguments(Map.of(PARAM_ACTION, "read", PARAM_PATH, "/tmp/a.txt"))
                                 .build()))
                 .build();
 
@@ -132,10 +134,10 @@ class ToolLoopPlanModeInterceptionTest {
         assertEquals(2, result.llmCalls());
 
         // AND: plan steps were recorded (2 tool calls)
-        verify(planService).addStep(eq(PLAN_ID), eq("file_system"),
-                eq(Map.of("action", "list", "path", "/tmp")), anyString());
-        verify(planService).addStep(eq(PLAN_ID), eq("file_system"),
-                eq(Map.of("action", "read", "path", "/tmp/a.txt")), anyString());
+        verify(planService).addStep(eq(PLAN_ID), eq(TOOL_FILE_SYSTEM),
+                eq(Map.of(PARAM_ACTION, "list", PARAM_PATH, "/tmp")), anyString());
+        verify(planService).addStep(eq(PLAN_ID), eq(TOOL_FILE_SYSTEM),
+                eq(Map.of(PARAM_ACTION, "read", PARAM_PATH, "/tmp/a.txt")), anyString());
 
         // AND: tool executor was NEVER called (tools not executed in plan mode)
         verify(toolExecutor, never()).execute(any(), any());
@@ -158,8 +160,8 @@ class ToolLoopPlanModeInterceptionTest {
         // GIVEN: a session with a user message
         AgentSession session = AgentSession.builder()
                 .id("s1")
-                .channelType("telegram")
-                .chatId("chat1")
+                .channelType(CHANNEL_TYPE)
+                .chatId(CHAT_ID)
                 .messages(new ArrayList<>())
                 .build();
 
@@ -167,8 +169,8 @@ class ToolLoopPlanModeInterceptionTest {
                 .role("user")
                 .content("Summarize what we planned")
                 .timestamp(NOW)
-                .channelType("telegram")
-                .chatId("chat1")
+                .channelType(CHANNEL_TYPE)
+                .chatId(CHAT_ID)
                 .build());
 
         AgentContext ctx = AgentContext.builder()

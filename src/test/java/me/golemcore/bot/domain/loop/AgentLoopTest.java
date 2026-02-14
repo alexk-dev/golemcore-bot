@@ -21,7 +21,6 @@ package me.golemcore.bot.domain.loop;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
-import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.RateLimitResult;
@@ -49,6 +48,8 @@ import static org.mockito.Mockito.*;
 
 class AgentLoopTest {
 
+    private static final String CHANNEL_TYPE = "telegram";
+
     @Test
     void shouldResetTypedControlFlagsAndToolResultsBetweenIterations() {
         SessionPort sessionPort = mock(SessionPort.class);
@@ -67,16 +68,16 @@ class AgentLoopTest {
 
         AgentSession session = AgentSession.builder()
                 .id("s1")
-                .channelType("telegram")
+                .channelType(CHANNEL_TYPE)
                 .chatId("1")
                 .messages(new ArrayList<>())
                 .build();
 
-        when(sessionPort.getOrCreate("telegram", "1")).thenReturn(session);
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "1")).thenReturn(session);
         when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
 
         ChannelPort channel = mock(ChannelPort.class);
-        when(channel.getChannelType()).thenReturn("telegram");
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
         when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         AgentSystem verifier = new AgentSystem() {
@@ -102,7 +103,7 @@ class AgentLoopTest {
                     context.setSkillTransitionRequest(SkillTransitionRequest.pipeline("next"));
                     context.addToolResult("tc1", ToolResult.success("ok"));
                     context.setAttribute(ContextAttributes.OUTGOING_RESPONSE,
-                            OutgoingResponse.text("hello"));
+                            OutgoingResponse.textOnly("hello"));
                     return context;
                 }
 
@@ -127,7 +128,7 @@ class AgentLoopTest {
         Message inbound = Message.builder()
                 .role("user")
                 .content("hi")
-                .channelType("telegram")
+                .channelType(CHANNEL_TYPE)
                 .chatId("1")
                 .senderId("u1")
                 .timestamp(clock.instant())
@@ -156,16 +157,16 @@ class AgentLoopTest {
 
         AgentSession session = AgentSession.builder()
                 .id("s1")
-                .channelType("telegram")
+                .channelType(CHANNEL_TYPE)
                 .chatId("1")
                 .messages(new ArrayList<>())
                 .build();
 
-        when(sessionPort.getOrCreate("telegram", "1")).thenReturn(session);
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "1")).thenReturn(session);
         when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
 
         ChannelPort channel = mock(ChannelPort.class);
-        when(channel.getChannelType()).thenReturn("telegram");
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
         when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         AgentSystem system = new AgentSystem() {
@@ -186,7 +187,7 @@ class AgentLoopTest {
 
             @Override
             public AgentContext process(AgentContext context) {
-                context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.text("hello"));
+                context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly("hello"));
                 return context;
             }
         };
@@ -206,7 +207,7 @@ class AgentLoopTest {
         Message inbound = Message.builder()
                 .role("user")
                 .content("hi")
-                .channelType("telegram")
+                .channelType(CHANNEL_TYPE)
                 .chatId("1")
                 .senderId("u1")
                 .timestamp(clock.instant())

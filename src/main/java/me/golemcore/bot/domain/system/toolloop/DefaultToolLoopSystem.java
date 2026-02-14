@@ -281,7 +281,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         if (context.getSession() == null) {
             return;
         }
-        java.util.Map<String, Object> metadata = context.getSession().getMetadata();
+        Map<String, Object> metadata = context.getSession().getMetadata();
         if (metadata == null) {
             return;
         }

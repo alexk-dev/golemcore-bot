@@ -123,7 +123,7 @@ class ToolLoopNoDuplicateHistoryBddTest {
         ResponseRoutingSystem routing = new ResponseRoutingSystem(List.of(channel), preferences, voiceHandler);
 
         ctx.setAttribute(ContextAttributes.OUTGOING_RESPONSE,
-                me.golemcore.bot.domain.model.OutgoingResponse.text(second.getContent()));
+                me.golemcore.bot.domain.model.OutgoingResponse.textOnly(second.getContent()));
 
         routing.process(ctx);
 

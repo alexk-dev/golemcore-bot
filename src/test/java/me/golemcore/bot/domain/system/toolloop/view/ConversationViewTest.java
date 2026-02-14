@@ -28,24 +28,26 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ConversationViewTest {
 
+    private static final String ROLE_USER = "user";
+
     @Test
     void constructorShouldDefensivelyCopyLists() {
         List<Message> messages = new ArrayList<>();
-        messages.add(Message.builder().role("user").content("hi").build());
+        messages.add(Message.builder().role(ROLE_USER).content("hi").build());
 
         List<String> diagnostics = new ArrayList<>();
         diagnostics.add("d1");
 
         ConversationView view = new ConversationView(messages, diagnostics);
 
-        messages.add(Message.builder().role("user").content("later").build());
+        messages.add(Message.builder().role(ROLE_USER).content("later").build());
         diagnostics.add("d2");
 
         assertEquals(1, view.messages().size());
         assertEquals(1, view.diagnostics().size());
 
         assertThrows(UnsupportedOperationException.class, () -> view.messages().add(
-                Message.builder().role("user").content("x").build()));
+                Message.builder().role(ROLE_USER).content("x").build()));
         assertThrows(UnsupportedOperationException.class, () -> view.diagnostics().add("x"));
     }
 
@@ -61,7 +63,7 @@ class ConversationViewTest {
     @Test
     void ofMessagesShouldUseEmptyDiagnostics() {
         ConversationView view = ConversationView.ofMessages(List.of(
-                Message.builder().role("user").content("hi").build()));
+                Message.builder().role(ROLE_USER).content("hi").build()));
 
         assertEquals(1, view.messages().size());
         assertTrue(view.diagnostics().isEmpty());

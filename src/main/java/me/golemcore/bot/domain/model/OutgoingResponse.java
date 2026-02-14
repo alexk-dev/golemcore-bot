@@ -18,7 +18,6 @@ package me.golemcore.bot.domain.model;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.model.Attachment;
 import lombok.Builder;
 import lombok.Singular;
 import lombok.Value;
@@ -64,8 +63,8 @@ public class OutgoingResponse {
     @Builder.Default
     boolean skipAssistantHistory = true;
 
-    public static OutgoingResponse text(String text) {
-        return OutgoingResponse.builder().text(text).build();
+    public static OutgoingResponse textOnly(String content) {
+        return OutgoingResponse.builder().text(content).build();
     }
 
     public static OutgoingResponse voiceOnly(String voiceText) {

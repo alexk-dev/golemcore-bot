@@ -13,7 +13,6 @@ import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.ConfirmationPort;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collection;
 import java.util.List;
@@ -21,7 +20,6 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
-import me.golemcore.bot.domain.model.ContextAttributes;
 
 /**
  * Pure tool-call execution service: executes tools + confirmation gating +

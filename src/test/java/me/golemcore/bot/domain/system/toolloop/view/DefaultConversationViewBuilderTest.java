@@ -34,6 +34,10 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class DefaultConversationViewBuilderTest {
 
+    private static final String ROLE_ASSISTANT = "assistant";
+    private static final String TOOL_CALL_ID = "tc1";
+    private static final String TOOL_NAME = "shell";
+
     @Test
     void shouldReturnRawMessagesWhenSessionMissing() {
         DefaultConversationViewBuilder builder = new DefaultConversationViewBuilder(new FlatteningToolMessageMasker());
@@ -61,9 +65,9 @@ class DefaultConversationViewBuilderTest {
                 .build();
 
         Message assistantWithToolCall = Message.builder()
-                .role("assistant")
+                .role(ROLE_ASSISTANT)
                 .content("Calling tool")
-                .toolCalls(List.of(Message.ToolCall.builder().id("tc1").name("shell")
+                .toolCalls(List.of(Message.ToolCall.builder().id(TOOL_CALL_ID).name(TOOL_NAME)
                         .arguments(Map.of("command", "echo hi"))
                         .build()))
                 .timestamp(Instant.parse("2026-01-01T00:00:00Z"))
@@ -96,9 +100,9 @@ class DefaultConversationViewBuilderTest {
                 .build();
 
         Message assistantWithToolCall = Message.builder()
-                .role("assistant")
+                .role(ROLE_ASSISTANT)
                 .content("Calling tool")
-                .toolCalls(List.of(Message.ToolCall.builder().id("tc1").name("shell")
+                .toolCalls(List.of(Message.ToolCall.builder().id(TOOL_CALL_ID).name(TOOL_NAME)
                         .arguments(Map.of("command", "echo hi"))
                         .build()))
                 .timestamp(Instant.parse("2026-01-01T00:00:00Z"))
@@ -106,8 +110,8 @@ class DefaultConversationViewBuilderTest {
 
         Message toolResult = Message.builder()
                 .role("tool")
-                .toolCallId("tc1")
-                .toolName("shell")
+                .toolCallId(TOOL_CALL_ID)
+                .toolName(TOOL_NAME)
                 .content("hi")
                 .timestamp(Instant.parse("2026-01-01T00:00:01Z"))
                 .build();
@@ -124,12 +128,12 @@ class DefaultConversationViewBuilderTest {
 
         assertEquals(2, view.messages().size());
         assertFalse(view.diagnostics().isEmpty());
-        assertEquals("assistant", view.messages().get(0).getRole());
+        assertEquals(ROLE_ASSISTANT, view.messages().get(0).getRole());
         assertFalse(view.messages().get(0).hasToolCalls(), "toolCalls must be masked in view");
         assertTrue(view.messages().get(0).getContent().contains("masked"));
 
         // The tool message becomes assistant text too (flattening behavior).
-        assertEquals("assistant", view.messages().get(1).getRole());
+        assertEquals(ROLE_ASSISTANT, view.messages().get(1).getRole());
     }
 
     @Test
@@ -146,8 +150,8 @@ class DefaultConversationViewBuilderTest {
 
         Message toolResult = Message.builder()
                 .role("tool")
-                .toolCallId("tc1")
-                .toolName("shell")
+                .toolCallId(TOOL_CALL_ID)
+                .toolName(TOOL_NAME)
                 .content("hi")
                 .timestamp(Instant.parse("2026-01-01T00:00:01Z"))
                 .build();
@@ -163,6 +167,6 @@ class DefaultConversationViewBuilderTest {
 
         assertEquals(1, view.messages().size());
         assertFalse(view.diagnostics().isEmpty());
-        assertEquals("assistant", view.messages().get(0).getRole());
+        assertEquals(ROLE_ASSISTANT, view.messages().get(0).getRole());
     }
 }

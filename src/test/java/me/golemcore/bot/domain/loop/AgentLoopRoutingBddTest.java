@@ -21,7 +21,6 @@ package me.golemcore.bot.domain.loop;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
-import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.RateLimitResult;
@@ -48,6 +47,10 @@ import static org.mockito.Mockito.*;
 
 class AgentLoopRoutingBddTest {
 
+    private static final String CHANNEL_TYPE = "telegram";
+    private static final String KEY_ITERATION_LIMIT = "system.iteration.limit";
+    private static final String KEY_GENERIC_FEEDBACK = "system.error.generic.feedback";
+
     @Test
     void scenario_iterationLimit_shouldRouteSyntheticLimitMessageViaRoutingSystem() {
         // Given
@@ -62,10 +65,10 @@ class AgentLoopRoutingBddTest {
         // is brittle. Match varargs properly.
         when(preferencesService.getMessage(any(), any())).thenAnswer(invocation -> {
             String key = invocation.getArgument(0);
-            if ("system.iteration.limit".equals(key)) {
+            if (KEY_ITERATION_LIMIT.equals(key)) {
                 return "LIMIT";
             }
-            if ("system.error.generic.feedback".equals(key)) {
+            if (KEY_GENERIC_FEEDBACK.equals(key)) {
                 return "generic";
             }
             return "x";
@@ -78,16 +81,16 @@ class AgentLoopRoutingBddTest {
 
         AgentSession session = AgentSession.builder()
                 .id("s1")
-                .channelType("telegram")
+                .channelType(CHANNEL_TYPE)
                 .chatId("1")
                 .messages(new ArrayList<>())
                 .build();
 
-        when(sessionPort.getOrCreate("telegram", "1")).thenReturn(session);
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "1")).thenReturn(session);
         when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
 
         ChannelPort channel = mock(ChannelPort.class);
-        when(channel.getChannelType()).thenReturn("telegram");
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
         when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         // System A: requests next iteration, which is impossible due to maxIterations=1
@@ -159,7 +162,7 @@ class AgentLoopRoutingBddTest {
         Message inbound = Message.builder()
                 .role("user")
                 .content("hi")
-                .channelType("telegram")
+                .channelType(CHANNEL_TYPE)
                 .chatId("1")
                 .senderId("u1")
                 .timestamp(clock.instant())

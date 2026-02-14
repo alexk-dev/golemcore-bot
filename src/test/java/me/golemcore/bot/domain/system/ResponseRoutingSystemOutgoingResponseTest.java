@@ -16,10 +16,13 @@ import static org.mockito.Mockito.*;
 
 class ResponseRoutingSystemOutgoingResponseTest {
 
+    private static final String CHANNEL_TYPE = "telegram";
+    private static final String CHAT_ID = "chat1";
+
     @Test
     void shouldSendOutgoingResponseTextWhenPresent() {
         ChannelPort channel = mock(ChannelPort.class);
-        when(channel.getChannelType()).thenReturn("telegram");
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
         when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         me.golemcore.bot.domain.service.VoiceResponseHandler voiceHandler = mock(
@@ -33,25 +36,25 @@ class ResponseRoutingSystemOutgoingResponseTest {
         system.registerChannel(channel);
 
         AgentSession session = AgentSession.builder()
-                .channelType("telegram")
-                .chatId("chat1")
+                .channelType(CHANNEL_TYPE)
+                .chatId(CHAT_ID)
                 .build();
 
         AgentContext context = AgentContext.builder()
                 .session(session)
                 .build();
-        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.text("hello"));
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly("hello"));
 
         system.process(context);
 
-        verify(channel).sendMessage("chat1", "hello");
+        verify(channel).sendMessage(CHAT_ID, "hello");
         assertThat((Object) context.getAttribute(ContextAttributes.RESPONSE_SENT)).isEqualTo(true);
     }
 
     @Test
     void shouldPreferOutgoingResponseOverLlmResponse() {
         ChannelPort channel = mock(ChannelPort.class);
-        when(channel.getChannelType()).thenReturn("telegram");
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
         when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         me.golemcore.bot.domain.service.VoiceResponseHandler voiceHandler = mock(
@@ -65,20 +68,20 @@ class ResponseRoutingSystemOutgoingResponseTest {
         system.registerChannel(channel);
 
         AgentSession session = AgentSession.builder()
-                .channelType("telegram")
-                .chatId("chat1")
+                .channelType(CHANNEL_TYPE)
+                .chatId(CHAT_ID)
                 .build();
 
         AgentContext context = AgentContext.builder()
                 .session(session)
                 .build();
 
-        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.text("from-outgoing"));
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly("from-outgoing"));
         // do NOT set LLM_RESPONSE content here; this test is about precedence
 
         system.process(context);
 
-        verify(channel).sendMessage("chat1", "from-outgoing");
+        verify(channel).sendMessage(CHAT_ID, "from-outgoing");
         assertThat((Object) context.getAttribute(ContextAttributes.RESPONSE_SENT)).isEqualTo(true);
     }
 }

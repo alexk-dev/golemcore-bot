@@ -82,7 +82,7 @@ class ResponseRoutingSystemTest {
     @Test
     void shouldSendOutgoingResponseText() {
         AgentContext context = createContext();
-        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.text(CONTENT_RESPONSE));
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly(CONTENT_RESPONSE));
 
         system.process(context);
 
@@ -135,7 +135,7 @@ class ResponseRoutingSystemTest {
     @Test
     void skipsResponseWhenPipelineTransitionPending() {
         AgentContext context = createContext();
-        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.text("response text"));
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly("response text"));
         context.setSkillTransitionRequest(me.golemcore.bot.domain.model.SkillTransitionRequest.explicit("next-skill"));
 
         system.process(context);
@@ -148,7 +148,7 @@ class ResponseRoutingSystemTest {
     @Test
     void autoModeMessageDoesNotSend() {
         AgentContext context = createContext();
-        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.text("auto response"));
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly("auto response"));
 
         Message autoMsg = Message.builder()
                 .role(ROLE_USER)
@@ -168,7 +168,7 @@ class ResponseRoutingSystemTest {
     @Test
     void shouldProcessWithOutgoingResponseText() {
         AgentContext context = createContext();
-        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.text("hi"));
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly("hi"));
         assertTrue(system.shouldProcess(context));
     }
 
@@ -205,7 +205,7 @@ class ResponseRoutingSystemTest {
     @Test
     void shouldSendErrorMessageViaOutgoingResponse() {
         AgentContext context = createContext();
-        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.text("Error occurred"));
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly("Error occurred"));
 
         system.process(context);
 
@@ -231,7 +231,7 @@ class ResponseRoutingSystemTest {
     void unknownChannelTypeDoesNotThrow() {
         AgentContext context = createContext();
         context.getSession().setChannelType(CHANNEL_UNKNOWN);
-        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.text(CONTENT_RESPONSE));
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly(CONTENT_RESPONSE));
 
         assertDoesNotThrow(() -> system.process(context));
         verify(channelPort, never()).sendMessage(anyString(), anyString());
@@ -245,7 +245,7 @@ class ResponseRoutingSystemTest {
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("send failed")));
 
         AgentContext context = createContext();
-        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.text(CONTENT_RESPONSE));
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly(CONTENT_RESPONSE));
 
         system.process(context);
 
@@ -401,7 +401,7 @@ class ResponseRoutingSystemTest {
     @Test
     void shouldSetResponseSentOnSuccessfulTextSend() {
         AgentContext context = createContext();
-        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.text("hello"));
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly("hello"));
 
         system.process(context);
 
@@ -414,7 +414,7 @@ class ResponseRoutingSystemTest {
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("send failed")));
 
         AgentContext context = createContext();
-        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.text(CONTENT_RESPONSE));
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly(CONTENT_RESPONSE));
 
         system.process(context);
 
@@ -435,7 +435,7 @@ class ResponseRoutingSystemTest {
         AgentContext context = createContext();
         context.getSession().setChannelType("slack");
         context.getSession().setChatId("slack-chat");
-        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.text("hello slack"));
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly("hello slack"));
 
         system.process(context);
 
@@ -465,7 +465,7 @@ class ResponseRoutingSystemTest {
     void errorChannelUnknownDoesNotThrow() {
         AgentContext context = createContext();
         context.getSession().setChannelType(CHANNEL_UNKNOWN);
-        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.text("some error"));
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly("some error"));
 
         assertDoesNotThrow(() -> system.process(context));
         verify(channelPort, never()).sendMessage(anyString(), anyString());

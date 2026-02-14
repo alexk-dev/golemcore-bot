@@ -29,6 +29,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class FlatteningToolMessageMaskerTest {
 
+    private static final String ROLE_USER = "user";
+
     @Test
     void shouldReturnEmptyResultForNullOrEmptyInput() {
         FlatteningToolMessageMasker masker = new FlatteningToolMessageMasker();
@@ -46,22 +48,22 @@ class FlatteningToolMessageMaskerTest {
     void shouldSkipNullMessages() {
         FlatteningToolMessageMasker masker = new FlatteningToolMessageMasker();
 
-        Message user = Message.builder().role("user").content("hi").build();
+        Message user = Message.builder().role(ROLE_USER).content("hi").build();
         ToolMessageMasker.MaskingResult result = masker.maskToolMessages(java.util.Arrays.asList(null, user, null));
 
         assertEquals(1, result.messages().size());
-        assertEquals("user", result.messages().get(0).getRole());
+        assertEquals(ROLE_USER, result.messages().get(0).getRole());
     }
 
     @Test
     void shouldAddNoOpDiagnosticWhenNothingFlattened() {
         FlatteningToolMessageMasker masker = new FlatteningToolMessageMasker();
 
-        Message user = Message.builder().role("user").content("hi").build();
+        Message user = Message.builder().role(ROLE_USER).content("hi").build();
         ToolMessageMasker.MaskingResult result = masker.maskToolMessages(List.of(user));
 
         assertEquals(1, result.messages().size());
-        assertEquals("user", result.messages().get(0).getRole());
+        assertEquals(ROLE_USER, result.messages().get(0).getRole());
         assertEquals(List.of("no-op: no tool messages found"), result.diagnostics());
     }
 

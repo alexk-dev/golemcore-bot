@@ -26,14 +26,16 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class AgentContextTest {
 
+    private static final String TOOL_CALL_ID = "tc1";
+
     @Test
     void addToolResultShouldInitializeMapWhenNull() {
         AgentContext ctx = AgentContext.builder().toolResults(null).build();
 
-        ctx.addToolResult("tc1", ToolResult.success("ok"));
+        ctx.addToolResult(TOOL_CALL_ID, ToolResult.success("ok"));
 
         assertNotNull(ctx.getToolResults());
-        assertEquals("ok", ctx.getToolResults().get("tc1").getOutput());
+        assertEquals("ok", ctx.getToolResults().get(TOOL_CALL_ID).getOutput());
     }
 
     @Test
@@ -93,10 +95,10 @@ class AgentContextTest {
     void builderShouldRespectProvidedMaps() {
         AgentContext ctx = AgentContext.builder()
                 .attributes(new java.util.HashMap<>(Map.of("a", 1)))
-                .toolResults(new java.util.HashMap<>(Map.of("tc1", ToolResult.success("ok"))))
+                .toolResults(new java.util.HashMap<>(Map.of(TOOL_CALL_ID, ToolResult.success("ok"))))
                 .build();
 
         assertEquals(1, ctx.<Integer>getAttribute("a"));
-        assertEquals("ok", ctx.getToolResults().get("tc1").getOutput());
+        assertEquals("ok", ctx.getToolResults().get(TOOL_CALL_ID).getOutput());
     }
 }
