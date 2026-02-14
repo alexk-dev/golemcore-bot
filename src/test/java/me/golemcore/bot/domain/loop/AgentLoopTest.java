@@ -211,7 +211,7 @@ class AgentLoopTest {
 
         loop.processMessage(inbound);
 
-        verify(channel, times(1)).sendMessage("1", "hello");
+        verify(channel, never()).sendMessage(any(), any());
         assertTrue(session.getMessages().stream().anyMatch(m -> "assistant".equals(m.getRole())
                 && "hello".equals(m.getContent())));
     }
