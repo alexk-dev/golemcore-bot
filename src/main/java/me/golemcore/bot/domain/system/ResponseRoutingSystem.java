@@ -138,11 +138,14 @@ public class ResponseRoutingSystem implements AgentSystem {
     private AgentContext handleAutoMode(AgentContext context) {
         LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
         if (hasResponseContent(response)) {
-            context.getSession().addMessage(Message.builder()
-                    .role("assistant")
-                    .content(response.getContent())
-                    .timestamp(Instant.now())
-                    .build());
+            AgentSession session = context.getSession();
+            if (!isLastAssistantMessage(session, response.getContent())) {
+                session.addMessage(Message.builder()
+                        .role("assistant")
+                        .content(response.getContent())
+                        .timestamp(Instant.now())
+                        .build());
+            }
         }
         return context;
     }
@@ -191,9 +194,13 @@ public class ResponseRoutingSystem implements AgentSystem {
             context.setAttribute(ContextAttributes.RESPONSE_SENT, true);
 
             if (!skipAssistantHistory) {
-                addAssistantMessage(session, content, response.getToolCalls());
+                if (!isLastAssistantMessage(session, content)) {
+                    addAssistantMessage(session, content, response.getToolCalls());
+                }
             } else {
-                addAssistantMessage(session, content, null);
+                if (!isLastAssistantMessage(session, content)) {
+                    addAssistantMessage(session, content, null);
+                }
             }
 
             log.info("[Response] Sent text to {}/{}", channelType, chatId);
@@ -210,6 +217,28 @@ public class ResponseRoutingSystem implements AgentSystem {
         sendVoiceAfterText(context, content);
 
         return context;
+    }
+
+    /**
+     * Prevents duplicate assistant messages when an upstream system already
+     * persisted the final assistant message to raw history.
+     */
+    private boolean isLastAssistantMessage(AgentSession session, String content) {
+        if (session == null || session.getMessages() == null || session.getMessages().isEmpty()) {
+            return false;
+        }
+
+        Message last = session.getMessages().get(session.getMessages().size() - 1);
+        if (last == null || !"assistant".equals(last.getRole())) {
+            return false;
+        }
+
+        String lastContent = last.getContent();
+        if (lastContent == null || content == null) {
+            return false;
+        }
+
+        return lastContent.equals(content);
     }
 
     // --- Helper predicates ---
