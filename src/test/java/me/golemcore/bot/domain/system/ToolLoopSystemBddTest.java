@@ -124,6 +124,7 @@ class ToolLoopSystemBddTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 settings,
                 router,
+                null,
                 Clock.fixed(DEADLINE, ZoneOffset.UTC));
 
         // WHEN: we process one turn
@@ -242,6 +243,7 @@ class ToolLoopSystemBddTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 settings,
                 router,
+                null,
                 Clock.fixed(DEADLINE, ZoneOffset.UTC));
 
         // WHEN
@@ -333,6 +335,7 @@ class ToolLoopSystemBddTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 settings,
                 router,
+                null,
                 Clock.fixed(DEADLINE, ZoneOffset.UTC));
 
         // WHEN
@@ -419,6 +422,7 @@ class ToolLoopSystemBddTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 settings,
                 router,
+                null,
                 fastClock);
 
         // WHEN
@@ -482,6 +486,7 @@ class ToolLoopSystemBddTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 settings,
                 router,
+                null,
                 Clock.fixed(DEADLINE, ZoneOffset.UTC));
 
         // WHEN
@@ -561,6 +566,7 @@ class ToolLoopSystemBddTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 settings,
                 router,
+                null,
                 Clock.fixed(DEADLINE, ZoneOffset.UTC));
 
         // WHEN
@@ -626,6 +632,7 @@ class ToolLoopSystemBddTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 settings,
                 router,
+                null,
                 Clock.fixed(DEADLINE, ZoneOffset.UTC));
 
         // WHEN
@@ -691,6 +698,7 @@ class ToolLoopSystemBddTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 settings,
                 router,
+                null,
                 Clock.fixed(DEADLINE, ZoneOffset.UTC));
 
         // WHEN
@@ -782,6 +790,7 @@ class ToolLoopSystemBddTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 settings,
                 router,
+                null,
                 Clock.fixed(DEADLINE, ZoneOffset.UTC));
 
         // WHEN

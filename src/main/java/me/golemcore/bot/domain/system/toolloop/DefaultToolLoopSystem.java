@@ -8,6 +8,7 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.ToolFailureKind;
+import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationView;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
 import me.golemcore.bot.port.outbound.LlmPort;
@@ -18,6 +19,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import me.golemcore.bot.infrastructure.config.BotProperties;
 
@@ -38,24 +40,26 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
     private final ConversationViewBuilder viewBuilder;
     private final BotProperties.ToolLoopProperties settings;
     private final BotProperties.ModelRouterProperties router;
+    private final PlanService planService;
     private final Clock clock;
 
     public DefaultToolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutor, HistoryWriter historyWriter,
             ConversationViewBuilder viewBuilder, BotProperties.ToolLoopProperties settings,
-            BotProperties.ModelRouterProperties router) {
-        this(llmPort, toolExecutor, historyWriter, viewBuilder, settings, router, Clock.systemUTC());
+            BotProperties.ModelRouterProperties router, PlanService planService) {
+        this(llmPort, toolExecutor, historyWriter, viewBuilder, settings, router, planService, Clock.systemUTC());
     }
 
     // Visible for testing
     public DefaultToolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutor, HistoryWriter historyWriter,
             ConversationViewBuilder viewBuilder, BotProperties.ToolLoopProperties settings,
-            BotProperties.ModelRouterProperties router, Clock clock) {
+            BotProperties.ModelRouterProperties router, PlanService planService, Clock clock) {
         this.llmPort = llmPort;
         this.toolExecutor = toolExecutor;
         this.historyWriter = historyWriter;
         this.viewBuilder = viewBuilder;
         this.settings = settings;
         this.router = router;
+        this.planService = planService;
         this.clock = clock;
     }
 
@@ -97,6 +101,24 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
 
             // 3) Append assistant message with tool calls
             historyWriter.appendAssistantToolCalls(context, response, response.getToolCalls());
+
+            // 3.5) Plan mode: record tool calls as plan steps, write synthetic results
+            if (planService != null && planService.isPlanModeActive()) {
+                String planId = planService.getActivePlanId();
+                for (Message.ToolCall tc : response.getToolCalls()) {
+                    Map<String, Object> args = tc.getArguments() != null ? tc.getArguments() : Map.of();
+                    String description = tc.getName() + "(" + args + ")";
+                    planService.addStep(planId, tc.getName(), args, description);
+
+                    ToolExecutionOutcome synthetic = new ToolExecutionOutcome(
+                            tc.getId(), tc.getName(),
+                            me.golemcore.bot.domain.model.ToolResult.success("[Planned]"),
+                            "[Planned]", true, null);
+                    historyWriter.appendToolResult(context, synthetic);
+                    toolExecutions++;
+                }
+                continue;
+            }
 
             // 4) Execute tools and append results
             for (Message.ToolCall tc : response.getToolCalls()) {

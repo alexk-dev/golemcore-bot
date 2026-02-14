@@ -99,6 +99,7 @@ class ToolLoopNoDuplicateHistoryBddTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 new BotProperties.ToolLoopProperties(),
                 new BotProperties.ModelRouterProperties(),
+                null,
                 Clock.fixed(NOW, ZoneOffset.UTC));
 
         // WHEN: ToolLoop runs
@@ -119,10 +120,10 @@ class ToolLoopNoDuplicateHistoryBddTest {
         VoiceResponseHandler voiceHandler = mock(VoiceResponseHandler.class);
         when(voiceHandler.isAvailable()).thenReturn(false);
 
-        BotProperties props = new BotProperties();
-        ResponseRoutingSystem routing = new ResponseRoutingSystem(List.of(channel), preferences, voiceHandler, props);
+        ResponseRoutingSystem routing = new ResponseRoutingSystem(List.of(channel), preferences, voiceHandler);
 
-        ctx.setAttribute(ContextAttributes.LLM_RESPONSE, second);
+        ctx.setAttribute(ContextAttributes.OUTGOING_RESPONSE,
+                me.golemcore.bot.domain.model.OutgoingResponse.text(second.getContent()));
 
         routing.process(ctx);
 

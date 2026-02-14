@@ -21,7 +21,6 @@ package me.golemcore.bot.domain.system;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
-import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.system.toolloop.ToolLoopSystem;
 import org.junit.jupiter.api.Test;
 
@@ -37,10 +36,8 @@ class ToolLoopExecutionSystemTest {
     @Test
     void shouldNotProcessWhenLlmErrorPresent() {
         ToolLoopSystem toolLoopSystem = mock(ToolLoopSystem.class);
-        PlanService planService = mock(PlanService.class);
-        when(planService.isPlanModeActive()).thenReturn(false);
 
-        ToolLoopExecutionSystem system = new ToolLoopExecutionSystem(toolLoopSystem, planService);
+        ToolLoopExecutionSystem system = new ToolLoopExecutionSystem(toolLoopSystem);
 
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder().channelType("telegram").chatId("1").build())
@@ -54,10 +51,8 @@ class ToolLoopExecutionSystemTest {
     @Test
     void processShouldInvokeToolLoopAndReturnSameContextInstance() {
         ToolLoopSystem toolLoopSystem = mock(ToolLoopSystem.class);
-        PlanService planService = mock(PlanService.class);
-        when(planService.isPlanModeActive()).thenReturn(false);
 
-        ToolLoopExecutionSystem system = new ToolLoopExecutionSystem(toolLoopSystem, planService);
+        ToolLoopExecutionSystem system = new ToolLoopExecutionSystem(toolLoopSystem);
 
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder().channelType("telegram").chatId("1").build())

@@ -92,6 +92,7 @@ class ToolLoopModelSwitchFlatteningTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 settings,
                 router,
+                null,
                 Clock.fixed(Instant.parse("2026-02-01T00:00:00Z"), ZoneOffset.UTC));
 
         // WHEN

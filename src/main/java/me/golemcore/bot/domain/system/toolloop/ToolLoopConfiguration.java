@@ -1,5 +1,6 @@
 package me.golemcore.bot.domain.system.toolloop;
 
+import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder;
 import me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker;
@@ -42,8 +43,9 @@ public class ToolLoopConfiguration {
 
     @Bean
     public ToolLoopSystem toolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutorPort,
-            HistoryWriter historyWriter, ConversationViewBuilder viewBuilder, BotProperties botProperties) {
+            HistoryWriter historyWriter, ConversationViewBuilder viewBuilder, BotProperties botProperties,
+            PlanService planService) {
         return new DefaultToolLoopSystem(llmPort, toolExecutorPort, historyWriter, viewBuilder,
-                botProperties.getToolLoop(), botProperties.getRouter());
+                botProperties.getToolLoop(), botProperties.getRouter(), planService);
     }
 }

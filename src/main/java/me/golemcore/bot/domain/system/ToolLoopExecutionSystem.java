@@ -3,7 +3,6 @@ package me.golemcore.bot.domain.system;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
-import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.system.toolloop.ToolLoopSystem;
 import org.springframework.stereotype.Component;
 
@@ -27,11 +26,9 @@ import org.springframework.stereotype.Component;
 public class ToolLoopExecutionSystem implements AgentSystem {
 
     private final ToolLoopSystem toolLoopSystem;
-    private final PlanService planService;
 
-    public ToolLoopExecutionSystem(ToolLoopSystem toolLoopSystem, PlanService planService) {
+    public ToolLoopExecutionSystem(ToolLoopSystem toolLoopSystem) {
         this.toolLoopSystem = toolLoopSystem;
-        this.planService = planService;
     }
 
     @Override
@@ -49,11 +46,6 @@ public class ToolLoopExecutionSystem implements AgentSystem {
         // If another system already produced an LLM error, let ResponseRouting handle
         // it.
         if (context.getAttribute(ContextAttributes.LLM_ERROR) != null) {
-            return false;
-        }
-
-        // Plan mode: do not execute tools / tool loop. Planning must be tool-free.
-        if (planService != null && planService.isPlanModeActive()) {
             return false;
         }
 
