@@ -47,7 +47,8 @@ me.golemcore.bot
 | 55    | `SkillPipelineSystem`     | Auto-transition between skills |
 | 55    | `RagIndexingSystem`       | Index conversations for RAG |
 | 58    | `PlanFinalizationSystem`  | Plan mode: detect plan completion, publish approval event |
-| 59    | `OutgoingResponsePreparationSystem` | Prepare OutgoingResponse from LLM results |
+| 58    | `OutgoingResponsePreparationSystem` | Prepare OutgoingResponse from LLM results |
+| 59    | `FeedbackGuaranteeSystem` | Fallback OutgoingResponse if none produced upstream |
 | 60    | `ResponseRoutingSystem`   | Send response to channel |
 
 Max iterations: `bot.agent.max-iterations=20`.

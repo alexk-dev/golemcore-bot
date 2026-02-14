@@ -151,7 +151,9 @@ class AgentLoopRoutingBddTest {
 
         // Then
         verify(channel, atLeastOnce()).sendMessage("1", "LIMIT");
-        assertTrue(session.getMessages().stream().anyMatch(m -> "assistant".equals(m.getRole())
-                && "LIMIT".equals(m.getContent())));
+        // ADR-0004: orchestration must not mutate raw history.
+        // Verify no synthetic assistant message was added to session.
+        assertFalse(session.getMessages().stream().anyMatch(m -> "assistant".equals(m.getRole())),
+                "Orchestration must not write synthetic assistant messages to raw history");
     }
 }

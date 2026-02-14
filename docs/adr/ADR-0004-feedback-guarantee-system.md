@@ -1,7 +1,7 @@
 # ADR-0004: FeedbackGuaranteeSystem — Detailed Design (Transport-Safe Feedback Guarantee)
 
 ## Status
-Proposed (implementation included in this branch)
+Accepted
 
 ## Problem / Motivation
 In a user-facing agent, **silence is a bug**.

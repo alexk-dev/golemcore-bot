@@ -60,7 +60,7 @@ class OutgoingResponsePreparationSystemTest {
     @Test
     void shouldReturnCorrectNameAndOrder() {
         assertEquals("OutgoingResponsePreparationSystem", system.getName());
-        assertEquals(59, system.getOrder());
+        assertEquals(58, system.getOrder());
     }
 
     // ── shouldProcess ──
