@@ -69,9 +69,6 @@ public final class ContextAttributes {
     /** String ? prompt suffix/extra context produced by RAG/context building. */
     public static final String RAG_CONTEXT = "rag.context";
 
-    /** String ? error details from ResponseRoutingSystem. */
-    public static final String ROUTING_ERROR = "routing.error";
-
     /** Boolean ? input sanitization already performed for this context. */
     public static final String SANITIZATION_PERFORMED = "sanitization.performed";
 
@@ -86,9 +83,4 @@ public final class ContextAttributes {
     /** Boolean ? loop iteration limit reached (AgentLoop safeguard). */
     public static final String ITERATION_LIMIT_REACHED = "iteration.limit.reached";
 
-    /** String ? generic system error marker/details (AgentLoop safeguard). */
-    public static final String SYSTEM_ERROR = "system.error.";
-
-    /** Boolean — a response was successfully sent to the user in this loop run. */
-    public static final String RESPONSE_SENT = "response.sent";
 }

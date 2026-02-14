@@ -24,7 +24,9 @@ import me.golemcore.bot.domain.model.Attachment;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.RoutingOutcome;
 import me.golemcore.bot.domain.model.SkillTransitionRequest;
+import me.golemcore.bot.domain.model.TurnOutcome;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.service.VoiceResponseHandler.VoiceSendResult;
@@ -90,50 +92,97 @@ public class ResponseRoutingSystem implements AgentSystem {
             return context;
         }
 
+        // Track routing results for RoutingOutcome
+        boolean sentText = false;
+        boolean sentVoice = false;
+        String errorMessage = null;
+
         if (outgoing.getText() != null && !outgoing.getText().isBlank()) {
-            sendOutgoingText(context, outgoing);
+            String textError = sendOutgoingText(context, outgoing);
+            if (textError == null) {
+                sentText = true;
+            } else {
+                errorMessage = textError;
+            }
         }
-        sendOutgoingVoiceIfRequested(context, outgoing);
-        sendOutgoingAttachments(context, outgoing);
+        if (sendOutgoingVoiceIfRequested(context, outgoing)) {
+            sentVoice = true;
+        }
+        int sentAttachments = sendOutgoingAttachments(context, outgoing);
+
+        // Build and record RoutingOutcome
+        RoutingOutcome routingOutcome = RoutingOutcome.builder()
+                .attempted(true)
+                .sentText(sentText)
+                .sentVoice(sentVoice)
+                .sentAttachments(sentAttachments)
+                .errorMessage(errorMessage)
+                .build();
+        recordRoutingOutcome(context, routingOutcome);
 
         return context;
     }
 
+    private void recordRoutingOutcome(AgentContext context, RoutingOutcome routingOutcome) {
+        TurnOutcome existing = context.getTurnOutcome();
+        if (existing != null) {
+            // Rebuild with routingOutcome added
+            TurnOutcome updated = TurnOutcome.builder()
+                    .finishReason(existing.getFinishReason())
+                    .assistantText(existing.getAssistantText())
+                    .outgoingResponse(existing.getOutgoingResponse())
+                    .failures(existing.getFailures())
+                    .rawHistoryWritten(existing.isRawHistoryWritten())
+                    .model(existing.getModel())
+                    .autoMode(existing.isAutoMode())
+                    .routingOutcome(routingOutcome)
+                    .build();
+            context.setTurnOutcome(updated);
+        }
+        context.setAttribute("routing.outcome", routingOutcome);
+    }
+
     // --- OutgoingResponse handlers ---
 
-    private void sendOutgoingText(AgentContext context, OutgoingResponse outgoing) {
+    /**
+     * Sends text and returns null on success or error message on failure.
+     */
+    private String sendOutgoingText(AgentContext context, OutgoingResponse outgoing) {
         AgentSession session = context.getSession();
         ChannelPort channel = resolveChannel(session);
         if (channel == null) {
-            return;
+            return null;
         }
         String chatId = session.getChatId();
         try {
             channel.sendMessage(chatId, outgoing.getText()).get(30, TimeUnit.SECONDS);
-            context.setAttribute(ContextAttributes.RESPONSE_SENT, true);
+            return null;
         } catch (Exception e) {
             log.warn("[Response] FAILED to send (OutgoingResponse): {}", e.getMessage());
             log.debug("[Response] OutgoingResponse send failure", e);
-            context.setAttribute(ContextAttributes.ROUTING_ERROR, e.getMessage());
+            return e.getMessage();
         }
     }
 
-    private void sendOutgoingVoiceIfRequested(AgentContext context, OutgoingResponse outgoing) {
+    /**
+     * Returns true if voice was successfully sent.
+     */
+    private boolean sendOutgoingVoiceIfRequested(AgentContext context, OutgoingResponse outgoing) {
         if (outgoing == null || !outgoing.isVoiceRequested()) {
-            return;
+            return false;
         }
 
         String voiceText = outgoing.getVoiceText();
         String responseText = outgoing.getText();
         String textToSpeak = (voiceText != null && !voiceText.isBlank()) ? voiceText : responseText;
         if (textToSpeak == null || textToSpeak.isBlank()) {
-            return;
+            return false;
         }
 
         AgentSession session = context.getSession();
         ChannelPort channel = resolveChannel(session);
         if (channel == null) {
-            return;
+            return false;
         }
 
         String chatId = session.getChatId();
@@ -141,20 +190,26 @@ public class ResponseRoutingSystem implements AgentSystem {
         VoiceSendResult result = voiceHandler.trySendVoice(channel, chatId, textToSpeak);
         if (result == VoiceSendResult.QUOTA_EXCEEDED) {
             sendVoiceQuotaNotification(channel, chatId);
+            return false;
         }
+        return result == VoiceSendResult.SUCCESS;
     }
 
-    private void sendOutgoingAttachments(AgentContext context, OutgoingResponse outgoing) {
+    /**
+     * Returns count of successfully sent attachments.
+     */
+    private int sendOutgoingAttachments(AgentContext context, OutgoingResponse outgoing) {
         if (outgoing == null || outgoing.getAttachments() == null || outgoing.getAttachments().isEmpty()) {
-            return;
+            return 0;
         }
 
         AgentSession session = context.getSession();
         ChannelPort channel = resolveChannel(session);
         if (channel == null) {
-            return;
+            return 0;
         }
 
+        int sent = 0;
         String chatId = session.getChatId();
         for (Attachment attachment : outgoing.getAttachments()) {
             try {
@@ -165,6 +220,7 @@ public class ResponseRoutingSystem implements AgentSystem {
                     channel.sendDocument(chatId, attachment.getData(), attachment.getFilename(),
                             attachment.getCaption()).get(30, TimeUnit.SECONDS);
                 }
+                sent++;
                 log.debug("[Response] Sent attachment: {} ({} bytes)", attachment.getFilename(),
                         attachment.getData().length);
             } catch (InterruptedException e) {
@@ -176,6 +232,7 @@ public class ResponseRoutingSystem implements AgentSystem {
                         e.getMessage());
             }
         }
+        return sent;
     }
 
     // --- Channel resolution ---

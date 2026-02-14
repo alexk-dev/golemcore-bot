@@ -23,6 +23,7 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.TurnOutcome;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -59,6 +60,11 @@ public class MemoryPersistSystem implements AgentSystem {
 
     @Override
     public boolean shouldProcess(AgentContext context) {
+        // Prefer TurnOutcome; fall back to legacy finalAnswerReady
+        TurnOutcome outcome = context.getTurnOutcome();
+        if (outcome != null) {
+            return outcome.getAssistantText() != null && !outcome.getAssistantText().isBlank();
+        }
         return context.isFinalAnswerReady();
     }
 
@@ -70,14 +76,21 @@ public class MemoryPersistSystem implements AgentSystem {
             return context;
         }
 
-        // Get the LLM response
-        LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
-        if (response == null || response.getContent() == null) {
-            return context;
+        // Prefer TurnOutcome.assistantText; fall back to legacy LLM_RESPONSE
+        TurnOutcome outcome = context.getTurnOutcome();
+        String assistantContent;
+        if (outcome != null && outcome.getAssistantText() != null) {
+            assistantContent = outcome.getAssistantText();
+        } else {
+            LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
+            if (response == null || response.getContent() == null) {
+                return context;
+            }
+            assistantContent = response.getContent();
         }
 
         // Build memory entry
-        String entry = buildMemoryEntry(lastUserMessage, response);
+        String entry = buildMemoryEntry(lastUserMessage, assistantContent);
 
         // Append to today's notes
         try {
@@ -104,10 +117,10 @@ public class MemoryPersistSystem implements AgentSystem {
         return null;
     }
 
-    private String buildMemoryEntry(Message userMessage, LlmResponse response) {
+    private String buildMemoryEntry(Message userMessage, String assistantText) {
         String time = TIME_FORMATTER.format(Instant.now());
         String userContent = truncate(userMessage.getContent(), 200);
-        String assistantContent = truncate(response.getContent(), 300);
+        String assistantContent = truncate(assistantText, 300);
 
         return String.format("[%s] User: %s | Assistant: %s%n",
                 time, userContent, assistantContent);

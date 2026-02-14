@@ -22,6 +22,7 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -106,6 +107,41 @@ public class AgentContext {
 
     @Builder.Default
     private boolean finalAnswerReady = false;
+
+    @SuppressWarnings("PMD.NullAssignment")
+    @Builder.Default
+    private TurnOutcome turnOutcome = null;
+
+    @Builder.Default
+    private List<FailureEvent> failures = new ArrayList<>();
+
+    /**
+     * Records a structured failure event that occurred during pipeline execution.
+     */
+    public void addFailure(FailureEvent failure) {
+        if (failures == null) {
+            failures = new ArrayList<>();
+        }
+        failures.add(failure);
+    }
+
+    /**
+     * Returns an unmodifiable view of recorded failure events.
+     */
+    public List<FailureEvent> getFailures() {
+        if (failures == null) {
+            return Collections.emptyList();
+        }
+        return Collections.unmodifiableList(failures);
+    }
+
+    public TurnOutcome getTurnOutcome() {
+        return turnOutcome;
+    }
+
+    public void setTurnOutcome(TurnOutcome turnOutcome) {
+        this.turnOutcome = turnOutcome;
+    }
 
     public SkillTransitionRequest getSkillTransitionRequest() {
         return skillTransitionRequest;

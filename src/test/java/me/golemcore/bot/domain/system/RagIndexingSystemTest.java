@@ -178,6 +178,82 @@ class RagIndexingSystemTest {
         assertTrue(system.shouldProcess(context));
     }
 
+    // ==================== TurnOutcome-based tests ====================
+
+    @Test
+    void shouldProcessWhenTurnOutcomeHasAssistantText() {
+        AgentContext context = AgentContext.builder()
+                .messages(new ArrayList<>())
+                .build();
+        context.setTurnOutcome(TurnOutcome.builder()
+                .finishReason(FinishReason.SUCCESS)
+                .assistantText("substantive answer about something important")
+                .build());
+
+        assertTrue(system.shouldProcess(context));
+    }
+
+    @Test
+    void shouldNotProcessWhenTurnOutcomeHasNullAssistantText() {
+        AgentContext context = AgentContext.builder()
+                .messages(new ArrayList<>())
+                .build();
+        context.setTurnOutcome(TurnOutcome.builder()
+                .finishReason(FinishReason.ERROR)
+                .assistantText(null)
+                .build());
+
+        assertFalse(system.shouldProcess(context));
+    }
+
+    @Test
+    void shouldNotProcessWhenTurnOutcomeHasBlankAssistantText() {
+        AgentContext context = AgentContext.builder()
+                .messages(new ArrayList<>())
+                .build();
+        context.setTurnOutcome(TurnOutcome.builder()
+                .finishReason(FinishReason.SUCCESS)
+                .assistantText("  ")
+                .build());
+
+        assertFalse(system.shouldProcess(context));
+    }
+
+    @Test
+    void processUsesAssistantTextFromTurnOutcome() {
+        AgentContext context = AgentContext.builder()
+                .messages(new ArrayList<>(List.of(
+                        Message.builder().role("user").content("What is the capital of France?")
+                                .timestamp(Instant.now()).build())))
+                .build();
+        context.setTurnOutcome(TurnOutcome.builder()
+                .finishReason(FinishReason.SUCCESS)
+                .assistantText("The capital of France is Paris, known for the Eiffel Tower.")
+                .build());
+        // Also set legacy attribute — TurnOutcome should take priority
+        context.setAttribute(ContextAttributes.LLM_RESPONSE,
+                LlmResponse.builder().content("LEGACY should be ignored").build());
+
+        system.process(context);
+
+        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+        verify(ragPort).index(captor.capture());
+        assertTrue(captor.getValue().contains("Assistant: The capital of France is Paris"));
+        assertFalse(captor.getValue().contains("LEGACY"));
+    }
+
+    @Test
+    void processFallsBackToLlmResponseWhenNoTurnOutcome() {
+        AgentContext context = buildContext("What is the capital of France?",
+                "The capital of France is Paris, known for the Eiffel Tower.");
+
+        system.process(context);
+
+        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+        verify(ragPort).index(captor.capture());
+        assertTrue(captor.getValue().contains("Assistant: The capital of France is Paris"));
+    }
+
     private AgentContext buildContext(String userText, String assistantText) {
         List<Message> messages = new ArrayList<>();
         messages.add(Message.builder()

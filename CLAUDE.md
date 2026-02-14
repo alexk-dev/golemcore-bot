@@ -46,6 +46,7 @@ me.golemcore.bot
 | 50    | `MemoryPersistSystem`     | Persist memory |
 | 55    | `SkillPipelineSystem`     | Auto-transition between skills |
 | 55    | `RagIndexingSystem`       | Index conversations for RAG |
+| 57    | `TurnOutcomeFinalizationSystem` | Build canonical TurnOutcome from domain state |
 | 58    | `PlanFinalizationSystem`  | Plan mode: detect plan completion, publish approval event |
 | 58    | `OutgoingResponsePreparationSystem` | Prepare OutgoingResponse from LLM results |
 | 59    | `FeedbackGuaranteeSystem` | Fallback OutgoingResponse if none produced upstream |

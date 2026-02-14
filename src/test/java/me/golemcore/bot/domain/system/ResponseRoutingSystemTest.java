@@ -4,8 +4,11 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Attachment;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.FinishReason;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
+import me.golemcore.bot.domain.model.RoutingOutcome;
+import me.golemcore.bot.domain.model.TurnOutcome;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.service.VoiceResponseHandler.VoiceSendResult;
@@ -36,6 +39,8 @@ class ResponseRoutingSystemTest {
     private static final String MSG_VOICE_QUOTA = "Voice quota exceeded!";
     private static final String CONTENT_RESPONSE = "response";
     private static final String VOICE_TEXT_CONTENT = "Voice text";
+    private static final String ATTR_ROUTING_OUTCOME = "routing.outcome";
+    private static final String CONTENT_HELLO = "hello";
 
     private ResponseRoutingSystem system;
     private ChannelPort channelPort;
@@ -87,7 +92,9 @@ class ResponseRoutingSystemTest {
         system.process(context);
 
         verify(channelPort).sendMessage(eq(CHAT_ID), eq(CONTENT_RESPONSE));
-        assertEquals(true, context.getAttribute(ContextAttributes.RESPONSE_SENT));
+        RoutingOutcome outcome = context.getAttribute(ATTR_ROUTING_OUTCOME);
+        assertNotNull(outcome);
+        assertTrue(outcome.isSentText());
     }
 
     @Test
@@ -210,7 +217,9 @@ class ResponseRoutingSystemTest {
         system.process(context);
 
         verify(channelPort).sendMessage(eq(CHAT_ID), eq("Error occurred"));
-        assertEquals(true, context.getAttribute(ContextAttributes.RESPONSE_SENT));
+        RoutingOutcome errorOutcome = context.getAttribute(ATTR_ROUTING_OUTCOME);
+        assertNotNull(errorOutcome);
+        assertTrue(errorOutcome.isSentText());
     }
 
     // ===== Blank/null content =====
@@ -240,7 +249,7 @@ class ResponseRoutingSystemTest {
     // ===== Send failure =====
 
     @Test
-    void channelSendFailureSetsRoutingError() {
+    void channelSendFailureRecordsRoutingOutcomeWithError() {
         when(channelPort.sendMessage(anyString(), anyString()))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("send failed")));
 
@@ -249,10 +258,12 @@ class ResponseRoutingSystemTest {
 
         system.process(context);
 
-        String error = (String) context.getAttribute(ContextAttributes.ROUTING_ERROR);
-        assertNotNull(error);
-        assertFalse(error.isBlank());
-        assertNull(context.getAttribute(ContextAttributes.RESPONSE_SENT));
+        RoutingOutcome outcome = context.getAttribute(ATTR_ROUTING_OUTCOME);
+        assertNotNull(outcome);
+        assertTrue(outcome.isAttempted());
+        assertFalse(outcome.isSentText());
+        assertNotNull(outcome.getErrorMessage());
+        assertFalse(outcome.getErrorMessage().isBlank());
     }
 
     // ===== Voice via OutgoingResponse =====
@@ -396,20 +407,22 @@ class ResponseRoutingSystemTest {
         verify(channelPort).sendMessage(eq(CHAT_ID), eq(MSG_VOICE_QUOTA));
     }
 
-    // ===== RESPONSE_SENT tracking =====
+    // ===== RoutingOutcome sentText tracking =====
 
     @Test
-    void shouldSetResponseSentOnSuccessfulTextSend() {
+    void shouldRecordSentTextTrueOnSuccessfulSend() {
         AgentContext context = createContext();
-        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly("hello"));
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly(CONTENT_HELLO));
 
         system.process(context);
 
-        assertEquals(true, context.getAttribute(ContextAttributes.RESPONSE_SENT));
+        RoutingOutcome outcome = context.getAttribute(ATTR_ROUTING_OUTCOME);
+        assertNotNull(outcome);
+        assertTrue(outcome.isSentText());
     }
 
     @Test
-    void shouldNotSetResponseSentOnSendFailure() {
+    void shouldRecordSentTextFalseOnSendFailure() {
         when(channelPort.sendMessage(anyString(), anyString()))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("send failed")));
 
@@ -418,7 +431,9 @@ class ResponseRoutingSystemTest {
 
         system.process(context);
 
-        assertNull(context.getAttribute(ContextAttributes.RESPONSE_SENT));
+        RoutingOutcome outcome = context.getAttribute(ATTR_ROUTING_OUTCOME);
+        assertNotNull(outcome);
+        assertFalse(outcome.isSentText());
     }
 
     // ===== Channel registration =====
@@ -506,5 +521,88 @@ class ResponseRoutingSystemTest {
         // No attachments sent
         verify(channelPort, never()).sendPhoto(anyString(), any(byte[].class), anyString(), any());
         verify(channelPort, never()).sendDocument(anyString(), any(byte[].class), anyString(), any());
+    }
+
+    // ===== RoutingOutcome tests =====
+
+    @Test
+    void shouldRecordRoutingOutcomeOnSuccessfulTextSend() {
+        AgentContext context = createContext();
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly(CONTENT_HELLO));
+
+        system.process(context);
+
+        RoutingOutcome outcome = context.getAttribute(ATTR_ROUTING_OUTCOME);
+        assertNotNull(outcome);
+        assertTrue(outcome.isAttempted());
+        assertTrue(outcome.isSentText());
+        assertFalse(outcome.isSentVoice());
+        assertEquals(0, outcome.getSentAttachments());
+        assertNull(outcome.getErrorMessage());
+    }
+
+    @Test
+    void shouldRecordRoutingOutcomeOnTextSendFailure() {
+        when(channelPort.sendMessage(anyString(), anyString()))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("network error")));
+
+        AgentContext context = createContext();
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly(CONTENT_RESPONSE));
+
+        system.process(context);
+
+        RoutingOutcome outcome = context.getAttribute(ATTR_ROUTING_OUTCOME);
+        assertNotNull(outcome);
+        assertTrue(outcome.isAttempted());
+        assertFalse(outcome.isSentText());
+        assertNotNull(outcome.getErrorMessage());
+    }
+
+    @Test
+    void shouldRecordRoutingOutcomeWithVoiceAndAttachments() {
+        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
+
+        AgentContext context = createContext();
+        Attachment attachment = Attachment.builder()
+                .type(Attachment.Type.IMAGE)
+                .data(new byte[] { 1 })
+                .filename(FILENAME_IMG_PNG)
+                .mimeType(MIME_IMAGE_PNG)
+                .build();
+
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE,
+                OutgoingResponse.builder()
+                        .text("text")
+                        .voiceRequested(true)
+                        .attachment(attachment)
+                        .build());
+
+        system.process(context);
+
+        RoutingOutcome outcome = context.getAttribute(ATTR_ROUTING_OUTCOME);
+        assertNotNull(outcome);
+        assertTrue(outcome.isSentText());
+        assertTrue(outcome.isSentVoice());
+        assertEquals(1, outcome.getSentAttachments());
+    }
+
+    @Test
+    void shouldUpdateTurnOutcomeWithRoutingOutcome() {
+        AgentContext context = createContext();
+        TurnOutcome turnOutcome = TurnOutcome.builder()
+                .finishReason(FinishReason.SUCCESS)
+                .assistantText(CONTENT_HELLO)
+                .build();
+        context.setTurnOutcome(turnOutcome);
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly(CONTENT_HELLO));
+
+        system.process(context);
+
+        TurnOutcome updated = context.getTurnOutcome();
+        assertNotNull(updated.getRoutingOutcome());
+        assertTrue(updated.getRoutingOutcome().isSentText());
+        // Original fields preserved
+        assertEquals(FinishReason.SUCCESS, updated.getFinishReason());
+        assertEquals(CONTENT_HELLO, updated.getAssistantText());
     }
 }

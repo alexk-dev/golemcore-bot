@@ -20,6 +20,7 @@ package me.golemcore.bot.domain.model;
 
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -100,5 +101,74 @@ class AgentContextTest {
 
         assertEquals(1, ctx.<Integer>getAttribute("a"));
         assertEquals("ok", ctx.getToolResults().get(TOOL_CALL_ID).getOutput());
+    }
+
+    // ==================== TurnOutcome typed field ====================
+
+    @Test
+    void turnOutcomeDefaultShouldBeNull() {
+        AgentContext ctx = AgentContext.builder().build();
+        assertNull(ctx.getTurnOutcome());
+    }
+
+    @Test
+    void turnOutcomeShouldBeSettableAndGettable() {
+        AgentContext ctx = AgentContext.builder().build();
+        TurnOutcome outcome = TurnOutcome.builder()
+                .finishReason(FinishReason.SUCCESS)
+                .assistantText("hello")
+                .build();
+
+        ctx.setTurnOutcome(outcome);
+
+        assertNotNull(ctx.getTurnOutcome());
+        assertEquals(FinishReason.SUCCESS, ctx.getTurnOutcome().getFinishReason());
+        assertEquals("hello", ctx.getTurnOutcome().getAssistantText());
+    }
+
+    // ==================== Failures accumulation ====================
+
+    @Test
+    void failuresDefaultShouldBeEmpty() {
+        AgentContext ctx = AgentContext.builder().build();
+        assertNotNull(ctx.getFailures());
+        assertTrue(ctx.getFailures().isEmpty());
+    }
+
+    @Test
+    void addFailureShouldAccumulate() {
+        AgentContext ctx = AgentContext.builder().build();
+        FailureEvent f1 = new FailureEvent(
+                FailureSource.SYSTEM, "SystemA", FailureKind.EXCEPTION, "err1", Instant.now());
+        FailureEvent f2 = new FailureEvent(
+                FailureSource.LLM, "Adapter", FailureKind.TIMEOUT, "err2", Instant.now());
+
+        ctx.addFailure(f1);
+        ctx.addFailure(f2);
+
+        assertEquals(2, ctx.getFailures().size());
+        assertEquals(f1, ctx.getFailures().get(0));
+        assertEquals(f2, ctx.getFailures().get(1));
+    }
+
+    @Test
+    void addFailureShouldInitializeListWhenNull() {
+        AgentContext ctx = AgentContext.builder().failures(null).build();
+        FailureEvent failure = new FailureEvent(
+                FailureSource.TOOL, "ShellTool", FailureKind.VALIDATION, "bad", Instant.now());
+
+        ctx.addFailure(failure);
+
+        assertEquals(1, ctx.getFailures().size());
+    }
+
+    @Test
+    void getFailuresShouldReturnUnmodifiableView() {
+        AgentContext ctx = AgentContext.builder().build();
+        ctx.addFailure(new FailureEvent(
+                FailureSource.SYSTEM, "S", FailureKind.UNKNOWN, "x", Instant.now()));
+
+        assertThrows(UnsupportedOperationException.class, () -> ctx.getFailures().add(new FailureEvent(
+                FailureSource.LLM, "L", FailureKind.EXCEPTION, "y", Instant.now())));
     }
 }

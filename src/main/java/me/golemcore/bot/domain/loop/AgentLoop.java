@@ -21,8 +21,13 @@ package me.golemcore.bot.domain.loop;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.FailureEvent;
+import me.golemcore.bot.domain.model.FailureKind;
+import me.golemcore.bot.domain.model.FailureSource;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
+import me.golemcore.bot.domain.model.RoutingOutcome;
+import me.golemcore.bot.domain.model.TurnOutcome;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.domain.system.AgentSystem;
@@ -209,7 +214,9 @@ public class AgentLoop {
                 } catch (Exception e) {
                     log.error("System '{}' FAILED after {}ms: {}", system.getName(), clock.millis() - startMs,
                             e.getMessage(), e);
-                    context.setAttribute(ContextAttributes.SYSTEM_ERROR + system.getName(), e.getMessage());
+                    context.addFailure(new FailureEvent(
+                            FailureSource.SYSTEM, system.getName(), FailureKind.EXCEPTION,
+                            e.getMessage(), clock.instant()));
                 }
             }
 
@@ -269,8 +276,13 @@ public class AgentLoop {
     }
 
     private void ensureFeedback(AgentContext context) {
-        Boolean responseSent = context.getAttribute(ContextAttributes.RESPONSE_SENT);
-        if (Boolean.TRUE.equals(responseSent)) {
+        // Check typed RoutingOutcome first, then fall back to attribute
+        TurnOutcome outcome = context.getTurnOutcome();
+        if (outcome != null && outcome.getRoutingOutcome() != null && outcome.getRoutingOutcome().isSentText()) {
+            return;
+        }
+        RoutingOutcome routingAttr = context.getAttribute("routing.outcome");
+        if (routingAttr != null && routingAttr.isSentText()) {
             return;
         }
 
@@ -325,15 +337,17 @@ public class AgentLoop {
         if (llmError != null) {
             errors.add(llmError);
         }
-        for (Map.Entry<String, Object> entry : context.getAttributes().entrySet()) {
-            if (entry.getKey().startsWith(ContextAttributes.SYSTEM_ERROR)
-                    && entry.getValue() instanceof String errorMsg) {
-                errors.add(errorMsg);
+        // Read typed FailureEvent list
+        for (FailureEvent failure : context.getFailures()) {
+            if (failure.message() != null) {
+                errors.add(failure.message());
             }
         }
-        String routingError = context.getAttribute(ContextAttributes.ROUTING_ERROR);
-        if (routingError != null) {
-            errors.add(routingError);
+        // Check RoutingOutcome for transport errors
+        TurnOutcome outcome = context.getTurnOutcome();
+        if (outcome != null && outcome.getRoutingOutcome() != null
+                && outcome.getRoutingOutcome().getErrorMessage() != null) {
+            errors.add(outcome.getRoutingOutcome().getErrorMessage());
         }
         return errors;
     }

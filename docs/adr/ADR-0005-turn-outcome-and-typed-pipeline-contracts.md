@@ -1,7 +1,7 @@
 # ADR-0005: TurnOutcome + Typed Pipeline Contracts (Full Design Purity Step)
 
 ## Status
-Proposed
+Accepted
 
 ## Executive Summary
 This ADR defines the next architectural step to reach **maximum design purity** after introducing:
@@ -280,25 +280,25 @@ Migration strategy:
 ## Migration Plan (Phased)
 
 ### Phase 1 — Introduce typed models without breaking legacy
-- [ ] Add `TurnOutcome`, `RoutingOutcome`, `FailureEvent` models.
-- [ ] Add typed fields/APIs to `AgentContext`.
-- [ ] Start recording `FailureEvent` from `AgentLoop` in parallel with existing attributes.
+- [x] Add `TurnOutcome`, `RoutingOutcome`, `FailureEvent` models.
+- [x] Add typed fields/APIs to `AgentContext`.
+- [x] Start recording `FailureEvent` from `AgentLoop` in parallel with existing attributes.
 
 ### Phase 2 — TurnOutcomeFinalization
-- [ ] Add `TurnOutcomeFinalizationSystem`.
-- [ ] Ensure it runs before routing.
-- [ ] Populate `assistantText` and `outgoingResponse`.
+- [x] Add `TurnOutcomeFinalizationSystem`.
+- [x] Ensure it runs before routing.
+- [x] Populate `assistantText` and `outgoingResponse`.
 
 ### Phase 3 — Migrate side-effects
-- [ ] Update `MemoryPersistSystem` to read `TurnOutcome.assistantText`.
-- [ ] Update `RagIndexingSystem` to read `TurnOutcome.assistantText`.
+- [x] Update `MemoryPersistSystem` to read `TurnOutcome.assistantText`.
+- [x] Update `RagIndexingSystem` to read `TurnOutcome.assistantText`.
 
 ### Phase 4 — Migrate transport outcomes
-- [ ] Update `ResponseRoutingSystem` to write `RoutingOutcome`.
-- [ ] Remove `RESPONSE_SENT` and `ROUTING_ERROR` usages.
+- [x] Update `ResponseRoutingSystem` to write `RoutingOutcome`.
+- [x] Remove `RESPONSE_SENT` and `ROUTING_ERROR` usages.
 
 ### Phase 5 — Delete legacy contract keys
-- [ ] Remove `SYSTEM_ERROR*` usage and related tests.
+- [x] Remove `SYSTEM_ERROR*` usage and related tests.
 - [ ] Remove voice attribute flags contract once producers are migrated.
 
 ---
