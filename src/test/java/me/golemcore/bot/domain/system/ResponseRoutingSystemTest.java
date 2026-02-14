@@ -575,6 +575,25 @@ class ResponseRoutingSystemTest {
     }
 
     @Test
+    void outgoingResponseVoiceOnlyDoesNotUseLegacyVoiceAttributes() {
+        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
+
+        AgentContext context = createContext();
+        // OutgoingResponse is the single source of truth (Variant B).
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE,
+                me.golemcore.bot.domain.model.OutgoingResponse.voiceOnly("Hello from OutgoingResponse"));
+
+        // These legacy attributes must be ignored when OutgoingResponse is present.
+        context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
+        context.setAttribute(ContextAttributes.VOICE_TEXT, "LEGACY SHOULD NOT BE USED");
+
+        system.process(context);
+
+        verify(voiceHandler).trySendVoice(eq(channelPort), eq(CHAT_ID), eq("Hello from OutgoingResponse"));
+        verify(channelPort, never()).sendMessage(anyString(), anyString());
+    }
+
+    @Test
     void voiceOnlyFallsBackToTextWhenVoiceNotAvailable() {
         when(voiceHandler.sendVoiceWithFallback(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
 

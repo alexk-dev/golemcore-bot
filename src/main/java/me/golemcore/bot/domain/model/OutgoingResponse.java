@@ -18,8 +18,12 @@ package me.golemcore.bot.domain.model;
  * Contact: alex@kuleshov.tech
  */
 
+import me.golemcore.bot.domain.model.Attachment;
 import lombok.Builder;
+import lombok.Singular;
 import lombok.Value;
+
+import java.util.List;
 
 /**
  * A transport-oriented response produced by domain systems and consumed by
@@ -36,6 +40,24 @@ public class OutgoingResponse {
     String text;
 
     /**
+     * Whether the system should attempt to send a voice response (TTS).
+     * <p>
+     * This is a transport-level hint produced by upstream domain systems.
+     */
+    @Builder.Default
+    boolean voiceRequested = false;
+
+    /**
+     * Optional explicit text to speak. If blank, routing may fall back to
+     * {@link #text}.
+     */
+    String voiceText;
+
+    /** Attachments to send after the main response (photos/documents). */
+    @Singular
+    List<Attachment> attachments;
+
+    /**
      * If true, response routing should not append a synthetic assistant message to
      * raw history (raw history ownership belongs to domain executors).
      */
@@ -45,4 +67,9 @@ public class OutgoingResponse {
     public static OutgoingResponse text(String text) {
         return OutgoingResponse.builder().text(text).build();
     }
+
+    public static OutgoingResponse voiceOnly(String voiceText) {
+        return OutgoingResponse.builder().voiceRequested(true).voiceText(voiceText).text(null).build();
+    }
+
 }

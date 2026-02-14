@@ -263,10 +263,41 @@ public class AgentLoop {
             return;
         }
 
+        // Variant B: ResponseRoutingSystem must depend on a single transport contract.
+        // Convert legacy ContextAttributes (LLM_RESPONSE, VOICE_*, PENDING_ATTACHMENTS)
+        // into OutgoingResponse.
         LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
-        if (response != null && response.getContent() != null && !response.getContent().isBlank()) {
-            context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.text(response.getContent()));
+        String text = response != null ? response.getContent() : null;
+
+        Boolean voiceRequested = context.getAttribute(ContextAttributes.VOICE_REQUESTED);
+        String voiceText = context.getAttribute(ContextAttributes.VOICE_TEXT);
+
+        @SuppressWarnings("unchecked")
+        List<me.golemcore.bot.domain.model.Attachment> pendingAttachments = context
+                .getAttribute(ContextAttributes.PENDING_ATTACHMENTS);
+
+        boolean hasText = text != null && !text.isBlank();
+        boolean hasVoice = Boolean.TRUE.equals(voiceRequested) || (voiceText != null && !voiceText.isBlank());
+        boolean hasAttachments = pendingAttachments != null && !pendingAttachments.isEmpty();
+
+        if (!hasText && !hasVoice && !hasAttachments) {
+            return;
         }
+
+        OutgoingResponse outgoing = OutgoingResponse.builder()
+                .text(hasText ? text : null)
+                .voiceRequested(hasVoice)
+                .voiceText(voiceText)
+                .attachments(hasAttachments ? pendingAttachments : List.of())
+                .build();
+
+        // Variant B: once OutgoingResponse is present, it becomes the single source
+        // of truth for transport. Avoid duplicate sends from legacy pending queue.
+        if (hasAttachments) {
+            context.setAttribute(ContextAttributes.PENDING_ATTACHMENTS, List.of());
+        }
+
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, outgoing);
     }
 
     private void routeSyntheticAssistantResponse(AgentContext context, String content, String finishReason) {

@@ -100,9 +100,15 @@ public class ResponseRoutingSystem implements AgentSystem {
         }
 
         OutgoingResponse outgoing = context.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
-        if (outgoing != null && outgoing.getText() != null && !outgoing.getText().isBlank()) {
-            sendOutgoingText(context, outgoing);
-            sendPendingAttachments(context);
+        if (outgoing != null) {
+            if (outgoing.getText() != null && !outgoing.getText().isBlank()) {
+                sendOutgoingText(context, outgoing);
+            }
+            sendOutgoingVoiceIfRequested(context, outgoing);
+            sendOutgoingAttachments(context, outgoing);
+            if (outgoing.getAttachments() == null || outgoing.getAttachments().isEmpty()) {
+                sendPendingAttachments(context);
+            }
             return context;
         }
 
@@ -354,6 +360,66 @@ public class ResponseRoutingSystem implements AgentSystem {
         }
     }
 
+    private void sendOutgoingVoiceIfRequested(AgentContext context, OutgoingResponse outgoing) {
+        if (outgoing == null || !outgoing.isVoiceRequested()) {
+            return;
+        }
+
+        String voiceText = outgoing.getVoiceText();
+        String responseText = outgoing.getText();
+        String textToSpeak = (voiceText != null && !voiceText.isBlank()) ? voiceText : responseText;
+        if (textToSpeak == null || textToSpeak.isBlank()) {
+            return;
+        }
+
+        AgentSession session = context.getSession();
+        ChannelPort channel = resolveChannel(session);
+        if (channel == null) {
+            return;
+        }
+
+        String chatId = session.getChatId();
+        log.debug("[Response] Sending voice for OutgoingResponse: {} chars, chatId={}", textToSpeak.length(), chatId);
+        VoiceSendResult result = voiceHandler.trySendVoice(channel, chatId, textToSpeak);
+        if (result == VoiceSendResult.QUOTA_EXCEEDED) {
+            sendVoiceQuotaNotification(channel, chatId);
+        }
+    }
+
+    private void sendOutgoingAttachments(AgentContext context, OutgoingResponse outgoing) {
+        if (outgoing == null || outgoing.getAttachments() == null || outgoing.getAttachments().isEmpty()) {
+            return;
+        }
+
+        AgentSession session = context.getSession();
+        ChannelPort channel = resolveChannel(session);
+        if (channel == null) {
+            return;
+        }
+
+        String chatId = session.getChatId();
+        for (Attachment attachment : outgoing.getAttachments()) {
+            try {
+                if (attachment.getType() == Attachment.Type.IMAGE) {
+                    channel.sendPhoto(chatId, attachment.getData(), attachment.getFilename(),
+                            attachment.getCaption()).get(30, TimeUnit.SECONDS);
+                } else {
+                    channel.sendDocument(chatId, attachment.getData(), attachment.getFilename(),
+                            attachment.getCaption()).get(30, TimeUnit.SECONDS);
+                }
+                log.debug("[Response] Sent attachment: {} ({} bytes)", attachment.getFilename(),
+                        attachment.getData().length);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.error("[Response] Failed to send attachment '{}' (interrupted): {}",
+                        attachment.getFilename(), e.getMessage());
+            } catch (Exception e) {
+                log.error("[Response] Failed to send attachment '{}': {}", attachment.getFilename(),
+                        e.getMessage());
+            }
+        }
+    }
+
     @SuppressWarnings("unchecked")
     private void sendPendingAttachments(AgentContext context) {
         List<Attachment> pending = context.getAttribute(ContextAttributes.PENDING_ATTACHMENTS);
@@ -418,8 +484,23 @@ public class ResponseRoutingSystem implements AgentSystem {
     @Override
     public boolean shouldProcess(AgentContext context) {
         OutgoingResponse outgoing = context.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
-        if (outgoing != null && outgoing.getText() != null && !outgoing.getText().isBlank()) {
-            return true;
+        if (outgoing != null) {
+            if (outgoing.getText() != null && !outgoing.getText().isBlank()) {
+                return true;
+            }
+            if (outgoing.isVoiceRequested()) {
+                String voiceText = outgoing.getVoiceText();
+                if (voiceText != null && !voiceText.isBlank()) {
+                    return true;
+                }
+                // voice requested but no explicit voice text: still allow if text exists
+                if (outgoing.getText() != null && !outgoing.getText().isBlank()) {
+                    return true;
+                }
+            }
+            if (outgoing.getAttachments() != null && !outgoing.getAttachments().isEmpty()) {
+                return true;
+            }
         }
 
         LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
