@@ -7,6 +7,7 @@ import me.golemcore.bot.domain.model.AudioFormat;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.service.VoiceResponseHandler.VoiceSendResult;
@@ -31,7 +32,6 @@ class ResponseRoutingSystemTest {
     private static final String SESSION_ID = "test-session";
     private static final String CHANNEL_TELEGRAM = "telegram";
     private static final String CHANNEL_UNKNOWN = "unknown_channel";
-    private static final String ATTR_PENDING_ATTACHMENTS = "pendingAttachments";
     private static final String MIME_IMAGE_PNG = "image/png";
     private static final String FILENAME_IMG_PNG = "img.png";
     private static final String VOICE_PREFIX = "\uD83D\uDD0A";
@@ -86,31 +86,6 @@ class ResponseRoutingSystemTest {
     }
 
     @Test
-    void sendsPendingImageAttachment() {
-        AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content("Here is the screenshot").build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-
-        Attachment attachment = Attachment.builder()
-                .type(Attachment.Type.IMAGE)
-                .data(new byte[] { 1, 2, 3 })
-                .filename("screenshot.png")
-                .mimeType(MIME_IMAGE_PNG)
-                .caption("A screenshot")
-                .build();
-
-        List<Attachment> pending = new ArrayList<>();
-        pending.add(attachment);
-        context.setAttribute(ATTR_PENDING_ATTACHMENTS, pending);
-
-        system.process(context);
-
-        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Here is the screenshot"));
-        verify(channelPort).sendPhoto(eq(CHAT_ID), eq(new byte[] { 1, 2, 3 }), eq("screenshot.png"),
-                eq("A screenshot"));
-    }
-
-    @Test
     void sendsPendingDocumentAttachment() {
         AgentContext context = createContext();
         LlmResponse response = LlmResponse.builder().content("Here is the file").build();
@@ -124,9 +99,10 @@ class ResponseRoutingSystemTest {
                 .caption("The report")
                 .build();
 
-        List<Attachment> pending = new ArrayList<>();
-        pending.add(attachment);
-        context.setAttribute(ATTR_PENDING_ATTACHMENTS, pending);
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.builder()
+                .text("Here is the file")
+                .attachment(attachment)
+                .build());
 
         system.process(context);
 
@@ -134,114 +110,9 @@ class ResponseRoutingSystemTest {
     }
 
     @Test
-    void sendsMultipleAttachments() {
-        AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content("Multiple files").build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-
-        List<Attachment> pending = new ArrayList<>();
-        pending.add(Attachment.builder()
-                .type(Attachment.Type.IMAGE)
-                .data(new byte[] { 1 })
-                .filename(FILENAME_IMG_PNG)
-                .mimeType(MIME_IMAGE_PNG)
-                .build());
-        pending.add(Attachment.builder()
-                .type(Attachment.Type.DOCUMENT)
-                .data(new byte[] { 2 })
-                .filename(FILENAME_DOC_PDF)
-                .mimeType("application/pdf")
-                .build());
-        context.setAttribute(ATTR_PENDING_ATTACHMENTS, pending);
-
-        system.process(context);
-
-        verify(channelPort).sendPhoto(eq(CHAT_ID), any(byte[].class), eq(FILENAME_IMG_PNG), isNull());
-        verify(channelPort).sendDocument(eq(CHAT_ID), any(byte[].class), eq(FILENAME_DOC_PDF), isNull());
-    }
-
-    @Test
-    void pendingAttachmentsClearedAfterSending() {
-        AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content("Done").build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-
-        List<Attachment> pending = new ArrayList<>();
-        pending.add(Attachment.builder()
-                .type(Attachment.Type.IMAGE)
-                .data(new byte[] { 1 })
-                .filename(FILENAME_IMG_PNG)
-                .mimeType(MIME_IMAGE_PNG)
-                .build());
-        context.setAttribute(ATTR_PENDING_ATTACHMENTS, pending);
-
-        system.process(context);
-
-        assertNull(context.getAttribute(ATTR_PENDING_ATTACHMENTS));
-    }
-
-    @Test
-    void shouldProcessWithPendingAttachmentsOnly() {
-        AgentContext context = createContext();
-        List<Attachment> pending = new ArrayList<>();
-        pending.add(Attachment.builder()
-                .type(Attachment.Type.IMAGE)
-                .data(new byte[] { 1 })
-                .filename(FILENAME_IMG_PNG)
-                .mimeType(MIME_IMAGE_PNG)
-                .build());
-        context.setAttribute(ATTR_PENDING_ATTACHMENTS, pending);
-
-        assertTrue(system.shouldProcess(context));
-    }
-
-    @Test
     void shouldNotProcessWithNothing() {
         AgentContext context = createContext();
         assertFalse(system.shouldProcess(context));
-    }
-
-    @Test
-    void attachmentsSentEvenOnLlmError() {
-        AgentContext context = createContext();
-        context.setAttribute(ContextAttributes.LLM_ERROR, "model crashed");
-
-        List<Attachment> pending = new ArrayList<>();
-        pending.add(Attachment.builder()
-                .type(Attachment.Type.IMAGE)
-                .data(new byte[] { 1 })
-                .filename(FILENAME_IMG_PNG)
-                .mimeType(MIME_IMAGE_PNG)
-                .caption("Before error")
-                .build());
-        context.setAttribute(ATTR_PENDING_ATTACHMENTS, pending);
-
-        system.process(context);
-
-        verify(channelPort).sendMessage(eq(CHAT_ID), anyString()); // error message
-        verify(channelPort).sendPhoto(eq(CHAT_ID), any(byte[].class), eq(FILENAME_IMG_PNG), eq("Before error"));
-    }
-
-    @Test
-    void attachmentSendFailureDoesNotBreakResponse() {
-        AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content("text").build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-
-        when(channelPort.sendPhoto(anyString(), any(byte[].class), anyString(), any()))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("upload failed")));
-
-        List<Attachment> pending = new ArrayList<>();
-        pending.add(Attachment.builder()
-                .type(Attachment.Type.IMAGE)
-                .data(new byte[] { 1 })
-                .filename(FILENAME_IMG_PNG)
-                .mimeType(MIME_IMAGE_PNG)
-                .build());
-        context.setAttribute(ATTR_PENDING_ATTACHMENTS, pending);
-
-        assertDoesNotThrow(() -> system.process(context));
-        verify(channelPort).sendMessage(eq(CHAT_ID), eq("text"));
     }
 
     // ===== Edge Cases =====
@@ -594,33 +465,6 @@ class ResponseRoutingSystemTest {
     }
 
     @Test
-    void outgoingResponseDoesNotSendPendingAttachments() {
-        when(channelPort.sendPhoto(anyString(), any(), anyString(), anyString()))
-                .thenReturn(CompletableFuture.completedFuture(null));
-
-        AgentContext context = createContext();
-        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE,
-                me.golemcore.bot.domain.model.OutgoingResponse.text("hi"));
-
-        // Legacy pending attachments must be ignored once OutgoingResponse is present
-        // (Variant B).
-        byte[] data = new byte[] { 1, 2, 3 };
-        Attachment attachment = Attachment.builder()
-                .type(Attachment.Type.IMAGE)
-                .mimeType(MIME_IMAGE_PNG)
-                .filename(FILENAME_IMG_PNG)
-                .data(data)
-                .caption(null)
-                .build();
-        context.setAttribute(ContextAttributes.PENDING_ATTACHMENTS, List.of(attachment));
-
-        system.process(context);
-
-        verify(channelPort, never()).sendPhoto(anyString(), any(), anyString(), anyString());
-        verify(channelPort).sendMessage(eq(CHAT_ID), eq("hi"));
-    }
-
-    @Test
     void voiceOnlyFallsBackToTextWhenVoiceNotAvailable() {
         when(voiceHandler.sendVoiceWithFallback(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
 
@@ -737,18 +581,20 @@ class ResponseRoutingSystemTest {
         when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
 
         AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content("Text with voice and attachment").build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-        context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
 
-        List<Attachment> pending = new ArrayList<>();
-        pending.add(Attachment.builder()
+        Attachment attachment = Attachment.builder()
                 .type(Attachment.Type.IMAGE)
                 .data(new byte[] { 1 })
                 .filename(FILENAME_IMG_PNG)
                 .mimeType(MIME_IMAGE_PNG)
-                .build());
-        context.setAttribute(ATTR_PENDING_ATTACHMENTS, pending);
+                .build();
+
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE,
+                me.golemcore.bot.domain.model.OutgoingResponse.builder()
+                        .text("Text with voice and attachment")
+                        .voiceRequested(true)
+                        .attachment(attachment)
+                        .build());
 
         system.process(context);
 
@@ -766,25 +612,25 @@ class ResponseRoutingSystemTest {
         when(voiceHandler.sendVoiceWithFallback(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
 
         AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content("").build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-        context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
-        context.setAttribute(ContextAttributes.VOICE_TEXT, VOICE_TEXT_CONTENT);
 
-        List<Attachment> pending = new ArrayList<>();
-        pending.add(Attachment.builder()
+        Attachment attachment = Attachment.builder()
                 .type(Attachment.Type.DOCUMENT)
                 .data(new byte[] { 2 })
                 .filename(FILENAME_DOC_PDF)
                 .mimeType("application/pdf")
-                .build());
-        context.setAttribute(ATTR_PENDING_ATTACHMENTS, pending);
+                .build();
+
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE,
+                me.golemcore.bot.domain.model.OutgoingResponse.builder()
+                        .voiceRequested(true)
+                        .voiceText(VOICE_TEXT_CONTENT)
+                        .attachment(attachment)
+                        .build());
 
         system.process(context);
 
-        verify(voiceHandler).sendVoiceWithFallback(channelPort, CHAT_ID, VOICE_TEXT_CONTENT);
+        verify(voiceHandler).trySendVoice(channelPort, CHAT_ID, VOICE_TEXT_CONTENT);
         verify(channelPort).sendDocument(eq(CHAT_ID), any(byte[].class), eq(FILENAME_DOC_PDF), isNull());
-        assertNull(context.getAttribute(ATTR_PENDING_ATTACHMENTS));
     }
 
     @Test

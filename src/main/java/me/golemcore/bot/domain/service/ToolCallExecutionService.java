@@ -247,14 +247,8 @@ public class ToolCallExecutionService {
         }
 
         if (attachment != null) {
-            List<Attachment> pending = context.getAttribute(ContextAttributes.PENDING_ATTACHMENTS);
-            if (pending == null) {
-                pending = new ArrayList<>();
-                context.setAttribute(ContextAttributes.PENDING_ATTACHMENTS, pending);
-            }
-            pending.add(attachment);
-            log.debug("[Tools] Queued attachment: {} ({}, {} bytes)",
-                    attachment.getFilename(), attachment.getType(), attachment.getData().length);
+            log.debug("[Tools] Attachment extracted from {} ({} bytes), but legacy attachment queue is removed",
+                    toolName, attachment.getData().length);
         }
     }
 

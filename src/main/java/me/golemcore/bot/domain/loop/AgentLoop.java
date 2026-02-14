@@ -264,7 +264,6 @@ public class AgentLoop {
         }
 
         // Variant B: ResponseRoutingSystem must depend on a single transport contract.
-        // Convert legacy ContextAttributes (LLM_RESPONSE, VOICE_*, PENDING_ATTACHMENTS)
         // into OutgoingResponse.
         LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
         String text = response != null ? response.getContent() : null;
@@ -273,12 +272,10 @@ public class AgentLoop {
         String voiceText = context.getAttribute(ContextAttributes.VOICE_TEXT);
 
         @SuppressWarnings("unchecked")
-        List<me.golemcore.bot.domain.model.Attachment> pendingAttachments = context
-                .getAttribute(ContextAttributes.PENDING_ATTACHMENTS);
 
         boolean hasText = text != null && !text.isBlank();
         boolean hasVoice = Boolean.TRUE.equals(voiceRequested) || (voiceText != null && !voiceText.isBlank());
-        boolean hasAttachments = pendingAttachments != null && !pendingAttachments.isEmpty();
+        boolean hasAttachments = false;
 
         if (!hasText && !hasVoice && !hasAttachments) {
             return;
@@ -288,13 +285,10 @@ public class AgentLoop {
                 .text(hasText ? text : null)
                 .voiceRequested(hasVoice)
                 .voiceText(voiceText)
-                .attachments(hasAttachments ? pendingAttachments : List.of())
+                .attachments(List.of())
                 .build();
 
-        // Variant B: once OutgoingResponse is present, it becomes the single source
-        // of truth for transport. Avoid duplicate sends from legacy pending queue.
         if (hasAttachments) {
-            context.setAttribute(ContextAttributes.PENDING_ATTACHMENTS, List.of());
         }
 
         context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, outgoing);

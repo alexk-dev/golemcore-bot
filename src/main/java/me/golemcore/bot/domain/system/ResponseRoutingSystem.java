@@ -92,13 +92,6 @@ public class ResponseRoutingSystem implements AgentSystem {
             return handleAutoMode(context);
         }
 
-        String llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
-        if (llmError != null) {
-            sendErrorToUser(context, llmError);
-            sendPendingAttachments(context);
-            return context;
-        }
-
         OutgoingResponse outgoing = context.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
         if (outgoing != null) {
             if (outgoing.getText() != null && !outgoing.getText().isBlank()) {
@@ -109,13 +102,18 @@ public class ResponseRoutingSystem implements AgentSystem {
             return context;
         }
 
+        String llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
+        if (llmError != null) {
+            sendErrorToUser(context, llmError);
+            return context;
+        }
+
         LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
         Boolean voiceRequested = context.getAttribute(ContextAttributes.VOICE_REQUESTED);
         String voiceText = context.getAttribute(ContextAttributes.VOICE_TEXT);
 
         if (isVoiceOnlyResponse(voiceRequested, voiceText, response)) {
             sendVoiceOnly(context, voiceText);
-            sendPendingAttachments(context);
             return context;
         }
 
@@ -182,7 +180,6 @@ public class ResponseRoutingSystem implements AgentSystem {
             VoiceSendResult voiceResult = voiceHandler.trySendVoice(channel, chatId, textToSpeak);
             if (voiceResult == VoiceSendResult.SUCCESS) {
                 context.setAttribute(ContextAttributes.RESPONSE_SENT, true);
-                sendPendingAttachments(context);
                 return context;
             }
             if (voiceResult == VoiceSendResult.QUOTA_EXCEEDED) {
@@ -193,7 +190,6 @@ public class ResponseRoutingSystem implements AgentSystem {
         // TTS failed or blank — fall through to send text without prefix
         if (textToSpeak.isBlank()) {
             log.debug("[Response] Voice prefix with no content, nothing to send");
-            sendPendingAttachments(context);
             return context;
         }
 
@@ -230,7 +226,6 @@ public class ResponseRoutingSystem implements AgentSystem {
             context.setAttribute(ContextAttributes.ROUTING_ERROR, e.getMessage());
         }
 
-        sendPendingAttachments(context);
         sendVoiceAfterText(context, content);
 
         return context;
@@ -418,42 +413,6 @@ public class ResponseRoutingSystem implements AgentSystem {
     }
 
     @SuppressWarnings("unchecked")
-    private void sendPendingAttachments(AgentContext context) {
-        List<Attachment> pending = context.getAttribute(ContextAttributes.PENDING_ATTACHMENTS);
-        if (pending == null || pending.isEmpty()) {
-            return;
-        }
-
-        AgentSession session = context.getSession();
-        ChannelPort channel = resolveChannel(session);
-        if (channel == null) {
-            return;
-        }
-
-        String chatId = session.getChatId();
-        for (Attachment attachment : pending) {
-            try {
-                if (attachment.getType() == Attachment.Type.IMAGE) {
-                    channel.sendPhoto(chatId, attachment.getData(), attachment.getFilename(),
-                            attachment.getCaption()).get(30, TimeUnit.SECONDS);
-                } else {
-                    channel.sendDocument(chatId, attachment.getData(), attachment.getFilename(),
-                            attachment.getCaption()).get(30, TimeUnit.SECONDS);
-                }
-                log.debug("[Response] Sent attachment: {} ({} bytes)", attachment.getFilename(),
-                        attachment.getData().length);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                log.error("[Response] Failed to send attachment '{}' (interrupted): {}",
-                        attachment.getFilename(), e.getMessage());
-            } catch (Exception e) {
-                log.error("[Response] Failed to send attachment '{}': {}", attachment.getFilename(),
-                        e.getMessage());
-            }
-        }
-
-        context.setAttribute(ContextAttributes.PENDING_ATTACHMENTS, null);
-    }
 
     private void sendErrorToUser(AgentContext context, String error) {
         AgentSession session = context.getSession();
@@ -512,8 +471,7 @@ public class ResponseRoutingSystem implements AgentSystem {
             return true;
         }
 
-        List<Attachment> pending = context.getAttribute(ContextAttributes.PENDING_ATTACHMENTS);
-        return pending != null && !pending.isEmpty();
+        return false;
     }
 
     public void registerChannel(ChannelPort channel) {

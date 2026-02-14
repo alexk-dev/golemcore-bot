@@ -54,9 +54,6 @@ public final class ContextAttributes {
 
     /** Boolean — tools were executed in this iteration. */
 
-    /** List&lt;Attachment&gt; — attachments pending delivery to channel. */
-    public static final String PENDING_ATTACHMENTS = "pendingAttachments";
-
     /**
      * String — LLM model name that last generated tool calls in the session
      * (persisted in session metadata).
