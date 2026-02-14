@@ -9,7 +9,7 @@ import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.system.toolloop.DefaultHistoryWriter;
 import me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem;
 import me.golemcore.bot.domain.system.toolloop.ToolExecutorPort;
-import me.golemcore.bot.domain.system.toolloop.view.DefaultLlmRequestViewBuilder;
+import me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.LlmPort;
 import org.junit.jupiter.api.Test;
@@ -88,7 +88,7 @@ class ToolLoopModelSwitchFlatteningTest {
                 llmPort,
                 toolExecutor,
                 historyWriter,
-                new DefaultLlmRequestViewBuilder(
+                new DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 settings,
                 router,

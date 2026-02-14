@@ -6,8 +6,11 @@ import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolFailureKind;
-import me.golemcore.bot.domain.system.toolloop.view.LlmRequestViewBuilder;
+import me.golemcore.bot.domain.system.toolloop.view.ConversationView;
+import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
 import me.golemcore.bot.port.outbound.LlmPort;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -25,23 +28,25 @@ import me.golemcore.bot.infrastructure.config.BotProperties;
  */
 public class DefaultToolLoopSystem implements ToolLoopSystem {
 
+    private static final Logger log = LoggerFactory.getLogger(DefaultToolLoopSystem.class);
+
     private final LlmPort llmPort;
     private final ToolExecutorPort toolExecutor;
     private final HistoryWriter historyWriter;
-    private final LlmRequestViewBuilder viewBuilder;
+    private final ConversationViewBuilder viewBuilder;
     private final BotProperties.ToolLoopProperties settings;
     private final BotProperties.ModelRouterProperties router;
     private final Clock clock;
 
     public DefaultToolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutor, HistoryWriter historyWriter,
-            LlmRequestViewBuilder viewBuilder, BotProperties.ToolLoopProperties settings,
+            ConversationViewBuilder viewBuilder, BotProperties.ToolLoopProperties settings,
             BotProperties.ModelRouterProperties router) {
         this(llmPort, toolExecutor, historyWriter, viewBuilder, settings, router, Clock.systemUTC());
     }
 
     // Visible for testing
     public DefaultToolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutor, HistoryWriter historyWriter,
-            LlmRequestViewBuilder viewBuilder, BotProperties.ToolLoopProperties settings,
+            ConversationViewBuilder viewBuilder, BotProperties.ToolLoopProperties settings,
             BotProperties.ModelRouterProperties router, Clock clock) {
         this.llmPort = llmPort;
         this.toolExecutor = toolExecutor;
@@ -187,7 +192,10 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
     private LlmRequest buildRequest(AgentContext context) {
         ModelSelection selection = selectModel(context.getModelTier());
 
-        List<Message> view = viewBuilder.buildMessagesView(context, selection.model);
+        ConversationView view = viewBuilder.buildView(context, selection.model);
+        if (!view.diagnostics().isEmpty()) {
+            log.debug("[ToolLoop] conversation view diagnostics: {}", view.diagnostics());
+        }
 
         // Track current model for next request (persisted in session metadata)
         storeSelectedModel(context, selection.model);
@@ -196,7 +204,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 .model(selection.model)
                 .reasoningEffort(selection.reasoning)
                 .systemPrompt(context.getSystemPrompt())
-                .messages(view)
+                .messages(view.messages())
                 .tools(context.getAvailableTools())
                 .toolResults(context.getToolResults())
                 .sessionId(context.getSession() != null ? context.getSession().getId() : null)

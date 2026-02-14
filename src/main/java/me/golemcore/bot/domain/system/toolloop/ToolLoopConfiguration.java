@@ -1,9 +1,9 @@
 package me.golemcore.bot.domain.system.toolloop;
 
 import me.golemcore.bot.domain.service.ToolCallExecutionService;
-import me.golemcore.bot.domain.system.toolloop.view.DefaultLlmRequestViewBuilder;
+import me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder;
 import me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker;
-import me.golemcore.bot.domain.system.toolloop.view.LlmRequestViewBuilder;
+import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
 import me.golemcore.bot.domain.system.toolloop.view.ToolMessageMasker;
 import me.golemcore.bot.port.outbound.LlmPort;
 import org.springframework.context.annotation.Bean;
@@ -36,13 +36,13 @@ public class ToolLoopConfiguration {
     }
 
     @Bean
-    public LlmRequestViewBuilder llmRequestViewBuilder(ToolMessageMasker toolMessageMasker) {
-        return new DefaultLlmRequestViewBuilder(toolMessageMasker);
+    public ConversationViewBuilder conversationViewBuilder(ToolMessageMasker toolMessageMasker) {
+        return new DefaultConversationViewBuilder(toolMessageMasker);
     }
 
     @Bean
     public ToolLoopSystem toolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutorPort,
-            HistoryWriter historyWriter, LlmRequestViewBuilder viewBuilder, BotProperties botProperties) {
+            HistoryWriter historyWriter, ConversationViewBuilder viewBuilder, BotProperties botProperties) {
         return new DefaultToolLoopSystem(llmPort, toolExecutorPort, historyWriter, viewBuilder,
                 botProperties.getToolLoop(), botProperties.getRouter());
     }

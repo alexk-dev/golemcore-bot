@@ -104,7 +104,7 @@ class ToolLoopSystemBddTest {
                 llmPort,
                 toolExecutor,
                 historyWriter,
-                new me.golemcore.bot.domain.system.toolloop.view.DefaultLlmRequestViewBuilder(
+                new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 settings,
                 router,
@@ -221,7 +221,7 @@ class ToolLoopSystemBddTest {
                 llmPort,
                 toolExecutor,
                 historyWriter,
-                new me.golemcore.bot.domain.system.toolloop.view.DefaultLlmRequestViewBuilder(
+                new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 settings,
                 router,
@@ -311,7 +311,7 @@ class ToolLoopSystemBddTest {
                 llmPort,
                 toolExecutor,
                 historyWriter,
-                new me.golemcore.bot.domain.system.toolloop.view.DefaultLlmRequestViewBuilder(
+                new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 settings,
                 router,
@@ -397,7 +397,7 @@ class ToolLoopSystemBddTest {
                 llmPort,
                 toolExecutor,
                 historyWriter,
-                new me.golemcore.bot.domain.system.toolloop.view.DefaultLlmRequestViewBuilder(
+                new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 settings,
                 router,
@@ -460,7 +460,7 @@ class ToolLoopSystemBddTest {
                 llmPort,
                 toolExecutor,
                 historyWriter,
-                new me.golemcore.bot.domain.system.toolloop.view.DefaultLlmRequestViewBuilder(
+                new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 settings,
                 router,
@@ -538,7 +538,7 @@ class ToolLoopSystemBddTest {
                 llmPort,
                 toolExecutor,
                 historyWriter,
-                new me.golemcore.bot.domain.system.toolloop.view.DefaultLlmRequestViewBuilder(
+                new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 settings,
                 router,
@@ -602,7 +602,7 @@ class ToolLoopSystemBddTest {
                 llmPort,
                 toolExecutor,
                 historyWriter,
-                new me.golemcore.bot.domain.system.toolloop.view.DefaultLlmRequestViewBuilder(
+                new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 settings,
                 router,
@@ -666,7 +666,7 @@ class ToolLoopSystemBddTest {
                 llmPort,
                 toolExecutor,
                 historyWriter,
-                new me.golemcore.bot.domain.system.toolloop.view.DefaultLlmRequestViewBuilder(
+                new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 settings,
                 router,
