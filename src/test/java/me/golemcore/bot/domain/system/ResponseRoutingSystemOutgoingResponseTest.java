@@ -29,8 +29,7 @@ class ResponseRoutingSystemOutgoingResponseTest {
         UserPreferencesService preferences = mock(UserPreferencesService.class);
         when(preferences.getMessage(any())).thenReturn("error");
 
-        ResponseRoutingSystem system = new ResponseRoutingSystem(java.util.List.of(channel), preferences, voiceHandler,
-                mock(me.golemcore.bot.infrastructure.config.BotProperties.class));
+        ResponseRoutingSystem system = new ResponseRoutingSystem(java.util.List.of(channel), preferences, voiceHandler);
         system.registerChannel(channel);
 
         AgentSession session = AgentSession.builder()
@@ -62,8 +61,7 @@ class ResponseRoutingSystemOutgoingResponseTest {
         UserPreferencesService preferences = mock(UserPreferencesService.class);
         when(preferences.getMessage(any())).thenReturn("error");
 
-        ResponseRoutingSystem system = new ResponseRoutingSystem(java.util.List.of(channel), preferences, voiceHandler,
-                mock(me.golemcore.bot.infrastructure.config.BotProperties.class));
+        ResponseRoutingSystem system = new ResponseRoutingSystem(java.util.List.of(channel), preferences, voiceHandler);
         system.registerChannel(channel);
 
         AgentSession session = AgentSession.builder()

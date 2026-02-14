@@ -3,15 +3,12 @@ package me.golemcore.bot.domain.system;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Attachment;
-import me.golemcore.bot.domain.model.AudioFormat;
 import me.golemcore.bot.domain.model.ContextAttributes;
-import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.service.VoiceResponseHandler.VoiceSendResult;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,7 +31,6 @@ class ResponseRoutingSystemTest {
     private static final String CHANNEL_UNKNOWN = "unknown_channel";
     private static final String MIME_IMAGE_PNG = "image/png";
     private static final String FILENAME_IMG_PNG = "img.png";
-    private static final String VOICE_PREFIX = "\uD83D\uDD0A";
     private static final String FILENAME_DOC_PDF = "doc.pdf";
     private static final String ROLE_USER = "user";
     private static final String MSG_VOICE_QUOTA = "Voice quota exceeded!";
@@ -45,7 +41,6 @@ class ResponseRoutingSystemTest {
     private ChannelPort channelPort;
     private UserPreferencesService preferencesService;
     private VoiceResponseHandler voiceHandler;
-    private BotProperties properties;
 
     @BeforeEach
     void setUp() {
@@ -65,10 +60,7 @@ class ResponseRoutingSystemTest {
         voiceHandler = mock(VoiceResponseHandler.class);
         when(voiceHandler.isAvailable()).thenReturn(false);
 
-        properties = new BotProperties();
-
-        system = new ResponseRoutingSystem(List.of(channelPort), preferencesService,
-                voiceHandler, properties);
+        system = new ResponseRoutingSystem(List.of(channelPort), preferencesService, voiceHandler);
     }
 
     private AgentContext createContext() {
@@ -85,11 +77,22 @@ class ResponseRoutingSystemTest {
                 .build();
     }
 
+    // ===== OutgoingResponse text routing =====
+
     @Test
-    void sendsPendingDocumentAttachment() {
+    void shouldSendOutgoingResponseText() {
         AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content("Here is the file").build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.text(CONTENT_RESPONSE));
+
+        system.process(context);
+
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq(CONTENT_RESPONSE));
+        assertEquals(true, context.getAttribute(ContextAttributes.RESPONSE_SENT));
+    }
+
+    @Test
+    void shouldSendOutgoingResponseWithDocumentAttachment() {
+        AgentContext context = createContext();
 
         Attachment attachment = Attachment.builder()
                 .type(Attachment.Type.DOCUMENT)
@@ -115,7 +118,7 @@ class ResponseRoutingSystemTest {
         assertFalse(system.shouldProcess(context));
     }
 
-    // ===== Edge Cases =====
+    // ===== Metadata =====
 
     @Test
     void orderIsSixty() {
@@ -127,11 +130,12 @@ class ResponseRoutingSystemTest {
         assertEquals("ResponseRoutingSystem", system.getName());
     }
 
+    // ===== Transition =====
+
     @Test
     void skipsResponseWhenPipelineTransitionPending() {
         AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content("response text").build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.text("response text"));
         context.setSkillTransitionRequest(me.golemcore.bot.domain.model.SkillTransitionRequest.explicit("next-skill"));
 
         system.process(context);
@@ -139,11 +143,12 @@ class ResponseRoutingSystemTest {
         verify(channelPort, never()).sendMessage(anyString(), anyString());
     }
 
+    // ===== Auto mode =====
+
     @Test
-    void autoModeMessageStoresInSessionOnly() {
+    void autoModeMessageDoesNotSend() {
         AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content("auto response").build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.text("auto response"));
 
         Message autoMsg = Message.builder()
                 .role(ROLE_USER)
@@ -156,64 +161,83 @@ class ResponseRoutingSystemTest {
         system.process(context);
 
         verify(channelPort, never()).sendMessage(anyString(), anyString());
-        assertTrue(context.getSession().getMessages().isEmpty());
     }
 
-    @Test
-    void shouldProcessWithLlmError() {
-        AgentContext context = createContext();
-        context.setAttribute(ContextAttributes.LLM_ERROR, "model error");
+    // ===== shouldProcess =====
 
+    @Test
+    void shouldProcessWithOutgoingResponseText() {
+        AgentContext context = createContext();
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.text("hi"));
         assertTrue(system.shouldProcess(context));
     }
 
     @Test
-    void shouldProcessWithLlmResponse() {
+    void shouldProcessWithOutgoingResponseVoice() {
         AgentContext context = createContext();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, LlmResponse.builder().content("hi").build());
-
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.voiceOnly("voice text"));
         assertTrue(system.shouldProcess(context));
     }
 
     @Test
-    void sendsLlmErrorToUser() {
+    void shouldProcessWithOutgoingResponseAttachments() {
         AgentContext context = createContext();
-        context.setAttribute(ContextAttributes.LLM_ERROR, "model crashed");
+        Attachment attachment = Attachment.builder()
+                .type(Attachment.Type.IMAGE)
+                .data(new byte[] { 1 })
+                .filename(FILENAME_IMG_PNG)
+                .mimeType(MIME_IMAGE_PNG)
+                .build();
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.builder()
+                .attachment(attachment)
+                .build());
+        assertTrue(system.shouldProcess(context));
+    }
+
+    @Test
+    void shouldNotProcessWithoutOutgoingResponse() {
+        AgentContext context = createContext();
+        assertFalse(system.shouldProcess(context));
+    }
+
+    // ===== Error path (via OutgoingResponse) =====
+
+    @Test
+    void shouldSendErrorMessageViaOutgoingResponse() {
+        AgentContext context = createContext();
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.text("Error occurred"));
 
         system.process(context);
 
         verify(channelPort).sendMessage(eq(CHAT_ID), eq("Error occurred"));
+        assertEquals(true, context.getAttribute(ContextAttributes.RESPONSE_SENT));
     }
+
+    // ===== Blank/null content =====
 
     @Test
-    void nullResponseContentSkipsRouting() {
+    void blankOutgoingResponseTextSkipsTextSend() {
         AgentContext context = createContext();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, LlmResponse.builder().content(null).build());
-
-        system.process(context);
-
-        verify(channelPort, never()).sendMessage(anyString(), anyString());
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.builder()
+                .text("   ")
+                .build());
+        // shouldProcess returns false for blank-only text with no voice or attachments
+        assertFalse(system.shouldProcess(context));
     }
 
-    @Test
-    void blankResponseContentSkipsRouting() {
-        AgentContext context = createContext();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, LlmResponse.builder().content("   ").build());
-
-        system.process(context);
-
-        verify(channelPort, never()).sendMessage(anyString(), anyString());
-    }
+    // ===== Unknown channel =====
 
     @Test
     void unknownChannelTypeDoesNotThrow() {
         AgentContext context = createContext();
         context.getSession().setChannelType(CHANNEL_UNKNOWN);
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, LlmResponse.builder().content(CONTENT_RESPONSE).build());
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.text(CONTENT_RESPONSE));
 
         assertDoesNotThrow(() -> system.process(context));
         verify(channelPort, never()).sendMessage(anyString(), anyString());
     }
+
+    // ===== Send failure =====
 
     @Test
     void channelSendFailureSetsRoutingError() {
@@ -221,7 +245,7 @@ class ResponseRoutingSystemTest {
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("send failed")));
 
         AgentContext context = createContext();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, LlmResponse.builder().content(CONTENT_RESPONSE).build());
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.text(CONTENT_RESPONSE));
 
         system.process(context);
 
@@ -231,31 +255,17 @@ class ResponseRoutingSystemTest {
         assertNull(context.getAttribute(ContextAttributes.RESPONSE_SENT));
     }
 
-    @Test
-    void toolCallsPresentDoesNotBlockRouting() {
-        AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder()
-                .content("Let me check")
-                .toolCalls(List.of(Message.ToolCall.builder().id("tc1").name("shell").build()))
-                .build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-
-        system.process(context);
-
-        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Let me check"));
-    }
-
-    // ===== Voice Response Tests =====
+    // ===== Voice via OutgoingResponse =====
 
     @Test
-    void sendsVoiceAfterTextWhenVoiceRequested() {
-        when(voiceHandler.isAvailable()).thenReturn(true);
+    void sendsVoiceWhenOutgoingResponseHasVoiceRequested() {
         when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
 
         AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content("Hello there").build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-        context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.builder()
+                .text("Hello there")
+                .voiceRequested(true)
+                .build());
 
         system.process(context);
 
@@ -264,15 +274,15 @@ class ResponseRoutingSystemTest {
     }
 
     @Test
-    void sendsVoiceWithCustomTextFromTool() {
-        when(voiceHandler.isAvailable()).thenReturn(true);
+    void sendsVoiceWithCustomVoiceText() {
         when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
 
         AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content("Full response with details").build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-        context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
-        context.setAttribute(ContextAttributes.VOICE_TEXT, "Short spoken version");
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.builder()
+                .text("Full response with details")
+                .voiceRequested(true)
+                .voiceText("Short spoken version")
+                .build());
 
         system.process(context);
 
@@ -280,183 +290,12 @@ class ResponseRoutingSystemTest {
     }
 
     @Test
-    void sendsVoiceForIncomingVoiceMessage() {
-        when(voiceHandler.isAvailable()).thenReturn(true);
-        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
-        properties.getVoice().getTelegram().setRespondWithVoice(true);
-
-        AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content("Voice reply").build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-
-        context.getMessages().add(Message.builder()
-                .role(ROLE_USER)
-                .content("transcribed text")
-                .voiceData(new byte[] { 10, 20 })
-                .audioFormat(AudioFormat.OGG_OPUS)
-                .timestamp(Instant.now())
-                .build());
-
-        system.process(context);
-
-        verify(voiceHandler).trySendVoice(eq(channelPort), eq(CHAT_ID), eq("Voice reply"));
-    }
-
-    @Test
-    void doesNotSendVoiceForNormalTextMessage() {
-        when(voiceHandler.isAvailable()).thenReturn(true);
-
-        AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content("normal response").build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-
-        context.getMessages().add(Message.builder()
-                .role(ROLE_USER)
-                .content("hello")
-                .timestamp(Instant.now())
-                .build());
-
-        system.process(context);
-
-        verify(voiceHandler, never()).trySendVoice(any(), anyString(), anyString());
-    }
-
-    @Test
-    void voiceSynthesisFailureDoesNotBreakResponse() {
-        when(voiceHandler.isAvailable()).thenReturn(true);
-        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.FAILED);
-
-        AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content("response text").build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-        context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
-
-        assertDoesNotThrow(() -> system.process(context));
-        verify(channelPort).sendMessage(eq(CHAT_ID), eq("response text"));
-    }
-
-    // ===== Voice Prefix Detection Tests =====
-
-    @Test
-    void voicePrefixSendsVoiceInsteadOfText() {
-        when(voiceHandler.isAvailable()).thenReturn(true);
+    void voiceOnlyOutgoingResponseSendsVoice() {
         when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
 
         AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content(VOICE_PREFIX + " Hello, this is voice").build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-
-        system.process(context);
-
-        verify(voiceHandler).trySendVoice(eq(channelPort), eq(CHAT_ID), eq("Hello, this is voice"));
-        verify(channelPort, never()).sendMessage(anyString(), anyString());
-        // Variant A: raw history is owned by upstream execution systems (e.g.
-        // ToolLoop).
-        // ResponseRoutingSystem must not mutate session history.
-        assertTrue(context.getSession().getMessages().isEmpty());
-    }
-
-    @Test
-    void voicePrefixWithTtsFailureFallsBackToText() {
-        when(voiceHandler.isAvailable()).thenReturn(true);
-        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.FAILED);
-
-        AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content(VOICE_PREFIX + " Fallback text").build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-
-        system.process(context);
-
-        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Fallback text"));
-    }
-
-    @Test
-    void noPrefixSendsNormalText() {
-        when(voiceHandler.isAvailable()).thenReturn(true);
-
-        AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content("Normal response").build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-
-        system.process(context);
-
-        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Normal response"));
-        verify(voiceHandler, never()).trySendVoice(any(), anyString(), anyString());
-    }
-
-    @Test
-    void voicePrefixIgnoredWhenVoiceNotAvailable() {
-        when(voiceHandler.isAvailable()).thenReturn(false);
-
-        AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content(VOICE_PREFIX + " Should be text").build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-
-        system.process(context);
-
-        verify(channelPort).sendMessage(eq(CHAT_ID), eq(VOICE_PREFIX + " Should be text"));
-        verify(voiceHandler, never()).trySendVoice(any(), anyString(), anyString());
-    }
-
-    @Test
-    void voicePrefixPrefersToolVoiceText() {
-        when(voiceHandler.isAvailable()).thenReturn(true);
-        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
-
-        AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content(
-                VOICE_PREFIX
-                        + " \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u043E")
-                .build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-        context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
-        context.setAttribute(ContextAttributes.VOICE_TEXT, "This is the actual joke that should be spoken");
-
-        system.process(context);
-
-        verify(voiceHandler).trySendVoice(eq(channelPort), eq(CHAT_ID),
-                eq("This is the actual joke that should be spoken"));
-        verify(channelPort, never()).sendMessage(anyString(), anyString());
-    }
-
-    // ===== Voice-Only Response Tests (send_voice tool with blank LLM content)
-    // =====
-
-    @Test
-    void voiceOnlyResponseSendsVoiceWhenNoLlmContent() {
-        when(voiceHandler.sendVoiceWithFallback(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
-
-        AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder()
-                .content("")
-                .toolCalls(List.of(Message.ToolCall.builder().id("tc1").name("send_voice").build()))
-                .build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-        context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
-        context.setAttribute(ContextAttributes.VOICE_TEXT, "Here is a joke for you");
-
-        system.process(context);
-
-        verify(voiceHandler).sendVoiceWithFallback(eq(channelPort), eq(CHAT_ID), eq("Here is a joke for you"));
-        verify(channelPort, never()).sendMessage(anyString(), anyString());
-        // Variant A: raw history is owned by upstream execution systems (e.g.
-        // ToolLoop).
-        // ResponseRoutingSystem must not mutate session history.
-        assertTrue(context.getSession().getMessages().isEmpty());
-    }
-
-    @Test
-    void outgoingResponseVoiceOnlyDoesNotUseLegacyVoiceAttributes() {
-        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
-
-        AgentContext context = createContext();
-        // OutgoingResponse is the single source of truth (Variant B).
         context.setAttribute(ContextAttributes.OUTGOING_RESPONSE,
-                me.golemcore.bot.domain.model.OutgoingResponse.voiceOnly("Hello from OutgoingResponse"));
-
-        // These legacy attributes must be ignored when OutgoingResponse is present.
-        context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
-        context.setAttribute(ContextAttributes.VOICE_TEXT, "LEGACY SHOULD NOT BE USED");
+                OutgoingResponse.voiceOnly("Hello from OutgoingResponse"));
 
         system.process(context);
 
@@ -465,119 +304,7 @@ class ResponseRoutingSystemTest {
     }
 
     @Test
-    void voiceOnlyFallsBackToTextWhenVoiceNotAvailable() {
-        when(voiceHandler.sendVoiceWithFallback(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
-
-        AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content("").build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-        context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
-        context.setAttribute(ContextAttributes.VOICE_TEXT, "Fallback joke text");
-
-        system.process(context);
-
-        verify(voiceHandler).sendVoiceWithFallback(eq(channelPort), eq(CHAT_ID), eq("Fallback joke text"));
-        // Variant A: raw history is owned by upstream execution systems (e.g.
-        // ToolLoop).
-        // ResponseRoutingSystem must not mutate session history.
-        assertTrue(context.getSession().getMessages().isEmpty());
-    }
-
-    @Test
-    void voiceOnlyFallsBackToTextOnTtsFailure() {
-        when(voiceHandler.sendVoiceWithFallback(any(), anyString(), anyString())).thenReturn(VoiceSendResult.FAILED);
-
-        AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content(null).build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-        context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
-        context.setAttribute(ContextAttributes.VOICE_TEXT, "Joke that fails TTS");
-
-        system.process(context);
-
-        verify(voiceHandler).sendVoiceWithFallback(eq(channelPort), eq(CHAT_ID), eq("Joke that fails TTS"));
-        // When sendVoiceWithFallback returns false, no assistant message added
-        assertTrue(context.getSession().getMessages().isEmpty());
-    }
-
-    @Test
-    void shouldProcessWithVoiceRequestedOnly() {
-        AgentContext context = createContext();
-        context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
-
-        assertTrue(system.shouldProcess(context));
-    }
-
-    @Test
-    void hasVoicePrefixDetectsPrefix() {
-        assertTrue(system.hasVoicePrefix(VOICE_PREFIX + " Hello"));
-        assertTrue(system.hasVoicePrefix("  " + VOICE_PREFIX + " Hello with leading spaces"));
-        assertFalse(system.hasVoicePrefix("Normal text"));
-        assertFalse(system.hasVoicePrefix("Hello " + VOICE_PREFIX + " not at start"));
-        assertFalse(system.hasVoicePrefix(null));
-        assertFalse(system.hasVoicePrefix(""));
-    }
-
-    @Test
-    void stripVoicePrefixRemovesPrefix() {
-        assertEquals("Hello", system.stripVoicePrefix(VOICE_PREFIX + " Hello"));
-        assertEquals("Hello", system.stripVoicePrefix("  " + VOICE_PREFIX + " Hello"));
-        assertEquals("", system.stripVoicePrefix(VOICE_PREFIX));
-        assertEquals("Normal text", system.stripVoicePrefix("Normal text"));
-    }
-
-    // ===== Edge Cases: Voice =====
-
-    @Test
-    void voiceOnlySkippedWhenVoiceTextBlank() {
-        // VOICE_REQUESTED=true but VOICE_TEXT="" → should NOT enter voice-only path
-        AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content("").build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-        context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
-        context.setAttribute(ContextAttributes.VOICE_TEXT, "");
-
-        system.process(context);
-
-        // Blank voiceText → voice-only guard fails, blank content guard hits → no
-        // output
-        verify(voiceHandler, never()).sendVoiceWithFallback(any(), anyString(), anyString());
-        verify(channelPort, never()).sendMessage(anyString(), anyString());
-    }
-
-    @Test
-    void voiceOnlySkippedWhenVoiceTextNull() {
-        // VOICE_REQUESTED=true but VOICE_TEXT=null → should NOT enter voice-only path
-        AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content("").build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-        context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
-        // VOICE_TEXT not set (null)
-
-        system.process(context);
-
-        verify(voiceHandler, never()).sendVoiceWithFallback(any(), anyString(), anyString());
-        verify(channelPort, never()).sendMessage(anyString(), anyString());
-    }
-
-    @Test
-    void voicePrefixWithWhitespaceOnlyAfterEmoji() {
-        when(voiceHandler.isAvailable()).thenReturn(true);
-
-        AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content(VOICE_PREFIX + "   ").build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-
-        system.process(context);
-
-        // stripVoicePrefix returns "" → blank text skips TTS and skips text send
-        verify(voiceHandler, never()).trySendVoice(any(), anyString(), anyString());
-        verify(channelPort, never()).sendMessage(anyString(), anyString());
-    }
-
-    @Test
     void voiceAndAttachmentsTogether() {
-        when(voiceHandler.isAvailable()).thenReturn(true);
         when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
 
         AgentContext context = createContext();
@@ -590,7 +317,7 @@ class ResponseRoutingSystemTest {
                 .build();
 
         context.setAttribute(ContextAttributes.OUTGOING_RESPONSE,
-                me.golemcore.bot.domain.model.OutgoingResponse.builder()
+                OutgoingResponse.builder()
                         .text("Text with voice and attachment")
                         .voiceRequested(true)
                         .attachment(attachment)
@@ -609,7 +336,7 @@ class ResponseRoutingSystemTest {
 
     @Test
     void voiceOnlyWithAttachments() {
-        when(voiceHandler.sendVoiceWithFallback(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
+        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
 
         AgentContext context = createContext();
 
@@ -621,7 +348,7 @@ class ResponseRoutingSystemTest {
                 .build();
 
         context.setAttribute(ContextAttributes.OUTGOING_RESPONSE,
-                me.golemcore.bot.domain.model.OutgoingResponse.builder()
+                OutgoingResponse.builder()
                         .voiceRequested(true)
                         .voiceText(VOICE_TEXT_CONTENT)
                         .attachment(attachment)
@@ -633,70 +360,40 @@ class ResponseRoutingSystemTest {
         verify(channelPort).sendDocument(eq(CHAT_ID), any(byte[].class), eq(FILENAME_DOC_PDF), isNull());
     }
 
-    @Test
-    void autoModeWithVoicePrefixStoresWithoutPrefix() {
-        AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder()
-                .content(VOICE_PREFIX + " Auto voice response").build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+    // ===== Voice quota exceeded =====
 
-        Message autoMsg = Message.builder()
-                .role(ROLE_USER)
-                .content("auto task")
-                .timestamp(Instant.now())
-                .metadata(Map.of("auto.mode", true))
-                .build();
-        context.getMessages().add(autoMsg);
+    @Test
+    void voiceQuotaExceededSendsNotification() {
+        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.QUOTA_EXCEEDED);
+        when(preferencesService.getMessage("voice.error.quota")).thenReturn(MSG_VOICE_QUOTA);
+
+        AgentContext context = createContext();
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.builder()
+                .text("Hello voice")
+                .voiceRequested(true)
+                .build());
 
         system.process(context);
 
-        // Auto mode stores raw content in session, never sends to channel
-        verify(channelPort, never()).sendMessage(anyString(), anyString());
-        verify(voiceHandler, never()).trySendVoice(any(), anyString(), anyString());
-        assertTrue(context.getSession().getMessages().isEmpty());
+        // Text sent
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Hello voice"));
+        // Quota notification sent
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq(MSG_VOICE_QUOTA));
     }
 
     @Test
-    void voiceAfterText_noChannelSilentlySkips() {
-        when(voiceHandler.isAvailable()).thenReturn(true);
+    void voiceOnlyQuotaExceededSendsNotification() {
+        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.QUOTA_EXCEEDED);
+        when(preferencesService.getMessage("voice.error.quota")).thenReturn(MSG_VOICE_QUOTA);
 
         AgentContext context = createContext();
-        context.getSession().setChannelType(CHANNEL_UNKNOWN);
-        LlmResponse response = LlmResponse.builder().content(CONTENT_RESPONSE).build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-        context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE,
+                OutgoingResponse.voiceOnly("Speak this"));
 
-        // Unknown channel → early return, no send, no exception
-        assertDoesNotThrow(() -> system.process(context));
-        verify(voiceHandler, never()).trySendVoice(any(), anyString(), anyString());
-    }
+        system.process(context);
 
-    @Test
-    void shouldRespondWithVoice_respondWithVoiceConfigDisabled() {
-        properties.getVoice().getTelegram().setRespondWithVoice(false);
-
-        AgentContext context = createContext();
-        context.getMessages().add(Message.builder()
-                .role(ROLE_USER)
-                .content("transcribed")
-                .voiceData(new byte[] { 1 })
-                .audioFormat(AudioFormat.OGG_OPUS)
-                .timestamp(Instant.now())
-                .build());
-
-        // Config says no auto-respond → should return false
-        assertFalse(system.shouldRespondWithVoice(context));
-    }
-
-    @Test
-    void shouldRespondWithVoice_voiceRequestedOverridesConfig() {
-        properties.getVoice().getTelegram().setRespondWithVoice(false);
-
-        AgentContext context = createContext();
-        context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
-
-        // Explicit tool request overrides config
-        assertTrue(system.shouldRespondWithVoice(context));
+        verify(voiceHandler).trySendVoice(eq(channelPort), eq(CHAT_ID), eq("Speak this"));
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq(MSG_VOICE_QUOTA));
     }
 
     // ===== RESPONSE_SENT tracking =====
@@ -704,18 +401,7 @@ class ResponseRoutingSystemTest {
     @Test
     void shouldSetResponseSentOnSuccessfulTextSend() {
         AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content("hello").build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-
-        system.process(context);
-
-        assertEquals(true, context.getAttribute(ContextAttributes.RESPONSE_SENT));
-    }
-
-    @Test
-    void shouldSetResponseSentOnErrorSend() {
-        AgentContext context = createContext();
-        context.setAttribute(ContextAttributes.LLM_ERROR, "model crashed");
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.text("hello"));
 
         system.process(context);
 
@@ -728,90 +414,14 @@ class ResponseRoutingSystemTest {
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("send failed")));
 
         AgentContext context = createContext();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, LlmResponse.builder().content(CONTENT_RESPONSE).build());
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.text(CONTENT_RESPONSE));
 
         system.process(context);
 
-        // Duplicate of channelSendFailureSetsRoutingError (kept for now as a narrower
-        // regression test).
         assertNull(context.getAttribute(ContextAttributes.RESPONSE_SENT));
     }
 
-    @Test
-    void shouldSetResponseSentOnVoiceSend() {
-        when(voiceHandler.sendVoiceWithFallback(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
-
-        AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content("").build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-        context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
-        context.setAttribute(ContextAttributes.VOICE_TEXT, VOICE_TEXT_CONTENT);
-
-        system.process(context);
-
-        assertEquals(true, context.getAttribute(ContextAttributes.RESPONSE_SENT));
-    }
-
-    // ===== Additional boundary coverage =====
-
-    @Test
-    void voiceOnlySkippedWhenNoChannel() {
-        AgentContext context = createContext();
-        context.getSession().setChannelType(CHANNEL_UNKNOWN);
-        LlmResponse response = LlmResponse.builder().content("").build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-        context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
-        context.setAttribute(ContextAttributes.VOICE_TEXT, VOICE_TEXT_CONTENT);
-
-        assertDoesNotThrow(() -> system.process(context));
-        verify(voiceHandler, never()).sendVoiceWithFallback(any(), anyString(), anyString());
-    }
-
-    @Test
-    void hasIncomingVoice_nullMessages() {
-        AgentContext context = createContext();
-        context.getMessages().clear();
-        assertFalse(system.shouldRespondWithVoice(context));
-    }
-
-    @Test
-    void hasIncomingVoice_noUserMessages() {
-        properties.getVoice().getTelegram().setRespondWithVoice(true);
-        AgentContext context = createContext();
-        context.getMessages().add(Message.builder()
-                .role("assistant")
-                .content(CONTENT_RESPONSE)
-                .timestamp(Instant.now())
-                .build());
-        assertFalse(system.shouldRespondWithVoice(context));
-    }
-
-    @Test
-    void hasIncomingVoice_userMessageWithoutVoice() {
-        properties.getVoice().getTelegram().setRespondWithVoice(true);
-        AgentContext context = createContext();
-        context.getMessages().add(Message.builder()
-                .role(ROLE_USER)
-                .content("text message")
-                .timestamp(Instant.now())
-                .build());
-        assertFalse(system.shouldRespondWithVoice(context));
-    }
-
-    @Test
-    void stripVoicePrefix_nullReturnsEmpty() {
-        assertEquals("", system.stripVoicePrefix(null));
-    }
-
-    @Test
-    void sendErrorToUser_unknownChannelDoesNotThrow() {
-        AgentContext context = createContext();
-        context.getSession().setChannelType(CHANNEL_UNKNOWN);
-        context.setAttribute(ContextAttributes.LLM_ERROR, "some error");
-
-        assertDoesNotThrow(() -> system.process(context));
-        verify(channelPort, never()).sendMessage(anyString(), anyString());
-    }
+    // ===== Channel registration =====
 
     @Test
     void registerChannelAddsNewChannel() {
@@ -825,30 +435,14 @@ class ResponseRoutingSystemTest {
         AgentContext context = createContext();
         context.getSession().setChannelType("slack");
         context.getSession().setChatId("slack-chat");
-        LlmResponse response = LlmResponse.builder().content("hello slack").build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.text("hello slack"));
 
         system.process(context);
 
         verify(newChannel).sendMessage(eq("slack-chat"), eq("hello slack"));
     }
 
-    @Test
-    void voicePrefixFallbackWithToolsExecuted() {
-        when(voiceHandler.isAvailable()).thenReturn(true);
-        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
-
-        AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder()
-                .content(VOICE_PREFIX + " Voice after tools")
-                .build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-
-        system.process(context);
-
-        verify(voiceHandler).trySendVoice(eq(channelPort), eq(CHAT_ID), eq("Voice after tools"));
-        verify(channelPort, never()).sendMessage(anyString(), anyString());
-    }
+    // ===== Edge cases =====
 
     @Test
     void shouldProcessFalseWhenAllNull() {
@@ -856,63 +450,32 @@ class ResponseRoutingSystemTest {
         assertFalse(system.shouldProcess(context));
     }
 
-    // ===== Voice Quota Exceeded Tests =====
-
     @Test
-    void voicePrefixQuotaExceededSendsNotificationAndFallsBackToText() {
-        when(voiceHandler.isAvailable()).thenReturn(true);
-        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.QUOTA_EXCEEDED);
-        when(preferencesService.getMessage("voice.error.quota")).thenReturn(MSG_VOICE_QUOTA);
-
+    void unknownChannelForVoiceDoesNotThrow() {
         AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content(VOICE_PREFIX + " Hello voice").build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+        context.getSession().setChannelType(CHANNEL_UNKNOWN);
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE,
+                OutgoingResponse.voiceOnly(VOICE_TEXT_CONTENT));
 
-        system.process(context);
-
-        // Falls back to text
-        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Hello voice"));
-        // Sends quota notification
-        verify(channelPort).sendMessage(eq(CHAT_ID), eq(MSG_VOICE_QUOTA));
+        assertDoesNotThrow(() -> system.process(context));
+        verify(voiceHandler, never()).trySendVoice(any(), anyString(), anyString());
     }
 
     @Test
-    void voiceOnlyQuotaExceededSendsNotification() {
-        when(voiceHandler.sendVoiceWithFallback(any(), anyString(), anyString()))
-                .thenReturn(VoiceSendResult.QUOTA_EXCEEDED);
-        when(preferencesService.getMessage("voice.error.quota")).thenReturn(MSG_VOICE_QUOTA);
-
+    void errorChannelUnknownDoesNotThrow() {
         AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content("").build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-        context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
-        context.setAttribute(ContextAttributes.VOICE_TEXT, "Speak this");
+        context.getSession().setChannelType(CHANNEL_UNKNOWN);
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.text("some error"));
 
-        system.process(context);
-
-        verify(voiceHandler).sendVoiceWithFallback(eq(channelPort), eq(CHAT_ID), eq("Speak this"));
-        verify(channelPort).sendMessage(eq(CHAT_ID), eq(MSG_VOICE_QUOTA));
-        // Variant A: ResponseRoutingSystem never mutates session history; only
-        // transport concerns.
-        assertTrue(context.getSession().getMessages().isEmpty());
+        assertDoesNotThrow(() -> system.process(context));
+        verify(channelPort, never()).sendMessage(anyString(), anyString());
     }
 
     @Test
-    void voiceAfterTextQuotaExceededSendsNotification() {
-        when(voiceHandler.isAvailable()).thenReturn(true);
-        when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.QUOTA_EXCEEDED);
-        when(preferencesService.getMessage("voice.error.quota")).thenReturn(MSG_VOICE_QUOTA);
-
+    void noOutgoingResponseDoesNothing() {
         AgentContext context = createContext();
-        LlmResponse response = LlmResponse.builder().content("Text response").build();
-        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-        context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
-
+        // No OUTGOING_RESPONSE set
         system.process(context);
-
-        // Text always sent
-        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Text response"));
-        // Quota notification sent after
-        verify(channelPort).sendMessage(eq(CHAT_ID), eq(MSG_VOICE_QUOTA));
+        verify(channelPort, never()).sendMessage(anyString(), anyString());
     }
 }

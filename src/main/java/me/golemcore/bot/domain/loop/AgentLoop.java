@@ -258,13 +258,21 @@ public class AgentLoop {
         }
     }
 
+    private static final String VOICE_PREFIX = "\uD83D\uDD0A";
+
     private void prepareOutgoingResponse(AgentContext context) {
         if (context.getAttribute(ContextAttributes.OUTGOING_RESPONSE) != null) {
             return;
         }
 
-        // Variant B: ResponseRoutingSystem must depend on a single transport contract.
-        // into OutgoingResponse.
+        // Error path: convert LLM_ERROR into a user-facing OutgoingResponse.
+        String llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
+        if (llmError != null) {
+            String errorMessage = preferencesService.getMessage("system.error.llm");
+            context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.text(errorMessage));
+            return;
+        }
+
         LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
         String text = response != null ? response.getContent() : null;
 
@@ -273,6 +281,29 @@ public class AgentLoop {
 
         boolean hasText = text != null && !text.isBlank();
         boolean hasVoice = Boolean.TRUE.equals(voiceRequested) || (voiceText != null && !voiceText.isBlank());
+
+        // Voice prefix detection: strip prefix and promote to voice request.
+        if (hasText && hasVoicePrefix(text)) {
+            String stripped = stripVoicePrefix(text);
+            if (!stripped.isBlank()) {
+                // Prefer tool-provided voiceText; otherwise use stripped prefix text.
+                String effectiveVoiceText = (voiceText != null && !voiceText.isBlank()) ? voiceText : stripped;
+                OutgoingResponse outgoing = OutgoingResponse.builder()
+                        .text(stripped)
+                        .voiceRequested(true)
+                        .voiceText(effectiveVoiceText)
+                        .build();
+                context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, outgoing);
+                return;
+            }
+            // Prefix with blank content after stripping — nothing to send.
+            return;
+        }
+
+        // Auto-respond with voice when incoming message was voice and config enabled.
+        if (hasText && !hasVoice) {
+            hasVoice = shouldAutoVoiceRespond(context);
+        }
 
         if (!hasText && !hasVoice) {
             return;
@@ -285,6 +316,42 @@ public class AgentLoop {
                 .build();
 
         context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, outgoing);
+    }
+
+    private boolean hasVoicePrefix(String content) {
+        return content != null && content.trim().startsWith(VOICE_PREFIX);
+    }
+
+    private String stripVoicePrefix(String content) {
+        if (content == null) {
+            return "";
+        }
+        String trimmed = content.trim();
+        if (trimmed.startsWith(VOICE_PREFIX)) {
+            return trimmed.substring(VOICE_PREFIX.length()).trim();
+        }
+        return trimmed;
+    }
+
+    private boolean shouldAutoVoiceRespond(AgentContext context) {
+        BotProperties.VoiceProperties voice = properties.getVoice();
+        if (!voice.getTelegram().isRespondWithVoice()) {
+            return false;
+        }
+        return hasIncomingVoice(context);
+    }
+
+    private boolean hasIncomingVoice(AgentContext context) {
+        if (context.getMessages() == null || context.getMessages().isEmpty()) {
+            return false;
+        }
+        for (int i = context.getMessages().size() - 1; i >= 0; i--) {
+            Message msg = context.getMessages().get(i);
+            if (msg.isUserMessage()) {
+                return msg.hasVoice();
+            }
+        }
+        return false;
     }
 
     private void routeSyntheticAssistantResponse(AgentContext context, String content, String finishReason) {

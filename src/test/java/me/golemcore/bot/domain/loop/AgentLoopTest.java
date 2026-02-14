@@ -197,7 +197,7 @@ class AgentLoopTest {
                 props,
                 List.of(system,
                         new me.golemcore.bot.domain.system.ResponseRoutingSystem(List.of(channel), preferencesService,
-                                mock(me.golemcore.bot.domain.service.VoiceResponseHandler.class), props)),
+                                mock(me.golemcore.bot.domain.service.VoiceResponseHandler.class))),
                 List.of(channel),
                 preferencesService,
                 llmPort,
