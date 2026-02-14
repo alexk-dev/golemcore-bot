@@ -23,10 +23,8 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.ToolCallExecutionResult;
 import me.golemcore.bot.domain.service.ToolCallExecutionService;
-import me.golemcore.bot.domain.system.toolloop.DefaultToolExecutor;
 import me.golemcore.bot.domain.system.toolloop.ToolCallExecutionServiceToolExecutorAdapter;
 import me.golemcore.bot.domain.system.toolloop.ToolExecutionOutcome;
-import me.golemcore.bot.domain.system.toolloop.ToolExecutionSystemToolExecutorAdapter;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -35,52 +33,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class ToolLoopToolExecutorAdaptersTest {
-
-    @Test
-    void defaultToolExecutor_shouldMapServiceResultToOutcome() {
-        ToolCallExecutionService svc = mock(ToolCallExecutionService.class);
-        DefaultToolExecutor adapter = new DefaultToolExecutor(svc);
-
-        AgentContext ctx = AgentContext.builder().build();
-        Message.ToolCall call = Message.ToolCall.builder().id("tc1").name("shell").build();
-
-        ToolCallExecutionResult svcResult = new ToolCallExecutionResult(
-                "tc1",
-                "shell",
-                ToolResult.success("ok"),
-                "ok");
-        when(svc.execute(ctx, call)).thenReturn(svcResult);
-
-        ToolExecutionOutcome out = adapter.execute(ctx, call);
-        assertEquals("tc1", out.toolCallId());
-        assertEquals("shell", out.toolName());
-        assertEquals("ok", out.toolResult().getOutput());
-        assertEquals("ok", out.messageContent());
-        assertFalse(out.synthetic());
-    }
-
-    @Test
-    void toolExecutionSystemAdapter_shouldMapServiceResultToOutcome() {
-        ToolCallExecutionService svc = mock(ToolCallExecutionService.class);
-        ToolExecutionSystemToolExecutorAdapter adapter = new ToolExecutionSystemToolExecutorAdapter(svc);
-
-        AgentContext ctx = AgentContext.builder().build();
-        Message.ToolCall call = Message.ToolCall.builder().id("tc1").name("shell").build();
-
-        ToolCallExecutionResult svcResult = new ToolCallExecutionResult(
-                "tc1",
-                "shell",
-                ToolResult.success("ok"),
-                "ok");
-        when(svc.execute(ctx, call)).thenReturn(svcResult);
-
-        ToolExecutionOutcome out = adapter.execute(ctx, call);
-        assertEquals("tc1", out.toolCallId());
-        assertEquals("shell", out.toolName());
-        assertEquals("ok", out.toolResult().getOutput());
-        assertEquals("ok", out.messageContent());
-        assertFalse(out.synthetic());
-    }
 
     @Test
     void toolCallExecutionServiceAdapter_shouldUseToolCallIdsAndNames() {
@@ -94,7 +46,8 @@ class ToolLoopToolExecutorAdaptersTest {
                 "tc1",
                 "shell",
                 ToolResult.success("ok"),
-                "ok");
+                "ok",
+                null);
         when(svc.execute(ctx, call)).thenReturn(svcResult);
 
         ToolExecutionOutcome out = adapter.execute(ctx, call);
