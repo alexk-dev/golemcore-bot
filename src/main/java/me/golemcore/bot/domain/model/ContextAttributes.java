@@ -36,8 +36,6 @@ public final class ContextAttributes {
     public static final String VOICE_TEXT = "voiceText";
 
     /** Boolean — signal to stop the agent loop after current iteration. */
-    public static final String LOOP_COMPLETE = "loop.complete";
-
     /** LlmResponse — response from LLM execution. */
     public static final String LLM_RESPONSE = "llm.response";
 

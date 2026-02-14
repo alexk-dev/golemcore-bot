@@ -382,13 +382,13 @@ class AgentLoopTest {
         verify(sessionPort).save(session);
     }
 
-    // ===== loop.complete stops loop =====
+    // ===== FINAL_ANSWER_READY stops loop =====
 
     @Test
-    void loopStopsWhenLoopCompleteSet() {
+    void loopStopsWhenFinalAnswerReadySet() {
         List<Integer> iterations = new ArrayList<>();
 
-        // System that simulates tool execution + sets loop.complete on first iteration
+        // System that simulates tool execution + finalizes the turn on first iteration
         AgentSystem toolWithComplete = new AgentSystem() {
             @Override
             public String getName() {
@@ -410,7 +410,7 @@ class AgentLoopTest {
                                 Message.ToolCall.builder().id("tc1").name("send_voice").arguments(Map.of()).build()))
                         .build();
                 context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-                context.setAttribute(ContextAttributes.LOOP_COMPLETE, true);
+                context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, Boolean.TRUE);
                 return context;
             }
         };
@@ -421,7 +421,7 @@ class AgentLoopTest {
         AgentLoop loop = createLoop(List.of(toolWithComplete));
         loop.processMessage(createUserMessage());
 
-        assertEquals(1, iterations.size(), "Loop should stop after 1 iteration when loop.complete is set");
+        assertEquals(1, iterations.size(), "Loop should stop after 1 iteration when FINAL_ANSWER_READY is set");
     }
 
     // ===== Feedback Guarantee Tests =====

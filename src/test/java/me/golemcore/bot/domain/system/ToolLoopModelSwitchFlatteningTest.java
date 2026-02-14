@@ -102,10 +102,14 @@ class ToolLoopModelSwitchFlatteningTest {
         assertEquals("new", captured.get().getModel());
 
         List<Message> reqMessages = captured.get().getMessages();
-        assertEquals(1, reqMessages.size());
-        assertFalse(reqMessages.get(0).hasToolCalls(), "toolCalls must be flattened away in request view");
+        assertEquals(2, reqMessages.size());
+
         assertEquals("assistant", reqMessages.get(0).getRole());
-        assertTrue(reqMessages.get(0).getContent().contains("[Tool:"));
+        assertFalse(reqMessages.get(0).hasToolCalls(), "toolCalls must be flattened away in request view");
+        assertTrue(reqMessages.get(0).getContent().contains("masked"));
+
+        assertEquals("assistant", reqMessages.get(1).getRole());
+        assertFalse(reqMessages.get(1).hasToolCalls(), "toolCalls must be flattened away in request view");
 
         // AND: raw history in context/session not mutated
         assertTrue(ctx.getMessages().get(0).hasToolCalls(), "raw history must keep toolCalls");

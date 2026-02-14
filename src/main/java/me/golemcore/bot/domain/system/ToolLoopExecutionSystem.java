@@ -50,10 +50,6 @@ public class ToolLoopExecutionSystem implements AgentSystem {
             return false;
         }
 
-        // If we already have a response and loop is complete, don't re-run.
-        if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.LOOP_COMPLETE))) {
-            return false;
-        }
         return true;
     }
 
@@ -62,9 +58,6 @@ public class ToolLoopExecutionSystem implements AgentSystem {
         log.debug("[ToolLoop] Executing tool loop (single-turn)");
 
         toolLoopSystem.processTurn(context);
-
-        // Ensure old loop continuation doesn't kick in.
-
         return context;
     }
 }

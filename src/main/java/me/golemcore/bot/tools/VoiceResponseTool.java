@@ -90,7 +90,7 @@ public class VoiceResponseTool implements ToolComponent {
         }
 
         context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
-        context.setAttribute(ContextAttributes.LOOP_COMPLETE, true);
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, Boolean.TRUE);
         if (text != null && !text.isBlank()) {
             context.setAttribute(ContextAttributes.VOICE_TEXT, text);
             log.info("[VoiceResponse] Voice response queued: {} chars of custom text", text.length());

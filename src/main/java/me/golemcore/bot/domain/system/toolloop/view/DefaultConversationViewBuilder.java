@@ -53,7 +53,7 @@ public class DefaultConversationViewBuilder implements ConversationViewBuilder {
         if (previousModel != null && targetModel != null && !previousModel.equals(targetModel)) {
             return true;
         }
-        return previousModel == null && hasToolMessages(messages);
+        return previousModel == null && hasToolMessages(messages) && targetModel != null;
     }
 
     private boolean hasToolMessages(List<Message> messages) {
