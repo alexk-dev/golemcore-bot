@@ -241,4 +241,28 @@ class MemoryPersistSystemTest {
         verify(memoryComponent).appendToday(
                 argThat(entry -> entry.matches("\\[\\d{2}:\\d{2}\\] User: hello \\| Assistant: reply\\n")));
     }
+
+    // ==================== shouldProcess (finality gate) ====================
+
+    @Test
+    void shouldNotProcessWhenFinalAnswerNotReady() {
+        AgentContext ctx = AgentContext.builder()
+                .session(AgentSession.builder().id(SESSION_ID).build())
+                .messages(new ArrayList<>())
+                .finalAnswerReady(false)
+                .build();
+
+        assertFalse(system.shouldProcess(ctx));
+    }
+
+    @Test
+    void shouldProcessWhenFinalAnswerReady() {
+        AgentContext ctx = AgentContext.builder()
+                .session(AgentSession.builder().id(SESSION_ID).build())
+                .messages(new ArrayList<>())
+                .finalAnswerReady(true)
+                .build();
+
+        assertTrue(system.shouldProcess(ctx));
+    }
 }

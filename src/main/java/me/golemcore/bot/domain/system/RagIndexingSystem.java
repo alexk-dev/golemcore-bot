@@ -71,6 +71,11 @@ public class RagIndexingSystem implements AgentSystem {
     }
 
     @Override
+    public boolean shouldProcess(AgentContext context) {
+        return context.isFinalAnswerReady();
+    }
+
+    @Override
     public AgentContext process(AgentContext context) {
         Message lastUserMessage = getLastUserMessage(context);
         if (lastUserMessage == null) {

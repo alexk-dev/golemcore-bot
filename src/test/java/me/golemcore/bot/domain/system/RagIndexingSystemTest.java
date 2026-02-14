@@ -156,6 +156,28 @@ class RagIndexingSystemTest {
         assertTrue(doc.contains("Assistant: answer"));
     }
 
+    // ==================== shouldProcess (finality gate) ====================
+
+    @Test
+    void shouldNotProcessWhenFinalAnswerNotReady() {
+        AgentContext context = AgentContext.builder()
+                .messages(new ArrayList<>())
+                .finalAnswerReady(false)
+                .build();
+
+        assertFalse(system.shouldProcess(context));
+    }
+
+    @Test
+    void shouldProcessWhenFinalAnswerReady() {
+        AgentContext context = AgentContext.builder()
+                .messages(new ArrayList<>())
+                .finalAnswerReady(true)
+                .build();
+
+        assertTrue(system.shouldProcess(context));
+    }
+
     private AgentContext buildContext(String userText, String assistantText) {
         List<Message> messages = new ArrayList<>();
         messages.add(Message.builder()

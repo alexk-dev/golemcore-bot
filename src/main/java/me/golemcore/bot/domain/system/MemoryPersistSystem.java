@@ -58,6 +58,11 @@ public class MemoryPersistSystem implements AgentSystem {
     }
 
     @Override
+    public boolean shouldProcess(AgentContext context) {
+        return context.isFinalAnswerReady();
+    }
+
+    @Override
     public AgentContext process(AgentContext context) {
         // Get the last user message
         Message lastUserMessage = getLastUserMessage(context);
