@@ -83,7 +83,6 @@ public final class ContextAttributes {
      * SkillTransitionRequest ? requested skill transition (from
      * SkillTransitionTool/SkillPipelineSystem).
      */
-    public static final String SKILL_TRANSITION_REQUEST = "skill.transition.request";
 
     /** Boolean ? loop iteration limit reached (AgentLoop safeguard). */
     public static final String ITERATION_LIMIT_REACHED = "iteration.limit.reached";

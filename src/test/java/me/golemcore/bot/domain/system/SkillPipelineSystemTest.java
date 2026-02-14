@@ -21,7 +21,6 @@ class SkillPipelineSystemTest {
 
     private static final String CONTENT_RESULT = "result";
     private static final String ATTR_LLM_RESPONSE = ContextAttributes.LLM_RESPONSE;
-    private static final String ATTR_TRANSITION_TARGET = ContextAttributes.SKILL_TRANSITION_REQUEST;
     private static final String ATTR_PIPELINE_DEPTH = "skill.pipeline.depth";
     private static final String SKILL_EXECUTOR = "executor";
 

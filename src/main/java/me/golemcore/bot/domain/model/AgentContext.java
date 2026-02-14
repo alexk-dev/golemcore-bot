@@ -101,16 +101,19 @@ public class AgentContext {
     // --- Typed transient attributes (preferred over string keys for control-flow
     // signals) ---
 
+    @Builder.Default
+    private SkillTransitionRequest skillTransitionRequest = null;
+
     public SkillTransitionRequest getSkillTransitionRequest() {
-        return getAttribute(ContextAttributes.SKILL_TRANSITION_REQUEST);
+        return skillTransitionRequest;
     }
 
     public void setSkillTransitionRequest(SkillTransitionRequest request) {
-        setAttribute(ContextAttributes.SKILL_TRANSITION_REQUEST, request);
+        this.skillTransitionRequest = request;
     }
 
     public void clearSkillTransitionRequest() {
-        setAttribute(ContextAttributes.SKILL_TRANSITION_REQUEST, null);
+        this.skillTransitionRequest = null;
     }
 
 }

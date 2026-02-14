@@ -261,8 +261,7 @@ class ResponseRoutingSystemTest {
         AgentContext context = createContext();
         LlmResponse response = LlmResponse.builder().content("response text").build();
         context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-        context.setAttribute(ContextAttributes.SKILL_TRANSITION_REQUEST,
-                me.golemcore.bot.domain.model.SkillTransitionRequest.explicit("next-skill"));
+        context.setSkillTransitionRequest(me.golemcore.bot.domain.model.SkillTransitionRequest.explicit("next-skill"));
 
         system.process(context);
 

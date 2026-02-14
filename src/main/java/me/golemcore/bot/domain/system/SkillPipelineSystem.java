@@ -124,8 +124,7 @@ public class SkillPipelineSystem implements AgentSystem {
         }
 
         // Set transition target for ContextBuildingSystem to pick up
-        context.setAttribute(ContextAttributes.SKILL_TRANSITION_REQUEST,
-                me.golemcore.bot.domain.model.SkillTransitionRequest.pipeline(nextSkillName));
+        context.setSkillTransitionRequest(me.golemcore.bot.domain.model.SkillTransitionRequest.pipeline(nextSkillName));
         context.setAttribute(PIPELINE_DEPTH_KEY, depth + 1);
         context.setAttribute(ContextAttributes.LLM_RESPONSE, null);
         context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, Boolean.FALSE);

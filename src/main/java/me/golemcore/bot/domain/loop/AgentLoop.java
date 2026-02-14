@@ -255,7 +255,7 @@ public class AgentLoop {
     }
 
     private boolean shouldContinueLoop(AgentContext context) {
-        // SkillPipelineSystem sets SKILL_TRANSITION_REQUEST to request a new iteration.
+        // SkillPipelineSystem sets skillTransitionRequest to request a new iteration.
         var transition = context.getSkillTransitionRequest();
         return transition != null && transition.targetSkill() != null;
     }

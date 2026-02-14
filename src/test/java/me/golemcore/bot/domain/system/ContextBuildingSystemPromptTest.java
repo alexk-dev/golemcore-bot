@@ -363,8 +363,7 @@ class ContextBuildingSystemPromptTest {
         when(skillComponent.findByName(SKILL_PROCESSING)).thenReturn(Optional.of(targetSkill));
 
         AgentContext ctx = createContext();
-        ctx.setAttribute(ContextAttributes.SKILL_TRANSITION_REQUEST,
-                me.golemcore.bot.domain.model.SkillTransitionRequest.explicit(SKILL_PROCESSING));
+        ctx.setSkillTransitionRequest(me.golemcore.bot.domain.model.SkillTransitionRequest.explicit(SKILL_PROCESSING));
         system.process(ctx);
 
         assertEquals(targetSkill, ctx.getActiveSkill());
