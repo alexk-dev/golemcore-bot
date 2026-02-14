@@ -14,6 +14,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class LocalStorageAdapterTest {
 
     private static final String TEST_DIR = "test-dir";
+    private static final String CONTENT_DEFAULT = "content";
+    private static final String FILE_1 = "file1.txt";
 
     @TempDir
     Path tempDir;
@@ -58,7 +60,7 @@ class LocalStorageAdapterTest {
         String directory = TEST_DIR;
         String path = "existing.txt";
 
-        storageAdapter.putText(directory, path, "content").get();
+        storageAdapter.putText(directory, path, CONTENT_DEFAULT).get();
 
         assertTrue(storageAdapter.exists(directory, path).get());
     }
@@ -73,7 +75,7 @@ class LocalStorageAdapterTest {
         String directory = TEST_DIR;
         String path = "to-delete.txt";
 
-        storageAdapter.putText(directory, path, "content").get();
+        storageAdapter.putText(directory, path, CONTENT_DEFAULT).get();
         assertTrue(storageAdapter.exists(directory, path).get());
 
         storageAdapter.deleteObject(directory, path).get();
@@ -84,14 +86,14 @@ class LocalStorageAdapterTest {
     void listObjects_returnsAllFiles() throws ExecutionException, InterruptedException {
         String directory = TEST_DIR;
 
-        storageAdapter.putText(directory, "file1.txt", "content1").get();
+        storageAdapter.putText(directory, FILE_1, "content1").get();
         storageAdapter.putText(directory, "file2.txt", "content2").get();
         storageAdapter.putText(directory, "subdir/file3.txt", "content3").get();
 
         List<String> files = storageAdapter.listObjects(directory, "").get();
 
         assertEquals(3, files.size());
-        assertTrue(files.contains("file1.txt"));
+        assertTrue(files.contains(FILE_1));
         assertTrue(files.contains("file2.txt"));
     }
 
@@ -122,5 +124,95 @@ class LocalStorageAdapterTest {
 
         assertTrue(tempDir.resolve(directory).toFile().exists());
         assertTrue(tempDir.resolve(directory).toFile().isDirectory());
+    }
+
+    // ==================== Path traversal ====================
+
+    @Test
+    void shouldBlockPathTraversal() {
+        ExecutionException ex = assertThrows(ExecutionException.class,
+                () -> storageAdapter.putText("test", "../../etc/passwd", "hack").get());
+        assertTrue(ex.getCause() instanceof IllegalArgumentException);
+    }
+
+    @Test
+    void shouldBlockPathTraversalOnGet() {
+        ExecutionException ex = assertThrows(ExecutionException.class,
+                () -> storageAdapter.getText("test", "../../../secret").get());
+        assertTrue(ex.getCause() instanceof IllegalArgumentException);
+    }
+
+    // ==================== listObjects edge cases ====================
+
+    @Test
+    void shouldReturnEmptyListForNonExistentDirectory() throws ExecutionException, InterruptedException {
+        List<String> files = storageAdapter.listObjects("non-existent-dir", "").get();
+        assertTrue(files.isEmpty());
+    }
+
+    @Test
+    void shouldReturnEmptyListForNonExistentPrefix() throws ExecutionException, InterruptedException {
+        storageAdapter.putText(TEST_DIR, FILE_1, CONTENT_DEFAULT).get();
+        List<String> files = storageAdapter.listObjects(TEST_DIR, "nonexistent-prefix").get();
+        assertTrue(files.isEmpty());
+    }
+
+    @Test
+    void shouldListObjectsWithNullPrefix() throws ExecutionException, InterruptedException {
+        storageAdapter.putText(TEST_DIR, FILE_1, CONTENT_DEFAULT).get();
+        List<String> files = storageAdapter.listObjects(TEST_DIR, null).get();
+        assertFalse(files.isEmpty());
+    }
+
+    @Test
+    void shouldListObjectsWithEmptyPrefix() throws ExecutionException, InterruptedException {
+        storageAdapter.putText(TEST_DIR, "a.txt", "a").get();
+        storageAdapter.putText(TEST_DIR, "b.txt", "b").get();
+        List<String> files = storageAdapter.listObjects(TEST_DIR, "").get();
+        assertEquals(2, files.size());
+    }
+
+    // ==================== getObject for non-existing file ====================
+
+    @Test
+    void shouldReturnNullBytesForNonExistingFile() throws ExecutionException, InterruptedException {
+        byte[] result = storageAdapter.getObject(TEST_DIR, "no-such-file.bin").get();
+        assertNull(result);
+    }
+
+    // ==================== deleteObject for non-existing file ====================
+
+    @Test
+    void shouldNotThrowWhenDeletingNonExistingFile() throws ExecutionException, InterruptedException {
+        assertDoesNotThrow(() -> storageAdapter.deleteObject(TEST_DIR, "does-not-exist.txt").get());
+    }
+
+    // ==================== Nested directory creation on put ====================
+
+    @Test
+    void shouldCreateNestedDirectoriesOnPut() throws ExecutionException, InterruptedException {
+        storageAdapter.putText(TEST_DIR, "deep/nested/dir/file.txt", "deep content").get();
+        String retrieved = storageAdapter.getText(TEST_DIR, "deep/nested/dir/file.txt").get();
+        assertEquals("deep content", retrieved);
+    }
+
+    // ==================== appendText creates parent dirs ====================
+
+    @Test
+    void shouldCreateParentDirsOnAppend() throws ExecutionException, InterruptedException {
+        storageAdapter.appendText(TEST_DIR, "new-subdir/append.log", "line1\n").get();
+        String content = storageAdapter.getText(TEST_DIR, "new-subdir/append.log").get();
+        assertEquals("line1\n", content);
+    }
+
+    // ==================== exists for directory ====================
+
+    @Test
+    void shouldReturnFalseForExistsOnDirectory() throws ExecutionException, InterruptedException {
+        storageAdapter.ensureDirectory("check-dir").get();
+        // exists checks a file path, not a directory — basepath/check-dir/ is the dir
+        // itself
+        boolean result = storageAdapter.exists("check-dir", "no-file").get();
+        assertFalse(result);
     }
 }
