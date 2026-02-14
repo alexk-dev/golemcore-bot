@@ -46,6 +46,9 @@ public final class ContextAttributes {
 
     /** Boolean ? final answer is ready and legacy systems should not run. */
 
+    /** OutgoingResponse ? response to route to the user (transport contract). */
+    public static final String OUTGOING_RESPONSE = "outgoing.response";
+
     /** Duration ? latency of the last LLM call (best-effort). */
     public static final String LLM_LATENCY = "llm.latency";
 

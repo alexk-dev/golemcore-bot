@@ -23,6 +23,7 @@ import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Attachment;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
+import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
@@ -98,6 +99,13 @@ public class ResponseRoutingSystem implements AgentSystem {
             return context;
         }
 
+        OutgoingResponse outgoing = context.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        if (outgoing != null && outgoing.getText() != null && !outgoing.getText().isBlank()) {
+            sendOutgoingText(context, outgoing);
+            sendPendingAttachments(context);
+            return context;
+        }
+
         LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
         Boolean voiceRequested = context.getAttribute(ContextAttributes.VOICE_REQUESTED);
         String voiceText = context.getAttribute(ContextAttributes.VOICE_TEXT);
@@ -134,6 +142,23 @@ public class ResponseRoutingSystem implements AgentSystem {
     }
 
     // --- Extracted response handlers ---
+
+    private void sendOutgoingText(AgentContext context, OutgoingResponse outgoing) {
+        AgentSession session = context.getSession();
+        ChannelPort channel = resolveChannel(session);
+        if (channel == null) {
+            return;
+        }
+        String chatId = session.getChatId();
+        try {
+            channel.sendMessage(chatId, outgoing.getText()).get(30, java.util.concurrent.TimeUnit.SECONDS);
+            context.setAttribute(ContextAttributes.RESPONSE_SENT, true);
+        } catch (Exception e) {
+            log.warn("[Response] FAILED to send (OutgoingResponse): {}", e.getMessage());
+            log.debug("[Response] OutgoingResponse send failure", e);
+            context.setAttribute(ContextAttributes.ROUTING_ERROR, e.getMessage());
+        }
+    }
 
     private AgentContext handleAutoMode(AgentContext context) {
         LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
