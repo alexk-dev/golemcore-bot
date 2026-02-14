@@ -21,13 +21,22 @@ package me.golemcore.bot.domain.loop;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.FailureEvent;
+import me.golemcore.bot.domain.model.FailureKind;
+import me.golemcore.bot.domain.model.FailureSource;
+import me.golemcore.bot.domain.model.FinishReason;
+import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.RateLimitResult;
+import me.golemcore.bot.domain.model.RoutingOutcome;
 import me.golemcore.bot.domain.model.SkillTransitionRequest;
 import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.model.TurnOutcome;
 import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.system.AgentSystem;
+import me.golemcore.bot.domain.system.ResponseRoutingSystem;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.LlmPort;
@@ -44,11 +53,15 @@ import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 class AgentLoopTest {
 
     private static final String CHANNEL_TYPE = "telegram";
+    private static final String FIXED_INSTANT = "2026-02-01T00:00:00Z";
+    private static final String ROLE_USER = "user";
+    private static final String MSG_GENERIC = "generic";
 
     @Test
     void shouldResetTypedControlFlagsAndToolResultsBetweenIterations() {
@@ -64,7 +77,7 @@ class AgentLoopTest {
         LlmPort llmPort = mock(LlmPort.class);
         when(llmPort.isAvailable()).thenReturn(false);
 
-        Clock clock = Clock.fixed(Instant.parse("2026-02-01T00:00:00Z"), ZoneOffset.UTC);
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
 
         AgentSession session = AgentSession.builder()
                 .id("s1")
@@ -126,7 +139,7 @@ class AgentLoopTest {
                 clock);
 
         Message inbound = Message.builder()
-                .role("user")
+                .role(ROLE_USER)
                 .content("hi")
                 .channelType(CHANNEL_TYPE)
                 .chatId("1")
@@ -147,13 +160,13 @@ class AgentLoopTest {
         props.getAgent().setMaxIterations(1);
 
         UserPreferencesService preferencesService = mock(UserPreferencesService.class);
-        when(preferencesService.getMessage(any())).thenReturn("generic");
+        when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
         when(preferencesService.getMessage(any(), any())).thenReturn("x");
 
         LlmPort llmPort = mock(LlmPort.class);
         when(llmPort.isAvailable()).thenReturn(false);
 
-        Clock clock = Clock.fixed(Instant.parse("2026-02-01T00:00:00Z"), ZoneOffset.UTC);
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
 
         AgentSession session = AgentSession.builder()
                 .id("s1")
@@ -197,15 +210,15 @@ class AgentLoopTest {
                 rateLimitPort,
                 props,
                 List.of(system,
-                        new me.golemcore.bot.domain.system.ResponseRoutingSystem(List.of(channel), preferencesService,
-                                mock(me.golemcore.bot.domain.service.VoiceResponseHandler.class))),
+                        new ResponseRoutingSystem(List.of(channel), preferencesService,
+                                mock(VoiceResponseHandler.class))),
                 List.of(channel),
                 preferencesService,
                 llmPort,
                 clock);
 
         Message inbound = Message.builder()
-                .role("user")
+                .role(ROLE_USER)
                 .content("hi")
                 .channelType(CHANNEL_TYPE)
                 .chatId("1")
@@ -220,5 +233,549 @@ class AgentLoopTest {
         // NOTE: ResponseRoutingSystem is transport-only. It must not write assistant
         // messages
         // into raw history. (Raw history is owned by the domain execution path.)
+    }
+
+    @Test
+    void shouldSkipDisabledSystem() {
+        // Arrange
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+        BotProperties props = new BotProperties();
+        props.getAgent().setMaxIterations(1);
+
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .messages(new ArrayList<>())
+                .build();
+
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "1")).thenReturn(session);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+        when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        // A system that is disabled — its process() should never be called
+        AgentSystem disabledSystem = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "disabledSystem";
+            }
+
+            @Override
+            public int getOrder() {
+                return 1;
+            }
+
+            @Override
+            public boolean isEnabled() {
+                return false;
+            }
+
+            @Override
+            public boolean shouldProcess(AgentContext context) {
+                return true;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                fail("process() must not be called on a disabled system");
+                return context;
+            }
+        };
+
+        AgentLoop loop = new AgentLoop(
+                sessionPort,
+                rateLimitPort,
+                props,
+                List.of(disabledSystem),
+                List.of(channel),
+                preferencesService,
+                llmPort,
+                clock);
+
+        Message inbound = Message.builder()
+                .role(ROLE_USER)
+                .content("hi")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .senderId("u1")
+                .timestamp(clock.instant())
+                .build();
+
+        // Act
+        loop.processMessage(inbound);
+
+        // Assert — session saved (loop completed), disabled system was not invoked
+        verify(sessionPort, times(1)).save(session);
+    }
+
+    @Test
+    void shouldRecordFailureEventOnSystemException() {
+        // Arrange
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+        BotProperties props = new BotProperties();
+        props.getAgent().setMaxIterations(1);
+
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .messages(new ArrayList<>())
+                .build();
+
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "1")).thenReturn(session);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+        when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        // A system that throws an exception
+        AgentSystem throwingSystem = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "throwingSystem";
+            }
+
+            @Override
+            public int getOrder() {
+                return 1;
+            }
+
+            @Override
+            public boolean shouldProcess(AgentContext context) {
+                return true;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                throw new IllegalStateException("boom");
+            }
+        };
+
+        // A second system that captures failures from context
+        List<FailureEvent> capturedFailures = new ArrayList<>();
+        AgentSystem inspectorSystem = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "inspector";
+            }
+
+            @Override
+            public int getOrder() {
+                return 99;
+            }
+
+            @Override
+            public boolean shouldProcess(AgentContext context) {
+                return true;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                capturedFailures.addAll(context.getFailures());
+                return context;
+            }
+        };
+
+        AgentLoop loop = new AgentLoop(
+                sessionPort,
+                rateLimitPort,
+                props,
+                List.of(throwingSystem, inspectorSystem),
+                List.of(channel),
+                preferencesService,
+                llmPort,
+                clock);
+
+        Message inbound = Message.builder()
+                .role(ROLE_USER)
+                .content("hi")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .senderId("u1")
+                .timestamp(clock.instant())
+                .build();
+
+        // Act
+        loop.processMessage(inbound);
+
+        // Assert
+        assertEquals(1, capturedFailures.size());
+        FailureEvent failure = capturedFailures.get(0);
+        assertEquals(FailureSource.SYSTEM, failure.source());
+        assertEquals("throwingSystem", failure.component());
+        assertEquals(FailureKind.EXCEPTION, failure.kind());
+        assertEquals("boom", failure.message());
+    }
+
+    @Test
+    void shouldCallShutdownWithoutError() {
+        // Arrange
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+        BotProperties props = new BotProperties();
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        LlmPort llmPort = mock(LlmPort.class);
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+
+        AgentLoop loop = new AgentLoop(
+                sessionPort,
+                rateLimitPort,
+                props,
+                List.of(),
+                List.of(channel),
+                preferencesService,
+                llmPort,
+                clock);
+
+        // Act & Assert — no exception thrown
+        assertDoesNotThrow(loop::shutdown);
+    }
+
+    @Test
+    void shouldCollectErrorsFromFailureEvents() {
+        // Arrange
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+        BotProperties props = new BotProperties();
+        props.getAgent().setMaxIterations(1);
+
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
+        when(preferencesService.getMessage(eq("system.error.feedback"), any())).thenReturn("Error: interpreted");
+
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(true);
+        LlmResponse llmResponse = LlmResponse.builder().content("interpreted error").build();
+        when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(llmResponse));
+
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .messages(new ArrayList<>())
+                .build();
+
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "1")).thenReturn(session);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+        when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        // System that adds a FailureEvent to the context but produces no response
+        AgentSystem failureSystem = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "failureAdder";
+            }
+
+            @Override
+            public int getOrder() {
+                return 1;
+            }
+
+            @Override
+            public boolean shouldProcess(AgentContext context) {
+                return true;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                context.addFailure(new FailureEvent(
+                        FailureSource.LLM, "testLlm", FailureKind.EXCEPTION,
+                        "connection refused", clock.instant()));
+                return context;
+            }
+        };
+
+        ResponseRoutingSystem routingSystem = new ResponseRoutingSystem(
+                List.of(channel), preferencesService, mock(VoiceResponseHandler.class));
+
+        AgentLoop loop = new AgentLoop(
+                sessionPort,
+                rateLimitPort,
+                props,
+                List.of(failureSystem, routingSystem),
+                List.of(channel),
+                preferencesService,
+                llmPort,
+                clock);
+
+        Message inbound = Message.builder()
+                .role(ROLE_USER)
+                .content("hi")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .senderId("u1")
+                .timestamp(clock.instant())
+                .build();
+
+        // Act
+        loop.processMessage(inbound);
+
+        // Assert — the LLM was called to interpret errors and a response was sent
+        verify(llmPort).chat(any());
+        verify(channel, atLeastOnce()).sendMessage(eq("1"), eq("Error: interpreted"));
+    }
+
+    @Test
+    void shouldHandleNullMessagesInAutoModeCheck() {
+        // Arrange
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+        BotProperties props = new BotProperties();
+        props.getAgent().setMaxIterations(1);
+
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .messages(new ArrayList<>())
+                .build();
+
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "1")).thenReturn(session);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+        when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        // System that nulls out the messages list to test isAutoModeContext safety
+        AgentSystem nullMessagesSystem = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "nullMessages";
+            }
+
+            @Override
+            public int getOrder() {
+                return 1;
+            }
+
+            @Override
+            public boolean shouldProcess(AgentContext context) {
+                return true;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                context.setMessages(null);
+                return context;
+            }
+        };
+
+        ResponseRoutingSystem routingSystem = new ResponseRoutingSystem(
+                List.of(channel), preferencesService, mock(VoiceResponseHandler.class));
+
+        AgentLoop loop = new AgentLoop(
+                sessionPort,
+                rateLimitPort,
+                props,
+                List.of(nullMessagesSystem, routingSystem),
+                List.of(channel),
+                preferencesService,
+                llmPort,
+                clock);
+
+        Message inbound = Message.builder()
+                .role(ROLE_USER)
+                .content("hi")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .senderId("u1")
+                .timestamp(clock.instant())
+                .build();
+
+        // Act & Assert — should not throw NullPointerException on isAutoModeContext
+        assertDoesNotThrow(() -> loop.processMessage(inbound));
+        verify(sessionPort).save(session);
+    }
+
+    @Test
+    void shouldTruncateNullInput() {
+        // Arrange — build a message with null content and verify the loop handles it
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+        BotProperties props = new BotProperties();
+        props.getAgent().setMaxIterations(1);
+
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .messages(new ArrayList<>())
+                .build();
+
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "1")).thenReturn(session);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+        when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        AgentLoop loop = new AgentLoop(
+                sessionPort,
+                rateLimitPort,
+                props,
+                List.of(),
+                List.of(channel),
+                preferencesService,
+                llmPort,
+                clock);
+
+        // Message with null content — truncate(null, 200) should return "<null>"
+        Message inbound = Message.builder()
+                .role(ROLE_USER)
+                .content(null)
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .senderId("u1")
+                .timestamp(clock.instant())
+                .build();
+
+        // Act & Assert — no NPE from truncate(null, 200) in log.debug line
+        assertDoesNotThrow(() -> loop.processMessage(inbound));
+        verify(sessionPort).save(session);
+    }
+
+    @Test
+    void shouldEnsureFeedbackWhenRoutingOutcomeNotSent() {
+        // Arrange
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+        BotProperties props = new BotProperties();
+        props.getAgent().setMaxIterations(1);
+
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn("generic fallback");
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .messages(new ArrayList<>())
+                .build();
+
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "1")).thenReturn(session);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+        when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        // System that sets a TurnOutcome with RoutingOutcome sentText=false and no
+        // OutgoingResponse
+        AgentSystem turnOutcomeSystem = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "turnOutcomeSetter";
+            }
+
+            @Override
+            public int getOrder() {
+                return 1;
+            }
+
+            @Override
+            public boolean shouldProcess(AgentContext context) {
+                return true;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                RoutingOutcome routingOutcome = RoutingOutcome.builder()
+                        .attempted(true)
+                        .sentText(false)
+                        .build();
+                TurnOutcome outcome = TurnOutcome.builder()
+                        .finishReason(FinishReason.ERROR)
+                        .routingOutcome(routingOutcome)
+                        .build();
+                context.setTurnOutcome(outcome);
+                return context;
+            }
+        };
+
+        ResponseRoutingSystem routingSystem = new ResponseRoutingSystem(
+                List.of(channel), preferencesService, mock(VoiceResponseHandler.class));
+
+        AgentLoop loop = new AgentLoop(
+                sessionPort,
+                rateLimitPort,
+                props,
+                List.of(turnOutcomeSystem, routingSystem),
+                List.of(channel),
+                preferencesService,
+                llmPort,
+                clock);
+
+        Message inbound = Message.builder()
+                .role(ROLE_USER)
+                .content("hi")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .senderId("u1")
+                .timestamp(clock.instant())
+                .build();
+
+        // Act
+        loop.processMessage(inbound);
+
+        // Assert — ensureFeedback should trigger because sentText=false,
+        // no unsent LLM response exists, LLM not available, so generic fallback fires
+        verify(channel, atLeastOnce()).sendMessage(eq("1"), eq("generic fallback"));
     }
 }
