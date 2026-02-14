@@ -34,7 +34,6 @@ import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
-import me.golemcore.bot.domain.model.ContextAttributes;
 
 class ContextBuildingSystemPromptTest {
 

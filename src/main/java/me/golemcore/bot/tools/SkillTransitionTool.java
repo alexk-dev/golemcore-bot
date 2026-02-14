@@ -34,7 +34,6 @@ import org.springframework.stereotype.Component;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import me.golemcore.bot.domain.model.ContextAttributes;
 
 /**
  * Tool for explicit skill transitions within a pipeline.

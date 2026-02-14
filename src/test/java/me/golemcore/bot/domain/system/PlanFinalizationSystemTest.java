@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -44,8 +45,8 @@ class PlanFinalizationSystemTest {
         preferencesService = mock(UserPreferencesService.class);
 
         // Avoid coupling tests to i18n message catalog contents
-        when(preferencesService.getMessage(org.mockito.ArgumentMatchers.anyString(),
-                org.mockito.ArgumentMatchers.any(Object[].class)))
+        when(preferencesService.getMessage(anyString(),
+                any(Object[].class)))
                 .thenAnswer(inv -> inv.getArgument(0));
 
         system = new PlanFinalizationSystem(planService, eventPublisher, preferencesService);

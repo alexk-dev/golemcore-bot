@@ -31,7 +31,6 @@ import me.golemcore.bot.domain.service.UserPreferencesService;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
-import java.util.List;
 import java.util.Optional;
 
 /**

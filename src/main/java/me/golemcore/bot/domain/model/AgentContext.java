@@ -115,6 +115,7 @@ public class AgentContext {
         this.skillTransitionRequest = request;
     }
 
+    @SuppressWarnings("PMD.NullAssignment")
     public void clearSkillTransitionRequest() {
         this.skillTransitionRequest = null;
     }

@@ -3,7 +3,6 @@ package me.golemcore.bot.domain.system;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
-import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.system.toolloop.ToolLoopSystem;
 import org.springframework.stereotype.Component;

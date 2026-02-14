@@ -38,22 +38,34 @@ class ToolLoopSystemBddTest {
 
     private static final Instant NOW = Instant.parse("2026-01-01T12:00:00Z");
 
+    private static final String CHANNEL_TELEGRAM = "telegram";
+    private static final String CHAT_1 = "chat1";
+    private static final String ROLE_USER = "user";
+    private static final String ROLE_ASSISTANT = "assistant";
+    private static final String ROLE_TOOL = "tool";
+    private static final String TOOL_CALL_ID_1 = "tc1";
+    private static final String TOOL_SHELL = "shell";
+    private static final String ARG_COMMAND = "command";
+    private static final String TEXT_CALLING_TOOL = "calling tool";
+    private static final Instant DEADLINE = Instant.parse("2026-02-01T00:00:00Z");
+    private static final int TWO = 2;
+
     @Test
     void scenarioA_happyPath_toolCallThenToolResultThenFinalAnswer_insideOneTurn() {
         // GIVEN: a session with an incoming user message
         AgentSession session = AgentSession.builder()
                 .id("s1")
-                .channelType("telegram")
-                .chatId("chat1")
+                .channelType(CHANNEL_TELEGRAM)
+                .chatId(CHAT_1)
                 .messages(new ArrayList<>())
                 .build();
 
         Message user = Message.builder()
-                .role("user")
+                .role(ROLE_USER)
                 .content("Say hello via shell")
                 .timestamp(NOW)
-                .channelType("telegram")
-                .chatId("chat1")
+                .channelType(CHANNEL_TELEGRAM)
+                .chatId(CHAT_1)
                 .build();
         session.addMessage(user);
 
@@ -69,9 +81,9 @@ class ToolLoopSystemBddTest {
         LlmResponse first = LlmResponse.builder()
                 .content("Let me do that")
                 .toolCalls(List.of(Message.ToolCall.builder()
-                        .id("tc1")
-                        .name("shell")
-                        .arguments(Map.of("command", "echo hello"))
+                        .id(TOOL_CALL_ID_1)
+                        .name(TOOL_SHELL)
+                        .arguments(Map.of(ARG_COMMAND, "echo hello"))
                         .build()))
                 .build();
 
@@ -90,8 +102,8 @@ class ToolLoopSystemBddTest {
         ToolExecutorPort toolExecutor = mock(ToolExecutorPort.class);
         when(toolExecutor.execute(any(AgentContext.class), any(Message.ToolCall.class)))
                 .thenReturn(new ToolExecutionOutcome(
-                        "tc1",
-                        "shell",
+                        TOOL_CALL_ID_1,
+                        TOOL_SHELL,
                         ToolResult.success("hello\n"),
                         "hello\n",
                         false));
@@ -108,7 +120,7 @@ class ToolLoopSystemBddTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 settings,
                 router,
-                Clock.fixed(Instant.parse("2026-02-01T00:00:00Z"), ZoneOffset.UTC));
+                Clock.fixed(DEADLINE, ZoneOffset.UTC));
 
         // WHEN: we process one turn
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
@@ -123,20 +135,20 @@ class ToolLoopSystemBddTest {
         List<Message> history = session.getMessages();
         assertEquals(4, history.size(), "Expected 4 messages in raw history");
 
-        assertEquals("user", history.get(0).getRole());
+        assertEquals(ROLE_USER, history.get(0).getRole());
 
-        assertEquals("assistant", history.get(1).getRole());
+        assertEquals(ROLE_ASSISTANT, history.get(1).getRole());
         assertNotNull(history.get(1).getToolCalls());
         assertEquals(1, history.get(1).getToolCalls().size());
-        assertEquals("shell", history.get(1).getToolCalls().get(0).getName());
-        assertEquals("tc1", history.get(1).getToolCalls().get(0).getId());
+        assertEquals(TOOL_SHELL, history.get(1).getToolCalls().get(0).getName());
+        assertEquals(TOOL_CALL_ID_1, history.get(1).getToolCalls().get(0).getId());
 
-        assertEquals("tool", history.get(2).getRole());
-        assertEquals("tc1", history.get(2).getToolCallId());
-        assertEquals("shell", history.get(2).getToolName());
+        assertEquals(ROLE_TOOL, history.get(2).getRole());
+        assertEquals(TOOL_CALL_ID_1, history.get(2).getToolCallId());
+        assertEquals(TOOL_SHELL, history.get(2).getToolName());
         assertEquals("hello\n", history.get(2).getContent());
 
-        assertEquals("assistant", history.get(3).getRole());
+        assertEquals(ROLE_ASSISTANT, history.get(3).getRole());
         assertEquals("Done: hello", history.get(3).getContent());
 
         // AND: tool was executed once
@@ -148,17 +160,17 @@ class ToolLoopSystemBddTest {
         // GIVEN: a session with an incoming user message
         AgentSession session = AgentSession.builder()
                 .id("s1")
-                .channelType("telegram")
-                .chatId("chat1")
+                .channelType(CHANNEL_TELEGRAM)
+                .chatId(CHAT_1)
                 .messages(new ArrayList<>())
                 .build();
 
         Message user = Message.builder()
-                .role("user")
+                .role(ROLE_USER)
                 .content("Do two tool steps")
                 .timestamp(NOW)
-                .channelType("telegram")
-                .chatId("chat1")
+                .channelType(CHANNEL_TELEGRAM)
+                .chatId(CHAT_1)
                 .build();
         session.addMessage(user);
 
@@ -174,9 +186,9 @@ class ToolLoopSystemBddTest {
         LlmResponse r1 = LlmResponse.builder()
                 .content("step 1")
                 .toolCalls(List.of(Message.ToolCall.builder()
-                        .id("tc1")
-                        .name("shell")
-                        .arguments(Map.of("command", "echo one"))
+                        .id(TOOL_CALL_ID_1)
+                        .name(TOOL_SHELL)
+                        .arguments(Map.of(ARG_COMMAND, "echo one"))
                         .build()))
                 .build();
 
@@ -184,8 +196,8 @@ class ToolLoopSystemBddTest {
                 .content("step 2")
                 .toolCalls(List.of(Message.ToolCall.builder()
                         .id("tc2")
-                        .name("shell")
-                        .arguments(Map.of("command", "echo two"))
+                        .name(TOOL_SHELL)
+                        .arguments(Map.of(ARG_COMMAND, "echo two"))
                         .build()))
                 .build();
 
@@ -204,7 +216,7 @@ class ToolLoopSystemBddTest {
         when(toolExecutor.execute(any(AgentContext.class), any(Message.ToolCall.class)))
                 .thenAnswer(inv -> {
                     Message.ToolCall tc = inv.getArgument(1);
-                    String out = tc.getId().equals("tc1") ? "one\n" : "two\n";
+                    String out = TOOL_CALL_ID_1.equals(tc.getId()) ? "one\n" : "two\n";
                     return new ToolExecutionOutcome(
                             tc.getId(),
                             tc.getName(),
@@ -225,7 +237,7 @@ class ToolLoopSystemBddTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 settings,
                 router,
-                Clock.fixed(Instant.parse("2026-02-01T00:00:00Z"), ZoneOffset.UTC));
+                Clock.fixed(DEADLINE, ZoneOffset.UTC));
 
         // WHEN
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
@@ -240,19 +252,19 @@ class ToolLoopSystemBddTest {
         // (assistant final)
         assertEquals(6, history.size());
 
-        assertEquals("user", history.get(0).getRole());
+        assertEquals(ROLE_USER, history.get(0).getRole());
 
-        assertEquals("assistant", history.get(1).getRole());
-        assertEquals("tc1", history.get(1).getToolCalls().get(0).getId());
-        assertEquals("tool", history.get(2).getRole());
-        assertEquals("tc1", history.get(2).getToolCallId());
+        assertEquals(ROLE_ASSISTANT, history.get(1).getRole());
+        assertEquals(TOOL_CALL_ID_1, history.get(1).getToolCalls().get(0).getId());
+        assertEquals(ROLE_TOOL, history.get(2).getRole());
+        assertEquals(TOOL_CALL_ID_1, history.get(2).getToolCallId());
 
-        assertEquals("assistant", history.get(3).getRole());
+        assertEquals(ROLE_ASSISTANT, history.get(3).getRole());
         assertEquals("tc2", history.get(3).getToolCalls().get(0).getId());
-        assertEquals("tool", history.get(4).getRole());
+        assertEquals(ROLE_TOOL, history.get(4).getRole());
         assertEquals("tc2", history.get(4).getToolCallId());
 
-        assertEquals("assistant", history.get(5).getRole());
+        assertEquals(ROLE_ASSISTANT, history.get(5).getRole());
         assertEquals("final", history.get(5).getContent());
 
         verify(toolExecutor, times(2)).execute(any(), any());
@@ -264,17 +276,17 @@ class ToolLoopSystemBddTest {
         // answer)
         AgentSession session = AgentSession.builder()
                 .id("s1")
-                .channelType("telegram")
-                .chatId("chat1")
+                .channelType(CHANNEL_TELEGRAM)
+                .chatId(CHAT_1)
                 .messages(new ArrayList<>())
                 .build();
 
         session.addMessage(Message.builder()
-                .role("user")
+                .role(ROLE_USER)
                 .content("Loop forever")
                 .timestamp(NOW)
-                .channelType("telegram")
-                .chatId("chat1")
+                .channelType(CHANNEL_TELEGRAM)
+                .chatId(CHAT_1)
                 .build());
 
         AgentContext ctx = AgentContext.builder()
@@ -284,11 +296,11 @@ class ToolLoopSystemBddTest {
 
         LlmPort llmPort = mock(LlmPort.class);
         LlmResponse toolCall = LlmResponse.builder()
-                .content("calling tool")
+                .content(TEXT_CALLING_TOOL)
                 .toolCalls(List.of(Message.ToolCall.builder()
-                        .id("tc1")
-                        .name("shell")
-                        .arguments(Map.of("command", "echo hi"))
+                        .id(TOOL_CALL_ID_1)
+                        .name(TOOL_SHELL)
+                        .arguments(Map.of(ARG_COMMAND, "echo hi"))
                         .build()))
                 .build();
 
@@ -297,8 +309,8 @@ class ToolLoopSystemBddTest {
         ToolExecutorPort toolExecutor = mock(ToolExecutorPort.class);
         when(toolExecutor.execute(any(AgentContext.class), any(Message.ToolCall.class)))
                 .thenReturn(new ToolExecutionOutcome(
-                        "tc1",
-                        "shell",
+                        TOOL_CALL_ID_1,
+                        TOOL_SHELL,
                         ToolResult.success("hi\n"),
                         "hi\n",
                         false));
@@ -315,14 +327,14 @@ class ToolLoopSystemBddTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 settings,
                 router,
-                Clock.fixed(Instant.parse("2026-02-01T00:00:00Z"), ZoneOffset.UTC));
+                Clock.fixed(DEADLINE, ZoneOffset.UTC));
 
         // WHEN
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
 
         // THEN: loop ends with a final assistant feedback message
         assertTrue(result.finalAnswerReady());
-        assertTrue(session.getMessages().stream().anyMatch(m -> "assistant".equals(m.getRole())
+        assertTrue(session.getMessages().stream().anyMatch(m -> ROLE_ASSISTANT.equals(m.getRole())
                 && m.getContent() != null
                 && m.getContent().contains("Tool loop stopped")));
     }
@@ -332,11 +344,11 @@ class ToolLoopSystemBddTest {
         // GIVEN
         AgentSession session = AgentSession.builder()
                 .id("s1")
-                .channelType("telegram")
-                .chatId("chat1")
+                .channelType(CHANNEL_TELEGRAM)
+                .chatId(CHAT_1)
                 .build();
         session.addMessage(Message.builder()
-                .role("user")
+                .role(ROLE_USER)
                 .content("hi")
                 .build());
 
@@ -347,11 +359,11 @@ class ToolLoopSystemBddTest {
 
         LlmPort llmPort = mock(LlmPort.class);
         LlmResponse toolCall = LlmResponse.builder()
-                .content("calling tool")
+                .content(TEXT_CALLING_TOOL)
                 .toolCalls(List.of(Message.ToolCall.builder()
-                        .id("tc1")
-                        .name("shell")
-                        .arguments(Map.of("command", "echo hi"))
+                        .id(TOOL_CALL_ID_1)
+                        .name(TOOL_SHELL)
+                        .arguments(Map.of(ARG_COMMAND, "echo hi"))
                         .build()))
                 .build();
         when(llmPort.chat(any(LlmRequest.class))).thenReturn(CompletableFuture.completedFuture(toolCall));
@@ -384,7 +396,7 @@ class ToolLoopSystemBddTest {
                 // 2) while condition before first iteration (start)
                 // 3) while condition before second iteration (expired)
                 calls++;
-                if (calls <= 2) {
+                if (calls <= TWO) {
                     return start;
                 }
                 return start.plusSeconds(10);
@@ -409,7 +421,7 @@ class ToolLoopSystemBddTest {
         // THEN
         assertTrue(result.finalAnswerReady());
         verify(toolExecutor, times(1)).execute(any(), any());
-        assertTrue(session.getMessages().stream().anyMatch(m -> "tool".equals(m.getRole()) && m.getContent() != null
+        assertTrue(session.getMessages().stream().anyMatch(m -> ROLE_TOOL.equals(m.getRole()) && m.getContent() != null
                 && m.getContent().contains("deadline")));
     }
 
@@ -418,10 +430,10 @@ class ToolLoopSystemBddTest {
         // GIVEN
         AgentSession session = AgentSession.builder()
                 .id("s1")
-                .channelType("telegram")
-                .chatId("chat1")
+                .channelType(CHANNEL_TELEGRAM)
+                .chatId(CHAT_1)
                 .build();
-        session.addMessage(Message.builder().role("user").content("hi").build());
+        session.addMessage(Message.builder().role(ROLE_USER).content("hi").build());
 
         AgentContext ctx = AgentContext.builder()
                 .session(session)
@@ -430,11 +442,11 @@ class ToolLoopSystemBddTest {
 
         LlmPort llmPort = mock(LlmPort.class);
         LlmResponse toolCall = LlmResponse.builder()
-                .content("calling tool")
+                .content(TEXT_CALLING_TOOL)
                 .toolCalls(List.of(Message.ToolCall.builder()
-                        .id("tc1")
-                        .name("shell")
-                        .arguments(Map.of("command", "boom"))
+                        .id(TOOL_CALL_ID_1)
+                        .name(TOOL_SHELL)
+                        .arguments(Map.of(ARG_COMMAND, "boom"))
                         .build()))
                 .build();
         LlmResponse finalAnswer = LlmResponse.builder()
@@ -464,7 +476,7 @@ class ToolLoopSystemBddTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 settings,
                 router,
-                Clock.fixed(Instant.parse("2026-02-01T00:00:00Z"), ZoneOffset.UTC));
+                Clock.fixed(DEADLINE, ZoneOffset.UTC));
 
         // WHEN
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
@@ -473,13 +485,13 @@ class ToolLoopSystemBddTest {
         assertTrue(result.finalAnswerReady());
         verify(llmPort, times(2)).chat(any(LlmRequest.class));
 
-        assertTrue(session.getMessages().stream().anyMatch(m -> "tool".equals(m.getRole())
+        assertTrue(session.getMessages().stream().anyMatch(m -> ROLE_TOOL.equals(m.getRole())
                 && m.getToolCallId() != null
-                && m.getToolCallId().equals("tc1")
+                && TOOL_CALL_ID_1.equals(m.getToolCallId())
                 && m.getContent() != null
                 && m.getContent().contains("Tool execution failed")));
 
-        assertTrue(session.getMessages().stream().anyMatch(m -> "assistant".equals(m.getRole())
+        assertTrue(session.getMessages().stream().anyMatch(m -> ROLE_ASSISTANT.equals(m.getRole())
                 && m.getContent() != null
                 && m.getContent().contains("ok after failure")));
     }
@@ -489,10 +501,10 @@ class ToolLoopSystemBddTest {
         // GIVEN
         AgentSession session = AgentSession.builder()
                 .id("s1")
-                .channelType("telegram")
-                .chatId("chat1")
+                .channelType(CHANNEL_TELEGRAM)
+                .chatId(CHAT_1)
                 .build();
-        session.addMessage(Message.builder().role("user").content("hi").build());
+        session.addMessage(Message.builder().role(ROLE_USER).content("hi").build());
 
         AgentContext ctx = AgentContext.builder()
                 .session(session)
@@ -501,11 +513,11 @@ class ToolLoopSystemBddTest {
 
         LlmPort llmPort = mock(LlmPort.class);
         LlmResponse toolCall = LlmResponse.builder()
-                .content("calling tool")
+                .content(TEXT_CALLING_TOOL)
                 .toolCalls(List.of(Message.ToolCall.builder()
-                        .id("tc1")
-                        .name("shell")
-                        .arguments(Map.of("command", "false"))
+                        .id(TOOL_CALL_ID_1)
+                        .name(TOOL_SHELL)
+                        .arguments(Map.of(ARG_COMMAND, "false"))
                         .build()))
                 .build();
 
@@ -520,8 +532,8 @@ class ToolLoopSystemBddTest {
         ToolExecutorPort toolExecutor = mock(ToolExecutorPort.class);
         when(toolExecutor.execute(any(AgentContext.class), any(Message.ToolCall.class)))
                 .thenReturn(new ToolExecutionOutcome(
-                        "tc1",
-                        "shell",
+                        TOOL_CALL_ID_1,
+                        TOOL_SHELL,
                         ToolResult.failure("exit 1"),
                         "exit 1",
                         false));
@@ -542,7 +554,7 @@ class ToolLoopSystemBddTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 settings,
                 router,
-                Clock.fixed(Instant.parse("2026-02-01T00:00:00Z"), ZoneOffset.UTC));
+                Clock.fixed(DEADLINE, ZoneOffset.UTC));
 
         // WHEN
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
@@ -550,7 +562,7 @@ class ToolLoopSystemBddTest {
         // THEN
         assertTrue(result.finalAnswerReady());
         verify(llmPort, times(1)).chat(any(LlmRequest.class));
-        assertTrue(session.getMessages().stream().anyMatch(m -> "assistant".equals(m.getRole())
+        assertTrue(session.getMessages().stream().anyMatch(m -> ROLE_ASSISTANT.equals(m.getRole())
                 && m.getContent() != null
                 && m.getContent().contains("Tool loop stopped")));
     }
@@ -560,10 +572,10 @@ class ToolLoopSystemBddTest {
         // GIVEN
         AgentSession session = AgentSession.builder()
                 .id("s1")
-                .channelType("telegram")
-                .chatId("chat1")
+                .channelType(CHANNEL_TELEGRAM)
+                .chatId(CHAT_1)
                 .build();
-        session.addMessage(Message.builder().role("user").content("hi").build());
+        session.addMessage(Message.builder().role(ROLE_USER).content("hi").build());
 
         AgentContext ctx = AgentContext.builder()
                 .session(session)
@@ -572,11 +584,11 @@ class ToolLoopSystemBddTest {
 
         LlmPort llmPort = mock(LlmPort.class);
         LlmResponse toolCall = LlmResponse.builder()
-                .content("calling tool")
+                .content(TEXT_CALLING_TOOL)
                 .toolCalls(List.of(Message.ToolCall.builder()
-                        .id("tc1")
-                        .name("shell")
-                        .arguments(Map.of("command", "echo sensitive"))
+                        .id(TOOL_CALL_ID_1)
+                        .name(TOOL_SHELL)
+                        .arguments(Map.of(ARG_COMMAND, "echo sensitive"))
                         .build()))
                 .build();
         when(llmPort.chat(any(LlmRequest.class))).thenReturn(CompletableFuture.completedFuture(toolCall));
@@ -584,8 +596,8 @@ class ToolLoopSystemBddTest {
         ToolExecutorPort toolExecutor = mock(ToolExecutorPort.class);
         when(toolExecutor.execute(any(AgentContext.class), any(Message.ToolCall.class)))
                 .thenReturn(new ToolExecutionOutcome(
-                        "tc1",
-                        "shell",
+                        TOOL_CALL_ID_1,
+                        TOOL_SHELL,
                         ToolResult.failure(ToolFailureKind.CONFIRMATION_DENIED, "Cancelled by user"),
                         "Error: Cancelled by user",
                         false));
@@ -606,7 +618,7 @@ class ToolLoopSystemBddTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 settings,
                 router,
-                Clock.fixed(Instant.parse("2026-02-01T00:00:00Z"), ZoneOffset.UTC));
+                Clock.fixed(DEADLINE, ZoneOffset.UTC));
 
         // WHEN
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
@@ -614,7 +626,7 @@ class ToolLoopSystemBddTest {
         // THEN
         assertTrue(result.finalAnswerReady());
         verify(llmPort, times(1)).chat(any(LlmRequest.class));
-        assertTrue(session.getMessages().stream().anyMatch(m -> "assistant".equals(m.getRole())
+        assertTrue(session.getMessages().stream().anyMatch(m -> ROLE_ASSISTANT.equals(m.getRole())
                 && m.getContent() != null
                 && m.getContent().contains("confirmation denied")));
     }
@@ -624,10 +636,10 @@ class ToolLoopSystemBddTest {
         // GIVEN
         AgentSession session = AgentSession.builder()
                 .id("s1")
-                .channelType("telegram")
-                .chatId("chat1")
+                .channelType(CHANNEL_TELEGRAM)
+                .chatId(CHAT_1)
                 .build();
-        session.addMessage(Message.builder().role("user").content("hi").build());
+        session.addMessage(Message.builder().role(ROLE_USER).content("hi").build());
 
         AgentContext ctx = AgentContext.builder()
                 .session(session)
@@ -636,9 +648,9 @@ class ToolLoopSystemBddTest {
 
         LlmPort llmPort = mock(LlmPort.class);
         LlmResponse toolCall = LlmResponse.builder()
-                .content("calling tool")
+                .content(TEXT_CALLING_TOOL)
                 .toolCalls(List.of(Message.ToolCall.builder()
-                        .id("tc1")
+                        .id(TOOL_CALL_ID_1)
                         .name("forbidden")
                         .arguments(Map.of())
                         .build()))
@@ -648,7 +660,7 @@ class ToolLoopSystemBddTest {
         ToolExecutorPort toolExecutor = mock(ToolExecutorPort.class);
         when(toolExecutor.execute(any(AgentContext.class), any(Message.ToolCall.class)))
                 .thenReturn(new ToolExecutionOutcome(
-                        "tc1",
+                        TOOL_CALL_ID_1,
                         "forbidden",
                         ToolResult.failure(ToolFailureKind.POLICY_DENIED, "Unknown tool: forbidden"),
                         "Error: Unknown tool: forbidden",
@@ -670,7 +682,7 @@ class ToolLoopSystemBddTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 settings,
                 router,
-                Clock.fixed(Instant.parse("2026-02-01T00:00:00Z"), ZoneOffset.UTC));
+                Clock.fixed(DEADLINE, ZoneOffset.UTC));
 
         // WHEN
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
@@ -678,7 +690,7 @@ class ToolLoopSystemBddTest {
         // THEN
         assertTrue(result.finalAnswerReady());
         verify(llmPort, times(1)).chat(any(LlmRequest.class));
-        assertTrue(session.getMessages().stream().anyMatch(m -> "assistant".equals(m.getRole())
+        assertTrue(session.getMessages().stream().anyMatch(m -> ROLE_ASSISTANT.equals(m.getRole())
                 && m.getContent() != null
                 && m.getContent().contains("tool denied by policy")));
     }
