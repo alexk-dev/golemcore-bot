@@ -343,10 +343,13 @@ With tool-loop, the conversation may contain:
 - either by consuming `ContextAttributes.LLM_RESPONSE` (final) as now,
 - or by reading a new attribute like `toolLoop.finalResponse`.
 
-### 13.4 Attachments are orthogonal but tied to tool execution
-ToolExecutionSystem queues attachments into `ContextAttributes.PENDING_ATTACHMENTS` and ResponseRoutingSystem sends them.
+### 13.4 Attachments are first-class tool execution outcomes
+Attachments flow through the pipeline as explicit values:
 
-**Implication for ToolLoopSystem/outcomes:** attachments should become part of `ToolExecutionOutcome` but can be aggregated into `PENDING_ATTACHMENTS` at the boundary for backwards compatibility.
+- `ToolCallExecutionResult.extractedAttachment` carries the attachment alongside the tool result.
+- `ToolExecutionOutcome.attachment` carries it through the tool loop.
+- `DefaultToolLoopSystem` accumulates attachments per turn and includes them in `OutgoingResponse`.
+- `ResponseRoutingSystem` sends attachments only from `OutgoingResponse.attachments`.
 
 ### 13.5 Avoid duplicating assistant final message in session
 Currently:

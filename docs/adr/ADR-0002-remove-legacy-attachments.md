@@ -1,6 +1,6 @@
 # ADR-0002: Remove Legacy Attachments; Use `OutgoingResponse.attachments` as the Only Transport Path
 
-- **Status:** Accepted (implementation in progress)
+- **Status:** Completed
 - **Date:** 2026-02-14
 - **Related docs:** [`docs/OUTGOING_RESPONSE.md`](../OUTGOING_RESPONSE.md)
 
@@ -100,22 +100,16 @@ If `OutgoingResponse` is present:
 - Remove any legacy attachment delivery path from `ResponseRoutingSystem`.
 - Update routing tests to assert attachments are sent from `OutgoingResponse.attachments`.
 
-### Phase 2 — Make attachments a first-class tool execution outcome (NEXT)
-Today `ToolCallExecutionService.extractAttachment(...)` can detect attachments but does not publish them.
+### Phase 2 — Make attachments a first-class tool execution outcome (DONE)
 
-We will:
+1. `ToolCallExecutionResult` extended with `Attachment extractedAttachment`.
+2. `ToolCallExecutionService.extractAttachment()` returns `Attachment` and passes it into the result.
+3. `ToolExecutionOutcome` carries the attachment through the tool loop.
+4. `DefaultToolLoopSystem` accumulates attachments per turn and includes them in `OutgoingResponse`.
 
-1. Extend tool execution result objects to carry extracted attachments explicitly.
-   - Recommended: add `List<Attachment> extractedAttachments` to `ToolCallExecutionResult`.
-2. Make `ToolCallExecutionService.execute(...)` return those attachments alongside the tool result.
-3. Make the domain orchestrator (preferably `ToolLoopSystem`) aggregate attachments per turn and attach them to `OutgoingResponse`.
-
-This removes the last remaining “implicit side-channel” temptation.
-
-### Phase 3 — Remove remaining legacy API surface (cleanup)
-- Remove any leftover references/documentation mentioning pending attachments.
-- Add a regression test:
-  - If a (hypothetical) legacy pending queue is present, routing must ignore it.
+### Phase 3 — Remove remaining legacy API surface (DONE)
+- Documentation cleaned: `OUTGOING_RESPONSE.md`, `TOOL_LOOP_SYSTEM_PLAN.md`.
+- Regression test added: `ResponseRoutingSystemTest.shouldIgnoreLegacyAttributesAndRouteOnlyOutgoingResponse()`.
 
 ---
 

@@ -13,7 +13,6 @@ Historically, the project relied on multiple implicit, overlapping “sources of
 
 - `ContextAttributes.LLM_RESPONSE` (LLM content)
 - `ContextAttributes.VOICE_REQUESTED` / `ContextAttributes.VOICE_TEXT`
-- legacy “pending attachments” queues (previously used for screenshots/files)
 - (in some flows) downstream systems inferred what to send by inspecting `LlmResponse` provider specifics
 
 This created:
@@ -58,8 +57,7 @@ If `OutgoingResponse` exists in the context, it MUST be treated as **the single 
 
 Implications:
 
-- `ResponseRoutingSystem` must prefer `OutgoingResponse` over `LLM_RESPONSE`, `LLM_ERROR`, and any legacy queues.
-- legacy attachment queues MUST NOT be read when `OutgoingResponse` exists.
+- `ResponseRoutingSystem` reads **only** from `OutgoingResponse`. No legacy attribute fallbacks exist.
 
 ### 3.2 Ordering
 
@@ -119,57 +117,31 @@ Responsibilities:
 
 ---
 
-## 5) Legacy Attachments Removal (status)
+## 5) Attachment Pipeline (completed)
 
-Legacy “pending attachments” have been removed in favor of `OutgoingResponse.attachments`.
+Attachments flow through the pipeline as first-class values:
 
-Current situation:
-
-- `ResponseRoutingSystem` sends attachments **only** from `OutgoingResponse`.
-- The remaining work is to ensure **tool-extracted attachments** are actually collected upstream into `OutgoingResponse`.
+1. `ToolCallExecutionService.extractAttachment()` detects attachments from tool results and returns them as `Attachment` objects.
+2. `ToolCallExecutionResult` carries `extractedAttachment` alongside the tool result.
+3. `ToolExecutionOutcome` carries the attachment through the tool loop.
+4. `DefaultToolLoopSystem` accumulates attachments per turn and includes them in `OutgoingResponse`.
+5. `ResponseRoutingSystem` sends attachments **only** from `OutgoingResponse.attachments`.
 
 ---
 
-## 6) Recommended next cleanups (architecture)
+## 6) Architecture notes
 
-### 6.1 Eliminate remaining legacy routing inputs
-Currently `ResponseRoutingSystem` still has a fallback path that reads:
+### 6.1 Routing is now OutgoingResponse-only
+`ResponseRoutingSystem` has no legacy fallback paths. It reads exclusively from `OutgoingResponse`.
 
-- `ContextAttributes.LLM_RESPONSE`
-- `ContextAttributes.LLM_ERROR`
-- `ContextAttributes.VOICE_REQUESTED` / `ContextAttributes.VOICE_TEXT`
+Voice prefix detection and auto-voice logic are handled upstream in `AgentLoop.prepareOutgoingResponse()`, which builds the `OutgoingResponse` from LLM response attributes before routing runs.
 
-For maximal purity:
-
-- Make upstream always build `OutgoingResponse` for any user-visible output.
-- Restrict routing to only two triggers:
-  1) `OutgoingResponse` present
-  2) error fallback (optional, if you want routing to still handle catastrophic failures)
-
-### 6.2 Make attachments a first-class outcome of tool execution
-`ToolCallExecutionService.extractAttachment(...)` currently detects attachments but does not publish them.
-
-Clean options:
-
-- Extend `ToolCallExecutionResult` with `List<Attachment> extractedAttachments`.
-- Aggregate those in `ToolLoopSystem` and add them to `OutgoingResponse`.
-
-This keeps the transport contract clean and avoids hidden side-channels.
-
-### 6.3 Unify voice contract with OutgoingResponse
-Eventually, migrate voice to a typed field on `OutgoingResponse` only (already mostly done conceptually).
-
-Benefits:
-
-- avoids string-key attributes for transport control
-- reduces coupling between tools/systems and routing
-
-### 6.4 Tests: enforce “transport-only” invariants
-Maintain BDD/contract tests that assert:
+### 6.2 Tests: enforced "transport-only" invariants
+BDD/contract tests assert:
 
 - routing sends only based on `OutgoingResponse`
 - routing does not append assistant messages to session history
-- routing does not read any legacy pending attachments
+- routing ignores any unknown attributes (regression guard)
 
 ---
 

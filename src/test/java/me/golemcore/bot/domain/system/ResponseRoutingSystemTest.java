@@ -478,4 +478,33 @@ class ResponseRoutingSystemTest {
         system.process(context);
         verify(channelPort, never()).sendMessage(anyString(), anyString());
     }
+
+    // ===== ADR-0002 Phase 3: regression guard =====
+
+    @Test
+    void shouldIgnoreLegacyAttributesAndRouteOnlyOutgoingResponse() {
+        // Regression test: even if legacy attributes are present in context,
+        // routing must send ONLY what OutgoingResponse specifies.
+        AgentContext context = createContext();
+
+        // Simulate legacy attributes that historically drove routing
+        context.setAttribute("llm.response.text", "LEGACY_TEXT_SHOULD_BE_IGNORED");
+        context.setAttribute("pending.attachments", List.of("LEGACY_ATTACHMENT"));
+        context.setAttribute(ContextAttributes.VOICE_REQUESTED, true);
+        context.setAttribute(ContextAttributes.VOICE_TEXT, "LEGACY_VOICE_SHOULD_BE_IGNORED");
+
+        // Set OutgoingResponse with specific text (no voice, no attachments)
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE,
+                OutgoingResponse.builder().text("ACTUAL_RESPONSE").build());
+
+        system.process(context);
+
+        // Only the OutgoingResponse text is sent
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq("ACTUAL_RESPONSE"));
+        // No voice sent (OutgoingResponse.voiceRequested is false)
+        verify(voiceHandler, never()).trySendVoice(any(), anyString(), anyString());
+        // No attachments sent
+        verify(channelPort, never()).sendPhoto(anyString(), any(byte[].class), anyString(), any());
+        verify(channelPort, never()).sendDocument(anyString(), any(byte[].class), anyString(), any());
+    }
 }
