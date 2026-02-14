@@ -368,7 +368,7 @@ class ContextBuildingSystemPromptTest {
         system.process(ctx);
 
         assertEquals(targetSkill, ctx.getActiveSkill());
-        assertNull(ctx.getAttribute(ContextAttributes.SKILL_TRANSITION_REQUEST)); // cleared after transition
+        assertNull(ctx.getSkillTransitionRequest()); // cleared after transition
         assertTrue(ctx.getSystemPrompt().contains("# Active Skill: processing"));
     }
 

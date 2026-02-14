@@ -97,4 +97,20 @@ public class AgentContext {
     public <T> T getAttribute(String key) {
         return attributes != null ? (T) attributes.get(key) : null;
     }
+
+    // --- Typed transient attributes (preferred over string keys for control-flow
+    // signals) ---
+
+    public SkillTransitionRequest getSkillTransitionRequest() {
+        return getAttribute(ContextAttributes.SKILL_TRANSITION_REQUEST);
+    }
+
+    public void setSkillTransitionRequest(SkillTransitionRequest request) {
+        setAttribute(ContextAttributes.SKILL_TRANSITION_REQUEST, request);
+    }
+
+    public void clearSkillTransitionRequest() {
+        setAttribute(ContextAttributes.SKILL_TRANSITION_REQUEST, null);
+    }
+
 }

@@ -78,8 +78,7 @@ class SkillTransitionToolTest {
 
         // Verify the context was updated
         AgentContext ctx = AgentContextHolder.get();
-        var req = (me.golemcore.bot.domain.model.SkillTransitionRequest) ctx
-                .getAttribute(ContextAttributes.SKILL_TRANSITION_REQUEST);
+        var req = ctx.getSkillTransitionRequest();
         assertEquals(CODE_WRITER, req.targetSkill());
     }
 

@@ -74,10 +74,8 @@ public class SkillPipelineSystem implements AgentSystem {
             return false;
         }
 
-        var transition = context.getAttribute(ContextAttributes.SKILL_TRANSITION_REQUEST);
-        String transitionTarget = transition instanceof me.golemcore.bot.domain.model.SkillTransitionRequest r
-                ? r.targetSkill()
-                : (String) transition;
+        var transition = context.getSkillTransitionRequest();
+        String transitionTarget = transition != null ? transition.targetSkill() : null;
         if (transitionTarget != null) {
             return false; // explicit transition already set
         }

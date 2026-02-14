@@ -80,10 +80,8 @@ public class ResponseRoutingSystem implements AgentSystem {
 
     @Override
     public AgentContext process(AgentContext context) {
-        var transition = context.getAttribute(ContextAttributes.SKILL_TRANSITION_REQUEST);
-        String transitionTarget = transition instanceof me.golemcore.bot.domain.model.SkillTransitionRequest r
-                ? r.targetSkill()
-                : (String) transition;
+        var transition = context.getSkillTransitionRequest();
+        String transitionTarget = transition != null ? transition.targetSkill() : null;
         if (transitionTarget != null) {
             log.debug("[Response] Pipeline transition pending (→ {}), skipping response routing", transitionTarget);
             return context;

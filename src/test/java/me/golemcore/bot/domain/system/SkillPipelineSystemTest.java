@@ -102,7 +102,7 @@ class SkillPipelineSystemTest {
         Skill skill = Skill.builder().name("a").nextSkill("b").build();
         LlmResponse response = LlmResponse.builder().content(CONTENT_RESULT).build();
         AgentContext ctx = createContext(skill, response);
-        ctx.setAttribute(ATTR_TRANSITION_TARGET, "c");
+        ctx.setSkillTransitionRequest(me.golemcore.bot.domain.model.SkillTransitionRequest.explicit("c"));
 
         assertFalse(system.shouldProcess(ctx));
     }
@@ -128,7 +128,9 @@ class SkillPipelineSystemTest {
         system.process(ctx);
 
         // Transition target should be set
-        assertEquals(SKILL_EXECUTOR, ctx.getAttribute(ATTR_TRANSITION_TARGET));
+        var req = ctx.getSkillTransitionRequest();
+        assertEquals(SKILL_EXECUTOR, req.targetSkill());
+        assertEquals(me.golemcore.bot.domain.model.SkillTransitionReason.SKILL_PIPELINE, req.reason());
         // Pipeline depth incremented
         assertEquals(1, (int) ctx.getAttribute(ATTR_PIPELINE_DEPTH));
         // Response cleared
@@ -150,7 +152,7 @@ class SkillPipelineSystemTest {
         system.process(ctx);
 
         // Should NOT set transition
-        assertNull(ctx.getAttribute(ATTR_TRANSITION_TARGET));
+        assertNull(ctx.getSkillTransitionRequest());
         // Response should still be present
         assertNotNull(ctx.getAttribute(ATTR_LLM_RESPONSE));
     }
@@ -166,7 +168,7 @@ class SkillPipelineSystemTest {
         system.process(ctx);
 
         // Should NOT set transition
-        assertNull(ctx.getAttribute(ATTR_TRANSITION_TARGET));
+        assertNull(ctx.getSkillTransitionRequest());
     }
 
     @Test
@@ -180,7 +182,7 @@ class SkillPipelineSystemTest {
         AgentContext ctx = createContext(activeSkill, response);
         system.process(ctx);
 
-        assertNull(ctx.getAttribute(ATTR_TRANSITION_TARGET));
+        assertNull(ctx.getSkillTransitionRequest());
     }
 
     @Test
@@ -213,6 +215,8 @@ class SkillPipelineSystemTest {
         // Blank content should not be stored
         assertEquals(0, ctx.getSession().getMessages().size());
         // But transition should still happen
-        assertEquals("b", ctx.getAttribute(ATTR_TRANSITION_TARGET));
+        var req = ctx.getSkillTransitionRequest();
+        assertEquals("b", req.targetSkill());
+        assertEquals(me.golemcore.bot.domain.model.SkillTransitionReason.SKILL_PIPELINE, req.reason());
     }
 }
