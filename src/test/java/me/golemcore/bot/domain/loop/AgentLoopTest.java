@@ -168,7 +168,8 @@ class AgentLoopTest {
             @Override
             public AgentContext process(AgentContext context) {
                 iterations.add(context.getCurrentIteration());
-                context.setAttribute(ContextAttributes.SKILL_TRANSITION_TARGET, "skill-next");
+                context.setAttribute(ContextAttributes.SKILL_TRANSITION_REQUEST,
+                        me.golemcore.bot.domain.model.SkillTransitionRequest.explicit("skill-next"));
                 context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, Boolean.FALSE);
                 return context;
             }

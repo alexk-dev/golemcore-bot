@@ -115,7 +115,8 @@ public class SkillTransitionTool implements ToolComponent {
             return CompletableFuture.completedFuture(ToolResult.failure("No agent context available"));
         }
 
-        context.setAttribute(ContextAttributes.SKILL_TRANSITION_TARGET, targetSkill);
+        context.setAttribute(ContextAttributes.SKILL_TRANSITION_REQUEST,
+                me.golemcore.bot.domain.model.SkillTransitionRequest.explicit(targetSkill));
 
         log.info("[SkillTransition] Transitioning to skill '{}' (reason: {})", targetSkill, reason);
 

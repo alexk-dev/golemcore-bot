@@ -88,13 +88,16 @@ public class ContextBuildingSystem implements AgentSystem {
         log.debug("[Context] Building context...");
 
         // Handle skill transitions (from SkillTransitionTool or SkillPipelineSystem)
-        String transitionTarget = context.getAttribute(ContextAttributes.SKILL_TRANSITION_TARGET);
+        var transition = context.getAttribute(ContextAttributes.SKILL_TRANSITION_REQUEST);
+        String transitionTarget = transition instanceof me.golemcore.bot.domain.model.SkillTransitionRequest r
+                ? r.targetSkill()
+                : (String) transition;
         if (transitionTarget != null) {
             skillComponent.findByName(transitionTarget).ifPresent(skill -> {
                 context.setActiveSkill(skill);
                 log.info("[Context] Skill transition: → {}", skill.getName());
             });
-            context.setAttribute(ContextAttributes.SKILL_TRANSITION_TARGET, null);
+            context.setAttribute(ContextAttributes.SKILL_TRANSITION_REQUEST, null);
         }
 
         // Resolve model tier from user preferences and active skill

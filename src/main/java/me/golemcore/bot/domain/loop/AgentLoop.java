@@ -218,7 +218,7 @@ public class AgentLoop {
 
             log.debug("Continuing to next iteration");
             context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, Boolean.FALSE);
-            context.setAttribute(ContextAttributes.SKILL_TRANSITION_TARGET, null); // reset transition
+            context.setAttribute(ContextAttributes.SKILL_TRANSITION_REQUEST, null); // reset transition
             context.getToolResults().clear();
         }
 
@@ -255,8 +255,11 @@ public class AgentLoop {
     }
 
     private boolean shouldContinueLoop(AgentContext context) {
-        // SkillPipelineSystem sets SKILL_TRANSITION_TARGET to request a new iteration.
-        String transitionTarget = context.getAttribute(ContextAttributes.SKILL_TRANSITION_TARGET);
+        // SkillPipelineSystem sets SKILL_TRANSITION_REQUEST to request a new iteration.
+        var transition = context.getAttribute(ContextAttributes.SKILL_TRANSITION_REQUEST);
+        String transitionTarget = transition instanceof me.golemcore.bot.domain.model.SkillTransitionRequest r
+                ? r.targetSkill()
+                : (String) transition;
         return transitionTarget != null;
     }
 

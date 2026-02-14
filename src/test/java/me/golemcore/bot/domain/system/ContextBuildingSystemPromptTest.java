@@ -363,11 +363,12 @@ class ContextBuildingSystemPromptTest {
         when(skillComponent.findByName(SKILL_PROCESSING)).thenReturn(Optional.of(targetSkill));
 
         AgentContext ctx = createContext();
-        ctx.setAttribute(ContextAttributes.SKILL_TRANSITION_TARGET, SKILL_PROCESSING);
+        ctx.setAttribute(ContextAttributes.SKILL_TRANSITION_REQUEST,
+                me.golemcore.bot.domain.model.SkillTransitionRequest.explicit(SKILL_PROCESSING));
         system.process(ctx);
 
         assertEquals(targetSkill, ctx.getActiveSkill());
-        assertNull(ctx.getAttribute(ContextAttributes.SKILL_TRANSITION_TARGET)); // cleared after transition
+        assertNull(ctx.getAttribute(ContextAttributes.SKILL_TRANSITION_REQUEST)); // cleared after transition
         assertTrue(ctx.getSystemPrompt().contains("# Active Skill: processing"));
     }
 

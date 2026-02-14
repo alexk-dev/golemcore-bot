@@ -79,8 +79,11 @@ public final class ContextAttributes {
     /** List<String> ? detected sanitization threats (best-effort). */
     public static final String SANITIZATION_THREATS = "sanitization.threats";
 
-    /** String ? requested skill transition target (from SkillTransitionTool). */
-    public static final String SKILL_TRANSITION_TARGET = "skill.transition.target";
+    /**
+     * SkillTransitionRequest ? requested skill transition (from
+     * SkillTransitionTool/SkillPipelineSystem).
+     */
+    public static final String SKILL_TRANSITION_REQUEST = "skill.transition.request";
 
     /** Boolean ? loop iteration limit reached (AgentLoop safeguard). */
     public static final String ITERATION_LIMIT_REACHED = "iteration.limit.reached";
