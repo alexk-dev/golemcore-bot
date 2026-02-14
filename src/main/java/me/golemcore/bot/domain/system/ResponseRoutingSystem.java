@@ -106,9 +106,6 @@ public class ResponseRoutingSystem implements AgentSystem {
             }
             sendOutgoingVoiceIfRequested(context, outgoing);
             sendOutgoingAttachments(context, outgoing);
-            if (outgoing.getAttachments() == null || outgoing.getAttachments().isEmpty()) {
-                sendPendingAttachments(context);
-            }
             return context;
         }
 

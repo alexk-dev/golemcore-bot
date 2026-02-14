@@ -594,6 +594,33 @@ class ResponseRoutingSystemTest {
     }
 
     @Test
+    void outgoingResponseDoesNotSendPendingAttachments() {
+        when(channelPort.sendPhoto(anyString(), any(), anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        AgentContext context = createContext();
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE,
+                me.golemcore.bot.domain.model.OutgoingResponse.text("hi"));
+
+        // Legacy pending attachments must be ignored once OutgoingResponse is present
+        // (Variant B).
+        byte[] data = new byte[] { 1, 2, 3 };
+        Attachment attachment = Attachment.builder()
+                .type(Attachment.Type.IMAGE)
+                .mimeType(MIME_IMAGE_PNG)
+                .filename(FILENAME_IMG_PNG)
+                .data(data)
+                .caption(null)
+                .build();
+        context.setAttribute(ContextAttributes.PENDING_ATTACHMENTS, List.of(attachment));
+
+        system.process(context);
+
+        verify(channelPort, never()).sendPhoto(anyString(), any(), anyString(), anyString());
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq("hi"));
+    }
+
+    @Test
     void voiceOnlyFallsBackToTextWhenVoiceNotAvailable() {
         when(voiceHandler.sendVoiceWithFallback(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
 
