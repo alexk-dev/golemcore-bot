@@ -30,10 +30,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
- * Prepares {@link OutgoingResponse} from LLM results before transport routing
- * (order=59). Converts {@code LLM_RESPONSE} and {@code LLM_ERROR} context
- * attributes into a single {@link OutgoingResponse}, handling voice prefix
- * detection and auto-voice policy.
+ * Prepares {@link OutgoingResponse} from LLM results before transport routing.
+ * Converts {@code LLM_RESPONSE} and {@code LLM_ERROR} context attributes into a
+ * single {@link OutgoingResponse}, handling voice prefix detection and
+ * auto-voice policy.
  *
  * <p>
  * This system replaces the former {@code AgentLoop.prepareOutgoingResponse()}
@@ -57,7 +57,8 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
 
     @Override
     public int getOrder() {
-        return 59;
+        // Must be before FeedbackGuaranteeSystem and ResponseRoutingSystem.
+        return 58;
     }
 
     @Override

@@ -257,7 +257,7 @@ public class AgentLoop {
     }
 
     private void routeSyntheticAssistantResponse(AgentContext context, String content, String finishReason) {
-        addFeedbackMessage(context.getSession(), content);
+        // Feedback guarantee must not mutate raw history.
         context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly(content));
         routeResponse(context);
     }
@@ -362,16 +362,6 @@ public class AgentLoop {
             log.debug("[AgentLoop] LLM error interpretation failed: {}", e.getMessage());
         }
         return null;
-    }
-
-    private void addFeedbackMessage(AgentSession session, String content) {
-        session.addMessage(Message.builder()
-                .role("assistant")
-                .content(content)
-                .channelType(session.getChannelType())
-                .chatId(session.getChatId())
-                .timestamp(clock.instant())
-                .build());
     }
 
     private boolean isAutoModeContext(AgentContext context) {
