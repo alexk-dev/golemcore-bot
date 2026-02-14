@@ -45,7 +45,6 @@ public final class ContextAttributes {
     /** List<Message.ToolCall> ? last tool calls requested by the LLM. */
 
     /** Boolean ? final answer is ready and legacy systems should not run. */
-    public static final String FINAL_ANSWER_READY = "llm.final.ready";
 
     /** Duration ? latency of the last LLM call (best-effort). */
     public static final String LLM_LATENCY = "llm.latency";
