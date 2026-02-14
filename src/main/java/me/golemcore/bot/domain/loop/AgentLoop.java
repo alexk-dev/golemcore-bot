@@ -195,6 +195,10 @@ public class AgentLoop {
                     continue;
                 }
 
+                if ("ResponseRoutingSystem".equals(system.getName())) {
+                    prepareOutgoingResponse(context);
+                }
+
                 if (!system.shouldProcess(context)) {
                     log.debug("System '{}' shouldProcess=false, skipping", system.getName());
                     continue;
@@ -251,6 +255,17 @@ public class AgentLoop {
             log.info("[AgentLoop] invoking routingSystem.process (OutgoingResponse present: {})",
                     context.getAttribute(ContextAttributes.OUTGOING_RESPONSE) != null);
             routingSystem.process(context);
+        }
+    }
+
+    private void prepareOutgoingResponse(AgentContext context) {
+        if (context.getAttribute(ContextAttributes.OUTGOING_RESPONSE) != null) {
+            return;
+        }
+
+        LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
+        if (response != null && response.getContent() != null && !response.getContent().isBlank()) {
+            context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.text(response.getContent()));
         }
     }
 
