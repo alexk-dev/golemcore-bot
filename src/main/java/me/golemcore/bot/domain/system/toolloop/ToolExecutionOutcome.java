@@ -1,5 +1,6 @@
 package me.golemcore.bot.domain.system.toolloop;
 
+import me.golemcore.bot.domain.model.Attachment;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.model.ToolFailureKind;
@@ -17,9 +18,11 @@ import me.golemcore.bot.domain.model.ToolFailureKind;
  *            content to write into the "tool" message (possibly truncated)
  * @param synthetic
  *            whether this result was produced without executing the tool
+ * @param attachment
+ *            extracted attachment (screenshot, file), or null
  */
-public record ToolExecutionOutcome(String toolCallId,String toolName,ToolResult toolResult,String messageContent,boolean synthetic){
+public record ToolExecutionOutcome(String toolCallId,String toolName,ToolResult toolResult,String messageContent,boolean synthetic,Attachment attachment){
 
-public static ToolExecutionOutcome synthetic(Message.ToolCall toolCall,String reason){return new ToolExecutionOutcome(toolCall.getId(),toolCall.getName(),ToolResult.failure(ToolFailureKind.EXECUTION_FAILED,reason),reason,true);}
+public static ToolExecutionOutcome synthetic(Message.ToolCall toolCall,String reason){return new ToolExecutionOutcome(toolCall.getId(),toolCall.getName(),ToolResult.failure(ToolFailureKind.EXECUTION_FAILED,reason),reason,true,null);}
 
-public static ToolExecutionOutcome synthetic(Message.ToolCall toolCall,ToolFailureKind kind,String reason){return new ToolExecutionOutcome(toolCall.getId(),toolCall.getName(),ToolResult.failure(kind,reason),reason,true);}}
+public static ToolExecutionOutcome synthetic(Message.ToolCall toolCall,ToolFailureKind kind,String reason){return new ToolExecutionOutcome(toolCall.getId(),toolCall.getName(),ToolResult.failure(kind,reason),reason,true,null);}}

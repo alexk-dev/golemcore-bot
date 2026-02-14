@@ -1,10 +1,12 @@
 package me.golemcore.bot.domain.system.toolloop;
 
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.Attachment;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationView;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
@@ -63,6 +65,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
 
         int llmCalls = 0;
         int toolExecutions = 0;
+        List<Attachment> accumulatedAttachments = new ArrayList<>();
 
         int maxLlmCalls = settings != null ? settings.getMaxLlmCalls() : 6;
         int maxToolExecutions = settings != null ? settings.getMaxToolExecutions() : 50;
@@ -88,6 +91,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 }
 
                 context.setFinalAnswerReady(true);
+                applyAttachments(context, accumulatedAttachments);
                 return new ToolLoopTurnResult(context, true, llmCalls, toolExecutions);
             }
 
@@ -105,6 +109,10 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 }
                 toolExecutions++;
 
+                if (outcome != null && outcome.attachment() != null) {
+                    accumulatedAttachments.add(outcome.attachment());
+                }
+
                 if (outcome != null && outcome.toolResult() != null) {
                     context.addToolResult(outcome.toolCallId(), outcome.toolResult());
                 }
@@ -114,15 +122,18 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                         ToolFailureKind kind = outcome.toolResult().getFailureKind();
 
                         if (stopOnConfirmationDenied && kind == ToolFailureKind.CONFIRMATION_DENIED) {
+                            applyAttachments(context, accumulatedAttachments);
                             return stopTurn(context, context.getAttribute(ContextAttributes.LLM_RESPONSE),
                                     response.getToolCalls(), "confirmation denied", llmCalls, toolExecutions);
                         }
                         if (stopOnToolPolicyDenied && kind == ToolFailureKind.POLICY_DENIED) {
+                            applyAttachments(context, accumulatedAttachments);
                             return stopTurn(context, context.getAttribute(ContextAttributes.LLM_RESPONSE),
                                     response.getToolCalls(), "tool denied by policy", llmCalls, toolExecutions);
                         }
                     }
                     if (stopOnToolFailure && outcome.toolResult() != null && !outcome.toolResult().isSuccess()) {
+                        applyAttachments(context, accumulatedAttachments);
                         return stopTurn(context, context.getAttribute(ContextAttributes.LLM_RESPONSE),
                                 response.getToolCalls(),
                                 "tool failure (" + outcome.toolName() + ")", llmCalls, toolExecutions);
@@ -135,6 +146,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
 
         LlmResponse last = context.getAttribute(ContextAttributes.LLM_RESPONSE);
         List<Message.ToolCall> pending = last != null ? last.getToolCalls() : null;
+        applyAttachments(context, accumulatedAttachments);
         return stopTurn(context, last, pending, stopReason, llmCalls, toolExecutions);
 
     }
@@ -162,6 +174,40 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
 
         context.setFinalAnswerReady(true);
         return new ToolLoopTurnResult(context, true, llmCalls, toolExecutions);
+    }
+
+    /**
+     * Merge accumulated attachments into the {@link OutgoingResponse} on the
+     * context. If an OutgoingResponse already exists, a new instance is built with
+     * the attachments appended; otherwise a minimal response carrying only
+     * attachments is created.
+     */
+    private void applyAttachments(AgentContext context, List<Attachment> attachments) {
+        if (attachments.isEmpty()) {
+            return;
+        }
+        log.debug("[ToolLoop] Applying {} attachment(s) to OutgoingResponse", attachments.size());
+
+        OutgoingResponse existing = context.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        OutgoingResponse.OutgoingResponseBuilder builder;
+        if (existing != null) {
+            builder = OutgoingResponse.builder()
+                    .text(existing.getText())
+                    .voiceRequested(existing.isVoiceRequested())
+                    .voiceText(existing.getVoiceText())
+                    .skipAssistantHistory(existing.isSkipAssistantHistory());
+            for (Attachment a : existing.getAttachments()) {
+                builder.attachment(a);
+            }
+        } else {
+            builder = OutgoingResponse.builder();
+        }
+
+        for (Attachment a : attachments) {
+            builder.attachment(a);
+        }
+
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, builder.build());
     }
 
     private void ensureMessageLists(AgentContext context) {

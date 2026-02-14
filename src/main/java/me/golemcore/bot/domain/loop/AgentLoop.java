@@ -271,13 +271,10 @@ public class AgentLoop {
         Boolean voiceRequested = context.getAttribute(ContextAttributes.VOICE_REQUESTED);
         String voiceText = context.getAttribute(ContextAttributes.VOICE_TEXT);
 
-        @SuppressWarnings("unchecked")
-
         boolean hasText = text != null && !text.isBlank();
         boolean hasVoice = Boolean.TRUE.equals(voiceRequested) || (voiceText != null && !voiceText.isBlank());
-        boolean hasAttachments = false;
 
-        if (!hasText && !hasVoice && !hasAttachments) {
+        if (!hasText && !hasVoice) {
             return;
         }
 
@@ -285,11 +282,7 @@ public class AgentLoop {
                 .text(hasText ? text : null)
                 .voiceRequested(hasVoice)
                 .voiceText(voiceText)
-                .attachments(List.of())
                 .build();
-
-        if (hasAttachments) {
-        }
 
         context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, outgoing);
     }

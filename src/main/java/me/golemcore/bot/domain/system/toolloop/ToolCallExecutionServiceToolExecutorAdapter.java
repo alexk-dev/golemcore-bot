@@ -26,6 +26,6 @@ public class ToolCallExecutionServiceToolExecutorAdapter implements ToolExecutor
         ToolCallExecutionResult result = toolCallExecutionService.execute(context, toolCall);
         ToolResult toolResult = result.toolResult();
         return new ToolExecutionOutcome(toolCall.getId(), toolCall.getName(), toolResult, result.toolMessageContent(),
-                false);
+                false, result.extractedAttachment());
     }
 }

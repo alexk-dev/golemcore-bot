@@ -89,7 +89,7 @@ class ToolLoopNoDuplicateHistoryBddTest {
 
         ToolExecutorPort toolExecutor = mock(ToolExecutorPort.class);
         when(toolExecutor.execute(any(AgentContext.class), any(Message.ToolCall.class))).thenReturn(
-                new ToolExecutionOutcome("tc1", "shell", ToolResult.success("hello\n"), "hello\n", false));
+                new ToolExecutionOutcome("tc1", "shell", ToolResult.success("hello\n"), "hello\n", false, null));
 
         DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
                 llmPort,

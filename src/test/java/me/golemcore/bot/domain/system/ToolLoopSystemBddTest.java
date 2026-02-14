@@ -2,9 +2,12 @@ package me.golemcore.bot.domain.system;
 
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.Attachment;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.system.toolloop.DefaultHistoryWriter;
@@ -106,7 +109,8 @@ class ToolLoopSystemBddTest {
                         TOOL_SHELL,
                         ToolResult.success("hello\n"),
                         "hello\n",
-                        false));
+                        false,
+                        null));
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
@@ -222,7 +226,8 @@ class ToolLoopSystemBddTest {
                             tc.getName(),
                             ToolResult.success(out),
                             out,
-                            false);
+                            false,
+                            null);
                 });
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
@@ -313,7 +318,8 @@ class ToolLoopSystemBddTest {
                         TOOL_SHELL,
                         ToolResult.success("hi\n"),
                         "hi\n",
-                        false));
+                        false,
+                        null));
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
@@ -536,7 +542,8 @@ class ToolLoopSystemBddTest {
                         TOOL_SHELL,
                         ToolResult.failure("exit 1"),
                         "exit 1",
-                        false));
+                        false,
+                        null));
 
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
         settings.setMaxLlmCalls(10);
@@ -600,7 +607,8 @@ class ToolLoopSystemBddTest {
                         TOOL_SHELL,
                         ToolResult.failure(ToolFailureKind.CONFIRMATION_DENIED, "Cancelled by user"),
                         "Error: Cancelled by user",
-                        false));
+                        false,
+                        null));
 
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
         settings.setMaxLlmCalls(10);
@@ -664,7 +672,8 @@ class ToolLoopSystemBddTest {
                         "forbidden",
                         ToolResult.failure(ToolFailureKind.POLICY_DENIED, "Unknown tool: forbidden"),
                         "Error: Unknown tool: forbidden",
-                        false));
+                        false,
+                        null));
 
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
         settings.setMaxLlmCalls(10);
@@ -693,5 +702,105 @@ class ToolLoopSystemBddTest {
         assertTrue(session.getMessages().stream().anyMatch(m -> ROLE_ASSISTANT.equals(m.getRole())
                 && m.getContent() != null
                 && m.getContent().contains("tool denied by policy")));
+    }
+
+    @Test
+    void shouldPropagateToolAttachmentIntoOutgoingResponse() {
+        // GIVEN: a session with a user message
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType(CHANNEL_TELEGRAM)
+                .chatId(CHAT_1)
+                .messages(new ArrayList<>())
+                .build();
+
+        session.addMessage(Message.builder()
+                .role(ROLE_USER)
+                .content("Take a screenshot")
+                .timestamp(NOW)
+                .channelType(CHANNEL_TELEGRAM)
+                .chatId(CHAT_1)
+                .build());
+
+        AgentContext ctx = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>(session.getMessages()))
+                .build();
+
+        // AND: an attachment produced by the tool
+        Attachment screenshot = Attachment.builder()
+                .type(Attachment.Type.IMAGE)
+                .data(new byte[] { 1, 2, 3 })
+                .filename("screenshot.png")
+                .mimeType("image/png")
+                .build();
+
+        // AND: scripted LLM responses: 1) tool call, 2) final answer
+        LlmPort llmPort = mock(LlmPort.class);
+        AtomicInteger llmCalls = new AtomicInteger();
+
+        LlmResponse first = LlmResponse.builder()
+                .content("Taking screenshot")
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id(TOOL_CALL_ID_1)
+                        .name("browser")
+                        .arguments(Map.of("action", "screenshot"))
+                        .build()))
+                .build();
+
+        LlmResponse second = LlmResponse.builder()
+                .content("Here is the screenshot")
+                .toolCalls(List.of())
+                .finishReason("stop")
+                .build();
+
+        when(llmPort.chat(any(LlmRequest.class))).thenAnswer(inv -> {
+            int n = llmCalls.incrementAndGet();
+            return CompletableFuture.completedFuture(n == 1 ? first : second);
+        });
+
+        // AND: a tool executor returning an outcome with an attachment
+        ToolExecutorPort toolExecutor = mock(ToolExecutorPort.class);
+        when(toolExecutor.execute(any(AgentContext.class), any(Message.ToolCall.class)))
+                .thenReturn(new ToolExecutionOutcome(
+                        TOOL_CALL_ID_1,
+                        "browser",
+                        ToolResult.success("Screenshot taken"),
+                        "Screenshot taken",
+                        false,
+                        screenshot));
+
+        DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
+        BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
+        BotProperties.ModelRouterProperties router = new BotProperties.ModelRouterProperties();
+
+        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
+                llmPort,
+                toolExecutor,
+                historyWriter,
+                new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
+                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
+                settings,
+                router,
+                Clock.fixed(DEADLINE, ZoneOffset.UTC));
+
+        // WHEN
+        ToolLoopTurnResult result = toolLoop.processTurn(ctx);
+
+        // THEN: loop finished normally
+        assertTrue(result.finalAnswerReady());
+        assertEquals(2, result.llmCalls());
+
+        // AND: OutgoingResponse on context contains the attachment
+        OutgoingResponse outgoing = ctx.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        assertNotNull(outgoing, "OutgoingResponse must be set on context");
+        assertNotNull(outgoing.getAttachments(), "Attachments list must not be null");
+        assertEquals(1, outgoing.getAttachments().size());
+
+        Attachment actual = outgoing.getAttachments().get(0);
+        assertEquals(Attachment.Type.IMAGE, actual.getType());
+        assertEquals("screenshot.png", actual.getFilename());
+        assertEquals("image/png", actual.getMimeType());
+        assertArrayEquals(new byte[] { 1, 2, 3 }, actual.getData());
     }
 }

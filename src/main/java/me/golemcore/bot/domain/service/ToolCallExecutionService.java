@@ -70,7 +70,7 @@ public class ToolCallExecutionService {
                     ToolResult denied = ToolResult.failure(ToolFailureKind.CONFIRMATION_DENIED, "Cancelled by user");
                     String content = truncateToolResult("Error: Cancelled by user", toolCall.getName());
                     context.addToolResult(toolCall.getId(), denied);
-                    return new ToolCallExecutionResult(toolCall.getId(), toolCall.getName(), denied, content);
+                    return new ToolCallExecutionResult(toolCall.getId(), toolCall.getName(), denied, content, null);
                 }
             } else if (!confirmationPolicy.isEnabled() && confirmationPolicy.isNotableAction(toolCall)) {
                 notifyToolExecution(context, toolCall);
@@ -78,11 +78,11 @@ public class ToolCallExecutionService {
 
             ToolResult result = executeToolCall(toolCall);
             context.addToolResult(toolCall.getId(), result);
-            extractAttachment(context, result, toolCall.getName());
+            Attachment attachment = extractAttachment(context, result, toolCall.getName());
 
             String content = buildToolMessageContent(result);
             content = truncateToolResult(content, toolCall.getName());
-            return new ToolCallExecutionResult(toolCall.getId(), toolCall.getName(), result, content);
+            return new ToolCallExecutionResult(toolCall.getId(), toolCall.getName(), result, content, attachment);
         } finally {
             AgentContextHolder.clear();
         }
@@ -197,9 +197,9 @@ public class ToolCallExecutionService {
     }
 
     @SuppressWarnings("unchecked")
-    public void extractAttachment(AgentContext context, ToolResult result, String toolName) {
+    public Attachment extractAttachment(AgentContext context, ToolResult result, String toolName) {
         if (result == null || !result.isSuccess() || !(result.getData() instanceof Map<?, ?> dataMap)) {
-            return;
+            return null;
         }
 
         Attachment attachment = null;
@@ -247,9 +247,9 @@ public class ToolCallExecutionService {
         }
 
         if (attachment != null) {
-            log.debug("[Tools] Attachment extracted from {} ({} bytes), but legacy attachment queue is removed",
-                    toolName, attachment.getData().length);
+            log.debug("[Tools] Attachment extracted from '{}' ({} bytes)", toolName, attachment.getData().length);
         }
+        return attachment;
     }
 
     private void notifyToolExecution(AgentContext context, Message.ToolCall toolCall) {
