@@ -170,7 +170,7 @@ class AgentLoopTest {
                 iterations.add(context.getCurrentIteration());
                 context.setSkillTransitionRequest(
                         me.golemcore.bot.domain.model.SkillTransitionRequest.explicit("skill-next"));
-                context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, Boolean.FALSE);
+                context.setFinalAnswerReady(false);
                 return context;
             }
         };
@@ -383,7 +383,7 @@ class AgentLoopTest {
         verify(sessionPort).save(session);
     }
 
-    // ===== FINAL_ANSWER_READY stops loop =====
+    // ===== finalAnswerReady stops loop =====
 
     @Test
     void loopStopsWhenFinalAnswerReadySet() {
@@ -411,7 +411,7 @@ class AgentLoopTest {
                                 Message.ToolCall.builder().id("tc1").name("send_voice").arguments(Map.of()).build()))
                         .build();
                 context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-                context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, Boolean.TRUE);
+                context.setFinalAnswerReady(true);
                 return context;
             }
         };
@@ -422,7 +422,7 @@ class AgentLoopTest {
         AgentLoop loop = createLoop(List.of(toolWithComplete));
         loop.processMessage(createUserMessage());
 
-        assertEquals(1, iterations.size(), "Loop should stop after 1 iteration when FINAL_ANSWER_READY is set");
+        assertEquals(1, iterations.size(), "Loop should stop after 1 iteration when finalAnswerReady is set");
     }
 
     // ===== Feedback Guarantee Tests =====

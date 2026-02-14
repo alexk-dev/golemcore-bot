@@ -79,7 +79,7 @@ class VoiceResponseToolTest {
         assertEquals("Voice response queued", result.getOutput());
         assertTrue((Boolean) context.getAttribute(ContextAttributes.VOICE_REQUESTED));
         assertEquals("Hello world", context.getAttribute(ContextAttributes.VOICE_TEXT));
-        assertTrue((Boolean) context.getAttribute(ContextAttributes.FINAL_ANSWER_READY));
+        assertTrue(context.isFinalAnswerReady());
     }
 
     @Test
@@ -171,6 +171,6 @@ class VoiceResponseToolTest {
         AgentContextHolder.set(context);
 
         tool.execute(Map.of(TEXT, "test")).get();
-        assertTrue((Boolean) context.getAttribute(ContextAttributes.FINAL_ANSWER_READY));
+        assertTrue(context.isFinalAnswerReady());
     }
 }

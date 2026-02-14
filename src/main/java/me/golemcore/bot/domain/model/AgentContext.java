@@ -104,6 +104,9 @@ public class AgentContext {
     @Builder.Default
     private SkillTransitionRequest skillTransitionRequest = null;
 
+    @Builder.Default
+    private boolean finalAnswerReady = false;
+
     public SkillTransitionRequest getSkillTransitionRequest() {
         return skillTransitionRequest;
     }
@@ -114,6 +117,14 @@ public class AgentContext {
 
     public void clearSkillTransitionRequest() {
         this.skillTransitionRequest = null;
+    }
+
+    public boolean isFinalAnswerReady() {
+        return finalAnswerReady;
+    }
+
+    public void setFinalAnswerReady(boolean finalAnswerReady) {
+        this.finalAnswerReady = finalAnswerReady;
     }
 
 }

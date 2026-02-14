@@ -217,7 +217,7 @@ public class AgentLoop {
             }
 
             log.debug("Continuing to next iteration");
-            context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, Boolean.FALSE);
+            context.setFinalAnswerReady(false);
             context.clearSkillTransitionRequest(); // reset transition
             context.getToolResults().clear();
         }

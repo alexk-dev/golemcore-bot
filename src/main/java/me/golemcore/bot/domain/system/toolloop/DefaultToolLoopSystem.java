@@ -87,7 +87,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                     historyWriter.appendFinalAssistantAnswer(context, response, response.getContent());
                 }
 
-                context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
+                context.setFinalAnswerReady(true);
                 return new ToolLoopTurnResult(context, true, llmCalls, toolExecutions);
             }
 
@@ -160,7 +160,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 lastResponse,
                 "Tool loop stopped: " + reason + ".");
 
-        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
+        context.setFinalAnswerReady(true);
         return new ToolLoopTurnResult(context, true, llmCalls, toolExecutions);
     }
 
