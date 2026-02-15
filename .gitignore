@@ -41,6 +41,11 @@ wiki/
 ### Logs ###
 logs/
 
+### Dashboard (generated frontend) ###
+src/main/resources/static/dashboard/
+dashboard/node_modules/
+dashboard/node/
+
 ### LightRAG data ###
 lightrag/data/
 
