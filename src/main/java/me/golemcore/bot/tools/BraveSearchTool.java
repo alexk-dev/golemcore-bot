@@ -210,7 +210,7 @@ public class BraveSearchTool implements ToolComponent {
             Thread.sleep(millis);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            log.warn("[BraveSearch] Retry sleep interrupted");
+            throw new IllegalStateException("BraveSearch retry sleep interrupted", e);
         }
     }
 

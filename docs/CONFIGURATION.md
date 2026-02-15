@@ -114,25 +114,52 @@ services:
       BOT_ROUTER_DEEP_MODEL: openai/gpt-5.2
 ```
 
-### Custom Endpoints
+### OpenAI-Compatible Endpoints (via LangChain4j)
+
+To use an OpenAI-compatible API endpoint (e.g., local gateway, self-hosted proxy), configure a provider entry and its `baseUrl`.
 
 ```bash
-export BOT_LLM_PROVIDER=custom
-export CUSTOM_LLM_API_URL=https://your-llm.com/v1
-export CUSTOM_LLM_API_KEY=your-key
+export BOT_LLM_PROVIDER=langchain4j
+
+# Example: add an "openai-compatible" provider (name is arbitrary)
+export BOT_LLM_LANGCHAIN4J_PROVIDERS_OPENAI_COMPATIBLE_API_KEY=your-key
+export BOT_LLM_LANGCHAIN4J_PROVIDERS_OPENAI_COMPATIBLE_BASE_URL=https://your-llm.com/v1
+
+# Then reference it from models.json (provider field) and/or tier routing
+# Example: BOT_ROUTER_BALANCED_MODEL=openai-compatible/my-model
 ```
 
-Must be OpenAI-compatible API.
-### LangChain4j Model Timeout
+Notes:
+- The `provider` in `models.json` must match the provider key under `bot.llm.langchain4j.providers.*`.
+- Non-Anthropic providers are treated as OpenAI-compatible by the adapter.
 
-Controls request timeout passed directly to LangChain4j chat model builders (OpenAI and Anthropic).
+### LLM Request Timeout
 
-export BOT_LLM_LANGCHAIN4J_TIMEOUT_MS=300000
+Canonical per-request timeout applied by the active LLM adapter (currently used by LangChain4j model builders).
 
-- Default: 300000 ms (300 seconds)
-- Applies to model-level timeout in LangChain4j
-- Independent from generic bot.http.* client timeouts
+```bash
+export BOT_LLM_REQUEST_TIMEOUT=PT300S
+```
 
+- Type: ISO-8601 `Duration` (e.g., `PT60S`, `PT5M`, `PT1H`)
+- Default: `PT300S` (5 minutes)
+- This is *not* the same as `bot.http.*` timeouts (those are for generic HTTP clients)
+
+---
+
+## Turn Budget (Single-turn autonomy)
+
+These limits protect the tool loop from runaway iterations and ensure a single user request can run autonomously for a long time.
+
+```bash
+export BOT_TURN_DEADLINE=PT60M
+export BOT_TURN_MAX_LLM_CALLS=200
+export BOT_TURN_MAX_TOOL_EXECUTIONS=500
+```
+
+- `BOT_TURN_DEADLINE` — max wall-clock time for one turn (default: 60 minutes)
+- `BOT_TURN_MAX_LLM_CALLS` — max LLM requests per turn (default: 200)
+- `BOT_TURN_MAX_TOOL_EXECUTIONS` — max tool executions per turn (default: 500)
 
 ---
 
@@ -341,7 +368,7 @@ export BOT_PLAN_DEFAULT_MODEL_TIER=smart   # Default model tier for plans
 ```
 
 **How it works:**
-1. `PlanInterceptSystem` (order=35) intercepts LLM tool calls during collection
+1. `ToolLoopExecutionSystem` (order=30) intercepts LLM tool calls during collection
 2. Synthetic `[Planned]` results keep the LLM proposing more steps
 3. `PlanFinalizationSystem` (order=58) detects when planning is done
 4. User approves via Telegram inline keyboard
@@ -577,26 +604,32 @@ Shows:
 
 ## Advanced: models.json
 
-Edit `models.json` in working directory to add custom models:
+Edit `models.json` in working directory to add custom models.
+
+> Note: `models.json` is a **map** (object) keyed by model name, not an array.
 
 ```json
 {
-  "models": [
-    {
-      "id": "openai/gpt-5.1",
+  "models": {
+    "gpt-5.1": {
       "provider": "openai",
-      "requiresReasoning": true,
+      "reasoningRequired": true,
       "supportsTemperature": false,
       "maxInputTokens": 128000
     },
-    {
-      "id": "custom/my-model",
+    "my-model": {
       "provider": "custom",
-      "requiresReasoning": false,
+      "reasoningRequired": false,
       "supportsTemperature": true,
       "maxInputTokens": 32000
     }
-  ]
+  },
+  "defaults": {
+    "provider": "openai",
+    "reasoningRequired": false,
+    "supportsTemperature": true,
+    "maxInputTokens": 128000
+  }
 }
 ```
 

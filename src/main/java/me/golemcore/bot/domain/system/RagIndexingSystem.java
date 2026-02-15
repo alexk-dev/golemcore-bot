@@ -19,8 +19,10 @@ package me.golemcore.bot.domain.system;
  */
 
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.TurnOutcome;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.RagPort;
 import lombok.RequiredArgsConstructor;
@@ -70,19 +72,36 @@ public class RagIndexingSystem implements AgentSystem {
     }
 
     @Override
+    public boolean shouldProcess(AgentContext context) {
+        // Prefer TurnOutcome; fall back to legacy finalAnswerReady
+        TurnOutcome outcome = context.getTurnOutcome();
+        if (outcome != null) {
+            return outcome.getAssistantText() != null && !outcome.getAssistantText().isBlank();
+        }
+        return Boolean.TRUE.equals(context.getAttribute(ContextAttributes.FINAL_ANSWER_READY));
+    }
+
+    @Override
     public AgentContext process(AgentContext context) {
         Message lastUserMessage = getLastUserMessage(context);
         if (lastUserMessage == null) {
             return context;
         }
 
-        LlmResponse response = context.getAttribute("llm.response");
-        if (response == null || response.getContent() == null || response.getContent().isBlank()) {
-            return context;
+        // Prefer TurnOutcome.assistantText; fall back to legacy LLM_RESPONSE
+        TurnOutcome outcome = context.getTurnOutcome();
+        String assistantText;
+        if (outcome != null && outcome.getAssistantText() != null) {
+            assistantText = outcome.getAssistantText();
+        } else {
+            LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
+            if (response == null || response.getContent() == null || response.getContent().isBlank()) {
+                return context;
+            }
+            assistantText = response.getContent();
         }
 
         String userText = lastUserMessage.getContent();
-        String assistantText = response.getContent();
 
         // Skip trivial exchanges
         if (isTrivial(userText, assistantText)) {

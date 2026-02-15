@@ -171,7 +171,7 @@ public class ExampleService {
 | Suffix | Layer | Example |
 |--------|-------|---------|
 | `*Service` | Domain services | `SessionService`, `CompactionService` |
-| `*System` | Agent pipeline systems | `LlmExecutionSystem`, `ToolExecutionSystem` |
+| `*System` | Agent pipeline systems | `ToolLoopExecutionSystem`, `ContextBuildingSystem` |
 | `*Tool` | LLM tool implementations | `FileSystemTool`, `ShellTool` |
 | `*Adapter` | Outbound adapter implementations | `Langchain4jAdapter`, `LocalStorageAdapter` |
 | `*Port` | Port interfaces (inbound/outbound) | `LlmPort`, `StoragePort`, `ChannelPort` |

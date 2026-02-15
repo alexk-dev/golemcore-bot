@@ -2,6 +2,7 @@ package me.golemcore.bot.domain.system;
 
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
@@ -19,10 +20,8 @@ import static org.mockito.Mockito.*;
 class SkillPipelineSystemTest {
 
     private static final String CONTENT_RESULT = "result";
-    private static final String ATTR_LLM_RESPONSE = "llm.response";
-    private static final String ATTR_TRANSITION_TARGET = "skill.transition.target";
+    private static final String ATTR_LLM_RESPONSE = ContextAttributes.LLM_RESPONSE;
     private static final String ATTR_PIPELINE_DEPTH = "skill.pipeline.depth";
-    private static final String ATTR_TOOLS_EXECUTED = "tools.executed";
     private static final String SKILL_EXECUTOR = "executor";
 
     private SkillComponent skillComponent;
@@ -102,7 +101,7 @@ class SkillPipelineSystemTest {
         Skill skill = Skill.builder().name("a").nextSkill("b").build();
         LlmResponse response = LlmResponse.builder().content(CONTENT_RESULT).build();
         AgentContext ctx = createContext(skill, response);
-        ctx.setAttribute(ATTR_TRANSITION_TARGET, "c");
+        ctx.setSkillTransitionRequest(me.golemcore.bot.domain.model.SkillTransitionRequest.explicit("c"));
 
         assertFalse(system.shouldProcess(ctx));
     }
@@ -128,11 +127,11 @@ class SkillPipelineSystemTest {
         system.process(ctx);
 
         // Transition target should be set
-        assertEquals(SKILL_EXECUTOR, ctx.getAttribute(ATTR_TRANSITION_TARGET));
+        var req = ctx.getSkillTransitionRequest();
+        assertEquals(SKILL_EXECUTOR, req.targetSkill());
+        assertEquals(me.golemcore.bot.domain.model.SkillTransitionReason.SKILL_PIPELINE, req.reason());
         // Pipeline depth incremented
         assertEquals(1, (int) ctx.getAttribute(ATTR_PIPELINE_DEPTH));
-        // Loop continuation forced
-        assertEquals(true, ctx.getAttribute(ATTR_TOOLS_EXECUTED));
         // Response cleared
         assertNull(ctx.getAttribute(ATTR_LLM_RESPONSE));
         // Intermediate response stored in session
@@ -152,7 +151,7 @@ class SkillPipelineSystemTest {
         system.process(ctx);
 
         // Should NOT set transition
-        assertNull(ctx.getAttribute(ATTR_TRANSITION_TARGET));
+        assertNull(ctx.getSkillTransitionRequest());
         // Response should still be present
         assertNotNull(ctx.getAttribute(ATTR_LLM_RESPONSE));
     }
@@ -168,7 +167,7 @@ class SkillPipelineSystemTest {
         system.process(ctx);
 
         // Should NOT set transition
-        assertNull(ctx.getAttribute(ATTR_TRANSITION_TARGET));
+        assertNull(ctx.getSkillTransitionRequest());
     }
 
     @Test
@@ -182,7 +181,7 @@ class SkillPipelineSystemTest {
         AgentContext ctx = createContext(activeSkill, response);
         system.process(ctx);
 
-        assertNull(ctx.getAttribute(ATTR_TRANSITION_TARGET));
+        assertNull(ctx.getSkillTransitionRequest());
     }
 
     @Test
@@ -215,6 +214,8 @@ class SkillPipelineSystemTest {
         // Blank content should not be stored
         assertEquals(0, ctx.getSession().getMessages().size());
         // But transition should still happen
-        assertEquals("b", ctx.getAttribute(ATTR_TRANSITION_TARGET));
+        var req = ctx.getSkillTransitionRequest();
+        assertEquals("b", req.targetSkill());
+        assertEquals(me.golemcore.bot.domain.model.SkillTransitionReason.SKILL_PIPELINE, req.reason());
     }
 }

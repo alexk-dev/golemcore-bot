@@ -187,7 +187,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 .modelName(modelName)
                 .maxRetries(0) // Retry handled by our backoff logic
                 .maxTokens(4096)
-                .timeout(Duration.ofMillis(properties.getLlm().getLangchain4j().getTimeoutMs()));
+                .timeout(properties.getLlm().getRequestTimeout());
 
         if (config.getBaseUrl() != null) {
             builder.baseUrl(config.getBaseUrl());
@@ -206,7 +206,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 .apiKey(config.getApiKey())
                 .modelName(modelName)
                 .maxRetries(0) // Retry handled by our backoff logic
-                .timeout(Duration.ofMillis(properties.getLlm().getLangchain4j().getTimeoutMs()));
+                .timeout(properties.getLlm().getRequestTimeout());
 
         if (config.getBaseUrl() != null) {
             builder.baseUrl(config.getBaseUrl());
@@ -419,7 +419,8 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         }
 
         // Convert conversation messages — tool call IDs and names are passed through
-        // as-is. Model switches are handled upstream by LlmExecutionSystem which
+        // as-is. Model switches are handled upstream by ToolLoop/request-time
+        // conversation view building which
         // flattens tool messages to plain text before they reach the adapter.
         for (Message msg : request.getMessages()) {
             switch (msg.getRole()) {

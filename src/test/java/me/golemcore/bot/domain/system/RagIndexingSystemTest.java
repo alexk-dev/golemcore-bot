@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -103,7 +104,7 @@ class RagIndexingSystemTest {
         AgentContext context = AgentContext.builder()
                 .messages(new ArrayList<>())
                 .build();
-        context.setAttribute("llm.response", LlmResponse.builder().content("response").build());
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, LlmResponse.builder().content("response").build());
 
         system.process(context);
         verify(ragPort, never()).index(anyString());
@@ -124,7 +125,7 @@ class RagIndexingSystemTest {
     void skipsWhenLlmResponseEmpty() {
         AgentContext context = buildContext("test question about something", "");
         // Override the response to have blank content
-        context.setAttribute("llm.response", LlmResponse.builder().content("").build());
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, LlmResponse.builder().content("").build());
 
         system.process(context);
         verify(ragPort, never()).index(anyString());
@@ -156,6 +157,104 @@ class RagIndexingSystemTest {
         assertTrue(doc.contains("Assistant: answer"));
     }
 
+    // ==================== shouldProcess (finality gate) ====================
+
+    @Test
+    void shouldNotProcessWhenFinalAnswerNotReady() {
+        AgentContext context = AgentContext.builder()
+                .messages(new ArrayList<>())
+                .attributes(Map.of(ContextAttributes.FINAL_ANSWER_READY, false))
+                .build();
+
+        assertFalse(system.shouldProcess(context));
+    }
+
+    @Test
+    void shouldProcessWhenFinalAnswerReady() {
+        AgentContext context = AgentContext.builder()
+                .messages(new ArrayList<>())
+                .attributes(Map.of(ContextAttributes.FINAL_ANSWER_READY, true))
+                .build();
+
+        assertTrue(system.shouldProcess(context));
+    }
+
+    // ==================== TurnOutcome-based tests ====================
+
+    @Test
+    void shouldProcessWhenTurnOutcomeHasAssistantText() {
+        AgentContext context = AgentContext.builder()
+                .messages(new ArrayList<>())
+                .build();
+        context.setTurnOutcome(TurnOutcome.builder()
+                .finishReason(FinishReason.SUCCESS)
+                .assistantText("substantive answer about something important")
+                .build());
+
+        assertTrue(system.shouldProcess(context));
+    }
+
+    @Test
+    void shouldNotProcessWhenTurnOutcomeHasNullAssistantText() {
+        AgentContext context = AgentContext.builder()
+                .messages(new ArrayList<>())
+                .build();
+        context.setTurnOutcome(TurnOutcome.builder()
+                .finishReason(FinishReason.ERROR)
+                .assistantText(null)
+                .build());
+
+        assertFalse(system.shouldProcess(context));
+    }
+
+    @Test
+    void shouldNotProcessWhenTurnOutcomeHasBlankAssistantText() {
+        AgentContext context = AgentContext.builder()
+                .messages(new ArrayList<>())
+                .build();
+        context.setTurnOutcome(TurnOutcome.builder()
+                .finishReason(FinishReason.SUCCESS)
+                .assistantText("  ")
+                .build());
+
+        assertFalse(system.shouldProcess(context));
+    }
+
+    @Test
+    void processUsesAssistantTextFromTurnOutcome() {
+        AgentContext context = AgentContext.builder()
+                .messages(new ArrayList<>(List.of(
+                        Message.builder().role("user").content("What is the capital of France?")
+                                .timestamp(Instant.now()).build())))
+                .build();
+        context.setTurnOutcome(TurnOutcome.builder()
+                .finishReason(FinishReason.SUCCESS)
+                .assistantText("The capital of France is Paris, known for the Eiffel Tower.")
+                .build());
+        // Also set legacy attribute — TurnOutcome should take priority
+        context.setAttribute(ContextAttributes.LLM_RESPONSE,
+                LlmResponse.builder().content("LEGACY should be ignored").build());
+
+        system.process(context);
+
+        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+        verify(ragPort).index(captor.capture());
+        assertTrue(captor.getValue().contains("Assistant: The capital of France is Paris"));
+        assertFalse(captor.getValue().contains("LEGACY"));
+    }
+
+    @Test
+    void processFallsBackToLlmResponseWhenNoTurnOutcome() {
+        AgentContext context = buildContext("What is the capital of France?",
+                "The capital of France is Paris, known for the Eiffel Tower.");
+
+        system.process(context);
+
+        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+        verify(ragPort).index(captor.capture());
+        assertTrue(captor.getValue().contains("Assistant: The capital of France is Paris"));
+    }
+
     private AgentContext buildContext(String userText, String assistantText) {
         List<Message> messages = new ArrayList<>();
         messages.add(Message.builder()
@@ -167,7 +266,7 @@ class RagIndexingSystemTest {
         AgentContext context = AgentContext.builder()
                 .messages(messages)
                 .build();
-        context.setAttribute("llm.response",
+        context.setAttribute(ContextAttributes.LLM_RESPONSE,
                 LlmResponse.builder().content(assistantText).build());
         return context;
     }

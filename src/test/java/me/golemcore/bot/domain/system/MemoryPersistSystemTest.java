@@ -2,15 +2,19 @@ package me.golemcore.bot.domain.system;
 
 import me.golemcore.bot.domain.component.MemoryComponent;
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.FinishReason;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.TurnOutcome;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -22,7 +26,7 @@ class MemoryPersistSystemTest {
     private static final String CONTENT_REPLY = "reply";
     private static final String CONTENT_RESPONSE = "response";
     private static final String SESSION_ID = "test";
-    private static final String ATTR_LLM_RESPONSE = "llm.response";
+    private static final String ATTR_LLM_RESPONSE = ContextAttributes.LLM_RESPONSE;
 
     private MemoryComponent memoryComponent;
     private MemoryPersistSystem system;
@@ -239,5 +243,105 @@ class MemoryPersistSystemTest {
 
         verify(memoryComponent).appendToday(
                 argThat(entry -> entry.matches("\\[\\d{2}:\\d{2}\\] User: hello \\| Assistant: reply\\n")));
+    }
+
+    // ==================== shouldProcess (finality gate) ====================
+
+    @Test
+    void shouldNotProcessWhenFinalAnswerNotReady() {
+        AgentContext ctx = AgentContext.builder()
+                .session(AgentSession.builder().id(SESSION_ID).build())
+                .messages(new ArrayList<>())
+                .attributes(Map.of(ContextAttributes.FINAL_ANSWER_READY, false))
+                .build();
+
+        assertFalse(system.shouldProcess(ctx));
+    }
+
+    @Test
+    void shouldProcessWhenFinalAnswerReady() {
+        AgentContext ctx = AgentContext.builder()
+                .session(AgentSession.builder().id(SESSION_ID).build())
+                .messages(new ArrayList<>())
+                .attributes(Map.of(ContextAttributes.FINAL_ANSWER_READY, true))
+                .build();
+
+        assertTrue(system.shouldProcess(ctx));
+    }
+
+    // ==================== TurnOutcome-based tests ====================
+
+    @Test
+    void shouldProcessWhenTurnOutcomeHasAssistantText() {
+        AgentContext ctx = AgentContext.builder()
+                .session(AgentSession.builder().id(SESSION_ID).build())
+                .messages(new ArrayList<>())
+                .build();
+        ctx.setTurnOutcome(TurnOutcome.builder()
+                .finishReason(FinishReason.SUCCESS)
+                .assistantText("hello")
+                .build());
+
+        assertTrue(system.shouldProcess(ctx));
+    }
+
+    @Test
+    void shouldNotProcessWhenTurnOutcomeHasNullAssistantText() {
+        AgentContext ctx = AgentContext.builder()
+                .session(AgentSession.builder().id(SESSION_ID).build())
+                .messages(new ArrayList<>())
+                .build();
+        ctx.setTurnOutcome(TurnOutcome.builder()
+                .finishReason(FinishReason.ERROR)
+                .assistantText(null)
+                .build());
+
+        assertFalse(system.shouldProcess(ctx));
+    }
+
+    @Test
+    void shouldNotProcessWhenTurnOutcomeHasBlankAssistantText() {
+        AgentContext ctx = AgentContext.builder()
+                .session(AgentSession.builder().id(SESSION_ID).build())
+                .messages(new ArrayList<>())
+                .build();
+        ctx.setTurnOutcome(TurnOutcome.builder()
+                .finishReason(FinishReason.SUCCESS)
+                .assistantText("   ")
+                .build());
+
+        assertFalse(system.shouldProcess(ctx));
+    }
+
+    @Test
+    void processUsesAssistantTextFromTurnOutcome() {
+        AgentContext ctx = AgentContext.builder()
+                .session(AgentSession.builder().id(SESSION_ID).build())
+                .messages(new ArrayList<>(List.of(
+                        Message.builder().role(ROLE_USER).content("question").timestamp(Instant.now()).build())))
+                .build();
+        ctx.setTurnOutcome(TurnOutcome.builder()
+                .finishReason(FinishReason.SUCCESS)
+                .assistantText("answer from outcome")
+                .build());
+        // Also set legacy attribute — TurnOutcome should take priority
+        ctx.setAttribute(ATTR_LLM_RESPONSE, LlmResponse.builder().content("legacy answer").build());
+
+        system.process(ctx);
+
+        verify(memoryComponent).appendToday(
+                argThat(entry -> entry.contains("Assistant: answer from outcome") && !entry.contains("legacy answer")));
+    }
+
+    @Test
+    void processFallsBackToLlmResponseWhenNoTurnOutcome() {
+        LlmResponse response = LlmResponse.builder().content("legacy reply").build();
+        AgentContext ctx = contextWith(
+                List.of(Message.builder().role(ROLE_USER).content("hi").timestamp(Instant.now()).build()),
+                response);
+
+        system.process(ctx);
+
+        verify(memoryComponent).appendToday(argThat(entry -> entry.contains("Assistant: legacy reply")));
     }
 }

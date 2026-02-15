@@ -35,9 +35,10 @@ import java.util.Set;
  * activity is detected (order=25). Analyzes tool calls and results from the
  * current agent loop run (not old history) for signals like FileSystem
  * operations on code files, Shell execution of code commands, or stack traces
- * in tool results. Runs after ContextBuildingSystem, before LlmExecutionSystem.
- * Only runs on iteration > 0. Only upgrades tier, never downgrades, to prevent
- * oscillation. Skipped entirely when user has tier force enabled.
+ * in tool results. Runs after ContextBuildingSystem, before the LLM request
+ * execution step (ToolLoop). Only runs on iteration > 0. Only upgrades tier,
+ * never downgrades, to prevent oscillation. Skipped entirely when user has tier
+ * force enabled.
  */
 @Component
 @RequiredArgsConstructor

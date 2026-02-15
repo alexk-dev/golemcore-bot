@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -44,8 +45,8 @@ class PlanFinalizationSystemTest {
         preferencesService = mock(UserPreferencesService.class);
 
         // Avoid coupling tests to i18n message catalog contents
-        when(preferencesService.getMessage(org.mockito.ArgumentMatchers.anyString(),
-                org.mockito.ArgumentMatchers.any(Object[].class)))
+        when(preferencesService.getMessage(anyString(),
+                any(Object[].class)))
                 .thenAnswer(inv -> inv.getArgument(0));
 
         system = new PlanFinalizationSystem(planService, eventPublisher, preferencesService);
@@ -79,9 +80,13 @@ class PlanFinalizationSystemTest {
     @Test
     void shouldNotProcessWhenToolCallsPresent() {
         when(planService.isPlanModeActive()).thenReturn(true);
-        AgentContext context = buildContext("Some response");
-        List<Object> toolCalls = List.of("tc1");
-        context.setAttribute("llm.toolCalls", toolCalls);
+        LlmResponse responseWithTools = LlmResponse.builder()
+                .content("Some response")
+                .toolCalls(List.of(me.golemcore.bot.domain.model.Message.ToolCall.builder()
+                        .id("tc1").name("shell").build()))
+                .build();
+        AgentContext context = buildContext(null);
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, responseWithTools);
         assertFalse(system.shouldProcess(context));
     }
 
@@ -201,7 +206,6 @@ class PlanFinalizationSystemTest {
     void shouldProcessWhenToolCallsListIsEmpty() {
         when(planService.isPlanModeActive()).thenReturn(true);
         AgentContext context = buildContext("Some text response");
-        context.setAttribute("llm.toolCalls", List.of());
         assertTrue(system.shouldProcess(context));
     }
 

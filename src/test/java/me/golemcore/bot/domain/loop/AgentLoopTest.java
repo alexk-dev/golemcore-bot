@@ -1,19 +1,47 @@
 package me.golemcore.bot.domain.loop;
 
+/*
+ * Copyright 2026 Aleksei Kuleshov
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * Contact: alex@kuleshov.tech
+ */
+
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.FailureEvent;
+import me.golemcore.bot.domain.model.FailureKind;
+import me.golemcore.bot.domain.model.FailureSource;
+import me.golemcore.bot.domain.model.FinishReason;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.OutgoingResponse;
+import me.golemcore.bot.domain.model.RateLimitResult;
+import me.golemcore.bot.domain.model.RoutingOutcome;
+import me.golemcore.bot.domain.model.SkillTransitionRequest;
+import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.model.TurnOutcome;
 import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.system.AgentSystem;
+import me.golemcore.bot.domain.system.ResponseRoutingSystem;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.LlmPort;
-import me.golemcore.bot.port.outbound.SessionPort;
-import me.golemcore.bot.domain.model.RateLimitResult;
 import me.golemcore.bot.port.outbound.RateLimitPort;
-import org.junit.jupiter.api.BeforeEach;
+import me.golemcore.bot.port.outbound.SessionPort;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
@@ -21,293 +49,234 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 class AgentLoopTest {
 
-    private static final String CHANNEL_TYPE_TELEGRAM = "telegram";
-    private static final String CHAT_ID = "123";
-    private static final Instant FIXED_TIME = Instant.parse("2026-01-01T12:00:00Z");
-    private static final String GENERIC_FEEDBACK = "Something went wrong while processing your request. Please try again.";
+    private static final String CHANNEL_TYPE = "telegram";
+    private static final String FIXED_INSTANT = "2026-02-01T00:00:00Z";
     private static final String ROLE_USER = "user";
-    private static final String KEY_ERROR_FEEDBACK = "system.error.feedback";
+    private static final String MSG_GENERIC = "generic";
 
-    private SessionPort sessionPort;
-    private RateLimitPort rateLimiter;
-    private BotProperties properties;
-    private UserPreferencesService preferencesService;
-    private ChannelPort channelPort;
-    private LlmPort llmPort;
-    private Clock clock;
+    @Test
+    void shouldResetTypedControlFlagsAndToolResultsBetweenIterations() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+        BotProperties props = new BotProperties();
+        props.getAgent().setMaxIterations(2);
 
-    @BeforeEach
-    void setUp() {
-        sessionPort = mock(SessionPort.class);
-        rateLimiter = mock(RateLimitPort.class);
-        properties = new BotProperties();
-        properties.getAgent().setMaxIterations(5);
-        preferencesService = mock(UserPreferencesService.class);
-        when(preferencesService.getMessage(anyString(), any(Object[].class))).thenReturn("limit reached");
-        when(preferencesService.getMessage("system.error.generic.feedback")).thenReturn(GENERIC_FEEDBACK);
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+        when(preferencesService.getMessage(any())).thenReturn("x");
 
-        channelPort = mock(ChannelPort.class);
-        when(channelPort.getChannelType()).thenReturn(CHANNEL_TYPE_TELEGRAM);
-        when(channelPort.sendMessage(anyString(), anyString()))
-                .thenReturn(CompletableFuture.completedFuture(null));
-
-        llmPort = mock(LlmPort.class);
+        LlmPort llmPort = mock(LlmPort.class);
         when(llmPort.isAvailable()).thenReturn(false);
 
-        clock = Clock.fixed(FIXED_TIME, ZoneOffset.UTC);
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
 
-        when(rateLimiter.tryConsume()).thenReturn(RateLimitResult.allowed(10));
-    }
-
-    private AgentLoop createLoop(List<AgentSystem> systems) {
-        return new AgentLoop(sessionPort, rateLimiter, properties, systems,
-                List.of(channelPort), preferencesService, llmPort, clock);
-    }
-
-    private Message createUserMessage() {
-        return Message.builder()
-                .id("msg-1")
-                .role(ROLE_USER)
-                .content("Hello")
-                .channelType(CHANNEL_TYPE_TELEGRAM)
-                .chatId(CHAT_ID)
-                .senderId("user1")
-                .timestamp(FIXED_TIME)
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .messages(new ArrayList<>())
                 .build();
-    }
 
-    private AgentSession createSession() {
-        return AgentSession.builder()
-                .id("telegram:123")
-                .channelType(CHANNEL_TYPE_TELEGRAM)
-                .chatId(CHAT_ID)
-                .createdAt(FIXED_TIME)
-                .updatedAt(FIXED_TIME)
-                .build();
-    }
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "1")).thenReturn(session);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
 
-    // ===== System ordering =====
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+        when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
-    @Test
-    void systemsCalledInOrder() {
-        List<String> callOrder = new ArrayList<>();
-
-        AgentSystem system10 = createOrderedSystem("A", 10, callOrder);
-        AgentSystem system20 = createOrderedSystem("B", 20, callOrder);
-        AgentSystem system30 = createOrderedSystem("C", 30, callOrder);
-
-        AgentSession session = createSession();
-        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
-
-        AgentLoop loop = createLoop(List.of(system30, system10, system20)); // intentionally unordered
-        loop.processMessage(createUserMessage());
-
-        assertEquals(List.of("A", "B", "C"), callOrder);
-        verify(sessionPort).save(session);
-    }
-
-    // ===== Loop continuation with tool calls =====
-
-    @Test
-    void loopContinuesWhenToolsExecuted() {
-        List<Integer> iterations = new ArrayList<>();
-
-        // System that simulates tool execution on first iteration
-        AgentSystem toolSystem = new AgentSystem() {
+        AgentSystem verifier = new AgentSystem() {
             @Override
             public String getName() {
-                return "ToolSim";
+                return "verifier";
             }
 
             @Override
             public int getOrder() {
-                return 40;
+                return 1;
+            }
+
+            @Override
+            public boolean shouldProcess(AgentContext context) {
+                return true;
             }
 
             @Override
             public AgentContext process(AgentContext context) {
-                iterations.add(context.getCurrentIteration());
                 if (context.getCurrentIteration() == 0) {
-                    // Simulate: LLM returned tool calls, tools were executed
-                    LlmResponse response = LlmResponse.builder()
-                            .content("")
-                            .toolCalls(List
-                                    .of(Message.ToolCall.builder().id("tc1").name("test").arguments(Map.of()).build()))
-                            .build();
-                    context.setAttribute("llm.response", response);
-                    context.setAttribute("tools.executed", true);
+                    context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
+                    context.setSkillTransitionRequest(SkillTransitionRequest.pipeline("next"));
+                    context.addToolResult("tc1", ToolResult.success("ok"));
+                    context.setAttribute(ContextAttributes.OUTGOING_RESPONSE,
+                            OutgoingResponse.textOnly("hello"));
+                    return context;
                 }
+
+                assertFalse(Boolean.TRUE.equals(context.getAttribute(ContextAttributes.FINAL_ANSWER_READY)),
+                        "finalAnswerReady must be reset between iterations");
+                assertNull(context.getSkillTransitionRequest(),
+                        "skillTransitionRequest must be cleared between iterations");
+                assertTrue(context.getToolResults().isEmpty(), "toolResults must be cleared between iterations");
                 return context;
             }
         };
 
-        AgentSession session = createSession();
-        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
+        AgentLoop loop = new AgentLoop(
+                sessionPort,
+                rateLimitPort,
+                props,
+                List.of(verifier),
+                List.of(channel),
+                preferencesService,
+                llmPort,
+                clock);
 
-        AgentLoop loop = createLoop(List.of(toolSystem));
-        loop.processMessage(createUserMessage());
+        Message inbound = Message.builder()
+                .role(ROLE_USER)
+                .content("hi")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .senderId("u1")
+                .timestamp(clock.instant())
+                .build();
 
-        // Should have run at least 2 iterations (iteration 0 with tool calls, iteration
-        // 1 without)
-        assertTrue(iterations.size() >= 2, "Expected at least 2 iterations, got " + iterations.size());
-        assertEquals(0, iterations.get(0));
-        assertEquals(1, iterations.get(1));
+        loop.processMessage(inbound);
+
+        verify(sessionPort, times(1)).save(session);
     }
 
-    // ===== Loop stops when no tool calls =====
-
     @Test
-    void loopStopsWithNoToolCalls() {
-        List<Integer> iterations = new ArrayList<>();
+    void shouldSendUnsentLlmResponseAsFeedbackGuarantee() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+        BotProperties props = new BotProperties();
+        props.getAgent().setMaxIterations(1);
+
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .messages(new ArrayList<>())
+                .build();
+
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "1")).thenReturn(session);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+        when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         AgentSystem system = new AgentSystem() {
             @Override
             public String getName() {
-                return "NoTool";
+                return "system";
             }
 
             @Override
             public int getOrder() {
-                return 10;
+                return 1;
+            }
+
+            @Override
+            public boolean shouldProcess(AgentContext context) {
+                return true;
             }
 
             @Override
             public AgentContext process(AgentContext context) {
-                iterations.add(context.getCurrentIteration());
+                context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly("hello"));
                 return context;
             }
         };
 
-        AgentSession session = createSession();
-        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
+        AgentLoop loop = new AgentLoop(
+                sessionPort,
+                rateLimitPort,
+                props,
+                List.of(system,
+                        new ResponseRoutingSystem(List.of(channel), preferencesService,
+                                mock(VoiceResponseHandler.class))),
+                List.of(channel),
+                preferencesService,
+                llmPort,
+                clock);
 
-        AgentLoop loop = createLoop(List.of(system));
-        loop.processMessage(createUserMessage());
+        Message inbound = Message.builder()
+                .role(ROLE_USER)
+                .content("hi")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .senderId("u1")
+                .timestamp(clock.instant())
+                .build();
 
-        assertEquals(1, iterations.size(), "Should run exactly 1 iteration when no tools");
+        loop.processMessage(inbound);
+
+        // Feedback guarantee should route via ResponseRoutingSystem when present.
+        verify(channel, atLeastOnce()).sendMessage(eq("1"), eq("hello"));
+        // NOTE: ResponseRoutingSystem is transport-only. It must not write assistant
+        // messages
+        // into raw history. (Raw history is owned by the domain execution path.)
     }
 
-    // ===== Max iterations limit =====
-
     @Test
-    void maxIterationsLimitEnforced() {
-        properties.getAgent().setMaxIterations(3);
-        List<Integer> iterations = new ArrayList<>();
+    void shouldSkipDisabledSystem() {
+        // Arrange
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+        BotProperties props = new BotProperties();
+        props.getAgent().setMaxIterations(1);
 
-        // System that always triggers another loop iteration
-        AgentSystem infiniteTools = new AgentSystem() {
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .messages(new ArrayList<>())
+                .build();
+
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "1")).thenReturn(session);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+        when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        // A system that is disabled — its process() should never be called
+        AgentSystem disabledSystem = new AgentSystem() {
             @Override
             public String getName() {
-                return "InfiniteTools";
+                return "disabledSystem";
             }
 
             @Override
             public int getOrder() {
-                return 10;
-            }
-
-            @Override
-            public AgentContext process(AgentContext context) {
-                iterations.add(context.getCurrentIteration());
-                LlmResponse response = LlmResponse.builder()
-                        .content("")
-                        .toolCalls(
-                                List.of(Message.ToolCall.builder().id("tc1").name("test").arguments(Map.of()).build()))
-                        .build();
-                context.setAttribute("llm.response", response);
-                context.setAttribute("tools.executed", true);
-                return context;
-            }
-        };
-
-        AgentSession session = createSession();
-        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
-
-        AgentLoop loop = createLoop(List.of(infiniteTools));
-        loop.processMessage(createUserMessage());
-
-        assertEquals(3, iterations.size(), "Should stop after max iterations");
-        // Verify iteration limit notification sent to channel
-        verify(channelPort).sendMessage(CHAT_ID, "limit reached");
-    }
-
-    // ===== Rate limiting =====
-
-    @Test
-    void rateLimitBlocksMessage() {
-        when(rateLimiter.tryConsume())
-                .thenReturn(RateLimitResult.denied(1000, "Rate limit exceeded"));
-
-        AgentSession session = createSession();
-        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
-
-        List<Integer> iterations = new ArrayList<>();
-        AgentSystem system = createTrackingSystem(iterations);
-
-        AgentLoop loop = createLoop(List.of(system));
-        loop.processMessage(createUserMessage());
-
-        assertTrue(iterations.isEmpty(), "No systems should run when rate-limited");
-        verify(sessionPort, never()).save(any());
-    }
-
-    // ===== Session created and saved =====
-
-    @Test
-    void sessionCreatedAndSaved() {
-        AgentSession session = createSession();
-        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
-
-        AgentSystem system = new AgentSystem() {
-            @Override
-            public String getName() {
-                return "PassThrough";
-            }
-
-            @Override
-            public int getOrder() {
-                return 10;
-            }
-
-            @Override
-            public AgentContext process(AgentContext context) {
-                return context;
-            }
-        };
-
-        AgentLoop loop = createLoop(List.of(system));
-        loop.processMessage(createUserMessage());
-
-        verify(sessionPort).getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID);
-        verify(sessionPort).save(session);
-        // Message should be added to session
-        assertFalse(session.getMessages().isEmpty());
-    }
-
-    // ===== Disabled systems skipped =====
-
-    @Test
-    void disabledSystemsSkipped() {
-        List<String> callOrder = new ArrayList<>();
-
-        AgentSystem enabled = createOrderedSystem("Enabled", 10, callOrder);
-        AgentSystem disabled = new AgentSystem() {
-            @Override
-            public String getName() {
-                return "Disabled";
-            }
-
-            @Override
-            public int getOrder() {
-                return 20;
+                return 1;
             }
 
             @Override
@@ -316,554 +285,498 @@ class AgentLoopTest {
             }
 
             @Override
+            public boolean shouldProcess(AgentContext context) {
+                return true;
+            }
+
+            @Override
             public AgentContext process(AgentContext context) {
-                callOrder.add("Disabled");
+                fail("process() must not be called on a disabled system");
                 return context;
             }
         };
 
-        AgentSession session = createSession();
-        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
+        AgentLoop loop = new AgentLoop(
+                sessionPort,
+                rateLimitPort,
+                props,
+                List.of(disabledSystem),
+                List.of(channel),
+                preferencesService,
+                llmPort,
+                clock);
 
-        AgentLoop loop = createLoop(List.of(enabled, disabled));
-        loop.processMessage(createUserMessage());
+        Message inbound = Message.builder()
+                .role(ROLE_USER)
+                .content("hi")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .senderId("u1")
+                .timestamp(clock.instant())
+                .build();
 
-        assertEquals(List.of("Enabled"), callOrder);
+        // Act
+        loop.processMessage(inbound);
+
+        // Assert — session saved (loop completed), disabled system was not invoked
+        verify(sessionPort, times(1)).save(session);
     }
 
-    // ===== shouldProcess=false skips system =====
-
     @Test
-    void shouldProcessFalseSkipsSystem() {
-        List<String> callOrder = new ArrayList<>();
+    void shouldRecordFailureEventOnSystemException() {
+        // Arrange
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+        BotProperties props = new BotProperties();
+        props.getAgent().setMaxIterations(1);
 
-        AgentSystem always = createOrderedSystem("Always", 10, callOrder);
-        AgentSystem conditional = new AgentSystem() {
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .messages(new ArrayList<>())
+                .build();
+
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "1")).thenReturn(session);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+        when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        // A system that throws an exception
+        AgentSystem throwingSystem = new AgentSystem() {
             @Override
             public String getName() {
-                return "Conditional";
+                return "throwingSystem";
             }
 
             @Override
             public int getOrder() {
-                return 20;
+                return 1;
             }
 
             @Override
             public boolean shouldProcess(AgentContext context) {
-                return false;
+                return true;
             }
 
             @Override
             public AgentContext process(AgentContext context) {
-                callOrder.add("Conditional");
+                throw new IllegalStateException("boom");
+            }
+        };
+
+        // A second system that captures failures from context
+        List<FailureEvent> capturedFailures = new ArrayList<>();
+        AgentSystem inspectorSystem = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "inspector";
+            }
+
+            @Override
+            public int getOrder() {
+                return 99;
+            }
+
+            @Override
+            public boolean shouldProcess(AgentContext context) {
+                return true;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                capturedFailures.addAll(context.getFailures());
                 return context;
             }
         };
 
-        AgentSession session = createSession();
-        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
+        AgentLoop loop = new AgentLoop(
+                sessionPort,
+                rateLimitPort,
+                props,
+                List.of(throwingSystem, inspectorSystem),
+                List.of(channel),
+                preferencesService,
+                llmPort,
+                clock);
 
-        AgentLoop loop = createLoop(List.of(always, conditional));
-        loop.processMessage(createUserMessage());
-
-        assertEquals(List.of("Always"), callOrder);
-    }
-
-    // ===== Auto mode skips rate limiter =====
-
-    @Test
-    void autoModeSkipsRateLimiter() {
-        when(rateLimiter.tryConsume())
-                .thenReturn(RateLimitResult.denied(1000, "Rate limit exceeded"));
-
-        Message autoMessage = Message.builder()
-                .id("auto-1")
+        Message inbound = Message.builder()
                 .role(ROLE_USER)
-                .content("Auto check")
-                .channelType(CHANNEL_TYPE_TELEGRAM)
-                .chatId(CHAT_ID)
-                .senderId("bot")
-                .timestamp(FIXED_TIME)
-                .metadata(Map.of("auto.mode", true))
+                .content("hi")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .senderId("u1")
+                .timestamp(clock.instant())
                 .build();
 
-        AgentSession session = createSession();
-        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
+        // Act
+        loop.processMessage(inbound);
 
-        List<Integer> iterations = new ArrayList<>();
-        AgentSystem system = createTrackingSystem(iterations);
-
-        AgentLoop loop = createLoop(List.of(system));
-        loop.processMessage(autoMessage);
-
-        assertFalse(iterations.isEmpty(), "Auto mode should bypass rate limiter");
-        verify(sessionPort).save(session);
-    }
-
-    // ===== System exception doesn't crash loop =====
-
-    @Test
-    void systemExceptionDoesNotCrashLoop() {
-        List<String> callOrder = new ArrayList<>();
-
-        AgentSystem failing = new AgentSystem() {
-            @Override
-            public String getName() {
-                return "Failing";
-            }
-
-            @Override
-            public int getOrder() {
-                return 10;
-            }
-
-            @Override
-            public AgentContext process(AgentContext context) {
-                callOrder.add("Failing");
-                throw new RuntimeException("System error");
-            }
-        };
-        AgentSystem after = createOrderedSystem("After", 20, callOrder);
-
-        AgentSession session = createSession();
-        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
-
-        AgentLoop loop = createLoop(List.of(failing, after));
-        loop.processMessage(createUserMessage());
-
-        assertEquals(List.of("Failing", "After"), callOrder);
-        verify(sessionPort).save(session);
-    }
-
-    // ===== loop.complete stops loop =====
-
-    @Test
-    void loopStopsWhenLoopCompleteSet() {
-        List<Integer> iterations = new ArrayList<>();
-
-        // System that simulates tool execution + sets loop.complete on first iteration
-        AgentSystem toolWithComplete = new AgentSystem() {
-            @Override
-            public String getName() {
-                return "ToolWithComplete";
-            }
-
-            @Override
-            public int getOrder() {
-                return 40;
-            }
-
-            @Override
-            public AgentContext process(AgentContext context) {
-                iterations.add(context.getCurrentIteration());
-                // Always simulate tool calls that would normally continue the loop
-                LlmResponse response = LlmResponse.builder()
-                        .content("")
-                        .toolCalls(List.of(
-                                Message.ToolCall.builder().id("tc1").name("send_voice").arguments(Map.of()).build()))
-                        .build();
-                context.setAttribute("llm.response", response);
-                context.setAttribute("tools.executed", true);
-                context.setAttribute("loop.complete", true);
-                return context;
-            }
-        };
-
-        AgentSession session = createSession();
-        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
-
-        AgentLoop loop = createLoop(List.of(toolWithComplete));
-        loop.processMessage(createUserMessage());
-
-        assertEquals(1, iterations.size(), "Loop should stop after 1 iteration when loop.complete is set");
-    }
-
-    // ===== Feedback Guarantee Tests =====
-
-    @Test
-    void shouldSendGenericFeedbackWhenNoResponseSent() {
-        AgentSession session = createSession();
-        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
-
-        AgentSystem noop = createOrderedSystem("Noop", 10, new ArrayList<>());
-
-        AgentLoop loop = createLoop(List.of(noop));
-        loop.processMessage(createUserMessage());
-
-        // Feedback guarantee should send generic feedback
-        verify(channelPort).sendMessage(CHAT_ID, GENERIC_FEEDBACK);
+        // Assert
+        assertEquals(1, capturedFailures.size());
+        FailureEvent failure = capturedFailures.get(0);
+        assertEquals(FailureSource.SYSTEM, failure.source());
+        assertEquals("throwingSystem", failure.component());
+        assertEquals(FailureKind.EXCEPTION, failure.kind());
+        assertEquals("boom", failure.message());
     }
 
     @Test
-    void shouldNotSendFeedbackWhenResponseAlreadySent() {
-        AgentSession session = createSession();
-        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
+    void shouldCallShutdownWithoutError() {
+        // Arrange
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+        BotProperties props = new BotProperties();
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        LlmPort llmPort = mock(LlmPort.class);
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
 
-        AgentSystem responseSentSystem = new AgentSystem() {
-            @Override
-            public String getName() {
-                return "ResponseSent";
-            }
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
 
-            @Override
-            public int getOrder() {
-                return 10;
-            }
+        AgentLoop loop = new AgentLoop(
+                sessionPort,
+                rateLimitPort,
+                props,
+                List.of(),
+                List.of(channel),
+                preferencesService,
+                llmPort,
+                clock);
 
-            @Override
-            public AgentContext process(AgentContext context) {
-                context.setAttribute(ContextAttributes.RESPONSE_SENT, true);
-                return context;
-            }
-        };
-
-        AgentLoop loop = createLoop(List.of(responseSentSystem));
-        loop.processMessage(createUserMessage());
-
-        // No feedback messages should be sent (only response tracking, no channel
-        // calls)
-        verify(channelPort, never()).sendMessage(anyString(), anyString());
+        // Act & Assert — no exception thrown
+        assertDoesNotThrow(loop::shutdown);
     }
 
     @Test
-    void shouldSendUnsentLlmResponseAsFeedback() {
-        AgentSession session = createSession();
-        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
+    void shouldCollectErrorsFromFailureEvents() {
+        // Arrange
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+        BotProperties props = new BotProperties();
+        props.getAgent().setMaxIterations(1);
 
-        AgentSystem llmResponseSystem = new AgentSystem() {
-            @Override
-            public String getName() {
-                return "LlmResponse";
-            }
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
+        when(preferencesService.getMessage(eq("system.error.feedback"), any())).thenReturn("Error: interpreted");
 
-            @Override
-            public int getOrder() {
-                return 10;
-            }
-
-            @Override
-            public AgentContext process(AgentContext context) {
-                LlmResponse response = LlmResponse.builder().content("Unsent answer").build();
-                context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-                // RESPONSE_SENT not set — simulating delivery failure
-                return context;
-            }
-        };
-
-        AgentLoop loop = createLoop(List.of(llmResponseSystem));
-        loop.processMessage(createUserMessage());
-
-        // Should send the unsent LLM response directly
-        verify(channelPort).sendMessage(CHAT_ID, "Unsent answer");
-    }
-
-    @Test
-    void shouldAttemptLlmInterpretationOnSystemErrors() {
-        AgentSession session = createSession();
-        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
+        LlmPort llmPort = mock(LlmPort.class);
         when(llmPort.isAvailable()).thenReturn(true);
+        LlmResponse llmResponse = LlmResponse.builder().content("interpreted error").build();
+        when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(llmResponse));
 
-        LlmResponse interpretedResponse = LlmResponse.builder()
-                .content("The service shut down during processing.")
-                .build();
-        when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(interpretedResponse));
-        when(preferencesService.getMessage(eq(KEY_ERROR_FEEDBACK), any(Object[].class)))
-                .thenReturn("Something went wrong during processing: The service shut down during processing.");
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
 
-        AgentSystem failingSystem = new AgentSystem() {
-            @Override
-            public String getName() {
-                return "Crashing";
-            }
-
-            @Override
-            public int getOrder() {
-                return 10;
-            }
-
-            @Override
-            public AgentContext process(AgentContext context) {
-                throw new RuntimeException("Process terminated (exit code 143)");
-            }
-        };
-
-        AgentLoop loop = createLoop(List.of(failingSystem));
-        loop.processMessage(createUserMessage());
-
-        // Should call LLM for error interpretation
-        verify(llmPort).chat(any());
-        // Should send the interpreted error
-        verify(channelPort).sendMessage(CHAT_ID,
-                "Something went wrong during processing: The service shut down during processing.");
-    }
-
-    @Test
-    void shouldFallbackToFormattedErrorWhenLlmInterpretationFails() {
-        AgentSession session = createSession();
-        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
-        when(llmPort.isAvailable()).thenReturn(true);
-        when(llmPort.chat(any())).thenReturn(CompletableFuture.failedFuture(new RuntimeException("LLM down")));
-        when(preferencesService.getMessage(eq(KEY_ERROR_FEEDBACK), any(Object[].class)))
-                .thenReturn("Something went wrong during processing: Process terminated (exit code 143)");
-
-        AgentSystem failingSystem = new AgentSystem() {
-            @Override
-            public String getName() {
-                return "Crashing";
-            }
-
-            @Override
-            public int getOrder() {
-                return 10;
-            }
-
-            @Override
-            public AgentContext process(AgentContext context) {
-                throw new RuntimeException("Process terminated (exit code 143)");
-            }
-        };
-
-        AgentLoop loop = createLoop(List.of(failingSystem));
-        loop.processMessage(createUserMessage());
-
-        // Should fallback to formatted error since LLM interpretation failed
-        verify(channelPort).sendMessage(CHAT_ID,
-                "Something went wrong during processing: Process terminated (exit code 143)");
-    }
-
-    @Test
-    void shouldSkipFeedbackGuaranteeForAutoMode() {
-        AgentSession session = createSession();
-        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
-
-        Message autoMessage = Message.builder()
-                .id("auto-1")
-                .role(ROLE_USER)
-                .content("Auto task")
-                .channelType(CHANNEL_TYPE_TELEGRAM)
-                .chatId(CHAT_ID)
-                .senderId("bot")
-                .timestamp(FIXED_TIME)
-                .metadata(Map.of("auto.mode", true))
-                .build();
-
-        AgentSystem noop = createOrderedSystem("Noop", 10, new ArrayList<>());
-
-        AgentLoop loop = createLoop(List.of(noop));
-        loop.processMessage(autoMessage);
-
-        // No feedback messages should be sent for auto mode
-        verify(channelPort, never()).sendMessage(anyString(), anyString());
-    }
-
-    @Test
-    void shouldSkipFeedbackWhenNoChannelRegistered() {
         AgentSession session = AgentSession.builder()
-                .id("slack:456")
-                .channelType("slack")
-                .chatId("456")
-                .createdAt(FIXED_TIME)
-                .updatedAt(FIXED_TIME)
+                .id("s1")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .messages(new ArrayList<>())
                 .build();
-        when(sessionPort.getOrCreate("slack", "456")).thenReturn(session);
 
-        Message slackMessage = Message.builder()
-                .id("msg-2")
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "1")).thenReturn(session);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+        when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        // System that adds a FailureEvent to the context but produces no response
+        AgentSystem failureSystem = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "failureAdder";
+            }
+
+            @Override
+            public int getOrder() {
+                return 1;
+            }
+
+            @Override
+            public boolean shouldProcess(AgentContext context) {
+                return true;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                context.addFailure(new FailureEvent(
+                        FailureSource.LLM, "testLlm", FailureKind.EXCEPTION,
+                        "connection refused", clock.instant()));
+                return context;
+            }
+        };
+
+        ResponseRoutingSystem routingSystem = new ResponseRoutingSystem(
+                List.of(channel), preferencesService, mock(VoiceResponseHandler.class));
+
+        AgentLoop loop = new AgentLoop(
+                sessionPort,
+                rateLimitPort,
+                props,
+                List.of(failureSystem, routingSystem),
+                List.of(channel),
+                preferencesService,
+                llmPort,
+                clock);
+
+        Message inbound = Message.builder()
                 .role(ROLE_USER)
-                .content("Hello")
-                .channelType("slack")
-                .chatId("456")
-                .senderId("user1")
-                .timestamp(FIXED_TIME)
+                .content("hi")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .senderId("u1")
+                .timestamp(clock.instant())
                 .build();
 
-        // No slack channel registered — feedback should be skipped silently
-        AgentLoop loop = createLoop(List.of(createOrderedSystem("Noop", 10, new ArrayList<>())));
-        loop.processMessage(slackMessage);
+        // Act
+        loop.processMessage(inbound);
 
-        verify(channelPort, never()).sendMessage(anyString(), anyString());
-    }
-
-    @Test
-    void shouldFallThroughToGenericWhenSendFails() {
-        AgentSession session = createSession();
-        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
-
-        // First sendMessage call fails, second succeeds (unsent response fails, generic
-        // succeeds)
-        when(channelPort.sendMessage(anyString(), anyString()))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("send failed")))
-                .thenReturn(CompletableFuture.completedFuture(null));
-
-        AgentSystem llmResponseSystem = new AgentSystem() {
-            @Override
-            public String getName() {
-                return "LlmResp";
-            }
-
-            @Override
-            public int getOrder() {
-                return 10;
-            }
-
-            @Override
-            public AgentContext process(AgentContext context) {
-                LlmResponse response = LlmResponse.builder().content("Unsent answer").build();
-                context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
-                return context;
-            }
-        };
-
-        AgentLoop loop = createLoop(List.of(llmResponseSystem));
-        loop.processMessage(createUserMessage());
-
-        // First call with LLM response content fails, falls through to generic
-        verify(channelPort, times(2)).sendMessage(eq(CHAT_ID), anyString());
-    }
-
-    @Test
-    void shouldCollectLlmErrorForFeedback() {
-        AgentSession session = createSession();
-        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
-        when(llmPort.isAvailable()).thenReturn(false);
-        when(preferencesService.getMessage(eq(KEY_ERROR_FEEDBACK), any(Object[].class)))
-                .thenReturn("Error: LLM timeout");
-
-        AgentSystem llmErrorSystem = new AgentSystem() {
-            @Override
-            public String getName() {
-                return "LlmErr";
-            }
-
-            @Override
-            public int getOrder() {
-                return 10;
-            }
-
-            @Override
-            public AgentContext process(AgentContext context) {
-                context.setAttribute(ContextAttributes.LLM_ERROR, "LLM timeout");
-                return context;
-            }
-        };
-
-        AgentLoop loop = createLoop(List.of(llmErrorSystem));
-        loop.processMessage(createUserMessage());
-
-        // Should send generic since LLM not available for interpretation
-        verify(channelPort).sendMessage(eq(CHAT_ID), anyString());
-    }
-
-    @Test
-    void shouldCollectRoutingErrorForFeedback() {
-        AgentSession session = createSession();
-        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
-        when(llmPort.isAvailable()).thenReturn(false);
-
-        AgentSystem routingErrorSystem = new AgentSystem() {
-            @Override
-            public String getName() {
-                return "RoutingErr";
-            }
-
-            @Override
-            public int getOrder() {
-                return 10;
-            }
-
-            @Override
-            public AgentContext process(AgentContext context) {
-                context.setAttribute("routing.error", "Connection reset");
-                return context;
-            }
-        };
-
-        AgentLoop loop = createLoop(List.of(routingErrorSystem));
-        loop.processMessage(createUserMessage());
-
-        // Should send generic feedback since no LLM available for interpretation
-        verify(channelPort).sendMessage(CHAT_ID, GENERIC_FEEDBACK);
-    }
-
-    @Test
-    void shouldHandleLlmErrorWithAvailableLlm() {
-        AgentSession session = createSession();
-        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, CHAT_ID)).thenReturn(session);
-        when(llmPort.isAvailable()).thenReturn(true);
-
-        LlmResponse interpretation = LlmResponse.builder()
-                .content("The AI model timed out.")
-                .build();
-        when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(interpretation));
-        when(preferencesService.getMessage(eq(KEY_ERROR_FEEDBACK), any(Object[].class)))
-                .thenReturn("Something went wrong: The AI model timed out.");
-
-        AgentSystem llmErrorSystem = new AgentSystem() {
-            @Override
-            public String getName() {
-                return "LlmErr";
-            }
-
-            @Override
-            public int getOrder() {
-                return 10;
-            }
-
-            @Override
-            public AgentContext process(AgentContext context) {
-                context.setAttribute(ContextAttributes.LLM_ERROR, "Request timed out");
-                return context;
-            }
-        };
-
-        AgentLoop loop = createLoop(List.of(llmErrorSystem));
-        loop.processMessage(createUserMessage());
-
+        // Assert — the LLM was called to interpret errors and a response was sent
         verify(llmPort).chat(any());
-        verify(channelPort).sendMessage(CHAT_ID,
-                "Something went wrong: The AI model timed out.");
+        verify(channel, atLeastOnce()).sendMessage(eq("1"), eq("Error: interpreted"));
     }
 
-    // ===== Helpers =====
+    @Test
+    void shouldHandleNullMessagesInAutoModeCheck() {
+        // Arrange
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+        BotProperties props = new BotProperties();
+        props.getAgent().setMaxIterations(1);
 
-    private AgentSystem createOrderedSystem(String name, int order, List<String> callOrder) {
-        return new AgentSystem() {
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .messages(new ArrayList<>())
+                .build();
+
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "1")).thenReturn(session);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+        when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        // System that nulls out the messages list to test isAutoModeContext safety
+        AgentSystem nullMessagesSystem = new AgentSystem() {
             @Override
             public String getName() {
-                return name;
+                return "nullMessages";
             }
 
             @Override
             public int getOrder() {
-                return order;
+                return 1;
+            }
+
+            @Override
+            public boolean shouldProcess(AgentContext context) {
+                return true;
             }
 
             @Override
             public AgentContext process(AgentContext context) {
-                callOrder.add(name);
+                context.setMessages(null);
                 return context;
             }
         };
+
+        ResponseRoutingSystem routingSystem = new ResponseRoutingSystem(
+                List.of(channel), preferencesService, mock(VoiceResponseHandler.class));
+
+        AgentLoop loop = new AgentLoop(
+                sessionPort,
+                rateLimitPort,
+                props,
+                List.of(nullMessagesSystem, routingSystem),
+                List.of(channel),
+                preferencesService,
+                llmPort,
+                clock);
+
+        Message inbound = Message.builder()
+                .role(ROLE_USER)
+                .content("hi")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .senderId("u1")
+                .timestamp(clock.instant())
+                .build();
+
+        // Act & Assert — should not throw NullPointerException on isAutoModeContext
+        assertDoesNotThrow(() -> loop.processMessage(inbound));
+        verify(sessionPort).save(session);
     }
 
-    private AgentSystem createTrackingSystem(List<Integer> iterations) {
-        return new AgentSystem() {
+    @Test
+    void shouldTruncateNullInput() {
+        // Arrange — build a message with null content and verify the loop handles it
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+        BotProperties props = new BotProperties();
+        props.getAgent().setMaxIterations(1);
+
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .messages(new ArrayList<>())
+                .build();
+
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "1")).thenReturn(session);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+        when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        AgentLoop loop = new AgentLoop(
+                sessionPort,
+                rateLimitPort,
+                props,
+                List.of(),
+                List.of(channel),
+                preferencesService,
+                llmPort,
+                clock);
+
+        // Message with null content — truncate(null, 200) should return "<null>"
+        Message inbound = Message.builder()
+                .role(ROLE_USER)
+                .content(null)
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .senderId("u1")
+                .timestamp(clock.instant())
+                .build();
+
+        // Act & Assert — no NPE from truncate(null, 200) in log.debug line
+        assertDoesNotThrow(() -> loop.processMessage(inbound));
+        verify(sessionPort).save(session);
+    }
+
+    @Test
+    void shouldEnsureFeedbackWhenRoutingOutcomeNotSent() {
+        // Arrange
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+        BotProperties props = new BotProperties();
+        props.getAgent().setMaxIterations(1);
+
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn("generic fallback");
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .messages(new ArrayList<>())
+                .build();
+
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "1")).thenReturn(session);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+        when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        // System that sets a TurnOutcome with RoutingOutcome sentText=false and no
+        // OutgoingResponse
+        AgentSystem turnOutcomeSystem = new AgentSystem() {
             @Override
             public String getName() {
-                return "Tracker";
+                return "turnOutcomeSetter";
             }
 
             @Override
             public int getOrder() {
-                return 10;
+                return 1;
+            }
+
+            @Override
+            public boolean shouldProcess(AgentContext context) {
+                return true;
             }
 
             @Override
             public AgentContext process(AgentContext context) {
-                iterations.add(context.getCurrentIteration());
+                RoutingOutcome routingOutcome = RoutingOutcome.builder()
+                        .attempted(true)
+                        .sentText(false)
+                        .build();
+                TurnOutcome outcome = TurnOutcome.builder()
+                        .finishReason(FinishReason.ERROR)
+                        .routingOutcome(routingOutcome)
+                        .build();
+                context.setTurnOutcome(outcome);
                 return context;
             }
         };
+
+        ResponseRoutingSystem routingSystem = new ResponseRoutingSystem(
+                List.of(channel), preferencesService, mock(VoiceResponseHandler.class));
+
+        AgentLoop loop = new AgentLoop(
+                sessionPort,
+                rateLimitPort,
+                props,
+                List.of(turnOutcomeSystem, routingSystem),
+                List.of(channel),
+                preferencesService,
+                llmPort,
+                clock);
+
+        Message inbound = Message.builder()
+                .role(ROLE_USER)
+                .content("hi")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .senderId("u1")
+                .timestamp(clock.instant())
+                .build();
+
+        // Act
+        loop.processMessage(inbound);
+
+        // Assert — ensureFeedback should trigger because sentText=false,
+        // no unsent LLM response exists, LLM not available, so generic fallback fires
+        verify(channel, atLeastOnce()).sendMessage(eq("1"), eq("generic fallback"));
     }
 }

@@ -20,6 +20,7 @@ package me.golemcore.bot.domain.system;
 
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.Skill;
@@ -63,7 +64,7 @@ public class SkillPipelineSystem implements AgentSystem {
         // 1. There's a final LLM response (no pending tool calls)
         // 2. Active skill has a nextSkill
         // 3. No explicit transition already set (by SkillTransitionTool)
-        LlmResponse response = context.getAttribute("llm.response");
+        LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
         if (response == null || response.hasToolCalls()) {
             return false;
         }
@@ -73,7 +74,8 @@ public class SkillPipelineSystem implements AgentSystem {
             return false;
         }
 
-        String transitionTarget = context.getAttribute("skill.transition.target");
+        var transition = context.getSkillTransitionRequest();
+        String transitionTarget = transition != null ? transition.targetSkill() : null;
         if (transitionTarget != null) {
             return false; // explicit transition already set
         }
@@ -112,7 +114,7 @@ public class SkillPipelineSystem implements AgentSystem {
                 activeSkill.getName(), nextSkillName, depth + 1);
 
         // Store current response as intermediate in session
-        LlmResponse response = context.getAttribute("llm.response");
+        LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
         if (response != null && response.getContent() != null && !response.getContent().isBlank()) {
             context.getSession().addMessage(Message.builder()
                     .role("assistant")
@@ -122,13 +124,10 @@ public class SkillPipelineSystem implements AgentSystem {
         }
 
         // Set transition target for ContextBuildingSystem to pick up
-        context.setAttribute("skill.transition.target", nextSkillName);
+        context.setSkillTransitionRequest(me.golemcore.bot.domain.model.SkillTransitionRequest.pipeline(nextSkillName));
         context.setAttribute(PIPELINE_DEPTH_KEY, depth + 1);
-
-        // Force loop continuation by marking tools as executed and clearing response
-        context.setAttribute("tools.executed", true);
-        context.setAttribute("llm.response", null);
-        context.setAttribute("llm.toolCalls", null);
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, null);
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, false);
 
         return context;
     }

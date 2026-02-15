@@ -77,7 +77,8 @@ class SkillTransitionToolTest {
 
         // Verify the context was updated
         AgentContext ctx = AgentContextHolder.get();
-        assertEquals(CODE_WRITER, ctx.getAttribute("skill.transition.target"));
+        var req = ctx.getSkillTransitionRequest();
+        assertEquals(CODE_WRITER, req.targetSkill());
     }
 
     @Test

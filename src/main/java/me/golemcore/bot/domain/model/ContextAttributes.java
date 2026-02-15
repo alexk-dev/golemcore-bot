@@ -27,28 +27,25 @@ public final class ContextAttributes {
     private ContextAttributes() {
     }
 
-    /**
-     * Boolean — voice response requested by VoiceResponseTool or incoming voice.
-     */
-    public static final String VOICE_REQUESTED = "voiceRequested";
-
-    /** String — specific text to synthesize (from VoiceResponseTool). */
-    public static final String VOICE_TEXT = "voiceText";
-
     /** Boolean — signal to stop the agent loop after current iteration. */
-    public static final String LOOP_COMPLETE = "loop.complete";
-
     /** LlmResponse — response from LLM execution. */
     public static final String LLM_RESPONSE = "llm.response";
 
     /** String — LLM error message. */
     public static final String LLM_ERROR = "llm.error";
 
-    /** Boolean — tools were executed in this iteration. */
-    public static final String TOOLS_EXECUTED = "tools.executed";
+    /** List<Message.ToolCall> ? last tool calls requested by the LLM. */
 
-    /** List&lt;Attachment&gt; — attachments pending delivery to channel. */
-    public static final String PENDING_ATTACHMENTS = "pendingAttachments";
+    /** Boolean ? final answer is ready and the turn can be finalized/routed. */
+    public static final String FINAL_ANSWER_READY = "llm.final.ready";
+
+    /** OutgoingResponse ? response to route to the user (transport contract). */
+    public static final String OUTGOING_RESPONSE = "outgoing.response";
+
+    /** Duration ? latency of the last LLM call (best-effort). */
+    public static final String LLM_LATENCY = "llm.latency";
+
+    /** Boolean — tools were executed in this iteration. */
 
     /**
      * String — LLM model name that last generated tool calls in the session
@@ -62,6 +59,21 @@ public final class ContextAttributes {
     /** String — plan ID that needs user approval before execution. */
     public static final String PLAN_APPROVAL_NEEDED = "plan.approval.needed";
 
-    /** Boolean — a response was successfully sent to the user in this loop run. */
-    public static final String RESPONSE_SENT = "response.sent";
+    /** String ? prompt suffix/extra context produced by RAG/context building. */
+    public static final String RAG_CONTEXT = "rag.context";
+
+    /** Boolean ? input sanitization already performed for this context. */
+    public static final String SANITIZATION_PERFORMED = "sanitization.performed";
+
+    /** List<String> ? detected sanitization threats (best-effort). */
+    public static final String SANITIZATION_THREATS = "sanitization.threats";
+
+    /**
+     * SkillTransitionRequest ? requested skill transition (from
+     * SkillTransitionTool/SkillPipelineSystem).
+     */
+
+    /** Boolean ? loop iteration limit reached (AgentLoop safeguard). */
+    public static final String ITERATION_LIMIT_REACHED = "iteration.limit.reached";
+
 }

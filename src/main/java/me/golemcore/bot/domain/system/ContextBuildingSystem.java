@@ -21,6 +21,7 @@ package me.golemcore.bot.domain.system;
 import me.golemcore.bot.domain.component.MemoryComponent;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
+import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.PromptSection;
@@ -42,6 +43,7 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import me.golemcore.bot.domain.model.ContextAttributes;
 
 /**
  * System for assembling the complete LLM system prompt with memory, skills,
@@ -63,7 +65,7 @@ public class ContextBuildingSystem implements AgentSystem {
     private final List<ToolComponent> toolComponents;
     private final SkillTemplateEngine templateEngine;
     private final McpPort mcpPort;
-    private final ToolExecutionSystem toolExecutionSystem;
+    private final ToolCallExecutionService toolCallExecutionService;
     private final RagPort ragPort;
     private final BotProperties properties;
     private final AutoModeService autoModeService;
@@ -86,13 +88,14 @@ public class ContextBuildingSystem implements AgentSystem {
         log.debug("[Context] Building context...");
 
         // Handle skill transitions (from SkillTransitionTool or SkillPipelineSystem)
-        String transitionTarget = context.getAttribute("skill.transition.target");
+        var transition = context.getSkillTransitionRequest();
+        String transitionTarget = transition != null ? transition.targetSkill() : null;
         if (transitionTarget != null) {
             skillComponent.findByName(transitionTarget).ifPresent(skill -> {
                 context.setActiveSkill(skill);
                 log.info("[Context] Skill transition: → {}", skill.getName());
             });
-            context.setAttribute("skill.transition.target", null);
+            context.clearSkillTransitionRequest();
         }
 
         // Resolve model tier from user preferences and active skill
@@ -124,7 +127,7 @@ public class ContextBuildingSystem implements AgentSystem {
                 for (ToolDefinition mcpTool : mcpTools) {
                     ToolComponent adapter = mcpPort.createToolAdapter(
                             context.getActiveSkill().getName(), mcpTool);
-                    toolExecutionSystem.registerTool(adapter);
+                    toolCallExecutionService.registerTool(adapter);
                     tools.add(mcpTool);
                 }
                 log.info("[Context] Registered {} MCP tools from skill '{}'",
@@ -151,7 +154,7 @@ public class ContextBuildingSystem implements AgentSystem {
                 try {
                     String ragContext = ragPort.query(userQuery, properties.getRag().getQueryMode()).join();
                     if (ragContext != null && !ragContext.isBlank()) {
-                        context.setAttribute("rag.context", ragContext);
+                        context.setAttribute(ContextAttributes.RAG_CONTEXT, ragContext);
                         log.debug("[Context] RAG context: {} chars", ragContext.length());
                     }
                 } catch (Exception e) {
@@ -203,7 +206,7 @@ public class ContextBuildingSystem implements AgentSystem {
             sb.append(DOUBLE_NEWLINE);
         }
 
-        String ragContext = context.getAttribute("rag.context");
+        String ragContext = context.getAttribute(ContextAttributes.RAG_CONTEXT);
         if (ragContext != null && !ragContext.isBlank()) {
             sb.append("# Relevant Memory\n");
             sb.append(ragContext);
@@ -308,7 +311,8 @@ public class ContextBuildingSystem implements AgentSystem {
         } else if (userTier != null) {
             context.setModelTier(userTier);
         }
-        // else: null → "balanced" in LlmExecutionSystem
+        // else: keep null. Downstream LLM execution treats null as the default tier
+        // (currently "balanced") and resolves model selection accordingly.
     }
 
     private boolean isAutoModeMessage(AgentContext context) {

@@ -197,4 +197,132 @@ class ToolConfirmationPolicyTest {
         ToolConfirmationPolicy disabledPolicy = new ToolConfirmationPolicy(props);
         assertFalse(disabledPolicy.isEnabled());
     }
+
+    // ==================== Null args edge cases ====================
+
+    @Test
+    void shouldNotRequireConfirmationWhenFilesystemArgsNull() {
+        Message.ToolCall toolCall = Message.ToolCall.builder()
+                .id(TOOL_CALL_ID)
+                .name(TOOL_FILESYSTEM)
+                .arguments(null)
+                .build();
+        assertFalse(policy.requiresConfirmation(toolCall));
+    }
+
+    @Test
+    void shouldNotRequireConfirmationWhenSkillManagementArgsNull() {
+        Message.ToolCall toolCall = Message.ToolCall.builder()
+                .id(TOOL_CALL_ID)
+                .name(TOOL_SKILL_MGMT)
+                .arguments(null)
+                .build();
+        assertFalse(policy.requiresConfirmation(toolCall));
+    }
+
+    // ==================== describeAction edge cases ====================
+
+    @Test
+    void shouldDescribeFilesystemNonDeleteAction() {
+        Message.ToolCall toolCall = Message.ToolCall.builder()
+                .id(TOOL_CALL_ID)
+                .name(TOOL_FILESYSTEM)
+                .arguments(Map.of(ARG_OPERATION, "read_file", ARG_PATH, TEST_FILE))
+                .build();
+        String description = policy.describeAction(toolCall);
+        assertTrue(description.contains("File operation"));
+        assertTrue(description.contains("read_file"));
+    }
+
+    @Test
+    void shouldDescribeFilesystemWithNullArgs() {
+        Message.ToolCall toolCall = Message.ToolCall.builder()
+                .id(TOOL_CALL_ID)
+                .name(TOOL_FILESYSTEM)
+                .arguments(null)
+                .build();
+        String description = policy.describeAction(toolCall);
+        assertTrue(description.contains("File operation"));
+    }
+
+    @Test
+    void shouldDescribeFilesystemDeleteWithNullPath() {
+        Message.ToolCall toolCall = Message.ToolCall.builder()
+                .id(TOOL_CALL_ID)
+                .name(TOOL_FILESYSTEM)
+                .arguments(Map.of(ARG_OPERATION, "delete"))
+                .build();
+        String description = policy.describeAction(toolCall);
+        assertTrue(description.contains("Delete file"));
+        assertTrue(description.contains("unknown"));
+    }
+
+    @Test
+    void shouldDescribeShellWithNullArgs() {
+        Message.ToolCall toolCall = Message.ToolCall.builder()
+                .id(TOOL_CALL_ID)
+                .name(TOOL_SHELL)
+                .arguments(null)
+                .build();
+        String description = policy.describeAction(toolCall);
+        assertTrue(description.contains("Run command"));
+    }
+
+    @Test
+    void shouldDescribeSkillNonDeleteAction() {
+        Message.ToolCall toolCall = Message.ToolCall.builder()
+                .id(TOOL_CALL_ID)
+                .name(TOOL_SKILL_MGMT)
+                .arguments(Map.of(ARG_OPERATION, "list_skills"))
+                .build();
+        String description = policy.describeAction(toolCall);
+        assertTrue(description.contains("Skill operation"));
+        assertTrue(description.contains("list_skills"));
+    }
+
+    @Test
+    void shouldDescribeSkillWithNullArgs() {
+        Message.ToolCall toolCall = Message.ToolCall.builder()
+                .id(TOOL_CALL_ID)
+                .name(TOOL_SKILL_MGMT)
+                .arguments(null)
+                .build();
+        String description = policy.describeAction(toolCall);
+        assertTrue(description.contains("Skill operation"));
+    }
+
+    @Test
+    void shouldDescribeSkillDeleteWithNullName() {
+        Message.ToolCall toolCall = Message.ToolCall.builder()
+                .id(TOOL_CALL_ID)
+                .name(TOOL_SKILL_MGMT)
+                .arguments(Map.of(ARG_OPERATION, "delete_skill"))
+                .build();
+        String description = policy.describeAction(toolCall);
+        assertTrue(description.contains("Delete skill"));
+        assertTrue(description.contains("unknown"));
+    }
+
+    @Test
+    void shouldDescribeUnknownTool() {
+        Message.ToolCall toolCall = Message.ToolCall.builder()
+                .id(TOOL_CALL_ID)
+                .name("custom_tool")
+                .arguments(Map.of("key", "value"))
+                .build();
+        String description = policy.describeAction(toolCall);
+        assertTrue(description.contains("custom_tool"));
+    }
+
+    @Test
+    void shouldDescribeShellCommandExactlyAtThreshold() {
+        String command = "a".repeat(80);
+        Message.ToolCall toolCall = Message.ToolCall.builder()
+                .id(TOOL_CALL_ID)
+                .name(TOOL_SHELL)
+                .arguments(Map.of(ARG_COMMAND, command))
+                .build();
+        String description = policy.describeAction(toolCall);
+        assertFalse(description.contains("..."));
+    }
 }

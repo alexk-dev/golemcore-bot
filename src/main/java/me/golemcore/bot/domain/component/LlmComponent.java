@@ -29,8 +29,8 @@ import java.util.concurrent.CompletableFuture;
 /**
  * Component providing access to Large Language Model (LLM) providers. Wraps an
  * {@link LlmPort} to enable chat completion requests with optional streaming
- * support. Supports multiple providers (OpenAI, Anthropic, custom endpoints)
- * via the LlmAdapterFactory pattern.
+ * support. Supports multiple providers (OpenAI, Anthropic, and
+ * OpenAI-compatible endpoints) via the LlmAdapterFactory pattern.
  */
 public interface LlmComponent extends Component {
 
@@ -89,7 +89,7 @@ public interface LlmComponent extends Component {
     /**
      * Returns the provider identifier for this LLM component.
      *
-     * @return the provider ID (e.g., "langchain4j", "custom")
+     * @return the provider ID (e.g., "langchain4j")
      */
     String getProviderId();
 }

@@ -1,0 +1,270 @@
+package me.golemcore.bot.domain.service;
+
+import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.component.ToolComponent;
+import me.golemcore.bot.domain.loop.AgentContextHolder;
+import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.Attachment;
+import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.model.ToolFailureKind;
+import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.ConfirmationPort;
+import org.springframework.stereotype.Component;
+
+import java.util.Base64;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * Pure tool-call execution service: executes tools + confirmation gating +
+ * truncation + attachment extraction.
+ *
+ * <p>
+ * Does NOT mutate conversation history and does NOT set any loop-control flags.
+ */
+@Component
+@Slf4j
+public class ToolCallExecutionService {
+
+    private static final long TOOL_TIMEOUT_SECONDS = 30;
+    private static final int MAX_BASE64_LENGTH = 67_000_000;
+
+    private final Map<String, ToolComponent> toolRegistry;
+    private final ToolConfirmationPolicy confirmationPolicy;
+    private final ConfirmationPort confirmationPort;
+    private final BotProperties properties;
+    private final Map<String, ChannelPort> channelRegistry;
+
+    public ToolCallExecutionService(List<ToolComponent> toolComponents,
+            ToolConfirmationPolicy confirmationPolicy,
+            ConfirmationPort confirmationPort,
+            BotProperties properties,
+            List<ChannelPort> channelPorts) {
+        this.toolRegistry = new ConcurrentHashMap<>();
+        for (ToolComponent tool : toolComponents) {
+            toolRegistry.put(tool.getToolName(), tool);
+        }
+        this.confirmationPolicy = confirmationPolicy;
+        this.confirmationPort = confirmationPort;
+        this.properties = properties;
+        this.channelRegistry = new ConcurrentHashMap<>();
+        for (ChannelPort port : channelPorts) {
+            channelRegistry.put(port.getChannelType(), port);
+        }
+    }
+
+    public ToolCallExecutionResult execute(AgentContext context, Message.ToolCall toolCall) {
+        AgentContextHolder.set(context);
+        try {
+            if (requiresConfirmation(toolCall)) {
+                boolean approved = requestConfirmation(context, toolCall);
+                if (!approved) {
+                    ToolResult denied = ToolResult.failure(ToolFailureKind.CONFIRMATION_DENIED, "Cancelled by user");
+                    String content = truncateToolResult("Error: Cancelled by user", toolCall.getName());
+                    context.addToolResult(toolCall.getId(), denied);
+                    return new ToolCallExecutionResult(toolCall.getId(), toolCall.getName(), denied, content, null);
+                }
+            } else if (!confirmationPolicy.isEnabled() && confirmationPolicy.isNotableAction(toolCall)) {
+                notifyToolExecution(context, toolCall);
+            }
+
+            ToolResult result = executeToolCall(toolCall);
+            context.addToolResult(toolCall.getId(), result);
+            Attachment attachment = extractAttachment(context, result, toolCall.getName());
+
+            String content = buildToolMessageContent(result);
+            content = truncateToolResult(content, toolCall.getName());
+            return new ToolCallExecutionResult(toolCall.getId(), toolCall.getName(), result, content, attachment);
+        } finally {
+            AgentContextHolder.clear();
+        }
+    }
+
+    public void registerTool(ToolComponent tool) {
+        toolRegistry.put(tool.getToolName(), tool);
+    }
+
+    public void unregisterTools(Collection<String> toolNames) {
+        if (toolNames == null) {
+            return;
+        }
+        for (String name : toolNames) {
+            toolRegistry.remove(name);
+        }
+        log.debug("Unregistered tools: {}", toolNames);
+    }
+
+    public ToolComponent getTool(String name) {
+        return toolRegistry.get(name);
+    }
+
+    private boolean requiresConfirmation(Message.ToolCall toolCall) {
+        return confirmationPolicy.requiresConfirmation(toolCall) && confirmationPort.isAvailable();
+    }
+
+    private boolean requestConfirmation(AgentContext context, Message.ToolCall toolCall) {
+        String chatId = context.getSession().getChatId();
+        String description = confirmationPolicy.describeAction(toolCall);
+
+        log.info("[Tools] Requesting confirmation for '{}': {}", toolCall.getName(), description);
+
+        try {
+            return confirmationPort.requestConfirmation(chatId, toolCall.getName(), description).join();
+        } catch (Exception e) {
+            log.error("[Tools] Confirmation request failed, denying", e);
+            return false;
+        }
+    }
+
+    private ToolResult executeToolCall(Message.ToolCall toolCall) {
+        String toolName = sanitizeToolName(toolCall.getName());
+        ToolComponent tool = toolRegistry.get(toolName);
+
+        if (tool == null) {
+            String available = String.join(", ", toolRegistry.keySet());
+            return ToolResult.failure(ToolFailureKind.POLICY_DENIED,
+                    "Unknown tool: " + toolName + ". Available tools: " + available);
+        }
+
+        if (!tool.isEnabled()) {
+            return ToolResult.failure(ToolFailureKind.POLICY_DENIED, "Tool is disabled: " + toolCall.getName());
+        }
+
+        try {
+            CompletableFuture<ToolResult> future = tool.execute(toolCall.getArguments());
+            return future.get(TOOL_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            log.error("Tool execution failed: {}", toolCall.getName(), e);
+            return ToolResult.failure(ToolFailureKind.EXECUTION_FAILED, "Tool execution failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Strip special tokens and garbage from tool names. Some models (e.g. gpt-oss)
+     * leak special tokens like {@code <|channel|>} into tool call names.
+     */
+    private String sanitizeToolName(String name) {
+        if (name == null) {
+            return null;
+        }
+        String sanitized = name.replaceAll("[^a-zA-Z0-9_-].*", "");
+        if (!sanitized.equals(name)) {
+            log.warn("[Tools] Sanitized tool name: '{}' -> '{}'", name, sanitized);
+        }
+        return sanitized;
+    }
+
+    private String buildToolMessageContent(ToolResult result) {
+        if (result == null) {
+            return null;
+        }
+        if (result.isSuccess()) {
+            return result.getOutput();
+        }
+        if (result.getOutput() != null && !result.getOutput().isBlank()) {
+            return result.getOutput();
+        }
+        return "Error: " + result.getError();
+    }
+
+    /**
+     * Truncate tool result content that exceeds the configured max length.
+     */
+    public String truncateToolResult(String content, String toolName) {
+        if (content == null) {
+            return null;
+        }
+        int maxChars = properties.getAutoCompact().getMaxToolResultChars();
+        if (maxChars <= 0 || content.length() <= maxChars) {
+            return content;
+        }
+
+        String suffix = "\n\n[OUTPUT TRUNCATED: " + content.length() + " chars total, showing first "
+                + maxChars + " chars. The full result is too large for the context window."
+                + " Try a more specific query, use filtering/pagination, or process the data in smaller chunks.]";
+        int cutPoint = Math.max(0, maxChars - suffix.length());
+        log.warn("[Tools] Truncating '{}' result: {} chars -> ~{} chars",
+                toolName, content.length(), cutPoint + suffix.length());
+        return content.substring(0, cutPoint) + suffix;
+    }
+
+    @SuppressWarnings("unchecked")
+    public Attachment extractAttachment(AgentContext context, ToolResult result, String toolName) {
+        if (result == null || !result.isSuccess() || !(result.getData() instanceof Map<?, ?> dataMap)) {
+            return null;
+        }
+
+        Attachment attachment = null;
+
+        Object attachmentObj = dataMap.get("attachment");
+        if (attachmentObj instanceof Attachment a) {
+            attachment = a;
+        }
+
+        if (attachment == null) {
+            Object screenshotB64 = dataMap.get("screenshot_base64");
+            if (screenshotB64 instanceof String b64) {
+                if (b64.length() > MAX_BASE64_LENGTH) {
+                    log.warn("[Tools] Base64 data too large ({} chars) from '{}', skipping", b64.length(), toolName);
+                } else {
+                    try {
+                        byte[] bytes = Base64.getDecoder().decode(b64);
+                        attachment = Attachment.builder()
+                                .type(Attachment.Type.IMAGE)
+                                .data(bytes)
+                                .filename("screenshot.png")
+                                .mimeType("image/png")
+                                .build();
+                    } catch (IllegalArgumentException e) {
+                        log.warn("[Tools] Invalid base64 in screenshot from '{}'", toolName);
+                    }
+                }
+            }
+        }
+
+        if (attachment == null) {
+            Object fileBytes = dataMap.get("file_bytes");
+            if (fileBytes instanceof byte[] bytes) {
+                String filename = dataMap.containsKey("filename") ? dataMap.get("filename").toString() : "file";
+                String mimeType = dataMap.containsKey("mime_type") ? dataMap.get("mime_type").toString()
+                        : "application/octet-stream";
+                Attachment.Type type = mimeType.startsWith("image/") ? Attachment.Type.IMAGE : Attachment.Type.DOCUMENT;
+                attachment = Attachment.builder()
+                        .type(type)
+                        .data(bytes)
+                        .filename(filename)
+                        .mimeType(mimeType)
+                        .build();
+            }
+        }
+
+        if (attachment != null) {
+            log.debug("[Tools] Attachment extracted from '{}' ({} bytes)", toolName, attachment.getData().length);
+        }
+        return attachment;
+    }
+
+    private void notifyToolExecution(AgentContext context, Message.ToolCall toolCall) {
+        try {
+            String channelType = context.getSession().getChannelType();
+            String chatId = context.getSession().getChatId();
+            ChannelPort channel = channelRegistry.get(channelType);
+            if (channel == null) {
+                return;
+            }
+
+            String description = confirmationPolicy.describeAction(toolCall);
+            String notification = "\u2699\ufe0f " + description;
+            channel.sendMessage(chatId, notification);
+            log.debug("[Tools] Notified user about '{}': {}", toolCall.getName(), description);
+        } catch (Exception e) {
+            log.debug("[Tools] Failed to send tool notification: {}", e.getMessage());
+        }
+    }
+}

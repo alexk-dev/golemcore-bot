@@ -51,7 +51,7 @@ class TelegramVoiceHandlerTest {
     void handleIncomingVoice_voiceDisabled() throws Exception {
         properties.getVoice().setEnabled(false);
 
-        String result = handler.handleIncomingVoice(new byte[] { 1 }).get();
+        String result = handler.handleIncomingVoice(new byte[] { 1 }).join();
 
         assertEquals("[Voice messages disabled]", result);
         verify(voicePort, never()).transcribe(any(), any());
@@ -61,7 +61,7 @@ class TelegramVoiceHandlerTest {
     void handleIncomingVoice_voiceUnavailable() throws Exception {
         when(voicePort.isAvailable()).thenReturn(false);
 
-        String result = handler.handleIncomingVoice(new byte[] { 1 }).get();
+        String result = handler.handleIncomingVoice(new byte[] { 1 }).join();
 
         assertEquals("[Voice processing unavailable]", result);
         verify(voicePort, never()).transcribe(any(), any());
@@ -73,7 +73,7 @@ class TelegramVoiceHandlerTest {
         when(voicePort.transcribe(any(byte[].class), any(AudioFormat.class)))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("STT error")));
 
-        String result = handler.handleIncomingVoice(new byte[] { 1 }).get();
+        String result = handler.handleIncomingVoice(new byte[] { 1 }).join();
 
         assertEquals("[Failed to transcribe voice message]", result);
     }
@@ -86,7 +86,7 @@ class TelegramVoiceHandlerTest {
         when(voicePort.transcribe(any(byte[].class), any(AudioFormat.class)))
                 .thenReturn(CompletableFuture.completedFuture(transcription));
 
-        String result = handler.handleIncomingVoice(new byte[] { 1 }).get();
+        String result = handler.handleIncomingVoice(new byte[] { 1 }).join();
 
         assertEquals("", result);
     }
@@ -102,7 +102,7 @@ class TelegramVoiceHandlerTest {
                 .thenReturn(CompletableFuture.completedFuture(transcription));
 
         byte[] voiceData = new byte[] { 10, 20, 30 };
-        Message msg = handler.processVoiceMessage("chat42", voiceData).get();
+        Message msg = handler.processVoiceMessage("chat42", voiceData).join();
 
         assertEquals("telegram", msg.getChannelType());
         assertEquals("chat42", msg.getChatId());
@@ -120,7 +120,7 @@ class TelegramVoiceHandlerTest {
         when(voicePort.transcribe(any(byte[].class), any(AudioFormat.class)))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("STT error")));
 
-        Message msg = handler.processVoiceMessage("chat1", new byte[] { 1 }).get();
+        Message msg = assertDoesNotThrow(() -> handler.processVoiceMessage("chat1", new byte[] { 1 }).join());
 
         assertEquals("[Failed to transcribe voice message]", msg.getContent());
         assertEquals("[Failed to transcribe voice message]", msg.getVoiceTranscription());
@@ -131,7 +131,7 @@ class TelegramVoiceHandlerTest {
     void processVoiceMessage_disabledVoiceStillBuildsMessage() throws Exception {
         properties.getVoice().setEnabled(false);
 
-        Message msg = handler.processVoiceMessage("chat1", new byte[] { 1 }).get();
+        Message msg = handler.processVoiceMessage("chat1", new byte[] { 1 }).join();
 
         assertEquals("[Voice messages disabled]", msg.getContent());
         assertEquals("[Voice messages disabled]", msg.getVoiceTranscription());

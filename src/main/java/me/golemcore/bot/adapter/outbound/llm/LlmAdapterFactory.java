@@ -43,8 +43,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * This factory manages multiple LLM provider adapters and selects the active
  * one based on {@code bot.llm.provider} configuration:
  * <ul>
- * <li>langchain4j - OpenAI, Anthropic via langchain4j library
- * <li>custom - Custom OpenAI-compatible endpoints
+ * <li>langchain4j - OpenAI, Anthropic via langchain4j library *
  * <li>none - No-op adapter for testing
  * </ul>
  *
@@ -53,9 +52,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * runtime in {@link #init()} based on configuration.
  *
  * @see LlmProviderAdapter
- * @see Langchain4jAdapter
- * @see CustomLlmAdapter
- * @see NoOpLlmAdapter
+ * @see Langchain4jAdapter * @see NoOpLlmAdapter
  */
 @Component
 @Primary

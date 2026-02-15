@@ -79,6 +79,8 @@ public class BotProperties {
     private AutoModeProperties auto = new AutoModeProperties();
     private PromptsProperties prompts = new PromptsProperties();
     private AutoCompactProperties autoCompact = new AutoCompactProperties();
+    private TurnProperties turn = new TurnProperties();
+    private ToolLoopProperties toolLoop = new ToolLoopProperties();
     private PlanProperties plan = new PlanProperties();
 
     @Data
@@ -89,8 +91,9 @@ public class BotProperties {
     @Data
     public static class LlmProperties {
         private String provider = "langchain4j";
+        /** Canonical per-request timeout for any LLM provider adapter. */
+        private java.time.Duration requestTimeout = java.time.Duration.ofSeconds(300);
         private Langchain4jProperties langchain4j = new Langchain4jProperties();
-        private CustomLlmProperties custom = new CustomLlmProperties();
         private Map<String, ModelConfig> models = new HashMap<>(); // Model configurations
     }
 
@@ -105,7 +108,6 @@ public class BotProperties {
 
     @Data
     public static class Langchain4jProperties {
-        private long timeoutMs = 300000;
         private Map<String, ProviderProperties> providers = new HashMap<>();
     }
 
@@ -113,12 +115,6 @@ public class BotProperties {
     public static class ProviderProperties {
         private String apiKey;
         private String baseUrl;
-    }
-
-    @Data
-    public static class CustomLlmProperties {
-        private String apiUrl;
-        private String apiKey;
     }
 
     @Data
@@ -448,6 +444,45 @@ public class BotProperties {
          * truncated.
          */
         private int maxToolResultChars = 100000;
+    }
+
+    // ==================== TURN BUDGET ====================
+
+    @Data
+    public static class TurnProperties {
+        /** Max number of internal LLM calls allowed within a single turn. */
+        private int maxLlmCalls = 200;
+
+        /** Max number of tool executions allowed within a single turn. */
+        private int maxToolExecutions = 500;
+
+        /** Max wall-clock time budget for a single turn. Default: 1 hour. */
+        private java.time.Duration deadline = java.time.Duration.ofHours(1);
+    }
+
+    // ==================== TOOL LOOP ====================
+
+    @Data
+    public static class ToolLoopProperties {
+
+        // Execution behavior flags that are specific to tool calling.
+        // NOTE: budgets/timeouts moved to bot.turn.*.
+        /**
+         * If true, stop the internal loop immediately after the first tool failure
+         * (ToolResult.success=false).
+         */
+        private boolean stopOnToolFailure = false;
+
+        /**
+         * Stop the loop when a tool execution was denied by the user (confirmation
+         * declined).
+         */
+        private boolean stopOnConfirmationDenied = true;
+
+        /**
+         * Stop the loop when a tool was blocked by policy (disabled/unknown/etc).
+         */
+        private boolean stopOnToolPolicyDenied = false;
     }
 
     // ==================== PLAN MODE ====================

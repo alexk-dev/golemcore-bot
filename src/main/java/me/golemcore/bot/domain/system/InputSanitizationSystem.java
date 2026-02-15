@@ -24,6 +24,7 @@ import me.golemcore.bot.domain.model.Message;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import me.golemcore.bot.domain.model.ContextAttributes;
 
 /**
  * System for input sanitization and security validation (order=10, first in
@@ -73,10 +74,10 @@ public class InputSanitizationSystem implements AgentSystem {
             log.warn("Detected threats in input: {}", result.threats());
             // Update the message with sanitized content
             lastMessage.setContent(result.sanitizedInput());
-            context.setAttribute("sanitization.threats", result.threats());
+            context.setAttribute(ContextAttributes.SANITIZATION_THREATS, result.threats());
         }
 
-        context.setAttribute("sanitization.performed", true);
+        context.setAttribute(ContextAttributes.SANITIZATION_PERFORMED, true);
         return context;
     }
 

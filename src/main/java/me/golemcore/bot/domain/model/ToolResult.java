@@ -37,6 +37,12 @@ public class ToolResult {
     private String error;
 
     /**
+     * Optional machine-readable failure kind. When present, callers must prefer
+     * this over parsing { #error}.
+     */
+    private ToolFailureKind failureKind;
+
+    /**
      * Creates a successful tool result with output text.
      */
     public static ToolResult success(String output) {
@@ -63,6 +69,17 @@ public class ToolResult {
     public static ToolResult failure(String error) {
         return ToolResult.builder()
                 .success(false)
+                .error(error)
+                .build();
+    }
+
+    /**
+     * Creates a failed tool result with an error message and failure kind.
+     */
+    public static ToolResult failure(ToolFailureKind kind, String error) {
+        return ToolResult.builder()
+                .success(false)
+                .failureKind(kind)
                 .error(error)
                 .build();
     }

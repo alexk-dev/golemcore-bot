@@ -14,13 +14,14 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
+import me.golemcore.bot.domain.model.ContextAttributes;
 
 class InputSanitizationSystemTest {
 
     private static final String ROLE_USER = "user";
     private static final String SESSION_ID = "test";
     private static final String CONTENT_HELLO = "hello";
-    private static final String ATTR_SANITIZATION_PERFORMED = "sanitization.performed";
+    private static final String ATTR_SANITIZATION_PERFORMED = ContextAttributes.SANITIZATION_PERFORMED;
     private static final String CONTENT_SECOND = "second";
     private static final String CONTENT_USER_MSG = "user msg";
 
@@ -200,7 +201,7 @@ class InputSanitizationSystemTest {
         AgentContext result = system.process(ctx);
 
         assertEquals(true, result.getAttribute(ATTR_SANITIZATION_PERFORMED));
-        assertNull(result.getAttribute("sanitization.threats"));
+        assertNull(result.getAttribute(ContextAttributes.SANITIZATION_THREATS));
         assertEquals(CONTENT_HELLO, result.getMessages().get(0).getContent());
     }
 
@@ -216,7 +217,7 @@ class InputSanitizationSystemTest {
         AgentContext result = system.process(ctx);
 
         assertEquals("cleaned", result.getMessages().get(0).getContent());
-        assertEquals(threats, result.getAttribute("sanitization.threats"));
+        assertEquals(threats, result.getAttribute(ContextAttributes.SANITIZATION_THREATS));
         assertEquals(true, result.getAttribute(ATTR_SANITIZATION_PERFORMED));
     }
 

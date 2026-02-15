@@ -31,7 +31,6 @@ import me.golemcore.bot.domain.service.UserPreferencesService;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
-import java.util.List;
 import java.util.Optional;
 
 /**
@@ -78,14 +77,14 @@ public class PlanFinalizationSystem implements AgentSystem {
             return false;
         }
 
-        // Only finalize when LLM responds with text (no tool calls)
-        List<?> toolCalls = context.getAttribute("llm.toolCalls");
-        if (toolCalls != null && !toolCalls.isEmpty()) {
+        LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
+        if (response == null || response.getContent() == null || response.getContent().isBlank()) {
             return false;
         }
 
-        LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
-        return response != null && response.getContent() != null && !response.getContent().isBlank();
+        // During plan mode we only finalize once the LLM produced plain text (no tool
+        // calls).
+        return response.getToolCalls() == null || response.getToolCalls().isEmpty();
     }
 
     @Override

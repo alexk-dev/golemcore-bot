@@ -21,16 +21,23 @@ package me.golemcore.bot.domain.loop;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
-import me.golemcore.bot.domain.model.LlmResponse;
+import me.golemcore.bot.domain.model.FailureEvent;
+import me.golemcore.bot.domain.model.FailureKind;
+import me.golemcore.bot.domain.model.FailureSource;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.OutgoingResponse;
+import me.golemcore.bot.domain.model.RoutingOutcome;
+import me.golemcore.bot.domain.model.TurnOutcome;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.domain.system.AgentSystem;
+import me.golemcore.bot.domain.system.ResponseRoutingSystem;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.RateLimitPort;
 import me.golemcore.bot.domain.model.LlmRequest;
+import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.RateLimitResult;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -80,6 +87,7 @@ public class AgentLoop {
     private static final long TYPING_INTERVAL_SECONDS = 4;
 
     private List<AgentSystem> sortedSystems;
+    private AgentSystem routingSystem;
 
     @PreDestroy
     public void shutdown() {
@@ -136,6 +144,11 @@ public class AgentLoop {
                 .currentIteration(0)
                 .build();
 
+        // Initialize sorted systems + routingSystem (used by feedback guarantee).
+        getSortedSystems();
+        log.info("[AgentLoop] routingSystem resolved: {}",
+                routingSystem != null ? routingSystem.getClass().getName() : "<null>");
+
         ChannelPort channel = channelRegistry.get(message.getChannelType());
         ScheduledFuture<?> typingTask = null;
         if (channel != null && message.getChatId() != null) {
@@ -155,9 +168,18 @@ public class AgentLoop {
             }
             // Guarantee ThreadLocal cleanup even if systems throw unexpectedly
             AgentContextHolder.clear();
+
+            // Persist the session even if loop/routing fails unexpectedly.
+            // This prevents losing the last inbound message (and any history mutations
+            // already applied)
+            // on restart/crash.
+            try {
+                sessionService.save(session);
+            } catch (Exception e) { // NOSONAR - last resort, must not break finally
+                log.error("Failed to persist session in finally: {}", session.getId(), e);
+            }
         }
 
-        sessionService.save(session);
         log.info("=== MESSAGE PROCESSING COMPLETE ===");
     }
 
@@ -171,7 +193,7 @@ public class AgentLoop {
 
     @EventListener
     public void onInboundMessage(InboundMessageEvent event) {
-        processMessage(event.getMessage());
+        processMessage(event.message());
     }
 
     private void runLoop(AgentContext context) {
@@ -201,7 +223,9 @@ public class AgentLoop {
                 } catch (Exception e) {
                     log.error("System '{}' FAILED after {}ms: {}", system.getName(), clock.millis() - startMs,
                             e.getMessage(), e);
-                    context.setAttribute("system.error." + system.getName(), e.getMessage());
+                    context.addFailure(new FailureEvent(
+                            FailureSource.SYSTEM, system.getName(), FailureKind.EXCEPTION,
+                            e.getMessage(), clock.instant()));
                 }
             }
 
@@ -216,65 +240,58 @@ public class AgentLoop {
                 break;
             }
 
-            log.debug("Continuing to next iteration (tools were executed)");
-            context.setAttribute("llm.toolCalls", null);
-            context.setAttribute("tools.executed", false);
-            context.setAttribute("skill.transition.target", null); // reset transition
+            log.debug("Continuing to next iteration");
+            context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, false);
+            context.clearSkillTransitionRequest(); // reset transition
             context.getToolResults().clear();
         }
 
         if (reachedLimit) {
-            context.setAttribute("iteration.limit.reached", true);
+            context.setAttribute(ContextAttributes.ITERATION_LIMIT_REACHED, true);
+            context.clearSkillTransitionRequest();
             String limitMessage = preferencesService.getMessage("system.iteration.limit", maxIterations);
-
-            context.getSession().addMessage(Message.builder()
-                    .role("assistant")
-                    .content(limitMessage)
-                    .channelType(context.getSession().getChannelType())
-                    .chatId(context.getSession().getChatId())
-                    .timestamp(clock.instant())
-                    .build());
-            notifyIterationLimit(context, limitMessage);
+            routeSyntheticAssistantResponse(context, limitMessage, "stop");
         }
     }
 
-    private void notifyIterationLimit(AgentContext context, String message) {
-        AgentSession session = context.getSession();
-        ChannelPort channel = channelRegistry.get(session.getChannelType());
-        if (channel != null) {
-            try {
-                channel.sendMessage(session.getChatId(), message).get();
-                context.setAttribute(ContextAttributes.RESPONSE_SENT, true);
-                log.info("[AgentLoop] Sent iteration limit notification");
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                log.error("[AgentLoop] Failed to send iteration limit notification: {}", e.getMessage());
-            } catch (ExecutionException e) {
-                log.error("[AgentLoop] Failed to send iteration limit notification: {}", e.getMessage());
-            }
+    private void routeResponse(AgentContext context) {
+        // AgentLoop is an orchestrator. It must not perform transport directly,
+        // but it can explicitly invoke the transport system when it generates
+        // a synthetic response outside the main pipeline flow.
+        if (routingSystem == null) {
+            log.warn("[AgentLoop] routingSystem is null; cannot route response");
+            return;
         }
+
+        boolean should = routingSystem.shouldProcess(context);
+        log.info("[AgentLoop] routingSystem.shouldProcess={}", should);
+        if (should) {
+            log.info("[AgentLoop] invoking routingSystem.process (OutgoingResponse present: {})",
+                    context.getAttribute(ContextAttributes.OUTGOING_RESPONSE) != null);
+            routingSystem.process(context);
+        }
+    }
+
+    private void routeSyntheticAssistantResponse(AgentContext context, String content, String finishReason) {
+        // Feedback guarantee must not mutate raw history.
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly(content));
+        routeResponse(context);
     }
 
     private boolean shouldContinueLoop(AgentContext context) {
-        Boolean loopComplete = context.getAttribute(ContextAttributes.LOOP_COMPLETE);
-        if (Boolean.TRUE.equals(loopComplete)) {
-            return false;
-        }
-
-        Boolean toolsExecuted = context.getAttribute("tools.executed");
-        if (Boolean.TRUE.equals(toolsExecuted)) {
-            LlmResponse response = context.getAttribute("llm.response");
-            if (response != null && response.hasToolCalls()) {
-                return true;
-            }
-        }
-
-        return false;
+        // SkillPipelineSystem sets skillTransitionRequest to request a new iteration.
+        var transition = context.getSkillTransitionRequest();
+        return transition != null && transition.targetSkill() != null;
     }
 
     private void ensureFeedback(AgentContext context) {
-        Boolean responseSent = context.getAttribute(ContextAttributes.RESPONSE_SENT);
-        if (Boolean.TRUE.equals(responseSent)) {
+        // Check typed RoutingOutcome first, then fall back to attribute
+        TurnOutcome outcome = context.getTurnOutcome();
+        if (outcome != null && outcome.getRoutingOutcome() != null && outcome.getRoutingOutcome().isSentText()) {
+            return;
+        }
+        RoutingOutcome routingAttr = context.getAttribute("routing.outcome");
+        if (routingAttr != null && routingAttr.isSentText()) {
             return;
         }
 
@@ -282,36 +299,31 @@ public class AgentLoop {
             return;
         }
 
-        AgentSession session = context.getSession();
-        ChannelPort channel = channelRegistry.get(session.getChannelType());
-        if (channel == null) {
+        if (tryUnsentLlmResponse(context)) {
             return;
         }
 
-        if (tryUnsentLlmResponse(context, channel, session)) {
+        if (tryErrorFeedback(context)) {
             return;
         }
 
-        if (tryErrorFeedback(context, channel, session)) {
-            return;
-        }
-
-        // Last resort: generic feedback
+        // Last resort: generic feedback.
         String generic = preferencesService.getMessage("system.error.generic.feedback");
-        log.info("[AgentLoop] Feedback guarantee: sending generic feedback");
-        trySendAndRecord(channel, session, generic);
+        log.info("[AgentLoop] Feedback guarantee: routing generic feedback");
+        routeSyntheticAssistantResponse(context, generic, "stop");
     }
 
-    private boolean tryUnsentLlmResponse(AgentContext context, ChannelPort channel, AgentSession session) {
-        LlmResponse llmResponse = context.getAttribute(ContextAttributes.LLM_RESPONSE);
-        if (llmResponse != null && llmResponse.getContent() != null && !llmResponse.getContent().isBlank()) {
-            log.info("[AgentLoop] Feedback guarantee: sending unsent LLM response");
-            return trySendAndRecord(channel, session, llmResponse.getContent());
+    private boolean tryUnsentLlmResponse(AgentContext context) {
+        OutgoingResponse outgoing = context.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        if (outgoing != null && outgoing.getText() != null && !outgoing.getText().isBlank()) {
+            log.info("[AgentLoop] Feedback guarantee: routing unsent OutgoingResponse");
+            routeResponse(context);
+            return true;
         }
         return false;
     }
 
-    private boolean tryErrorFeedback(AgentContext context, ChannelPort channel, AgentSession session) {
+    private boolean tryErrorFeedback(AgentContext context) {
         List<String> errors = collectErrors(context);
         if (errors.isEmpty() || !llmPort.isAvailable()) {
             return false;
@@ -320,16 +332,12 @@ public class AgentLoop {
         String interpretation = tryInterpretErrors(errors);
         if (interpretation != null) {
             String message = preferencesService.getMessage("system.error.feedback", interpretation);
-            log.info("[AgentLoop] Feedback guarantee: sending LLM-interpreted error");
-            if (trySendAndRecord(channel, session, message)) {
-                return true;
-            }
+            log.info("[AgentLoop] Feedback guarantee: routing interpreted error");
+            routeSyntheticAssistantResponse(context, message, "stop");
+            return true;
         }
 
-        // LLM interpretation failed — send formatted error
-        String formatted = preferencesService.getMessage("system.error.feedback", String.join("; ", errors));
-        log.info("[AgentLoop] Feedback guarantee: sending formatted error");
-        return trySendAndRecord(channel, session, formatted);
+        return false;
     }
 
     private List<String> collectErrors(AgentContext context) {
@@ -338,14 +346,17 @@ public class AgentLoop {
         if (llmError != null) {
             errors.add(llmError);
         }
-        for (Map.Entry<String, Object> entry : context.getAttributes().entrySet()) {
-            if (entry.getKey().startsWith("system.error.") && entry.getValue() instanceof String errorMsg) {
-                errors.add(errorMsg);
+        // Read typed FailureEvent list
+        for (FailureEvent failure : context.getFailures()) {
+            if (failure.message() != null) {
+                errors.add(failure.message());
             }
         }
-        String routingError = context.getAttribute("routing.error");
-        if (routingError != null) {
-            errors.add(routingError);
+        // Check RoutingOutcome for transport errors
+        TurnOutcome outcome = context.getTurnOutcome();
+        if (outcome != null && outcome.getRoutingOutcome() != null
+                && outcome.getRoutingOutcome().getErrorMessage() != null) {
+            errors.add(outcome.getRoutingOutcome().getErrorMessage());
         }
         return errors;
     }
@@ -376,31 +387,6 @@ public class AgentLoop {
         return null;
     }
 
-    private boolean trySendAndRecord(ChannelPort channel, AgentSession session, String content) {
-        try {
-            channel.sendMessage(session.getChatId(), content).get(10, TimeUnit.SECONDS);
-            addFeedbackMessage(session, content);
-            return true;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.error("[AgentLoop] Feedback send interrupted: {}", e.getMessage());
-            return false;
-        } catch (ExecutionException | TimeoutException e) {
-            log.error("[AgentLoop] Feedback send failed: {}", e.getMessage());
-            return false;
-        }
-    }
-
-    private void addFeedbackMessage(AgentSession session, String content) {
-        session.addMessage(Message.builder()
-                .role("assistant")
-                .content(content)
-                .channelType(session.getChannelType())
-                .chatId(session.getChatId())
-                .timestamp(clock.instant())
-                .build());
-    }
-
     private boolean isAutoModeContext(AgentContext context) {
         if (context.getMessages() == null || context.getMessages().isEmpty()) {
             return false;
@@ -413,17 +399,24 @@ public class AgentLoop {
         if (sortedSystems == null) {
             sortedSystems = new ArrayList<>(systems);
             sortedSystems.sort(Comparator.comparingInt(AgentSystem::getOrder));
+
+            log.info("[AgentLoop] systems in pipeline: {}",
+                    sortedSystems.stream().map(AgentSystem::getName).toList());
+
+            routingSystem = sortedSystems.stream()
+                    .filter(ResponseRoutingSystem.class::isInstance)
+                    .findFirst()
+                    .orElse(null);
         }
+        log.debug("[AgentLoop] routingSystem resolved: {}",
+                routingSystem != null ? routingSystem.getClass().getName() : "<null>");
         return sortedSystems;
     }
 
     public record InboundMessageEvent(Message message, Instant timestamp) {
+
         public InboundMessageEvent(Message message) {
             this(message, Instant.now());
-        }
-
-        public Message getMessage() {
-            return message;
         }
     }
 }

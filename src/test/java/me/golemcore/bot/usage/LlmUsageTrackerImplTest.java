@@ -456,6 +456,115 @@ class LlmUsageTrackerImplTest {
         assertDoesNotThrow(() -> freshTracker.init());
     }
 
+    // ===== getStatsByModel with null provider/model =====
+
+    @Test
+    void shouldHandleNullProviderAndModelInStatsByModel() {
+        Instant now = Instant.now();
+        LlmUsage usage = LlmUsage.builder()
+                .inputTokens(100).outputTokens(50).totalTokens(150)
+                .timestamp(now)
+                .latency(Duration.ofMillis(100))
+                .build();
+
+        tracker.recordUsage(null, null, usage);
+
+        Map<String, UsageStats> byModel = tracker.getStatsByModel(Duration.ofHours(1));
+        assertFalse(byModel.isEmpty());
+        assertTrue(byModel.containsKey("unknown/unknown"));
+    }
+
+    // ===== getAllStats empty =====
+
+    @Test
+    void shouldReturnEmptyMapWhenNoUsageRecorded() {
+        Map<String, UsageStats> allStats = tracker.getAllStats(Duration.ofHours(1));
+        assertTrue(allStats.isEmpty());
+    }
+
+    // ===== Export metrics empty =====
+
+    @Test
+    void shouldReturnEmptyMetricsWhenNoUsage() {
+        List<UsageMetric> metrics = tracker.exportMetrics();
+        assertTrue(metrics.isEmpty());
+    }
+
+    // ===== Load with blank lines =====
+
+    @Test
+    void shouldSkipBlankLinesOnLoad() {
+        String validLine = "{\"inputTokens\":100,\"outputTokens\":50,\"totalTokens\":150,\"providerId\":\"p\",\"model\":\"m\",\"timestamp\":\""
+                + Instant.now() + "\"}";
+        String content = "\n\n" + validLine + "\n\n\n" + validLine + "\n";
+
+        when(storagePort.listObjects(USAGE_DIR, ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of("blanks.jsonl")));
+        when(storagePort.getText(USAGE_DIR, "blanks.jsonl"))
+                .thenReturn(CompletableFuture.completedFuture(content));
+
+        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, properties, objectMapper);
+        freshTracker.init();
+
+        UsageStats stats = freshTracker.getStats("p", Duration.ofHours(1));
+        assertEquals(2, stats.getTotalRequests());
+    }
+
+    // ===== Load record with null timestamp: loaded into memory but filtered out by
+    // period query =====
+
+    @Test
+    void shouldLoadRecordWithNullTimestampButFilterByPeriod() {
+        String line = "{\"inputTokens\":100,\"outputTokens\":50,\"totalTokens\":150,\"providerId\":\"p\",\"model\":\"m\"}";
+
+        when(storagePort.listObjects(USAGE_DIR, ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of("null-ts.jsonl")));
+        when(storagePort.getText(USAGE_DIR, "null-ts.jsonl"))
+                .thenReturn(CompletableFuture.completedFuture(line));
+
+        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, properties, objectMapper);
+        freshTracker.init();
+
+        // Null timestamp records are loaded but filtered out by filterByPeriod
+        // (timestamp != null check)
+        UsageStats stats = freshTracker.getStats("p", Duration.ofHours(1));
+        assertEquals(0, stats.getTotalRequests());
+    }
+
+    // ===== recordUsage auto-sets timestamp when null =====
+
+    @Test
+    void shouldAutoSetTimestampWhenNull() {
+        LlmUsage usage = LlmUsage.builder()
+                .inputTokens(100).outputTokens(50).totalTokens(150)
+                .timestamp(null)
+                .build();
+
+        tracker.recordUsage("p", "m", usage);
+
+        // recordUsage sets timestamp to Instant.now() if null
+        assertNotNull(usage.getTimestamp());
+        UsageStats stats = tracker.getStats("p", Duration.ofHours(1));
+        assertEquals(1, stats.getTotalRequests());
+    }
+
+    // ===== aggregateUsages with all null models =====
+
+    @Test
+    void shouldReturnNullPrimaryModelWhenAllModelsNull() {
+        LlmUsage usage = LlmUsage.builder()
+                .inputTokens(10).outputTokens(5).totalTokens(15)
+                .timestamp(Instant.now())
+                .build();
+        usage.setModel(null);
+
+        // Record directly to bypass the model setter in recordUsage
+        tracker.recordUsage(null, null, usage);
+
+        UsageStats stats = tracker.getStats("unknown", Duration.ofHours(1));
+        assertNull(stats.getModel());
+    }
+
     private LlmUsage usage(int input, int output, Instant ts) {
         return LlmUsage.builder()
                 .inputTokens(input).outputTokens(output).totalTokens(input + output)

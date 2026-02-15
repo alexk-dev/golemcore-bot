@@ -33,7 +33,7 @@ import me.golemcore.bot.port.outbound.LlmPort;
 public interface LlmProviderAdapter extends LlmPort {
 
     /**
-     * Get the provider ID (e.g., "langchain4j", "custom", "none").
+     * Get the provider ID (e.g., "langchain4j", "none").
      */
     String getProviderId();
 
