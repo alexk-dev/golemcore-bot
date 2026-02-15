@@ -48,12 +48,8 @@ import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
 import org.telegram.telegrambots.meta.api.methods.send.SendVoice;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiRequestException;
-import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
 import org.telegram.telegrambots.meta.api.objects.InputFile;
 import org.telegram.telegrambots.meta.api.objects.Update;
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 
 import java.io.ByteArrayInputStream;
@@ -113,6 +109,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
     private final MessageService messageService;
     private final ObjectProvider<CommandPort> commandRouter;
     private final TelegramVoiceHandler voiceHandler;
+    private final TelegramMenuHandler menuHandler;
 
     private TelegramClient telegramClient;
     private volatile Consumer<Message> messageHandler;
@@ -225,12 +222,8 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
             handleConfirmationCallback(chatId, messageId, data);
         } else if (data.startsWith("plan:")) {
             handlePlanCallback(chatId, messageId, data);
-        } else if (data.startsWith("lang:")) {
-            String lang = data.substring(5);
-            preferencesService.setLanguage(lang);
-            String langName = messageService.getLanguageDisplayName(lang);
-            String message = preferencesService.getMessage("settings.language.changed", langName);
-            updateSettingsMessage(chatId, messageId, message);
+        } else if (data.startsWith("menu:")) {
+            menuHandler.handleCallback(chatId, messageId, data);
         }
     }
 
@@ -264,46 +257,6 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
                 planId, action, chatId, messageId.toString()));
     }
 
-    private void updateSettingsMessage(String chatId, Integer messageId, String statusMessage) {
-        try {
-            String title = preferencesService.getMessage("settings.title");
-            String currentLang = preferencesService.getLanguage();
-            String langName = messageService.getLanguageDisplayName(currentLang);
-            String langLabel = preferencesService.getMessage("settings.language.current", langName);
-
-            String text = "**" + title + "**\n\n" + langLabel;
-            if (statusMessage != null) {
-                text += "\n\n" + statusMessage;
-            }
-
-            EditMessageText edit = EditMessageText.builder()
-                    .chatId(chatId)
-                    .messageId(messageId)
-                    .text(TelegramHtmlFormatter.format(text))
-                    .parseMode("HTML")
-                    .replyMarkup(buildLanguageKeyboard())
-                    .build();
-
-            telegramClient.execute(edit);
-        } catch (Exception e) {
-            log.error("Failed to update settings message", e);
-        }
-    }
-
-    private InlineKeyboardMarkup buildLanguageKeyboard() {
-        return InlineKeyboardMarkup.builder()
-                .keyboardRow(new InlineKeyboardRow(
-                        InlineKeyboardButton.builder()
-                                .text(preferencesService.getMessage("button.language.en"))
-                                .callbackData("lang:en")
-                                .build(),
-                        InlineKeyboardButton.builder()
-                                .text(preferencesService.getMessage("button.language.ru"))
-                                .callbackData("lang:ru")
-                                .build()))
-                .build();
-    }
-
     private void handleMessage(Update update) {
         org.telegram.telegrambots.meta.api.objects.message.Message telegramMessage = update.getMessage();
         String chatId = telegramMessage.getChatId().toString();
@@ -333,9 +286,9 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
                 String[] parts = text.split("\\s+", 2);
                 String cmd = parts[0].substring(1).split("@")[0]; // strip / and @botname
 
-                // /settings is a special case (uses Telegram inline keyboards)
-                if (SETTINGS_COMMAND.equals(cmd)) {
-                    sendSettingsMenu(chatId);
+                // /menu and /settings open the centralized inline-keyboard menu
+                if ("menu".equals(cmd) || SETTINGS_COMMAND.equals(cmd)) {
+                    menuHandler.sendMainMenu(chatId);
                     return;
                 }
 
@@ -644,27 +597,4 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
         }
     }
 
-    private void sendSettingsMenu(String chatId) {
-        try {
-            String title = preferencesService.getMessage("settings.title");
-            String currentLang = preferencesService.getLanguage();
-            String langName = messageService.getLanguageDisplayName(currentLang);
-            String langLabel = preferencesService.getMessage("settings.language.current", langName);
-            String selectLabel = preferencesService.getMessage("settings.language.select");
-
-            String text = "**" + title + "**\n\n" + langLabel + "\n\n" + selectLabel;
-
-            SendMessage message = SendMessage.builder()
-                    .chatId(chatId)
-                    .text(TelegramHtmlFormatter.format(text))
-                    .parseMode("HTML")
-                    .replyMarkup(buildLanguageKeyboard())
-                    .build();
-
-            telegramClient.execute(message);
-            log.debug("Sent settings menu to chat: {}", chatId);
-        } catch (Exception e) {
-            log.error("Failed to send settings menu", e);
-        }
-    }
 }
