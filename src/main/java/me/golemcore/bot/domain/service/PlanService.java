@@ -267,7 +267,6 @@ public class PlanService {
         plan.setMarkdown(planMarkdown);
         plan.setStatus(Plan.PlanStatus.READY);
         plan.setUpdatedAt(Instant.now(clock));
-        deactivatePlanMode();
         savePlans(getPlans());
         log.info("[PlanMode] Plan {} finalized/updated (READY)", planId);
     }

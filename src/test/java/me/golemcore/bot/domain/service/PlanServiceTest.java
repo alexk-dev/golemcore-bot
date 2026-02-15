@@ -86,7 +86,7 @@ class PlanServiceTest {
         // Act
         Plan plan = service.createPlan("Deploy service", "Deploy to production", TEST_CHAT_ID, TEST_MODEL_TIER);
 
-        // Assert
+        // Assert ? plan work stays active until /plan done or /reset
         assertNotNull(plan);
         assertNotNull(plan.getId());
         assertEquals("Deploy service", plan.getTitle());
@@ -149,7 +149,7 @@ class PlanServiceTest {
         // Act
         Plan plan = service.createPlan("New plan", "Should succeed", TEST_CHAT_ID, TEST_MODEL_TIER);
 
-        // Assert
+        // Assert ? plan work stays active until /plan done or /reset
         assertNotNull(plan);
         assertEquals(Plan.PlanStatus.COLLECTING, plan.getStatus());
     }
@@ -163,17 +163,17 @@ class PlanServiceTest {
         assertFalse(service.isPlanModeActive());
         assertNull(service.getActivePlanId());
 
-        // Act — activate
+        // Act ? activate
         service.activatePlanMode(TEST_CHAT_ID, TEST_MODEL_TIER);
 
-        // Assert — activated
+        // Assert ? activated
         assertTrue(service.isPlanModeActive());
         assertNotNull(service.getActivePlanId());
 
-        // Act — deactivate
+        // Act ? deactivate
         service.deactivatePlanMode();
 
-        // Assert — deactivated
+        // Assert ? deactivated
         assertFalse(service.isPlanModeActive());
         assertNull(service.getActivePlanId());
     }
@@ -183,7 +183,8 @@ class PlanServiceTest {
         // Act
         service.activatePlanMode(TEST_CHAT_ID, TEST_MODEL_TIER);
 
-        // Assert — plan was created and is accessible
+        // Assert ? plan work stays active until /plan done or /reset — plan was created
+        // and is accessible
         String activePlanId = service.getActivePlanId();
         assertNotNull(activePlanId);
 
@@ -215,7 +216,7 @@ class PlanServiceTest {
         // Act
         PlanStep step = service.addStep(PLAN_ABC, TOOL_FILESYSTEM, args, "Create main application file");
 
-        // Assert
+        // Assert ? plan work stays active until /plan done or /reset
         assertNotNull(step);
         assertNotNull(step.getId());
         assertEquals(PLAN_ABC, step.getPlanId());
@@ -255,7 +256,8 @@ class PlanServiceTest {
         // Act
         PlanStep secondStep = service.addStep(PLAN_ABC, TOOL_FILESYSTEM, Map.of("path", "/test"), "Add test file");
 
-        // Assert — order should be 1 (second step)
+        // Assert ? plan work stays active until /plan done or /reset — order should be
+        // 1 (second step)
         assertEquals(1, secondStep.getOrder());
     }
 
@@ -332,7 +334,8 @@ class PlanServiceTest {
         // Act
         service.finalizePlan("plan-fin", "# Plan", null);
 
-        // Assert — verify saved plan status changed to READY
+        // Assert ? plan work stays active until /plan done or /reset — verify saved
+        // plan status changed to READY
         ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
         verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq(PLANS_FILE), captor.capture());
 
@@ -348,7 +351,7 @@ class PlanServiceTest {
     }
 
     @Test
-    void shouldDeactivatePlanModeWhenFinalizing() throws Exception {
+    void shouldKeepPlanModeActiveWhenFinalizing() throws Exception {
         // Arrange — create a plan via activatePlanMode so plan mode is active
         service.activatePlanMode(TEST_CHAT_ID, TEST_MODEL_TIER);
         String activePlanId = service.getActivePlanId();
@@ -357,9 +360,9 @@ class PlanServiceTest {
         // Act
         service.finalizePlan(activePlanId, "# Plan", null);
 
-        // Assert
-        assertFalse(service.isPlanModeActive());
-        assertNull(service.getActivePlanId());
+        // Assert ? plan work stays active until /plan done or /reset
+        assertTrue(service.isPlanModeActive());
+        assertNotNull(service.getActivePlanId());
     }
 
     // ==================== 7. shouldThrowWhenFinalizingNonCollectingPlan
@@ -383,7 +386,7 @@ class PlanServiceTest {
         // Act
         service.finalizePlan("plan-ready", "# Updated plan", null);
 
-        // Assert
+        // Assert ? plan work stays active until /plan done or /reset
         ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
         verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq(PLANS_FILE), captor.capture());
 
@@ -425,7 +428,7 @@ class PlanServiceTest {
         // Act
         service.approvePlan("plan-approve");
 
-        // Assert
+        // Assert ? plan work stays active until /plan done or /reset
         ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
         verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq(PLANS_FILE), captor.capture());
 
@@ -487,7 +490,7 @@ class PlanServiceTest {
         // Act
         service.cancelPlan("plan-cancel");
 
-        // Assert
+        // Assert ? plan work stays active until /plan done or /reset
         ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
         verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq(PLANS_FILE), captor.capture());
 
@@ -543,7 +546,8 @@ class PlanServiceTest {
         // state
         service.cancelPlan("plan-other");
 
-        // Assert — plan mode remains active (recovered from the COLLECTING plan)
+        // Assert ? plan work stays active until /plan done or /reset — plan mode
+        // remains active (recovered from the COLLECTING plan)
         assertTrue(service.isPlanModeActive());
     }
 
@@ -594,7 +598,8 @@ class PlanServiceTest {
         // Act
         Optional<PlanStep> nextStep = service.getNextPendingStep(PLAN_EXEC);
 
-        // Assert — should return step-1 (lowest order among pending)
+        // Assert ? plan work stays active until /plan done or /reset — should return
+        // step-1 (lowest order among pending)
         assertTrue(nextStep.isPresent());
         assertEquals(STEP_1, nextStep.get().getId());
         assertEquals(PlanStep.StepStatus.PENDING, nextStep.get().getStatus());
@@ -628,7 +633,7 @@ class PlanServiceTest {
         // Act
         Optional<PlanStep> nextStep = service.getNextPendingStep("plan-done");
 
-        // Assert
+        // Assert ? plan work stays active until /plan done or /reset
         assertTrue(nextStep.isEmpty());
     }
 
@@ -637,7 +642,7 @@ class PlanServiceTest {
         // Act
         Optional<PlanStep> nextStep = service.getNextPendingStep(NONEXISTENT_PLAN);
 
-        // Assert
+        // Assert ? plan work stays active until /plan done or /reset
         assertTrue(nextStep.isEmpty());
     }
 
@@ -654,7 +659,7 @@ class PlanServiceTest {
         // Act
         String context = service.buildPlanContext();
 
-        // Assert
+        // Assert ? plan work stays active until /plan done or /reset
         assertNotNull(context);
         assertTrue(context.contains("# Plan Work"));
         assertTrue(context.contains("Plan work is ACTIVE"));
@@ -668,7 +673,7 @@ class PlanServiceTest {
         // Act
         String context = service.buildPlanContext();
 
-        // Assert
+        // Assert ? plan work stays active until /plan done or /reset
         assertNull(context);
     }
 
@@ -680,7 +685,7 @@ class PlanServiceTest {
         // Act
         String context = service.buildPlanContext();
 
-        // Assert
+        // Assert ? plan work stays active until /plan done or /reset
         assertNotNull(context);
         assertTrue(context.contains("# Plan Work"));
     }
@@ -713,7 +718,7 @@ class PlanServiceTest {
         // Act
         service.deletePlan("plan-delete");
 
-        // Assert
+        // Assert ? plan work stays active until /plan done or /reset
         ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
         verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq(PLANS_FILE), captor.capture());
 
@@ -774,7 +779,7 @@ class PlanServiceTest {
         // Act
         service.markStepInProgress("plan-lc", "step-ip");
 
-        // Assert
+        // Assert ? plan work stays active until /plan done or /reset
         ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
         verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq(PLANS_FILE), captor.capture());
 
@@ -811,7 +816,7 @@ class PlanServiceTest {
         // Act
         service.markStepCompleted("plan-lc2", "step-comp", "File written successfully");
 
-        // Assert
+        // Assert ? plan work stays active until /plan done or /reset
         ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
         verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq(PLANS_FILE), captor.capture());
 
@@ -850,7 +855,7 @@ class PlanServiceTest {
         // Act
         service.markStepFailed("plan-lc3", "step-fail", "Command exited with code 1");
 
-        // Assert
+        // Assert ? plan work stays active until /plan done or /reset
         ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
         verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq(PLANS_FILE), captor.capture());
 
@@ -925,7 +930,7 @@ class PlanServiceTest {
         // Act
         service.completePlan(PLAN_COMPLETE);
 
-        // Assert
+        // Assert ? plan work stays active until /plan done or /reset
         ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
         verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq(PLANS_FILE), captor.capture());
 
@@ -989,7 +994,7 @@ class PlanServiceTest {
         // Act
         service.markPlanPartiallyCompleted(PLAN_PARTIAL);
 
-        // Assert
+        // Assert ? plan work stays active until /plan done or /reset
         ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
         verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq(PLANS_FILE), captor.capture());
 
@@ -1030,7 +1035,7 @@ class PlanServiceTest {
         // Act
         service.markPlanExecuting(PLAN_EXEC);
 
-        // Assert
+        // Assert ? plan work stays active until /plan done or /reset
         ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
         verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq(PLANS_FILE), captor.capture());
 
@@ -1068,7 +1073,7 @@ class PlanServiceTest {
         Optional<Plan> found = service.getPlan("plan-find");
         Optional<Plan> notFound = service.getPlan(NONEXISTENT);
 
-        // Assert
+        // Assert ? plan work stays active until /plan done or /reset
         assertTrue(found.isPresent());
         assertEquals("plan-find", found.get().getId());
         assertTrue(notFound.isEmpty());
@@ -1079,7 +1084,7 @@ class PlanServiceTest {
         // Act
         Optional<Plan> activePlan = service.getActivePlan();
 
-        // Assert
+        // Assert ? plan work stays active until /plan done or /reset
         assertTrue(activePlan.isEmpty());
     }
 
@@ -1092,7 +1097,7 @@ class PlanServiceTest {
         // Act
         List<Plan> plans = service.getPlans();
 
-        // Assert
+        // Assert ? plan work stays active until /plan done or /reset
         assertNotNull(plans);
         assertTrue(plans.isEmpty());
     }
@@ -1106,7 +1111,7 @@ class PlanServiceTest {
         // Act
         List<Plan> plans = service.getPlans();
 
-        // Assert
+        // Assert ? plan work stays active until /plan done or /reset
         assertNotNull(plans);
         assertTrue(plans.isEmpty());
     }
@@ -1120,7 +1125,7 @@ class PlanServiceTest {
         // Act — should not throw, returns empty list as fallback
         List<Plan> plans = service.getPlans();
 
-        // Assert
+        // Assert ? plan work stays active until /plan done or /reset
         assertNotNull(plans);
         assertTrue(plans.isEmpty());
     }
@@ -1167,7 +1172,7 @@ class PlanServiceTest {
         // Act
         Plan plan = service.createPlan(null, null, TEST_CHAT_ID, TEST_MODEL_TIER);
 
-        // Assert
+        // Assert ? plan work stays active until /plan done or /reset
         assertNotNull(plan);
         assertNull(plan.getTitle());
         assertNull(plan.getDescription());
