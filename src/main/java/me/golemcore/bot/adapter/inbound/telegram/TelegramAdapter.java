@@ -31,6 +31,7 @@ import me.golemcore.bot.port.inbound.CommandPort;
 import me.golemcore.bot.security.AllowlistValidator;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
@@ -39,6 +40,7 @@ import org.telegram.telegrambots.longpolling.TelegramBotsLongPollingApplication;
 import org.telegram.telegrambots.longpolling.util.LongPollingSingleThreadUpdateConsumer;
 import org.telegram.telegrambots.meta.api.methods.ActionType;
 import org.telegram.telegrambots.meta.api.methods.GetFile;
+import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.telegram.telegrambots.meta.api.methods.send.SendChatAction;
 import org.telegram.telegrambots.meta.api.methods.send.SendAudio;
 import org.telegram.telegrambots.meta.api.methods.send.SendDocument;
@@ -109,7 +111,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
     private final TelegramBotsLongPollingApplication botsApplication;
     private final UserPreferencesService preferencesService;
     private final MessageService messageService;
-    private final CommandPort commandRouter;
+    private final ObjectProvider<CommandPort> commandRouter;
     private final TelegramVoiceHandler voiceHandler;
 
     private TelegramClient telegramClient;
@@ -338,9 +340,10 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
                 }
 
                 // Route to CommandRouter
-                if (commandRouter.hasCommand(cmd)) {
+                CommandPort router = commandRouter.getIfAvailable();
+                if (router != null && router.hasCommand(cmd)) {
                     List<String> args = parts.length > 1
-                            ? Arrays.asList(parts[1].split("\\s+"))
+                            ? Arrays.asList(parts[1].split("\s+"))
                             : List.of();
                     String sessionId = CHANNEL_TYPE + ":" + chatId;
                     Map<String, Object> ctx = Map.<String, Object>of(
@@ -348,7 +351,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
                             "chatId", chatId,
                             "channelType", CHANNEL_TYPE);
                     try {
-                        var result = commandRouter.execute(cmd, args, ctx).join();
+                        var result = router.execute(cmd, args, ctx).join();
                         sendMessage(chatId, result.output());
                     } catch (Exception e) {
                         log.error("Command execution failed: /{}", cmd, e);
@@ -410,7 +413,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
         }
     }
 
-    private byte[] downloadVoice(String fileId) throws Exception {
+    private byte[] downloadVoice(String fileId) throws TelegramApiException, java.io.IOException {
         GetFile getFile = new GetFile(fileId);
         org.telegram.telegrambots.meta.api.objects.File file = telegramClient.execute(getFile);
 

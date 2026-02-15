@@ -284,4 +284,5 @@ The read path (order=20) runs **before** the write path (order=50), so the LLM s
 |---------|--------------|
 | `/status` | Session message count, memory state |
 | `/compact [N]` | Manually compact conversation, keep last N messages |
+| `/stop` | Interrupt the current run (messages will be queued until your next message) |
 | `/new` | Clear session messages (memory files preserved) |

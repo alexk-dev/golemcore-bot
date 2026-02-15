@@ -125,6 +125,7 @@ Send `/help` to your bot on Telegram to see available commands.
 | `/status` | Show session info + usage stats |
 | `/new` or `/reset` | Start new conversation |
 | `/compact [N]` | Compact conversation history, keep last N messages (default: 10) |
+| `/stop` | Stop the current run (interrupt) |
 | `/tier [tier] [force]` | Set model tier (balanced/smart/coding/deep) |
 | `/settings` | Change language (Telegram only) |
 

@@ -41,7 +41,6 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.RateLimitResult;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import java.time.Clock;
@@ -51,12 +50,12 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 /**
  * Core orchestrator managing the agent processing pipeline for incoming
@@ -191,10 +190,8 @@ public class AgentLoop {
         return text.substring(0, maxLen) + "...";
     }
 
-    @EventListener
-    public void onInboundMessage(InboundMessageEvent event) {
-        processMessage(event.message());
-    }
+    // Inbound messages are handled by SessionRunCoordinator via
+    // InboundMessageListener.
 
     private void runLoop(AgentContext context) {
         int maxIterations = context.getMaxIterations();

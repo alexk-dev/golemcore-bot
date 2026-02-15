@@ -36,6 +36,7 @@ import me.golemcore.bot.domain.service.CompactionService;
 import me.golemcore.bot.domain.service.PlanExecutionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.ScheduleService;
+import me.golemcore.bot.domain.service.SessionRunCoordinator;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.CommandPort;
@@ -98,6 +99,7 @@ public class CommandRouter implements CommandPort {
     private static final String CMD_HELP = "help";
     private static final String CMD_GOAL = "goal";
     private static final String CMD_PLAN = "plan";
+    private static final String CMD_PLANS = "plans";
     private static final String CMD_STATUS = "status";
     private static final int MIN_SCHEDULE_ARGS = 2;
     private static final int MIN_CRON_PARTS_FOR_REPEAT_CHECK = 1;
@@ -112,13 +114,14 @@ public class CommandRouter implements CommandPort {
     private final PlanService planService;
     private final PlanExecutionService planExecutionService;
     private final ScheduleService scheduleService;
+    private final SessionRunCoordinator runCoordinator;
     private final ApplicationEventPublisher eventPublisher;
     private final BotProperties properties;
 
     private static final List<String> KNOWN_COMMANDS = List.of(
             "skills", "tools", CMD_STATUS, "new", "reset", "compact", CMD_HELP,
             "tier", "auto", "goals", CMD_GOAL, "diary", "tasks", "schedule",
-            CMD_PLAN, "plans");
+            CMD_PLAN, CMD_PLANS, "stop");
 
     private static final java.util.Set<String> VALID_TIERS = java.util.Set.of(
             "balanced", "smart", "coding", "deep");
@@ -134,6 +137,7 @@ public class CommandRouter implements CommandPort {
             PlanService planService,
             PlanExecutionService planExecutionService,
             ScheduleService scheduleService,
+            SessionRunCoordinator runCoordinator,
             ApplicationEventPublisher eventPublisher,
             BotProperties properties) {
         this.skillComponent = skillComponent;
@@ -146,6 +150,7 @@ public class CommandRouter implements CommandPort {
         this.planService = planService;
         this.planExecutionService = planExecutionService;
         this.scheduleService = scheduleService;
+        this.runCoordinator = runCoordinator;
         this.eventPublisher = eventPublisher;
         this.properties = properties;
         log.info("CommandRouter initialized with commands: {}", KNOWN_COMMANDS);
@@ -174,7 +179,8 @@ public class CommandRouter implements CommandPort {
             case "tasks" -> handleTasks();
             case "schedule" -> handleSchedule(args);
             case CMD_PLAN -> handlePlan(args, chatId);
-            case "plans" -> handlePlans();
+            case CMD_PLANS -> handlePlans();
+            case "stop" -> handleStop(channelType, chatId);
             default -> CommandResult.failure(msg("command.unknown", command));
             };
         });
@@ -195,7 +201,8 @@ public class CommandRouter implements CommandPort {
                 new CommandDefinition("reset", "Reset conversation", "/reset"),
                 new CommandDefinition("compact", "Compact conversation history", "/compact [keep]"),
                 new CommandDefinition(CMD_HELP, "Show available commands", "/help"),
-                new CommandDefinition("tier", "Set model tier", "/tier [balanced|smart|coding|deep] [force]")));
+                new CommandDefinition("tier", "Set model tier", "/tier [balanced|smart|coding|deep] [force]"),
+                new CommandDefinition("stop", "Stop current run", "/stop")));
         if (autoModeService.isFeatureEnabled()) {
             commands.add(new CommandDefinition("auto", "Toggle auto mode", "/auto [on|off]"));
             commands.add(new CommandDefinition("goals", "List goals", "/goals"));
@@ -207,9 +214,17 @@ public class CommandRouter implements CommandPort {
         if (planService.isFeatureEnabled()) {
             commands.add(new CommandDefinition(CMD_PLAN, "Plan mode control",
                     "/plan [on|off|status|approve|cancel|resume]"));
-            commands.add(new CommandDefinition("plans", "List plans", "/plans"));
+            commands.add(new CommandDefinition(CMD_PLANS, "List plans", "/plans"));
         }
         return commands;
+    }
+
+    private CommandResult handleStop(String channelType, String chatId) {
+        if (channelType == null || chatId == null) {
+            return CommandResult.failure(msg("command.stop.notAvailable"));
+        }
+        runCoordinator.requestStop(channelType, chatId);
+        return CommandResult.success(msg("command.stop.ack"));
     }
 
     private CommandResult handleSkills() {

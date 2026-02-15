@@ -20,8 +20,6 @@ package me.golemcore.bot.domain.model;
 
 import org.junit.jupiter.api.Test;
 
-import me.golemcore.bot.domain.model.ContextAttributes;
-
 import java.time.Instant;
 import java.util.Map;
 

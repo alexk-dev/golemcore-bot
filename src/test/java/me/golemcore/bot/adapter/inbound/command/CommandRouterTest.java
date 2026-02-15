@@ -19,6 +19,7 @@ import me.golemcore.bot.domain.service.CompactionService;
 import me.golemcore.bot.domain.service.PlanExecutionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.ScheduleService;
+import me.golemcore.bot.domain.service.SessionRunCoordinator;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.CommandPort;
@@ -129,6 +130,7 @@ class CommandRouterTest {
         planService = mock(PlanService.class);
         planExecutionService = mock(PlanExecutionService.class);
         scheduleService = mock(ScheduleService.class);
+        SessionRunCoordinator runCoordinator = mock(SessionRunCoordinator.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
 
         ToolComponent tool1 = mockTool(TOOL_FILESYSTEM, "File system operations", true);
@@ -148,6 +150,7 @@ class CommandRouterTest {
                 planService,
                 planExecutionService,
                 scheduleService,
+                runCoordinator,
                 eventPublisher,
                 properties);
     }
@@ -186,7 +189,7 @@ class CommandRouterTest {
     @Test
     void listCommands() {
         List<CommandPort.CommandDefinition> commands = router.listCommands();
-        assertEquals(8, commands.size());
+        assertEquals(9, commands.size());
     }
 
     @Test
@@ -566,7 +569,7 @@ class CommandRouterTest {
         assertTrue(commands.stream().anyMatch(c -> CMD_GOALS.equals(c.name())));
         assertTrue(commands.stream().anyMatch(c -> CMD_DIARY.equals(c.name())));
         assertTrue(commands.stream().anyMatch(c -> CMD_SCHEDULE.equals(c.name())));
-        assertEquals(14, commands.size()); // 8 base + 6 auto mode
+        assertEquals(15, commands.size()); // 8 base + 6 auto mode
     }
 
     @Test
@@ -576,7 +579,7 @@ class CommandRouterTest {
         List<CommandPort.CommandDefinition> commands = router.listCommands();
         assertTrue(commands.stream().anyMatch(c -> "plan".equals(c.name())));
         assertTrue(commands.stream().anyMatch(c -> "plans".equals(c.name())));
-        assertEquals(10, commands.size()); // 8 base + 2 plan
+        assertEquals(11, commands.size()); // 8 base + 2 plan
     }
 
     // ===== Plan commands =====
