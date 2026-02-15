@@ -98,9 +98,15 @@ class PlanFinalizationSystemTest {
     }
 
     @Test
-    void shouldProcessWhenPlanActiveAndTextResponse() {
+    void shouldProcessWhenPlanActiveAndPlanFinalizeToolCallPresent() {
         when(planService.isPlanModeActive()).thenReturn(true);
-        AgentContext context = buildContext("Here is my plan summary");
+        LlmResponse response = LlmResponse.builder()
+                .content("irrelevant")
+                .toolCalls(List.of(me.golemcore.bot.domain.model.Message.ToolCall.builder()
+                        .id("tc1").name(me.golemcore.bot.tools.PlanFinalizeTool.TOOL_NAME).build()))
+                .build();
+        AgentContext context = buildContext(null);
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
         assertTrue(system.shouldProcess(context));
     }
 
@@ -184,29 +190,30 @@ class PlanFinalizationSystemTest {
     }
 
     @Test
-    void shouldNotProcessWhenResponseContentIsNull() {
+    void shouldNotProcessWhenTextOnlyResponseWithoutToolCalls() {
         when(planService.isPlanModeActive()).thenReturn(true);
         AgentContext context = buildContext(null);
-        // Explicitly set a response with null content (different from no response)
-        LlmResponse response = LlmResponse.builder().content(null).build();
+        LlmResponse response = LlmResponse.builder().content("some text").toolCalls(List.of()).build();
         context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
         assertFalse(system.shouldProcess(context));
     }
 
     @Test
-    void shouldNotProcessWhenResponseContentIsBlank() {
+    void shouldNotProcessWhenResponseHasNoToolCallsField() {
         when(planService.isPlanModeActive()).thenReturn(true);
         AgentContext context = buildContext(null);
-        LlmResponse response = LlmResponse.builder().content("   ").build();
+        LlmResponse response = LlmResponse.builder().content("whatever").toolCalls(null).build();
         context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
         assertFalse(system.shouldProcess(context));
     }
 
     @Test
-    void shouldProcessWhenToolCallsListIsEmpty() {
+    void shouldNotProcessWhenToolCallsListIsEmpty() {
         when(planService.isPlanModeActive()).thenReturn(true);
-        AgentContext context = buildContext("Some text response");
-        assertTrue(system.shouldProcess(context));
+        AgentContext context = buildContext(null);
+        LlmResponse response = LlmResponse.builder().content("Some text response").toolCalls(List.of()).build();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+        assertFalse(system.shouldProcess(context));
     }
 
     @Test

@@ -2,7 +2,7 @@ package me.golemcore.bot.domain.system;
 
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
-import me.golemcore.bot.domain.model.LlmRequest;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.PlanService;
@@ -22,8 +22,6 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -35,47 +33,42 @@ import static org.mockito.Mockito.when;
 
 class ToolLoopPlanModeFinalizeToolTest {
 
-    private static final Instant NOW = Instant.parse("2026-01-01T12:00:00Z");
-    private static final Instant FAR_FUTURE = Instant.parse("2026-02-01T00:00:00Z");
     private static final String PLAN_ID = "plan-123";
+    private static final Instant NOW = Instant.parse("2026-02-15T00:00:00Z");
+    private static final Instant FAR_FUTURE = Instant.parse("2099-01-01T00:00:00Z");
 
     @Test
-    void shouldFinalizePlanWhenPlanFinalizeToolCallIsPresent() {
-        // GIVEN: a session with an incoming user message
+    void shouldTreatPlanFinalizeToolAsControlToolWithoutFinalizingPlan() {
+        // GIVEN
         AgentSession session = AgentSession.builder()
-                .id("s1")
-                .channelType("telegram")
-                .chatId("chat1")
+                .chatId("chat-1")
                 .messages(new ArrayList<>())
                 .build();
 
-        session.addMessage(Message.builder()
-                .role("user")
-                .content("Make a plan")
-                .timestamp(NOW)
-                .channelType("telegram")
-                .chatId("chat1")
-                .build());
-
         AgentContext ctx = AgentContext.builder()
                 .session(session)
-                .messages(new ArrayList<>(session.getMessages()))
+                .messages(session.getMessages())
                 .build();
 
-        // AND: LLM responds with plan_finalize tool call
-        LlmPort llmPort = mock(LlmPort.class);
-        LlmResponse response = LlmResponse.builder()
+        LlmResponse response1 = LlmResponse.builder()
                 .content("Plan is ready")
-                .toolCalls(List.of(
-                        Message.ToolCall.builder()
-                                .id("tc-final")
-                                .name(PlanFinalizeTool.TOOL_NAME)
-                                .arguments(Map.of("summary", "ok"))
-                                .build()))
-                .finishReason("tool_calls")
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("tc1")
+                        .name(PlanFinalizeTool.TOOL_NAME)
+                        .arguments(null)
+                        .build()))
                 .build();
 
-        when(llmPort.chat(any(LlmRequest.class))).thenReturn(CompletableFuture.completedFuture(response));
+        // The tool loop must continue after producing synthetic tool results.
+        LlmResponse response2 = LlmResponse.builder()
+                .content("Ok")
+                .toolCalls(List.of())
+                .build();
+
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.chat(any()))
+                .thenReturn(java.util.concurrent.CompletableFuture.completedFuture(response1),
+                        java.util.concurrent.CompletableFuture.completedFuture(response2));
 
         PlanService planService = mock(PlanService.class);
         when(planService.isPlanModeActive()).thenReturn(true);
@@ -88,6 +81,7 @@ class ToolLoopPlanModeFinalizeToolTest {
                 toolExecutor,
                 new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC)),
                 new DefaultConversationViewBuilder(new FlatteningToolMessageMasker()),
+                new BotProperties.TurnProperties(),
                 new BotProperties.ToolLoopProperties(),
                 new BotProperties.ModelRouterProperties(),
                 planService,
@@ -98,13 +92,18 @@ class ToolLoopPlanModeFinalizeToolTest {
 
         // THEN
         assertTrue(result.finalAnswerReady());
-        assertEquals(1, result.llmCalls());
-        verify(planService).finalizePlan(PLAN_ID);
+        assertEquals(2, result.llmCalls());
+
+        // Finalization must be handled downstream (PlanFinalizationSystem)
+        verify(planService, never()).finalizePlan(any());
         verify(toolExecutor, never()).execute(any(), any());
+
+        // PlanFinalizationSystem depends on this attribute being set.
+        assertEquals(true, ctx.getAttribute(ContextAttributes.PLAN_FINALIZE_REQUESTED));
 
         // Raw history should contain assistant tool-call message
         Message last = session.getMessages().get(session.getMessages().size() - 1);
         assertEquals("assistant", last.getRole());
-        assertEquals("Plan is ready", last.getContent());
+        assertEquals("Ok", last.getContent());
     }
 }

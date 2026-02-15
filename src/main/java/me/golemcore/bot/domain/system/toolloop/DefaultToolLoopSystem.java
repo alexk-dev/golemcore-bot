@@ -131,25 +131,26 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             historyWriter.appendAssistantToolCalls(context, response, response.getToolCalls());
 
             // 3.5) Plan mode: record tool calls as plan steps, write synthetic results.
-            // plan_finalize is treated as a control tool: it finalizes the plan instead of
-            // being recorded as a step.
+            // plan_finalize is treated as a control tool: it is NOT recorded as a step.
+            // Finalization is handled downstream by PlanFinalizationSystem.
             if (planService != null && planService.isPlanModeActive()) {
 
                 String planId = planService.getActivePlanId();
 
-                boolean sawFinalize = response.getToolCalls().stream()
-                        .anyMatch(tc -> me.golemcore.bot.tools.PlanFinalizeTool.TOOL_NAME.equals(tc.getName()));
-                if (sawFinalize) {
-                    planService.finalizePlan(planId);
-                    // Keep the assistant tool-call message in raw history; plan card will be
-                    // generated downstream.
-                    context.setAttribute(ContextAttributes.PLAN_APPROVAL_NEEDED, planId);
-                    context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
-                    applyAttachments(context, accumulatedAttachments);
-                    return new ToolLoopTurnResult(context, true, llmCalls, toolExecutions);
-                }
-
                 for (Message.ToolCall tc : response.getToolCalls()) {
+                    if (me.golemcore.bot.tools.PlanFinalizeTool.TOOL_NAME.equals(tc.getName())) {
+                        // Control tool: still produce a tool result (so the conversation is
+                        // well-formed), but do not record it as a plan step.
+                        ToolExecutionOutcome synthetic = new ToolExecutionOutcome(
+                                tc.getId(), tc.getName(),
+                                me.golemcore.bot.domain.model.ToolResult.success("[Finalizing plan]"),
+                                "[Finalizing plan]", true, null);
+                        historyWriter.appendToolResult(context, synthetic);
+                        context.setAttribute(ContextAttributes.PLAN_FINALIZE_REQUESTED, true);
+                        toolExecutions += 1;
+                        continue;
+                    }
+
                     Map<String, Object> args = tc.getArguments() != null ? tc.getArguments() : Map.of();
                     String description = tc.getName() + "(" + args + ")";
                     planService.addStep(planId, tc.getName(), args, description);

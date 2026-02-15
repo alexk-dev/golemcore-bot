@@ -59,6 +59,9 @@ public final class ContextAttributes {
     /** String — plan ID that needs user approval before execution. */
     public static final String PLAN_APPROVAL_NEEDED = "plan.approval.needed";
 
+    /** Boolean ? set when plan_finalize tool call was observed in LLM response. */
+    public static final String PLAN_FINALIZE_REQUESTED = "plan.finalize.requested";
+
     /** String ? prompt suffix/extra context produced by RAG/context building. */
     public static final String RAG_CONTEXT = "rag.context";
 

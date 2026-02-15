@@ -34,12 +34,11 @@ import org.springframework.stereotype.Component;
 import java.util.Optional;
 
 /**
- * Detects when the LLM has finished proposing plan steps (responds with text,
- * no tool calls) and finalizes the plan (order=58, before ResponseRouting at
- * 60).
+ * Detects when plan mode should be finalized (via plan_finalize tool call) and
+ * finalizes the plan (order=58, before ResponseRouting at 60).
  *
  * <p>
- * When the LLM produces a text response without tool calls during plan mode:
+ * When the LLM invokes plan_finalize during plan mode:
  * <ol>
  * <li>If plan has 0 steps, cancels the empty plan and returns</li>
  * <li>Finalizes the plan (COLLECTING -> READY)</li>
@@ -78,13 +77,21 @@ public class PlanFinalizationSystem implements AgentSystem {
         }
 
         LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
-        if (response == null || response.getContent() == null || response.getContent().isBlank()) {
+        if (response == null) {
             return false;
         }
 
-        // During plan mode we only finalize once the LLM produced plain text (no tool
-        // calls).
-        return response.getToolCalls() == null || response.getToolCalls().isEmpty();
+        boolean finalizeRequested = false;
+        if (response.getToolCalls() != null) {
+            finalizeRequested = response.getToolCalls().stream()
+                    .anyMatch(tc -> me.golemcore.bot.tools.PlanFinalizeTool.TOOL_NAME.equals(tc.getName()));
+        }
+
+        if (finalizeRequested) {
+            context.setAttribute(ContextAttributes.PLAN_FINALIZE_REQUESTED, true);
+        }
+
+        return finalizeRequested;
     }
 
     @Override
