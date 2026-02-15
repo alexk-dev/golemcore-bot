@@ -1,0 +1,180 @@
+package me.golemcore.bot.domain.service;
+
+/*
+ * Copyright 2026 Aleksei Kuleshov
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * Contact: alex@kuleshov.tech
+ */
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.loop.AgentLoop;
+import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.port.outbound.SessionPort;
+import org.springframework.stereotype.Service;
+
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+
+/**
+ * Coordinates execution of {@link AgentLoop} per session.
+ *
+ * <p>
+ * Supports:
+ * </p>
+ * <ul>
+ * <li>Accept inbound messages while a run is executing (queued).</li>
+ * <li>/stop: interrupt the current run and pause processing until the next
+ * inbound.</li>
+ * <li>After /stop, flush queued user messages into raw history before
+ * processing the next inbound.</li>
+ * </ul>
+ */
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class SessionRunCoordinator {
+
+    private final SessionPort sessionPort;
+    private final AgentLoop agentLoop;
+    private final ExecutorService sessionRunExecutor;
+
+    private final Map<SessionKey, SessionRunner> runners = new ConcurrentHashMap<>();
+
+    public void enqueue(Message inbound) {
+        SessionKey key = new SessionKey(inbound.getChannelType(), inbound.getChatId());
+        SessionRunner runner = runners.computeIfAbsent(key, k -> new SessionRunner());
+        runner.enqueue(inbound);
+    }
+
+    public void requestStop(String channelType, String chatId) {
+        SessionKey key = new SessionKey(channelType, chatId);
+        SessionRunner runner = runners.computeIfAbsent(key, k -> new SessionRunner());
+        runner.requestStop();
+    }
+
+    private final class SessionRunner {
+
+        private final Object lock = new Object();
+        private final Deque<Message> queuedMessages = new ArrayDeque<>();
+
+        private boolean pausedAfterStop = false;
+        private Future<?> runningTask;
+
+        void enqueue(Message inbound) {
+            Objects.requireNonNull(inbound, "inbound");
+
+            synchronized (lock) {
+                if (pausedAfterStop) {
+                    resumeWithInbound(inbound);
+                    return;
+                }
+
+                if (isRunning()) {
+                    queuedMessages.addLast(inbound);
+                    return;
+                }
+            }
+
+            startRun(inbound, new ArrayDeque<>());
+        }
+
+        void requestStop() {
+            synchronized (lock) {
+                pausedAfterStop = true;
+                if (runningTask != null) {
+                    boolean cancelled = runningTask.cancel(true);
+                    log.info("[Stop] cancel requested (cancelled={})", cancelled);
+                } else {
+                    log.info("[Stop] stop requested while idle");
+                }
+            }
+        }
+
+        private void resumeWithInbound(Message inbound) {
+            Deque<Message> prefix;
+            synchronized (lock) {
+                pausedAfterStop = false;
+                prefix = new ArrayDeque<>(queuedMessages);
+                queuedMessages.clear();
+            }
+            startRun(inbound, prefix);
+        }
+
+        private boolean isRunning() {
+            return runningTask != null && !runningTask.isDone();
+        }
+
+        private void startRun(Message inbound, Deque<Message> prefix) {
+            SessionKey key = new SessionKey(inbound.getChannelType(), inbound.getChatId());
+            runningTask = sessionRunExecutor.submit(() -> {
+                try {
+                    if (!prefix.isEmpty()) {
+                        flushQueuedMessages(key, prefix);
+                    }
+                    agentLoop.processMessage(inbound);
+                } catch (Exception e) { // NOSONAR - must not kill executor thread
+                    log.error("[SessionRunCoordinator] run failed: channel={}, chatId={}: {}",
+                            inbound.getChannelType(), inbound.getChatId(), e.getMessage(), e);
+                } finally {
+                    onRunComplete();
+                }
+            });
+        }
+
+        private void onRunComplete() {
+            Message next = null;
+            synchronized (lock) {
+                if (pausedAfterStop) {
+                    return;
+                }
+                if (!queuedMessages.isEmpty()) {
+                    next = queuedMessages.removeFirst();
+                }
+            }
+            if (next != null) {
+                startRun(next, new ArrayDeque<>());
+            }
+        }
+
+        private void flushQueuedMessages(SessionKey key, Deque<Message> prefix) {
+            AgentSession session = sessionPort.getOrCreate(key.channelType(), key.chatId());
+            int before = session.getMessages().size();
+            for (Message m : prefix) {
+                session.addMessage(m);
+            }
+            try {
+                sessionPort.save(session);
+            } catch (Exception e) { // NOSONAR - best-effort persistence
+                log.error("[SessionRunCoordinator] failed to persist prefix flush: sessionId={}", session.getId(), e);
+            }
+            log.info("[SessionRunCoordinator] flushed {} queued messages ({} -> {})",
+                    prefix.size(), before, session.getMessages().size());
+        }
+    }
+
+    private record SessionKey(String channelType, String chatId) {
+        private SessionKey {
+            Objects.requireNonNull(channelType, "channelType");
+            Objects.requireNonNull(chatId, "chatId");
+        }
+    }
+}
