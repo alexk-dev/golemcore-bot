@@ -82,8 +82,8 @@ public class UserPreferences {
     }
 
     /**
-     * Webhook configuration for inbound HTTP triggers (OpenClaw-style).
-     * Contains global settings and a list of custom hook mappings.
+     * Webhook configuration for inbound HTTP triggers (OpenClaw-style). Contains
+     * global settings and a list of custom hook mappings.
      */
     @Data
     @NoArgsConstructor
@@ -111,8 +111,8 @@ public class UserPreferences {
     }
 
     /**
-     * A single custom hook mapping that transforms external payloads
-     * (GitHub, Stripe, etc.) into wake or agent actions.
+     * A single custom hook mapping that transforms external payloads (GitHub,
+     * Stripe, etc.) into wake or agent actions.
      */
     @Data
     @NoArgsConstructor
@@ -140,8 +140,8 @@ public class UserPreferences {
         private String hmacPrefix;
 
         /**
-         * Message template with {@code {field.path}} placeholders resolved
-         * against the incoming JSON body.
+         * Message template with {@code {field.path}} placeholders resolved against the
+         * incoming JSON body.
          */
         private String messageTemplate;
 
