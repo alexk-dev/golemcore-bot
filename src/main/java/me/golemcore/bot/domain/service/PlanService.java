@@ -92,6 +92,10 @@ public class PlanService {
         return activePlanId;
     }
 
+    public Optional<String> getActivePlanIdOptional() {
+        return Optional.ofNullable(activePlanId);
+    }
+
     public void activatePlanMode(String chatId, String modelTier) {
         Plan plan = createPlan(null, null, chatId, modelTier);
         activePlanId = plan.getId();

@@ -168,7 +168,8 @@ public class CommandRouter implements CommandPort {
             case "skills" -> handleSkills();
             case "tools" -> handleTools();
             case CMD_STATUS -> handleStatus(sessionId);
-            case "new", "reset" -> handleNew(sessionId);
+            case "new" -> handleNew(sessionId);
+            case "reset" -> handleReset(sessionId, chatId);
             case "compact" -> handleCompact(sessionId, args);
             case CMD_HELP -> handleHelp();
             case "tier" -> handleTier(args);
@@ -361,6 +362,15 @@ public class CommandRouter implements CommandPort {
     private CommandResult handleNew(String sessionId) {
         sessionService.clearMessages(sessionId);
         return CommandResult.success(msg("command.new.done"));
+    }
+
+    private CommandResult handleReset(String sessionId, String chatId) {
+        sessionService.clearMessages(sessionId);
+        if (planService.isFeatureEnabled() && planService.isPlanModeActive()) {
+            planService.getActivePlanIdOptional().ifPresent(planService::cancelPlan);
+            planService.deactivatePlanMode();
+        }
+        return CommandResult.success(msg("command.reset.done"));
     }
 
     private CommandResult handleCompact(String sessionId, List<String> args) {

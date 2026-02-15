@@ -267,9 +267,16 @@ class CommandRouterTest {
 
     @Test
     void resetCommand() throws Exception {
+        when(planService.isFeatureEnabled()).thenReturn(true);
+        when(planService.isPlanModeActive()).thenReturn(true);
+        when(planService.getActivePlanIdOptional()).thenReturn(java.util.Optional.of("plan-1"));
+
         CommandPort.CommandResult result = router.execute("reset", List.of(), CTX).get();
+
         assertTrue(result.success());
         verify(sessionService).clearMessages(SESSION_ID);
+        verify(planService).cancelPlan("plan-1");
+        verify(planService).deactivatePlanMode();
     }
 
     @Test
