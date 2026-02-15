@@ -197,6 +197,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         LlmResponse last = context.getAttribute(ContextAttributes.LLM_RESPONSE);
         List<Message.ToolCall> pending = last != null ? last.getToolCalls() : null;
         applyAttachments(context, accumulatedAttachments);
+        context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REACHED, true);
         return stopTurn(context, last, pending, stopReason, llmCalls, toolExecutions);
 
     }

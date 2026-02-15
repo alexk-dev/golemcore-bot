@@ -571,6 +571,43 @@ class OutgoingResponsePreparationSystemTest {
         assertEquals("Tool loop stopped: reached max internal LLM calls (2).", outgoing.getText());
     }
 
+    // ── process: tool loop limit i18n override ──
+
+    @Test
+    void shouldOverrideTextWithI18nWhenToolLoopLimitReached() {
+        AgentContext context = buildContext();
+        LlmResponse response = LlmResponse.builder()
+                .content("Tool loop stopped: reached max internal LLM calls (200).")
+                .build();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+        context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REACHED, true);
+
+        String i18nMessage = "Autonomous work limit reached. Send \"continue\" to resume.";
+        when(preferencesService.getMessage("system.toolloop.limit")).thenReturn(i18nMessage);
+
+        AgentContext result = system.process(context);
+
+        OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        assertNotNull(outgoing);
+        assertEquals(i18nMessage, outgoing.getText(),
+                "User-facing text should be the i18n message, not the technical stop reason");
+    }
+
+    @Test
+    void shouldNotOverrideTextWhenToolLoopLimitNotReached() {
+        AgentContext context = buildContext();
+        LlmResponse response = LlmResponse.builder()
+                .content("Normal response text")
+                .build();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+
+        AgentContext result = system.process(context);
+
+        OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        assertNotNull(outgoing);
+        assertEquals("Normal response text", outgoing.getText());
+    }
+
     @Test
     void shouldSkipToolCallResponseWhenFinalAnswerNotReady() {
         AgentContext context = buildContext();
