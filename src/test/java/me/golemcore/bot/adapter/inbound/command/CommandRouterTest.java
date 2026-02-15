@@ -89,6 +89,7 @@ class CommandRouterTest {
     private PlanService planService;
     private PlanExecutionService planExecutionService;
     private ScheduleService scheduleService;
+    private SessionRunCoordinator runCoordinator;
     private ApplicationEventPublisher eventPublisher;
     private CommandRouter router;
 
@@ -130,7 +131,7 @@ class CommandRouterTest {
         planService = mock(PlanService.class);
         planExecutionService = mock(PlanExecutionService.class);
         scheduleService = mock(ScheduleService.class);
-        SessionRunCoordinator runCoordinator = mock(SessionRunCoordinator.class);
+        runCoordinator = mock(SessionRunCoordinator.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
 
         ToolComponent tool1 = mockTool(TOOL_FILESYSTEM, "File system operations", true);
@@ -182,6 +183,7 @@ class CommandRouterTest {
         assertTrue(router.hasCommand(CMD_SCHEDULE));
         assertTrue(router.hasCommand("plan"));
         assertTrue(router.hasCommand("plans"));
+        assertTrue(router.hasCommand("stop"));
         assertFalse(router.hasCommand("unknown"));
         assertFalse(router.hasCommand("settings"));
     }
@@ -1290,5 +1292,22 @@ class CommandRouterTest {
                 List.of(CMD_GOAL, TEST_GOAL_ID), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.schedule.goal.usage"));
+    }
+
+    // ===== Stop command =====
+
+    @Test
+    void stopCommandRequestsStop() throws Exception {
+        CommandPort.CommandResult result = router.execute("stop", List.of(), CTX_WITH_CHANNEL).get();
+        assertTrue(result.success());
+        assertTrue(result.output().contains("command.stop.ack"));
+        verify(runCoordinator).requestStop(CHANNEL_TYPE_TELEGRAM, CHAT_ID);
+    }
+
+    @Test
+    void stopCommandFailsWithoutChannel() throws Exception {
+        CommandPort.CommandResult result = router.execute("stop", List.of(), CTX).get();
+        assertFalse(result.success());
+        assertTrue(result.output().contains("command.stop.notAvailable"));
     }
 }

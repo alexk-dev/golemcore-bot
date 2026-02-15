@@ -9,11 +9,13 @@ import org.junit.jupiter.api.Test;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -75,6 +77,92 @@ class SessionRunCoordinatorTest {
             verify(agentLoop, times(2)).processMessage(any(Message.class));
             verify(agentLoop, times(1)).processMessage(a);
             verify(agentLoop, times(1)).processMessage(d);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void shouldHandleStopWhenIdle() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+
+        try {
+            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor);
+
+            // requestStop when no task is running should not throw
+            coordinator.requestStop(CHANNEL_TYPE, CHAT_ID);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void shouldProcessQueuedMessageAfterRunCompletes() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor);
+
+            Message a = user("A");
+            Message b = user("B");
+
+            Gate gateA = new Gate();
+            CountDownLatch bProcessed = new CountDownLatch(1);
+
+            org.mockito.Mockito.doAnswer(inv -> {
+                gateA.await();
+                return null;
+            }).when(agentLoop).processMessage(a);
+
+            org.mockito.Mockito.doAnswer(inv -> {
+                bProcessed.countDown();
+                return null;
+            }).when(agentLoop).processMessage(b);
+
+            // Start first run
+            coordinator.enqueue(a);
+            gateA.awaitStarted();
+
+            // Queue second message while first is running
+            coordinator.enqueue(b);
+
+            // Release first run — onRunComplete should pick up B
+            gateA.release();
+
+            // Wait for B to be processed before shutting down
+            assertTrue(bProcessed.await(2, TimeUnit.SECONDS), "B should have been processed");
+
+            verify(agentLoop, times(1)).processMessage(a);
+            verify(agentLoop, times(1)).processMessage(b);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void shouldHandleExceptionInProcessMessage() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor);
+
+            Message a = user("A");
+            org.mockito.Mockito.doThrow(new RuntimeException("boom"))
+                    .when(agentLoop).processMessage(a);
+
+            coordinator.enqueue(a);
+
+            executor.shutdown();
+            executor.awaitTermination(2, TimeUnit.SECONDS);
+
+            // Should not propagate — executor thread stays alive
+            verify(agentLoop, times(1)).processMessage(a);
         } finally {
             executor.shutdownNow();
         }
