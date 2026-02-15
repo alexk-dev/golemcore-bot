@@ -133,16 +133,33 @@ Notes:
 - The `provider` in `models.json` must match the provider key under `bot.llm.langchain4j.providers.*`.
 - Non-Anthropic providers are treated as OpenAI-compatible by the adapter.
 
-### LangChain4j Model Timeout
+### LLM Request Timeout
 
-Controls request timeout passed directly to LangChain4j chat model builders (OpenAI and Anthropic).
+Canonical per-request timeout applied by the active LLM adapter (currently used by LangChain4j model builders).
 
-export BOT_LLM_LANGCHAIN4J_TIMEOUT_MS=300000
+```bash
+export BOT_LLM_REQUEST_TIMEOUT=PT300S
+```
 
-- Default: 300000 ms (300 seconds)
-- Applies to model-level timeout in LangChain4j
-- Independent from generic bot.http.* client timeouts
+- Type: ISO-8601 `Duration` (e.g., `PT60S`, `PT5M`, `PT1H`)
+- Default: `PT300S` (5 minutes)
+- This is *not* the same as `bot.http.*` timeouts (those are for generic HTTP clients)
 
+---
+
+## Turn Budget (Single-turn autonomy)
+
+These limits protect the tool loop from runaway iterations and ensure a single user request can run autonomously for a long time.
+
+```bash
+export BOT_TURN_DEADLINE=PT60M
+export BOT_TURN_MAX_LLM_CALLS=200
+export BOT_TURN_MAX_TOOL_EXECUTIONS=500
+```
+
+- `BOT_TURN_DEADLINE` — max wall-clock time for one turn (default: 60 minutes)
+- `BOT_TURN_MAX_LLM_CALLS` — max LLM requests per turn (default: 200)
+- `BOT_TURN_MAX_TOOL_EXECUTIONS` — max tool executions per turn (default: 500)
 
 ---
 
