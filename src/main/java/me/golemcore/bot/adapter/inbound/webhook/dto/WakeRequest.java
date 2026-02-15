@@ -27,8 +27,8 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Request body for {@code POST /api/hooks/wake} — fire-and-forget event trigger.
- * Injects a system event into an existing or new session.
+ * Request body for {@code POST /api/hooks/wake} — fire-and-forget event
+ * trigger. Injects a system event into an existing or new session.
  */
 @Data
 @Builder
