@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -350,6 +351,45 @@ class SessionServiceTest {
         session.addMessage(Message.builder().role(ROLE_USER).content(MSG_PREFIX).timestamp(Instant.now()).build());
 
         assertTrue(service.getMessagesToCompact(SESSION_ID, 5).isEmpty());
+    }
+
+    // ==================== listAll ====================
+
+    @Test
+    void listAllReturnsCachedSessions() {
+        when(storagePort.getText(SESSIONS_DIR, SESSION_FILE))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
+        when(storagePort.listObjects(anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(List.of()));
+
+        service.getOrCreate(CHANNEL_TELEGRAM, CHAT_ID);
+        List<AgentSession> all = service.listAll();
+
+        assertFalse(all.isEmpty());
+        assertEquals(SESSION_ID, all.get(0).getId());
+    }
+
+    @Test
+    void listAllScansStorageDirectory() {
+        when(storagePort.listObjects(anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(List.of("web:999.json")));
+        when(storagePort.getText(SESSIONS_DIR, "web:999.json"))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("not found")));
+
+        List<AgentSession> all = service.listAll();
+
+        // Verifies listObjects was called to scan storage
+        verify(storagePort).listObjects(SESSIONS_DIR, "");
+        assertNotNull(all);
+    }
+
+    @Test
+    void listAllHandlesStorageScanFailure() {
+        when(storagePort.listObjects(anyString(), anyString()))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("scan error")));
+
+        List<AgentSession> all = service.listAll();
+        assertNotNull(all);
     }
 
     // ==================== getMessageCount ====================
