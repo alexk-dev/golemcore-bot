@@ -136,11 +136,20 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                     // Control tool: do not execute; let PlanFinalizationSystem handle it.
                     context.setAttribute(ContextAttributes.PLAN_SET_CONTENT_REQUESTED, true);
 
+                    String md = null;
+                    if (tc.getArguments() != null && tc.getArguments().get("plan_markdown") instanceof String) {
+                        md = (String) tc.getArguments().get("plan_markdown");
+                    }
+                    if (md == null || md.isBlank()) {
+                        md = "[Plan draft received]";
+                    }
+
                     ToolExecutionOutcome synthetic = new ToolExecutionOutcome(
                             tc.getId(), tc.getName(),
-                            me.golemcore.bot.domain.model.ToolResult.success("[Plan draft received]"),
-                            "[Plan draft received]", true, null);
+                            me.golemcore.bot.domain.model.ToolResult.success(md),
+                            md, true, null);
                     historyWriter.appendToolResult(context, synthetic);
+                    context.addToolResult(tc.getId(), me.golemcore.bot.domain.model.ToolResult.success(md));
                     toolExecutions++;
                     continue;
                 }

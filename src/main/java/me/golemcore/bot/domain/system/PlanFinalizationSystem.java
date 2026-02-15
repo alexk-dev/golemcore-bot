@@ -84,12 +84,8 @@ public class PlanFinalizationSystem implements AgentSystem {
             finalizeRequested = response.getToolCalls().stream()
                     .anyMatch(tc -> me.golemcore.bot.tools.PlanSetContentTool.TOOL_NAME.equals(tc.getName()));
         }
-
-        if (finalizeRequested) {
-            context.setAttribute(ContextAttributes.PLAN_SET_CONTENT_REQUESTED, true);
-        }
-
-        return finalizeRequested;
+        return finalizeRequested
+                || Boolean.TRUE.equals(context.getAttribute(ContextAttributes.PLAN_SET_CONTENT_REQUESTED));
     }
 
     @Override
@@ -104,15 +100,8 @@ public class PlanFinalizationSystem implements AgentSystem {
         Plan plan = activePlan.get();
         String chatId = context.getSession().getChatId();
 
-        // Empty plan ? cancel and let normal response routing proceed
-        if (plan.getSteps() != null && plan.getSteps().isEmpty()) {
-            log.info("[PlanSetContent] Empty plan, cancelling");
-            planService.cancelPlan(plan.getId());
-            return context;
-        }
-
         LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
-        PlanSetContentArgs finalizeArgs = PlanSetContentArgs.from(response);
+        PlanSetContentArgs finalizeArgs = PlanSetContentArgs.from(response, context);
         if (finalizeArgs == null || finalizeArgs.planMarkdown() == null || finalizeArgs.planMarkdown().isBlank()) {
             log.warn("[PlanSetContent] plan_set_content called without plan_markdown");
             return context;
@@ -133,7 +122,7 @@ public class PlanFinalizationSystem implements AgentSystem {
     private record PlanSetContentArgs(String planMarkdown, String title) {
 
         @SuppressWarnings("unchecked")
-        static PlanSetContentArgs from(LlmResponse response) {
+        static PlanSetContentArgs from(LlmResponse response, AgentContext context) {
             if (response == null || response.getToolCalls() == null) {
                 return null;
             }
@@ -143,6 +132,12 @@ public class PlanFinalizationSystem implements AgentSystem {
                     .map(tc -> {
                         Map<String, Object> args = tc.getArguments() != null ? tc.getArguments() : Map.of();
                         Object md = args.get("plan_markdown");
+                        if (!(md instanceof String) && context != null && context.getToolResults() != null) {
+                            var tr = context.getToolResults().get(tc.getId() != null ? tc.getId() : tc.getName());
+                            if (tr != null && tr.isSuccess() && tr.getOutput() != null) {
+                                md = tr.getOutput();
+                            }
+                        }
                         Object title = args.get("title");
                         return new PlanSetContentArgs(md instanceof String ? (String) md : null,
                                 title instanceof String ? (String) title : null);

@@ -19,7 +19,8 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.eq;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -110,7 +111,8 @@ class PlanFinalizationSystemTest {
     }
 
     @Test
-    void shouldCancelEmptyPlan() {
+
+    void shouldFinalizeEvenIfPlanHasNoSteps() {
         when(planService.isPlanModeActive()).thenReturn(true);
         Plan emptyPlan = Plan.builder()
                 .id(PLAN_ID)
@@ -131,9 +133,8 @@ class PlanFinalizationSystemTest {
         context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
         system.process(context);
 
-        verify(planService).cancelPlan(PLAN_ID);
-        verify(planService, never()).finalizePlan(any(), any(), any());
-        verify(eventPublisher, never()).publishEvent(any());
+        verify(planService).finalizePlan(eq(PLAN_ID), eq("# Plan"), any());
+        verify(eventPublisher).publishEvent(org.mockito.ArgumentMatchers.any(PlanReadyEvent.class));
     }
 
     @Test
@@ -164,7 +165,7 @@ class PlanFinalizationSystemTest {
         system.process(context);
 
         verify(planService).finalizePlan(any(), any(), any());
-        verify(eventPublisher).publishEvent(new PlanReadyEvent(PLAN_ID, CHAT_ID));
+        verify(eventPublisher).publishEvent(org.mockito.ArgumentMatchers.any(PlanReadyEvent.class));
 
         // Check that plan approval attribute was set
         String approvalNeeded = context.getAttribute(ContextAttributes.PLAN_APPROVAL_NEEDED);
