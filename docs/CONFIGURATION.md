@@ -671,10 +671,52 @@ export BOT_ROUTER_BALANCED_MODEL=custom/my-model
 
 ---
 
+## Webhooks
+
+> **Deep dive:** See [Webhooks Guide](WEBHOOKS.md) for the full endpoint reference, custom mappings, message templates, and architecture.
+
+Webhook configuration is stored in **UserPreferences** (not environment variables). Edit via bot conversation or directly in `~/.golemcore/workspace/preferences/settings.json`:
+
+```json
+{
+  "webhooks": {
+    "enabled": true,
+    "token": "your-secret-token",
+    "maxPayloadSize": 65536,
+    "defaultTimeoutSeconds": 300,
+    "mappings": []
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `webhooks.enabled` | boolean | `false` | Master switch for all webhook endpoints |
+| `webhooks.token` | string | `null` | Shared secret for Bearer authentication |
+| `webhooks.maxPayloadSize` | int | `65536` | Max payload size in bytes (64KB) |
+| `webhooks.defaultTimeoutSeconds` | int | `300` | Default timeout for `/agent` runs |
+| `webhooks.mappings` | array | `[]` | Custom hook mappings |
+
+**Endpoints:**
+- `POST /api/hooks/wake` — fire-and-forget event trigger (200 OK)
+- `POST /api/hooks/agent` — full agent turn, async (202 Accepted)
+- `POST /api/hooks/{name}` — custom mapped webhook
+
+**Quick test:**
+```bash
+curl -X POST http://localhost:8080/api/hooks/wake \
+  -H "Authorization: Bearer your-secret-token" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Hello from webhook"}'
+```
+
+---
+
 ## See Also
 
 - [Quick Start](QUICKSTART.md)
 - [Skills Guide](SKILLS.md)
 - [Tools Reference](TOOLS.md)
 - [MCP Integration](MCP.md)
+- [Webhooks Guide](WEBHOOKS.md)
 - [Deployment Guide](DEPLOYMENT.md)

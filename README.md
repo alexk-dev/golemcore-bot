@@ -125,7 +125,8 @@ Full reference (90+ variables, examples, mail/voice/rate limits/security): **[do
 3. **[Model Routing](docs/MODEL_ROUTING.md)** (tiers)
 4. **[Auto Mode](docs/AUTO_MODE.md)**
 5. **[Memory](docs/MEMORY.md)** + **[RAG](docs/RAG.md)**
-6. **[Deployment](docs/DEPLOYMENT.md)**
+6. **[Webhooks](docs/WEBHOOKS.md)** (HTTP triggers, custom mappings, callbacks)
+7. **[Deployment](docs/DEPLOYMENT.md)**
 
 ---
 
