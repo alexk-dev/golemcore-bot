@@ -71,9 +71,9 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         int toolExecutions = 0;
         List<Attachment> accumulatedAttachments = new ArrayList<>();
 
-        int maxLlmCalls = settings != null ? settings.getMaxLlmCalls() : 6;
-        int maxToolExecutions = settings != null ? settings.getMaxToolExecutions() : 50;
-        long deadlineMs = settings != null ? settings.getDeadlineMs() : 30000L;
+        int maxLlmCalls = settings != null ? settings.getMaxLlmCalls() : 200;
+        int maxToolExecutions = settings != null ? settings.getMaxToolExecutions() : 500;
+        long deadlineMs = settings != null ? settings.getDeadlineMs() : 3600000L;
         boolean stopOnToolFailure = settings != null && settings.isStopOnToolFailure();
         boolean stopOnConfirmationDenied = settings == null || settings.isStopOnConfirmationDenied();
         boolean stopOnToolPolicyDenied = settings != null && settings.isStopOnToolPolicyDenied();

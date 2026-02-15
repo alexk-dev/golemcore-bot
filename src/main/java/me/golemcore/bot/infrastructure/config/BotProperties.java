@@ -451,15 +451,15 @@ public class BotProperties {
         /**
          * Max number of internal LLM calls allowed within a single pipeline pass.
          */
-        private int maxLlmCalls = 6;
+        private int maxLlmCalls = 200;
         /**
          * Max number of tool executions allowed within a single pipeline pass.
          */
-        private int maxToolExecutions = 50;
+        private int maxToolExecutions = 500;
         /**
-         * Max wall-clock time budget for the internal loop (ms).
+         * Max wall-clock time budget for the internal loop (ms). Default: 1 hour.
          */
-        private long deadlineMs = 30000;
+        private long deadlineMs = 3600000;
         /**
          * If true, stop the internal loop immediately after the first tool failure
          * (ToolResult.success=false).
