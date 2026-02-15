@@ -38,6 +38,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
     private final ToolExecutorPort toolExecutor;
     private final HistoryWriter historyWriter;
     private final ConversationViewBuilder viewBuilder;
+    private final BotProperties.TurnProperties turnSettings;
     private final BotProperties.ToolLoopProperties settings;
     private final BotProperties.ModelRouterProperties router;
     private final PlanService planService;
@@ -58,9 +59,35 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         this.historyWriter = historyWriter;
         this.viewBuilder = viewBuilder;
         this.settings = settings;
+        this.turnSettings = null;
         this.router = router;
         this.planService = planService;
         this.clock = clock;
+    }
+
+    public DefaultToolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutor, HistoryWriter historyWriter,
+            ConversationViewBuilder viewBuilder, BotProperties.TurnProperties turnSettings,
+            BotProperties.ToolLoopProperties settings, BotProperties.ModelRouterProperties router,
+            PlanService planService) {
+        this(llmPort, toolExecutor, historyWriter, viewBuilder, turnSettings, settings, router, planService,
+                Clock.systemUTC());
+    }
+
+    // Visible for testing
+    public DefaultToolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutor, HistoryWriter historyWriter,
+            ConversationViewBuilder viewBuilder, BotProperties.TurnProperties turnSettings,
+            BotProperties.ToolLoopProperties settings, BotProperties.ModelRouterProperties router,
+            PlanService planService, Clock clock) {
+        this.llmPort = llmPort;
+        this.toolExecutor = toolExecutor;
+        this.historyWriter = historyWriter;
+        this.viewBuilder = viewBuilder;
+        this.turnSettings = turnSettings;
+        this.settings = settings;
+        this.router = router;
+        this.planService = planService;
+        this.clock = clock;
+
     }
 
     @Override
@@ -71,14 +98,15 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         int toolExecutions = 0;
         List<Attachment> accumulatedAttachments = new ArrayList<>();
 
-        int maxLlmCalls = settings != null ? settings.getMaxLlmCalls() : 200;
-        int maxToolExecutions = settings != null ? settings.getMaxToolExecutions() : 500;
-        long deadlineMs = settings != null ? settings.getDeadlineMs() : 3600000L;
+        int maxLlmCalls = turnSettings != null ? turnSettings.getMaxLlmCalls() : 200;
+        int maxToolExecutions = turnSettings != null ? turnSettings.getMaxToolExecutions() : 500;
+        java.time.Duration turnDeadline = turnSettings != null ? turnSettings.getDeadline()
+                : java.time.Duration.ofHours(1);
         boolean stopOnToolFailure = settings != null && settings.isStopOnToolFailure();
         boolean stopOnConfirmationDenied = settings == null || settings.isStopOnConfirmationDenied();
         boolean stopOnToolPolicyDenied = settings != null && settings.isStopOnToolPolicyDenied();
 
-        Instant deadline = clock.instant().plusMillis(deadlineMs);
+        Instant deadline = clock.instant().plus(turnDeadline);
 
         while (llmCalls < maxLlmCalls && toolExecutions < maxToolExecutions && clock.instant().isBefore(deadline)) {
             // 1) LLM call

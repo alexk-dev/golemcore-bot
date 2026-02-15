@@ -187,7 +187,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 .modelName(modelName)
                 .maxRetries(0) // Retry handled by our backoff logic
                 .maxTokens(4096)
-                .timeout(Duration.ofMillis(properties.getLlm().getLangchain4j().getTimeoutMs()));
+                .timeout(properties.getLlm().getRequestTimeout());
 
         if (config.getBaseUrl() != null) {
             builder.baseUrl(config.getBaseUrl());
@@ -206,7 +206,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 .apiKey(config.getApiKey())
                 .modelName(modelName)
                 .maxRetries(0) // Retry handled by our backoff logic
-                .timeout(Duration.ofMillis(properties.getLlm().getLangchain4j().getTimeoutMs()));
+                .timeout(properties.getLlm().getRequestTimeout());
 
         if (config.getBaseUrl() != null) {
             builder.baseUrl(config.getBaseUrl());

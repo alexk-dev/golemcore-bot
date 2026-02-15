@@ -46,6 +46,6 @@ public class ToolLoopConfiguration {
             HistoryWriter historyWriter, ConversationViewBuilder viewBuilder, BotProperties botProperties,
             PlanService planService) {
         return new DefaultToolLoopSystem(llmPort, toolExecutorPort, historyWriter, viewBuilder,
-                botProperties.getToolLoop(), botProperties.getRouter(), planService);
+                botProperties.getTurn(), botProperties.getToolLoop(), botProperties.getRouter(), planService);
     }
 }

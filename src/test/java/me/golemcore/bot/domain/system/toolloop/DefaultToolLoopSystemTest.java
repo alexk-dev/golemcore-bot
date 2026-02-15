@@ -60,6 +60,8 @@ class DefaultToolLoopSystemTest {
     @Mock
     private PlanService planService;
 
+    private BotProperties.TurnProperties turnSettings;
+
     private BotProperties.ToolLoopProperties settings;
     private BotProperties.ModelRouterProperties router;
     private Clock clock;
@@ -71,9 +73,6 @@ class DefaultToolLoopSystemTest {
         clock = Clock.fixed(Instant.parse("2026-02-14T00:00:00Z"), ZoneId.of("UTC"));
 
         settings = new BotProperties.ToolLoopProperties();
-        settings.setMaxLlmCalls(6);
-        settings.setMaxToolExecutions(50);
-        settings.setDeadlineMs(30000L);
         settings.setStopOnToolFailure(false);
         settings.setStopOnConfirmationDenied(true);
         settings.setStopOnToolPolicyDenied(false);
@@ -87,8 +86,9 @@ class DefaultToolLoopSystemTest {
         when(viewBuilder.buildView(any(), any()))
                 .thenReturn(new ConversationView(List.of(), List.of()));
 
-        system = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, viewBuilder, settings, router,
-                planService, clock);
+        turnSettings = new BotProperties.TurnProperties();
+        system = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, viewBuilder,
+                turnSettings, settings, router, planService, clock);
     }
 
     private AgentContext buildContext() {
@@ -321,7 +321,7 @@ class DefaultToolLoopSystemTest {
 
     @Test
     void shouldStopWhenMaxLlmCallsReached() {
-        settings.setMaxLlmCalls(2);
+        turnSettings.setMaxLlmCalls(2);
         AgentContext context = buildContext();
         Message.ToolCall tc = toolCall(TOOL_CALL_ID, TOOL_NAME);
 
@@ -340,7 +340,7 @@ class DefaultToolLoopSystemTest {
 
     @Test
     void shouldStopWhenMaxToolExecutionsReached() {
-        settings.setMaxToolExecutions(1);
+        turnSettings.setMaxToolExecutions(1);
         AgentContext context = buildContext();
         Message.ToolCall tc1 = toolCall(TOOL_CALL_ID, TOOL_NAME);
         Message.ToolCall tc2 = toolCall("tc-2", TOOL_NAME);
@@ -620,7 +620,7 @@ class DefaultToolLoopSystemTest {
 
     @Test
     void shouldSkipDuplicateSyntheticResultsInStopTurn() {
-        settings.setMaxLlmCalls(1);
+        turnSettings.setMaxLlmCalls(1);
         AgentContext context = buildContext();
         Message.ToolCall tc1 = toolCall(TOOL_CALL_ID, TOOL_NAME);
         Message.ToolCall tc2 = toolCall("tc-2", TOOL_NAME);
@@ -645,7 +645,7 @@ class DefaultToolLoopSystemTest {
 
     @Test
     void shouldReplaceLlmResponseWithCleanResponseOnStop() {
-        settings.setMaxLlmCalls(1);
+        turnSettings.setMaxLlmCalls(1);
         AgentContext context = buildContext();
         Message.ToolCall tc = toolCall(TOOL_CALL_ID, TOOL_NAME);
 

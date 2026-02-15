@@ -113,6 +113,7 @@ class ToolLoopSystemBddTest {
                         null));
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
+        BotProperties.TurnProperties turn = new BotProperties.TurnProperties();
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
         BotProperties.ModelRouterProperties router = new BotProperties.ModelRouterProperties();
 
@@ -122,6 +123,7 @@ class ToolLoopSystemBddTest {
                 historyWriter,
                 new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
+                turn,
                 settings,
                 router,
                 null,
@@ -232,6 +234,7 @@ class ToolLoopSystemBddTest {
                 });
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
+        BotProperties.TurnProperties turn = new BotProperties.TurnProperties();
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
         BotProperties.ModelRouterProperties router = new BotProperties.ModelRouterProperties();
 
@@ -241,6 +244,7 @@ class ToolLoopSystemBddTest {
                 historyWriter,
                 new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
+                turn,
                 settings,
                 router,
                 null,
@@ -324,6 +328,7 @@ class ToolLoopSystemBddTest {
                         null));
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
+        BotProperties.TurnProperties turn = new BotProperties.TurnProperties();
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
         BotProperties.ModelRouterProperties router = new BotProperties.ModelRouterProperties();
 
@@ -333,6 +338,7 @@ class ToolLoopSystemBddTest {
                 historyWriter,
                 new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
+                turn,
                 settings,
                 router,
                 null,
@@ -379,10 +385,11 @@ class ToolLoopSystemBddTest {
 
         ToolExecutorPort toolExecutor = mock(ToolExecutorPort.class);
 
+        BotProperties.TurnProperties turn = new BotProperties.TurnProperties();
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
-        settings.setMaxLlmCalls(100);
-        settings.setMaxToolExecutions(100);
-        settings.setDeadlineMs(5000);
+        turn.setMaxLlmCalls(100);
+        turn.setMaxToolExecutions(100);
+        turn.setDeadline(java.time.Duration.ofMillis(5000));
 
         Instant start = NOW;
         Clock fastClock = new Clock() {
@@ -420,6 +427,7 @@ class ToolLoopSystemBddTest {
                 historyWriter,
                 new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
+                turn,
                 settings,
                 router,
                 null,
@@ -471,10 +479,11 @@ class ToolLoopSystemBddTest {
         when(toolExecutor.execute(any(AgentContext.class), any(Message.ToolCall.class)))
                 .thenThrow(new RuntimeException("kaboom"));
 
+        BotProperties.TurnProperties turn = new BotProperties.TurnProperties();
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
-        settings.setMaxLlmCalls(5);
-        settings.setMaxToolExecutions(5);
-        settings.setDeadlineMs(30000);
+        turn.setMaxLlmCalls(5);
+        turn.setMaxToolExecutions(5);
+        turn.setDeadline(java.time.Duration.ofMillis(30000));
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
         BotProperties.ModelRouterProperties router = new BotProperties.ModelRouterProperties();
@@ -484,6 +493,7 @@ class ToolLoopSystemBddTest {
                 historyWriter,
                 new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
+                turn,
                 settings,
                 router,
                 null,
@@ -550,10 +560,11 @@ class ToolLoopSystemBddTest {
                         false,
                         null));
 
+        BotProperties.TurnProperties turn = new BotProperties.TurnProperties();
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
-        settings.setMaxLlmCalls(10);
-        settings.setMaxToolExecutions(10);
-        settings.setDeadlineMs(30000);
+        turn.setMaxLlmCalls(10);
+        turn.setMaxToolExecutions(10);
+        turn.setDeadline(java.time.Duration.ofMillis(30000));
         settings.setStopOnToolFailure(true);
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
@@ -564,6 +575,7 @@ class ToolLoopSystemBddTest {
                 historyWriter,
                 new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
+                turn,
                 settings,
                 router,
                 null,
@@ -616,10 +628,11 @@ class ToolLoopSystemBddTest {
                         false,
                         null));
 
+        BotProperties.TurnProperties turn = new BotProperties.TurnProperties();
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
-        settings.setMaxLlmCalls(10);
-        settings.setMaxToolExecutions(10);
-        settings.setDeadlineMs(30000);
+        turn.setMaxLlmCalls(10);
+        turn.setMaxToolExecutions(10);
+        turn.setDeadline(java.time.Duration.ofMillis(30000));
         settings.setStopOnConfirmationDenied(true);
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
@@ -630,6 +643,7 @@ class ToolLoopSystemBddTest {
                 historyWriter,
                 new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
+                turn,
                 settings,
                 router,
                 null,
@@ -682,10 +696,11 @@ class ToolLoopSystemBddTest {
                         false,
                         null));
 
+        BotProperties.TurnProperties turn = new BotProperties.TurnProperties();
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
-        settings.setMaxLlmCalls(10);
-        settings.setMaxToolExecutions(10);
-        settings.setDeadlineMs(30000);
+        turn.setMaxLlmCalls(10);
+        turn.setMaxToolExecutions(10);
+        turn.setDeadline(java.time.Duration.ofMillis(30000));
         settings.setStopOnToolPolicyDenied(true);
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
@@ -696,6 +711,7 @@ class ToolLoopSystemBddTest {
                 historyWriter,
                 new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
+                turn,
                 settings,
                 router,
                 null,
@@ -779,6 +795,7 @@ class ToolLoopSystemBddTest {
                         screenshot));
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
+        BotProperties.TurnProperties turn = new BotProperties.TurnProperties();
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
         BotProperties.ModelRouterProperties router = new BotProperties.ModelRouterProperties();
 
@@ -788,6 +805,7 @@ class ToolLoopSystemBddTest {
                 historyWriter,
                 new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
+                turn,
                 settings,
                 router,
                 null,
