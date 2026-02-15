@@ -311,7 +311,8 @@ public class ContextBuildingSystem implements AgentSystem {
         } else if (userTier != null) {
             context.setModelTier(userTier);
         }
-        // else: null → "balanced" in LlmExecutionSystem
+        // else: keep null. Downstream LLM execution treats null as the default tier
+        // (currently "balanced") and resolves model selection accordingly.
     }
 
     private boolean isAutoModeMessage(AgentContext context) {
