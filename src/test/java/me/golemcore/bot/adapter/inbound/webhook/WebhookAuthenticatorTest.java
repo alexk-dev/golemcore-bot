@@ -14,6 +14,11 @@ import static org.mockito.Mockito.*;
 class WebhookAuthenticatorTest {
 
     private static final String SECRET = "test-secret-token";
+    private static final String HOOK_NAME = "github";
+    private static final String AUTH_HMAC = "hmac";
+    private static final String HMAC_HEADER = "x-hub-signature-256";
+    private static final String HMAC_SECRET = "webhook-secret";
+    private static final String HMAC_PREFIX = "sha256=";
 
     private UserPreferencesService preferencesService;
     private WebhookAuthenticator authenticator;
@@ -100,7 +105,7 @@ class WebhookAuthenticatorTest {
         when(preferencesService.getPreferences()).thenReturn(prefs);
 
         HttpHeaders headers = new HttpHeaders();
-        headers.set(HttpHeaders.AUTHORIZATION, "Bearer test");
+        headers.set(HttpHeaders.AUTHORIZATION, "Bearer test-value");
 
         assertFalse(authenticator.authenticateBearer(headers));
     }
@@ -109,39 +114,25 @@ class WebhookAuthenticatorTest {
 
     @Test
     void shouldAcceptValidHmacSignature() {
-        UserPreferences.HookMapping mapping = UserPreferences.HookMapping.builder()
-                .name("github")
-                .authMode("hmac")
-                .hmacHeader("x-hub-signature-256")
-                .hmacSecret("webhook-secret")
-                .hmacPrefix("sha256=")
-                .build();
+        UserPreferences.HookMapping mapping = buildHmacMapping();
 
         byte[] body = "{\"action\":\"push\"}".getBytes(StandardCharsets.UTF_8);
-
-        // Pre-compute expected HMAC
-        String expectedSignature = computeHmac("webhook-secret", body);
+        String expectedSignature = computeHmac(HMAC_SECRET, body);
 
         HttpHeaders headers = new HttpHeaders();
-        headers.set("x-hub-signature-256", "sha256=" + expectedSignature);
+        headers.set(HMAC_HEADER, HMAC_PREFIX + expectedSignature);
 
         assertTrue(authenticator.authenticateHmac(mapping, headers, body));
     }
 
     @Test
     void shouldRejectInvalidHmacSignature() {
-        UserPreferences.HookMapping mapping = UserPreferences.HookMapping.builder()
-                .name("github")
-                .authMode("hmac")
-                .hmacHeader("x-hub-signature-256")
-                .hmacSecret("webhook-secret")
-                .hmacPrefix("sha256=")
-                .build();
+        UserPreferences.HookMapping mapping = buildHmacMapping();
 
         byte[] body = "{\"action\":\"push\"}".getBytes(StandardCharsets.UTF_8);
 
         HttpHeaders headers = new HttpHeaders();
-        headers.set("x-hub-signature-256", "sha256=deadbeef");
+        headers.set(HMAC_HEADER, HMAC_PREFIX + "deadbeef");
 
         assertFalse(authenticator.authenticateHmac(mapping, headers, body));
     }
@@ -149,10 +140,10 @@ class WebhookAuthenticatorTest {
     @Test
     void shouldRejectMissingHmacHeader() {
         UserPreferences.HookMapping mapping = UserPreferences.HookMapping.builder()
-                .name("github")
-                .authMode("hmac")
-                .hmacHeader("x-hub-signature-256")
-                .hmacSecret("webhook-secret")
+                .name(HOOK_NAME)
+                .authMode(AUTH_HMAC)
+                .hmacHeader(HMAC_HEADER)
+                .hmacSecret(HMAC_SECRET)
                 .build();
 
         HttpHeaders headers = new HttpHeaders();
@@ -163,16 +154,10 @@ class WebhookAuthenticatorTest {
 
     @Test
     void shouldRejectWhenHmacPrefixMissing() {
-        UserPreferences.HookMapping mapping = UserPreferences.HookMapping.builder()
-                .name("github")
-                .authMode("hmac")
-                .hmacHeader("x-hub-signature-256")
-                .hmacSecret("webhook-secret")
-                .hmacPrefix("sha256=")
-                .build();
+        UserPreferences.HookMapping mapping = buildHmacMapping();
 
         HttpHeaders headers = new HttpHeaders();
-        headers.set("x-hub-signature-256", "no-prefix-here");
+        headers.set(HMAC_HEADER, "no-prefix-here");
         byte[] body = "{}".getBytes(StandardCharsets.UTF_8);
 
         assertFalse(authenticator.authenticateHmac(mapping, headers, body));
@@ -183,7 +168,7 @@ class WebhookAuthenticatorTest {
     @Test
     void shouldDispatchToBearerWhenAuthModeIsBearer() {
         UserPreferences.HookMapping mapping = UserPreferences.HookMapping.builder()
-                .name("test")
+                .name("dispatch-test")
                 .authMode("bearer")
                 .build();
 
@@ -196,13 +181,13 @@ class WebhookAuthenticatorTest {
     @Test
     void shouldDispatchToHmacWhenAuthModeIsHmac() {
         UserPreferences.HookMapping mapping = UserPreferences.HookMapping.builder()
-                .name("test")
-                .authMode("hmac")
+                .name("dispatch-test")
+                .authMode(AUTH_HMAC)
                 .hmacHeader("x-sig")
                 .hmacSecret("s3cret")
                 .build();
 
-        byte[] body = "test".getBytes(StandardCharsets.UTF_8);
+        byte[] body = "test-body".getBytes(StandardCharsets.UTF_8);
         String sig = computeHmac("s3cret", body);
 
         HttpHeaders headers = new HttpHeaders();
@@ -211,7 +196,16 @@ class WebhookAuthenticatorTest {
         assertTrue(authenticator.authenticate(mapping, headers, body));
     }
 
-    // Helper: compute HMAC-SHA256 hex
+    private UserPreferences.HookMapping buildHmacMapping() {
+        return UserPreferences.HookMapping.builder()
+                .name(HOOK_NAME)
+                .authMode(AUTH_HMAC)
+                .hmacHeader(HMAC_HEADER)
+                .hmacSecret(HMAC_SECRET)
+                .hmacPrefix(HMAC_PREFIX)
+                .build();
+    }
+
     private String computeHmac(String secret, byte[] data) {
         try {
             javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");

@@ -44,7 +44,7 @@ public class WebhookResponse {
     private String chatId;
 
     /** Error message (only when {@code status="error"}). */
-    private String error;
+    private String errorMessage;
 
     public static WebhookResponse accepted(String chatId) {
         return WebhookResponse.builder()
@@ -64,7 +64,7 @@ public class WebhookResponse {
     public static WebhookResponse error(String message) {
         return WebhookResponse.builder()
                 .status("error")
-                .error(message)
+                .errorMessage(message)
                 .build();
     }
 }

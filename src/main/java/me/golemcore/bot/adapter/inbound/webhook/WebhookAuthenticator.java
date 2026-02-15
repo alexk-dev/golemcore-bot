@@ -52,6 +52,7 @@ public class WebhookAuthenticator {
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String CUSTOM_HEADER = "X-Golemcore-Token";
     private static final String HMAC_ALGORITHM = "HmacSHA256";
+    private static final String AUTH_MODE_HMAC = "hmac";
 
     private final UserPreferencesService preferencesService;
 
@@ -138,7 +139,7 @@ public class WebhookAuthenticator {
      * HMAC depending on the mapping's {@code authMode}.
      */
     public boolean authenticate(UserPreferences.HookMapping mapping, HttpHeaders headers, byte[] body) {
-        if ("hmac".equals(mapping.getAuthMode())) {
+        if (AUTH_MODE_HMAC.equals(mapping.getAuthMode())) {
             return authenticateHmac(mapping, headers, body);
         }
         return authenticateBearer(headers);

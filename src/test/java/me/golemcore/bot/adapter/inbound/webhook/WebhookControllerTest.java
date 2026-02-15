@@ -1,5 +1,7 @@
 package me.golemcore.bot.adapter.inbound.webhook;
 
+import me.golemcore.bot.adapter.inbound.webhook.dto.AgentRequest;
+import me.golemcore.bot.adapter.inbound.webhook.dto.WakeRequest;
 import me.golemcore.bot.adapter.inbound.webhook.dto.WebhookResponse;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.UserPreferences;
@@ -19,6 +21,9 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class WebhookControllerTest {
+
+    private static final String TOKEN = "test-token-value";
+    private static final String SAMPLE_TEXT = "sample-input";
 
     private UserPreferencesService preferencesService;
     private WebhookAuthenticator authenticator;
@@ -41,13 +46,7 @@ class WebhookControllerTest {
                 preferencesService, authenticator, channelAdapter,
                 transformer, eventPublisher, inputSanitizer);
 
-        UserPreferences prefs = UserPreferences.builder()
-                .webhooks(UserPreferences.WebhookConfig.builder()
-                        .enabled(true)
-                        .token("secret")
-                        .build())
-                .build();
-        when(preferencesService.getPreferences()).thenReturn(prefs);
+        when(preferencesService.getPreferences()).thenReturn(buildEnabledPrefs());
         when(authenticator.authenticateBearer(any())).thenReturn(true);
     }
 
@@ -55,8 +54,7 @@ class WebhookControllerTest {
 
     @Test
     void wakeShouldAcceptValidRequest() {
-        me.golemcore.bot.adapter.inbound.webhook.dto.WakeRequest request = me.golemcore.bot.adapter.inbound.webhook.dto.WakeRequest
-                .builder()
+        WakeRequest request = WakeRequest.builder()
                 .text("CI build failed")
                 .chatId("webhook:ci")
                 .build();
@@ -83,10 +81,7 @@ class WebhookControllerTest {
                 .build();
         when(preferencesService.getPreferences()).thenReturn(prefs);
 
-        me.golemcore.bot.adapter.inbound.webhook.dto.WakeRequest request = me.golemcore.bot.adapter.inbound.webhook.dto.WakeRequest
-                .builder()
-                .text("test")
-                .build();
+        WakeRequest request = WakeRequest.builder().text(SAMPLE_TEXT).build();
 
         ResponseEntity<WebhookResponse> response = controller.wake(request, new HttpHeaders()).block();
 
@@ -98,10 +93,7 @@ class WebhookControllerTest {
     void wakeShouldReturnUnauthorizedOnBadToken() {
         when(authenticator.authenticateBearer(any())).thenReturn(false);
 
-        me.golemcore.bot.adapter.inbound.webhook.dto.WakeRequest request = me.golemcore.bot.adapter.inbound.webhook.dto.WakeRequest
-                .builder()
-                .text("test")
-                .build();
+        WakeRequest request = WakeRequest.builder().text(SAMPLE_TEXT).build();
 
         ResponseEntity<WebhookResponse> response = controller.wake(request, new HttpHeaders()).block();
 
@@ -111,10 +103,7 @@ class WebhookControllerTest {
 
     @Test
     void wakeShouldReturnBadRequestWhenTextMissing() {
-        me.golemcore.bot.adapter.inbound.webhook.dto.WakeRequest request = me.golemcore.bot.adapter.inbound.webhook.dto.WakeRequest
-                .builder()
-                .text(null)
-                .build();
+        WakeRequest request = WakeRequest.builder().text(null).build();
 
         ResponseEntity<WebhookResponse> response = controller.wake(request, new HttpHeaders()).block();
 
@@ -124,10 +113,7 @@ class WebhookControllerTest {
 
     @Test
     void wakeShouldWrapPayloadWithSafetyMarkers() {
-        me.golemcore.bot.adapter.inbound.webhook.dto.WakeRequest request = me.golemcore.bot.adapter.inbound.webhook.dto.WakeRequest
-                .builder()
-                .text("External event")
-                .build();
+        WakeRequest request = WakeRequest.builder().text("External event").build();
 
         controller.wake(request, new HttpHeaders()).block();
 
@@ -143,8 +129,7 @@ class WebhookControllerTest {
 
     @Test
     void agentShouldReturn202WithRunId() {
-        me.golemcore.bot.adapter.inbound.webhook.dto.AgentRequest request = me.golemcore.bot.adapter.inbound.webhook.dto.AgentRequest
-                .builder()
+        AgentRequest request = AgentRequest.builder()
                 .message("Summarize issues")
                 .name("Daily Digest")
                 .model("smart")
@@ -161,9 +146,8 @@ class WebhookControllerTest {
 
     @Test
     void agentShouldUseProvidedChatId() {
-        me.golemcore.bot.adapter.inbound.webhook.dto.AgentRequest request = me.golemcore.bot.adapter.inbound.webhook.dto.AgentRequest
-                .builder()
-                .message("Test")
+        AgentRequest request = AgentRequest.builder()
+                .message("Test msg")
                 .chatId("my-session")
                 .build();
 
@@ -175,10 +159,7 @@ class WebhookControllerTest {
 
     @Test
     void agentShouldReturnBadRequestWhenMessageMissing() {
-        me.golemcore.bot.adapter.inbound.webhook.dto.AgentRequest request = me.golemcore.bot.adapter.inbound.webhook.dto.AgentRequest
-                .builder()
-                .message(null)
-                .build();
+        AgentRequest request = AgentRequest.builder().message(null).build();
 
         ResponseEntity<WebhookResponse> response = controller.agent(request, new HttpHeaders()).block();
 
@@ -188,9 +169,8 @@ class WebhookControllerTest {
 
     @Test
     void agentShouldRegisterPendingRun() {
-        me.golemcore.bot.adapter.inbound.webhook.dto.AgentRequest request = me.golemcore.bot.adapter.inbound.webhook.dto.AgentRequest
-                .builder()
-                .message("Test")
+        AgentRequest request = AgentRequest.builder()
+                .message("Test msg")
                 .callbackUrl("https://example.com/callback")
                 .model("coding")
                 .build();
@@ -210,14 +190,7 @@ class WebhookControllerTest {
                 .action("wake")
                 .messageTemplate("Push to {repository.name}")
                 .build();
-        UserPreferences prefs = UserPreferences.builder()
-                .webhooks(UserPreferences.WebhookConfig.builder()
-                        .enabled(true)
-                        .token("secret")
-                        .mappings(List.of(mapping))
-                        .build())
-                .build();
-        when(preferencesService.getPreferences()).thenReturn(prefs);
+        when(preferencesService.getPreferences()).thenReturn(buildPrefsWithMapping(mapping));
         when(authenticator.authenticate(any(), any(), any())).thenReturn(true);
         when(transformer.transform(eq("Push to {repository.name}"), any()))
                 .thenReturn("Push to myapp");
@@ -242,23 +215,16 @@ class WebhookControllerTest {
     @Test
     void customHookShouldReturn401OnAuthFailure() {
         UserPreferences.HookMapping mapping = UserPreferences.HookMapping.builder()
-                .name("test")
+                .name("auth-fail")
                 .authMode("hmac")
                 .hmacHeader("x-sig")
-                .hmacSecret("secret")
+                .hmacSecret("hmac-key")
                 .build();
-        UserPreferences prefs = UserPreferences.builder()
-                .webhooks(UserPreferences.WebhookConfig.builder()
-                        .enabled(true)
-                        .token("secret")
-                        .mappings(List.of(mapping))
-                        .build())
-                .build();
-        when(preferencesService.getPreferences()).thenReturn(prefs);
+        when(preferencesService.getPreferences()).thenReturn(buildPrefsWithMapping(mapping));
         when(authenticator.authenticate(any(), any(), any())).thenReturn(false);
 
         byte[] body = "{}".getBytes();
-        ResponseEntity<WebhookResponse> response = controller.customHook("test", body, new HttpHeaders()).block();
+        ResponseEntity<WebhookResponse> response = controller.customHook("auth-fail", body, new HttpHeaders()).block();
 
         assertNotNull(response);
         assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
@@ -269,12 +235,12 @@ class WebhookControllerTest {
         UserPreferences.HookMapping mapping = UserPreferences.HookMapping.builder()
                 .name("big")
                 .action("wake")
-                .messageTemplate("test")
+                .messageTemplate("payload-test")
                 .build();
         UserPreferences prefs = UserPreferences.builder()
                 .webhooks(UserPreferences.WebhookConfig.builder()
                         .enabled(true)
-                        .token("secret")
+                        .token(TOKEN)
                         .maxPayloadSize(10)
                         .mappings(List.of(mapping))
                         .build())
@@ -297,22 +263,35 @@ class WebhookControllerTest {
                 .messageTemplate("Process: {event}")
                 .model("smart")
                 .build();
-        UserPreferences prefs = UserPreferences.builder()
-                .webhooks(UserPreferences.WebhookConfig.builder()
-                        .enabled(true)
-                        .token("secret")
-                        .mappings(List.of(mapping))
-                        .build())
-                .build();
-        when(preferencesService.getPreferences()).thenReturn(prefs);
+        when(preferencesService.getPreferences()).thenReturn(buildPrefsWithMapping(mapping));
         when(authenticator.authenticate(any(), any(), any())).thenReturn(true);
         when(transformer.transform(any(), any())).thenReturn("Process: deploy");
 
         byte[] body = "{\"event\":\"deploy\"}".getBytes();
-        ResponseEntity<WebhookResponse> response = controller.customHook("agent-hook", body, new HttpHeaders()).block();
+        ResponseEntity<WebhookResponse> response = controller.customHook("agent-hook", body, new HttpHeaders())
+                .block();
 
         assertNotNull(response);
         assertEquals(HttpStatus.ACCEPTED, response.getStatusCode());
         assertNotNull(response.getBody().getRunId());
+    }
+
+    private UserPreferences buildEnabledPrefs() {
+        return UserPreferences.builder()
+                .webhooks(UserPreferences.WebhookConfig.builder()
+                        .enabled(true)
+                        .token(TOKEN)
+                        .build())
+                .build();
+    }
+
+    private UserPreferences buildPrefsWithMapping(UserPreferences.HookMapping mapping) {
+        return UserPreferences.builder()
+                .webhooks(UserPreferences.WebhookConfig.builder()
+                        .enabled(true)
+                        .token(TOKEN)
+                        .mappings(List.of(mapping))
+                        .build())
+                .build();
     }
 }

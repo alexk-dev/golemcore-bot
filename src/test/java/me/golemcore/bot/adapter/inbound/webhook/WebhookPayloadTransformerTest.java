@@ -9,6 +9,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class WebhookPayloadTransformerTest {
 
+    private static final String RAW_JSON = "{\"raw\":\"data\"}";
+
     private WebhookPayloadTransformer transformer;
 
     @BeforeEach
@@ -49,20 +51,20 @@ class WebhookPayloadTransformerTest {
 
     @Test
     void shouldReturnRawBodyWhenTemplateIsNull() {
-        byte[] body = "{\"raw\":\"data\"}".getBytes(StandardCharsets.UTF_8);
+        byte[] body = RAW_JSON.getBytes(StandardCharsets.UTF_8);
 
         String result = transformer.transform(null, body);
 
-        assertEquals("{\"raw\":\"data\"}", result);
+        assertEquals(RAW_JSON, result);
     }
 
     @Test
     void shouldReturnRawBodyWhenTemplateIsBlank() {
-        byte[] body = "{\"raw\":\"data\"}".getBytes(StandardCharsets.UTF_8);
+        byte[] body = RAW_JSON.getBytes(StandardCharsets.UTF_8);
 
         String result = transformer.transform("  ", body);
 
-        assertEquals("{\"raw\":\"data\"}", result);
+        assertEquals(RAW_JSON, result);
     }
 
     @Test
