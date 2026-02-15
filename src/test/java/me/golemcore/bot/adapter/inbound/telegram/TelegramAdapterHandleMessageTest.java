@@ -22,7 +22,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
@@ -42,6 +41,7 @@ class TelegramAdapterHandleMessageTest {
     private UserPreferencesService preferencesService;
     private MessageService messageService;
     private ApplicationEventPublisher eventPublisher;
+    private TelegramMenuHandler menuHandler;
     private Consumer<Message> messageHandler;
 
     @BeforeEach
@@ -62,6 +62,7 @@ class TelegramAdapterHandleMessageTest {
         commandRouter = mock(CommandPort.class);
         preferencesService = mock(UserPreferencesService.class);
         messageService = mock(MessageService.class);
+        menuHandler = mock(TelegramMenuHandler.class);
 
         adapter = new TelegramAdapter(
                 properties,
@@ -71,7 +72,8 @@ class TelegramAdapterHandleMessageTest {
                 preferencesService,
                 messageService,
                 new TestObjectProvider<>(commandRouter),
-                mock(TelegramVoiceHandler.class));
+                mock(TelegramVoiceHandler.class),
+                menuHandler);
         adapter.setTelegramClient(telegramClient);
 
         messageHandler = mock(Consumer.class);
@@ -118,25 +120,22 @@ class TelegramAdapterHandleMessageTest {
     }
 
     @Test
-    void shouldHandleSettingsCommand() throws Exception {
-        when(preferencesService.getMessage("settings.title")).thenReturn("Settings");
-        when(preferencesService.getMessage(anyString())).thenReturn("Settings");
-        when(preferencesService.getMessage(eq("settings.language.current"), anyString())).thenReturn("Language: EN");
-        when(preferencesService.getMessage("settings.language.select")).thenReturn("Select language:");
-        when(preferencesService.getLanguage()).thenReturn("en");
-        when(messageService.getLanguageDisplayName("en")).thenReturn("English");
-        when(preferencesService.getMessage("button.language.en")).thenReturn("English");
-        when(preferencesService.getMessage("button.language.ru")).thenReturn("Russian");
-
-        when(telegramClient.execute(any(SendMessage.class)))
-                .thenReturn(mock(org.telegram.telegrambots.meta.api.objects.message.Message.class));
-
+    void shouldDelegateSettingsToMenuHandler() {
         Update update = createTextUpdate(123L, 100L, "/settings");
         adapter.consume(update);
 
-        // Settings should be handled directly, not routed to commandRouter
+        verify(menuHandler).sendMainMenu("100");
         verify(commandRouter, never()).hasCommand("settings");
-        verify(telegramClient, timeout(2000)).execute(any(SendMessage.class));
+        verify(messageHandler, never()).accept(any());
+    }
+
+    @Test
+    void shouldDelegateMenuCommandToMenuHandler() {
+        Update update = createTextUpdate(123L, 100L, "/menu");
+        adapter.consume(update);
+
+        verify(menuHandler).sendMainMenu("100");
+        verify(commandRouter, never()).hasCommand("menu");
         verify(messageHandler, never()).accept(any());
     }
 
