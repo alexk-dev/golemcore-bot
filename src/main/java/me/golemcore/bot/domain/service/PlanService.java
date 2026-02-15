@@ -338,8 +338,8 @@ public class PlanService {
         StringBuilder sb = new StringBuilder();
         sb.append("# Plan Mode\n\n");
         sb.append("You are in PLAN MODE. Tool calls will be collected as plan steps, NOT executed immediately.\n");
-        sb.append(
-                "Continue proposing tool calls to build the plan. When done, respond with a summary of the plan.\n\n");
+        sb.append("Continue proposing tool calls to build the plan. ");
+        sb.append("When the plan is complete, call the plan_finalize tool.\n\n");
 
         if (!plan.getSteps().isEmpty()) {
             sb.append("## Collected Steps (").append(plan.getSteps().size()).append(")\n");
@@ -354,8 +354,9 @@ public class PlanService {
         sb.append("## Instructions\n");
         sb.append("1. Propose tool calls for the remaining steps of your plan\n");
         sb.append("2. Each tool call will be recorded but NOT executed\n");
-        sb.append("3. When the plan is complete, respond with a text summary (no tool calls)\n");
-        sb.append("4. The user will review and approve the plan before execution\n");
+        sb.append("3. When the plan is complete, call the plan_finalize tool\n");
+        sb.append("4. Optionally provide a brief summary for the user\n");
+        sb.append("5. The user will review and approve the plan before execution\n");
 
         return sb.toString();
     }
