@@ -650,7 +650,8 @@ public class CommandRouter implements CommandPort {
             return CommandResult.success(msg("command.plan.not-active"));
         }
 
-        planService.getActivePlan().ifPresent(plan -> planService.cancelPlan(plan.getId()));
+        // "Done" means: stop plan drafting mode.
+        // The plan itself is finalized via the plan_set_content tool.
         planService.deactivatePlanMode();
         return CommandResult.success(msg("command.plan.done"));
     }

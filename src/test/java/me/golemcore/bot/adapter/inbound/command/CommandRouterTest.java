@@ -696,7 +696,7 @@ class CommandRouterTest {
     }
 
     @Test
-    void planDoneCancelsActivePlan() throws Exception {
+    void planDoneDeactivatesPlanMode() throws Exception {
         when(planService.isFeatureEnabled()).thenReturn(true);
         when(planService.isPlanModeActive()).thenReturn(true);
         Plan plan = buildPlan(PLAN_ID_FULL, Plan.PlanStatus.COLLECTING, List.of(), null);
@@ -704,7 +704,7 @@ class CommandRouterTest {
 
         CommandPort.CommandResult result = router.execute(CMD_PLAN, List.of("done"), CTX_WITH_CHANNEL).get();
         assertTrue(result.success());
-        verify(planService).cancelPlan(PLAN_ID_FULL);
+        verify(planService, never()).cancelPlan(any());
         verify(planService).deactivatePlanMode();
     }
 
