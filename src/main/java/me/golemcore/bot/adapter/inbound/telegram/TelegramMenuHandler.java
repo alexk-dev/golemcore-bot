@@ -42,6 +42,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Handles the /menu command and all menu:* callback queries.
@@ -84,7 +85,7 @@ public class TelegramMenuHandler {
     private final MessageService messageService;
     private final ObjectProvider<CommandPort> commandRouter;
 
-    private volatile TelegramClient telegramClient;
+    private final AtomicReference<TelegramClient> telegramClient = new AtomicReference<>();
 
     public TelegramMenuHandler(
             BotProperties properties,
@@ -107,11 +108,11 @@ public class TelegramMenuHandler {
      * Package-private setter for testing.
      */
     void setTelegramClient(TelegramClient client) {
-        this.telegramClient = client;
+        this.telegramClient.set(client);
     }
 
     private TelegramClient getOrCreateClient() {
-        TelegramClient client = this.telegramClient;
+        TelegramClient client = this.telegramClient.get();
         if (client != null) {
             return client;
         }
@@ -123,8 +124,9 @@ public class TelegramMenuHandler {
         if (token == null || token.isBlank()) {
             return null;
         }
-        this.telegramClient = new OkHttpTelegramClient(token);
-        return this.telegramClient;
+        OkHttpTelegramClient newClient = new OkHttpTelegramClient(token);
+        this.telegramClient.compareAndSet(null, newClient);
+        return this.telegramClient.get();
     }
 
     // ==================== Public API ====================
