@@ -46,7 +46,10 @@ public class AgentRequest {
     /** Session key. Defaults to {@code "hook:<uuid>"}. */
     private String chatId;
 
-    /** Model tier override ({@code balanced}, {@code smart}, {@code coding}, {@code deep}). */
+    /**
+     * Model tier override ({@code balanced}, {@code smart}, {@code coding},
+     * {@code deep}).
+     */
     private String model;
 
     /** Route agent response to a messaging channel. */

@@ -19,6 +19,7 @@
 package me.golemcore.bot.adapter.inbound.webhook.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -44,7 +45,8 @@ public class WebhookResponse {
     private String chatId;
 
     /** Error message (only when {@code status="error"}). */
-    private String error;
+    @JsonProperty("error")
+    private String errorMessage;
 
     public static WebhookResponse accepted(String chatId) {
         return WebhookResponse.builder()
@@ -64,7 +66,7 @@ public class WebhookResponse {
     public static WebhookResponse error(String message) {
         return WebhookResponse.builder()
                 .status("error")
-                .error(message)
+                .errorMessage(message)
                 .build();
     }
 }

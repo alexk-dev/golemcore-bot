@@ -33,12 +33,15 @@ import java.util.function.Consumer;
 /**
  * {@link ChannelPort} implementation for the webhook channel.
  *
- * <p>When the agent pipeline produces a response via {@code ResponseRoutingSystem},
- * this adapter captures it. For {@code /agent} requests the response is stored in
- * a {@link CompletableFuture} keyed by chatId, and optionally delivered via
- * {@link WebhookCallbackSender} to a callback URL.
+ * <p>
+ * When the agent pipeline produces a response via
+ * {@code ResponseRoutingSystem}, this adapter captures it. For {@code /agent}
+ * requests the response is stored in a {@link CompletableFuture} keyed by
+ * chatId, and optionally delivered via {@link WebhookCallbackSender} to a
+ * callback URL.
  *
- * <p>Cross-channel delivery (e.g. forwarding a webhook-triggered response to
+ * <p>
+ * Cross-channel delivery (e.g. forwarding a webhook-triggered response to
  * Telegram) is handled by the controller layer which resolves the target
  * channel from the channel registry.
  */
@@ -52,8 +55,8 @@ public class WebhookChannelAdapter implements ChannelPort {
     private final WebhookCallbackSender callbackSender;
 
     /**
-     * Pending agent run futures keyed by chatId. When {@code sendMessage} is
-     * called by the pipeline, the future is completed with the response text.
+     * Pending agent run futures keyed by chatId. When {@code sendMessage} is called
+     * by the pipeline, the future is completed with the response text.
      */
     private final Map<String, CompletableFuture<String>> pendingResponses = new ConcurrentHashMap<>();
 
@@ -133,10 +136,14 @@ public class WebhookChannelAdapter implements ChannelPort {
     /**
      * Registers a pending agent run so the response can be captured.
      *
-     * @param chatId      session identifier
-     * @param runId       unique run identifier
-     * @param callbackUrl optional URL to POST results to
-     * @param model       model tier used
+     * @param chatId
+     *            session identifier
+     * @param runId
+     *            unique run identifier
+     * @param callbackUrl
+     *            optional URL to POST results to
+     * @param model
+     *            model tier used
      * @return a future that completes with the agent response text
      */
     public CompletableFuture<String> registerPendingRun(String chatId, String runId,

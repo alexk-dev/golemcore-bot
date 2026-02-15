@@ -27,10 +27,11 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Transforms arbitrary JSON payloads into message strings using templates
- * with {@code {field.path}} placeholders.
+ * Transforms arbitrary JSON payloads into message strings using templates with
+ * {@code {field.path}} placeholders.
  *
- * <p>Example template: {@code "Push to {repository.name} by {pusher.name}"}
+ * <p>
+ * Example template: {@code "Push to {repository.name} by {pusher.name}"}
  * applied to a GitHub push event extracts nested JSON values via dot-notation.
  */
 @Component
@@ -45,8 +46,10 @@ public class WebhookPayloadTransformer {
      * Applies the template to the raw JSON payload, resolving all
      * {@code {field.path}} placeholders.
      *
-     * @param template message template with placeholders
-     * @param rawBody  raw JSON bytes from the incoming request
+     * @param template
+     *            message template with placeholders
+     * @param rawBody
+     *            raw JSON bytes from the incoming request
      * @return resolved message string, with unresolved placeholders replaced by
      *         {@code <missing>}
      */
