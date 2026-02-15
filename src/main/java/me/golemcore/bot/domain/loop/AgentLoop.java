@@ -168,9 +168,18 @@ public class AgentLoop {
             }
             // Guarantee ThreadLocal cleanup even if systems throw unexpectedly
             AgentContextHolder.clear();
+
+            // Persist the session even if loop/routing fails unexpectedly.
+            // This prevents losing the last inbound message (and any history mutations
+            // already applied)
+            // on restart/crash.
+            try {
+                sessionService.save(session);
+            } catch (Exception e) { // NOSONAR - last resort, must not break finally
+                log.error("Failed to persist session in finally: {}", session.getId(), e);
+            }
         }
 
-        sessionService.save(session);
         log.info("=== MESSAGE PROCESSING COMPLETE ===");
     }
 
