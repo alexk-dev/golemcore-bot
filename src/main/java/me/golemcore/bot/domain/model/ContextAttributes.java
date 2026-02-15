@@ -82,4 +82,7 @@ public final class ContextAttributes {
      */
     public static final String TOOL_LOOP_LIMIT_REACHED = "toolloop.limit.reached";
 
+    /** WebSocketSession — reference to WebSocket session for streaming. */
+    public static final String WEB_STREAM_SINK = "web.stream.sink";
+
 }
