@@ -126,6 +126,7 @@ Send `/help` to your bot on Telegram to see available commands.
 | `/new` or `/reset` | Start new conversation |
 | `/compact [N]` | Compact conversation history, keep last N messages (default: 10) |
 | `/stop` | Stop the current run (interrupt) |
+| `/model [subcommand]` | Per-user model selection (list, set, reset) |
 | `/tier [tier] [force]` | Set model tier (balanced/smart/coding/deep) |
 | `/settings` | Change language (Telegram only) |
 
@@ -154,6 +155,14 @@ Control which model handles your requests. See [Model Routing Guide](MODEL_ROUTI
 ```
 
 Skills can also declare a preferred tier via `model_tier` in their YAML frontmatter.
+
+Override which model is used for each tier with `/model`:
+```bash
+# In chat:
+/model list                      # See available models
+/model coding openai/gpt-5.2    # Set specific model for coding tier
+/model coding reasoning high     # Change reasoning level
+```
 
 ### Web Search (Brave)
 
