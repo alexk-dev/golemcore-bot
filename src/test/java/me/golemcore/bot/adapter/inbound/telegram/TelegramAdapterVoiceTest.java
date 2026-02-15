@@ -50,7 +50,7 @@ class TelegramAdapterVoiceTest {
                 mock(TelegramBotsLongPollingApplication.class),
                 mock(UserPreferencesService.class),
                 mock(MessageService.class),
-                mock(CommandPort.class),
+                new TestObjectProvider<>(mock(CommandPort.class)),
                 mock(TelegramVoiceHandler.class));
         adapter.setTelegramClient(telegramClient);
     }

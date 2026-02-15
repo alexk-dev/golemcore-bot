@@ -29,7 +29,7 @@ import java.util.concurrent.TimeUnit;
 @Configuration
 public class SessionRunConfiguration {
 
-    private final ExecutorService sessionRunExecutor = Executors.newCachedThreadPool(r -> {
+    private final ExecutorService executor = Executors.newCachedThreadPool(r -> {
         Thread t = new Thread(r, "session-run");
         t.setDaemon(true);
         return t;
@@ -37,14 +37,14 @@ public class SessionRunConfiguration {
 
     @Bean
     public ExecutorService sessionRunExecutor() {
-        return sessionRunExecutor;
+        return executor;
     }
 
     @PreDestroy
     public void shutdown() {
-        sessionRunExecutor.shutdownNow();
+        executor.shutdownNow();
         try {
-            sessionRunExecutor.awaitTermination(2, TimeUnit.SECONDS);
+            executor.awaitTermination(2, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }

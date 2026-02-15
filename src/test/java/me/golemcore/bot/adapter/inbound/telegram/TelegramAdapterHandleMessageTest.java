@@ -70,7 +70,7 @@ class TelegramAdapterHandleMessageTest {
                 mock(TelegramBotsLongPollingApplication.class),
                 preferencesService,
                 messageService,
-                commandRouter,
+                new TestObjectProvider<>(commandRouter),
                 mock(TelegramVoiceHandler.class));
         adapter.setTelegramClient(telegramClient);
 

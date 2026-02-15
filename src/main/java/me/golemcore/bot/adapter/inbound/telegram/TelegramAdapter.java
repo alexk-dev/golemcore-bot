@@ -31,6 +31,7 @@ import me.golemcore.bot.port.inbound.CommandPort;
 import me.golemcore.bot.security.AllowlistValidator;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
@@ -109,7 +110,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
     private final TelegramBotsLongPollingApplication botsApplication;
     private final UserPreferencesService preferencesService;
     private final MessageService messageService;
-    private final CommandPort commandRouter;
+    private final ObjectProvider<CommandPort> commandRouter;
     private final TelegramVoiceHandler voiceHandler;
 
     private TelegramClient telegramClient;
@@ -338,9 +339,10 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
                 }
 
                 // Route to CommandRouter
-                if (commandRouter.hasCommand(cmd)) {
+                CommandPort router = commandRouter.getIfAvailable();
+                if (router != null && router.hasCommand(cmd)) {
                     List<String> args = parts.length > 1
-                            ? Arrays.asList(parts[1].split("\\s+"))
+                            ? Arrays.asList(parts[1].split("\s+"))
                             : List.of();
                     String sessionId = CHANNEL_TYPE + ":" + chatId;
                     Map<String, Object> ctx = Map.<String, Object>of(
@@ -348,7 +350,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
                             "chatId", chatId,
                             "channelType", CHANNEL_TYPE);
                     try {
-                        var result = commandRouter.execute(cmd, args, ctx).join();
+                        var result = router.execute(cmd, args, ctx).join();
                         sendMessage(chatId, result.output());
                     } catch (Exception e) {
                         log.error("Command execution failed: /{}", cmd, e);
