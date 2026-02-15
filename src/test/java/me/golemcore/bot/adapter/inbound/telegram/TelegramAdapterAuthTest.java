@@ -56,7 +56,7 @@ class TelegramAdapterAuthTest {
                 mock(TelegramBotsLongPollingApplication.class),
                 mock(UserPreferencesService.class),
                 messageService,
-                mock(CommandPort.class),
+                new TestObjectProvider<>(mock(CommandPort.class)),
                 mock(TelegramVoiceHandler.class));
         adapter.setTelegramClient(telegramClient);
 

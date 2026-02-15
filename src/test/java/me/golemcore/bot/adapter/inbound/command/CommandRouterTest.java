@@ -19,6 +19,7 @@ import me.golemcore.bot.domain.service.CompactionService;
 import me.golemcore.bot.domain.service.PlanExecutionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.ScheduleService;
+import me.golemcore.bot.domain.service.SessionRunCoordinator;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.CommandPort;
@@ -88,6 +89,7 @@ class CommandRouterTest {
     private PlanService planService;
     private PlanExecutionService planExecutionService;
     private ScheduleService scheduleService;
+    private SessionRunCoordinator runCoordinator;
     private ApplicationEventPublisher eventPublisher;
     private CommandRouter router;
 
@@ -129,6 +131,7 @@ class CommandRouterTest {
         planService = mock(PlanService.class);
         planExecutionService = mock(PlanExecutionService.class);
         scheduleService = mock(ScheduleService.class);
+        runCoordinator = mock(SessionRunCoordinator.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
 
         ToolComponent tool1 = mockTool(TOOL_FILESYSTEM, "File system operations", true);
@@ -148,6 +151,7 @@ class CommandRouterTest {
                 planService,
                 planExecutionService,
                 scheduleService,
+                runCoordinator,
                 eventPublisher,
                 properties);
     }
@@ -179,6 +183,7 @@ class CommandRouterTest {
         assertTrue(router.hasCommand(CMD_SCHEDULE));
         assertTrue(router.hasCommand("plan"));
         assertTrue(router.hasCommand("plans"));
+        assertTrue(router.hasCommand("stop"));
         assertFalse(router.hasCommand("unknown"));
         assertFalse(router.hasCommand("settings"));
     }
@@ -186,7 +191,7 @@ class CommandRouterTest {
     @Test
     void listCommands() {
         List<CommandPort.CommandDefinition> commands = router.listCommands();
-        assertEquals(8, commands.size());
+        assertEquals(9, commands.size());
     }
 
     @Test
@@ -566,7 +571,7 @@ class CommandRouterTest {
         assertTrue(commands.stream().anyMatch(c -> CMD_GOALS.equals(c.name())));
         assertTrue(commands.stream().anyMatch(c -> CMD_DIARY.equals(c.name())));
         assertTrue(commands.stream().anyMatch(c -> CMD_SCHEDULE.equals(c.name())));
-        assertEquals(14, commands.size()); // 8 base + 6 auto mode
+        assertEquals(15, commands.size()); // 8 base + 6 auto mode
     }
 
     @Test
@@ -576,7 +581,7 @@ class CommandRouterTest {
         List<CommandPort.CommandDefinition> commands = router.listCommands();
         assertTrue(commands.stream().anyMatch(c -> "plan".equals(c.name())));
         assertTrue(commands.stream().anyMatch(c -> "plans".equals(c.name())));
-        assertEquals(10, commands.size()); // 8 base + 2 plan
+        assertEquals(11, commands.size()); // 8 base + 2 plan
     }
 
     // ===== Plan commands =====
@@ -1287,5 +1292,22 @@ class CommandRouterTest {
                 List.of(CMD_GOAL, TEST_GOAL_ID), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.schedule.goal.usage"));
+    }
+
+    // ===== Stop command =====
+
+    @Test
+    void stopCommandRequestsStop() throws Exception {
+        CommandPort.CommandResult result = router.execute("stop", List.of(), CTX_WITH_CHANNEL).get();
+        assertTrue(result.success());
+        assertTrue(result.output().contains("command.stop.ack"));
+        verify(runCoordinator).requestStop(CHANNEL_TYPE_TELEGRAM, CHAT_ID);
+    }
+
+    @Test
+    void stopCommandFailsWithoutChannel() throws Exception {
+        CommandPort.CommandResult result = router.execute("stop", List.of(), CTX).get();
+        assertFalse(result.success());
+        assertTrue(result.output().contains("command.stop.notAvailable"));
     }
 }

@@ -11,6 +11,7 @@ import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.ConfirmationPort;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
 import java.util.Base64;
@@ -19,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -39,13 +41,15 @@ public class ToolCallExecutionService {
     private final ToolConfirmationPolicy confirmationPolicy;
     private final ConfirmationPort confirmationPort;
     private final BotProperties properties;
-    private final Map<String, ChannelPort> channelRegistry;
+    private final ObjectProvider<List<ChannelPort>> channelPortsProvider;
+
+    private final AtomicReference<Map<String, ChannelPort>> channelRegistry = new AtomicReference<>();
 
     public ToolCallExecutionService(List<ToolComponent> toolComponents,
             ToolConfirmationPolicy confirmationPolicy,
             ConfirmationPort confirmationPort,
             BotProperties properties,
-            List<ChannelPort> channelPorts) {
+            ObjectProvider<List<ChannelPort>> channelPortsProvider) {
         this.toolRegistry = new ConcurrentHashMap<>();
         for (ToolComponent tool : toolComponents) {
             toolRegistry.put(tool.getToolName(), tool);
@@ -53,10 +57,7 @@ public class ToolCallExecutionService {
         this.confirmationPolicy = confirmationPolicy;
         this.confirmationPort = confirmationPort;
         this.properties = properties;
-        this.channelRegistry = new ConcurrentHashMap<>();
-        for (ChannelPort port : channelPorts) {
-            channelRegistry.put(port.getChannelType(), port);
-        }
+        this.channelPortsProvider = channelPortsProvider;
     }
 
     public ToolCallExecutionResult execute(AgentContext context, Message.ToolCall toolCall) {
@@ -250,11 +251,28 @@ public class ToolCallExecutionService {
         return attachment;
     }
 
+    private Map<String, ChannelPort> getChannelRegistry() {
+        Map<String, ChannelPort> existing = channelRegistry.get();
+        if (existing != null) {
+            return existing;
+        }
+
+        Map<String, ChannelPort> registry = new ConcurrentHashMap<>();
+        List<ChannelPort> ports = channelPortsProvider.getIfAvailable(List::of);
+        for (ChannelPort port : ports) {
+            registry.put(port.getChannelType(), port);
+        }
+
+        Map<String, ChannelPort> immutable = Map.copyOf(registry);
+        channelRegistry.compareAndSet(null, immutable);
+        return channelRegistry.get();
+    }
+
     private void notifyToolExecution(AgentContext context, Message.ToolCall toolCall) {
         try {
             String channelType = context.getSession().getChannelType();
             String chatId = context.getSession().getChatId();
-            ChannelPort channel = channelRegistry.get(channelType);
+            ChannelPort channel = getChannelRegistry().get(channelType);
             if (channel == null) {
                 return;
             }
