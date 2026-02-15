@@ -8,6 +8,7 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.ToolFailureKind;
+import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationView;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
@@ -40,43 +41,44 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
     private final ConversationViewBuilder viewBuilder;
     private final BotProperties.TurnProperties turnSettings;
     private final BotProperties.ToolLoopProperties settings;
-    private final BotProperties.ModelRouterProperties router;
+    private final ModelSelectionService modelSelectionService;
     private final PlanService planService;
     private final Clock clock;
 
     public DefaultToolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutor, HistoryWriter historyWriter,
             ConversationViewBuilder viewBuilder, BotProperties.ToolLoopProperties settings,
-            BotProperties.ModelRouterProperties router, PlanService planService) {
-        this(llmPort, toolExecutor, historyWriter, viewBuilder, settings, router, planService, Clock.systemUTC());
+            ModelSelectionService modelSelectionService, PlanService planService) {
+        this(llmPort, toolExecutor, historyWriter, viewBuilder, settings, modelSelectionService, planService,
+                Clock.systemUTC());
     }
 
     // Visible for testing
     public DefaultToolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutor, HistoryWriter historyWriter,
             ConversationViewBuilder viewBuilder, BotProperties.ToolLoopProperties settings,
-            BotProperties.ModelRouterProperties router, PlanService planService, Clock clock) {
+            ModelSelectionService modelSelectionService, PlanService planService, Clock clock) {
         this.llmPort = llmPort;
         this.toolExecutor = toolExecutor;
         this.historyWriter = historyWriter;
         this.viewBuilder = viewBuilder;
         this.settings = settings;
         this.turnSettings = null;
-        this.router = router;
+        this.modelSelectionService = modelSelectionService;
         this.planService = planService;
         this.clock = clock;
     }
 
     public DefaultToolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutor, HistoryWriter historyWriter,
             ConversationViewBuilder viewBuilder, BotProperties.TurnProperties turnSettings,
-            BotProperties.ToolLoopProperties settings, BotProperties.ModelRouterProperties router,
+            BotProperties.ToolLoopProperties settings, ModelSelectionService modelSelectionService,
             PlanService planService) {
-        this(llmPort, toolExecutor, historyWriter, viewBuilder, turnSettings, settings, router, planService,
-                Clock.systemUTC());
+        this(llmPort, toolExecutor, historyWriter, viewBuilder, turnSettings, settings, modelSelectionService,
+                planService, Clock.systemUTC());
     }
 
     // Visible for testing
     public DefaultToolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutor, HistoryWriter historyWriter,
             ConversationViewBuilder viewBuilder, BotProperties.TurnProperties turnSettings,
-            BotProperties.ToolLoopProperties settings, BotProperties.ModelRouterProperties router,
+            BotProperties.ToolLoopProperties settings, ModelSelectionService modelSelectionService,
             PlanService planService, Clock clock) {
         this.llmPort = llmPort;
         this.toolExecutor = toolExecutor;
@@ -84,7 +86,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         this.viewBuilder = viewBuilder;
         this.turnSettings = turnSettings;
         this.settings = settings;
-        this.router = router;
+        this.modelSelectionService = modelSelectionService;
         this.planService = planService;
         this.clock = clock;
 
@@ -294,19 +296,19 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
     }
 
     private LlmRequest buildRequest(AgentContext context) {
-        ModelSelection selection = selectModel(context.getModelTier());
+        ModelSelectionService.ModelSelection selection = selectModel(context.getModelTier());
 
-        ConversationView view = viewBuilder.buildView(context, selection.model);
+        ConversationView view = viewBuilder.buildView(context, selection.model());
         if (!view.diagnostics().isEmpty()) {
             log.debug("[ToolLoop] conversation view diagnostics: {}", view.diagnostics());
         }
 
         // Track current model for next request (persisted in session metadata)
-        storeSelectedModel(context, selection.model);
+        storeSelectedModel(context, selection.model());
 
         return LlmRequest.builder()
-                .model(selection.model)
-                .reasoningEffort(selection.reasoning)
+                .model(selection.model())
+                .reasoningEffort(selection.reasoning())
                 .systemPrompt(context.getSystemPrompt())
                 .messages(view.messages())
                 .tools(context.getAvailableTools())
@@ -326,21 +328,10 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         metadata.put(ContextAttributes.LLM_MODEL, model);
     }
 
-    private ModelSelection selectModel(String tier) {
-        // Keep the same tier contract as the previous legacy implementation.
-        // If router is missing (tests / minimal wiring), fall back to provider default.
-        if (router == null) {
-            return new ModelSelection(null, null);
+    private ModelSelectionService.ModelSelection selectModel(String tier) {
+        if (modelSelectionService == null) {
+            return new ModelSelectionService.ModelSelection(null, null);
         }
-
-        return switch (tier != null ? tier : "balanced") {
-        case "deep" -> new ModelSelection(router.getDeepModel(), router.getDeepModelReasoning());
-        case "coding" -> new ModelSelection(router.getCodingModel(), router.getCodingModelReasoning());
-        case "smart" -> new ModelSelection(router.getSmartModel(), router.getSmartModelReasoning());
-        default -> new ModelSelection(router.getBalancedModel(), router.getBalancedModelReasoning());
-        };
-    }
-
-    private record ModelSelection(String model, String reasoning) {
+        return modelSelectionService.resolveForTier(tier);
     }
 }

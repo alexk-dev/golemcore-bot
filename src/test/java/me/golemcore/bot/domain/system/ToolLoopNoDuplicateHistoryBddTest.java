@@ -9,6 +9,7 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
+import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.system.toolloop.DefaultHistoryWriter;
 import me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem;
 import me.golemcore.bot.domain.system.toolloop.ToolExecutionOutcome;
@@ -91,6 +92,10 @@ class ToolLoopNoDuplicateHistoryBddTest {
         when(toolExecutor.execute(any(AgentContext.class), any(Message.ToolCall.class))).thenReturn(
                 new ToolExecutionOutcome("tc1", "shell", ToolResult.success("hello\n"), "hello\n", false, null));
 
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveForTier(any())).thenReturn(
+                new ModelSelectionService.ModelSelection(null, null));
+
         DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
                 llmPort,
                 toolExecutor,
@@ -99,7 +104,7 @@ class ToolLoopNoDuplicateHistoryBddTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 new BotProperties.TurnProperties(),
                 new BotProperties.ToolLoopProperties(),
-                new BotProperties.ModelRouterProperties(),
+                modelSelectionService,
                 null,
                 Clock.fixed(NOW, ZoneOffset.UTC));
 

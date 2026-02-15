@@ -33,6 +33,7 @@ import me.golemcore.bot.domain.model.UsageStats;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.CompactionService;
+import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanExecutionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.ScheduleService;
@@ -103,6 +104,12 @@ public class CommandRouter implements CommandPort {
     private static final String CMD_STATUS = "status";
     private static final int MIN_SCHEDULE_ARGS = 2;
     private static final int MIN_CRON_PARTS_FOR_REPEAT_CHECK = 1;
+    private static final int MIN_REASONING_ARGS = 2;
+    private static final String SUBCMD_LIST = "list";
+    private static final String SUBCMD_RESET = "reset";
+    private static final String SUBCMD_REASONING = "reasoning";
+    private static final String ERR_PROVIDER_NOT_ALLOWED = "provider.not.allowed";
+    private static final String ERR_NO_REASONING = "no.reasoning";
 
     private final SkillComponent skillComponent;
     private final List<ToolComponent> toolComponents;
@@ -111,6 +118,7 @@ public class CommandRouter implements CommandPort {
     private final UserPreferencesService preferencesService;
     private final CompactionService compactionService;
     private final AutoModeService autoModeService;
+    private final ModelSelectionService modelSelectionService;
     private final PlanService planService;
     private final PlanExecutionService planExecutionService;
     private final ScheduleService scheduleService;
@@ -119,8 +127,8 @@ public class CommandRouter implements CommandPort {
     private final BotProperties properties;
 
     private static final List<String> KNOWN_COMMANDS = List.of(
-            "skills", "tools", CMD_STATUS, "new", "reset", "compact", CMD_HELP,
-            "tier", "auto", "goals", CMD_GOAL, "diary", "tasks", "schedule",
+            "skills", "tools", CMD_STATUS, "new", SUBCMD_RESET, "compact", CMD_HELP,
+            "tier", "model", "auto", "goals", CMD_GOAL, "diary", "tasks", "schedule",
             CMD_PLAN, CMD_PLANS, "stop");
 
     private static final java.util.Set<String> VALID_TIERS = java.util.Set.of(
@@ -134,6 +142,7 @@ public class CommandRouter implements CommandPort {
             UserPreferencesService preferencesService,
             CompactionService compactionService,
             AutoModeService autoModeService,
+            ModelSelectionService modelSelectionService,
             PlanService planService,
             PlanExecutionService planExecutionService,
             ScheduleService scheduleService,
@@ -147,6 +156,7 @@ public class CommandRouter implements CommandPort {
         this.preferencesService = preferencesService;
         this.compactionService = compactionService;
         this.autoModeService = autoModeService;
+        this.modelSelectionService = modelSelectionService;
         this.planService = planService;
         this.planExecutionService = planExecutionService;
         this.scheduleService = scheduleService;
@@ -168,10 +178,11 @@ public class CommandRouter implements CommandPort {
             case "skills" -> handleSkills();
             case "tools" -> handleTools();
             case CMD_STATUS -> handleStatus(sessionId);
-            case "new", "reset" -> handleNew(sessionId);
+            case "new", SUBCMD_RESET -> handleNew(sessionId);
             case "compact" -> handleCompact(sessionId, args);
             case CMD_HELP -> handleHelp();
             case "tier" -> handleTier(args);
+            case "model" -> handleModel(args);
             case "auto" -> handleAuto(args, channelType, chatId);
             case "goals" -> handleGoals();
             case CMD_GOAL -> handleGoal(args);
@@ -198,10 +209,12 @@ public class CommandRouter implements CommandPort {
                 new CommandDefinition("tools", "List enabled tools", "/tools"),
                 new CommandDefinition(CMD_STATUS, "Show session status", "/status"),
                 new CommandDefinition("new", "Start a new conversation", "/new"),
-                new CommandDefinition("reset", "Reset conversation", "/reset"),
+                new CommandDefinition(SUBCMD_RESET, "Reset conversation", "/reset"),
                 new CommandDefinition("compact", "Compact conversation history", "/compact [keep]"),
                 new CommandDefinition(CMD_HELP, "Show available commands", "/help"),
                 new CommandDefinition("tier", "Set model tier", "/tier [balanced|smart|coding|deep] [force]"),
+                new CommandDefinition("model", "Per-tier model selection",
+                        "/model [list|<tier> <model>|<tier> reasoning <level>|<tier> reset]"),
                 new CommandDefinition("stop", "Stop current run", "/stop")));
         if (autoModeService.isFeatureEnabled()) {
             commands.add(new CommandDefinition("auto", "Toggle auto mode", "/auto [on|off]"));
@@ -429,6 +442,163 @@ public class CommandRouter implements CommandPort {
             return CommandResult.success(msg("command.tier.set.force", tierArg));
         }
         return CommandResult.success(msg("command.tier.set", tierArg));
+    }
+
+    // ==================== Model Selection Command ====================
+
+    private CommandResult handleModel(List<String> args) {
+        if (args.isEmpty()) {
+            return handleModelShow();
+        }
+
+        String subcommand = args.get(0).toLowerCase(Locale.ROOT);
+        if (SUBCMD_LIST.equals(subcommand)) {
+            return handleModelList();
+        }
+
+        // Tier-based subcommands: /model <tier> ...
+        if (!VALID_TIERS.contains(subcommand)) {
+            return CommandResult.success(msg("command.model.invalid.tier"));
+        }
+
+        String tier = subcommand;
+        List<String> subArgs = args.subList(1, args.size());
+
+        if (subArgs.isEmpty()) {
+            return CommandResult.success(msg("command.model.usage"));
+        }
+
+        String action = subArgs.get(0).toLowerCase(Locale.ROOT);
+        if (SUBCMD_RESET.equals(action)) {
+            return handleModelReset(tier);
+        }
+        if (SUBCMD_REASONING.equals(action)) {
+            if (subArgs.size() < MIN_REASONING_ARGS) {
+                return CommandResult.success(msg("command.model.usage"));
+            }
+            return handleModelSetReasoning(tier, subArgs.get(1).toLowerCase(Locale.ROOT));
+        }
+
+        // /model <tier> <provider/model>
+        String modelSpec = subArgs.get(0);
+        return handleModelSet(tier, modelSpec);
+    }
+
+    private CommandResult handleModelShow() {
+        UserPreferences prefs = preferencesService.getPreferences();
+        StringBuilder sb = new StringBuilder();
+        sb.append("**").append(msg("command.model.show.title")).append("**\n\n");
+
+        for (String tier : List.of("balanced", "smart", "coding", "deep")) {
+            ModelSelectionService.ModelSelection selection = modelSelectionService.resolveForTier(tier);
+            String model = selection.model() != null ? selection.model() : "—";
+            String reasoning = selection.reasoning() != null ? selection.reasoning() : "—";
+
+            boolean hasOverride = prefs.getTierOverrides() != null
+                    && prefs.getTierOverrides().containsKey(tier);
+            String msgKey = hasOverride ? "command.model.show.tier.override" : "command.model.show.tier.default";
+            sb.append(msg(msgKey, tier, model, reasoning)).append("\n");
+        }
+
+        return CommandResult.success(sb.toString());
+    }
+
+    private CommandResult handleModelList() {
+        Map<String, List<ModelSelectionService.AvailableModel>> grouped = modelSelectionService
+                .getAvailableModelsGrouped();
+        if (grouped.isEmpty()) {
+            return CommandResult.success(msg("command.model.list.title") + "\n\nNo models available.");
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("**").append(msg("command.model.list.title")).append("**\n\n");
+
+        for (Map.Entry<String, List<ModelSelectionService.AvailableModel>> entry : grouped.entrySet()) {
+            sb.append(msg("command.model.list.provider", entry.getKey())).append("\n");
+            for (ModelSelectionService.AvailableModel model : entry.getValue()) {
+                String reasoningInfo = model.hasReasoning()
+                        ? " [reasoning: " + String.join(", ", model.reasoningLevels()) + "]"
+                        : "";
+                sb.append(msg("command.model.list.model", model.id(), model.displayName(), reasoningInfo)).append("\n");
+            }
+            sb.append("\n");
+        }
+
+        return CommandResult.success(sb.toString());
+    }
+
+    private CommandResult handleModelSet(String tier, String modelSpec) {
+        ModelSelectionService.ValidationResult validation = modelSelectionService.validateModel(modelSpec);
+        if (!validation.valid()) {
+            if (ERR_PROVIDER_NOT_ALLOWED.equals(validation.error())) {
+                String allowedStr = String.join(", ",
+                        properties.getModelSelection().getAllowedProviders());
+                return CommandResult.success(msg("command.model.invalid.provider", modelSpec, allowedStr));
+            }
+            return CommandResult.success(msg("command.model.invalid.model", modelSpec));
+        }
+
+        UserPreferences prefs = preferencesService.getPreferences();
+        String defaultReasoning = findDefaultReasoning(modelSpec);
+
+        UserPreferences.TierOverride override = new UserPreferences.TierOverride(modelSpec, defaultReasoning);
+        prefs.getTierOverrides().put(tier, override);
+        preferencesService.savePreferences(prefs);
+
+        String displayReasoning = defaultReasoning != null ? " (reasoning: " + defaultReasoning + ")" : "";
+        return CommandResult.success(msg("command.model.set", tier, modelSpec) + displayReasoning);
+    }
+
+    private CommandResult handleModelSetReasoning(String tier, String level) {
+        UserPreferences prefs = preferencesService.getPreferences();
+        UserPreferences.TierOverride existing = prefs.getTierOverrides() != null
+                ? prefs.getTierOverrides().get(tier)
+                : null;
+
+        if (existing == null || existing.getModel() == null) {
+            return CommandResult.success(msg("command.model.no.override", tier));
+        }
+
+        ModelSelectionService.ValidationResult validation = modelSelectionService.validateReasoning(
+                existing.getModel(), level);
+        if (!validation.valid()) {
+            if (ERR_NO_REASONING.equals(validation.error())) {
+                return CommandResult.success(msg("command.model.no.reasoning", existing.getModel()));
+            }
+            List<String> available = modelSelectionService.getAvailableModels().stream()
+                    .filter(m -> m.id().equals(existing.getModel())
+                            || existing.getModel().endsWith("/" + m.id()))
+                    .flatMap(m -> m.reasoningLevels().stream())
+                    .toList();
+            return CommandResult.success(msg("command.model.invalid.reasoning", level, String.join(", ", available)));
+        }
+
+        existing.setReasoning(level);
+        preferencesService.savePreferences(prefs);
+        return CommandResult.success(msg("command.model.set.reasoning", tier, level));
+    }
+
+    private CommandResult handleModelReset(String tier) {
+        UserPreferences prefs = preferencesService.getPreferences();
+        if (prefs.getTierOverrides() != null) {
+            prefs.getTierOverrides().remove(tier);
+            preferencesService.savePreferences(prefs);
+        }
+        return CommandResult.success(msg("command.model.reset", tier));
+    }
+
+    private String findDefaultReasoning(String modelSpec) {
+        // Extract from models.json
+        List<ModelSelectionService.AvailableModel> models = modelSelectionService.getAvailableModels();
+        for (ModelSelectionService.AvailableModel model : models) {
+            if (model.id().equals(modelSpec) || modelSpec.endsWith("/" + model.id())) {
+                if (model.hasReasoning() && !model.reasoningLevels().isEmpty()) {
+                    List<String> levels = model.reasoningLevels();
+                    return levels.contains("medium") ? "medium" : levels.get(0);
+                }
+            }
+        }
+        return null;
     }
 
     // ==================== Auto Mode Commands ====================

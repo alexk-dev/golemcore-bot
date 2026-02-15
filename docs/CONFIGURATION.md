@@ -189,6 +189,28 @@ model_tier: coding
 
 When a skill with `model_tier` is active, the skill's tier is used (unless the user has force enabled).
 
+### `/model` Command (Per-User Model Selection)
+
+Override the default model for any tier:
+
+```bash
+/model                           # Show model+reasoning for all tiers
+/model list                      # List available models (filtered by allowed providers)
+/model <tier> <provider/model>   # Override model for a tier
+/model <tier> reasoning <level>  # Set reasoning level for a tier
+/model <tier> reset              # Remove override, revert to default
+```
+
+Overrides persist across conversations and work alongside `/tier` (tier selects complexity level, model selects the actual LLM).
+
+### Model Selection (Allowed Providers)
+
+```bash
+BOT_MODEL_SELECTION_ALLOWED_PROVIDERS=openai,anthropic   # default
+```
+
+Controls which providers appear in `/model list` and are accepted in `/model set`. Restricts user model choices to approved providers only.
+
 ---
 
 ## Storage
@@ -613,25 +635,33 @@ Edit `models.json` in working directory to add custom models.
   "models": {
     "gpt-5.1": {
       "provider": "openai",
-      "reasoningRequired": true,
+      "displayName": "GPT-5.1",
       "supportsTemperature": false,
-      "maxInputTokens": 128000
+      "reasoning": {
+        "default": "medium",
+        "levels": {
+          "low":    { "maxInputTokens": 1000000 },
+          "medium": { "maxInputTokens": 1000000 },
+          "high":   { "maxInputTokens": 500000 },
+          "xhigh":  { "maxInputTokens": 250000 }
+        }
+      }
     },
     "my-model": {
       "provider": "custom",
-      "reasoningRequired": false,
+      "displayName": "My Model",
       "supportsTemperature": true,
       "maxInputTokens": 32000
     }
   },
   "defaults": {
-    "provider": "openai",
-    "reasoningRequired": false,
     "supportsTemperature": true,
     "maxInputTokens": 128000
   }
 }
 ```
+
+> **Note:** Reasoning models use `reasoning.levels` for per-level context limits. Non-reasoning models use the flat `maxInputTokens`. The `displayName` field is shown in `/model list` output.
 
 Then reference in config:
 

@@ -21,9 +21,9 @@ package me.golemcore.bot.domain.system;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.CompactionService;
+import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.SessionPort;
-import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -36,8 +36,8 @@ import java.util.List;
  * exceeds thresholds (order=18). Runs before ContextBuildingSystem to ensure
  * manageable context window. Estimates token count from character length, uses
  * model's maxInputTokens from models.json (with 80% safety margin), and invokes
- * {@link service.CompactionService} for LLM-powered summarization with fallback
- * to simple truncation.
+ * {@link CompactionService} for LLM-powered summarization with fallback to
+ * simple truncation.
  */
 @Component
 @RequiredArgsConstructor
@@ -47,7 +47,7 @@ public class AutoCompactionSystem implements AgentSystem {
     private final SessionPort sessionService;
     private final CompactionService compactionService;
     private final BotProperties properties;
-    private final ModelConfigService modelConfigService;
+    private final ModelSelectionService modelSelectionService;
 
     @Override
     public String getName() {
@@ -71,7 +71,7 @@ public class AutoCompactionSystem implements AgentSystem {
 
     @Override
     public AgentContext process(AgentContext context) {
-        var config = properties.getAutoCompact();
+        BotProperties.AutoCompactProperties config = properties.getAutoCompact();
         List<Message> messages = context.getMessages();
 
         long totalChars = messages.stream()
@@ -121,32 +121,18 @@ public class AutoCompactionSystem implements AgentSystem {
     }
 
     /**
-     * Resolve the max context token threshold. Uses model's maxInputTokens from
-     * models.json (with 80% safety margin), capped by config's maxContextTokens as
-     * upper bound.
+     * Resolve the max context token threshold. Uses model's maxInputTokens via
+     * ModelSelectionService (with 80% safety margin), capped by config's
+     * maxContextTokens as upper bound.
      */
     private int resolveMaxTokens(AgentContext context, BotProperties.AutoCompactProperties config) {
         try {
-            String modelTier = context.getModelTier();
-            String modelName = resolveModelName(modelTier);
-            if (modelName != null) {
-                int modelMax = modelConfigService.getMaxInputTokens(modelName);
-                int modelThreshold = (int) (modelMax * 0.8);
-                return Math.min(modelThreshold, config.getMaxContextTokens());
-            }
+            int modelMax = modelSelectionService.resolveMaxInputTokens(context.getModelTier());
+            int modelThreshold = (int) (modelMax * 0.8);
+            return Math.min(modelThreshold, config.getMaxContextTokens());
         } catch (Exception e) {
             log.debug("[AutoCompact] Failed to resolve model max tokens, using config default", e);
         }
         return config.getMaxContextTokens();
-    }
-
-    private String resolveModelName(String tier) {
-        var router = properties.getRouter();
-        return switch (tier != null ? tier : "balanced") {
-        case "deep" -> router.getDeepModel();
-        case "coding" -> router.getCodingModel();
-        case "smart" -> router.getSmartModel();
-        default -> router.getBalancedModel();
-        };
     }
 }

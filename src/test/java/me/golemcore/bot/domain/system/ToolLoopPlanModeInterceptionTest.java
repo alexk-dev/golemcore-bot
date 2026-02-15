@@ -5,6 +5,7 @@ import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.system.toolloop.DefaultHistoryWriter;
 import me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem;
@@ -114,7 +115,9 @@ class ToolLoopPlanModeInterceptionTest {
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
-        BotProperties.ModelRouterProperties router = new BotProperties.ModelRouterProperties();
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveForTier(any())).thenReturn(
+                new ModelSelectionService.ModelSelection("gpt-4o", null));
 
         DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
                 llmPort,
@@ -122,7 +125,7 @@ class ToolLoopPlanModeInterceptionTest {
                 historyWriter,
                 new DefaultConversationViewBuilder(new FlatteningToolMessageMasker()),
                 settings,
-                router,
+                modelSelectionService,
                 planService,
                 Clock.fixed(DEADLINE, ZoneOffset.UTC));
 
@@ -197,7 +200,9 @@ class ToolLoopPlanModeInterceptionTest {
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
-        BotProperties.ModelRouterProperties router = new BotProperties.ModelRouterProperties();
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveForTier(any())).thenReturn(
+                new ModelSelectionService.ModelSelection("gpt-4o", null));
 
         DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
                 llmPort,
@@ -205,7 +210,7 @@ class ToolLoopPlanModeInterceptionTest {
                 historyWriter,
                 new DefaultConversationViewBuilder(new FlatteningToolMessageMasker()),
                 settings,
-                router,
+                modelSelectionService,
                 planService,
                 Clock.fixed(DEADLINE, ZoneOffset.UTC));
 

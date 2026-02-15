@@ -14,14 +14,19 @@ The bot uses a **4-tier model selection** strategy that picks the most appropria
 2. **Skill override** — `model_tier` field in skill YAML frontmatter
 3. **Dynamic upgrade** — `DynamicTierSystem` promotes to `coding` when code activity is detected mid-conversation
 4. **Fallback** — `"balanced"` when no tier is explicitly set
+5. **Per-user model override** — set via `/model` command
 ```
 User Message
     |
     v
 [ContextBuildingSystem]  --- Resolves tier from user prefs / active skill
-    |                        Priority: force+user > skill > user pref > balanced    v
+    |                        Priority: force+user > skill > user pref > balanced
+    v
 [DynamicTierSystem]      --- May upgrade to "coding" if code activity detected
     |                        (only on iteration > 0, never downgrades)
+    v
+[ModelSelectionService]  --- Resolves actual model for the tier
+    |                        (user override > router config fallback)
     v
 [ToolLoopExecutionSystem] --- Selects model + reasoning level based on modelTier
     |                         (via DefaultToolLoopSystem internal loop)
@@ -67,7 +72,7 @@ BOT_ROUTER_DEEP_MODEL_REASONING=xhigh
 BOT_ROUTER_TEMPERATURE=0.7
 ```
 
-> **Note:** Reasoning models (e.g., `gpt-5.1`, `o3`) ignore the temperature parameter. The `reasoningRequired` and `supportsTemperature` flags in `models.json` control this behavior. See [models.json Reference](#modelsjson-reference).
+> **Note:** Reasoning models (e.g., `gpt-5.1`, `o3`) ignore the temperature parameter. The presence of a `reasoning` object and the `supportsTemperature` flag in `models.json` control this behavior. See [models.json Reference](#modelsjson-reference).
 
 ---
 
@@ -110,6 +115,40 @@ The LLM can switch tiers mid-conversation using the `set_tier` tool:
 - If the user has `tierForce=true`, the tool returns an error: "Tier is locked by user"
 - Otherwise, the tier is applied immediately for the current conversation
 - The tool does NOT persist the change to user preferences (session-only)
+
+### Per-User Model Override (`/model` command)
+
+Users can override the default model for any tier using the `/model` command:
+
+```
+/model                           # Show current model+reasoning for all 4 tiers
+/model list                      # List available models (filtered by allowed providers)
+/model <tier> <provider/model>   # Set model override for a tier
+/model <tier> reasoning <level>  # Set reasoning level for the current model on a tier
+/model <tier> reset              # Remove override, revert to application.properties default
+```
+
+**Examples:**
+```
+/model coding openai/gpt-5.2         # Set coding tier to GPT-5.2
+/model coding reasoning high          # Set reasoning level to high
+/model smart anthropic/claude-sonnet-4-20250514  # Use Claude for smart tier
+/model coding reset                   # Revert coding tier to default
+```
+
+**Key behavior:**
+- Overrides are stored in `UserPreferences.tierOverrides` and persist across conversations
+- When a model is set, the default reasoning level from `models.json` is auto-applied
+- The model's provider must be in the allowed providers list (configured via `BOT_MODEL_SELECTION_ALLOWED_PROVIDERS`)
+- Tier selection (`/tier`) and model selection (`/model`) work independently — `/tier` selects which tier is active, `/model` customizes what model each tier uses
+- `ModelSelectionService` centralizes resolution: user override > router config fallback
+
+**Allowed providers:**
+```bash
+BOT_MODEL_SELECTION_ALLOWED_PROVIDERS=openai,anthropic   # default
+```
+
+Only models from these providers will appear in `/model list` and be accepted in `/model <tier> <model>`.
 
 ### Skill `model_tier` Override
 
@@ -154,30 +193,17 @@ When a skill with `model_tier` is active:
 
 ## Model Selection in ToolLoopExecutionSystem
 
-`ToolLoopExecutionSystem` (order=30) delegates to `DefaultToolLoopSystem`, which translates the `modelTier` string into an actual model name and reasoning effort:
-
-```java
-switch (tier != null ? tier : "balanced") {
-    case "coding" -> (codingModel, codingModelReasoning)
-    case "smart"  -> (smartModel, smartModelReasoning)
-    case "deep"   -> (deepModel, deepModelReasoning)
-    default       -> (balancedModel, balancedModelReasoning)   // "balanced" or null
-}
-```
-
-The selected model and reasoning effort are passed to the LLM adapter via `LlmRequest`:
+`ToolLoopExecutionSystem` (order=30) delegates to `DefaultToolLoopSystem`, which uses `ModelSelectionService` to translate the `modelTier` string into an actual model name and reasoning effort:
 
 ```
-LlmRequest {
-    model: "openai/gpt-5.2"
-    reasoningEffort: "medium"
-    systemPrompt: "..."
-    messages: [...]
-    tools: [...]
-}
+ModelSelectionService.resolveForTier(tier)
+  1. Check UserPreferences.tierOverrides for the tier
+  2. If override exists → use override model + reasoning
+  3. Otherwise → use router config (BOT_ROUTER_*_MODEL)
+  4. For reasoning models → auto-fill default reasoning from models.json
 ```
 
-> **Note:** The tier name `"balanced"` maps to the balanced model config. If no tier is set (null), the balanced tier is used.
+The selected model and reasoning effort are passed to the LLM adapter via `LlmRequest`.
 
 ---
 
@@ -219,9 +245,12 @@ Model capabilities are defined in `models.json` at the project root. Each entry 
 | Field | Type | Description |
 |-------|------|-------------|
 | `provider` | string | Provider name: `openai`, `anthropic`, `zhipu`, `qwen`, `cerebras`, `deepinfra` |
-| `reasoningRequired` | boolean | Whether the model requires a `reasoning` parameter instead of `temperature` |
+| `displayName` | string | Human-readable name for UI display (e.g., in `/model list`) |
 | `supportsTemperature` | boolean | Whether to send the `temperature` parameter (reasoning models typically don't support it) |
-| `maxInputTokens` | integer | Maximum input context window size in tokens (used for emergency truncation calculations) |
+| `maxInputTokens` | integer | Maximum input tokens for non-reasoning models (used for truncation) |
+| `reasoning` | object | Reasoning configuration (null/absent for non-reasoning models) |
+| `reasoning.default` | string | Default reasoning level (e.g., `"medium"`) |
+| `reasoning.levels` | object | Map of level name to `{ "maxInputTokens": N }` |
 
 **Example entry:**
 
@@ -230,25 +259,39 @@ Model capabilities are defined in `models.json` at the project root. Each entry 
   "models": {
     "gpt-5.1": {
       "provider": "openai",
-      "reasoningRequired": true,
+      "displayName": "GPT-5.1",
       "supportsTemperature": false,
-      "maxInputTokens": 1000000
+      "reasoning": {
+        "default": "medium",
+        "levels": {
+          "low":    { "maxInputTokens": 1000000 },
+          "medium": { "maxInputTokens": 1000000 },
+          "high":   { "maxInputTokens": 500000 },
+          "xhigh":  { "maxInputTokens": 250000 }
+        }
+      }
+    },
+    "gpt-4o": {
+      "provider": "openai",
+      "displayName": "GPT-4o",
+      "supportsTemperature": true,
+      "maxInputTokens": 128000
     },
     "claude-sonnet-4-20250514": {
       "provider": "anthropic",
-      "reasoningRequired": false,
+      "displayName": "Claude Sonnet 4",
       "supportsTemperature": true,
       "maxInputTokens": 200000
     }
   },
   "defaults": {
-    "provider": "openai",
-    "reasoningRequired": false,
     "supportsTemperature": true,
     "maxInputTokens": 128000
   }
 }
 ```
+
+> **Note:** The `reasoningRequired` field has been replaced by the presence of a `reasoning` object. Models with reasoning have per-level context limits inside `reasoning.levels`. Models without reasoning use the flat `maxInputTokens` field.
 
 **Model name resolution** in `ModelConfigService`:
 
@@ -258,8 +301,9 @@ Model capabilities are defined in `models.json` at the project root. Each entry 
 4. Fall back to `defaults` section
 
 The `maxInputTokens` value is used by:
-- `AutoCompactionSystem` — triggers compaction at 80% of context window
+- `AutoCompactionSystem` — triggers compaction at 80% of context window (uses per-level limit when available)
 - `ToolLoopExecutionSystem` — emergency truncation limits each message to 25% of context window (minimum 10K characters)
+- `ModelSelectionService` — resolves max tokens per tier for compaction threshold
 
 > **See:** [Configuration Guide — Advanced: models.json](CONFIGURATION.md#advanced-modelsjson) for adding custom models.
 
@@ -271,7 +315,7 @@ Model routing is primarily configured by choosing models for each tier and enabl
 
 ```bash
 # Tier models
-BOT_ROUTER_DEFAULT_MODEL=openai/gpt-5.1
+BOT_ROUTER_BALANCED_MODEL=openai/gpt-5.1
 BOT_ROUTER_SMART_MODEL=openai/gpt-5.1
 BOT_ROUTER_CODING_MODEL=openai/gpt-5.2
 BOT_ROUTER_DEEP_MODEL=openai/gpt-5.2
@@ -497,6 +541,7 @@ Layer 1: AutoCompactionSystem (order=18)
 | `CommandRouter` | `adapter.inbound.command` | — | `/tier` command handler || `LlmAdapterFactory` | `adapter.outbound.llm` | — | Provider adapter selection |
 | `Langchain4jAdapter` | `adapter.outbound.llm` | — | OpenAI/Anthropic integration, ID remapping, name sanitization |
 | `ModelConfigService` | `infrastructure.config` | — | Model capability lookups from models.json |
+| `ModelSelectionService` | `domain.service` | — | Per-user model override resolution, provider filtering |
 | `AgentContext` | `domain.model` | — | Runtime state: holds `modelTier`, `activeSkill` |
 
 ---
