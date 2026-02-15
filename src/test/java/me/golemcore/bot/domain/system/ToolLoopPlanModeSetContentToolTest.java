@@ -14,7 +14,7 @@ import me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuild
 import me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.LlmPort;
-import me.golemcore.bot.tools.PlanFinalizeTool;
+import me.golemcore.bot.tools.PlanSetContentTool;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
@@ -31,14 +31,14 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-class ToolLoopPlanModeFinalizeToolTest {
+class ToolLoopPlanModeSetContentToolTest {
 
     private static final String PLAN_ID = "plan-123";
     private static final Instant NOW = Instant.parse("2026-02-15T00:00:00Z");
     private static final Instant FAR_FUTURE = Instant.parse("2099-01-01T00:00:00Z");
 
     @Test
-    void shouldTreatPlanFinalizeToolAsControlToolWithoutFinalizingPlan() {
+    void shouldTreatPlanSetContentToolAsControlToolWithoutFinalizingPlan() {
         // GIVEN
         AgentSession session = AgentSession.builder()
                 .chatId("chat-1")
@@ -54,7 +54,7 @@ class ToolLoopPlanModeFinalizeToolTest {
                 .content("Plan is ready")
                 .toolCalls(List.of(Message.ToolCall.builder()
                         .id("tc1")
-                        .name(PlanFinalizeTool.TOOL_NAME)
+                        .name(PlanSetContentTool.TOOL_NAME)
                         .arguments(null)
                         .build()))
                 .build();
@@ -99,7 +99,7 @@ class ToolLoopPlanModeFinalizeToolTest {
         verify(toolExecutor, never()).execute(any(), any());
 
         // PlanFinalizationSystem depends on this attribute being set.
-        assertEquals(true, ctx.getAttribute(ContextAttributes.PLAN_FINALIZE_REQUESTED));
+        assertEquals(true, ctx.getAttribute(ContextAttributes.PLAN_SET_CONTENT_REQUESTED));
 
         // Raw history should contain assistant tool-call message
         Message last = session.getMessages().get(session.getMessages().size() - 1);

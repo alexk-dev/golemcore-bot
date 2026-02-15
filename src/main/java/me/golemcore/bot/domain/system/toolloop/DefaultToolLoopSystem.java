@@ -132,9 +132,9 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
 
             // 4) Execute tools and append results
             for (Message.ToolCall tc : response.getToolCalls()) {
-                if (me.golemcore.bot.tools.PlanFinalizeTool.TOOL_NAME.equals(tc.getName())) {
+                if (me.golemcore.bot.tools.PlanSetContentTool.TOOL_NAME.equals(tc.getName())) {
                     // Control tool: do not execute; let PlanFinalizationSystem handle it.
-                    context.setAttribute(ContextAttributes.PLAN_FINALIZE_REQUESTED, true);
+                    context.setAttribute(ContextAttributes.PLAN_SET_CONTENT_REQUESTED, true);
 
                     ToolExecutionOutcome synthetic = new ToolExecutionOutcome(
                             tc.getId(), tc.getName(),

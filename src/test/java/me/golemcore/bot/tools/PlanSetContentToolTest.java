@@ -11,14 +11,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-class PlanFinalizeToolTest {
+class PlanSetContentToolTest {
 
     @Test
     void shouldDenyOutsidePlanWork() {
         PlanService planService = mock(PlanService.class);
         when(planService.isPlanModeActive()).thenReturn(false);
 
-        PlanFinalizeTool tool = new PlanFinalizeTool(planService);
+        PlanSetContentTool tool = new PlanSetContentTool(planService);
         ToolResult result = tool.execute(Map.of("plan_markdown", "# plan")).join();
 
         assertEquals(false, result.isSuccess());
@@ -30,7 +30,7 @@ class PlanFinalizeToolTest {
         PlanService planService = mock(PlanService.class);
         when(planService.isPlanModeActive()).thenReturn(true);
 
-        PlanFinalizeTool tool = new PlanFinalizeTool(planService);
+        PlanSetContentTool tool = new PlanSetContentTool(planService);
         ToolResult result = tool.execute(Map.of("plan_markdown", "# plan")).join();
 
         assertEquals(true, result.isSuccess());

@@ -13,7 +13,7 @@ import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.McpPort;
 import me.golemcore.bot.port.outbound.RagPort;
-import me.golemcore.bot.tools.PlanFinalizeTool;
+import me.golemcore.bot.tools.PlanSetContentTool;
 import me.golemcore.bot.tools.PlanGetTool;
 import org.junit.jupiter.api.Test;
 
@@ -26,7 +26,7 @@ import static org.mockito.Mockito.when;
 class ContextBuildingSystemTest {
 
     @Test
-    void shouldAdvertisePlanFinalizeToolOnlyWhenPlanModeIsActive() {
+    void shouldAdvertisePlanSetContentToolOnlyWhenPlanModeIsActive() {
         BotProperties properties = new BotProperties();
 
         SkillTemplateEngine templateEngine = mock(SkillTemplateEngine.class);
@@ -44,7 +44,7 @@ class ContextBuildingSystemTest {
         PlanService planService = mock(PlanService.class);
         when(planService.isFeatureEnabled()).thenReturn(true);
 
-        PlanFinalizeTool planFinalizeTool = new PlanFinalizeTool(planService);
+        PlanSetContentTool planFinalizeTool = new PlanSetContentTool(planService);
         PlanGetTool planGetTool = new PlanGetTool(planService);
 
         ContextBuildingSystem system = new ContextBuildingSystem(
@@ -67,14 +67,14 @@ class ContextBuildingSystemTest {
         when(planService.isPlanModeActive()).thenReturn(false);
         system.process(context);
         assertTrue(context.getAvailableTools().stream()
-                .noneMatch(t -> PlanFinalizeTool.TOOL_NAME.equals(t.getName())
+                .noneMatch(t -> PlanSetContentTool.TOOL_NAME.equals(t.getName())
                         || PlanGetTool.TOOL_NAME.equals(t.getName())));
 
         // Case 2: plan mode ON
         when(planService.isPlanModeActive()).thenReturn(true);
         system.process(context);
         assertTrue(context.getAvailableTools().stream()
-                .anyMatch(t -> PlanFinalizeTool.TOOL_NAME.equals(t.getName())));
+                .anyMatch(t -> PlanSetContentTool.TOOL_NAME.equals(t.getName())));
         assertTrue(context.getAvailableTools().stream()
                 .anyMatch(t -> PlanGetTool.TOOL_NAME.equals(t.getName())));
     }

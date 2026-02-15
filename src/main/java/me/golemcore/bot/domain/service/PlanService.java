@@ -381,7 +381,7 @@ public class PlanService {
         sb.append("- You may use any tools that help you analyze and prepare the plan.\n");
         sb.append("- The canonical plan is a single Markdown document (SSOT).\n");
         sb.append("- Use the plan_get tool to load the current canonical plan.\n");
-        sb.append("- When you have an updated draft, call plan_finalize(plan_markdown=...).\n\n");
+        sb.append("- When you have an updated draft, call plan_set_content(plan_markdown=...).\n\n");
 
         if (plan.getMarkdown() != null && !plan.getMarkdown().isBlank()) {
             sb.append("## Current canonical plan (SSOT)\n");
@@ -393,7 +393,7 @@ public class PlanService {
 
         sb.append("## Rules\n");
         sb.append("1. Discuss and refine the plan as needed.\n");
-        sb.append("2. Call plan_finalize with the FULL plan in plan_markdown when ready.\n");
+        sb.append("2. Call plan_set_content with the FULL plan in plan_markdown when ready.\n");
         sb.append("3. The user will approve the plan before execution.\n");
 
         return sb.toString().trim();

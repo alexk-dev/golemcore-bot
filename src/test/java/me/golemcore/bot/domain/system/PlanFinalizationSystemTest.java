@@ -67,7 +67,7 @@ class PlanFinalizationSystemTest {
                 .content("Some response")
                 .toolCalls(List.of(me.golemcore.bot.domain.model.Message.ToolCall.builder()
                         .id("tc1")
-                        .name(me.golemcore.bot.tools.PlanFinalizeTool.TOOL_NAME)
+                        .name(me.golemcore.bot.tools.PlanSetContentTool.TOOL_NAME)
                         .arguments(java.util.Map.of("plan_markdown", "# Plan"))
                         .build()))
                 .build();
@@ -97,12 +97,12 @@ class PlanFinalizationSystemTest {
     }
 
     @Test
-    void shouldProcessWhenPlanActiveAndPlanFinalizeToolCallPresent() {
+    void shouldProcessWhenPlanActiveAndPlanSetContentToolCallPresent() {
         when(planService.isPlanModeActive()).thenReturn(true);
         LlmResponse response = LlmResponse.builder()
                 .content("irrelevant")
                 .toolCalls(List.of(me.golemcore.bot.domain.model.Message.ToolCall.builder()
-                        .id("tc1").name(me.golemcore.bot.tools.PlanFinalizeTool.TOOL_NAME).build()))
+                        .id("tc1").name(me.golemcore.bot.tools.PlanSetContentTool.TOOL_NAME).build()))
                 .build();
         AgentContext context = buildContext(null);
         context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
@@ -123,7 +123,7 @@ class PlanFinalizationSystemTest {
                 .content("No plan needed")
                 .toolCalls(List.of(me.golemcore.bot.domain.model.Message.ToolCall.builder()
                         .id("tc1")
-                        .name(me.golemcore.bot.tools.PlanFinalizeTool.TOOL_NAME)
+                        .name(me.golemcore.bot.tools.PlanSetContentTool.TOOL_NAME)
                         .arguments(java.util.Map.of("plan_markdown", "# Plan"))
                         .build()))
                 .build();
@@ -155,7 +155,7 @@ class PlanFinalizationSystemTest {
                 .content("Here is my plan")
                 .toolCalls(List.of(me.golemcore.bot.domain.model.Message.ToolCall.builder()
                         .id("tc1")
-                        .name(me.golemcore.bot.tools.PlanFinalizeTool.TOOL_NAME)
+                        .name(me.golemcore.bot.tools.PlanSetContentTool.TOOL_NAME)
                         .arguments(java.util.Map.of("plan_markdown", "# Plan"))
                         .build()))
                 .build();
@@ -180,7 +180,7 @@ class PlanFinalizationSystemTest {
                 .content("Some response")
                 .toolCalls(List.of(me.golemcore.bot.domain.model.Message.ToolCall.builder()
                         .id("tc1")
-                        .name(me.golemcore.bot.tools.PlanFinalizeTool.TOOL_NAME)
+                        .name(me.golemcore.bot.tools.PlanSetContentTool.TOOL_NAME)
                         .arguments(java.util.Map.of("plan_markdown", "# Plan"))
                         .build()))
                 .build();

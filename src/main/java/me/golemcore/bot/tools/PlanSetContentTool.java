@@ -33,13 +33,13 @@ import java.util.concurrent.CompletableFuture;
  * draft is ready to be persisted.
  */
 @Component
-public class PlanFinalizeTool implements ToolComponent {
+public class PlanSetContentTool implements ToolComponent {
 
-    public static final String TOOL_NAME = "plan_finalize";
+    public static final String TOOL_NAME = "plan_set_content";
 
     private final PlanService planService;
 
-    public PlanFinalizeTool(PlanService planService) {
+    public PlanSetContentTool(PlanService planService) {
         this.planService = planService;
     }
 

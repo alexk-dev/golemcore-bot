@@ -1,4 +1,4 @@
-# ADR-00XX: Deterministic "Work by Plan" via `plan_finalize` (SSOT Markdown)
+# ADR-00XX: Deterministic "Work by Plan" via `plan_set_content` (SSOT Markdown)
 
 - **Status:** Accepted
 - **Date:** 2026-02-15
@@ -28,7 +28,7 @@ We also clarified UX constraints:
 Introduce a deterministic, testable, and architecturally clean mechanism to:
 1. Start a "work by plan" mode on `/plan on`.
 2. Allow iterative plan drafting and updates.
-3. Persist the plan as a **single Markdown document (SSOT)** at `plan_finalize`.
+3. Persist the plan as a **single Markdown document (SSOT)** at `plan_set_content`.
 4. Keep the plan reliably accessible even after compaction.
 5. End the mode explicitly on `/plan done` or `/reset`.
 
@@ -36,7 +36,7 @@ Introduce a deterministic, testable, and architecturally clean mechanism to:
 We define a **"Work by Plan"** mode ("plan work") that is enabled explicitly by the user via `/plan on` and disabled via `/plan done` or `/reset`.
 
 The canonical plan is persisted only via an explicit tool call:
-- **`plan_finalize(plan_markdown=...)`**
+- **`plan_set_content(plan_markdown=...)`**
 
 ### SSOT of the plan
 - **Plan SSOT is one Markdown document** (string).
@@ -44,12 +44,12 @@ The canonical plan is persisted only via an explicit tool call:
 
 ### Updates before approval
 We adopt **Variant B**:
-- `plan_finalize` is allowed when the plan is already `READY` (draft is finalized but not approved yet).
-- Repeated `plan_finalize` calls **overwrite** the stored Markdown draft.
+- `plan_set_content` is allowed when the plan is already `READY` (draft is finalized but not approved yet).
+- Repeated `plan_set_content` calls **overwrite** the stored Markdown draft.
 
 ### Editing during execution
 While executing the plan, the user might want to revise it.
-We support this by allowing `plan_finalize` in `EXECUTING` too:
+We support this by allowing `plan_set_content` in `EXECUTING` too:
 - The system creates a **new plan revision** based on the previous one and marks the previous plan as cancelled/superseded.
 - UX still exposes only a single "active plan".
 
@@ -61,7 +61,7 @@ We introduce a read tool:
 
 ## Invariants (must hold)
 1. **Mode gating invariant:**
-   - Plan tools (`plan_finalize`, `plan_get`) are advertised **only when plan work is active**.
+   - Plan tools (`plan_set_content`, `plan_get`) are advertised **only when plan work is active**.
 2. **Execution invariant:**
    - If plan tools are called when plan work is inactive, execution is denied (policy failure) and plan state is not mutated.
 3. **SSOT invariant:**
@@ -89,7 +89,7 @@ Rules:
 - `/plan done` or `/reset` disables plan work and clears `activePlanId`.
 
 ### 3) Tools
-#### 3.1 `plan_finalize`
+#### 3.1 `plan_set_content`
 - **Advertised:** only when plan work is active.
 - **Input schema:**
   - `plan_markdown` (required string) — full canonical plan draft.
@@ -112,37 +112,37 @@ Tool loop executes LLM + tool calls as usual.
 Important: plan tools are **control/read** tools; they should not cause external side effects.
 
 #### 4.2 Plan finalization system
-`PlanFinalizationSystem` finalizes/updates the plan draft when it sees `plan_finalize` tool call.
+`PlanFinalizationSystem` finalizes/updates the plan draft when it sees `plan_set_content` tool call.
 
 It extracts the tool arguments from `LLM_RESPONSE.toolCalls` and persists `Plan.markdown`.
 
 #### 4.3 Context building
 `ContextBuildingSystem`:
 - Injects a **compact plan-mode context** when plan work is active.
-- Advertises `plan_finalize` and `plan_get` only when plan work is active.
+- Advertises `plan_set_content` and `plan_get` only when plan work is active.
 
 Minimum required context:
-- "Plan work is active. Use `plan_get` to load the canonical plan. When you have a new draft, call `plan_finalize(plan_markdown=...)`."
+- "Plan work is active. Use `plan_get` to load the canonical plan. When you have a new draft, call `plan_set_content(plan_markdown=...)`."
 
 ## Detailed Implementation Plan (Phases)
 
 ### Phase 0 — ADR + prompt contract updates
 - [ ] Update `PlanService.buildPlanContext()` text:
   - remove claims that tools are not executed
-  - instruct to use `plan_get` + `plan_finalize(plan_markdown=...)`
+  - instruct to use `plan_get` + `plan_set_content(plan_markdown=...)`
 
 ### Phase 1 — Data model & persistence
 - [ ] Add `Plan.markdown` persisted field.
 - [ ] Ensure existing `plans.json` load/save remains compatible (missing field → null).
 
 ### Phase 2 — Tools
-- [ ] Update `plan_finalize` schema to require `plan_markdown`.
+- [ ] Update `plan_set_content` schema to require `plan_markdown`.
 - [ ] Add `plan_get` tool.
 - [ ] Advertisement gating: only when plan work active.
 
 ### Phase 3 — Finalization behavior
 - [ ] Update `PlanFinalizationSystem`:
-  - trigger on `plan_finalize` tool call
+  - trigger on `plan_set_content` tool call
   - extract `plan_markdown` (and optional `title`)
   - implement Variant B (overwrite draft when READY)
   - implement revision creation when EXECUTING
@@ -153,7 +153,7 @@ Minimum required context:
 - [ ] `/reset` must end plan work and clear active plan.
 
 ### Phase 5 — Tests (BDD/TDD)
-- [ ] `PlanFinalizeToolTest`:
+- [ ] `PlanSetContentToolTest`:
   - denied when plan work inactive
   - schema includes required `plan_markdown`
 - [ ] `PlanGetToolTest`:
@@ -174,7 +174,7 @@ Minimum required context:
 - Clear lifecycle boundaries: plan exists only when explicitly active.
 
 ### Trade-offs
-- Requires the model to comply with a structured tool contract (`plan_finalize(plan_markdown=...)`).
+- Requires the model to comply with a structured tool contract (`plan_set_content(plan_markdown=...)`).
 - Adds additional domain surface (plan_get + revision semantics).
 
 ## Notes on Single-User Assumption

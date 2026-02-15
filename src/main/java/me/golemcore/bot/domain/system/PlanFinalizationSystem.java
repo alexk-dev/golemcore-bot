@@ -33,11 +33,11 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Detects when plan mode should be finalized (via plan_finalize tool call) and
- * finalizes the plan (order=58, before ResponseRouting at 60).
+ * Detects when plan mode should be finalized (via plan_set_content tool call)
+ * and finalizes the plan (order=58, before ResponseRouting at 60).
  *
  * <p>
- * When the LLM invokes plan_finalize during plan mode:
+ * When the LLM invokes plan_set_content during plan mode:
  * <ol>
  * <li>If plan has 0 steps, cancels the empty plan and returns</li>
  * <li>Finalizes the plan (COLLECTING -> READY)</li>
@@ -82,11 +82,11 @@ public class PlanFinalizationSystem implements AgentSystem {
         boolean finalizeRequested = false;
         if (response.getToolCalls() != null) {
             finalizeRequested = response.getToolCalls().stream()
-                    .anyMatch(tc -> me.golemcore.bot.tools.PlanFinalizeTool.TOOL_NAME.equals(tc.getName()));
+                    .anyMatch(tc -> me.golemcore.bot.tools.PlanSetContentTool.TOOL_NAME.equals(tc.getName()));
         }
 
         if (finalizeRequested) {
-            context.setAttribute(ContextAttributes.PLAN_FINALIZE_REQUESTED, true);
+            context.setAttribute(ContextAttributes.PLAN_SET_CONTENT_REQUESTED, true);
         }
 
         return finalizeRequested;
@@ -96,7 +96,7 @@ public class PlanFinalizationSystem implements AgentSystem {
     public AgentContext process(AgentContext context) {
         Optional<Plan> activePlan = planService.getActivePlan();
         if (activePlan.isEmpty()) {
-            log.warn("[PlanFinalize] Plan work active but no active plan found");
+            log.warn("[PlanSetContent] Plan work active but no active plan found");
             planService.deactivatePlanMode();
             return context;
         }
@@ -106,15 +106,15 @@ public class PlanFinalizationSystem implements AgentSystem {
 
         // Empty plan ? cancel and let normal response routing proceed
         if (plan.getSteps() != null && plan.getSteps().isEmpty()) {
-            log.info("[PlanFinalize] Empty plan, cancelling");
+            log.info("[PlanSetContent] Empty plan, cancelling");
             planService.cancelPlan(plan.getId());
             return context;
         }
 
         LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
-        PlanFinalizeArgs finalizeArgs = PlanFinalizeArgs.from(response);
+        PlanSetContentArgs finalizeArgs = PlanSetContentArgs.from(response);
         if (finalizeArgs == null || finalizeArgs.planMarkdown() == null || finalizeArgs.planMarkdown().isBlank()) {
-            log.warn("[PlanFinalize] plan_finalize called without plan_markdown");
+            log.warn("[PlanSetContent] plan_set_content called without plan_markdown");
             return context;
         }
 
@@ -125,26 +125,26 @@ public class PlanFinalizationSystem implements AgentSystem {
         eventPublisher.publishEvent(new PlanReadyEvent(plan.getId(), chatId));
         context.setAttribute(ContextAttributes.PLAN_APPROVAL_NEEDED, plan.getId());
 
-        log.info("[PlanFinalize] Plan '{}' updated and ready for approval", plan.getId());
+        log.info("[PlanSetContent] Plan '{}' updated and ready for approval", plan.getId());
 
         return context;
     }
 
-    private record PlanFinalizeArgs(String planMarkdown, String title) {
+    private record PlanSetContentArgs(String planMarkdown, String title) {
 
         @SuppressWarnings("unchecked")
-        static PlanFinalizeArgs from(LlmResponse response) {
+        static PlanSetContentArgs from(LlmResponse response) {
             if (response == null || response.getToolCalls() == null) {
                 return null;
             }
             return response.getToolCalls().stream()
-                    .filter(tc -> me.golemcore.bot.tools.PlanFinalizeTool.TOOL_NAME.equals(tc.getName()))
+                    .filter(tc -> me.golemcore.bot.tools.PlanSetContentTool.TOOL_NAME.equals(tc.getName()))
                     .findFirst()
                     .map(tc -> {
                         Map<String, Object> args = tc.getArguments() != null ? tc.getArguments() : Map.of();
                         Object md = args.get("plan_markdown");
                         Object title = args.get("title");
-                        return new PlanFinalizeArgs(md instanceof String ? (String) md : null,
+                        return new PlanSetContentArgs(md instanceof String ? (String) md : null,
                                 title instanceof String ? (String) title : null);
                     })
                     .orElse(null);
