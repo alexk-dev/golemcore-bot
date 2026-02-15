@@ -25,6 +25,7 @@ import java.util.Date;
 public class JwtTokenProvider {
 
     private static final int MIN_SECRET_BYTES = 32;
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final BotProperties botProperties;
     private SecretKey signingKey;
@@ -38,7 +39,7 @@ public class JwtTokenProvider {
         String secret = botProperties.getDashboard().getJwtSecret();
         if (secret == null || secret.isBlank()) {
             byte[] randomBytes = new byte[64];
-            new SecureRandom().nextBytes(randomBytes);
+            SECURE_RANDOM.nextBytes(randomBytes);
             secret = Base64.getEncoder().encodeToString(randomBytes);
             log.warn(
                     "[Dashboard] No JWT secret configured — generated ephemeral secret (tokens won't survive restart)");
