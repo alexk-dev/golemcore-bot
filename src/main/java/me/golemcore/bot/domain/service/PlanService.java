@@ -66,7 +66,7 @@ public class PlanService {
     private final Clock clock;
 
     // In-memory state
-    private volatile boolean planModeActive = false;
+    private volatile boolean planWorkActive = false;
     private volatile String activePlanId;
     private final AtomicReference<List<Plan>> plansCache = new AtomicReference<>();
 
@@ -85,7 +85,7 @@ public class PlanService {
     // ==================== Plan mode state ====================
 
     public boolean isPlanModeActive() {
-        return planModeActive;
+        return planWorkActive;
     }
 
     public String getActivePlanId() {
@@ -99,13 +99,13 @@ public class PlanService {
     public void activatePlanMode(String chatId, String modelTier) {
         Plan plan = createPlan(null, null, chatId, modelTier);
         activePlanId = plan.getId();
-        planModeActive = true;
+        planWorkActive = true;
         log.info("[PlanMode] Activated, plan: {}", plan.getId());
     }
 
     @SuppressWarnings("PMD.NullAssignment") // intentional: clearing volatile state means "no active plan"
     public void deactivatePlanMode() {
-        planModeActive = false;
+        planWorkActive = false;
         activePlanId = null;
         log.info("[PlanMode] Deactivated");
     }
@@ -415,7 +415,7 @@ public class PlanService {
     }
 
     private void recoverActivePlanMode(List<Plan> plans) {
-        if (activePlanId != null && planModeActive) {
+        if (activePlanId != null && planWorkActive) {
             return;
         }
         plans.stream()
@@ -426,7 +426,7 @@ public class PlanService {
                 .reduce((first, second) -> second)
                 .ifPresent(plan -> {
                     activePlanId = plan.getId();
-                    planModeActive = true;
+                    planWorkActive = true;
                     log.info("[PlanMode] Recovered active plan '{}' after restart", activePlanId);
                 });
     }
