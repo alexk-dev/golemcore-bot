@@ -47,4 +47,6 @@ public interface SessionPort {
     List<Message> getMessagesToCompact(String sessionId, int keepLast);
 
     int getMessageCount(String sessionId);
+
+    List<AgentSession> listAll();
 }

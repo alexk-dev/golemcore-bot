@@ -186,6 +186,25 @@ public class SessionService implements SessionPort {
         return session != null ? session.getMessages().size() : 0;
     }
 
+    @Override
+    public List<AgentSession> listAll() {
+        // Merge cached sessions with any on-disk sessions not yet loaded
+        try {
+            List<String> files = storagePort.listObjects(SESSIONS_DIR, "").join();
+            for (String file : files) {
+                if (file.endsWith(".json")) {
+                    String sessionId = file.substring(0, file.length() - 5);
+                    sessionCache.computeIfAbsent(sessionId, id -> load(id).orElse(null));
+                }
+            }
+        } catch (Exception e) { // NOSONAR
+            log.warn("Failed to scan sessions directory: {}", e.getMessage());
+        }
+        return sessionCache.values().stream()
+                .filter(java.util.Objects::nonNull)
+                .toList();
+    }
+
     private Optional<AgentSession> load(String sessionId) {
         try {
             String json = storagePort.getText(SESSIONS_DIR, sessionId + ".json").join();

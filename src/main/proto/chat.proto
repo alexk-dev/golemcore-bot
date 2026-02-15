@@ -1,0 +1,48 @@
+syntax = "proto3";
+package golemcore.chat;
+option java_package = "me.golemcore.bot.adapter.inbound.web.proto";
+option java_multiple_files = true;
+
+message ChatEnvelope {
+  string request_id = 1;
+  oneof payload {
+    UserMessage user_message = 2;
+    AssistantChunk assistant_chunk = 3;
+    AssistantDone assistant_done = 4;
+    SystemEvent system_event = 5;
+    ErrorEvent error = 6;
+  }
+  // Reserved JSON-encoded extension fields
+  string hint = 10;
+  string ads = 11;
+  string status = 12;
+}
+
+message UserMessage {
+  string text = 1;
+  string session_id = 2;
+}
+
+message AssistantChunk {
+  string text = 1;
+  string session_id = 2;
+  string model = 3;
+}
+
+message AssistantDone {
+  string full_text = 1;
+  string session_id = 2;
+  string model = 3;
+  int32 input_tokens = 4;
+  int32 output_tokens = 5;
+}
+
+message SystemEvent {
+  string event_type = 1;
+  string data = 2;
+}
+
+message ErrorEvent {
+  string code = 1;
+  string message = 2;
+}
