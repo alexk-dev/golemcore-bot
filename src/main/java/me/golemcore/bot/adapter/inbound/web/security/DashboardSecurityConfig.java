@@ -63,6 +63,7 @@ public class DashboardSecurityConfig {
                 .build();
     }
 
+    @SuppressWarnings("java:S5122") // CORS is intentionally configurable via bot.dashboard.cors-allowed-origins
     private CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
         String origins = botProperties.getDashboard().getCorsAllowedOrigins();

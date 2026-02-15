@@ -14,6 +14,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -89,6 +90,28 @@ class SettingsControllerTest {
         verify(preferencesService).savePreferences(prefs);
         assertEquals("fr", prefs.getLanguage());
         assertEquals("Europe/Paris", prefs.getTimezone());
+    }
+
+    @Test
+    void shouldUpdatePartialPreferences() {
+        UserPreferences prefs = new UserPreferences();
+        prefs.setLanguage("en");
+        prefs.setModelTier("standard");
+        when(preferencesService.getPreferences()).thenReturn(prefs);
+
+        PreferencesUpdateRequest request = new PreferencesUpdateRequest();
+        request.setNotificationsEnabled(true);
+        request.setModelTier("premium");
+        request.setTierForce(true);
+
+        StepVerifier.create(controller.updatePreferences(request))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        assertEquals("en", prefs.getLanguage()); // unchanged
+        assertEquals("premium", prefs.getModelTier());
+        assertTrue(prefs.isTierForce());
+        assertTrue(prefs.isNotificationsEnabled());
     }
 
     @Test

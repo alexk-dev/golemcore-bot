@@ -12,7 +12,13 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.net.URI;
+import java.util.concurrent.atomic.AtomicReference;
 
+import me.golemcore.bot.domain.model.Message;
+import org.springframework.web.reactive.socket.WebSocketMessage;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -72,6 +78,73 @@ class WebSocketChatHandlerTest {
         when(handshakeInfo.getUri()).thenReturn(URI.create("ws://localhost/ws/chat?token=" + token));
         when(session.getId()).thenReturn("session-1");
         when(session.receive()).thenReturn(Flux.empty());
+
+        StepVerifier.create(handler.handle(session))
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldHandleIncomingMessage() {
+        String token = tokenProvider.generateAccessToken("admin");
+
+        AtomicReference<Message> received = new AtomicReference<>();
+        webChannelAdapter.onMessage(received::set);
+
+        WebSocketSession session = mock(WebSocketSession.class);
+        HandshakeInfo handshakeInfo = mock(HandshakeInfo.class);
+        when(session.getHandshakeInfo()).thenReturn(handshakeInfo);
+        when(handshakeInfo.getUri()).thenReturn(URI.create("ws://localhost/ws/chat?token=" + token));
+        when(session.getId()).thenReturn("session-1");
+
+        WebSocketMessage wsMessage = mock(WebSocketMessage.class);
+        when(wsMessage.getPayloadAsText()).thenReturn("{\"text\":\"hello\",\"sessionId\":\"chat-1\"}");
+
+        when(session.receive()).thenReturn(Flux.just(wsMessage));
+
+        StepVerifier.create(handler.handle(session))
+                .verifyComplete();
+
+        assertNotNull(received.get());
+        assertEquals("hello", received.get().getContent());
+        assertEquals("web", received.get().getChannelType());
+    }
+
+    @Test
+    void shouldIgnoreBlankMessages() {
+        String token = tokenProvider.generateAccessToken("admin");
+
+        AtomicReference<Message> received = new AtomicReference<>();
+        webChannelAdapter.onMessage(received::set);
+
+        WebSocketSession session = mock(WebSocketSession.class);
+        HandshakeInfo handshakeInfo = mock(HandshakeInfo.class);
+        when(session.getHandshakeInfo()).thenReturn(handshakeInfo);
+        when(handshakeInfo.getUri()).thenReturn(URI.create("ws://localhost/ws/chat?token=" + token));
+        when(session.getId()).thenReturn("session-2");
+
+        WebSocketMessage wsMessage = mock(WebSocketMessage.class);
+        when(wsMessage.getPayloadAsText()).thenReturn("{\"text\":\"\"}");
+
+        when(session.receive()).thenReturn(Flux.just(wsMessage));
+
+        StepVerifier.create(handler.handle(session))
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldHandleMalformedJson() {
+        String token = tokenProvider.generateAccessToken("admin");
+
+        WebSocketSession session = mock(WebSocketSession.class);
+        HandshakeInfo handshakeInfo = mock(HandshakeInfo.class);
+        when(session.getHandshakeInfo()).thenReturn(handshakeInfo);
+        when(handshakeInfo.getUri()).thenReturn(URI.create("ws://localhost/ws/chat?token=" + token));
+        when(session.getId()).thenReturn("session-3");
+
+        WebSocketMessage wsMessage = mock(WebSocketMessage.class);
+        when(wsMessage.getPayloadAsText()).thenReturn("not json");
+
+        when(session.receive()).thenReturn(Flux.just(wsMessage));
 
         StepVerifier.create(handler.handle(session))
                 .verifyComplete();

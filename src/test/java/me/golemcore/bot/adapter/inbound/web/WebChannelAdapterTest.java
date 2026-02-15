@@ -130,6 +130,61 @@ class WebChannelAdapterTest {
     }
 
     @Test
+    void shouldSendMessageToActiveSession() {
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.isOpen()).thenReturn(true);
+        when(session.send(any())).thenReturn(Mono.empty());
+        when(session.textMessage(any(String.class)))
+                .thenReturn(mock(org.springframework.web.reactive.socket.WebSocketMessage.class));
+
+        adapter.registerSession("chat-1", session);
+        CompletableFuture<Void> result = adapter.sendMessage("chat-1", "hello");
+        assertNotNull(result);
+        result.join();
+    }
+
+    @Test
+    void shouldShowTypingToActiveSession() {
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.isOpen()).thenReturn(true);
+        when(session.send(any())).thenReturn(Mono.empty());
+        when(session.textMessage(any(String.class)))
+                .thenReturn(mock(org.springframework.web.reactive.socket.WebSocketMessage.class));
+
+        adapter.registerSession("chat-1", session);
+        adapter.showTyping("chat-1");
+    }
+
+    @Test
+    void shouldSendMessageObjectToActiveSession() {
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.isOpen()).thenReturn(true);
+        when(session.send(any())).thenReturn(Mono.empty());
+        when(session.textMessage(any(String.class)))
+                .thenReturn(mock(org.springframework.web.reactive.socket.WebSocketMessage.class));
+
+        adapter.registerSession("chat-2", session);
+        Message message = Message.builder()
+                .chatId("chat-2")
+                .content("test response")
+                .build();
+        CompletableFuture<Void> result = adapter.sendMessage(message);
+        assertNotNull(result);
+        result.join();
+    }
+
+    @Test
+    void shouldHandleClosedSession() {
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.isOpen()).thenReturn(false);
+
+        adapter.registerSession("chat-1", session);
+        CompletableFuture<Void> result = adapter.sendMessage("chat-1", "hello");
+        assertNotNull(result);
+        result.join();
+    }
+
+    @Test
     void shouldStopClearsSessions() {
         WebSocketSession session = mock(WebSocketSession.class);
         when(session.close()).thenReturn(Mono.empty());
