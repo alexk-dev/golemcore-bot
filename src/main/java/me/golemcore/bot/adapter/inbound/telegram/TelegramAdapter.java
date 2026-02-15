@@ -40,6 +40,7 @@ import org.telegram.telegrambots.longpolling.TelegramBotsLongPollingApplication;
 import org.telegram.telegrambots.longpolling.util.LongPollingSingleThreadUpdateConsumer;
 import org.telegram.telegrambots.meta.api.methods.ActionType;
 import org.telegram.telegrambots.meta.api.methods.GetFile;
+import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.telegram.telegrambots.meta.api.methods.send.SendChatAction;
 import org.telegram.telegrambots.meta.api.methods.send.SendAudio;
 import org.telegram.telegrambots.meta.api.methods.send.SendDocument;
@@ -412,7 +413,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
         }
     }
 
-    private byte[] downloadVoice(String fileId) throws Exception {
+    private byte[] downloadVoice(String fileId) throws TelegramApiException, java.io.IOException {
         GetFile getFile = new GetFile(fileId);
         org.telegram.telegrambots.meta.api.objects.File file = telegramClient.execute(getFile);
 

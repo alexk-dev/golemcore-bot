@@ -5,6 +5,7 @@ import org.springframework.beans.factory.ObjectProvider;
 /**
  * Small test helper to wrap an instance as an {@link ObjectProvider}.
  */
+@SuppressWarnings("PMD.TestClassWithoutTestCases")
 final class TestObjectProvider<T> implements ObjectProvider<T> {
 
     private final T value;
@@ -15,7 +16,7 @@ final class TestObjectProvider<T> implements ObjectProvider<T> {
 
     @Override
     public T getObject(Object... args) {
-        return value;
+        return getIfAvailable();
     }
 
     @Override
@@ -25,7 +26,8 @@ final class TestObjectProvider<T> implements ObjectProvider<T> {
 
     @Override
     public T getIfUnique() {
-        return value;
+        T available = getIfAvailable();
+        return available != null ? available : null;
     }
 
     @Override

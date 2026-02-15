@@ -99,6 +99,7 @@ public class CommandRouter implements CommandPort {
     private static final String CMD_HELP = "help";
     private static final String CMD_GOAL = "goal";
     private static final String CMD_PLAN = "plan";
+    private static final String CMD_PLANS = "plans";
     private static final String CMD_STATUS = "status";
     private static final int MIN_SCHEDULE_ARGS = 2;
     private static final int MIN_CRON_PARTS_FOR_REPEAT_CHECK = 1;
@@ -120,7 +121,7 @@ public class CommandRouter implements CommandPort {
     private static final List<String> KNOWN_COMMANDS = List.of(
             "skills", "tools", CMD_STATUS, "new", "reset", "compact", CMD_HELP,
             "tier", "auto", "goals", CMD_GOAL, "diary", "tasks", "schedule",
-            CMD_PLAN, "plans", "stop");
+            CMD_PLAN, CMD_PLANS, "stop");
 
     private static final java.util.Set<String> VALID_TIERS = java.util.Set.of(
             "balanced", "smart", "coding", "deep");
@@ -178,7 +179,7 @@ public class CommandRouter implements CommandPort {
             case "tasks" -> handleTasks();
             case "schedule" -> handleSchedule(args);
             case CMD_PLAN -> handlePlan(args, chatId);
-            case "plans" -> handlePlans();
+            case CMD_PLANS -> handlePlans();
             case "stop" -> handleStop(channelType, chatId);
             default -> CommandResult.failure(msg("command.unknown", command));
             };
@@ -213,7 +214,7 @@ public class CommandRouter implements CommandPort {
         if (planService.isFeatureEnabled()) {
             commands.add(new CommandDefinition(CMD_PLAN, "Plan mode control",
                     "/plan [on|off|status|approve|cancel|resume]"));
-            commands.add(new CommandDefinition("plans", "List plans", "/plans"));
+            commands.add(new CommandDefinition(CMD_PLANS, "List plans", "/plans"));
         }
         return commands;
     }

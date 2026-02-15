@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -42,7 +43,7 @@ public class ToolCallExecutionService {
     private final BotProperties properties;
     private final ObjectProvider<List<ChannelPort>> channelPortsProvider;
 
-    private volatile Map<String, ChannelPort> channelRegistry;
+    private final AtomicReference<Map<String, ChannelPort>> channelRegistry = new AtomicReference<>();
 
     public ToolCallExecutionService(List<ToolComponent> toolComponents,
             ToolConfirmationPolicy confirmationPolicy,
@@ -251,22 +252,20 @@ public class ToolCallExecutionService {
     }
 
     private Map<String, ChannelPort> getChannelRegistry() {
-        Map<String, ChannelPort> existing = channelRegistry;
+        Map<String, ChannelPort> existing = channelRegistry.get();
         if (existing != null) {
             return existing;
         }
-        synchronized (this) {
-            if (channelRegistry != null) {
-                return channelRegistry;
-            }
-            Map<String, ChannelPort> registry = new ConcurrentHashMap<>();
-            List<ChannelPort> ports = channelPortsProvider.getIfAvailable(List::of);
-            for (ChannelPort port : ports) {
-                registry.put(port.getChannelType(), port);
-            }
-            channelRegistry = registry;
-            return registry;
+
+        Map<String, ChannelPort> registry = new ConcurrentHashMap<>();
+        List<ChannelPort> ports = channelPortsProvider.getIfAvailable(List::of);
+        for (ChannelPort port : ports) {
+            registry.put(port.getChannelType(), port);
         }
+
+        Map<String, ChannelPort> immutable = Map.copyOf(registry);
+        channelRegistry.compareAndSet(null, immutable);
+        return channelRegistry.get();
     }
 
     private void notifyToolExecution(AgentContext context, Message.ToolCall toolCall) {
