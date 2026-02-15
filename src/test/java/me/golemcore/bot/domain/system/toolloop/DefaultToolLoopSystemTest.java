@@ -44,6 +44,7 @@ class DefaultToolLoopSystemTest {
     private static final String TOOL_NAME = "test_tool";
     private static final String CONTENT_DONE = "Done";
     private static final String CONTENT_HELLO = "Hello";
+    private static final String USER_DENIED = "User denied";
 
     @Mock
     private LlmPort llmPort;
@@ -243,8 +244,8 @@ class DefaultToolLoopSystemTest {
 
         ToolExecutionOutcome outcome = new ToolExecutionOutcome(
                 TOOL_CALL_ID, TOOL_NAME,
-                ToolResult.failure(ToolFailureKind.CONFIRMATION_DENIED, "User denied"),
-                "User denied", false, null);
+                ToolResult.failure(ToolFailureKind.CONFIRMATION_DENIED, USER_DENIED),
+                USER_DENIED, false, null);
         when(toolExecutor.execute(any(), any())).thenReturn(outcome);
 
         ToolLoopTurnResult result = system.processTurn(context);
@@ -665,6 +666,48 @@ class DefaultToolLoopSystemTest {
         assertFalse(replacedResponse.hasToolCalls(), "LLM_RESPONSE should have no tool calls after stop");
         assertTrue(replacedResponse.getContent().contains("reached max internal LLM calls"),
                 "LLM_RESPONSE content should contain the stop reason");
+    }
+
+    @Test
+    void shouldSetToolLoopLimitReachedWhenMaxLlmCallsExhausted() {
+        turnSettings.setMaxLlmCalls(1);
+        AgentContext context = buildContext();
+        Message.ToolCall tc = toolCall(TOOL_CALL_ID, TOOL_NAME);
+
+        LlmResponse withTools = toolCallResponse(List.of(tc));
+        when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(withTools));
+
+        ToolExecutionOutcome outcome = new ToolExecutionOutcome(
+                TOOL_CALL_ID, TOOL_NAME, ToolResult.success("ok"), "ok", false, null);
+        when(toolExecutor.execute(any(), any())).thenReturn(outcome);
+
+        system.processTurn(context);
+
+        Boolean limitReached = context.getAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REACHED);
+        assertTrue(Boolean.TRUE.equals(limitReached),
+                "TOOL_LOOP_LIMIT_REACHED should be set when LLM call limit exhausted");
+    }
+
+    @Test
+    void shouldNotSetToolLoopLimitReachedOnConfirmationDenied() {
+        settings.setStopOnConfirmationDenied(true);
+        AgentContext context = buildContext();
+        Message.ToolCall tc = toolCall(TOOL_CALL_ID, TOOL_NAME);
+
+        LlmResponse withTools = toolCallResponse(List.of(tc));
+        when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(withTools));
+
+        ToolExecutionOutcome outcome = new ToolExecutionOutcome(
+                TOOL_CALL_ID, TOOL_NAME,
+                ToolResult.failure(ToolFailureKind.CONFIRMATION_DENIED, USER_DENIED),
+                USER_DENIED, false, null);
+        when(toolExecutor.execute(any(), any())).thenReturn(outcome);
+
+        system.processTurn(context);
+
+        Boolean limitReached = context.getAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REACHED);
+        assertFalse(Boolean.TRUE.equals(limitReached),
+                "TOOL_LOOP_LIMIT_REACHED should NOT be set for confirmation denied stop");
     }
 
     // ==================== Conversation view diagnostics ====================

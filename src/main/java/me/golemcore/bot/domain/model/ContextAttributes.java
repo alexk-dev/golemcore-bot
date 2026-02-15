@@ -76,4 +76,10 @@ public final class ContextAttributes {
     /** Boolean ? loop iteration limit reached (AgentLoop safeguard). */
     public static final String ITERATION_LIMIT_REACHED = "iteration.limit.reached";
 
+    /**
+     * Boolean — tool loop stopped due to internal limit (LLM calls / tool
+     * executions / deadline).
+     */
+    public static final String TOOL_LOOP_LIMIT_REACHED = "toolloop.limit.reached";
+
 }

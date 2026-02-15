@@ -98,6 +98,12 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
         }
         String text = response.getContent();
 
+        // Tool loop limit: replace technical stop message with user-friendly i18n text.
+        Boolean toolLoopLimitReached = context.getAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REACHED);
+        if (Boolean.TRUE.equals(toolLoopLimitReached)) {
+            text = preferencesService.getMessage("system.toolloop.limit");
+        }
+
         // Voice intent is typed (backward-incompatible: no ContextAttributes.* for
         // voice).
 
