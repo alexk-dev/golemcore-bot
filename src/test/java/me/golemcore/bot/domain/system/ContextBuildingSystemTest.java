@@ -14,6 +14,7 @@ import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.McpPort;
 import me.golemcore.bot.port.outbound.RagPort;
 import me.golemcore.bot.tools.PlanFinalizeTool;
+import me.golemcore.bot.tools.PlanGetTool;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -44,11 +45,12 @@ class ContextBuildingSystemTest {
         when(planService.isFeatureEnabled()).thenReturn(true);
 
         PlanFinalizeTool planFinalizeTool = new PlanFinalizeTool(planService);
+        PlanGetTool planGetTool = new PlanGetTool(planService);
 
         ContextBuildingSystem system = new ContextBuildingSystem(
                 memoryComponent,
                 skillComponent,
-                List.of(planFinalizeTool),
+                List.of(planFinalizeTool, planGetTool),
                 templateEngine,
                 mcpPort,
                 toolCallExecutionService,
@@ -65,12 +67,15 @@ class ContextBuildingSystemTest {
         when(planService.isPlanModeActive()).thenReturn(false);
         system.process(context);
         assertTrue(context.getAvailableTools().stream()
-                .noneMatch(t -> PlanFinalizeTool.TOOL_NAME.equals(t.getName())));
+                .noneMatch(t -> PlanFinalizeTool.TOOL_NAME.equals(t.getName())
+                        || PlanGetTool.TOOL_NAME.equals(t.getName())));
 
         // Case 2: plan mode ON
         when(planService.isPlanModeActive()).thenReturn(true);
         system.process(context);
         assertTrue(context.getAvailableTools().stream()
                 .anyMatch(t -> PlanFinalizeTool.TOOL_NAME.equals(t.getName())));
+        assertTrue(context.getAvailableTools().stream()
+                .anyMatch(t -> PlanGetTool.TOOL_NAME.equals(t.getName())));
     }
 }

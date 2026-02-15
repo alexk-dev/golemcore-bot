@@ -19,6 +19,7 @@ package me.golemcore.bot.tools;
  */
 
 import me.golemcore.bot.domain.component.ToolComponent;
+import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.ToolResult;
@@ -29,17 +30,17 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Plan-work-only tool used as a deterministic signal that a canonical plan
- * draft is ready to be persisted.
+ * Read-only tool that returns the canonical plan markdown (SSOT) for the
+ * current active plan.
  */
 @Component
-public class PlanFinalizeTool implements ToolComponent {
+public class PlanGetTool implements ToolComponent {
 
-    public static final String TOOL_NAME = "plan_finalize";
+    public static final String TOOL_NAME = "plan_get";
 
     private final PlanService planService;
 
-    public PlanFinalizeTool(PlanService planService) {
+    public PlanGetTool(PlanService planService) {
         this.planService = planService;
     }
 
@@ -47,18 +48,10 @@ public class PlanFinalizeTool implements ToolComponent {
     public ToolDefinition getDefinition() {
         return ToolDefinition.builder()
                 .name(TOOL_NAME)
-                .description("Persist the canonical plan markdown for the active plan work. "
-                        + "Provide the full plan as a Markdown document in plan_markdown.")
+                .description("Get the current canonical plan markdown (SSOT) for the active plan work.")
                 .inputSchema(Map.of(
                         "type", "object",
-                        "required", java.util.List.of("plan_markdown"),
-                        "properties", Map.of(
-                                "plan_markdown", Map.of(
-                                        "type", "string",
-                                        "description", "Full canonical plan draft as a single Markdown document."),
-                                "title", Map.of(
-                                        "type", "string",
-                                        "description", "Optional short title for the plan."))))
+                        "properties", Map.of()))
                 .build();
     }
 
@@ -69,9 +62,11 @@ public class PlanFinalizeTool implements ToolComponent {
                     ToolResult.failure(ToolFailureKind.POLICY_DENIED, "Plan work is not active"));
         }
 
-        // Intentionally no mutations here. Finalization is performed by the plan
-        // finalization system.
-        return CompletableFuture.completedFuture(ToolResult.success("[Plan finalize requested]"));
+        return CompletableFuture.completedFuture(planService.getActivePlan()
+                .map(Plan::getMarkdown)
+                .filter(md -> md != null && !md.isBlank())
+                .map(ToolResult::success)
+                .orElseGet(() -> ToolResult.failure(ToolFailureKind.POLICY_DENIED, "No plan markdown available")));
     }
 
     @Override

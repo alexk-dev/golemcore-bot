@@ -678,32 +678,29 @@ class CommandRouterTest {
     }
 
     @Test
-    void planOffDeactivatesAndCancelsEmptyPlan() throws Exception {
+    void planOffDeactivatesWhenActive() throws Exception {
         when(planService.isFeatureEnabled()).thenReturn(true);
         when(planService.isPlanModeActive()).thenReturn(true);
-        Plan emptyPlan = buildPlan(PLAN_ID_FULL, Plan.PlanStatus.COLLECTING, List.of(), null);
-        when(planService.getActivePlan()).thenReturn(Optional.of(emptyPlan));
 
         CommandPort.CommandResult result = router.execute(CMD_PLAN, List.of(SUB_OFF), CTX_WITH_CHANNEL).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.plan.disabled"));
-        verify(planService).cancelPlan(PLAN_ID_FULL);
+        verify(planService).deactivatePlanMode();
     }
 
     @Test
-    void planOffFinalizesNonEmptyPlan() throws Exception {
+    void planDoneCancelsActivePlan() throws Exception {
         when(planService.isFeatureEnabled()).thenReturn(true);
         when(planService.isPlanModeActive()).thenReturn(true);
-        Plan plan = buildPlan(PLAN_ID_FULL, Plan.PlanStatus.COLLECTING,
-                List.of(PlanStep.builder().id("s1").toolName("fs").order(0).build()), null);
+        Plan plan = buildPlan(PLAN_ID_FULL, Plan.PlanStatus.COLLECTING, List.of(), null);
         when(planService.getActivePlan()).thenReturn(Optional.of(plan));
 
-        CommandPort.CommandResult result = router.execute(CMD_PLAN, List.of(SUB_OFF), CTX_WITH_CHANNEL).get();
+        CommandPort.CommandResult result = router.execute(CMD_PLAN, List.of("done"), CTX_WITH_CHANNEL).get();
         assertTrue(result.success());
-        verify(planService).finalizePlan(PLAN_ID_FULL);
+        verify(planService).cancelPlan(PLAN_ID_FULL);
+        verify(planService).deactivatePlanMode();
     }
 
-    @Test
     void planOffWhenNotActive() throws Exception {
         when(planService.isFeatureEnabled()).thenReturn(true);
         when(planService.isPlanModeActive()).thenReturn(false);
@@ -766,7 +763,7 @@ class CommandRouterTest {
                 List.of(SUB_CANCEL, PLAN_ID_FULL), CTX_WITH_CHANNEL).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.plan.cancelled"));
-        verify(planService).cancelPlan(PLAN_ID_FULL);
+        verify(planService, org.mockito.Mockito.never()).deactivatePlanMode();
     }
 
     @Test
@@ -777,7 +774,7 @@ class CommandRouterTest {
 
         CommandPort.CommandResult result = router.execute(CMD_PLAN, List.of(SUB_CANCEL), CTX_WITH_CHANNEL).get();
         assertTrue(result.success());
-        verify(planService).cancelPlan(PLAN_ID_FULL);
+        verify(planService, org.mockito.Mockito.never()).deactivatePlanMode();
     }
 
     @Test

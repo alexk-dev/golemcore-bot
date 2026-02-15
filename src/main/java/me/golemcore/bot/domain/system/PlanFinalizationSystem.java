@@ -25,12 +25,11 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.PlanReadyEvent;
-import me.golemcore.bot.domain.model.PlanStep;
 import me.golemcore.bot.domain.service.PlanService;
-import me.golemcore.bot.domain.service.UserPreferencesService;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -53,7 +52,6 @@ public class PlanFinalizationSystem implements AgentSystem {
 
     private final PlanService planService;
     private final ApplicationEventPublisher eventPublisher;
-    private final UserPreferencesService preferencesService;
 
     @Override
     public String getName() {
@@ -98,7 +96,7 @@ public class PlanFinalizationSystem implements AgentSystem {
     public AgentContext process(AgentContext context) {
         Optional<Plan> activePlan = planService.getActivePlan();
         if (activePlan.isEmpty()) {
-            log.warn("[PlanFinalize] Plan mode active but no active plan found");
+            log.warn("[PlanFinalize] Plan work active but no active plan found");
             planService.deactivatePlanMode();
             return context;
         }
@@ -106,60 +104,50 @@ public class PlanFinalizationSystem implements AgentSystem {
         Plan plan = activePlan.get();
         String chatId = context.getSession().getChatId();
 
-        // Empty plan — cancel and let normal response routing proceed
-        if (plan.getSteps().isEmpty()) {
+        // Empty plan ? cancel and let normal response routing proceed
+        if (plan.getSteps() != null && plan.getSteps().isEmpty()) {
             log.info("[PlanFinalize] Empty plan, cancelling");
             planService.cancelPlan(plan.getId());
             return context;
         }
 
-        // Finalize the plan
-        planService.finalizePlan(plan.getId());
-
-        // Append plan summary to LLM response
         LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
-        String summary = buildPlanSummary(plan);
-        String updatedContent = response.getContent() + "\n\n" + summary;
-        response.setContent(updatedContent);
+        PlanFinalizeArgs finalizeArgs = PlanFinalizeArgs.from(response);
+        if (finalizeArgs == null || finalizeArgs.planMarkdown() == null || finalizeArgs.planMarkdown().isBlank()) {
+            log.warn("[PlanFinalize] plan_finalize called without plan_markdown");
+            return context;
+        }
+
+        // Persist canonical markdown draft (SSOT) and move plan state forward.
+        planService.finalizePlan(plan.getId(), finalizeArgs.planMarkdown(), finalizeArgs.title());
 
         // Publish event for Telegram approval UI
         eventPublisher.publishEvent(new PlanReadyEvent(plan.getId(), chatId));
         context.setAttribute(ContextAttributes.PLAN_APPROVAL_NEEDED, plan.getId());
 
-        log.info("[PlanFinalize] Plan '{}' ready for approval ({} steps)", plan.getId(), plan.getSteps().size());
+        log.info("[PlanFinalize] Plan '{}' updated and ready for approval", plan.getId());
 
         return context;
     }
 
-    private String buildPlanSummary(Plan plan) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("---\n");
+    private record PlanFinalizeArgs(String planMarkdown, String title) {
 
-        String shortId = plan.getId().substring(0, 8);
-        sb.append("**")
-                .append(msg("plan.ready.card.title", shortId, plan.getSteps().size()))
-                .append("**\n");
-
-        for (int i = 0; i < plan.getSteps().size(); i++) {
-            PlanStep step = plan.getSteps().get(i);
-            sb.append(String.format("%d. `%s`", i + 1, step.getToolName()));
-            if (step.getDescription() != null && !step.getDescription().isBlank()) {
-                sb.append(" — ").append(step.getDescription());
+        @SuppressWarnings("unchecked")
+        static PlanFinalizeArgs from(LlmResponse response) {
+            if (response == null || response.getToolCalls() == null) {
+                return null;
             }
-            sb.append("\n");
+            return response.getToolCalls().stream()
+                    .filter(tc -> me.golemcore.bot.tools.PlanFinalizeTool.TOOL_NAME.equals(tc.getName()))
+                    .findFirst()
+                    .map(tc -> {
+                        Map<String, Object> args = tc.getArguments() != null ? tc.getArguments() : Map.of();
+                        Object md = args.get("plan_markdown");
+                        Object title = args.get("title");
+                        return new PlanFinalizeArgs(md instanceof String ? (String) md : null,
+                                title instanceof String ? (String) title : null);
+                    })
+                    .orElse(null);
         }
-
-        sb.append("\n_").append(msg("plan.ready.card.waiting")).append("_\n");
-        sb.append("\n**").append(msg("plan.ready.card.quick.title")).append("**\n");
-        sb.append(msg("plan.ready.card.quick.approve", plan.getId())).append("\n");
-        sb.append(msg("plan.ready.card.quick.cancel", plan.getId())).append("\n");
-        sb.append(msg("plan.ready.card.quick.status")).append("\n");
-        sb.append(msg("plan.ready.card.quick.list")).append("\n");
-
-        return sb.toString();
-    }
-
-    private String msg(String key, Object... args) {
-        return preferencesService.getMessage(key, args);
     }
 }

@@ -8,7 +8,6 @@ import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.PlanReadyEvent;
 import me.golemcore.bot.domain.model.PlanStep;
 import me.golemcore.bot.domain.service.PlanService;
-import me.golemcore.bot.domain.service.UserPreferencesService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
@@ -21,7 +20,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -35,21 +33,13 @@ class PlanFinalizationSystemTest {
 
     private PlanService planService;
     private ApplicationEventPublisher eventPublisher;
-    private UserPreferencesService preferencesService;
     private PlanFinalizationSystem system;
 
     @BeforeEach
     void setUp() {
         planService = mock(PlanService.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
-        preferencesService = mock(UserPreferencesService.class);
-
-        // Avoid coupling tests to i18n message catalog contents
-        when(preferencesService.getMessage(anyString(),
-                any(Object[].class)))
-                .thenAnswer(inv -> inv.getArgument(0));
-
-        system = new PlanFinalizationSystem(planService, eventPublisher, preferencesService);
+        system = new PlanFinalizationSystem(planService, eventPublisher);
     }
 
     @Test
@@ -73,7 +63,16 @@ class PlanFinalizationSystemTest {
     @Test
     void shouldNotProcessWhenPlanModeInactive() {
         when(planService.isPlanModeActive()).thenReturn(false);
-        AgentContext context = buildContext("Some response");
+        LlmResponse response = LlmResponse.builder()
+                .content("Some response")
+                .toolCalls(List.of(me.golemcore.bot.domain.model.Message.ToolCall.builder()
+                        .id("tc1")
+                        .name(me.golemcore.bot.tools.PlanFinalizeTool.TOOL_NAME)
+                        .arguments(java.util.Map.of("plan_markdown", "# Plan"))
+                        .build()))
+                .build();
+        AgentContext context = buildContext(null);
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
         assertFalse(system.shouldProcess(context));
     }
 
@@ -120,11 +119,20 @@ class PlanFinalizationSystemTest {
                 .build();
         when(planService.getActivePlan()).thenReturn(Optional.of(emptyPlan));
 
-        AgentContext context = buildContext("No plan needed");
+        LlmResponse response = LlmResponse.builder()
+                .content("No plan needed")
+                .toolCalls(List.of(me.golemcore.bot.domain.model.Message.ToolCall.builder()
+                        .id("tc1")
+                        .name(me.golemcore.bot.tools.PlanFinalizeTool.TOOL_NAME)
+                        .arguments(java.util.Map.of("plan_markdown", "# Plan"))
+                        .build()))
+                .build();
+        AgentContext context = buildContext(null);
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
         system.process(context);
 
         verify(planService).cancelPlan(PLAN_ID);
-        verify(planService, never()).finalizePlan(any());
+        verify(planService, never()).finalizePlan(any(), any(), any());
         verify(eventPublisher, never()).publishEvent(any());
     }
 
@@ -143,10 +151,19 @@ class PlanFinalizationSystemTest {
                 .build();
         when(planService.getActivePlan()).thenReturn(Optional.of(plan));
 
-        AgentContext context = buildContext("Here is my plan");
+        LlmResponse response = LlmResponse.builder()
+                .content("Here is my plan")
+                .toolCalls(List.of(me.golemcore.bot.domain.model.Message.ToolCall.builder()
+                        .id("tc1")
+                        .name(me.golemcore.bot.tools.PlanFinalizeTool.TOOL_NAME)
+                        .arguments(java.util.Map.of("plan_markdown", "# Plan"))
+                        .build()))
+                .build();
+        AgentContext context = buildContext(null);
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
         system.process(context);
 
-        verify(planService).finalizePlan(PLAN_ID);
+        verify(planService).finalizePlan(any(), any(), any());
         verify(eventPublisher).publishEvent(new PlanReadyEvent(PLAN_ID, CHAT_ID));
 
         // Check that plan approval attribute was set
@@ -155,34 +172,20 @@ class PlanFinalizationSystemTest {
     }
 
     @Test
-    void shouldAppendPlanSummaryToResponse() {
-        when(planService.isPlanModeActive()).thenReturn(true);
-
-        List<PlanStep> steps = List.of(
-                PlanStep.builder().id("s1").toolName(TOOL_FILESYSTEM).description("write file").order(0).build());
-
-        Plan plan = Plan.builder()
-                .id(PLAN_ID)
-                .status(Plan.PlanStatus.COLLECTING)
-                .steps(new ArrayList<>(steps))
-                .build();
-        when(planService.getActivePlan()).thenReturn(Optional.of(plan));
-
-        AgentContext context = buildContext("Original response");
-        system.process(context);
-
-        LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
-        assertTrue(response.getContent().contains("Original response"));
-        assertTrue(response.getContent().contains(TOOL_FILESYSTEM));
-        assertTrue(response.getContent().contains("plan.ready.card.waiting"));
-    }
-
-    @Test
     void shouldDeactivateWhenNoActivePlanFound() {
         when(planService.isPlanModeActive()).thenReturn(true);
         when(planService.getActivePlan()).thenReturn(Optional.empty());
 
-        AgentContext context = buildContext("Some response");
+        LlmResponse response = LlmResponse.builder()
+                .content("Some response")
+                .toolCalls(List.of(me.golemcore.bot.domain.model.Message.ToolCall.builder()
+                        .id("tc1")
+                        .name(me.golemcore.bot.tools.PlanFinalizeTool.TOOL_NAME)
+                        .arguments(java.util.Map.of("plan_markdown", "# Plan"))
+                        .build()))
+                .build();
+        AgentContext context = buildContext(null);
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
         system.process(context);
 
         verify(planService).deactivatePlanMode();
@@ -214,51 +217,6 @@ class PlanFinalizationSystemTest {
         LlmResponse response = LlmResponse.builder().content("Some text response").toolCalls(List.of()).build();
         context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
         assertFalse(system.shouldProcess(context));
-    }
-
-    @Test
-    void shouldHandleStepWithNullDescription() {
-        when(planService.isPlanModeActive()).thenReturn(true);
-
-        List<PlanStep> steps = List.of(
-                PlanStep.builder().id("s1").toolName(TOOL_FILESYSTEM).description(null).order(0).build());
-
-        Plan plan = Plan.builder()
-                .id(PLAN_ID)
-                .status(Plan.PlanStatus.COLLECTING)
-                .steps(new ArrayList<>(steps))
-                .build();
-        when(planService.getActivePlan()).thenReturn(Optional.of(plan));
-
-        AgentContext context = buildContext("Plan summary here");
-        system.process(context);
-
-        LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
-        assertTrue(response.getContent().contains(TOOL_FILESYSTEM));
-        assertFalse(response.getContent().contains(" — null"));
-    }
-
-    @Test
-    void shouldHandleStepWithBlankDescription() {
-        when(planService.isPlanModeActive()).thenReturn(true);
-
-        List<PlanStep> steps = List.of(
-                PlanStep.builder().id("s1").toolName(TOOL_FILESYSTEM).description("   ").order(0).build());
-
-        Plan plan = Plan.builder()
-                .id(PLAN_ID)
-                .status(Plan.PlanStatus.COLLECTING)
-                .steps(new ArrayList<>(steps))
-                .build();
-        when(planService.getActivePlan()).thenReturn(Optional.of(plan));
-
-        AgentContext context = buildContext("Plan summary here");
-        system.process(context);
-
-        LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
-        assertTrue(response.getContent().contains(TOOL_FILESYSTEM));
-        // Blank description should not have " — " separator
-        assertFalse(response.getContent().contains(" — "));
     }
 
     private AgentContext buildContext(String responseContent) {

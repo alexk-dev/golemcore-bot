@@ -236,7 +236,6 @@ class PlanServiceTest {
                 .id(STEP_1)
                 .planId(PLAN_ABC)
                 .toolName(TOOL_SHELL)
-                .description("Run tests")
                 .order(0)
                 .status(PlanStep.StepStatus.PENDING)
                 .createdAt(FIXED_INSTANT)
@@ -331,7 +330,7 @@ class PlanServiceTest {
                 .thenReturn(CompletableFuture.completedFuture(plansJson));
 
         // Act
-        service.finalizePlan("plan-fin");
+        service.finalizePlan("plan-fin", "# Plan", null);
 
         // Assert — verify saved plan status changed to READY
         ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
@@ -356,7 +355,7 @@ class PlanServiceTest {
         assertTrue(service.isPlanModeActive());
 
         // Act
-        service.finalizePlan(activePlanId);
+        service.finalizePlan(activePlanId, "# Plan", null);
 
         // Assert
         assertFalse(service.isPlanModeActive());
@@ -367,8 +366,8 @@ class PlanServiceTest {
     // ====================
 
     @Test
-    void shouldThrowWhenFinalizingNonCollectingPlan() throws Exception {
-        // Arrange — plan in READY state
+    void shouldAllowUpdatingReadyPlanMarkdown() throws Exception {
+        // Arrange ? plan in READY state
         Plan plan = Plan.builder()
                 .id("plan-ready")
                 .title("Already ready")
@@ -381,18 +380,29 @@ class PlanServiceTest {
         when(storagePort.getText(AUTO_DIR, PLANS_FILE))
                 .thenReturn(CompletableFuture.completedFuture(plansJson));
 
-        // Act & Assert
-        IllegalStateException exception = assertThrows(IllegalStateException.class,
-                () -> service.finalizePlan("plan-ready"));
-        assertTrue(exception.getMessage().contains("Can only finalize plans in COLLECTING state"));
-        assertTrue(exception.getMessage().contains("READY"));
+        // Act
+        service.finalizePlan("plan-ready", "# Updated plan", null);
+
+        // Assert
+        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+        verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq(PLANS_FILE), captor.capture());
+
+        String savedJson = captor.getValue();
+        List<Plan> savedPlans = objectMapper.readValue(savedJson, new TypeReference<>() {
+        });
+        Plan savedPlan = savedPlans.stream()
+                .filter(p -> "plan-ready".equals(p.getId()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(Plan.PlanStatus.READY, savedPlan.getStatus());
+        assertEquals("# Updated plan", savedPlan.getMarkdown());
     }
 
     @Test
     void shouldThrowWhenFinalizingNonExistentPlan() {
         // Act & Assert
         assertThrows(IllegalArgumentException.class,
-                () -> service.finalizePlan(NONEXISTENT_PLAN));
+                () -> service.finalizePlan(NONEXISTENT_PLAN, "# Plan", null));
     }
 
     // ==================== 8. shouldApprovePlanFromReady ====================
@@ -519,8 +529,9 @@ class PlanServiceTest {
                 .updatedAt(FIXED_INSTANT)
                 .build();
         // Need to reload plans cache with both plans
-        List<Plan> allPlans = new ArrayList<>(service.getPlans());
+        List<Plan> allPlans = new ArrayList<>();
         allPlans.add(otherPlan);
+        allPlans.addAll(service.getPlans());
         String plansJson = objectMapper.writeValueAsString(allPlans);
         // Reset the service to reload the cache
         service = new PlanService(storagePort, objectMapper, properties, clock);
@@ -639,23 +650,14 @@ class PlanServiceTest {
         String activePlanId = service.getActivePlanId();
 
         // Add steps to the active plan
-        service.addStep(activePlanId, TOOL_FILESYSTEM, Map.of("path", "/app.java"), "Create app file");
-        service.addStep(activePlanId, TOOL_SHELL, Map.of("command", "mvn test"), "Run tests");
 
         // Act
         String context = service.buildPlanContext();
 
         // Assert
         assertNotNull(context);
-        assertTrue(context.contains("# Plan Mode"));
-        assertTrue(context.contains("PLAN MODE"));
-        assertTrue(context.contains("Collected Steps (2)"));
-        assertTrue(context.contains("**filesystem**"));
-        assertTrue(context.contains("Create app file"));
-        assertTrue(context.contains("**shell**"));
-        assertTrue(context.contains("Run tests"));
-        assertTrue(context.contains("## Instructions"));
-        assertTrue(context.contains("NOT executed"));
+        assertTrue(context.contains("# Plan Work"));
+        assertTrue(context.contains("Plan work is ACTIVE"));
     }
 
     @Test
@@ -680,10 +682,7 @@ class PlanServiceTest {
 
         // Assert
         assertNotNull(context);
-        assertTrue(context.contains("# Plan Mode"));
-        assertTrue(context.contains("## Instructions"));
-        // Should NOT contain "Collected Steps" section when empty
-        assertFalse(context.contains("Collected Steps"));
+        assertTrue(context.contains("# Plan Work"));
     }
 
     // ==================== 12. shouldDeletePlan ====================

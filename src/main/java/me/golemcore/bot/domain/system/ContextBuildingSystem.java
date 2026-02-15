@@ -293,7 +293,9 @@ public class ContextBuildingSystem implements AgentSystem {
     }
 
     private boolean isToolAdvertised(ToolComponent tool, boolean planModeActive) {
-        if (me.golemcore.bot.tools.PlanFinalizeTool.TOOL_NAME.equals(tool.getToolName())) {
+        String toolName = tool.getToolName();
+        if (me.golemcore.bot.tools.PlanFinalizeTool.TOOL_NAME.equals(toolName)
+                || me.golemcore.bot.tools.PlanGetTool.TOOL_NAME.equals(toolName)) {
             return planModeActive;
         }
         return true;

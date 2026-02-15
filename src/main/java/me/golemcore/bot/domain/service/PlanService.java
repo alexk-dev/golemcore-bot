@@ -219,17 +219,53 @@ public class PlanService {
     public void finalizePlan(String planId) {
         Plan plan = getPlan(planId)
                 .orElseThrow(() -> new IllegalArgumentException(PLAN_NOT_FOUND + planId));
+        String md = plan.getMarkdown();
+        if (md == null || md.isBlank()) {
+            md = "# Plan\n\n(TODO: plan_markdown not provided)";
+        }
+        finalizePlan(planId, md, plan.getTitle());
+    }
 
-        if (plan.getStatus() != Plan.PlanStatus.COLLECTING) {
+    public void finalizePlan(String planId, String planMarkdown, String title) {
+        Plan plan = getPlan(planId)
+                .orElseThrow(() -> new IllegalArgumentException(PLAN_NOT_FOUND + planId));
+
+        if (plan.getStatus() != Plan.PlanStatus.COLLECTING
+                && plan.getStatus() != Plan.PlanStatus.READY
+                && plan.getStatus() != Plan.PlanStatus.EXECUTING) {
             throw new IllegalStateException(
-                    "Can only finalize plans in COLLECTING state, current: " + plan.getStatus());
+                    "Can only finalize/update plans in COLLECTING/READY/EXECUTING, current: " + plan.getStatus());
         }
 
+        if (planMarkdown == null || planMarkdown.isBlank()) {
+            throw new IllegalArgumentException("plan_markdown must not be blank");
+        }
+
+        // If we are executing, create a revision and supersede the current plan.
+        if (plan.getStatus() == Plan.PlanStatus.EXECUTING) {
+            Plan revision = createPlan(title, null, plan.getChatId(), plan.getModelTier());
+            revision.setMarkdown(planMarkdown);
+            revision.setStatus(Plan.PlanStatus.READY);
+            revision.setUpdatedAt(Instant.now(clock));
+            // Supersede old plan
+            plan.setStatus(Plan.PlanStatus.CANCELLED);
+            plan.setUpdatedAt(Instant.now(clock));
+            activePlanId = revision.getId();
+            savePlans(getPlans());
+            log.info("[PlanMode] Plan revised: old={} new={}", planId, revision.getId());
+            return;
+        }
+
+        // COLLECTING -> READY, or READY -> READY (overwrite draft)
+        if (title != null && !title.isBlank()) {
+            plan.setTitle(title);
+        }
+        plan.setMarkdown(planMarkdown);
         plan.setStatus(Plan.PlanStatus.READY);
         plan.setUpdatedAt(Instant.now(clock));
         deactivatePlanMode();
         savePlans(getPlans());
-        log.info("[PlanMode] Plan '{}' finalized ({} steps)", planId, plan.getSteps().size());
+        log.info("[PlanMode] Plan {} finalized/updated (READY)", planId);
     }
 
     public void approvePlan(String planId) {
@@ -336,29 +372,27 @@ public class PlanService {
 
         Plan plan = activePlan.get();
         StringBuilder sb = new StringBuilder();
-        sb.append("# Plan Mode\n\n");
-        sb.append("You are in PLAN MODE. Tool calls will be collected as plan steps, NOT executed immediately.\n");
-        sb.append("Continue proposing tool calls to build the plan. ");
-        sb.append("When the plan is complete, call the plan_finalize tool.\n\n");
+        sb.append("# Plan Work\n\n");
+        sb.append("Plan work is ACTIVE.\n");
+        sb.append("- You may use any tools that help you analyze and prepare the plan.\n");
+        sb.append("- The canonical plan is a single Markdown document (SSOT).\n");
+        sb.append("- Use the plan_get tool to load the current canonical plan.\n");
+        sb.append("- When you have an updated draft, call plan_finalize(plan_markdown=...).\n\n");
 
-        if (!plan.getSteps().isEmpty()) {
-            sb.append("## Collected Steps (").append(plan.getSteps().size()).append(")\n");
-            for (int i = 0; i < plan.getSteps().size(); i++) {
-                PlanStep step = plan.getSteps().get(i);
-                sb.append(String.format("%d. **%s** — %s%n", i + 1, step.getToolName(),
-                        step.getDescription() != null ? step.getDescription() : ""));
-            }
-            sb.append("\n");
+        if (plan.getMarkdown() != null && !plan.getMarkdown().isBlank()) {
+            sb.append("## Current canonical plan (SSOT)\n");
+            sb.append("(Use plan_get to retrieve the full document.)\n\n");
+        } else {
+            sb.append("## Current canonical plan (SSOT)\n");
+            sb.append("No canonical plan markdown has been finalized yet.\n\n");
         }
 
-        sb.append("## Instructions\n");
-        sb.append("1. Propose tool calls for the remaining steps of your plan\n");
-        sb.append("2. Each tool call will be recorded but NOT executed\n");
-        sb.append("3. When the plan is complete, call the plan_finalize tool\n");
-        sb.append("4. Optionally provide a brief summary for the user\n");
-        sb.append("5. The user will review and approve the plan before execution\n");
+        sb.append("## Rules\n");
+        sb.append("1. Discuss and refine the plan as needed.\n");
+        sb.append("2. Call plan_finalize with the FULL plan in plan_markdown when ready.\n");
+        sb.append("3. The user will approve the plan before execution.\n");
 
-        return sb.toString();
+        return sb.toString().trim();
     }
 
     private synchronized void recoverRuntimeState(List<Plan> plans) {
@@ -382,12 +416,15 @@ public class PlanService {
             return;
         }
         plans.stream()
-                .filter(p -> p.getStatus() == Plan.PlanStatus.COLLECTING)
+                .filter(p -> p.getStatus() == Plan.PlanStatus.COLLECTING
+                        || p.getStatus() == Plan.PlanStatus.READY
+                        || p.getStatus() == Plan.PlanStatus.APPROVED
+                        || p.getStatus() == Plan.PlanStatus.EXECUTING)
                 .reduce((first, second) -> second)
                 .ifPresent(plan -> {
                     activePlanId = plan.getId();
                     planModeActive = true;
-                    log.info("[PlanMode] Recovered active collecting plan '{}' after restart", activePlanId);
+                    log.info("[PlanMode] Recovered active plan '{}' after restart", activePlanId);
                 });
     }
 

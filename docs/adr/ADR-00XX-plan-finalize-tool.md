@@ -1,221 +1,181 @@
-# ADR-00XX: Deterministic Plan Mode Finalization via `plan_finalize` Tool
+# ADR-00XX: Deterministic "Work by Plan" via `plan_finalize` (SSOT Markdown)
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-02-15
-- **Decision Drivers:** Reliability, testability (BDD/TDD), hexagonal cleanliness, elimination of brittle text heuristics, single-source-of-truth transport contracts.
+- **Decision Drivers:** Reliability, testability (BDD/TDD), hexagonal cleanliness, elimination of brittle text heuristics, ensure plan survives compaction, **single active plan UX**.
 
 ## Context
-GolemCore Bot has a **Plan Mode** that collects proposed tool calls as plan steps and requires user approval before executing them. The current finalization logic relies on an implicit heuristic:
+GolemCore Bot supports a planning workflow. The original implementation relied on an implicit heuristic:
 
 > *“Finalize the plan when the LLM returns plain text with no tool calls.”*
 
-This is fragile in practice:
+This is fragile:
 - Some models emit summary text **together with tool calls**.
 - Some models keep emitting tool calls indefinitely (“just one more step”).
-- “No tool calls” is an **absence-based signal**, which is hard to reason about and test.
+- "No tool calls" is an **absence-based signal**, hard to reason about and test.
 
-Additionally, the current approach encourages downstream systems to infer planning completion from the shape/content of the LLM message rather than from an explicit domain signal.
+During the discussion we clarified the real product goal:
 
-We want Plan Mode to be:
-- **Deterministic** (explicit completion signal)
-- **Easy to test** (machine-readable event)
-- **Architecturally clean** (hexagonal, with clear responsibilities)
-- Compatible with the direction of the refactor: **typed turn outcomes / OutgoingResponse as transport SSOT**.
+- We do **not** want to restrict tools during planning. We cannot predict which tools are useful for analysis while drafting a plan.
+- The purpose of plan-specific tools is to **persist a canonical plan artifact** in a way that is robust to context growth and auto-compaction.
+
+We also clarified UX constraints:
+- This bot is **single-user/single-chat by design**.
+- The user should not have to manage `planId`s in everyday UX.
+- There must be a clear notion of when "work by plan" is **active** and when it is **over**, otherwise the plan becomes an unexpected artifact.
+
+## Goal
+Introduce a deterministic, testable, and architecturally clean mechanism to:
+1. Start a "work by plan" mode on `/plan on`.
+2. Allow iterative plan drafting and updates.
+3. Persist the plan as a **single Markdown document (SSOT)** at `plan_finalize`.
+4. Keep the plan reliably accessible even after compaction.
+5. End the mode explicitly on `/plan done` or `/reset`.
 
 ## Decision
-Introduce a dedicated tool call **`plan_finalize`** used *only in Plan Mode* as the explicit, machine-readable signal that planning is complete.
+We define a **"Work by Plan"** mode ("plan work") that is enabled explicitly by the user via `/plan on` and disabled via `/plan done` or `/reset`.
 
-### Core behavior
-- While Plan Mode is active:
-  - Regular tool calls are **intercepted** and recorded as `PlanStep`s (not executed).
-  - When the model believes the plan is complete, it must call **`plan_finalize`**.
-- `plan_finalize` triggers plan finalization:
-  - Plan transitions `COLLECTING → READY` (or is cancelled if empty).
-  - A plan summary is produced for the user.
-  - A `PlanReadyEvent` is published (for approval UI), and execution remains blocked until user approval.
+The canonical plan is persisted only via an explicit tool call:
+- **`plan_finalize(plan_markdown=...)`**
 
-### Why a tool call (not a text marker)
-- Structured and reliable (no regex, no language sensitivity).
-- Aligns with tool-loop architecture (tools = explicit state transitions).
-- Enables strict BDD assertions.
-- Reduces coupling to model-specific formatting of summary text.
+### SSOT of the plan
+- **Plan SSOT is one Markdown document** (string).
+- Any notion of "steps" is part of the Markdown text; we do not require a structured step list as the canonical representation.
+
+### Updates before approval
+We adopt **Variant B**:
+- `plan_finalize` is allowed when the plan is already `READY` (draft is finalized but not approved yet).
+- Repeated `plan_finalize` calls **overwrite** the stored Markdown draft.
+
+### Editing during execution
+While executing the plan, the user might want to revise it.
+We support this by allowing `plan_finalize` in `EXECUTING` too:
+- The system creates a **new plan revision** based on the previous one and marks the previous plan as cancelled/superseded.
+- UX still exposes only a single "active plan".
+
+### Plan access tool
+We introduce a read tool:
+- **`plan_get()`** — returns the current canonical plan Markdown.
+
+`plan_get` is advertised **only when plan work is active**, to avoid the plan becoming an unexpected artifact.
 
 ## Invariants (must hold)
-1. **Advertisement invariant:** `plan_finalize` is advertised to the LLM **only when Plan Mode is active**.
-2. **Execution invariant:** If `plan_finalize` is called while Plan Mode is **inactive**, it must be denied (policy failure) and must **not** mutate plan state.
-3. **No side effects invariant:** Calling `plan_finalize` must never execute external tools or perform external side effects; it only affects plan state and user-facing output.
+1. **Mode gating invariant:**
+   - Plan tools (`plan_finalize`, `plan_get`) are advertised **only when plan work is active**.
+2. **Execution invariant:**
+   - If plan tools are called when plan work is inactive, execution is denied (policy failure) and plan state is not mutated.
+3. **SSOT invariant:**
+   - The only canonical plan content is `Plan.markdown` (a single Markdown string).
+4. **Compaction safety invariant:**
+   - As long as plan work is active, the system prompt must include enough information to recover the plan (at minimum: "use `plan_get`"), so the plan cannot be lost due to history truncation/compaction.
+5. **Single-active-plan invariant:**
+   - At any point, there is at most one "active" plan for UX and tool exposure.
 
 ## Target Architecture
 
-### 1) New tool: `plan_finalize`
-- **Type:** Domain tool (no side effects outside plan state)
-- **Availability:** Advertised to the LLM **only when Plan Mode is active**.
-- **Execution policy:** Must be allowed without confirmation; it does not execute external actions.
-- **Guardrail:** If called outside Plan Mode, it must return a failure (policy denied).
+### 1) Domain model changes
+- `Plan` gains a new persisted field:
+  - `markdown` (String) — canonical plan document.
 
-**Suggested schema** (minimal):
-```json
-{
-  "name": "plan_finalize",
-  "description": "Finalize the current plan. Use when you have finished proposing plan steps. This does not execute tools.",
-  "input": {
-    "type": "object",
-    "properties": {
-      "summary": { "type": "string", "description": "Optional brief plan summary for the user." }
-    }
-  }
-}
-```
+`PlanStep` may remain for legacy/execution history, but it is **not** the SSOT for plan drafting.
 
-**Notes**
-- `summary` is optional. We can support both:
-  - summary provided as `summary` argument, or
-  - summary provided as regular assistant content in the same LLM response.
+### 2) Runtime state
+`PlanService` owns:
+- `planWorkActive` (boolean)
+- `activePlanId` (String)
 
-### 2) Pipeline responsibility split
+Rules:
+- `/plan on` creates a new plan, sets `planWorkActive=true`, sets `activePlanId`.
+- `/plan done` or `/reset` disables plan work and clears `activePlanId`.
 
-#### ToolLoopExecutionSystem / ToolLoop
-- Remains responsible for:
-  - LLM calls
-  - tool call orchestration
-  - appending assistant/tool messages to raw history
+### 3) Tools
+#### 3.1 `plan_finalize`
+- **Advertised:** only when plan work is active.
+- **Input schema:**
+  - `plan_markdown` (required string) — full canonical plan draft.
+  - (optional) `title` (string) — may be used to set `Plan.title`.
 
-#### Plan collection & finalization
-Two viable placements (choose based on current code reality and refactor stage):
+- **Semantics:**
+  - If status is `COLLECTING`: set `markdown`, move to `READY`.
+  - If status is `READY`: overwrite `markdown` (update draft).
+  - If status is `EXECUTING`: create a new plan revision (new plan), cancel/supersede old, set new as active, set `READY`.
+  - If status is terminal or unsupported: deny.
 
-**Option A (recommended): Plan interception/finalization is a dedicated system**
-- Add `PlanModeInterceptionSystem` (order near ToolLoop, before plan finalization/outgoing response preparation).
-- It inspects `LLM_RESPONSE.toolCalls`:
-  - If toolCall.name == `plan_finalize`: triggers plan finalization path.
-  - Else: records each tool call as a plan step and generates synthetic tool results `[Planned]`.
+#### 3.2 `plan_get`
+- **Advertised:** only when plan work is active.
+- **Execution:** returns `Plan.markdown` (and optionally metadata like status/title).
 
-**Option B (migration-friendly): Intercept in ToolLoop, but isolate policy**
-- Keep the interception inside ToolLoop short-term, but delegate to a `PlanModeToolPolicy` component.
+### 4) Pipeline systems
+#### 4.1 ToolLoopExecutionSystem / ToolLoop
+Tool loop executes LLM + tool calls as usual.
 
-ADR endorses **Option A** for hexagonal cleanliness.
+Important: plan tools are **control/read** tools; they should not cause external side effects.
 
-### 3) Finalization rules
-When `plan_finalize` is observed:
-1. Resolve active plan.
-2. If plan has 0 steps: cancel plan, deactivate plan mode.
-3. Else:
-   - finalize plan (`COLLECTING → READY`)
-   - publish `PlanReadyEvent`
-   - set `ContextAttributes.PLAN_APPROVAL_NEEDED = planId`
-   - produce user-facing response (via `OutgoingResponse` or via a canonical `TurnOutcome` field)
+#### 4.2 Plan finalization system
+`PlanFinalizationSystem` finalizes/updates the plan draft when it sees `plan_finalize` tool call.
 
-### 4) Transport contract
-Plan finalization must **not** mutate `LlmResponse` in-place.
+It extracts the tool arguments from `LLM_RESPONSE.toolCalls` and persists `Plan.markdown`.
 
-Preferred output:
-- `OutgoingResponse.text` includes:
-  - optional LLM summary text
-  - generated plan card / quick commands
+#### 4.3 Context building
+`ContextBuildingSystem`:
+- Injects a **compact plan-mode context** when plan work is active.
+- Advertises `plan_finalize` and `plan_get` only when plan work is active.
 
-If the system is moving towards canonical `TurnOutcome`, then:
-- add `TurnOutcome.planIdReadyForApproval` (or similar) and derive `OutgoingResponse` from it.
+Minimum required context:
+- "Plan work is active. Use `plan_get` to load the canonical plan. When you have a new draft, call `plan_finalize(plan_markdown=...)`."
 
 ## Detailed Implementation Plan (Phases)
 
-### Phase 0 — Documentation + prompt contracts (no code behavior change)
-- [ ] Update plan mode prompt/context (`PlanService.buildPlanContext()`):
-  - Explicitly instruct the model:
-    - propose steps as tool calls
-    - when finished, call `plan_finalize`
-    - do not execute tools in plan mode
+### Phase 0 — ADR + prompt contract updates
+- [ ] Update `PlanService.buildPlanContext()` text:
+  - remove claims that tools are not executed
+  - instruct to use `plan_get` + `plan_finalize(plan_markdown=...)`
 
-### Phase 1 — Introduce `plan_finalize` tool (plumbing)
-- [ ] Add `PlanFinalizeTool` implementation (`tools/` or `domain/component` depending on existing conventions).
-- [ ] Register the tool in tool registry / tool list provider.
-- [ ] Ensure it is advertised to the LLM **only** when plan mode is active (via `ContextBuildingSystem`).
+### Phase 1 — Data model & persistence
+- [ ] Add `Plan.markdown` persisted field.
+- [ ] Ensure existing `plans.json` load/save remains compatible (missing field → null).
 
-**Behavior of PlanFinalizeTool**
-- It should **not** execute external actions.
-- It should return a `ToolResult.success("[Plan finalized]")` (or similar) for raw history completeness.
-- It may store the optional summary argument into context attributes for downstream usage.
-- If plan mode is inactive, it returns `ToolResult.failure(kind=POLICY_DENIED, ...)`.
+### Phase 2 — Tools
+- [ ] Update `plan_finalize` schema to require `plan_markdown`.
+- [ ] Add `plan_get` tool.
+- [ ] Advertisement gating: only when plan work active.
 
-### Phase 2 — Implement deterministic finalization trigger
-- [ ] Update plan processing to key off `plan_finalize` tool call rather than “no tool calls”.
+### Phase 3 — Finalization behavior
+- [ ] Update `PlanFinalizationSystem`:
+  - trigger on `plan_finalize` tool call
+  - extract `plan_markdown` (and optional `title`)
+  - implement Variant B (overwrite draft when READY)
+  - implement revision creation when EXECUTING
 
-Concrete changes:
-- [ ] Replace `PlanFinalizationSystem.shouldProcess()` heuristic.
-- [ ] New logic: process when LLM tool calls contain a `plan_finalize`.
+### Phase 4 — Commands / lifecycle
+- [ ] `/plan on` must set **plan work active** and create the initial plan.
+- [ ] `/plan done` must end plan work and clear active plan.
+- [ ] `/reset` must end plan work and clear active plan.
 
-### Phase 3 — Move plan interception out of ToolLoop (clean split)
-- [ ] Add `PlanModeInterceptionSystem` (new pipeline system).
-- [ ] It must:
-  - detect plan mode active
-  - read `LLM_RESPONSE.toolCalls`
-  - for each tool call:
-    - if `plan_finalize`: finalize plan
-    - else record step + write synthetic tool result `[Planned]`
-  - ensure tool calls are **not executed** in plan mode
-
-This system becomes the single place responsible for:
-- plan step recording
-- synthetic tool results for plan steps
-- plan finalization via tool signal
-
-### Phase 4 — Transport + SSOT alignment
-- [ ] Remove in-place mutations of `LlmResponse` in plan finalization.
-- [ ] Produce `OutgoingResponse` (or set typed outcome) with:
-  - user-visible plan card
-  - quick commands (`/plan approve <id>` etc.)
-
-### Phase 5 — Tighten tests (BDD/TDD)
-Add/adjust tests to lock the new contract:
-
-**Unit tests**
-- [ ] `PlanModeInterceptionSystemTest`:
-  - tool calls recorded as plan steps
-  - synthetic tool results appended
-  - `plan_finalize` causes `PlanService.finalizePlan()`
-
+### Phase 5 — Tests (BDD/TDD)
 - [ ] `PlanFinalizeToolTest`:
-  - returns success tool result
-  - writes optional summary attribute (if implemented)
-  - denies outside plan mode
-
-**BDD scenarios (pipeline-level)**
-- [ ] Scenario: Plan mode collects steps, then `plan_finalize` finalizes and emits approval event.
-- [ ] Scenario: `plan_finalize` with 0 collected steps cancels plan.
-- [ ] Scenario: LLM emits summary text + `plan_finalize` tool call in same response → finalization still happens.
-- [ ] Scenario: Plan mode active but LLM never calls `plan_finalize` → plan remains COLLECTING (user can `/plan off` or continue).
-
-### Phase 6 — Cleanup and removal of legacy heuristics
-- [ ] Delete the old “no tool calls” finalization heuristic.
-- [ ] Ensure docs (`docs/CONFIGURATION.md`, plan docs) reflect the new deterministic behavior.
-
-## Full List of Expected Code Changes
-
-### New
-- `tools/PlanFinalizeTool.java` (or equivalent)
-- `domain/system/PlanModeInterceptionSystem.java` (recommended)
-- Tests for both
-- Message keys (i18n) if new strings are introduced
-
-### Modified
-- `PlanService.buildPlanContext()` — prompt text updated to instruct `plan_finalize`.
-- `ContextBuildingSystem` — ensure conditional tool availability + plan prompt injection remain consistent.
-- `PlanFinalizationSystem` — switch trigger to `plan_finalize` (or reduce responsibilities if replaced by interception system).
-- Tool loop / execution path — ensure plan mode never executes real tools.
-- Documentation: `docs/CONFIGURATION.md` (and any Plan Mode doc pages).
-
-### Removed/Deprecated
-- “Finalize when plain text and no tool calls” logic (after migration).
+  - denied when plan work inactive
+  - schema includes required `plan_markdown`
+- [ ] `PlanGetToolTest`:
+  - denied when plan work inactive
+  - returns markdown when active
+- [ ] `PlanFinalizationSystemTest`:
+  - COLLECTING → READY with markdown persisted
+  - READY → READY overwrite
+  - EXECUTING → revision created, old cancelled
+- [ ] Context builder tests:
+  - plan tools advertised only when plan work active
 
 ## Consequences
-
 ### Positive
-- Deterministic finalization; fewer model-behavior edge cases.
-- Stronger separation of concerns (Plan Mode logic isolated).
-- Easier automated testing and debugging.
-- Less coupling to language/format of the plan summary.
+- Deterministic and testable plan persistence.
+- Plan survives compaction because it is stored out-of-band and can be reloaded via `plan_get`.
+- No artificial restriction of tools during drafting.
+- Clear lifecycle boundaries: plan exists only when explicitly active.
 
-### Negative / Trade-offs
-- Requires model compliance with a new tool contract (prompting must be explicit).
-- Adds a new tool and potentially a new pipeline system.
+### Trade-offs
+- Requires the model to comply with a structured tool contract (`plan_finalize(plan_markdown=...)`).
+- Adds additional domain surface (plan_get + revision semantics).
 
 ## Notes on Single-User Assumption
-This ADR does not require multi-user support. However, using `plan_finalize` as an explicit signal **reduces ambiguity** even in single-user mode and improves reliability.
+The single-user constraint simplifies state management (one active plan). The architecture still uses explicit signals and strict invariants to reduce ambiguity and improve debuggability.
