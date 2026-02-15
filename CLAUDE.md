@@ -21,7 +21,7 @@ Spring Boot 4.0.2, Java 17, Hexagonal Architecture (Ports & Adapters).
 
 ```
 me.golemcore.bot
-├── adapter/inbound/          Telegram (TelegramAdapter, TelegramVoiceHandler), CommandRouter
+├── adapter/inbound/          Telegram (TelegramAdapter, TelegramVoiceHandler), CommandRouter, Webhook (WebhookController)
 ├── adapter/outbound/         LLM, storage, browser, MCP, voice (ElevenLabsAdapter)
 ├── domain/component/         Interfaces: ToolComponent, SkillComponent, etc.
 ├── domain/loop/              AgentLoop, AgentContextHolder
@@ -187,7 +187,7 @@ Follow [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.
 
 ### Scope
 
-Use module/area name: `llm`, `telegram`, `tools`, `skills`, `mcp`, `auto`, `security`, `storage`, `loop`, `voice`.
+Use module/area name: `llm`, `telegram`, `tools`, `skills`, `mcp`, `auto`, `security`, `storage`, `loop`, `voice`, `webhook`.
 
 ### Rules
 
@@ -305,3 +305,18 @@ ElevenLabs for STT + TTS. Voice prefix mechanism: LLM starts response with `🔊
 - TTS endpoint: `POST /v1/text-to-speech/{voice_id}`
 
 **Error Handling:** Handles 401 (auth), 429 (rate limit), 500/503 (server errors), network errors. See `ElevenLabsAdapter` for implementation.
+
+### Webhooks
+
+Inbound HTTP webhooks (OpenClaw-style, WebFlux). Three endpoint types: `/api/hooks/wake` (fire-and-forget, 200), `/api/hooks/agent` (full agent turn, 202), `/api/hooks/{name}` (custom mapped). Configuration stored in `UserPreferences.WebhookConfig` (not application.properties).
+
+**Components:**
+- `WebhookController` — REST endpoints (`Mono<ResponseEntity<WebhookResponse>>`)
+- `WebhookAuthenticator` — Bearer token + HMAC-SHA256 with constant-time comparison
+- `WebhookChannelAdapter` — `ChannelPort` implementation, captures responses, sends callbacks
+- `WebhookCallbackSender` — Reactive `WebClient` POST with exponential backoff retry
+- `WebhookPayloadTransformer` — `{field.path}` placeholder resolution from JSON
+
+**Message flow:** `WebhookController` → `ApplicationEventPublisher` → `InboundMessageEvent` → `SessionRunCoordinator` → `AgentLoop` pipeline. External payloads wrapped with `[EXTERNAL WEBHOOK DATA]` safety markers.
+
+See [docs/WEBHOOKS.md](docs/WEBHOOKS.md) for the full guide.
