@@ -38,6 +38,8 @@ We define a **"Work by Plan"** mode ("plan work") that is enabled explicitly by 
 The canonical plan is persisted only via an explicit tool call:
 - **`plan_set_content(plan_markdown=...)`**
 
+**Important:** `plan_set_content` persists/updates the draft, but **does not** end plan work. Ending plan work is the user's explicit action (`/plan done` or `/reset`).
+
 ### SSOT of the plan
 - **Plan SSOT is one Markdown document** (string).
 - Any notion of "steps" is part of the Markdown text; we do not require a structured step list as the canonical representation.
@@ -127,43 +129,43 @@ Minimum required context:
 ## Detailed Implementation Plan (Phases)
 
 ### Phase 0 — ADR + prompt contract updates
-- [ ] Update `PlanService.buildPlanContext()` text:
+- [x] Update `PlanService.buildPlanContext()` text:
   - remove claims that tools are not executed
   - instruct to use `plan_get` + `plan_set_content(plan_markdown=...)`
 
 ### Phase 1 — Data model & persistence
-- [ ] Add `Plan.markdown` persisted field.
-- [ ] Ensure existing `plans.json` load/save remains compatible (missing field → null).
+- [x] Add `Plan.markdown` persisted field.
+- [x] Ensure existing `plans.json` load/save remains compatible (missing field → null).
 
 ### Phase 2 — Tools
-- [ ] Update `plan_set_content` schema to require `plan_markdown`.
-- [ ] Add `plan_get` tool.
-- [ ] Advertisement gating: only when plan work active.
+- [x] Update `plan_set_content` schema to require `plan_markdown`.
+- [x] Add `plan_get` tool.
+- [x] Advertisement gating: only when plan work active.
 
 ### Phase 3 — Finalization behavior
-- [ ] Update `PlanFinalizationSystem`:
+- [x] Update `PlanFinalizationSystem`:
   - trigger on `plan_set_content` tool call
   - extract `plan_markdown` (and optional `title`)
   - implement Variant B (overwrite draft when READY)
   - implement revision creation when EXECUTING
 
 ### Phase 4 — Commands / lifecycle
-- [ ] `/plan on` must set **plan work active** and create the initial plan.
-- [ ] `/plan done` must end plan work and clear active plan.
-- [ ] `/reset` must end plan work and clear active plan.
+- [x] `/plan on` sets **plan work active** and creates the initial plan.
+- [x] `/plan done` ends plan work and clears active plan.
+- [x] `/reset` ends plan work and clears active plan.
 
 ### Phase 5 — Tests (BDD/TDD)
-- [ ] `PlanSetContentToolTest`:
+- [x] `PlanSetContentToolTest`:
   - denied when plan work inactive
   - schema includes required `plan_markdown`
-- [ ] `PlanGetToolTest`:
+- [x] `PlanGetToolTest`:
   - denied when plan work inactive
   - returns markdown when active
-- [ ] `PlanFinalizationSystemTest`:
+- [x] `PlanFinalizationSystemTest`:
   - COLLECTING → READY with markdown persisted
   - READY → READY overwrite
   - EXECUTING → revision created, old cancelled
-- [ ] Context builder tests:
+- [x] Context builder tests:
   - plan tools advertised only when plan work active
 
 ## Consequences
