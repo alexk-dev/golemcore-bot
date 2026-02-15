@@ -35,7 +35,7 @@ public class JwtTokenProvider {
     }
 
     @PostConstruct
-    void init() {
+    public void init() {
         String secret = botProperties.getDashboard().getJwtSecret();
         if (secret == null || secret.isBlank()) {
             byte[] randomBytes = new byte[64];

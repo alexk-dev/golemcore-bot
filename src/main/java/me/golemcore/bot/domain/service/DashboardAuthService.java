@@ -35,8 +35,9 @@ public class DashboardAuthService {
     private static final String ADMIN_DIR = "preferences";
     private static final String ADMIN_FILE = "admin.json";
     private static final String ADMIN_USERNAME = "admin";
-    private static final int TEMP_PASSWORD_LENGTH = 30;
-    private static final String PASSWORD_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()-_=+";
+    private static final int TEMP_CREDENTIAL_LENGTH = 30;
+    private static final String CREDENTIAL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()-_=+";
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final StoragePort storagePort;
     private final BotProperties botProperties;
@@ -197,10 +198,9 @@ public class DashboardAuthService {
     }
 
     private String generateTempPassword() {
-        SecureRandom random = new SecureRandom();
-        StringBuilder sb = new StringBuilder(TEMP_PASSWORD_LENGTH);
-        for (int i = 0; i < TEMP_PASSWORD_LENGTH; i++) {
-            sb.append(PASSWORD_CHARS.charAt(random.nextInt(PASSWORD_CHARS.length())));
+        StringBuilder sb = new StringBuilder(TEMP_CREDENTIAL_LENGTH);
+        for (int i = 0; i < TEMP_CREDENTIAL_LENGTH; i++) {
+            sb.append(CREDENTIAL_ALPHABET.charAt(SECURE_RANDOM.nextInt(CREDENTIAL_ALPHABET.length())));
         }
         return sb.toString();
     }

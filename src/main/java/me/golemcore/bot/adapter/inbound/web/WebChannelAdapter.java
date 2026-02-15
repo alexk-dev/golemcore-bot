@@ -12,6 +12,7 @@ import reactor.core.publisher.Mono;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 /**
@@ -28,7 +29,7 @@ public class WebChannelAdapter implements ChannelPort {
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
     /** Maps connectionId -> chatId for reverse lookup */
     private final Map<String, String> connectionToChatId = new ConcurrentHashMap<>();
-    private volatile Consumer<Message> messageHandler;
+    private final AtomicReference<Consumer<Message>> messageHandler = new AtomicReference<>();
     private volatile boolean running = false;
 
     @Override
@@ -87,7 +88,7 @@ public class WebChannelAdapter implements ChannelPort {
 
     @Override
     public void onMessage(Consumer<Message> handler) {
-        this.messageHandler = handler;
+        this.messageHandler.set(handler);
     }
 
     @Override
@@ -125,8 +126,9 @@ public class WebChannelAdapter implements ChannelPort {
             }
         }
 
-        if (messageHandler != null) {
-            messageHandler.accept(message);
+        Consumer<Message> handler = messageHandler.get();
+        if (handler != null) {
+            handler.accept(message);
         }
     }
 
