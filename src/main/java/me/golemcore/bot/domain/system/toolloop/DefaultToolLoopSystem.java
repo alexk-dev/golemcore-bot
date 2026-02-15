@@ -298,7 +298,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
     }
 
     private ModelSelection selectModel(String tier) {
-        // Keep the same tier contract as legacy LlmExecutionSystem.
+        // Keep the same tier contract as the previous legacy implementation.
         // If router is missing (tests / minimal wiring), fall back to provider default.
         if (router == null) {
             return new ModelSelection(null, null);

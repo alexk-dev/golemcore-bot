@@ -419,7 +419,8 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         }
 
         // Convert conversation messages — tool call IDs and names are passed through
-        // as-is. Model switches are handled upstream by LlmExecutionSystem which
+        // as-is. Model switches are handled upstream by ToolLoop/request-time
+        // conversation view building which
         // flattens tool messages to plain text before they reach the adapter.
         for (Message msg : request.getMessages()) {
             switch (msg.getRole()) {
