@@ -49,18 +49,21 @@ import java.util.UUID;
 /**
  * Inbound HTTP webhook controller (OpenClaw-style, WebFlux).
  *
- * <p>Three endpoint types:
+ * <p>
+ * Three endpoint types:
  * <ul>
- *   <li>{@code POST /api/hooks/wake}  — fire-and-forget event trigger (200)</li>
- *   <li>{@code POST /api/hooks/agent} — full agent turn, async (202)</li>
- *   <li>{@code POST /api/hooks/{name}} — custom mapped webhook</li>
+ * <li>{@code POST /api/hooks/wake} — fire-and-forget event trigger (200)</li>
+ * <li>{@code POST /api/hooks/agent} — full agent turn, async (202)</li>
+ * <li>{@code POST /api/hooks/{name}} — custom mapped webhook</li>
  * </ul>
  *
- * <p>All endpoints authenticate via Bearer token or HMAC (per-mapping).
- * Webhook configuration is read from {@link UserPreferences.WebhookConfig}.
+ * <p>
+ * All endpoints authenticate via Bearer token or HMAC (per-mapping). Webhook
+ * configuration is read from {@link UserPreferences.WebhookConfig}.
  *
- * <p>The bean is always present (no {@code @ConditionalOnProperty}).
- * When webhooks are disabled, endpoints return 404.
+ * <p>
+ * The bean is always present (no {@code @ConditionalOnProperty}). When webhooks
+ * are disabled, endpoints return 404.
  */
 @RestController
 @RequestMapping("/api/hooks")
@@ -82,8 +85,8 @@ public class WebhookController {
     // ==================== /wake ====================
 
     /**
-     * Fire-and-forget event trigger. Injects a system event into the session
-     * and returns {@code 200 OK} immediately.
+     * Fire-and-forget event trigger. Injects a system event into the session and
+     * returns {@code 200 OK} immediately.
      */
     @PostMapping("/wake")
     public Mono<ResponseEntity<WebhookResponse>> wake(
@@ -120,8 +123,8 @@ public class WebhookController {
 
     /**
      * Full agent turn. Returns {@code 202 Accepted} immediately; the result is
-     * delivered via callback URL (if provided) or can be retrieved from the
-     * channel adapter.
+     * delivered via callback URL (if provided) or can be retrieved from the channel
+     * adapter.
      */
     @PostMapping("/agent")
     public Mono<ResponseEntity<WebhookResponse>> agent(
@@ -183,8 +186,8 @@ public class WebhookController {
 
     /**
      * Custom mapped webhook. Resolves the mapping by name from UserPreferences,
-     * authenticates (Bearer or HMAC), transforms the payload, and delegates to
-     * wake or agent flow.
+     * authenticates (Bearer or HMAC), transforms the payload, and delegates to wake
+     * or agent flow.
      */
     @PostMapping("/{name}")
     public Mono<ResponseEntity<WebhookResponse>> customHook(

@@ -36,11 +36,13 @@ import java.util.HexFormat;
 /**
  * Authenticates inbound webhook requests using Bearer token or HMAC signature.
  *
- * <p>Bearer token is read from {@link UserPreferences.WebhookConfig#getToken()}.
+ * <p>
+ * Bearer token is read from {@link UserPreferences.WebhookConfig#getToken()}.
  * HMAC verification is used for custom hook mappings that specify
  * {@code authMode=hmac}.
  *
- * <p>All comparisons use constant-time algorithms to prevent timing attacks.
+ * <p>
+ * All comparisons use constant-time algorithms to prevent timing attacks.
  */
 @Component
 @RequiredArgsConstructor
@@ -56,7 +58,8 @@ public class WebhookAuthenticator {
     /**
      * Authenticates a request using the global Bearer token.
      *
-     * @param headers HTTP headers containing Authorization or custom token header
+     * @param headers
+     *            HTTP headers containing Authorization or custom token header
      * @return {@code true} if the token matches the configured secret
      */
     public boolean authenticateBearer(HttpHeaders headers) {
@@ -88,9 +91,12 @@ public class WebhookAuthenticator {
     /**
      * Verifies an HMAC-SHA256 signature for a custom hook mapping.
      *
-     * @param mapping  the hook mapping with HMAC configuration
-     * @param headers  HTTP headers containing the signature
-     * @param body     raw request body bytes
+     * @param mapping
+     *            the hook mapping with HMAC configuration
+     * @param headers
+     *            HTTP headers containing the signature
+     * @param body
+     *            raw request body bytes
      * @return {@code true} if the signature is valid
      */
     public boolean authenticateHmac(UserPreferences.HookMapping mapping, HttpHeaders headers, byte[] body) {
@@ -128,8 +134,8 @@ public class WebhookAuthenticator {
     }
 
     /**
-     * Authenticates a request for a specific hook mapping. Dispatches to Bearer
-     * or HMAC depending on the mapping's {@code authMode}.
+     * Authenticates a request for a specific hook mapping. Dispatches to Bearer or
+     * HMAC depending on the mapping's {@code authMode}.
      */
     public boolean authenticate(UserPreferences.HookMapping mapping, HttpHeaders headers, byte[] body) {
         if ("hmac".equals(mapping.getAuthMode())) {
