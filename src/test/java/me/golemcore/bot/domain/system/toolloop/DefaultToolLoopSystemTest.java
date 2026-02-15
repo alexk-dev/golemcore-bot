@@ -9,6 +9,7 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationView;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
@@ -61,10 +62,12 @@ class DefaultToolLoopSystemTest {
     @Mock
     private PlanService planService;
 
+    @Mock
+    private ModelSelectionService modelSelectionService;
+
     private BotProperties.TurnProperties turnSettings;
 
     private BotProperties.ToolLoopProperties settings;
-    private BotProperties.ModelRouterProperties router;
     private Clock clock;
     private DefaultToolLoopSystem system;
 
@@ -78,18 +81,15 @@ class DefaultToolLoopSystemTest {
         settings.setStopOnConfirmationDenied(true);
         settings.setStopOnToolPolicyDenied(false);
 
-        router = new BotProperties.ModelRouterProperties();
-        router.setBalancedModel(MODEL_BALANCED);
-        router.setSmartModel("gpt-4o-smart");
-        router.setCodingModel("gpt-4o-coding");
-        router.setDeepModel("o3");
+        when(modelSelectionService.resolveForTier(any())).thenReturn(
+                new ModelSelectionService.ModelSelection(MODEL_BALANCED, null));
 
         when(viewBuilder.buildView(any(), any()))
                 .thenReturn(new ConversationView(List.of(), List.of()));
 
         turnSettings = new BotProperties.TurnProperties();
         system = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, viewBuilder,
-                turnSettings, settings, router, planService, clock);
+                turnSettings, settings, modelSelectionService, planService, clock);
     }
 
     private AgentContext buildContext() {
@@ -411,7 +411,7 @@ class DefaultToolLoopSystemTest {
     @Test
     void shouldUseDefaultsWhenSettingsAreNull() {
         DefaultToolLoopSystem nullSettingsSystem = new DefaultToolLoopSystem(
-                llmPort, toolExecutor, historyWriter, viewBuilder, null, router, planService, clock);
+                llmPort, toolExecutor, historyWriter, viewBuilder, null, modelSelectionService, planService, clock);
 
         AgentContext context = buildContext();
         LlmResponse response = finalResponse(CONTENT_HELLO);
@@ -422,10 +422,10 @@ class DefaultToolLoopSystemTest {
         assertTrue(result.finalAnswerReady());
     }
 
-    // ==================== Null router ====================
+    // ==================== Null modelSelectionService ====================
 
     @Test
-    void shouldUseNullModelWhenRouterIsNull() {
+    void shouldUseNullModelWhenModelSelectionServiceIsNull() {
         DefaultToolLoopSystem nullRouterSystem = new DefaultToolLoopSystem(
                 llmPort, toolExecutor, historyWriter, viewBuilder, settings, null, planService, clock);
 

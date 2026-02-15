@@ -16,6 +16,7 @@ import me.golemcore.bot.domain.model.UsageStats;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.CompactionService;
+import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanExecutionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.ScheduleService;
@@ -86,6 +87,7 @@ class CommandRouterTest {
     private UserPreferencesService preferencesService;
     private CompactionService compactionService;
     private AutoModeService autoModeService;
+    private ModelSelectionService modelSelectionService;
     private PlanService planService;
     private PlanExecutionService planExecutionService;
     private ScheduleService scheduleService;
@@ -128,6 +130,7 @@ class CommandRouterTest {
         });
 
         autoModeService = mock(AutoModeService.class);
+        modelSelectionService = mock(ModelSelectionService.class);
         planService = mock(PlanService.class);
         planExecutionService = mock(PlanExecutionService.class);
         scheduleService = mock(ScheduleService.class);
@@ -148,6 +151,7 @@ class CommandRouterTest {
                 preferencesService,
                 compactionService,
                 autoModeService,
+                modelSelectionService,
                 planService,
                 planExecutionService,
                 scheduleService,
@@ -191,7 +195,7 @@ class CommandRouterTest {
     @Test
     void listCommands() {
         List<CommandPort.CommandDefinition> commands = router.listCommands();
-        assertEquals(9, commands.size());
+        assertEquals(10, commands.size());
     }
 
     @Test
@@ -571,7 +575,7 @@ class CommandRouterTest {
         assertTrue(commands.stream().anyMatch(c -> CMD_GOALS.equals(c.name())));
         assertTrue(commands.stream().anyMatch(c -> CMD_DIARY.equals(c.name())));
         assertTrue(commands.stream().anyMatch(c -> CMD_SCHEDULE.equals(c.name())));
-        assertEquals(15, commands.size()); // 8 base + 6 auto mode
+        assertEquals(16, commands.size()); // 9 base + 1 model + 6 auto mode
     }
 
     @Test
@@ -581,7 +585,7 @@ class CommandRouterTest {
         List<CommandPort.CommandDefinition> commands = router.listCommands();
         assertTrue(commands.stream().anyMatch(c -> "plan".equals(c.name())));
         assertTrue(commands.stream().anyMatch(c -> "plans".equals(c.name())));
-        assertEquals(11, commands.size()); // 8 base + 2 plan
+        assertEquals(12, commands.size()); // 9 base + 1 model + 2 plan
     }
 
     // ===== Plan commands =====

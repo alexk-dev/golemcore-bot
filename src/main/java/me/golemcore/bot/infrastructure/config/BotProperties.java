@@ -82,6 +82,7 @@ public class BotProperties {
     private TurnProperties turn = new TurnProperties();
     private ToolLoopProperties toolLoop = new ToolLoopProperties();
     private PlanProperties plan = new PlanProperties();
+    private ModelSelectionProperties modelSelection = new ModelSelectionProperties();
 
     @Data
     public static class AgentProperties {
@@ -494,6 +495,14 @@ public class BotProperties {
         private int maxStepsPerPlan = 50;
         private boolean stopOnFailure = true;
         private String defaultModelTier = "smart";
+    }
+
+    // ==================== MODEL SELECTION (user model overrides)
+    // ====================
+
+    @Data
+    public static class ModelSelectionProperties {
+        private List<String> allowedProviders = List.of("openai", "anthropic");
     }
 
     // ==================== PROMPTS (system prompt sections) ====================

@@ -10,6 +10,7 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.model.ToolFailureKind;
+import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.system.toolloop.DefaultHistoryWriter;
 import me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem;
 import me.golemcore.bot.domain.system.toolloop.ToolExecutionOutcome;
@@ -115,7 +116,9 @@ class ToolLoopSystemBddTest {
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
         BotProperties.TurnProperties turn = new BotProperties.TurnProperties();
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
-        BotProperties.ModelRouterProperties router = new BotProperties.ModelRouterProperties();
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveForTier(any())).thenReturn(
+                new ModelSelectionService.ModelSelection(null, null));
 
         DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
                 llmPort,
@@ -125,7 +128,7 @@ class ToolLoopSystemBddTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 turn,
                 settings,
-                router,
+                modelSelectionService,
                 null,
                 Clock.fixed(DEADLINE, ZoneOffset.UTC));
 
@@ -236,7 +239,9 @@ class ToolLoopSystemBddTest {
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
         BotProperties.TurnProperties turn = new BotProperties.TurnProperties();
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
-        BotProperties.ModelRouterProperties router = new BotProperties.ModelRouterProperties();
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveForTier(any())).thenReturn(
+                new ModelSelectionService.ModelSelection(null, null));
 
         DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
                 llmPort,
@@ -246,7 +251,7 @@ class ToolLoopSystemBddTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 turn,
                 settings,
-                router,
+                modelSelectionService,
                 null,
                 Clock.fixed(DEADLINE, ZoneOffset.UTC));
 
@@ -330,7 +335,9 @@ class ToolLoopSystemBddTest {
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
         BotProperties.TurnProperties turn = new BotProperties.TurnProperties();
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
-        BotProperties.ModelRouterProperties router = new BotProperties.ModelRouterProperties();
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveForTier(any())).thenReturn(
+                new ModelSelectionService.ModelSelection(null, null));
 
         DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
                 llmPort,
@@ -340,7 +347,7 @@ class ToolLoopSystemBddTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 turn,
                 settings,
-                router,
+                modelSelectionService,
                 null,
                 Clock.fixed(DEADLINE, ZoneOffset.UTC));
 
@@ -420,7 +427,9 @@ class ToolLoopSystemBddTest {
         };
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
-        BotProperties.ModelRouterProperties router = new BotProperties.ModelRouterProperties();
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveForTier(any())).thenReturn(
+                new ModelSelectionService.ModelSelection(null, null));
         DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
                 llmPort,
                 toolExecutor,
@@ -429,7 +438,7 @@ class ToolLoopSystemBddTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 turn,
                 settings,
-                router,
+                modelSelectionService,
                 null,
                 fastClock);
 
@@ -486,7 +495,9 @@ class ToolLoopSystemBddTest {
         turn.setDeadline(java.time.Duration.ofMillis(30000));
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
-        BotProperties.ModelRouterProperties router = new BotProperties.ModelRouterProperties();
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveForTier(any())).thenReturn(
+                new ModelSelectionService.ModelSelection(null, null));
         DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
                 llmPort,
                 toolExecutor,
@@ -495,7 +506,7 @@ class ToolLoopSystemBddTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 turn,
                 settings,
-                router,
+                modelSelectionService,
                 null,
                 Clock.fixed(DEADLINE, ZoneOffset.UTC));
 
@@ -568,7 +579,9 @@ class ToolLoopSystemBddTest {
         settings.setStopOnToolFailure(true);
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
-        BotProperties.ModelRouterProperties router = new BotProperties.ModelRouterProperties();
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveForTier(any())).thenReturn(
+                new ModelSelectionService.ModelSelection(null, null));
         DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
                 llmPort,
                 toolExecutor,
@@ -577,7 +590,7 @@ class ToolLoopSystemBddTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 turn,
                 settings,
-                router,
+                modelSelectionService,
                 null,
                 Clock.fixed(DEADLINE, ZoneOffset.UTC));
 
@@ -636,7 +649,9 @@ class ToolLoopSystemBddTest {
         settings.setStopOnConfirmationDenied(true);
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
-        BotProperties.ModelRouterProperties router = new BotProperties.ModelRouterProperties();
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveForTier(any())).thenReturn(
+                new ModelSelectionService.ModelSelection(null, null));
         DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
                 llmPort,
                 toolExecutor,
@@ -645,7 +660,7 @@ class ToolLoopSystemBddTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 turn,
                 settings,
-                router,
+                modelSelectionService,
                 null,
                 Clock.fixed(DEADLINE, ZoneOffset.UTC));
 
@@ -704,7 +719,9 @@ class ToolLoopSystemBddTest {
         settings.setStopOnToolPolicyDenied(true);
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
-        BotProperties.ModelRouterProperties router = new BotProperties.ModelRouterProperties();
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveForTier(any())).thenReturn(
+                new ModelSelectionService.ModelSelection(null, null));
         DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
                 llmPort,
                 toolExecutor,
@@ -713,7 +730,7 @@ class ToolLoopSystemBddTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 turn,
                 settings,
-                router,
+                modelSelectionService,
                 null,
                 Clock.fixed(DEADLINE, ZoneOffset.UTC));
 
@@ -797,7 +814,9 @@ class ToolLoopSystemBddTest {
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
         BotProperties.TurnProperties turn = new BotProperties.TurnProperties();
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
-        BotProperties.ModelRouterProperties router = new BotProperties.ModelRouterProperties();
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveForTier(any())).thenReturn(
+                new ModelSelectionService.ModelSelection(null, null));
 
         DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
                 llmPort,
@@ -807,7 +826,7 @@ class ToolLoopSystemBddTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 turn,
                 settings,
-                router,
+                modelSelectionService,
                 null,
                 Clock.fixed(DEADLINE, ZoneOffset.UTC));
 

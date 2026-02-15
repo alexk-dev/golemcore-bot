@@ -23,9 +23,13 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.HashMap;
+import java.util.Map;
+
 /**
- * User preferences for language, notifications, timezone, and model tier.
- * Persisted to storage and loaded on session initialization.
+ * User preferences for language, notifications, timezone, model tier, and
+ * per-tier model overrides. Persisted to storage and loaded on session
+ * initialization.
  */
 @Data
 @Builder
@@ -49,4 +53,25 @@ public class UserPreferences {
     /** When true, locks the tier — ignores skill overrides and DynamicTierSystem */
     @Builder.Default
     private boolean tierForce = false;
+
+    /**
+     * Per-tier model overrides (e.g. "coding" -> {model="openai/gpt-5.2",
+     * reasoning="high"})
+     */
+    @Builder.Default
+    private Map<String, TierOverride> tierOverrides = new HashMap<>();
+
+    /**
+     * Per-tier model override, allowing users to assign specific models and
+     * reasoning levels to each tier.
+     */
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class TierOverride {
+        /** Full model spec, e.g. "openai/gpt-5.2" */
+        private String model;
+        /** Reasoning level, e.g. "high", or null for non-reasoning models */
+        private String reasoning;
+    }
 }

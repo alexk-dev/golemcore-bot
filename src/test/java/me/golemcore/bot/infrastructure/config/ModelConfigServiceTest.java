@@ -15,9 +15,11 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@SuppressWarnings("PMD.AvoidDuplicateLiterals")
 class ModelConfigServiceTest {
 
     private static final String PROVIDER_OPENAI = "openai";
@@ -81,7 +83,7 @@ class ModelConfigServiceTest {
         // "gpt-5.1-preview" should match "gpt-5.1" prefix
         ModelConfigService.ModelSettings settings = service.getModelSettings(MODEL_GPT_5_1 + "-preview");
         assertEquals(PROVIDER_OPENAI, settings.getProvider());
-        assertTrue(settings.isReasoningRequired());
+        assertTrue(service.isReasoningRequired(MODEL_GPT_5_1 + "-preview"));
     }
 
     @Test
@@ -95,7 +97,7 @@ class ModelConfigServiceTest {
         // "o3-mini-2025" should match "o3-mini" (longer) not "o3"
         ModelConfigService.ModelSettings settings = service.getModelSettings("o3-mini-2025");
         assertEquals(PROVIDER_OPENAI, settings.getProvider());
-        assertTrue(settings.isReasoningRequired());
+        assertTrue(service.isReasoningRequired("o3-mini-2025"));
     }
 
     // ===== Default fallback =====
@@ -176,27 +178,37 @@ class ModelConfigServiceTest {
     void shouldCreateModelSettingsWithDefaults() {
         ModelConfigService.ModelSettings settings = new ModelConfigService.ModelSettings();
         assertEquals(PROVIDER_OPENAI, settings.getProvider());
-        assertFalse(settings.isReasoningRequired());
+        assertNull(settings.getReasoning());
         assertTrue(settings.isSupportsTemperature());
         assertEquals(128000, settings.getMaxInputTokens());
     }
 
     @Test
-    void shouldCreateModelSettingsWithThreeArgConstructor() {
-        ModelConfigService.ModelSettings settings = new ModelConfigService.ModelSettings(PROVIDER_ANTHROPIC, true,
-                false);
+    void shouldCreateModelSettingsWithReasoningConfig() {
+        ModelConfigService.ModelSettings settings = new ModelConfigService.ModelSettings();
+        settings.setProvider(PROVIDER_ANTHROPIC);
+        settings.setSupportsTemperature(false);
+        ModelConfigService.ReasoningConfig reasoning = new ModelConfigService.ReasoningConfig();
+        reasoning.setDefaultLevel("medium");
+        reasoning.getLevels().put("medium", new ModelConfigService.ReasoningLevelConfig(200000));
+        settings.setReasoning(reasoning);
+
         assertEquals(PROVIDER_ANTHROPIC, settings.getProvider());
-        assertTrue(settings.isReasoningRequired());
+        assertNotNull(settings.getReasoning());
+        assertEquals("medium", settings.getReasoning().getDefaultLevel());
         assertFalse(settings.isSupportsTemperature());
         assertEquals(128000, settings.getMaxInputTokens());
     }
 
     @Test
-    void shouldCreateModelSettingsWithFourArgConstructor() {
-        ModelConfigService.ModelSettings settings = new ModelConfigService.ModelSettings(PROVIDER_CUSTOM, false, true,
-                64000);
+    void shouldCreateModelSettingsWithCustomMaxInputTokens() {
+        ModelConfigService.ModelSettings settings = new ModelConfigService.ModelSettings();
+        settings.setProvider(PROVIDER_CUSTOM);
+        settings.setSupportsTemperature(true);
+        settings.setMaxInputTokens(64000);
+
         assertEquals(PROVIDER_CUSTOM, settings.getProvider());
-        assertFalse(settings.isReasoningRequired());
+        assertNull(settings.getReasoning());
         assertTrue(settings.isSupportsTemperature());
         assertEquals(64000, settings.getMaxInputTokens());
     }
@@ -210,14 +222,19 @@ class ModelConfigServiceTest {
                   "models": {
                     "test-model": {
                       "provider": "test-provider",
-                      "reasoningRequired": true,
+                      "displayName": "Test Model",
                       "supportsTemperature": false,
-                      "maxInputTokens": 64000
+                      "reasoning": {
+                        "default": "medium",
+                        "levels": {
+                          "low": { "maxInputTokens": 64000 },
+                          "medium": { "maxInputTokens": 64000 }
+                        }
+                      }
                     }
                   },
                   "defaults": {
                     "provider": "default-provider",
-                    "reasoningRequired": false,
                     "supportsTemperature": true,
                     "maxInputTokens": 32000
                   }
@@ -232,9 +249,12 @@ class ModelConfigServiceTest {
 
         ModelConfigService.ModelSettings testModel = config.getModels().get(MODEL_TEST);
         assertEquals("test-provider", testModel.getProvider());
-        assertTrue(testModel.isReasoningRequired());
+        assertEquals("Test Model", testModel.getDisplayName());
+        assertNotNull(testModel.getReasoning());
+        assertEquals("medium", testModel.getReasoning().getDefaultLevel());
+        assertEquals(2, testModel.getReasoning().getLevels().size());
+        assertEquals(64000, testModel.getReasoning().getLevels().get("medium").getMaxInputTokens());
         assertFalse(testModel.isSupportsTemperature());
-        assertEquals(64000, testModel.getMaxInputTokens());
 
         ModelConfigService.ModelSettings defaults = config.getDefaults();
         assertEquals("default-provider", defaults.getProvider());
@@ -316,17 +336,18 @@ class ModelConfigServiceTest {
 
         // OpenAI reasoning models
         assertEquals(PROVIDER_OPENAI, config.getModels().get(MODEL_GPT_5_1).getProvider());
-        assertTrue(config.getModels().get(MODEL_GPT_5_1).isReasoningRequired());
+        assertNotNull(config.getModels().get(MODEL_GPT_5_1).getReasoning());
+        assertFalse(config.getModels().get(MODEL_GPT_5_1).getReasoning().getLevels().isEmpty());
         assertFalse(config.getModels().get(MODEL_GPT_5_1).isSupportsTemperature());
 
         // OpenAI standard models
         assertEquals(PROVIDER_OPENAI, config.getModels().get(MODEL_GPT_4O).getProvider());
-        assertFalse(config.getModels().get(MODEL_GPT_4O).isReasoningRequired());
+        assertNull(config.getModels().get(MODEL_GPT_4O).getReasoning());
         assertTrue(config.getModels().get(MODEL_GPT_4O).isSupportsTemperature());
 
         // Anthropic models
         assertEquals(PROVIDER_ANTHROPIC, config.getModels().get(MODEL_CLAUDE_3_HAIKU).getProvider());
-        assertFalse(config.getModels().get(MODEL_CLAUDE_3_HAIKU).isReasoningRequired());
+        assertNull(config.getModels().get(MODEL_CLAUDE_3_HAIKU).getReasoning());
         assertTrue(config.getModels().get(MODEL_CLAUDE_3_HAIKU).isSupportsTemperature());
     }
 
@@ -374,14 +395,18 @@ class ModelConfigServiceTest {
                   "models": {
                     "custom-model": {
                       "provider": "custom-provider",
-                      "reasoningRequired": true,
+                      "displayName": "Custom Model",
                       "supportsTemperature": false,
-                      "maxInputTokens": 32000
+                      "reasoning": {
+                        "default": "low",
+                        "levels": {
+                          "low": { "maxInputTokens": 32000 }
+                        }
+                      }
                     }
                   },
                   "defaults": {
                     "provider": "custom-default",
-                    "reasoningRequired": false,
                     "supportsTemperature": true,
                     "maxInputTokens": 16000
                   }
@@ -400,8 +425,10 @@ class ModelConfigServiceTest {
         assertEquals(1, config.getModels().size());
         assertTrue(config.getModels().containsKey(MODEL_CUSTOM));
         assertEquals("custom-provider", config.getModels().get(MODEL_CUSTOM).getProvider());
-        assertTrue(config.getModels().get(MODEL_CUSTOM).isReasoningRequired());
-        assertEquals(32000, config.getModels().get(MODEL_CUSTOM).getMaxInputTokens());
+        assertNotNull(config.getModels().get(MODEL_CUSTOM).getReasoning());
+        assertEquals("low", config.getModels().get(MODEL_CUSTOM).getReasoning().getDefaultLevel());
+        assertEquals(32000,
+                config.getModels().get(MODEL_CUSTOM).getReasoning().getLevels().get("low").getMaxInputTokens());
         assertEquals("custom-default", config.getDefaults().getProvider());
         assertEquals(16000, config.getDefaults().getMaxInputTokens());
     }
@@ -428,7 +455,8 @@ class ModelConfigServiceTest {
         // "gpt-4o" should return exact match, not prefix match with "gpt-4"
         ModelConfigService.ModelSettings settings = service.getModelSettings(MODEL_GPT_4O);
         assertEquals(PROVIDER_OPENAI, settings.getProvider());
-        assertFalse(settings.isReasoningRequired());
+        assertNull(settings.getReasoning());
+        assertFalse(service.isReasoningRequired(MODEL_GPT_4O));
         assertTrue(settings.isSupportsTemperature());
     }
 
@@ -470,15 +498,28 @@ class ModelConfigServiceTest {
     @Test
     void modelsConfigSettersWork() {
         ModelConfigService.ModelsConfig config = new ModelConfigService.ModelsConfig();
-        ModelConfigService.ModelSettings defaults = new ModelConfigService.ModelSettings("test", false, true);
+
+        ModelConfigService.ModelSettings defaults = new ModelConfigService.ModelSettings();
+        defaults.setProvider("test");
+        defaults.setSupportsTemperature(true);
         config.setDefaults(defaults);
+
+        ModelConfigService.ModelSettings testModel = new ModelConfigService.ModelSettings();
+        testModel.setProvider("test");
+        testModel.setSupportsTemperature(false);
+        ModelConfigService.ReasoningConfig reasoning = new ModelConfigService.ReasoningConfig();
+        reasoning.setDefaultLevel("medium");
+        reasoning.getLevels().put("medium", new ModelConfigService.ReasoningLevelConfig(128000));
+        testModel.setReasoning(reasoning);
+
         Map<String, ModelConfigService.ModelSettings> models = new java.util.HashMap<>();
-        models.put(MODEL_TEST, new ModelConfigService.ModelSettings("test", true, false));
+        models.put(MODEL_TEST, testModel);
         config.setModels(models);
 
         assertEquals("test", config.getDefaults().getProvider());
         assertEquals(1, config.getModels().size());
-        assertTrue(config.getModels().get(MODEL_TEST).isReasoningRequired());
+        assertNotNull(config.getModels().get(MODEL_TEST).getReasoning());
+        assertFalse(config.getModels().get(MODEL_TEST).getReasoning().getLevels().isEmpty());
     }
 
     // ===== ModelSettings data class =====
@@ -487,12 +528,20 @@ class ModelConfigServiceTest {
     void modelSettingsSettersWork() {
         ModelConfigService.ModelSettings settings = new ModelConfigService.ModelSettings();
         settings.setProvider(PROVIDER_CUSTOM);
-        settings.setReasoningRequired(true);
+        settings.setDisplayName("Custom Model");
         settings.setSupportsTemperature(false);
         settings.setMaxInputTokens(64000);
 
+        ModelConfigService.ReasoningConfig reasoning = new ModelConfigService.ReasoningConfig();
+        reasoning.setDefaultLevel("high");
+        reasoning.getLevels().put("high", new ModelConfigService.ReasoningLevelConfig(64000));
+        settings.setReasoning(reasoning);
+
         assertEquals(PROVIDER_CUSTOM, settings.getProvider());
-        assertTrue(settings.isReasoningRequired());
+        assertEquals("Custom Model", settings.getDisplayName());
+        assertNotNull(settings.getReasoning());
+        assertEquals("high", settings.getReasoning().getDefaultLevel());
+        assertEquals(1, settings.getReasoning().getLevels().size());
         assertFalse(settings.isSupportsTemperature());
         assertEquals(64000, settings.getMaxInputTokens());
     }
