@@ -130,9 +130,25 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             // 3) Append assistant message with tool calls
             historyWriter.appendAssistantToolCalls(context, response, response.getToolCalls());
 
-            // 3.5) Plan mode: record tool calls as plan steps, write synthetic results
+            // 3.5) Plan mode: record tool calls as plan steps, write synthetic results.
+            // plan_finalize is treated as a control tool: it finalizes the plan instead of
+            // being recorded as a step.
             if (planService != null && planService.isPlanModeActive()) {
+
                 String planId = planService.getActivePlanId();
+
+                boolean sawFinalize = response.getToolCalls().stream()
+                        .anyMatch(tc -> me.golemcore.bot.tools.PlanFinalizeTool.TOOL_NAME.equals(tc.getName()));
+                if (sawFinalize) {
+                    planService.finalizePlan(planId);
+                    // Keep the assistant tool-call message in raw history; plan card will be
+                    // generated downstream.
+                    context.setAttribute(ContextAttributes.PLAN_APPROVAL_NEEDED, planId);
+                    context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
+                    applyAttachments(context, accumulatedAttachments);
+                    return new ToolLoopTurnResult(context, true, llmCalls, toolExecutions);
+                }
+
                 for (Message.ToolCall tc : response.getToolCalls()) {
                     Map<String, Object> args = tc.getArguments() != null ? tc.getArguments() : Map.of();
                     String description = tc.getName() + "(" + args + ")";
