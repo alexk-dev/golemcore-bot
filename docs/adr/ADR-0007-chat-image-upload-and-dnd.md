@@ -79,7 +79,8 @@ Images are uploaded first, then referenced in outbound chat message payload.
 
 ### Phase D — Tests
 - [x] Backend validation tests (size/type/count) for upload controller.
-- [ ] Frontend DnD tests.
+- [x] Frontend file-validation tests (type and limit behavior in ChatInput).
+- [ ] Frontend DnD behavior tests.
 - [ ] End-to-end: upload -> send -> persisted message refs.
 
 ## Security

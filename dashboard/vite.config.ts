@@ -8,6 +8,11 @@ export default defineConfig({
     outDir: '../src/main/resources/static/dashboard',
     emptyOutDir: true,
   },
+  test: {
+    environment: 'jsdom',
+    setupFiles: './src/test/setup.ts',
+    globals: true,
+  },
   server: {
     proxy: {
       '/api': 'http://localhost:8080',

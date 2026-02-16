@@ -78,6 +78,7 @@ Implement **in-browser voice recording** and send audio to backend endpoint that
 
 ### Phase D — Tests
 - [x] Backend tests for voice endpoint availability/empty payload/success path.
+- [x] Frontend test coverage for voice-adjacent ChatInput behavior (send/input lifecycle).
 - [ ] Frontend tests for recorder state transitions.
 - [ ] Integration test for upload->transcript flow.
 
