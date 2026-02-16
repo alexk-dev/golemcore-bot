@@ -103,6 +103,23 @@
   border-top: 1px solid var(--bs-border-color);
   padding-top: 0.75rem;
   background-color: var(--bs-body-bg);
+  position: relative;
+
+  &.drag-active {
+    outline: 2px dashed var(--bs-primary);
+    outline-offset: 2px;
+    border-radius: 0.5rem;
+  }
+}
+
+.chat-drag-overlay {
+  border: 1px dashed var(--bs-primary);
+  color: var(--bs-primary);
+  background: rgba(13, 110, 253, 0.08);
+  border-radius: 0.5rem;
+  padding: 0.45rem 0.7rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
 }
 
 .chat-toolbar {

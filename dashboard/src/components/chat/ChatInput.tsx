@@ -14,6 +14,7 @@ interface Props {
 const MAX_ATTACHMENTS = 5;
 const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
 const MAX_VOICE_BYTES = 25 * 1024 * 1024;
+const COMMAND_LISTBOX_ID = 'chat-command-listbox';
 
 function parseRequiredArgsFromUsage(usage: string): string[] {
   const required = usage.match(/<[^>]+>/g) ?? [];
@@ -44,6 +45,8 @@ export default function ChatInput({ onSend, disabled }: Props) {
   const [recording, setRecording] = useState(false);
   const [processingVoice, setProcessingVoice] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+  const [autocompleteDismissed, setAutocompleteDismissed] = useState(false);
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -53,7 +56,7 @@ export default function ChatInput({ onSend, disabled }: Props) {
   const commandsQuery = useCommands();
   const commands = commandsQuery.data ?? [];
   const filteredCommands = useMemo(() => filterCommands(commands, text).slice(0, 8), [commands, text]);
-  const showAutocomplete = text.startsWith('/') && text.trim().length > 0;
+  const showAutocomplete = text.startsWith('/') && text.trim().length > 0 && !autocompleteDismissed;
 
   const selectedCommand = useMemo(() => {
     if (!text.startsWith('/')) return undefined;
@@ -67,12 +70,24 @@ export default function ChatInput({ onSend, disabled }: Props) {
     [selectedCommand?.usage, text]
   );
 
+  const statusText = useMemo(() => {
+    if (uploading) return 'Uploading image...';
+    if (recording) return 'Recording...';
+    if (processingVoice) return 'Transcribing...';
+    return '';
+  }, [uploading, recording, processingVoice]);
+
+  const activeDescendant = showAutocomplete && filteredCommands.length > 0
+    ? `${COMMAND_LISTBOX_ID}-option-${selectedCmdIndex}`
+    : undefined;
+
   useEffect(() => {
     if (!disabled) inputRef.current?.focus();
   }, [disabled]);
 
   useEffect(() => {
     setSelectedCmdIndex(0);
+    setAutocompleteDismissed(false);
   }, [text]);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -112,6 +127,15 @@ export default function ChatInput({ onSend, disabled }: Props) {
         e.preventDefault();
         applySelectedCommand();
         return;
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        applySelectedCommand();
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setAutocompleteDismissed(true);
       }
     }
 
@@ -165,11 +189,17 @@ export default function ChatInput({ onSend, disabled }: Props) {
 
   const handleDrop: React.DragEventHandler<HTMLDivElement> = async (e) => {
     e.preventDefault();
+    setDragActive(false);
     await processFiles(e.dataTransfer.files);
   };
 
   const handleDragOver: React.DragEventHandler<HTMLDivElement> = (e) => {
     e.preventDefault();
+    setDragActive(true);
+  };
+
+  const handleDragLeave: React.DragEventHandler<HTMLDivElement> = () => {
+    setDragActive(false);
   };
 
   const toggleRecording = async () => {
@@ -230,26 +260,36 @@ export default function ChatInput({ onSend, disabled }: Props) {
   };
 
   return (
-    <div className="chat-input-area" onDrop={handleDrop} onDragOver={handleDragOver}>
+    <div
+      className={`chat-input-area ${dragActive ? 'drag-active' : ''}`}
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+    >
+      <div className="visually-hidden" aria-live="polite" aria-atomic="true">
+        {statusText || errorText || (missingArgs.length > 0 ? `Missing command arguments: ${missingArgs.join(', ')}` : '')}
+      </div>
+
       {showAutocomplete && (
         <CommandAutocomplete
           commands={commands}
           input={text}
           selectedIndex={selectedCmdIndex}
           visible={showAutocomplete}
+          listboxId={COMMAND_LISTBOX_ID}
         />
       )}
 
       {attachments.length > 0 && (
-        <div className="chat-attachments-strip">
+        <div className="chat-attachments-strip" aria-label="Selected attachments">
           {attachments.map((a, idx) => (
             <div key={`${a.id}-${idx}`} className="chat-attachment-chip">
               <img src={a.url} alt="attachment" />
               <button
                 type="button"
                 className="btn btn-sm btn-light"
-                onClick={() => setAttachments((prev) => prev.filter((x) => x.id !== a.id))}
-                aria-label="Remove attachment"
+                onClick={() => setAttachments((prev) => prev.filter((_, itemIdx) => itemIdx !== idx))}
+                aria-label={`Remove attachment ${idx + 1}`}
               >
                 <FiX />
               </button>
@@ -258,28 +298,44 @@ export default function ChatInput({ onSend, disabled }: Props) {
         </div>
       )}
 
-      {(missingArgs.length > 0 || errorText) && (
+      {missingArgs.length > 0 && (
         <div className="mb-2">
-          {missingArgs.length > 0 && (
-            <Badge bg="warning" text="dark" className="me-2">
-              Missing args: {missingArgs.join(', ')}
-            </Badge>
-          )}
-          {errorText && (
-            <Alert variant="warning" className="chat-input-alert mb-0 py-2">
-              {errorText}
-            </Alert>
-          )}
+          <Badge bg="secondary" className="me-2">Hint</Badge>
+          <small className="text-muted">Missing args: {missingArgs.join(', ')}</small>
+        </div>
+      )}
+
+      {errorText && (
+        <Alert variant="warning" className="chat-input-alert mb-2 py-2" role="alert">
+          {errorText}
+        </Alert>
+      )}
+
+      {dragActive && (
+        <div className="chat-drag-overlay" role="status" aria-live="polite">
+          Drop images to attach
         </div>
       )}
 
       <Form onSubmit={handleSubmit}>
         <InputGroup>
-          <Button variant="outline-secondary" type="button" onClick={() => fileRef.current?.click()} disabled={disabled || uploading}>
+          <Button
+            variant="outline-secondary"
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={disabled || uploading}
+            aria-label="Attach images"
+          >
             <FiImage size={16} />
           </Button>
 
-          <Button variant={recording ? 'danger' : 'outline-secondary'} type="button" onClick={toggleRecording} disabled={disabled || processingVoice}>
+          <Button
+            variant={recording ? 'danger' : 'outline-secondary'}
+            type="button"
+            onClick={toggleRecording}
+            disabled={disabled || processingVoice}
+            aria-label={recording ? 'Stop voice recording' : 'Start voice recording'}
+          >
             <FiMic size={16} />
           </Button>
 
@@ -292,10 +348,20 @@ export default function ChatInput({ onSend, disabled }: Props) {
             onKeyDown={handleKeyDown}
             placeholder="Type a message... (Shift+Enter for new line)"
             disabled={disabled}
+            role="combobox"
+            aria-expanded={showAutocomplete && filteredCommands.length > 0}
+            aria-controls={COMMAND_LISTBOX_ID}
+            aria-activedescendant={activeDescendant}
+            aria-autocomplete="list"
             style={{ resize: 'none', maxHeight: 120, overflow: 'auto' }}
           />
 
-          <Button type="submit" variant="primary" disabled={disabled || (!text.trim() && attachments.length === 0)}>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={disabled || (!text.trim() && attachments.length === 0)}
+            aria-label="Send message"
+          >
             <FiSend size={16} />
           </Button>
         </InputGroup>
@@ -303,7 +369,7 @@ export default function ChatInput({ onSend, disabled }: Props) {
         <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={handlePickImages} />
 
         {(uploading || processingVoice || recording) && (
-          <div className="mt-2 d-flex gap-2 align-items-center">
+          <div className="mt-2 d-flex gap-2 align-items-center" aria-live="polite">
             {uploading && <Badge bg="secondary">Uploading image...</Badge>}
             {recording && <Badge bg="danger">Recording...</Badge>}
             {processingVoice && <Badge bg="info">Transcribing...</Badge>}

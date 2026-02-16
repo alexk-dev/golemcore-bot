@@ -47,6 +47,20 @@ describe('ChatInput', () => {
     });
   });
 
+  it('accepts selected command on Enter when autocomplete is visible', async () => {
+    const onSend = vi.fn();
+    render(<ChatInput onSend={onSend} />);
+
+    const textarea = screen.getByPlaceholderText(/Type a message/i);
+    fireEvent.change(textarea, { target: { value: '/pl' } });
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect((textarea as HTMLTextAreaElement).value).toBe('/plan ');
+    });
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
   it('submits user message on Enter', async () => {
     const onSend = vi.fn();
     render(<ChatInput onSend={onSend} />);
@@ -71,6 +85,19 @@ describe('ChatInput', () => {
       target: { files: [file] },
     });
 
-    expect(await screen.findByText(/Only image files are supported/i)).toBeInTheDocument();
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/Only image files are supported/i);
+  });
+
+  it('sets combobox aria attributes for command suggestions', async () => {
+    const onSend = vi.fn();
+    render(<ChatInput onSend={onSend} />);
+
+    const textarea = screen.getByRole('combobox');
+    fireEvent.change(textarea, { target: { value: '/pl' } });
+
+    expect(textarea).toHaveAttribute('aria-controls', 'chat-command-listbox');
+    expect(textarea).toHaveAttribute('aria-expanded', 'true');
+    expect(await screen.findByRole('listbox')).toBeInTheDocument();
   });
 });

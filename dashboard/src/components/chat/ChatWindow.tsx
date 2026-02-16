@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Badge, Form } from 'react-bootstrap';
+import { Button, Form } from 'react-bootstrap';
 import { useAuthStore } from '../../store/authStore';
 import { listSessions, getSession } from '../../api/sessions';
 import { updatePreferences } from '../../api/settings';
@@ -182,12 +182,13 @@ export default function ChatWindow() {
           <span className={`status-dot ${connected ? 'online' : 'offline'}`} />
           <small className="text-muted">{connected ? 'Connected' : 'Reconnecting...'}</small>
         </div>
-        <div className="d-flex align-items-center gap-2">
+        <div className="d-flex align-items-center gap-2" aria-label="Advanced model controls">
           <Form.Select
             size="sm"
             value={tier}
             onChange={(e) => handleTierChange(e.target.value)}
             style={{ width: 120 }}
+            aria-label="Model tier"
           >
             <option value="balanced">Balanced</option>
             <option value="smart">Smart</option>
@@ -209,9 +210,14 @@ export default function ChatWindow() {
             {loadingMore ? (
               <small className="text-muted">Loading...</small>
             ) : (
-              <Badge bg="secondary" className="cursor-pointer" style={{ cursor: 'pointer' }} onClick={() => setVisibleStart(Math.max(0, visibleStart - LOAD_MORE_COUNT))}>
+              <Button
+                size="sm"
+                variant="outline-secondary"
+                onClick={() => setVisibleStart(Math.max(0, visibleStart - LOAD_MORE_COUNT))}
+                aria-label="Load earlier messages"
+              >
                 Load earlier messages
-              </Badge>
+              </Button>
             )}
           </div>
         )}
@@ -219,7 +225,7 @@ export default function ChatWindow() {
           <MessageBubble key={visibleStart + i} role={msg.role} content={msg.content} model={msg.model} />
         ))}
         {typing && (
-          <div className="typing-indicator">
+          <div className="typing-indicator" aria-live="polite" role="status" aria-label="Assistant is typing">
             <span />
             <span />
             <span />
