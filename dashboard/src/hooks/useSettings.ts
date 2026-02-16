@@ -11,6 +11,7 @@ import {
   updateWebhooksConfig,
   updateAutoConfig,
   updateAdvancedConfig,
+  updateRuntimeSecrets,
   generateInviteCode,
   deleteInviteCode,
   restartTelegram,
@@ -23,6 +24,7 @@ import {
   SecurityConfig,
   CompactionConfig,
   WebhookConfig,
+  SecretUpdateRequest,
 } from '../api/settings';
 
 export function useSettings() {
@@ -122,4 +124,13 @@ export function useDeleteInviteCode() {
 
 export function useRestartTelegram() {
   return useMutation({ mutationFn: restartTelegram });
+}
+
+
+export function useUpdateRuntimeSecrets() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: SecretUpdateRequest) => updateRuntimeSecrets(payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
 }

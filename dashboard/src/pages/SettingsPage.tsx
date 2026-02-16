@@ -6,7 +6,7 @@ import {
 import {
   useSettings, useUpdatePreferences, useRuntimeConfig,
   useUpdateTelegram, useUpdateModelRouter, useUpdateTools,
-  useUpdateVoice, useUpdateWebhooks, useUpdateAuto, useUpdateAdvanced,
+  useUpdateVoice, useUpdateWebhooks, useUpdateAuto, useUpdateAdvanced, useUpdateRuntimeSecrets,
   useGenerateInviteCode, useDeleteInviteCode, useRestartTelegram,
 } from '../hooks/useSettings';
 import { useAvailableModels } from '../hooks/useModels';
@@ -18,7 +18,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import type {
   TelegramConfig, ModelRouterConfig, ToolsConfig, VoiceConfig,
   AutoModeConfig, RateLimitConfig, SecurityConfig, CompactionConfig,
-  WebhookConfig, HookMapping, ImapConfig, SmtpConfig,
+  WebhookConfig, HookMapping, ImapConfig, SmtpConfig, SecretUpdateRequest,
 } from '../api/settings';
 import { FiHelpCircle } from 'react-icons/fi';
 
@@ -187,6 +187,7 @@ function TelegramTab({ config }: { config: TelegramConfig }) {
   const genInvite = useGenerateInviteCode();
   const delInvite = useDeleteInviteCode();
   const restart = useRestartTelegram();
+  const updateSecrets = useUpdateRuntimeSecrets();
 
   const [enabled, setEnabled] = useState(config.enabled ?? false);
   const [token, setToken] = useState(config.token ?? '');
@@ -197,8 +198,11 @@ function TelegramTab({ config }: { config: TelegramConfig }) {
   const handleSave = async () => {
     const users = allowedUsers.split(',').map(u => u.trim()).filter(Boolean);
     await updateTelegram.mutateAsync({
-      ...config, enabled, token: token || null, authMode, allowedUsers: users,
+      ...config, enabled, token: config.token, authMode, allowedUsers: users,
     });
+    if (token && token !== '***') {
+      await updateSecrets.mutateAsync({ telegramToken: token });
+    }
     toast.success('Telegram settings saved');
   };
 
@@ -448,6 +452,7 @@ function TierModelCard({ label, color, providers, providerNames, modelValue, rea
 
 function ToolsTab({ config }: { config: ToolsConfig }) {
   const updateTools = useUpdateTools();
+  const updateSecrets = useUpdateRuntimeSecrets();
   const [form, setForm] = useState<ToolsConfig>({ ...config });
 
   useEffect(() => { setForm({ ...config }); }, [config]);
@@ -463,7 +468,21 @@ function ToolsTab({ config }: { config: ToolsConfig }) {
   ];
 
   const handleSave = async () => {
-    await updateTools.mutateAsync(form);
+    await updateTools.mutateAsync({
+      ...form,
+      braveSearchApiKey: config.braveSearchApiKey,
+      imap: { ...form.imap, password: config.imap?.password ?? null },
+      smtp: { ...form.smtp, password: config.smtp?.password ?? null },
+    });
+
+    const secretsPayload: SecretUpdateRequest = {};
+    if (form.braveSearchApiKey && form.braveSearchApiKey !== '***') secretsPayload.braveSearchApiKey = form.braveSearchApiKey;
+    if (form.imap?.password && form.imap.password !== '***') secretsPayload.imapPassword = form.imap.password;
+    if (form.smtp?.password && form.smtp.password !== '***') secretsPayload.smtpPassword = form.smtp.password;
+    if (Object.keys(secretsPayload).length > 0) {
+      await updateSecrets.mutateAsync(secretsPayload);
+    }
+
     toast.success('Tools settings saved');
   };
 
@@ -503,6 +522,7 @@ function ToolsTab({ config }: { config: ToolsConfig }) {
               <Form.Control size="sm" type="password" value={form.braveSearchApiKey ?? ''}
                 onChange={(e) => setForm({ ...form, braveSearchApiKey: e.target.value || null })}
                 placeholder="BSA-..." />
+              <Form.Text className="text-muted">Leave as *** to keep current key</Form.Text>
             </Form.Group>
           )}
           <Button variant="primary" size="sm" onClick={handleSave}>Save</Button>
@@ -569,6 +589,7 @@ function ToolsTab({ config }: { config: ToolsConfig }) {
                     </Form.Label>
                     <Form.Control size="sm" type="password" value={form.imap?.password ?? ''}
                       onChange={(e) => updateImap({ password: e.target.value || null })} />
+                    <Form.Text className="text-muted">Leave as *** to keep current password</Form.Text>
                   </Form.Group>
                 </Col>
               </Row>
@@ -667,6 +688,7 @@ function ToolsTab({ config }: { config: ToolsConfig }) {
                     </Form.Label>
                     <Form.Control size="sm" type="password" value={form.smtp?.password ?? ''}
                       onChange={(e) => updateSmtp({ password: e.target.value || null })} />
+                    <Form.Text className="text-muted">Leave as *** to keep current password</Form.Text>
                   </Form.Group>
                 </Col>
               </Row>
@@ -696,13 +718,17 @@ function ToolsTab({ config }: { config: ToolsConfig }) {
 
 function VoiceTab({ config }: { config: VoiceConfig }) {
   const updateVoice = useUpdateVoice();
+  const updateSecrets = useUpdateRuntimeSecrets();
   const [form, setForm] = useState<VoiceConfig>({ ...config });
   const [showKey, setShowKey] = useState(false);
 
   useEffect(() => { setForm({ ...config }); }, [config]);
 
   const handleSave = async () => {
-    await updateVoice.mutateAsync(form);
+    await updateVoice.mutateAsync({ ...form, apiKey: config.apiKey });
+    if (form.apiKey && form.apiKey !== '***') {
+      await updateSecrets.mutateAsync({ voiceApiKey: form.apiKey });
+    }
     toast.success('Voice settings saved');
   };
 
@@ -721,6 +747,7 @@ function VoiceTab({ config }: { config: VoiceConfig }) {
           <InputGroup size="sm">
             <Form.Control type={showKey ? 'text' : 'password'} value={form.apiKey ?? ''}
               onChange={(e) => setForm({ ...form, apiKey: e.target.value || null })} />
+            <Form.Text className="text-muted">Leave as *** to keep current API key</Form.Text>
             <Button variant="outline-secondary" onClick={() => setShowKey(!showKey)}>
               {showKey ? 'Hide' : 'Show'}
             </Button>

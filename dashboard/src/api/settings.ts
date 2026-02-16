@@ -140,6 +140,15 @@ export interface CompactionConfig {
   keepLastMessages: number | null;
 }
 
+
+export interface SecretUpdateRequest {
+  telegramToken?: string | null;
+  braveSearchApiKey?: string | null;
+  imapPassword?: string | null;
+  smtpPassword?: string | null;
+  voiceApiKey?: string | null;
+}
+
 export interface WebhookConfig {
   enabled: boolean;
   token: string | null;
@@ -169,6 +178,11 @@ export async function getRuntimeConfig(): Promise<RuntimeConfig> {
 
 export async function updateRuntimeConfig(config: RuntimeConfig): Promise<RuntimeConfig> {
   const { data } = await client.put('/settings/runtime', config);
+  return data;
+}
+
+export async function updateRuntimeSecrets(payload: SecretUpdateRequest): Promise<RuntimeConfig> {
+  const { data } = await client.put('/settings/runtime/secrets', payload);
   return data;
 }
 
