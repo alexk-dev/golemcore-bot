@@ -118,8 +118,32 @@ public class SettingsController {
     @PutMapping("/runtime")
     public Mono<ResponseEntity<RuntimeConfig>> updateRuntimeConfig(@RequestBody RuntimeConfig config) {
         RuntimeConfig current = runtimeConfigService.getRuntimeConfig();
-        RuntimeConfig merged = preserveMaskedSecrets(current, config);
+        RuntimeConfig merged = preserveExistingSecrets(current, config);
         runtimeConfigService.updateRuntimeConfig(merged);
+        return Mono.just(ResponseEntity.ok(maskSecrets(runtimeConfigService.getRuntimeConfig())));
+    }
+
+    @PutMapping("/runtime/secrets")
+    public Mono<ResponseEntity<RuntimeConfig>> updateRuntimeSecrets(@RequestBody SecretUpdateRequest request) {
+        RuntimeConfig cfg = runtimeConfigService.getRuntimeConfig();
+
+        if (request.telegramToken() != null && !isMaskedSecret(request.telegramToken())) {
+            cfg.getTelegram().setToken(request.telegramToken());
+        }
+        if (request.braveSearchApiKey() != null && !isMaskedSecret(request.braveSearchApiKey())) {
+            cfg.getTools().setBraveSearchApiKey(request.braveSearchApiKey());
+        }
+        if (request.imapPassword() != null && !isMaskedSecret(request.imapPassword())) {
+            cfg.getTools().getImap().setPassword(request.imapPassword());
+        }
+        if (request.smtpPassword() != null && !isMaskedSecret(request.smtpPassword())) {
+            cfg.getTools().getSmtp().setPassword(request.smtpPassword());
+        }
+        if (request.voiceApiKey() != null && !isMaskedSecret(request.voiceApiKey())) {
+            cfg.getVoice().setApiKey(request.voiceApiKey());
+        }
+
+        runtimeConfigService.updateRuntimeConfig(cfg);
         return Mono.just(ResponseEntity.ok(maskSecrets(runtimeConfigService.getRuntimeConfig())));
     }
 
@@ -127,16 +151,13 @@ public class SettingsController {
     public Mono<ResponseEntity<RuntimeConfig>> updateTelegramConfig(
             @RequestBody RuntimeConfig.TelegramConfig telegramConfig) {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        RuntimeConfig.TelegramConfig merged = telegramConfig;
-        if (isMaskedSecret(telegramConfig.getToken())) {
-            merged = RuntimeConfig.TelegramConfig.builder()
-                    .enabled(telegramConfig.getEnabled())
-                    .token(config.getTelegram().getToken())
-                    .authMode(telegramConfig.getAuthMode())
-                    .allowedUsers(telegramConfig.getAllowedUsers())
-                    .inviteCodes(telegramConfig.getInviteCodes())
-                    .build();
-        }
+        RuntimeConfig.TelegramConfig merged = RuntimeConfig.TelegramConfig.builder()
+                .enabled(telegramConfig.getEnabled())
+                .token(config.getTelegram().getToken())
+                .authMode(telegramConfig.getAuthMode())
+                .allowedUsers(telegramConfig.getAllowedUsers())
+                .inviteCodes(telegramConfig.getInviteCodes())
+                .build();
         config.setTelegram(merged);
         runtimeConfigService.updateRuntimeConfig(config);
         return Mono.just(ResponseEntity.ok(maskSecrets(runtimeConfigService.getRuntimeConfig())));
@@ -165,17 +186,14 @@ public class SettingsController {
     public Mono<ResponseEntity<RuntimeConfig>> updateVoiceConfig(
             @RequestBody RuntimeConfig.VoiceConfig voiceConfig) {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        RuntimeConfig.VoiceConfig merged = voiceConfig;
-        if (isMaskedSecret(voiceConfig.getApiKey())) {
-            merged = RuntimeConfig.VoiceConfig.builder()
-                    .enabled(voiceConfig.getEnabled())
-                    .apiKey(config.getVoice().getApiKey())
-                    .voiceId(voiceConfig.getVoiceId())
-                    .ttsModelId(voiceConfig.getTtsModelId())
-                    .sttModelId(voiceConfig.getSttModelId())
-                    .speed(voiceConfig.getSpeed())
-                    .build();
-        }
+        RuntimeConfig.VoiceConfig merged = RuntimeConfig.VoiceConfig.builder()
+                .enabled(voiceConfig.getEnabled())
+                .apiKey(config.getVoice().getApiKey())
+                .voiceId(voiceConfig.getVoiceId())
+                .ttsModelId(voiceConfig.getTtsModelId())
+                .sttModelId(voiceConfig.getSttModelId())
+                .speed(voiceConfig.getSpeed())
+                .build();
         config.setVoice(merged);
         runtimeConfigService.updateRuntimeConfig(config);
         return Mono.just(ResponseEntity.ok(maskSecrets(runtimeConfigService.getRuntimeConfig())));
@@ -241,16 +259,14 @@ public class SettingsController {
         return Mono.just(ResponseEntity.ok().build());
     }
 
-    private RuntimeConfig preserveMaskedSecrets(RuntimeConfig current, RuntimeConfig incoming) {
+    private RuntimeConfig preserveExistingSecrets(RuntimeConfig current, RuntimeConfig incoming) {
         RuntimeConfig merged = incoming;
 
-        if (incoming.getTelegram() != null && current.getTelegram() != null
-                && isMaskedSecret(incoming.getTelegram().getToken())) {
+        if (incoming.getTelegram() != null && current.getTelegram() != null) {
             incoming.getTelegram().setToken(current.getTelegram().getToken());
         }
 
-        if (incoming.getVoice() != null && current.getVoice() != null
-                && isMaskedSecret(incoming.getVoice().getApiKey())) {
+        if (incoming.getVoice() != null && current.getVoice() != null) {
             incoming.getVoice().setApiKey(current.getVoice().getApiKey());
         }
 
@@ -269,17 +285,13 @@ public class SettingsController {
             return current;
         }
 
-        if (isMaskedSecret(incoming.getBraveSearchApiKey())) {
-            incoming.setBraveSearchApiKey(current.getBraveSearchApiKey());
-        }
+        incoming.setBraveSearchApiKey(current.getBraveSearchApiKey());
 
-        if (incoming.getImap() != null && current.getImap() != null
-                && isMaskedSecret(incoming.getImap().getPassword())) {
+        if (incoming.getImap() != null && current.getImap() != null) {
             incoming.getImap().setPassword(current.getImap().getPassword());
         }
 
-        if (incoming.getSmtp() != null && current.getSmtp() != null
-                && isMaskedSecret(incoming.getSmtp().getPassword())) {
+        if (incoming.getSmtp() != null && current.getSmtp() != null) {
             incoming.getSmtp().setPassword(current.getSmtp().getPassword());
         }
 
@@ -327,6 +339,14 @@ public class SettingsController {
             RuntimeConfig.RateLimitConfig rateLimit,
             RuntimeConfig.SecurityConfig security,
             RuntimeConfig.CompactionConfig compaction) {
+    }
+
+    private record SecretUpdateRequest(
+            String telegramToken,
+            String braveSearchApiKey,
+            String imapPassword,
+            String smtpPassword,
+            String voiceApiKey) {
     }
 
     /**

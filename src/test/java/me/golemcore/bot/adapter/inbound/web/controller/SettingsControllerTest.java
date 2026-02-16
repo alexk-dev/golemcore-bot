@@ -228,4 +228,17 @@ class SettingsControllerTest {
         assertEquals("real-smtp", incoming.getTools().getSmtp().getPassword());
     }
 
+    @Test
+    void shouldHaveDedicatedRuntimeSecretsEndpointMethod() throws Exception {
+        var methods = SettingsController.class.getDeclaredMethods();
+        boolean found = false;
+        for (var m : methods) {
+            if (m.getName().equals("updateRuntimeSecrets")) {
+                found = true;
+                break;
+            }
+        }
+        assertTrue(found);
+    }
+
 }
