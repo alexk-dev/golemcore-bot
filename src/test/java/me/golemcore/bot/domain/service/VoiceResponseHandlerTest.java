@@ -1,8 +1,8 @@
 package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.model.AudioFormat;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler.VoiceSendResult;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.VoicePort;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,18 +20,17 @@ class VoiceResponseHandlerTest {
     private static final String TEXT_HELLO = "Hello";
 
     private VoicePort voicePort;
-    private BotProperties properties;
+    private RuntimeConfigService runtimeConfigService;
     private ChannelPort channel;
     private VoiceResponseHandler handler;
 
     @BeforeEach
     void setUp() {
         voicePort = mock(VoicePort.class);
-        properties = new BotProperties();
-        properties.getVoice().setEnabled(true);
-        properties.getVoice().setVoiceId("test-voice");
-        properties.getVoice().setTtsModelId("test-model");
-        properties.getVoice().setSpeed(1.0f);
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.getVoiceId()).thenReturn("test-voice");
+        when(runtimeConfigService.getTtsModelId()).thenReturn("test-model");
+        when(runtimeConfigService.getVoiceSpeed()).thenReturn(1.0f);
 
         channel = mock(ChannelPort.class);
         when(channel.sendVoice(anyString(), any(byte[].class)))
@@ -39,7 +38,7 @@ class VoiceResponseHandlerTest {
         when(channel.sendMessage(anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
-        handler = new VoiceResponseHandler(voicePort, properties);
+        handler = new VoiceResponseHandler(voicePort, runtimeConfigService);
     }
 
     // ===== trySendVoice =====
@@ -109,9 +108,9 @@ class VoiceResponseHandlerTest {
     @Test
     void trySendVoice_usesConfigFromProperties() {
         when(voicePort.isAvailable()).thenReturn(true);
-        properties.getVoice().setVoiceId("my-voice");
-        properties.getVoice().setTtsModelId("my-model");
-        properties.getVoice().setSpeed(1.5f);
+        when(runtimeConfigService.getVoiceId()).thenReturn("my-voice");
+        when(runtimeConfigService.getTtsModelId()).thenReturn("my-model");
+        when(runtimeConfigService.getVoiceSpeed()).thenReturn(1.5f);
 
         when(voicePort.synthesize(anyString(), any(VoicePort.VoiceConfig.class)))
                 .thenAnswer(inv -> {

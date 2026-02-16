@@ -1,6 +1,7 @@
 package me.golemcore.bot.adapter.outbound.confirmation;
 
 import me.golemcore.bot.domain.model.ConfirmationCallbackEvent;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,6 +26,7 @@ class TelegramConfirmationAdapterTest {
 
     private TelegramConfirmationAdapter adapter;
     private TelegramClient telegramClient;
+    private RuntimeConfigService runtimeConfigService;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -32,7 +34,11 @@ class TelegramConfirmationAdapterTest {
         properties.getSecurity().getToolConfirmation().setEnabled(true);
         properties.getSecurity().getToolConfirmation().setTimeoutSeconds(5);
 
-        adapter = new TelegramConfirmationAdapter(properties);
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isTelegramEnabled()).thenReturn(true);
+        when(runtimeConfigService.getTelegramToken()).thenReturn("test-token");
+
+        adapter = new TelegramConfirmationAdapter(properties, runtimeConfigService);
 
         telegramClient = mock(TelegramClient.class);
         when(telegramClient.execute(any(SendMessage.class)))
@@ -61,7 +67,9 @@ class TelegramConfirmationAdapterTest {
     void isNotAvailableWithoutClient() {
         BotProperties properties = new BotProperties();
         properties.getSecurity().getToolConfirmation().setEnabled(true);
-        TelegramConfirmationAdapter noClientAdapter = new TelegramConfirmationAdapter(properties);
+        RuntimeConfigService disabledConfig = mock(RuntimeConfigService.class);
+        when(disabledConfig.isTelegramEnabled()).thenReturn(false);
+        TelegramConfirmationAdapter noClientAdapter = new TelegramConfirmationAdapter(properties, disabledConfig);
         assertFalse(noClientAdapter.isAvailable());
     }
 
@@ -69,7 +77,9 @@ class TelegramConfirmationAdapterTest {
     void isNotAvailableWhenDisabled() {
         BotProperties properties = new BotProperties();
         properties.getSecurity().getToolConfirmation().setEnabled(false);
-        TelegramConfirmationAdapter disabledAdapter = new TelegramConfirmationAdapter(properties);
+        RuntimeConfigService enabledConfig = mock(RuntimeConfigService.class);
+        when(enabledConfig.isTelegramEnabled()).thenReturn(true);
+        TelegramConfirmationAdapter disabledAdapter = new TelegramConfirmationAdapter(properties, enabledConfig);
         disabledAdapter.setTelegramClient(telegramClient);
         assertFalse(disabledAdapter.isAvailable());
     }
@@ -77,14 +87,13 @@ class TelegramConfirmationAdapterTest {
     // ===== Lazy TelegramClient initialization =====
 
     @Test
-    void shouldNotBeAvailableWhenTelegramChannelDisabled() {
+    void shouldNotBeAvailableWhenTelegramDisabled() {
         BotProperties props = new BotProperties();
         props.getSecurity().getToolConfirmation().setEnabled(true);
-        BotProperties.ChannelProperties channelProps = new BotProperties.ChannelProperties();
-        channelProps.setEnabled(false);
-        props.getChannels().put("telegram", channelProps);
+        RuntimeConfigService disabledConfig = mock(RuntimeConfigService.class);
+        when(disabledConfig.isTelegramEnabled()).thenReturn(false);
 
-        TelegramConfirmationAdapter lazyAdapter = new TelegramConfirmationAdapter(props);
+        TelegramConfirmationAdapter lazyAdapter = new TelegramConfirmationAdapter(props, disabledConfig);
         assertFalse(lazyAdapter.isAvailable());
     }
 
@@ -92,12 +101,11 @@ class TelegramConfirmationAdapterTest {
     void shouldNotBeAvailableWhenTokenBlank() {
         BotProperties props = new BotProperties();
         props.getSecurity().getToolConfirmation().setEnabled(true);
-        BotProperties.ChannelProperties channelProps = new BotProperties.ChannelProperties();
-        channelProps.setEnabled(true);
-        channelProps.setToken("   ");
-        props.getChannels().put("telegram", channelProps);
+        RuntimeConfigService blankTokenConfig = mock(RuntimeConfigService.class);
+        when(blankTokenConfig.isTelegramEnabled()).thenReturn(true);
+        when(blankTokenConfig.getTelegramToken()).thenReturn("   ");
 
-        TelegramConfirmationAdapter lazyAdapter = new TelegramConfirmationAdapter(props);
+        TelegramConfirmationAdapter lazyAdapter = new TelegramConfirmationAdapter(props, blankTokenConfig);
         assertFalse(lazyAdapter.isAvailable());
     }
 
@@ -105,22 +113,22 @@ class TelegramConfirmationAdapterTest {
     void shouldNotBeAvailableWhenTokenNull() {
         BotProperties props = new BotProperties();
         props.getSecurity().getToolConfirmation().setEnabled(true);
-        BotProperties.ChannelProperties channelProps = new BotProperties.ChannelProperties();
-        channelProps.setEnabled(true);
-        channelProps.setToken(null);
-        props.getChannels().put("telegram", channelProps);
+        RuntimeConfigService nullTokenConfig = mock(RuntimeConfigService.class);
+        when(nullTokenConfig.isTelegramEnabled()).thenReturn(true);
+        when(nullTokenConfig.getTelegramToken()).thenReturn(null);
 
-        TelegramConfirmationAdapter lazyAdapter = new TelegramConfirmationAdapter(props);
+        TelegramConfirmationAdapter lazyAdapter = new TelegramConfirmationAdapter(props, nullTokenConfig);
         assertFalse(lazyAdapter.isAvailable());
     }
 
     @Test
-    void shouldNotBeAvailableWhenNoTelegramChannel() {
+    void shouldNotBeAvailableWhenTelegramNotConfigured() {
         BotProperties props = new BotProperties();
         props.getSecurity().getToolConfirmation().setEnabled(true);
-        // No "telegram" key in channels map
+        RuntimeConfigService disabledConfig = mock(RuntimeConfigService.class);
+        when(disabledConfig.isTelegramEnabled()).thenReturn(false);
 
-        TelegramConfirmationAdapter lazyAdapter = new TelegramConfirmationAdapter(props);
+        TelegramConfirmationAdapter lazyAdapter = new TelegramConfirmationAdapter(props, disabledConfig);
         assertFalse(lazyAdapter.isAvailable());
     }
 
@@ -128,9 +136,10 @@ class TelegramConfirmationAdapterTest {
     void shouldAutoApproveWhenLazyInitFails() throws Exception {
         BotProperties props = new BotProperties();
         props.getSecurity().getToolConfirmation().setEnabled(true);
-        // No telegram channel configured → getOrCreateClient returns null
+        RuntimeConfigService disabledConfig = mock(RuntimeConfigService.class);
+        when(disabledConfig.isTelegramEnabled()).thenReturn(false);
 
-        TelegramConfirmationAdapter lazyAdapter = new TelegramConfirmationAdapter(props);
+        TelegramConfirmationAdapter lazyAdapter = new TelegramConfirmationAdapter(props, disabledConfig);
         CompletableFuture<Boolean> result = lazyAdapter.requestConfirmation(CHAT_ID, TOOL_NAME, TOOL_DESCRIPTION);
         assertTrue(result.get(1, TimeUnit.SECONDS));
     }
@@ -141,7 +150,9 @@ class TelegramConfirmationAdapterTest {
     void autoApprovesWhenNotAvailable() throws Exception {
         BotProperties properties = new BotProperties();
         properties.getSecurity().getToolConfirmation().setEnabled(true);
-        TelegramConfirmationAdapter noClientAdapter = new TelegramConfirmationAdapter(properties);
+        RuntimeConfigService disabledConfig = mock(RuntimeConfigService.class);
+        when(disabledConfig.isTelegramEnabled()).thenReturn(false);
+        TelegramConfirmationAdapter noClientAdapter = new TelegramConfirmationAdapter(properties, disabledConfig);
 
         CompletableFuture<Boolean> result = noClientAdapter.requestConfirmation(CHAT_ID, TOOL_NAME, TOOL_DESCRIPTION);
         assertTrue(result.get(1, TimeUnit.SECONDS));
@@ -173,7 +184,7 @@ class TelegramConfirmationAdapterTest {
         props.getSecurity().getToolConfirmation().setEnabled(true);
         props.getSecurity().getToolConfirmation().setTimeoutSeconds(1);
 
-        TelegramConfirmationAdapter shortTimeoutAdapter = new TelegramConfirmationAdapter(props);
+        TelegramConfirmationAdapter shortTimeoutAdapter = new TelegramConfirmationAdapter(props, runtimeConfigService);
         shortTimeoutAdapter.setTelegramClient(telegramClient);
 
         CompletableFuture<Boolean> result = shortTimeoutAdapter.requestConfirmation(CHAT_ID, TOOL_NAME,

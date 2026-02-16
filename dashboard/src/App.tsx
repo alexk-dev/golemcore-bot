@@ -2,7 +2,6 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store/authStore';
 import DashboardLayout from './components/layout/DashboardLayout';
 import LoginPage from './pages/LoginPage';
-import DashboardPage from './pages/DashboardPage';
 import ChatPage from './pages/ChatPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import SettingsPage from './pages/SettingsPage';
@@ -26,7 +25,7 @@ export default function App() {
           <ProtectedRoute>
             <DashboardLayout>
               <Routes>
-                <Route path="/" element={<DashboardPage />} />
+                <Route path="/" element={<ChatPage />} />
                 <Route path="/chat" element={<ChatPage />} />
                 <Route path="/analytics" element={<AnalyticsPage />} />
                 <Route path="/settings" element={<SettingsPage />} />

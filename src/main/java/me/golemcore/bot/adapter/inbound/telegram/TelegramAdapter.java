@@ -24,8 +24,10 @@ import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AudioFormat;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.adapter.inbound.web.controller.SettingsController;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.i18n.MessageService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.inbound.CommandPort;
 import me.golemcore.bot.security.AllowlistValidator;
@@ -34,6 +36,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.client.okhttp.OkHttpTelegramClient;
 import org.telegram.telegrambots.longpolling.TelegramBotsLongPollingApplication;
@@ -102,6 +105,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
     private static final int TELEGRAM_MAX_CAPTION_LENGTH = 1024;
 
     private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
     private final AllowlistValidator allowlistValidator;
     private final ApplicationEventPublisher eventPublisher;
     private final TelegramBotsLongPollingApplication botsApplication;
@@ -132,15 +136,14 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
     }
 
     private boolean isEnabled() {
-        BotProperties.ChannelProperties channelProps = properties.getChannels().get(CHANNEL_TYPE);
-        return channelProps != null && channelProps.isEnabled();
+        return runtimeConfigService.isTelegramEnabled();
     }
 
     private synchronized void ensureInitialized() {
         if (initialized || !isEnabled())
             return;
 
-        String token = properties.getChannels().get(CHANNEL_TYPE).getToken();
+        String token = runtimeConfigService.getTelegramToken();
         if (token == null || token.isBlank()) {
             log.warn("Telegram token not configured, adapter will not start");
             return;
@@ -190,6 +193,19 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
     @PreDestroy
     public void destroy() {
         stop();
+    }
+
+    /**
+     * Handle restart request from dashboard settings UI.
+     */
+    @EventListener
+    public void onTelegramRestart(SettingsController.TelegramRestartEvent event) {
+        log.info("[Telegram] Restart requested from dashboard");
+        if (running) {
+            stop();
+        }
+        initialized = false;
+        start();
     }
 
     @Override

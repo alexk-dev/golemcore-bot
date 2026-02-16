@@ -21,6 +21,7 @@ package me.golemcore.bot.tools;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.tools.mail.MailSecurity;
 import me.golemcore.bot.tools.mail.MailSessionFactory;
@@ -85,8 +86,8 @@ public class SmtpTool implements ToolComponent {
     private final BotProperties.SmtpToolProperties config;
     private final MailSecurity security;
 
-    public SmtpTool(BotProperties properties) {
-        this.config = properties.getTools().getSmtp();
+    public SmtpTool(RuntimeConfigService runtimeConfigService) {
+        this.config = runtimeConfigService.getResolvedSmtpConfig();
         this.security = MailSecurity.fromString(config.getSecurity());
     }
 

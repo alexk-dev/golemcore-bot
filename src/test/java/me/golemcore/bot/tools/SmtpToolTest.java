@@ -2,6 +2,7 @@ package me.golemcore.bot.tools;
 
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -13,6 +14,7 @@ import java.util.Map;
 import java.util.concurrent.ExecutionException;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 @SuppressWarnings("PMD.AvoidDuplicateLiterals") // Test readability over deduplication
 class SmtpToolTest {
@@ -28,42 +30,43 @@ class SmtpToolTest {
     private static final String PARAM_BODY = "body";
     private static final String TEST_RECIPIENT = "test@example.com";
 
-    private BotProperties properties;
+    private RuntimeConfigService runtimeConfigService;
+    private BotProperties.SmtpToolProperties smtpConfig;
 
     @BeforeEach
     void setUp() {
-        properties = new BotProperties();
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        smtpConfig = new BotProperties.SmtpToolProperties();
+        when(runtimeConfigService.getResolvedSmtpConfig()).thenReturn(smtpConfig);
     }
 
     // ==================== isEnabled ====================
 
     @Test
     void shouldBeDisabledByDefault() {
-        SmtpTool tool = new SmtpTool(properties);
+        SmtpTool tool = new SmtpTool(runtimeConfigService);
 
         assertFalse(tool.isEnabled());
     }
 
     @Test
     void shouldBeDisabledWhenEnabledButNoHost() {
-        BotProperties.SmtpToolProperties config = properties.getTools().getSmtp();
-        config.setEnabled(true);
-        config.setHost("");
-        config.setUsername(USERNAME);
+        smtpConfig.setEnabled(true);
+        smtpConfig.setHost("");
+        smtpConfig.setUsername(USERNAME);
 
-        SmtpTool tool = new SmtpTool(properties);
+        SmtpTool tool = new SmtpTool(runtimeConfigService);
 
         assertFalse(tool.isEnabled());
     }
 
     @Test
     void shouldBeDisabledWhenEnabledButNoUsername() {
-        BotProperties.SmtpToolProperties config = properties.getTools().getSmtp();
-        config.setEnabled(true);
-        config.setHost(SMTP_HOST);
-        config.setUsername("");
+        smtpConfig.setEnabled(true);
+        smtpConfig.setHost(SMTP_HOST);
+        smtpConfig.setUsername("");
 
-        SmtpTool tool = new SmtpTool(properties);
+        SmtpTool tool = new SmtpTool(runtimeConfigService);
 
         assertFalse(tool.isEnabled());
     }
@@ -72,7 +75,7 @@ class SmtpToolTest {
     void shouldBeEnabledWhenFullyConfigured() {
         configureProperties();
 
-        SmtpTool tool = new SmtpTool(properties);
+        SmtpTool tool = new SmtpTool(runtimeConfigService);
 
         assertTrue(tool.isEnabled());
     }
@@ -81,7 +84,7 @@ class SmtpToolTest {
 
     @Test
     void shouldReturnCorrectDefinition() {
-        SmtpTool tool = new SmtpTool(properties);
+        SmtpTool tool = new SmtpTool(runtimeConfigService);
 
         ToolDefinition definition = tool.getDefinition();
 
@@ -219,7 +222,7 @@ class SmtpToolTest {
             "test123@sub.domain.com"
     })
     void shouldAcceptValidEmails(String email) {
-        SmtpTool tool = new SmtpTool(properties);
+        SmtpTool tool = new SmtpTool(runtimeConfigService);
 
         ToolResult result = tool.validateRecipients(email);
 
@@ -235,7 +238,7 @@ class SmtpToolTest {
             "user space@example.com"
     })
     void shouldRejectInvalidEmails(String email) {
-        SmtpTool tool = new SmtpTool(properties);
+        SmtpTool tool = new SmtpTool(runtimeConfigService);
 
         ToolResult result = tool.validateRecipients(email);
 
@@ -245,7 +248,7 @@ class SmtpToolTest {
 
     @Test
     void shouldValidateMultipleRecipients() {
-        SmtpTool tool = new SmtpTool(properties);
+        SmtpTool tool = new SmtpTool(runtimeConfigService);
 
         ToolResult result = tool.validateRecipients("a@example.com, b@example.com");
 
@@ -254,7 +257,7 @@ class SmtpToolTest {
 
     @Test
     void shouldRejectIfAnyRecipientInvalid() {
-        SmtpTool tool = new SmtpTool(properties);
+        SmtpTool tool = new SmtpTool(runtimeConfigService);
 
         ToolResult result = tool.validateRecipients("valid@example.com, not-valid");
 
@@ -381,7 +384,7 @@ class SmtpToolTest {
 
     @Test
     void shouldRejectEmptyRecipientBetweenCommas() {
-        SmtpTool tool = new SmtpTool(properties);
+        SmtpTool tool = new SmtpTool(runtimeConfigService);
 
         ToolResult result = tool.validateRecipients("a@example.com,,b@example.com");
 
@@ -392,13 +395,12 @@ class SmtpToolTest {
 
     @Test
     void shouldSanitizeCredentialsInError() {
-        BotProperties.SmtpToolProperties config = properties.getTools().getSmtp();
-        config.setEnabled(true);
-        config.setHost(SMTP_HOST);
-        config.setUsername(USERNAME);
-        config.setPassword("secret123");
+        smtpConfig.setEnabled(true);
+        smtpConfig.setHost(SMTP_HOST);
+        smtpConfig.setUsername(USERNAME);
+        smtpConfig.setPassword("secret123");
 
-        SmtpTool tool = new SmtpTool(properties);
+        SmtpTool tool = new SmtpTool(runtimeConfigService);
 
         String sanitized = tool.sanitizeError("Login failed for " + USERNAME + " with password secret123");
 
@@ -409,14 +411,14 @@ class SmtpToolTest {
 
     @Test
     void shouldHandleNullErrorMessage() {
-        SmtpTool tool = new SmtpTool(properties);
+        SmtpTool tool = new SmtpTool(runtimeConfigService);
 
         assertEquals("Unknown error", tool.sanitizeError(null));
     }
 
     @Test
     void shouldSanitizeErrorWithNoCredentials() {
-        SmtpTool tool = new SmtpTool(properties);
+        SmtpTool tool = new SmtpTool(runtimeConfigService);
 
         String sanitized = tool.sanitizeError("Connection timed out");
 
@@ -531,15 +533,14 @@ class SmtpToolTest {
     // ==================== Helpers ====================
 
     private void configureProperties() {
-        BotProperties.SmtpToolProperties config = properties.getTools().getSmtp();
-        config.setEnabled(true);
-        config.setHost(SMTP_HOST);
-        config.setUsername(USERNAME);
-        config.setPassword(PASSWORD);
+        smtpConfig.setEnabled(true);
+        smtpConfig.setHost(SMTP_HOST);
+        smtpConfig.setUsername(USERNAME);
+        smtpConfig.setPassword(PASSWORD);
     }
 
     private SmtpTool createConfiguredTool() {
         configureProperties();
-        return new SmtpTool(properties);
+        return new SmtpTool(runtimeConfigService);
     }
 }

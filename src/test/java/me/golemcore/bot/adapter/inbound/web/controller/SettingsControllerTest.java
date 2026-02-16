@@ -4,9 +4,11 @@ import me.golemcore.bot.adapter.inbound.web.dto.PreferencesUpdateRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.SettingsResponse;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.ModelSelectionService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 
 import java.util.LinkedHashMap;
@@ -25,13 +27,18 @@ class SettingsControllerTest {
 
     private UserPreferencesService preferencesService;
     private ModelSelectionService modelSelectionService;
+    private RuntimeConfigService runtimeConfigService;
+    private ApplicationEventPublisher eventPublisher;
     private SettingsController controller;
 
     @BeforeEach
     void setUp() {
         preferencesService = mock(UserPreferencesService.class);
         modelSelectionService = mock(ModelSelectionService.class);
-        controller = new SettingsController(preferencesService, modelSelectionService);
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        eventPublisher = mock(ApplicationEventPublisher.class);
+        controller = new SettingsController(preferencesService, modelSelectionService, runtimeConfigService,
+                eventPublisher);
     }
 
     @Test

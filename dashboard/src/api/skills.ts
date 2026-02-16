@@ -20,9 +20,18 @@ export async function getSkill(name: string): Promise<SkillInfo> {
   return data;
 }
 
+export async function createSkill(name: string, content: string): Promise<SkillInfo> {
+  const { data } = await client.post('/skills', { name, content });
+  return data;
+}
+
 export async function updateSkill(name: string, content: string) {
   const { data } = await client.put(`/skills/${name}`, { content });
   return data;
+}
+
+export async function deleteSkill(name: string) {
+  await client.delete(`/skills/${name}`);
 }
 
 export async function reloadSkill(name: string) {

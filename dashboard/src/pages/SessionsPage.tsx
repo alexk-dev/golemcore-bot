@@ -78,7 +78,7 @@ export default function SessionsPage() {
         </Modal.Header>
         <Modal.Body style={{ maxHeight: '60vh', overflowY: 'auto' }}>
           {detail?.messages.map((msg, i) => (
-            <div key={i} className={`mb-2 p-2 rounded ${msg.role === 'user' ? 'bg-primary bg-opacity-10' : 'bg-light'}`}>
+            <div key={i} className={`mb-2 p-2 rounded ${msg.role === 'user' ? 'bg-primary bg-opacity-10' : 'bg-body-secondary'}`}>
               <div className="fw-bold small">{msg.role}</div>
               <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>
               {msg.timestamp && <div className="text-muted" style={{ fontSize: '0.7rem' }}>{msg.timestamp}</div>}

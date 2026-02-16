@@ -18,6 +18,7 @@ package me.golemcore.bot.security;
  * Contact: alex@kuleshov.tech
  */
 
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,22 +28,7 @@ import java.util.List;
 
 /**
  * Validates users against channel-specific allowlists and global blocklists.
- *
- * <p>
- * This component provides access control by checking if users are:
- * <ul>
- * <li>Allowed on specific channels (per-channel allowlists)</li>
- * <li>Globally blocked across all channels</li>
- * </ul>
- *
- * <p>
- * If the allowlist feature is disabled or no allowlist is configured for a
- * channel, all users are permitted by default (fail-open behavior).
- *
- * <p>
- * Blocked users are denied access regardless of channel allowlist settings.
- *
- * @since 1.0
+ * Checks RuntimeConfig first, then falls back to BotProperties.
  */
 @Component
 @RequiredArgsConstructor
@@ -50,12 +36,25 @@ import java.util.List;
 public class AllowlistValidator {
 
     private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
 
     /**
      * Check if a user is allowed to use the bot on a specific channel.
      */
     public boolean isAllowed(String channelType, String userId) {
         log.trace("[Security] Allowlist check: channel={}, user={}", channelType, userId);
+
+        // For telegram, check RuntimeConfig first
+        if ("telegram".equals(channelType)) {
+            List<String> runtimeAllowed = runtimeConfigService.getTelegramAllowedUsers();
+            if (runtimeAllowed != null && !runtimeAllowed.isEmpty()) {
+                boolean allowed = runtimeAllowed.contains(userId);
+                if (!allowed) {
+                    log.warn("[Security] Unauthorized: channel={}, user={}", channelType, userId);
+                }
+                return allowed;
+            }
+        }
 
         BotProperties.ChannelProperties channelProps = properties.getChannels().get(channelType);
         if (channelProps == null) {

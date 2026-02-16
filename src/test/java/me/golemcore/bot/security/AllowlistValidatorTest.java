@@ -1,5 +1,6 @@
 package me.golemcore.bot.security;
 
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -7,6 +8,7 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,12 +26,17 @@ class AllowlistValidatorTest {
     @Mock
     private BotProperties properties;
 
+    @Mock
+    private RuntimeConfigService runtimeConfigService;
+
     private AllowlistValidator validator;
 
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        validator = new AllowlistValidator(properties);
+        // Return empty list so tests fall through to BotProperties by default
+        when(runtimeConfigService.getTelegramAllowedUsers()).thenReturn(Collections.emptyList());
+        validator = new AllowlistValidator(properties, runtimeConfigService);
     }
 
     // ==================== isAllowed() ====================

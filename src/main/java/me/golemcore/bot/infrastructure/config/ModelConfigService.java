@@ -26,12 +26,13 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.port.outbound.StoragePort;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -40,27 +41,12 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * Service for loading and managing model configurations from external JSON
- * file.
+ * Service for loading and managing model configurations from workspace storage.
  *
  * <p>
- * This service loads model metadata from {@code models.json} in the working
- * directory. Model configurations include:
- * <ul>
- * <li>Provider - OpenAI, Anthropic, etc.</li>
- * <li>Reasoning support - whether model supports reasoning levels</li>
- * <li>Temperature support - whether model supports temperature parameter</li>
- * <li>Context limits - maximum input tokens (per reasoning level for reasoning
- * models)</li>
- * </ul>
- *
- * <p>
- * If {@code models.json} is not found, the service creates a default
- * configuration with common models (GPT-4o, Claude Sonnet, etc.) and writes it
- * to disk for user reference.
- *
- * <p>
- * Model config is loaded once at startup via {@code @PostConstruct}.
+ * On first run, copies bundled {@code classpath:models.json} to workspace
+ * ({@code models/models.json} via StoragePort). Subsequent loads read from
+ * workspace, allowing UI edits to persist.
  *
  * @since 1.0
  */
@@ -68,13 +54,17 @@ import java.util.stream.Collectors;
 @Slf4j
 public class ModelConfigService {
 
+    private static final String MODELS_DIR = "models";
     private static final String CONFIG_FILE = "models.json";
     private static final String PROVIDER_OPENAI = "openai";
-    private static final String PROVIDER_ANTHROPIC = "anthropic";
-    private static final String REASONING_MEDIUM = "medium";
 
+    private final StoragePort storagePort;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private ModelsConfig config;
+
+    public ModelConfigService(StoragePort storagePort) {
+        this.storagePort = storagePort;
+    }
 
     @PostConstruct
     public void init() {
@@ -82,153 +72,99 @@ public class ModelConfigService {
     }
 
     private void loadConfig() {
-        Path configPath = Paths.get(CONFIG_FILE);
-
-        if (Files.exists(configPath)) {
-            try {
-                String json = Files.readString(configPath);
-                config = objectMapper.readValue(json, ModelsConfig.class);
-                log.info("Loaded model config from {}: {} models", configPath.toAbsolutePath(),
-                        config.getModels().size());
-            } catch (IOException e) {
-                log.error("Failed to load models.json: {}", e.getMessage());
-                config = createDefaultConfig();
-            }
-        } else {
-            log.warn("models.json not found in working directory, using defaults");
-            config = createDefaultConfig();
-            // Write default config for user reference
-            writeDefaultConfig(configPath);
-        }
-    }
-
-    private void writeDefaultConfig(Path path) {
         try {
-            String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(config);
-            Files.writeString(path, json);
-            log.info("Created default models.json at {}", path.toAbsolutePath());
-        } catch (IOException e) {
-            log.warn("Failed to write default models.json: {}", e.getMessage());
+            // Try workspace first
+            Boolean exists = storagePort.exists(MODELS_DIR, CONFIG_FILE).join();
+            if (Boolean.TRUE.equals(exists)) {
+                String json = storagePort.getText(MODELS_DIR, CONFIG_FILE).join();
+                if (json != null && !json.isBlank()) {
+                    config = objectMapper.readValue(json, ModelsConfig.class);
+                    log.info("[ModelConfig] Loaded from workspace: {} models", config.getModels().size());
+                    return;
+                }
+            }
+        } catch (IOException | RuntimeException e) { // NOSONAR
+            log.warn("[ModelConfig] Failed to load from workspace: {}", e.getMessage());
         }
+
+        // Fall back to classpath and copy to workspace
+        loadFromClasspathAndCopy();
     }
 
-    private ModelsConfig createDefaultConfig() {
-        ModelsConfig cfg = new ModelsConfig();
+    private void loadFromClasspathAndCopy() {
+        try {
+            ClassPathResource resource = new ClassPathResource(CONFIG_FILE);
+            if (resource.exists()) {
+                try (InputStream is = resource.getInputStream()) {
+                    String json = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+                    config = objectMapper.readValue(json, ModelsConfig.class);
+                    log.info("[ModelConfig] Loaded from classpath: {} models", config.getModels().size());
+                    // Copy to workspace for future edits
+                    saveConfig();
+                    return;
+                }
+            }
+        } catch (IOException e) {
+            log.warn("[ModelConfig] Failed to load from classpath: {}", e.getMessage());
+        }
 
-        // OpenAI reasoning models
-        ReasoningConfig gpt5Reasoning = new ReasoningConfig();
-        gpt5Reasoning.setDefaultLevel(REASONING_MEDIUM);
-        gpt5Reasoning.getLevels().put("low", new ReasoningLevelConfig(1000000));
-        gpt5Reasoning.getLevels().put(REASONING_MEDIUM, new ReasoningLevelConfig(1000000));
-        gpt5Reasoning.getLevels().put("high", new ReasoningLevelConfig(500000));
-        gpt5Reasoning.getLevels().put("xhigh", new ReasoningLevelConfig(250000));
-
-        ModelSettings gpt51 = new ModelSettings();
-        gpt51.setProvider(PROVIDER_OPENAI);
-        gpt51.setDisplayName("GPT-5.1");
-        gpt51.setSupportsTemperature(false);
-        gpt51.setReasoning(gpt5Reasoning);
-        cfg.getModels().put("gpt-5.1", gpt51);
-
-        ModelSettings gpt52 = new ModelSettings();
-        gpt52.setProvider(PROVIDER_OPENAI);
-        gpt52.setDisplayName("GPT-5.2");
-        gpt52.setSupportsTemperature(false);
-        gpt52.setReasoning(gpt5Reasoning);
-        cfg.getModels().put("gpt-5.2", gpt52);
-
-        ReasoningConfig o3Reasoning = new ReasoningConfig();
-        o3Reasoning.setDefaultLevel(REASONING_MEDIUM);
-        o3Reasoning.getLevels().put("low", new ReasoningLevelConfig(200000));
-        o3Reasoning.getLevels().put(REASONING_MEDIUM, new ReasoningLevelConfig(200000));
-        o3Reasoning.getLevels().put("high", new ReasoningLevelConfig(200000));
-
-        ModelSettings o1 = new ModelSettings();
-        o1.setProvider(PROVIDER_OPENAI);
-        o1.setDisplayName("o1");
-        o1.setSupportsTemperature(false);
-        o1.setReasoning(o3Reasoning);
-        cfg.getModels().put("o1", o1);
-
-        ModelSettings o3 = new ModelSettings();
-        o3.setProvider(PROVIDER_OPENAI);
-        o3.setDisplayName("o3");
-        o3.setSupportsTemperature(false);
-        o3.setReasoning(o3Reasoning);
-        cfg.getModels().put("o3", o3);
-
-        ReasoningConfig o3MiniReasoning = new ReasoningConfig();
-        o3MiniReasoning.setDefaultLevel(REASONING_MEDIUM);
-        o3MiniReasoning.getLevels().put("low", new ReasoningLevelConfig(128000));
-        o3MiniReasoning.getLevels().put(REASONING_MEDIUM, new ReasoningLevelConfig(128000));
-        o3MiniReasoning.getLevels().put("high", new ReasoningLevelConfig(128000));
-
-        ModelSettings o3Mini = new ModelSettings();
-        o3Mini.setProvider(PROVIDER_OPENAI);
-        o3Mini.setDisplayName("o3 Mini");
-        o3Mini.setSupportsTemperature(false);
-        o3Mini.setReasoning(o3MiniReasoning);
-        cfg.getModels().put("o3-mini", o3Mini);
-
-        // OpenAI standard models
-        ModelSettings gpt4o = new ModelSettings();
-        gpt4o.setProvider(PROVIDER_OPENAI);
-        gpt4o.setDisplayName("GPT-4o");
-        gpt4o.setSupportsTemperature(true);
-        gpt4o.setMaxInputTokens(128000);
-        cfg.getModels().put("gpt-4o", gpt4o);
-
-        ModelSettings gpt4Turbo = new ModelSettings();
-        gpt4Turbo.setProvider(PROVIDER_OPENAI);
-        gpt4Turbo.setDisplayName("GPT-4 Turbo");
-        gpt4Turbo.setSupportsTemperature(true);
-        gpt4Turbo.setMaxInputTokens(128000);
-        cfg.getModels().put("gpt-4-turbo", gpt4Turbo);
-
-        // Anthropic models
-        ModelSettings claudeSonnet4 = new ModelSettings();
-        claudeSonnet4.setProvider(PROVIDER_ANTHROPIC);
-        claudeSonnet4.setDisplayName("Claude Sonnet 4");
-        claudeSonnet4.setSupportsTemperature(true);
-        claudeSonnet4.setMaxInputTokens(200000);
-        cfg.getModels().put("claude-sonnet-4-20250514", claudeSonnet4);
-
-        ModelSettings claude35Sonnet = new ModelSettings();
-        claude35Sonnet.setProvider(PROVIDER_ANTHROPIC);
-        claude35Sonnet.setDisplayName("Claude 3.5 Sonnet");
-        claude35Sonnet.setSupportsTemperature(true);
-        claude35Sonnet.setMaxInputTokens(200000);
-        cfg.getModels().put("claude-3-5-sonnet", claude35Sonnet);
-
-        ModelSettings claude3Opus = new ModelSettings();
-        claude3Opus.setProvider(PROVIDER_ANTHROPIC);
-        claude3Opus.setDisplayName("Claude 3 Opus");
-        claude3Opus.setSupportsTemperature(true);
-        claude3Opus.setMaxInputTokens(200000);
-        cfg.getModels().put("claude-3-opus", claude3Opus);
-
-        ModelSettings claude3Haiku = new ModelSettings();
-        claude3Haiku.setProvider(PROVIDER_ANTHROPIC);
-        claude3Haiku.setDisplayName("Claude 3 Haiku");
-        claude3Haiku.setSupportsTemperature(true);
-        claude3Haiku.setMaxInputTokens(200000);
-        cfg.getModels().put("claude-3-haiku", claude3Haiku);
-
-        // Defaults
-        ModelSettings defaults = new ModelSettings();
-        defaults.setProvider(PROVIDER_OPENAI);
-        defaults.setSupportsTemperature(true);
-        defaults.setMaxInputTokens(128000);
-        cfg.setDefaults(defaults);
-
-        return cfg;
+        log.warn("[ModelConfig] No models.json found, using empty config");
+        config = new ModelsConfig();
     }
 
     /**
-     * Reload config from file.
+     * Reload config from workspace.
      */
     public void reload() {
         loadConfig();
+    }
+
+    /**
+     * Get the full models config (for API).
+     */
+    public ModelsConfig getConfig() {
+        return config;
+    }
+
+    /**
+     * Save the full models config to workspace.
+     */
+    public void saveConfig() {
+        try {
+            String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(config);
+            storagePort.putText(MODELS_DIR, CONFIG_FILE, json).join();
+            log.info("[ModelConfig] Saved to workspace: {} models", config.getModels().size());
+        } catch (Exception e) {
+            log.error("[ModelConfig] Failed to save: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Add or update a single model definition.
+     */
+    public void saveModel(String id, ModelSettings settings) {
+        config.getModels().put(id, settings);
+        saveConfig();
+    }
+
+    /**
+     * Delete a model definition.
+     */
+    public boolean deleteModel(String id) {
+        ModelSettings removed = config.getModels().remove(id);
+        if (removed != null) {
+            saveConfig();
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Replace the entire models config.
+     */
+    public void replaceConfig(ModelsConfig newConfig) {
+        this.config = newConfig;
+        saveConfig();
     }
 
     /**

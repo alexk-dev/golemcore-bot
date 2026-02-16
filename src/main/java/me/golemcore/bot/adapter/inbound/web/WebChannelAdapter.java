@@ -3,8 +3,10 @@ package me.golemcore.bot.adapter.inbound.web;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.port.inbound.ChannelPort;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.socket.WebSocketSession;
 import reactor.core.publisher.Mono;
@@ -12,7 +14,6 @@ import reactor.core.publisher.Mono;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 /**
@@ -25,11 +26,11 @@ import java.util.function.Consumer;
 public class WebChannelAdapter implements ChannelPort {
 
     private final ObjectMapper objectMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
     /** Maps connectionId -> chatId for reverse lookup */
     private final Map<String, String> connectionToChatId = new ConcurrentHashMap<>();
-    private final AtomicReference<Consumer<Message>> messageHandler = new AtomicReference<>();
     private volatile boolean running = false;
 
     @Override
@@ -88,7 +89,7 @@ public class WebChannelAdapter implements ChannelPort {
 
     @Override
     public void onMessage(Consumer<Message> handler) {
-        this.messageHandler.set(handler);
+        // Not used — messages are published via ApplicationEventPublisher
     }
 
     @Override
@@ -112,24 +113,14 @@ public class WebChannelAdapter implements ChannelPort {
         }
     }
 
-    public void handleIncomingMessage(Message message) {
-        // Map the connectionId to chatId for future outbound messages
+    public void handleIncomingMessage(Message message, String connectionId) {
         String chatId = message.getChatId();
-        // Find the WebSocket session by scanning connections
-        // The chatId IS the connectionId initially, or a user-specified sessionId
-        for (Map.Entry<String, WebSocketSession> entry : sessions.entrySet()) {
-            if (!connectionToChatId.containsKey(entry.getKey())) {
-                // This is a connection not yet mapped — assume it's the sender
-                connectionToChatId.put(entry.getKey(), chatId);
-                sessions.put(chatId, entry.getValue());
-                break;
-            }
+        connectionToChatId.put(connectionId, chatId);
+        WebSocketSession wsSession = sessions.get(connectionId);
+        if (wsSession != null) {
+            sessions.put(chatId, wsSession);
         }
-
-        Consumer<Message> handler = messageHandler.get();
-        if (handler != null) {
-            handler.accept(message);
-        }
+        eventPublisher.publishEvent(new AgentLoop.InboundMessageEvent(message));
     }
 
     private CompletableFuture<Void> sendJsonToChat(String chatId, Map<String, Object> payload) {

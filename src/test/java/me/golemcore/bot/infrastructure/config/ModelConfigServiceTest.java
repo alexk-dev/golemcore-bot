@@ -1,9 +1,12 @@
 package me.golemcore.bot.infrastructure.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.io.IOException;
@@ -12,6 +15,7 @@ import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -20,6 +24,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.when;
 
 @SuppressWarnings("PMD.AvoidDuplicateLiterals")
 class ModelConfigServiceTest {
@@ -34,14 +40,22 @@ class ModelConfigServiceTest {
     private static final String MODEL_TEST = "test-model";
     private static final String MODEL_CUSTOM = "custom-model";
     private static final String PROVIDER_CUSTOM = "custom";
-    private static final String METHOD_CREATE_DEFAULT_CONFIG = "createDefaultConfig";
+
+    @Mock
+    private StoragePort storagePort;
 
     private ModelConfigService service;
 
     @BeforeEach
     void setUp() {
-        service = new ModelConfigService();
-        // init() loads from file or creates defaults — trigger manually
+        MockitoAnnotations.openMocks(this);
+        // Workspace has no models.json — falls back to classpath
+        // (src/main/resources/models.json)
+        when(storagePort.exists(anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(false));
+        when(storagePort.putText(anyString(), anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+        service = new ModelConfigService(storagePort);
         service.init();
     }
 
@@ -300,92 +314,6 @@ class ModelConfigServiceTest {
     void shouldReturnStandardSettingsForGpt4Turbo() {
         assertFalse(service.isReasoningRequired("gpt-4-turbo"));
         assertTrue(service.supportsTemperature("gpt-4-turbo"));
-    }
-
-    // ===== createDefaultConfig =====
-
-    @Test
-    void shouldCreateDefaultConfigWithAllModels() {
-        ModelConfigService.ModelsConfig config = ReflectionTestUtils.invokeMethod(service,
-                METHOD_CREATE_DEFAULT_CONFIG);
-
-        assertNotNull(config);
-        assertNotNull(config.getModels());
-        assertFalse(config.getModels().isEmpty());
-
-        // Verify specific models exist
-        assertTrue(config.getModels().containsKey(MODEL_GPT_5_1));
-        assertTrue(config.getModels().containsKey("gpt-5.2"));
-        assertTrue(config.getModels().containsKey("o1"));
-        assertTrue(config.getModels().containsKey(MODEL_O3));
-        assertTrue(config.getModels().containsKey("o3-mini"));
-        assertTrue(config.getModels().containsKey(MODEL_GPT_4O));
-        assertTrue(config.getModels().containsKey("gpt-4-turbo"));
-        assertTrue(config.getModels().containsKey(MODEL_CLAUDE_SONNET_4));
-        assertTrue(config.getModels().containsKey("claude-3-5-sonnet"));
-        assertTrue(config.getModels().containsKey("claude-3-opus"));
-        assertTrue(config.getModels().containsKey(MODEL_CLAUDE_3_HAIKU));
-
-        // Verify defaults
-        assertNotNull(config.getDefaults());
-        assertEquals(PROVIDER_OPENAI, config.getDefaults().getProvider());
-    }
-
-    @Test
-    void shouldCreateDefaultConfigWithCorrectProviders() {
-        ModelConfigService.ModelsConfig config = ReflectionTestUtils.invokeMethod(service,
-                METHOD_CREATE_DEFAULT_CONFIG);
-
-        // OpenAI reasoning models
-        assertEquals(PROVIDER_OPENAI, config.getModels().get(MODEL_GPT_5_1).getProvider());
-        assertNotNull(config.getModels().get(MODEL_GPT_5_1).getReasoning());
-        assertFalse(config.getModels().get(MODEL_GPT_5_1).getReasoning().getLevels().isEmpty());
-        assertFalse(config.getModels().get(MODEL_GPT_5_1).isSupportsTemperature());
-
-        // OpenAI standard models
-        assertEquals(PROVIDER_OPENAI, config.getModels().get(MODEL_GPT_4O).getProvider());
-        assertNull(config.getModels().get(MODEL_GPT_4O).getReasoning());
-        assertTrue(config.getModels().get(MODEL_GPT_4O).isSupportsTemperature());
-
-        // Anthropic models
-        assertEquals(PROVIDER_ANTHROPIC, config.getModels().get(MODEL_CLAUDE_3_HAIKU).getProvider());
-        assertNull(config.getModels().get(MODEL_CLAUDE_3_HAIKU).getReasoning());
-        assertTrue(config.getModels().get(MODEL_CLAUDE_3_HAIKU).isSupportsTemperature());
-    }
-
-    // ===== writeDefaultConfig =====
-
-    @Test
-    void shouldWriteDefaultConfig(@TempDir Path tempDir) {
-        // Set the config field first
-        ModelConfigService.ModelsConfig defaultConfig = ReflectionTestUtils.invokeMethod(service,
-                METHOD_CREATE_DEFAULT_CONFIG);
-        ReflectionTestUtils.setField(service, "config", defaultConfig);
-
-        Path configFile = tempDir.resolve("models.json");
-        ReflectionTestUtils.invokeMethod(service, "writeDefaultConfig", configFile);
-
-        assertTrue(Files.exists(configFile));
-        String content;
-        try {
-            content = Files.readString(configFile);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-        assertTrue(content.contains(MODEL_GPT_5_1));
-        assertTrue(content.contains(PROVIDER_OPENAI));
-        assertTrue(content.contains(PROVIDER_ANTHROPIC));
-    }
-
-    @Test
-    void shouldHandleWriteFailureGracefully() {
-        ModelConfigService.ModelsConfig defaultConfig = ReflectionTestUtils.invokeMethod(service,
-                METHOD_CREATE_DEFAULT_CONFIG);
-        ReflectionTestUtils.setField(service, "config", defaultConfig);
-
-        // Write to a non-existent directory should fail gracefully
-        Path badPath = Path.of("/nonexistent/dir/models.json");
-        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(service, "writeDefaultConfig", badPath));
     }
 
     // ===== loadConfig with custom file =====

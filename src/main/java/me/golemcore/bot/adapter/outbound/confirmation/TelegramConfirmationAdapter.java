@@ -19,6 +19,7 @@ package me.golemcore.bot.adapter.outbound.confirmation;
  */
 
 import me.golemcore.bot.domain.model.ConfirmationCallbackEvent;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.ConfirmationPort;
 import lombok.extern.slf4j.Slf4j;
@@ -83,14 +84,16 @@ public class TelegramConfirmationAdapter implements ConfirmationPort {
 
     private final Map<String, PendingConfirmation> pending = new ConcurrentHashMap<>();
     private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
     private final int timeoutSeconds;
     private final boolean enabled;
 
     private volatile TelegramClient telegramClient;
     private ScheduledExecutorService cleanupExecutor;
 
-    public TelegramConfirmationAdapter(BotProperties properties) {
+    public TelegramConfirmationAdapter(BotProperties properties, RuntimeConfigService runtimeConfigService) {
         this.properties = properties;
+        this.runtimeConfigService = runtimeConfigService;
         BotProperties.ToolConfirmationProperties config = properties.getSecurity().getToolConfirmation();
         this.enabled = config.isEnabled();
         this.timeoutSeconds = config.getTimeoutSeconds();
@@ -147,11 +150,10 @@ public class TelegramConfirmationAdapter implements ConfirmationPort {
         if (client != null) {
             return client;
         }
-        BotProperties.ChannelProperties channelProps = properties.getChannels().get("telegram");
-        if (channelProps == null || !channelProps.isEnabled()) {
+        if (!runtimeConfigService.isTelegramEnabled()) {
             return null;
         }
-        String token = channelProps.getToken();
+        String token = runtimeConfigService.getTelegramToken();
         if (token == null || token.isBlank()) {
             return null;
         }

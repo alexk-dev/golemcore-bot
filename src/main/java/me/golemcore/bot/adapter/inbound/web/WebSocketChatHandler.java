@@ -77,7 +77,7 @@ public class WebSocketChatHandler implements WebSocketHandler {
                     .timestamp(Instant.now())
                     .build();
 
-            webChannelAdapter.handleIncomingMessage(message);
+            webChannelAdapter.handleIncomingMessage(message, connectionId);
         } catch (Exception e) { // NOSONAR
             log.warn("[WebSocket] Failed to process incoming message: {}", e.getMessage());
         }

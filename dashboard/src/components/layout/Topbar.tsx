@@ -1,12 +1,15 @@
-import { Button, Navbar, Container } from 'react-bootstrap';
+import { Button } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
+import { useThemeStore } from '../../store/themeStore';
 import { logout } from '../../api/auth';
-import { FiLogOut } from 'react-icons/fi';
+import { FiLogOut, FiSun, FiMoon } from 'react-icons/fi';
 
 export default function Topbar() {
   const nav = useNavigate();
   const doLogout = useAuthStore((s) => s.logout);
+  const theme = useThemeStore((s) => s.theme);
+  const toggleTheme = useThemeStore((s) => s.toggle);
 
   const handleLogout = async () => {
     try {
@@ -18,12 +21,21 @@ export default function Topbar() {
   };
 
   return (
-    <Navbar bg="white" className="border-bottom px-3">
-      <Container fluid className="justify-content-end">
-        <Button variant="outline-secondary" size="sm" onClick={handleLogout}>
-          <FiLogOut className="me-1" /> Logout
+    <div className="topbar d-flex align-items-center justify-content-end px-4 py-2">
+      <div className="d-flex align-items-center gap-2">
+        <Button
+          variant={theme === 'light' ? 'outline-secondary' : 'outline-light'}
+          size="sm"
+          onClick={toggleTheme}
+          title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+        >
+          {theme === 'light' ? <FiMoon size={16} /> : <FiSun size={16} />}
         </Button>
-      </Container>
-    </Navbar>
+        <Button variant="outline-secondary" size="sm" onClick={handleLogout}>
+          <FiLogOut size={14} className="me-1" />
+          Logout
+        </Button>
+      </div>
+    </div>
   );
 }

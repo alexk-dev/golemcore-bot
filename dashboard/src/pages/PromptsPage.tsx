@@ -150,7 +150,7 @@ export default function PromptsPage() {
                   <Button size="sm" variant="outline-danger" onClick={handleDelete}>Delete</Button>
                 </div>
                 {preview && (
-                  <Card className="mt-3 bg-light">
+                  <Card className="mt-3 bg-body-tertiary">
                     <Card.Body>
                       <pre className="mb-0" style={{ whiteSpace: 'pre-wrap', fontSize: '0.85rem' }}>
                         {preview}

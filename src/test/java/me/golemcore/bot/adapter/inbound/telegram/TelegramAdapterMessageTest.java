@@ -1,5 +1,6 @@
 package me.golemcore.bot.adapter.inbound.telegram;
 
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.i18n.MessageService;
@@ -55,8 +56,13 @@ class TelegramAdapterMessageTest {
         allowlistValidator = mock(AllowlistValidator.class);
         telegramClient = mock(TelegramClient.class);
 
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isTelegramEnabled()).thenReturn(true);
+        when(runtimeConfigService.getTelegramToken()).thenReturn("test-token");
+
         adapter = new TelegramAdapter(
                 properties,
+                runtimeConfigService,
                 allowlistValidator,
                 mock(ApplicationEventPublisher.class),
                 mock(TelegramBotsLongPollingApplication.class),

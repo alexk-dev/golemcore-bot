@@ -2,9 +2,11 @@ package me.golemcore.bot.adapter.inbound.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.adapter.inbound.web.security.JwtTokenProvider;
+import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.web.reactive.socket.HandshakeInfo;
 import org.springframework.web.reactive.socket.WebSocketSession;
 import reactor.core.publisher.Flux;
@@ -12,13 +14,10 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.net.URI;
-import java.util.concurrent.atomic.AtomicReference;
 
-import me.golemcore.bot.domain.model.Message;
 import org.springframework.web.reactive.socket.WebSocketMessage;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -28,6 +27,7 @@ class WebSocketChatHandlerTest {
     private JwtTokenProvider tokenProvider;
     private WebChannelAdapter webChannelAdapter;
     private ObjectMapper objectMapper;
+    private ApplicationEventPublisher eventPublisher;
     private WebSocketChatHandler handler;
 
     @BeforeEach
@@ -38,7 +38,8 @@ class WebSocketChatHandlerTest {
         tokenProvider.init();
 
         objectMapper = new ObjectMapper();
-        webChannelAdapter = new WebChannelAdapter(objectMapper);
+        eventPublisher = mock(ApplicationEventPublisher.class);
+        webChannelAdapter = new WebChannelAdapter(objectMapper, eventPublisher);
         handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper);
     }
 
@@ -87,9 +88,6 @@ class WebSocketChatHandlerTest {
     void shouldHandleIncomingMessage() {
         String token = tokenProvider.generateAccessToken("admin");
 
-        AtomicReference<Message> received = new AtomicReference<>();
-        webChannelAdapter.onMessage(received::set);
-
         WebSocketSession session = mock(WebSocketSession.class);
         HandshakeInfo handshakeInfo = mock(HandshakeInfo.class);
         when(session.getHandshakeInfo()).thenReturn(handshakeInfo);
@@ -104,17 +102,12 @@ class WebSocketChatHandlerTest {
         StepVerifier.create(handler.handle(session))
                 .verifyComplete();
 
-        assertNotNull(received.get());
-        assertEquals("hello", received.get().getContent());
-        assertEquals("web", received.get().getChannelType());
+        verify(eventPublisher).publishEvent(any(AgentLoop.InboundMessageEvent.class));
     }
 
     @Test
     void shouldIgnoreBlankMessages() {
         String token = tokenProvider.generateAccessToken("admin");
-
-        AtomicReference<Message> received = new AtomicReference<>();
-        webChannelAdapter.onMessage(received::set);
 
         WebSocketSession session = mock(WebSocketSession.class);
         HandshakeInfo handshakeInfo = mock(HandshakeInfo.class);

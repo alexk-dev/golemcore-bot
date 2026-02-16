@@ -5,14 +5,10 @@ import me.golemcore.bot.infrastructure.config.BotProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.SecurityWebFiltersOrder;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.web.server.SecurityWebFilterChain;
-import org.springframework.security.web.server.csrf.CookieServerCsrfTokenRepository;
-import org.springframework.security.web.server.util.matcher.NegatedServerWebExchangeMatcher;
-import org.springframework.security.web.server.util.matcher.ServerWebExchangeMatchers;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.reactive.CorsConfigurationSource;
 import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
@@ -34,21 +30,16 @@ public class DashboardSecurityConfig {
 
     @Bean
     public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
-        Customizer<ServerHttpSecurity.CsrfSpec> csrfCustomizer = csrf -> csrf
-                .csrfTokenRepository(CookieServerCsrfTokenRepository.withHttpOnlyFalse())
-                .requireCsrfProtectionMatcher(
-                        new NegatedServerWebExchangeMatcher(
-                                ServerWebExchangeMatchers.pathMatchers("/api/**", "/ws/**")));
-
+        // CSRF disabled — authentication uses JWT bearer tokens (inherently CSRF-safe)
         if (!botProperties.getDashboard().isEnabled()) {
             return http
-                    .csrf(csrfCustomizer)
+                    .csrf(ServerHttpSecurity.CsrfSpec::disable)
                     .authorizeExchange(exchanges -> exchanges.anyExchange().permitAll())
                     .build();
         }
 
         return http
-                .csrf(csrfCustomizer)
+                .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .httpBasic(ServerHttpSecurity.HttpBasicSpec::disable)
                 .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
@@ -58,6 +49,7 @@ public class DashboardSecurityConfig {
                         .pathMatchers("/ws/**").permitAll()
                         .pathMatchers("/dashboard/**").permitAll()
                         .pathMatchers(HttpMethod.GET, "/", "/favicon.ico").permitAll()
+                        .pathMatchers("/api/models/**").hasRole("ADMIN")
                         .pathMatchers("/api/**").hasRole("ADMIN")
                         .anyExchange().permitAll())
                 .build();

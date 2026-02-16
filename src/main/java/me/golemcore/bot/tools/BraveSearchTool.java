@@ -21,6 +21,7 @@ package me.golemcore.bot.tools;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.http.FeignClientFactory;
@@ -79,6 +80,7 @@ public class BraveSearchTool implements ToolComponent {
 
     private final FeignClientFactory feignClientFactory;
     private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
     private final UserPreferencesService userPreferencesService;
 
     private BraveSearchApi searchApi;
@@ -88,10 +90,9 @@ public class BraveSearchTool implements ToolComponent {
 
     @PostConstruct
     public void init() {
-        var config = properties.getTools().getBraveSearch();
-        this.enabled = config.isEnabled();
-        this.apiKey = config.getApiKey();
-        this.defaultCount = config.getDefaultCount();
+        this.enabled = runtimeConfigService.isBraveSearchEnabled();
+        this.apiKey = runtimeConfigService.getBraveSearchApiKey();
+        this.defaultCount = properties.getTools().getBraveSearch().getDefaultCount();
 
         if (enabled && (apiKey == null || apiKey.isBlank())) {
             log.warn("Brave Search tool is enabled but API key is not configured. Disabling.");

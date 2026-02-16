@@ -2,6 +2,7 @@ package me.golemcore.bot.adapter.outbound.voice;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.model.AudioFormat;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.VoicePort;
 import okhttp3.OkHttpClient;
@@ -23,6 +24,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class ElevenLabsAdapterTest {
 
@@ -37,6 +40,7 @@ class ElevenLabsAdapterTest {
     private MockWebServer mockServer;
     private ElevenLabsAdapter adapter;
     private BotProperties properties;
+    private RuntimeConfigService runtimeConfigService;
 
     @BeforeEach
     void setUp() throws IOException {
@@ -55,8 +59,16 @@ class ElevenLabsAdapterTest {
         properties.getVoice().setTtsModelId("eleven_multilingual_v2");
         properties.getVoice().setSttModelId("scribe_v1");
 
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isVoiceEnabled()).thenReturn(true);
+        when(runtimeConfigService.getVoiceApiKey()).thenReturn("test-api-key");
+        when(runtimeConfigService.getVoiceId()).thenReturn("test-voice-id");
+        when(runtimeConfigService.getTtsModelId()).thenReturn("eleven_multilingual_v2");
+        when(runtimeConfigService.getSttModelId()).thenReturn("scribe_v1");
+        when(runtimeConfigService.getVoiceSpeed()).thenReturn(1.0f);
+
         String baseUrl = mockServer.url("/").toString();
-        adapter = new ElevenLabsAdapter(client, properties, new ObjectMapper()) {
+        adapter = new ElevenLabsAdapter(client, properties, runtimeConfigService, new ObjectMapper()) {
             @Override
             protected String getSttUrl() {
                 return baseUrl + "v1/speech-to-text";
@@ -211,31 +223,31 @@ class ElevenLabsAdapterTest {
 
     @Test
     void isNotAvailableWithoutApiKey() {
-        properties.getVoice().setApiKey("");
+        when(runtimeConfigService.getVoiceApiKey()).thenReturn("");
         assertFalse(adapter.isAvailable());
     }
 
     @Test
     void isNotAvailableWhenDisabled() {
-        properties.getVoice().setEnabled(false);
+        when(runtimeConfigService.isVoiceEnabled()).thenReturn(false);
         assertFalse(adapter.isAvailable());
     }
 
     @Test
     void isNotAvailableWithNullApiKey() {
-        properties.getVoice().setApiKey(null);
+        when(runtimeConfigService.getVoiceApiKey()).thenReturn(null);
         assertFalse(adapter.isAvailable());
     }
 
     @Test
     void transcribeFailsWithoutApiKey() {
-        properties.getVoice().setApiKey("");
+        when(runtimeConfigService.getVoiceApiKey()).thenReturn("");
         assertTranscribeThrowsAny();
     }
 
     @Test
     void synthesizeFailsWithoutApiKey() {
-        properties.getVoice().setApiKey("");
+        when(runtimeConfigService.getVoiceApiKey()).thenReturn("");
         CompletableFuture<byte[]> future = adapter.synthesize(STT_TEXT, VoicePort.VoiceConfig.defaultConfig());
         assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
     }
@@ -376,7 +388,7 @@ class ElevenLabsAdapterTest {
 
     @Test
     void synthesizeNullApiKeyOnCall() {
-        properties.getVoice().setApiKey(null);
+        when(runtimeConfigService.getVoiceApiKey()).thenReturn(null);
         assertSynthesizeThrowsAny();
     }
 
@@ -402,16 +414,16 @@ class ElevenLabsAdapterTest {
 
     @Test
     void initLogsWarnWhenEnabledButNoKey() {
-        properties.getVoice().setEnabled(true);
-        properties.getVoice().setApiKey("");
+        when(runtimeConfigService.isVoiceEnabled()).thenReturn(true);
+        when(runtimeConfigService.getVoiceApiKey()).thenReturn("");
         // init() should not throw, just log warn
         assertDoesNotThrow(() -> adapter.init());
     }
 
     @Test
     void initLogsWhenDisabled() {
-        properties.getVoice().setEnabled(false);
-        properties.getVoice().setApiKey("");
+        when(runtimeConfigService.isVoiceEnabled()).thenReturn(false);
+        when(runtimeConfigService.getVoiceApiKey()).thenReturn("");
         // init() should not throw even when disabled
         assertDoesNotThrow(() -> adapter.init());
     }
