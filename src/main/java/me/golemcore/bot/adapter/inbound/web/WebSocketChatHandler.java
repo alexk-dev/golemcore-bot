@@ -5,6 +5,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.adapter.inbound.web.security.JwtTokenProvider;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.port.inbound.CommandPort;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.socket.WebSocketHandler;
 import org.springframework.web.reactive.socket.WebSocketMessage;
@@ -14,6 +16,7 @@ import reactor.core.publisher.Mono;
 
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -33,10 +36,12 @@ public class WebSocketChatHandler implements WebSocketHandler {
 
     private static final int MAX_IMAGE_ATTACHMENTS = 6;
     private static final int MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+    private static final String CHANNEL_TYPE = "web";
 
     private final JwtTokenProvider jwtTokenProvider;
     private final WebChannelAdapter webChannelAdapter;
     private final ObjectMapper objectMapper;
+    private final ObjectProvider<CommandPort> commandRouter;
 
     @Override
     public Mono<Void> handle(WebSocketSession session) {
@@ -75,6 +80,12 @@ public class WebSocketChatHandler implements WebSocketHandler {
                 return;
             }
 
+            // Intercept slash commands before routing to agent loop
+            if (text != null && text.startsWith("/") && attachments.isEmpty()
+                    && tryExecuteCommand(text.trim(), sessionId, connectionId)) {
+                return;
+            }
+
             Map<String, Object> metadata = null;
             if (!attachments.isEmpty()) {
                 metadata = Map.of("attachments", attachments);
@@ -84,7 +95,7 @@ public class WebSocketChatHandler implements WebSocketHandler {
                     .id(UUID.randomUUID().toString())
                     .role("user")
                     .content(text != null ? text : "")
-                    .channelType("web")
+                    .channelType(CHANNEL_TYPE)
                     .chatId(sessionId)
                     .senderId(username)
                     .metadata(metadata)
@@ -95,6 +106,38 @@ public class WebSocketChatHandler implements WebSocketHandler {
         } catch (Exception e) { // NOSONAR
             log.warn("[WebSocket] Failed to process incoming message: {}", e.getMessage());
         }
+    }
+
+    private boolean tryExecuteCommand(String text, String sessionId, String connectionId) {
+        String[] parts = text.split("\\s+", 2);
+        String cmd = parts[0].substring(1);
+        if (cmd.isBlank()) {
+            return false;
+        }
+
+        CommandPort router = commandRouter.getIfAvailable();
+        if (router == null || !router.hasCommand(cmd)) {
+            return false;
+        }
+
+        List<String> args = parts.length > 1
+                ? Arrays.asList(parts[1].split("\\s+"))
+                : List.of();
+        String fullSessionId = CHANNEL_TYPE + ":" + sessionId;
+        Map<String, Object> ctx = Map.of(
+                "sessionId", fullSessionId,
+                "chatId", sessionId,
+                "channelType", CHANNEL_TYPE);
+
+        try {
+            CommandPort.CommandResult result = router.execute(cmd, args, ctx).join();
+            webChannelAdapter.sendMessage(sessionId, result.output());
+            log.debug("[WebSocket] Executed command: /{} -> {}", cmd, result.success() ? "ok" : "fail");
+        } catch (Exception e) { // NOSONAR
+            log.error("[WebSocket] Command execution failed: /{}", cmd, e);
+            webChannelAdapter.sendMessage(sessionId, "Command failed: " + e.getMessage());
+        }
+        return true;
     }
 
     private String extractToken(WebSocketSession session) {

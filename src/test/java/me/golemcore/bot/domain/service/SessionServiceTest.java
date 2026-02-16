@@ -3,6 +3,7 @@ package me.golemcore.bot.domain.service;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.port.outbound.StoragePort;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.BeforeEach;
@@ -13,6 +14,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
@@ -44,6 +46,7 @@ class SessionServiceTest {
         storagePort = mock(StoragePort.class);
         objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
+        objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         clock = Clock.fixed(FIXED_TIME, ZoneOffset.UTC);
         service = new SessionService(storagePort, objectMapper, clock);
         sessionProtoMapper = new SessionProtoMapper();
@@ -509,5 +512,153 @@ class SessionServiceTest {
         session.addMessage(Message.builder().role("assistant").content("b").timestamp(Instant.now()).build());
 
         assertEquals(2, service.getMessageCount(SESSION_ID));
+    }
+
+    // ==================== parseSessionFromJsonTree with tool fields
+    // ====================
+
+    @Test
+    void shouldParseToolFieldsFromLegacyJson() {
+        String jsonWithToolFields = """
+                {
+                  "id": "telegram:500",
+                  "channelType": "telegram",
+                  "chatId": "500",
+                  "messages": [
+                    {
+                      "id": "m1",
+                      "role": "user",
+                      "content": "list files",
+                      "timestamp": "2026-01-15T10:00:00Z"
+                    },
+                    {
+                      "id": "m2",
+                      "role": "assistant",
+                      "toolCalls": [
+                        {
+                          "id": "call_abc",
+                          "name": "shell",
+                          "arguments": {"command": "ls -la"}
+                        }
+                      ],
+                      "timestamp": "2026-01-15T10:00:01Z"
+                    },
+                    {
+                      "id": "m3",
+                      "role": "tool",
+                      "content": "file1.txt\\nfile2.txt",
+                      "toolCallId": "call_abc",
+                      "toolName": "shell",
+                      "timestamp": "2026-01-15T10:00:02Z"
+                    }
+                  ],
+                  "state": "ACTIVE",
+                  "createdAt": "2026-01-15T10:00:00Z",
+                  "updatedAt": "2026-01-15T10:00:02Z"
+                }
+                """;
+
+        when(storagePort.getObject(SESSIONS_DIR, "telegram:500.pb"))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
+        when(storagePort.getText(SESSIONS_DIR, "telegram:500.json"))
+                .thenReturn(CompletableFuture.completedFuture(jsonWithToolFields));
+
+        Optional<AgentSession> result = service.get("telegram:500");
+
+        assertTrue(result.isPresent());
+        AgentSession session = result.get();
+        assertEquals(3, session.getMessages().size());
+
+        // Assistant message with tool calls
+        Message assistantMsg = session.getMessages().get(1);
+        assertEquals("assistant", assistantMsg.getRole());
+        assertNotNull(assistantMsg.getToolCalls());
+        assertEquals(1, assistantMsg.getToolCalls().size());
+        assertEquals("call_abc", assistantMsg.getToolCalls().get(0).getId());
+        assertEquals("shell", assistantMsg.getToolCalls().get(0).getName());
+        assertEquals("ls -la", assistantMsg.getToolCalls().get(0).getArguments().get("command"));
+
+        // Tool result message
+        Message toolMsg = session.getMessages().get(2);
+        assertEquals("tool", toolMsg.getRole());
+        assertEquals("call_abc", toolMsg.getToolCallId());
+        assertEquals("shell", toolMsg.getToolName());
+    }
+
+    @Test
+    void shouldHandleLegacyJsonWithoutToolFields() {
+        String jsonNoToolFields = """
+                {
+                  "id": "telegram:501",
+                  "messages": [
+                    {
+                      "id": "m1",
+                      "role": "user",
+                      "content": "hello",
+                      "timestamp": "2026-01-15T10:00:00Z"
+                    }
+                  ]
+                }
+                """;
+
+        when(storagePort.getObject(SESSIONS_DIR, "telegram:501.pb"))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
+        when(storagePort.getText(SESSIONS_DIR, "telegram:501.json"))
+                .thenReturn(CompletableFuture.completedFuture(jsonNoToolFields));
+
+        Optional<AgentSession> result = service.get("telegram:501");
+
+        assertTrue(result.isPresent());
+        assertEquals(1, result.get().getMessages().size());
+        assertNull(result.get().getMessages().get(0).getToolCallId());
+        assertNull(result.get().getMessages().get(0).getToolName());
+        assertNull(result.get().getMessages().get(0).getToolCalls());
+    }
+
+    // ==================== Message Jackson round-trip ====================
+
+    @Test
+    void shouldRoundTripMessageWithToolFieldsViaJackson() throws Exception {
+        Message original = Message.builder()
+                .id("m1")
+                .role("assistant")
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("call_1")
+                        .name("shell")
+                        .arguments(Map.of("command", "ls"))
+                        .build()))
+                .timestamp(FIXED_TIME)
+                .build();
+
+        String json = objectMapper.writeValueAsString(original);
+        Message deserialized = objectMapper.readValue(json, Message.class);
+
+        assertEquals(original.getId(), deserialized.getId());
+        assertEquals(original.getRole(), deserialized.getRole());
+        assertNotNull(deserialized.getToolCalls());
+        assertEquals(1, deserialized.getToolCalls().size());
+        assertEquals("call_1", deserialized.getToolCalls().get(0).getId());
+        assertEquals("shell", deserialized.getToolCalls().get(0).getName());
+        assertEquals("ls", deserialized.getToolCalls().get(0).getArguments().get("command"));
+    }
+
+    @Test
+    void shouldRoundTripToolResultMessageViaJackson() throws Exception {
+        Message original = Message.builder()
+                .id("m2")
+                .role("tool")
+                .content("file1.txt")
+                .toolCallId("call_1")
+                .toolName("shell")
+                .timestamp(FIXED_TIME)
+                .build();
+
+        String json = objectMapper.writeValueAsString(original);
+        Message deserialized = objectMapper.readValue(json, Message.class);
+
+        assertEquals("tool", deserialized.getRole());
+        assertEquals("call_1", deserialized.getToolCallId());
+        assertEquals("shell", deserialized.getToolName());
+        assertEquals("file1.txt", deserialized.getContent());
     }
 }

@@ -7,6 +7,7 @@ interface Props {
   content: string | null | undefined;
   model?: string | null;
   tier?: string | null;
+  reasoning?: string | null;
 }
 
 const TIER_META: Record<string, { label: string; className: string }> = {
@@ -67,7 +68,17 @@ function parseLeadingCommand(content: string): { command: string; args: string }
   return { command, args };
 }
 
-export default function MessageBubble({ role, content, model, tier }: Props) {
+function formatModelLabel(model: string | null | undefined, reasoning: string | null | undefined): string {
+  if (!model) {
+    return 'Model unavailable';
+  }
+  if (reasoning) {
+    return `${model}:${reasoning}`;
+  }
+  return model;
+}
+
+export default function MessageBubble({ role, content, model, tier, reasoning }: Props) {
   const safeContent = content ?? '';
   const isAssistant = role === 'assistant';
   const normalizedTier = (tier ?? '').toLowerCase();
@@ -84,7 +95,7 @@ export default function MessageBubble({ role, content, model, tier }: Props) {
             <span className={`badge ${tierMeta?.className ?? 'text-bg-secondary'}`}>
               {tierMeta?.label ?? (tier ?? 'Unknown tier')}
             </span>
-            <small className="text-body-secondary">{model ?? 'Model unavailable'}</small>
+            <small className="text-body-secondary">{formatModelLabel(model, reasoning)}</small>
           </div>
           {tools.map((t, i) => (
             <ToolCallCard key={i} tool={t.tool} result={t.result} />

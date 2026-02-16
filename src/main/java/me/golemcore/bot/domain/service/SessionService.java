@@ -379,13 +379,28 @@ public class SessionService implements SessionPort {
         JsonNode messagesNode = root.path("messages");
         if (messagesNode.isArray()) {
             for (JsonNode messageNode : messagesNode) {
-                Message message = Message.builder()
+                Message.MessageBuilder msgBuilder = Message.builder()
                         .id(readText(messageNode, "id"))
                         .role(readText(messageNode, "role"))
                         .content(readText(messageNode, "content"))
-                        .timestamp(parseInstant(readText(messageNode, "timestamp")))
-                        .build();
-                messages.add(message);
+                        .toolCallId(readText(messageNode, "toolCallId"))
+                        .toolName(readText(messageNode, "toolName"))
+                        .timestamp(parseInstant(readText(messageNode, "timestamp")));
+
+                JsonNode toolCallsNode = messageNode.path("toolCalls");
+                if (toolCallsNode.isArray() && !toolCallsNode.isEmpty()) {
+                    List<Message.ToolCall> toolCalls = new ArrayList<>();
+                    for (JsonNode tcNode : toolCallsNode) {
+                        toolCalls.add(Message.ToolCall.builder()
+                                .id(readText(tcNode, "id"))
+                                .name(readText(tcNode, "name"))
+                                .arguments(parseArguments(tcNode.path("arguments")))
+                                .build());
+                    }
+                    msgBuilder.toolCalls(toolCalls);
+                }
+
+                messages.add(msgBuilder.build());
             }
         }
 
@@ -427,6 +442,19 @@ public class SessionService implements SessionPort {
         try {
             return Instant.parse(value);
         } catch (DateTimeParseException e) {
+            return null;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> parseArguments(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull() || !node.isObject()) {
+            return null;
+        }
+        try {
+            return objectMapper.convertValue(node, Map.class);
+        } catch (IllegalArgumentException e) {
+            log.debug("Failed to parse tool call arguments: {}", e.getMessage());
             return null;
         }
     }

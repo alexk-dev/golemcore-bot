@@ -18,8 +18,10 @@ package me.golemcore.bot.domain.model;
  * Contact: alex@kuleshov.tech
  */
 
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -34,6 +36,8 @@ import java.util.Map;
  */
 @Data
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class Message {
 
     private String id;
@@ -131,8 +135,9 @@ public class Message {
             }
         }
 
-        // If no tool messages exist, return as-is
-        if (toolResultsByCallId.isEmpty() && messages.stream().noneMatch(Message::hasToolCalls)) {
+        // If no tool-related messages exist at all, return as-is
+        boolean hasAnyToolMessages = messages.stream().anyMatch(Message::isToolMessage);
+        if (!hasAnyToolMessages && messages.stream().noneMatch(Message::hasToolCalls)) {
             return messages;
         }
 
@@ -244,6 +249,8 @@ public class Message {
      */
     @Data
     @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
     public static class ToolCall {
         private String id;
         private String name;

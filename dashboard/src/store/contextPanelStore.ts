@@ -4,6 +4,7 @@ import type { Goal } from '../api/goals';
 export interface TurnMetadata {
   model: string | null;
   tier: string | null;
+  reasoning: string | null;
   inputTokens: number | null;
   outputTokens: number | null;
   totalTokens: number | null;
@@ -25,6 +26,7 @@ interface ContextPanelState {
 const emptyMetadata: TurnMetadata = {
   model: null,
   tier: null,
+  reasoning: null,
   inputTokens: null,
   outputTokens: null,
   totalTokens: null,

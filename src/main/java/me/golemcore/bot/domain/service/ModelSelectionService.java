@@ -59,9 +59,9 @@ public class ModelSelectionService {
             UserPreferences.TierOverride override = prefs.getTierOverrides().get(effectiveTier);
             if (override != null && override.getModel() != null) {
                 String reasoning = override.getReasoning();
-                // Auto-fill reasoning default for reasoning-required models if not set
+                // Auto-fill lowest reasoning level for reasoning-required models if not set
                 if (reasoning == null && modelConfigService.isReasoningRequired(override.getModel())) {
-                    reasoning = modelConfigService.getDefaultReasoningLevel(override.getModel());
+                    reasoning = modelConfigService.getLowestReasoningLevel(override.getModel());
                 }
                 log.debug("[ModelSelection] Using user override for tier {}: model={}, reasoning={}",
                         effectiveTier, override.getModel(), reasoning);
@@ -170,7 +170,7 @@ public class ModelSelectionService {
     }
 
     private ModelSelection resolveFromRouter(String tier) {
-        return switch (tier) {
+        ModelSelection selected = switch (tier) {
         case "routing" ->
             new ModelSelection(runtimeConfigService.getRoutingModel(), runtimeConfigService.getRoutingModelReasoning());
         case "deep" ->
@@ -182,6 +182,12 @@ public class ModelSelectionService {
         default -> new ModelSelection(runtimeConfigService.getBalancedModel(),
                 runtimeConfigService.getBalancedModelReasoning());
         };
+
+        String reasoning = selected.reasoning();
+        if (reasoning == null && selected.model() != null && modelConfigService.isReasoningRequired(selected.model())) {
+            reasoning = modelConfigService.getLowestReasoningLevel(selected.model());
+        }
+        return new ModelSelection(selected.model(), reasoning);
     }
 
     /** Resolved model + reasoning for a tier. */

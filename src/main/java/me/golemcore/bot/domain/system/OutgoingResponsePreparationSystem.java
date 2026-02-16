@@ -189,6 +189,11 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
             hints.put("model", model);
         }
 
+        String reasoning = context.getAttribute(ContextAttributes.LLM_REASONING);
+        if (reasoning != null && !"none".equals(reasoning)) {
+            hints.put("reasoning", reasoning);
+        }
+
         String tier = context.getModelTier();
         hints.put("tier", tier != null ? tier : "balanced");
 

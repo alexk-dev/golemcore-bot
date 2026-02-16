@@ -56,6 +56,12 @@ public final class ContextAttributes {
      */
     public static final String LLM_MODEL = "llm.model";
 
+    /**
+     * String — reasoning effort used for the current LLM call (e.g. "low",
+     * "medium", "high").
+     */
+    public static final String LLM_REASONING = "llm.reasoning";
+
     /** Boolean — plan mode is active for the current session. */
     public static final String PLAN_MODE_ACTIVE = "plan.mode.active";
 

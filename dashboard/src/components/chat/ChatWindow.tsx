@@ -28,6 +28,7 @@ interface ChatMessage {
   content: string;
   model?: string | null;
   tier?: string | null;
+  reasoning?: string | null;
 }
 
 interface ChatAttachmentPayload {
@@ -154,6 +155,7 @@ export default function ChatWindow() {
             setTurnMetadata({
               model: data.hint.model ?? null,
               tier: data.hint.tier ?? null,
+              reasoning: data.hint.reasoning ?? null,
               inputTokens: data.hint.inputTokens ?? null,
               outputTokens: data.hint.outputTokens ?? null,
               totalTokens: data.hint.totalTokens ?? null,
@@ -166,12 +168,14 @@ export default function ChatWindow() {
             const last = prev[prev.length - 1];
             const chunkModel = data.hint?.model ?? null;
             const chunkTier = data.hint?.tier ?? null;
+            const chunkReasoning = data.hint?.reasoning ?? null;
             if (last?.role === 'assistant' && data.type === 'assistant_chunk') {
               return [...prev.slice(0, -1), {
                 role: 'assistant',
                 content: last.content + data.text,
                 model: chunkModel ?? last.model ?? null,
                 tier: chunkTier ?? last.tier ?? null,
+                reasoning: chunkReasoning ?? last.reasoning ?? null,
               }];
             }
             return [...prev, {
@@ -179,6 +183,7 @@ export default function ChatWindow() {
               content: data.text ?? '',
               model: chunkModel,
               tier: chunkTier,
+              reasoning: chunkReasoning,
             }];
           });
         }
@@ -279,6 +284,7 @@ export default function ChatWindow() {
                 content={msg.content}
                 model={msg.model ?? null}
                 tier={msg.tier ?? null}
+                reasoning={msg.reasoning ?? null}
               />
             ))}
             {typing && (

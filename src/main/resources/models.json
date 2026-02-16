@@ -4,13 +4,15 @@
       "provider": "openai",
       "displayName": "GPT-5.2",
       "supportsTemperature": false,
+      "maxInputTokens": 400000,
       "reasoning": {
-        "default": "medium",
+        "default": "none",
         "levels": {
-          "low":    { "maxInputTokens": 1000000 },
-          "medium": { "maxInputTokens": 1000000 },
-          "high":   { "maxInputTokens": 500000 },
-          "xhigh":  { "maxInputTokens": 250000 }
+          "none":   { "maxInputTokens": 400000 },
+          "low":    { "maxInputTokens": 400000 },
+          "medium": { "maxInputTokens": 400000 },
+          "high":   { "maxInputTokens": 400000 },
+          "xhigh":  { "maxInputTokens": 400000 }
         }
       }
     },
@@ -18,13 +20,14 @@
       "provider": "openai",
       "displayName": "GPT-5.1",
       "supportsTemperature": false,
+      "maxInputTokens": 400000,
       "reasoning": {
-        "default": "medium",
+        "default": "none",
         "levels": {
-          "low":    { "maxInputTokens": 1000000 },
-          "medium": { "maxInputTokens": 1000000 },
-          "high":   { "maxInputTokens": 500000 },
-          "xhigh":  { "maxInputTokens": 250000 }
+          "none":   { "maxInputTokens": 400000 },
+          "low":    { "maxInputTokens": 400000 },
+          "medium": { "maxInputTokens": 400000 },
+          "high":   { "maxInputTokens": 400000 }
         }
       }
     },
@@ -32,13 +35,14 @@
       "provider": "openai",
       "displayName": "GPT-5",
       "supportsTemperature": false,
+      "maxInputTokens": 400000,
       "reasoning": {
         "default": "medium",
         "levels": {
-          "low":    { "maxInputTokens": 1000000 },
-          "medium": { "maxInputTokens": 1000000 },
-          "high":   { "maxInputTokens": 500000 },
-          "xhigh":  { "maxInputTokens": 250000 }
+          "minimal": { "maxInputTokens": 400000 },
+          "low":     { "maxInputTokens": 400000 },
+          "medium":  { "maxInputTokens": 400000 },
+          "high":    { "maxInputTokens": 400000 }
         }
       }
     },
@@ -46,12 +50,13 @@
       "provider": "openai",
       "displayName": "GPT-5 Mini",
       "supportsTemperature": false,
+      "maxInputTokens": 400000,
       "reasoning": {
         "default": "medium",
         "levels": {
-          "low":    { "maxInputTokens": 1000000 },
-          "medium": { "maxInputTokens": 1000000 },
-          "high":   { "maxInputTokens": 500000 }
+          "low":    { "maxInputTokens": 400000 },
+          "medium": { "maxInputTokens": 400000 },
+          "high":   { "maxInputTokens": 400000 }
         }
       }
     },
@@ -59,12 +64,13 @@
       "provider": "openai",
       "displayName": "GPT-5 Nano",
       "supportsTemperature": false,
+      "maxInputTokens": 400000,
       "reasoning": {
         "default": "medium",
         "levels": {
-          "low":    { "maxInputTokens": 256000 },
-          "medium": { "maxInputTokens": 256000 },
-          "high":   { "maxInputTokens": 128000 }
+          "low":    { "maxInputTokens": 400000 },
+          "medium": { "maxInputTokens": 400000 },
+          "high":   { "maxInputTokens": 400000 }
         }
       }
     },
@@ -72,19 +78,20 @@
       "provider": "openai",
       "displayName": "GPT-5 Chat Latest",
       "supportsTemperature": true,
-      "maxInputTokens": 1000000
+      "maxInputTokens": 128000
     },
     "gpt-5.2-codex": {
       "provider": "openai",
       "displayName": "GPT-5.2 Codex",
       "supportsTemperature": false,
+      "maxInputTokens": 400000,
       "reasoning": {
         "default": "medium",
         "levels": {
-          "low":    { "maxInputTokens": 1000000 },
-          "medium": { "maxInputTokens": 1000000 },
-          "high":   { "maxInputTokens": 500000 },
-          "xhigh":  { "maxInputTokens": 250000 }
+          "low":    { "maxInputTokens": 400000 },
+          "medium": { "maxInputTokens": 400000 },
+          "high":   { "maxInputTokens": 400000 },
+          "xhigh":  { "maxInputTokens": 400000 }
         }
       }
     },
@@ -92,13 +99,14 @@
       "provider": "openai",
       "displayName": "GPT-5.3 Codex",
       "supportsTemperature": false,
+      "maxInputTokens": 400000,
       "reasoning": {
         "default": "medium",
         "levels": {
-          "low":    { "maxInputTokens": 1000000 },
-          "medium": { "maxInputTokens": 1000000 },
-          "high":   { "maxInputTokens": 500000 },
-          "xhigh":  { "maxInputTokens": 250000 }
+          "low":    { "maxInputTokens": 400000 },
+          "medium": { "maxInputTokens": 400000 },
+          "high":   { "maxInputTokens": 400000 },
+          "xhigh":  { "maxInputTokens": 400000 }
         }
       }
     },
@@ -106,54 +114,19 @@
       "provider": "openai",
       "displayName": "GPT-5.3 Codex Spark",
       "supportsTemperature": false,
+      "maxInputTokens": 128000,
       "reasoning": {
         "default": "low",
         "levels": {
-          "low":    { "maxInputTokens": 1000000 },
-          "medium": { "maxInputTokens": 500000 },
-          "high":   { "maxInputTokens": 250000 }
+          "low":    { "maxInputTokens": 128000 },
+          "medium": { "maxInputTokens": 128000 },
+          "high":   { "maxInputTokens": 128000 }
         }
       }
     },
-    "o3": {
-      "provider": "openai",
-      "displayName": "o3",
-      "supportsTemperature": false,
-      "reasoning": {
-        "default": "medium",
-        "levels": {
-          "low":    { "maxInputTokens": 200000 },
-          "medium": { "maxInputTokens": 200000 },
-          "high":   { "maxInputTokens": 200000 }
-        }
-      }
-    },
-    "o3-pro": {
-      "provider": "openai",
-      "displayName": "o3 Pro",
-      "supportsTemperature": false,
-      "reasoning": {
-        "default": "high",
-        "levels": {
-          "low":    { "maxInputTokens": 200000 },
-          "medium": { "maxInputTokens": 200000 },
-          "high":   { "maxInputTokens": 200000 }
-        }
-      }
-    },
-    "o4-mini": {
-      "provider": "openai",
-      "displayName": "o4 Mini",
-      "supportsTemperature": false,
-      "reasoning": {
-        "default": "medium",
-        "levels": {
-          "low":    { "maxInputTokens": 200000 },
-          "medium": { "maxInputTokens": 200000 },
-          "high":   { "maxInputTokens": 200000 }
-        }
-      }
-    },
+    
+    
+    
     "claude-sonnet-4-5": {
       "provider": "anthropic",
       "displayName": "Claude Sonnet 4.5",
@@ -196,21 +169,9 @@
       "supportsTemperature": true,
       "maxInputTokens": 1048576
     },
-    "gemini-2.5-pro-preview": {
-      "provider": "google",
-      "displayName": "Gemini 2.5 Pro Preview",
-      "supportsTemperature": true,
-      "maxInputTokens": 1048576
-    },
     "gemini-2.5-flash": {
       "provider": "google",
       "displayName": "Gemini 2.5 Flash",
-      "supportsTemperature": true,
-      "maxInputTokens": 1048576
-    },
-    "gemini-2.5-flash-preview": {
-      "provider": "google",
-      "displayName": "Gemini 2.5 Flash Preview",
       "supportsTemperature": true,
       "maxInputTokens": 1048576
     },
@@ -255,19 +216,19 @@
       "provider": "qwen",
       "displayName": "Qwen Max",
       "supportsTemperature": true,
-      "maxInputTokens": 32000
+      "maxInputTokens": 32768
     },
     "qwen-plus": {
       "provider": "qwen",
       "displayName": "Qwen Plus",
       "supportsTemperature": true,
-      "maxInputTokens": 131072
+      "maxInputTokens": 1000000
     },
     "qwen-turbo": {
       "provider": "qwen",
       "displayName": "Qwen Turbo",
       "supportsTemperature": true,
-      "maxInputTokens": 131072
+      "maxInputTokens": 1000000
     },
     "qwen2.5-72b-instruct": {
       "provider": "qwen",

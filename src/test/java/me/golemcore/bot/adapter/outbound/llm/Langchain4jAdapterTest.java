@@ -12,6 +12,7 @@ import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.Content;
 import dev.langchain4j.data.message.ContentType;
+import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
@@ -694,6 +695,194 @@ class Langchain4jAdapterTest {
 
         LlmResponse response = adapter.chat(request).get();
         assertEquals("Weather is sunny", response.getContent());
+    }
+
+    // ===== convertMessages synthetic ID assignment =====
+
+    @Test
+    void shouldAssignSyntheticIdsWhenToolCallIdIsNull() {
+        Message assistantMsg = Message.builder()
+                .role(ROLE_ASSISTANT)
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id(null)
+                        .name(WEATHER)
+                        .arguments(Map.of("location", "London"))
+                        .build()))
+                .build();
+
+        Message toolResultMsg = Message.builder()
+                .role(ROLE_TOOL)
+                .content("Sunny, 25C")
+                .toolCallId(null)
+                .toolName(WEATHER)
+                .build();
+
+        LlmRequest request = LlmRequest.builder()
+                .messages(List.of(
+                        Message.builder().role(ROLE_USER).content("Weather?").build(),
+                        assistantMsg,
+                        toolResultMsg))
+                .build();
+
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<ChatMessage> messages = (List<ChatMessage>) ReflectionTestUtils.invokeMethod(
+                adapter, CONVERT_MESSAGES, request);
+
+        // user + assistant(tool_calls) + tool_result = 3 messages
+        assertEquals(3, messages.size());
+
+        // Assistant message should have AiMessage with tool execution requests carrying
+        // synthetic IDs
+        AiMessage aiMsg = (AiMessage) messages.get(1);
+        assertNotNull(aiMsg.toolExecutionRequests());
+        assertEquals(1, aiMsg.toolExecutionRequests().size());
+        String synthId = aiMsg.toolExecutionRequests().get(0).id();
+        assertNotNull(synthId);
+        assertTrue(synthId.startsWith("synth_call_"));
+
+        // Tool result should be ToolExecutionResultMessage (not FunctionMessage) with
+        // matching synthetic ID
+        assertTrue(messages.get(2) instanceof ToolExecutionResultMessage);
+        ToolExecutionResultMessage toolResult = (ToolExecutionResultMessage) messages.get(2);
+        assertEquals(synthId, toolResult.id());
+    }
+
+    @Test
+    void shouldAssignSyntheticIdsForBlankToolCallId() {
+        Message assistantMsg = Message.builder()
+                .role(ROLE_ASSISTANT)
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("   ")
+                        .name(WEATHER)
+                        .arguments(Map.of())
+                        .build()))
+                .build();
+
+        Message toolResultMsg = Message.builder()
+                .role(ROLE_TOOL)
+                .content("Result")
+                .toolCallId("   ")
+                .toolName(WEATHER)
+                .build();
+
+        LlmRequest request = LlmRequest.builder()
+                .messages(List.of(assistantMsg, toolResultMsg))
+                .build();
+
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<ChatMessage> messages = (List<ChatMessage>) ReflectionTestUtils.invokeMethod(
+                adapter, CONVERT_MESSAGES, request);
+
+        AiMessage aiMsg = (AiMessage) messages.get(0);
+        String synthId = aiMsg.toolExecutionRequests().get(0).id();
+        assertTrue(synthId.startsWith("synth_call_"));
+
+        ToolExecutionResultMessage toolResult = (ToolExecutionResultMessage) messages.get(1);
+        assertEquals(synthId, toolResult.id());
+    }
+
+    @Test
+    void shouldPreserveRealToolCallIds() {
+        Message assistantMsg = Message.builder()
+                .role(ROLE_ASSISTANT)
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("call_real_123")
+                        .name(WEATHER)
+                        .arguments(Map.of())
+                        .build()))
+                .build();
+
+        Message toolResultMsg = Message.builder()
+                .role(ROLE_TOOL)
+                .content("Result")
+                .toolCallId("call_real_123")
+                .toolName(WEATHER)
+                .build();
+
+        LlmRequest request = LlmRequest.builder()
+                .messages(List.of(assistantMsg, toolResultMsg))
+                .build();
+
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<ChatMessage> messages = (List<ChatMessage>) ReflectionTestUtils.invokeMethod(
+                adapter, CONVERT_MESSAGES, request);
+
+        AiMessage aiMsg = (AiMessage) messages.get(0);
+        assertEquals("call_real_123", aiMsg.toolExecutionRequests().get(0).id());
+
+        ToolExecutionResultMessage toolResult = (ToolExecutionResultMessage) messages.get(1);
+        assertEquals("call_real_123", toolResult.id());
+    }
+
+    // ===== convertMessages orphaned tool message handling =====
+
+    @Test
+    void shouldConvertOrphanedToolMessageToUserText() {
+        Message toolResultMsg = Message.builder()
+                .role(ROLE_TOOL)
+                .content("orphaned result")
+                .toolCallId("call_missing")
+                .toolName(WEATHER)
+                .build();
+
+        LlmRequest request = LlmRequest.builder()
+                .messages(List.of(
+                        Message.builder().role(ROLE_USER).content("Hi").build(),
+                        toolResultMsg))
+                .build();
+
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<ChatMessage> messages = (List<ChatMessage>) ReflectionTestUtils.invokeMethod(
+                adapter, CONVERT_MESSAGES, request);
+
+        assertEquals(2, messages.size());
+        assertTrue(messages.get(0) instanceof UserMessage);
+        // Orphaned tool message should be converted to UserMessage, not
+        // ToolExecutionResultMessage
+        assertTrue(messages.get(1) instanceof UserMessage);
+        UserMessage converted = (UserMessage) messages.get(1);
+        assertTrue(converted.singleText().contains("[Tool: weather]"));
+        assertTrue(converted.singleText().contains("orphaned result"));
+    }
+
+    @Test
+    void shouldConvertOrphanedToolMessageWithNullIdToUserText() {
+        Message toolResultMsg = Message.builder()
+                .role(ROLE_TOOL)
+                .content("orphaned null result")
+                .toolCallId(null)
+                .toolName(WEATHER)
+                .build();
+
+        LlmRequest request = LlmRequest.builder()
+                .messages(List.of(
+                        Message.builder().role(ROLE_USER).content("Hi").build(),
+                        toolResultMsg))
+                .build();
+
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<ChatMessage> messages = (List<ChatMessage>) ReflectionTestUtils.invokeMethod(
+                adapter, CONVERT_MESSAGES, request);
+
+        assertEquals(2, messages.size());
+        assertTrue(messages.get(1) instanceof UserMessage);
+    }
+
+    // ===== isUnsupportedFunctionRoleError detection =====
+
+    @Test
+    void shouldDetectOrphanedToolRoleError() {
+        String errorMsg = "{\"error\":{\"message\":\"Invalid parameter: messages with role 'tool' "
+                + "must be a response to a preceeding message with 'tool_calls'.\"}}";
+        assertTrue((boolean) ReflectionTestUtils.invokeMethod(adapter,
+                "isUnsupportedFunctionRoleError", new RuntimeException(errorMsg)));
+    }
+
+    @Test
+    void shouldDetectLegacyFunctionRoleError() {
+        String errorMsg = "unsupported_value: model does not support 'function' role";
+        assertTrue((boolean) ReflectionTestUtils.invokeMethod(adapter,
+                "isUnsupportedFunctionRoleError", new RuntimeException(errorMsg)));
     }
 
     // ===== chatStream =====

@@ -14,6 +14,7 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Service for managing application-level runtime configuration. Loads from
@@ -26,18 +27,19 @@ public class RuntimeConfigService {
 
     private static final String PREFERENCES_DIR = "preferences";
     private static final String CONFIG_FILE = "runtime-config.json";
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final String INVITE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final int INVITE_CODE_LENGTH = 20;
     private static final String DEFAULT_BALANCED_MODEL = "openai/gpt-5.1";
-    private static final String DEFAULT_BALANCED_REASONING = "medium";
+    private static final String DEFAULT_BALANCED_REASONING = "none";
     private static final String DEFAULT_ROUTING_MODEL = "openai/gpt-5.2-codex";
-    private static final String DEFAULT_ROUTING_REASONING = "medium";
+    private static final String DEFAULT_ROUTING_REASONING = "none";
     private static final String DEFAULT_SMART_MODEL = "openai/gpt-5.1";
-    private static final String DEFAULT_SMART_REASONING = "high";
+    private static final String DEFAULT_SMART_REASONING = "none";
     private static final String DEFAULT_CODING_MODEL = "openai/gpt-5.2";
-    private static final String DEFAULT_CODING_REASONING = "medium";
+    private static final String DEFAULT_CODING_REASONING = "none";
     private static final String DEFAULT_DEEP_MODEL = "openai/gpt-5.2";
-    private static final String DEFAULT_DEEP_REASONING = "xhigh";
+    private static final String DEFAULT_DEEP_REASONING = "none";
     private static final double DEFAULT_TEMPERATURE = 0.7;
     private static final String DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
     private static final String DEFAULT_TTS_MODEL = "eleven_multilingual_v2";
@@ -88,7 +90,7 @@ public class RuntimeConfigService {
     private final StoragePort storagePort;
     private final ObjectMapper objectMapper;
 
-    private volatile RuntimeConfig config;
+    private final AtomicReference<RuntimeConfig> configRef = new AtomicReference<>();
 
     public RuntimeConfigService(StoragePort storagePort) {
         this.storagePort = storagePort;
@@ -100,15 +102,18 @@ public class RuntimeConfigService {
      * Get current RuntimeConfig (lazy-loaded, cached).
      */
     public RuntimeConfig getRuntimeConfig() {
-        if (config == null) {
+        RuntimeConfig current = configRef.get();
+        if (current == null) {
             synchronized (this) {
-                if (config == null) {
-                    config = loadOrCreate();
-                    normalizeRuntimeConfig(config);
+                current = configRef.get();
+                if (current == null) {
+                    current = loadOrCreate();
+                    normalizeRuntimeConfig(current);
+                    configRef.set(current);
                 }
             }
         }
-        return config;
+        return current;
     }
 
     public RuntimeConfig getRuntimeConfigForApi() {
@@ -131,7 +136,7 @@ public class RuntimeConfigService {
      */
     public void updateRuntimeConfig(RuntimeConfig newConfig) {
         normalizeRuntimeConfig(newConfig);
-        this.config = newConfig;
+        this.configRef.set(newConfig);
         persist(newConfig);
     }
 
@@ -647,10 +652,9 @@ public class RuntimeConfigService {
      * Generate a new single-use invite code.
      */
     public RuntimeConfig.InviteCode generateInviteCode() {
-        SecureRandom random = new SecureRandom();
         StringBuilder code = new StringBuilder(INVITE_CODE_LENGTH);
         for (int i = 0; i < INVITE_CODE_LENGTH; i++) {
-            code.append(INVITE_CHARS.charAt(random.nextInt(INVITE_CHARS.length())));
+            code.append(INVITE_CHARS.charAt(SECURE_RANDOM.nextInt(INVITE_CHARS.length())));
         }
 
         RuntimeConfig.InviteCode inviteCode = RuntimeConfig.InviteCode.builder()

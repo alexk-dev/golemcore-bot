@@ -4,8 +4,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.adapter.inbound.web.security.JwtTokenProvider;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.port.inbound.CommandPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.web.reactive.socket.HandshakeInfo;
 import org.springframework.web.reactive.socket.WebSocketSession;
@@ -31,6 +33,8 @@ class WebSocketChatHandlerTest {
     private WebChannelAdapter webChannelAdapter;
     private ObjectMapper objectMapper;
     private ApplicationEventPublisher eventPublisher;
+    @SuppressWarnings("unchecked")
+    private ObjectProvider<CommandPort> commandRouterProvider = mock(ObjectProvider.class);
     private WebSocketChatHandler handler;
 
     @BeforeEach
@@ -43,7 +47,8 @@ class WebSocketChatHandlerTest {
         objectMapper = new ObjectMapper();
         eventPublisher = mock(ApplicationEventPublisher.class);
         webChannelAdapter = new WebChannelAdapter(objectMapper, eventPublisher);
-        handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper);
+        when(commandRouterProvider.getIfAvailable()).thenReturn(null);
+        handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider);
     }
 
     @Test

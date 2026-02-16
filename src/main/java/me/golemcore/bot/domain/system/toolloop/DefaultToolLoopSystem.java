@@ -348,8 +348,11 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             log.debug("[ToolLoop] conversation view diagnostics: {}", view.diagnostics());
         }
 
-        // Track current model for next request (persisted in session metadata)
+        // Track current model for next request (persisted in session metadata + context
+        // attributes)
         storeSelectedModel(context, selection.model());
+        context.setAttribute(ContextAttributes.LLM_MODEL, selection.model());
+        context.setAttribute(ContextAttributes.LLM_REASONING, selection.reasoning());
 
         return LlmRequest.builder()
                 .model(selection.model())

@@ -1,3 +1,10 @@
+// ============================================================
+//  session.proto — the memory palace of GolemCore
+//
+//  every conversation the bot has ever had lives here.
+//  if this file breaks, the bot gets amnesia. no pressure.
+// ============================================================
+
 syntax = "proto3";
 
 package golemcore.sessions.v1;
@@ -8,78 +15,91 @@ option java_outer_classname = "SessionProto";
 
 import "google/protobuf/timestamp.proto";
 
+// the whole conversation — who, where, when, and all the vibes
 message AgentSessionRecord {
-  string id = 1;
-  string channel_type = 2;
-  string chat_id = 3;
-  repeated MessageRecord messages = 4;
-  map<string, JsonValue> metadata = 5;
-  SessionState state = 6;
-  google.protobuf.Timestamp created_at = 7;
-  google.protobuf.Timestamp updated_at = 8;
+  string id = 1;                                   // unique session fingerprint
+  string channel_type = 2;                         // telegram, web, webhook... wherever the vibes flow
+  string chat_id = 3;                              // user's chat — their little corner of the universe
+  repeated MessageRecord messages = 4;             // the actual conversation. the good stuff
+  map<string, JsonValue> metadata = 5;             // misc brain crumbs the bot leaves for itself
+  SessionState state = 6;                          // alive? sleeping? gone? mood.
+  google.protobuf.Timestamp created_at = 7;        // the moment it all began
+  google.protobuf.Timestamp updated_at = 8;        // last sign of life
 }
 
+// a single message — could be human wisdom, bot rambling, or a tool doing its thing
 message MessageRecord {
-  string id = 1;
-  string role = 2;
-  string content = 3;
-  string channel_type = 4;
-  string chat_id = 5;
-  string sender_id = 6;
+  string id = 1;                                   // snowflake id, every message is unique and special
+  string role = 2;                                 // user | assistant | system | tool — pick your fighter
+  string content = 3;                              // the actual words. sometimes empty. that's ok, silence is valid
 
-  repeated ToolCallRecord tool_calls = 7;
-  string tool_call_id = 8;
-  string tool_name = 9;
+  string channel_type = 4;                         // where this message came from
+  string chat_id = 5;                              // which chat it belongs to
+  string sender_id = 6;                            // who sent it (for the audit trail)
 
-  map<string, JsonValue> metadata = 10;
-  google.protobuf.Timestamp timestamp = 11;
+  repeated ToolCallRecord tool_calls = 7;          // when the bot decides to use its hands
+  string tool_call_id = 8;                         // correlation id — links tool result back to the call
+  string tool_name = 9;                            // which tool answered the call
 
-  bytes voice_data = 12;
-  string voice_transcription = 13;
-  AudioFormat audio_format = 14;
+  map<string, JsonValue> metadata = 10;            // model name, tier, token counts... the receipts
+  google.protobuf.Timestamp timestamp = 11;        // when this exact thought happened
+
+  bytes voice_data = 12;                           // raw audio bytes — the bot can speak!
+  string voice_transcription = 13;                 // what the voice said, in text form for the introverts
+  AudioFormat audio_format = 14;                   // ogg, mp3, wav... audiophile settings
 }
 
+// when the LLM wants to call a tool — "hey shell, run this for me"
 message ToolCallRecord {
-  string id = 1;
-  string name = 2;
-  map<string, JsonValue> arguments = 3;
+  string id = 1;                                   // call id so we can match request -> response
+  string name = 2;                                 // tool name — shell, filesystem, browser, etc.
+  map<string, JsonValue> arguments = 3;            // whatever the tool needs to do its thing
 }
+
+// ---- generic JSON-in-protobuf machinery ----
+// because sometimes you just need to shove arbitrary JSON into a proto
+// and pretend everything is fine
 
 message JsonObject {
-  map<string, JsonValue> fields = 1;
+  map<string, JsonValue> fields = 1;               // it's a map. it maps. what else do you want
 }
 
 message JsonArray {
-  repeated JsonValue items = 1;
+  repeated JsonValue items = 1;                    // ordered list of "whatever"
 }
 
 message NullValue {
+  // literally nothing. the void stares back.
 }
 
+// the universal "could be anything" type
+// protobuf doesn't have `any` in the json sense, so we built one
 message JsonValue {
   oneof kind {
-    bool bool_value = 1;
-    int64 int_value = 2;
-    double double_value = 3;
-    string string_value = 4;
-    JsonObject object_value = 5;
-    JsonArray array_value = 6;
-    NullValue null_value = 7;
+    bool bool_value = 1;                           // true or false. simple times
+    int64 int_value = 2;                           // whole numbers for whole people
+    double double_value = 3;                       // when you need that .5
+    string string_value = 4;                       // the classic
+    JsonObject object_value = 5;                   // nested chaos
+    JsonArray array_value = 6;                     // ordered chaos
+    NullValue null_value = 7;                      // the absence of chaos
   }
 }
 
+// session lifecycle — from birth to ghost
 enum SessionState {
-  SESSION_STATE_UNSPECIFIED = 0;
-  SESSION_STATE_ACTIVE = 1;
-  SESSION_STATE_PAUSED = 2;
-  SESSION_STATE_TERMINATED = 3;
+  SESSION_STATE_UNSPECIFIED = 0;                   // schrodinger's session
+  SESSION_STATE_ACTIVE = 1;                        // alive and chatting
+  SESSION_STATE_PAUSED = 2;                        // brb
+  SESSION_STATE_TERMINATED = 3;                    // gone but not forgotten (we keep the data)
 }
 
+// supported audio formats — for when text just isn't enough
 enum AudioFormat {
-  AUDIO_FORMAT_UNSPECIFIED = 0;
-  AUDIO_FORMAT_OGG_OPUS = 1;
-  AUDIO_FORMAT_MP3 = 2;
-  AUDIO_FORMAT_WAV = 3;
-  AUDIO_FORMAT_PCM_16K = 4;
-  AUDIO_FORMAT_PCM_44K = 5;
+  AUDIO_FORMAT_UNSPECIFIED = 0;                    // mystery audio. good luck
+  AUDIO_FORMAT_OGG_OPUS = 1;                      // telegram's favorite child
+  AUDIO_FORMAT_MP3 = 2;                            // the people's format
+  AUDIO_FORMAT_WAV = 3;                            // uncompressed truth
+  AUDIO_FORMAT_PCM_16K = 4;                        // raw 16kHz — STT loves this
+  AUDIO_FORMAT_PCM_44K = 5;                        // raw 44.1kHz — CD quality nostalgia
 }

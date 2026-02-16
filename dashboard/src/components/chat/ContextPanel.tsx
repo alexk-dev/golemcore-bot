@@ -47,7 +47,10 @@ export default function ContextPanel({ tier, tierForce, onTierChange, onForceCha
       <div className="context-section">
         <div className="section-label">MODEL</div>
         <div className="section-value">
-          <span className="font-mono">{turnMetadata.model ?? '--'}</span>
+          <span className="font-mono">
+            {turnMetadata.model ?? '--'}
+            {turnMetadata.reasoning ? `:${turnMetadata.reasoning}` : ''}
+          </span>
         </div>
         <div className="d-flex align-items-center gap-2 mt-1">
           <Badge bg={TIER_COLORS[turnMetadata.tier ?? tier] ?? 'secondary'}>

@@ -28,7 +28,7 @@ class ModelSelectionServiceTest {
 
     @BeforeEach
     void setUp() {
-        properties = mock(BotProperties.class);
+        properties = new BotProperties();
         runtimeConfigService = mock(RuntimeConfigService.class);
         modelConfigService = mock(ModelConfigService.class);
         preferencesService = mock(UserPreferencesService.class);
@@ -46,7 +46,7 @@ class ModelSelectionServiceTest {
         modelSelectionProperties = new BotProperties.ModelSelectionProperties();
         modelSelectionProperties.setAllowedProviders(List.of("openai", "anthropic"));
 
-        when(properties.getModelSelection()).thenReturn(modelSelectionProperties);
+        properties.setModelSelection(modelSelectionProperties);
 
         userPreferences = UserPreferences.builder().build();
         when(preferencesService.getPreferences()).thenReturn(userPreferences);
@@ -81,14 +81,14 @@ class ModelSelectionServiceTest {
         userPreferences.setTierOverrides(overrides);
 
         when(modelConfigService.isReasoningRequired("openai/gpt-5.1")).thenReturn(true);
-        when(modelConfigService.getDefaultReasoningLevel("openai/gpt-5.1")).thenReturn("medium");
+        when(modelConfigService.getLowestReasoningLevel("openai/gpt-5.1")).thenReturn("none");
 
         // Act
         ModelSelectionService.ModelSelection result = service.resolveForTier("smart");
 
         // Assert
         assertEquals("openai/gpt-5.1", result.model());
-        assertEquals("medium", result.reasoning());
+        assertEquals("none", result.reasoning());
     }
 
     @Test

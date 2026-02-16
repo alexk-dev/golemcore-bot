@@ -277,6 +277,25 @@ public class ModelConfigService {
     }
 
     /**
+     * Get the lowest available reasoning level for a model.
+     */
+    public String getLowestReasoningLevel(String modelName) {
+        List<String> available = getAvailableReasoningLevels(modelName);
+        if (available.isEmpty()) {
+            return null;
+        }
+
+        List<String> preference = List.of("none", "minimal", "low", "medium", "high", "xhigh");
+        for (String candidate : preference) {
+            if (available.contains(candidate)) {
+                return candidate;
+            }
+        }
+
+        return available.get(0);
+    }
+
+    /**
      * Get available reasoning levels for a model.
      */
     public List<String> getAvailableReasoningLevels(String modelName) {

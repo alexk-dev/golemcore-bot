@@ -61,10 +61,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Deque;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
@@ -112,6 +116,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     private static final long INITIAL_BACKOFF_MS = 5_000;
     private static final double BACKOFF_MULTIPLIER = 2.0;
     private static final String PROVIDER_ANTHROPIC = "anthropic";
+    private static final String SYNTH_ID_PREFIX = "synth_call_";
     private static final String SCHEMA_KEY_PROPERTIES = "properties";
     private static final java.util.regex.Pattern RESET_SECONDS_PATTERN = java.util.regex.Pattern
             .compile("\"reset_seconds\"\\s*:\\s*(\\d+)");
@@ -452,36 +457,62 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             messages.add(SystemMessage.from(systemPrompt));
         }
 
-        // Convert conversation messages — tool call IDs and names are passed through
-        // as-is. Model switches are handled upstream by ToolLoop/request-time
-        // conversation view building which
-        // flattens tool messages to plain text before they reach the adapter.
         if (requestMessages == null) {
             return messages;
         }
+
+        // Synthetic ID generation: langchain4j serializes null-ID tool calls as
+        // legacy "function_call" and null-ID tool results as "role: function",
+        // both rejected by GPT-5.2+. Assign synthetic IDs where missing.
+        // Also track emitted tool call IDs to detect orphaned tool messages
+        // whose preceding assistant message was removed (e.g. by compaction).
+        int synthCounter = 0;
+        Deque<String> pendingSynthIds = new ArrayDeque<>();
+        Set<String> emittedToolCallIds = new HashSet<>();
 
         for (Message msg : requestMessages) {
             switch (msg.getRole()) {
             case "user" -> messages.add(toUserMessage(msg));
             case "assistant" -> {
                 if (msg.hasToolCalls()) {
-                    List<ToolExecutionRequest> toolRequests = msg.getToolCalls().stream()
-                            .map(tc -> ToolExecutionRequest.builder()
-                                    .id(tc.getId())
-                                    .name(tc.getName())
-                                    .arguments(convertArgsToJson(tc.getArguments()))
-                                    .build())
-                            .toList();
+                    List<ToolExecutionRequest> toolRequests = new ArrayList<>();
+                    for (Message.ToolCall tc : msg.getToolCalls()) {
+                        String id = tc.getId();
+                        if (id == null || id.isBlank()) {
+                            id = SYNTH_ID_PREFIX + synthCounter++;
+                            pendingSynthIds.addLast(id);
+                        }
+                        emittedToolCallIds.add(id);
+                        toolRequests.add(ToolExecutionRequest.builder()
+                                .id(id)
+                                .name(tc.getName())
+                                .arguments(convertArgsToJson(tc.getArguments()))
+                                .build());
+                    }
                     messages.add(AiMessage.from(toolRequests));
                 } else {
                     messages.add(AiMessage.from(nonNullText(msg.getContent())));
                 }
             }
             case "tool" -> {
-                messages.add(ToolExecutionResultMessage.from(
-                        msg.getToolCallId(),
-                        msg.getToolName(),
-                        nonNullText(msg.getContent())));
+                String toolCallId = msg.getToolCallId();
+                if (toolCallId == null || toolCallId.isBlank()) {
+                    toolCallId = pendingSynthIds.isEmpty()
+                            ? SYNTH_ID_PREFIX + synthCounter++
+                            : pendingSynthIds.pollFirst();
+                }
+                if (emittedToolCallIds.contains(toolCallId)) {
+                    messages.add(ToolExecutionResultMessage.from(
+                            toolCallId,
+                            msg.getToolName(),
+                            nonNullText(msg.getContent())));
+                } else {
+                    log.debug("[LLM] Converting orphaned tool message to text: tool={}",
+                            msg.getToolName());
+                    String toolText = "[Tool: " + nonNullText(msg.getToolName())
+                            + "]\n[Result: " + nonNullText(msg.getContent()) + "]";
+                    messages.add(UserMessage.from(toolText));
+                }
             }
             case "system" -> messages.add(SystemMessage.from(nonNullText(msg.getContent())));
             default -> log.warn("Unknown message role: {}, treating as user message", msg.getRole());
@@ -499,10 +530,17 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         Throwable current = throwable;
         while (current != null) {
             String message = current.getMessage();
-            if (message != null
-                    && message.contains("unsupported_value")
-                    && message.contains("does not support 'function'")) {
-                return true;
+            if (message != null) {
+                // Legacy function role rejected by newer models
+                if (message.contains("unsupported_value")
+                        && message.contains("does not support 'function'")) {
+                    return true;
+                }
+                // Orphaned tool message without preceding tool_calls
+                if (message.contains("role 'tool' must be a response to")
+                        && message.contains("tool_calls")) {
+                    return true;
+                }
             }
             current = current.getCause();
         }
