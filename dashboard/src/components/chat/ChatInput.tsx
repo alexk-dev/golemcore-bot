@@ -70,6 +70,9 @@ export default function ChatInput({ onSend, disabled }: Props) {
     [selectedCommand?.usage, text]
   );
 
+  const commandMode = text.trimStart().startsWith('/');
+  const commandTokenOnly = commandMode && !text.trim().includes(' ');
+
   const statusText = useMemo(() => {
     if (uploading) return 'Uploading image...';
     if (recording) return 'Recording...';
@@ -136,10 +139,21 @@ export default function ChatInput({ onSend, disabled }: Props) {
       if (e.key === 'Escape') {
         e.preventDefault();
         setAutocompleteDismissed(true);
+        return;
       }
     }
 
+    if (e.key === 'Escape' && showAutocomplete) {
+      e.preventDefault();
+      setAutocompleteDismissed(true);
+      return;
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
+      if (commandTokenOnly && !selectedCommand) {
+        e.preventDefault();
+        return;
+      }
       e.preventDefault();
       handleSubmit(e);
     }
@@ -298,6 +312,13 @@ export default function ChatInput({ onSend, disabled }: Props) {
         </div>
       )}
 
+      {commandMode && (
+        <div className="mb-2 d-flex align-items-center gap-2">
+          <Badge bg="primary">Command mode</Badge>
+          <small className="text-muted">Press Tab/Enter to accept suggestion, Shift+Enter for newline.</small>
+        </div>
+      )}
+
       {missingArgs.length > 0 && (
         <div className="mb-2">
           <Badge bg="secondary" className="me-2">Hint</Badge>
@@ -353,6 +374,7 @@ export default function ChatInput({ onSend, disabled }: Props) {
             aria-controls={COMMAND_LISTBOX_ID}
             aria-activedescendant={activeDescendant}
             aria-autocomplete="list"
+            aria-haspopup="listbox"
             style={{ resize: 'none', maxHeight: 120, overflow: 'auto' }}
           />
 

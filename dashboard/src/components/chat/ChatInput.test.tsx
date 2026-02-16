@@ -34,6 +34,16 @@ describe('ChatInput', () => {
     expect(await screen.findByText(/Missing args:/i)).toBeInTheDocument();
   });
 
+  it('shows command mode indicator for slash command input', async () => {
+    const onSend = vi.fn();
+    render(<ChatInput onSend={onSend} />);
+
+    const textarea = screen.getByPlaceholderText(/Type a message/i);
+    fireEvent.change(textarea, { target: { value: '/pl' } });
+
+    expect(await screen.findByText(/Command mode/i)).toBeInTheDocument();
+  });
+
   it('supports command autocomplete via Tab', async () => {
     const onSend = vi.fn();
     render(<ChatInput onSend={onSend} />);
@@ -59,6 +69,34 @@ describe('ChatInput', () => {
       expect((textarea as HTMLTextAreaElement).value).toBe('/plan ');
     });
     expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('does not submit unknown slash token without args on Enter', async () => {
+    const onSend = vi.fn();
+    render(<ChatInput onSend={onSend} />);
+
+    const textarea = screen.getByPlaceholderText(/Type a message/i);
+    fireEvent.change(textarea, { target: { value: '/unknown' } });
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(onSend).not.toHaveBeenCalled();
+    });
+  });
+
+  it('dismisses autocomplete on Escape', async () => {
+    const onSend = vi.fn();
+    render(<ChatInput onSend={onSend} />);
+
+    const textarea = screen.getByRole('combobox');
+    fireEvent.change(textarea, { target: { value: '/pl' } });
+    expect(await screen.findByRole('listbox')).toBeInTheDocument();
+
+    fireEvent.keyDown(textarea, { key: 'Escape' });
+
+    await waitFor(() => {
+      expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    });
   });
 
   it('submits user message on Enter', async () => {
@@ -98,6 +136,7 @@ describe('ChatInput', () => {
 
     expect(textarea).toHaveAttribute('aria-controls', 'chat-command-listbox');
     expect(textarea).toHaveAttribute('aria-expanded', 'true');
+    expect(textarea).toHaveAttribute('aria-haspopup', 'listbox');
     expect(await screen.findByRole('listbox')).toBeInTheDocument();
   });
 });
