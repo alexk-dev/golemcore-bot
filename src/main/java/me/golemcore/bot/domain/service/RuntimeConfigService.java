@@ -27,16 +27,49 @@ public class RuntimeConfigService {
     private static final String CONFIG_FILE = "runtime-config.json";
     private static final String INVITE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final int INVITE_CODE_LENGTH = 20;
+    private static final String DEFAULT_BALANCED_MODEL = "openai/gpt-5.1";
+    private static final String DEFAULT_BALANCED_REASONING = "medium";
+    private static final String DEFAULT_SMART_MODEL = "openai/gpt-5.1";
+    private static final String DEFAULT_SMART_REASONING = "high";
+    private static final String DEFAULT_CODING_MODEL = "openai/gpt-5.2";
+    private static final String DEFAULT_CODING_REASONING = "medium";
+    private static final String DEFAULT_DEEP_MODEL = "openai/gpt-5.2";
+    private static final String DEFAULT_DEEP_REASONING = "xhigh";
+    private static final double DEFAULT_TEMPERATURE = 0.7;
+    private static final String DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
+    private static final String DEFAULT_TTS_MODEL = "eleven_multilingual_v2";
+    private static final String DEFAULT_STT_MODEL = "scribe_v1";
+    private static final float DEFAULT_VOICE_SPEED = 1.0f;
+    private static final int DEFAULT_RATE_USER_PER_MINUTE = 20;
+    private static final int DEFAULT_RATE_USER_PER_HOUR = 100;
+    private static final int DEFAULT_RATE_USER_PER_DAY = 500;
+    private static final int DEFAULT_RATE_CHANNEL_PER_SECOND = 30;
+    private static final int DEFAULT_RATE_LLM_PER_MINUTE = 60;
+    private static final int DEFAULT_MAX_INPUT_LENGTH = 10000;
+    private static final int DEFAULT_AUTO_TICK_INTERVAL_SECONDS = 30;
+    private static final int DEFAULT_AUTO_TIMEOUT_MINUTES = 10;
+    private static final int DEFAULT_AUTO_MAX_GOALS = 3;
+    private static final String DEFAULT_AUTO_MODEL_TIER = "default";
+    private static final int DEFAULT_AUTO_COMPACT_MAX_TOKENS = 50000;
+    private static final int DEFAULT_AUTO_COMPACT_KEEP_LAST = 20;
+    private static final int DEFAULT_IMAP_PORT = 993;
+    private static final int DEFAULT_IMAP_CONNECT_TIMEOUT = 10000;
+    private static final int DEFAULT_IMAP_READ_TIMEOUT = 30000;
+    private static final int DEFAULT_IMAP_MAX_BODY_LENGTH = 50000;
+    private static final int DEFAULT_IMAP_DEFAULT_MESSAGE_LIMIT = 20;
+    private static final String DEFAULT_IMAP_SECURITY = "ssl";
+    private static final int DEFAULT_SMTP_PORT = 587;
+    private static final int DEFAULT_SMTP_CONNECT_TIMEOUT = 10000;
+    private static final int DEFAULT_SMTP_READ_TIMEOUT = 30000;
+    private static final String DEFAULT_SMTP_SECURITY = "starttls";
 
     private final StoragePort storagePort;
-    private final BotProperties botProperties;
     private final ObjectMapper objectMapper;
 
     private volatile RuntimeConfig config;
 
-    public RuntimeConfigService(StoragePort storagePort, BotProperties botProperties) {
+    public RuntimeConfigService(StoragePort storagePort) {
         this.storagePort = storagePort;
-        this.botProperties = botProperties;
         this.objectMapper = new ObjectMapper();
         this.objectMapper.registerModule(new JavaTimeModule());
     }
@@ -72,142 +105,158 @@ public class RuntimeConfigService {
 
     public String getTelegramToken() {
         String val = getRuntimeConfig().getTelegram().getToken();
-        if (val != null && !val.isBlank()) {
-            return val;
-        }
-        BotProperties.ChannelProperties tg = botProperties.getChannels().get("telegram");
-        return tg != null ? tg.getToken() : "";
+        return val != null ? val : "";
     }
 
     public List<String> getTelegramAllowedUsers() {
         List<String> runtimeUsers = getRuntimeConfig().getTelegram().getAllowedUsers();
-        if (runtimeUsers != null && !runtimeUsers.isEmpty()) {
-            return runtimeUsers;
-        }
-        BotProperties.ChannelProperties tg = botProperties.getChannels().get("telegram");
-        return tg != null ? tg.getAllowFrom() : List.of();
+        return runtimeUsers != null ? runtimeUsers : List.of();
     }
 
     // ==================== Model Router ====================
 
     public String getBalancedModel() {
         String val = getRuntimeConfig().getModelRouter().getBalancedModel();
-        return val != null ? val : botProperties.getRouter().getBalancedModel();
+        return val != null ? val : DEFAULT_BALANCED_MODEL;
     }
 
     public String getBalancedModelReasoning() {
         String val = getRuntimeConfig().getModelRouter().getBalancedModelReasoning();
-        return val != null ? val : botProperties.getRouter().getBalancedModelReasoning();
+        return val != null ? val : DEFAULT_BALANCED_REASONING;
     }
 
     public String getSmartModel() {
         String val = getRuntimeConfig().getModelRouter().getSmartModel();
-        return val != null ? val : botProperties.getRouter().getSmartModel();
+        return val != null ? val : DEFAULT_SMART_MODEL;
     }
 
     public String getSmartModelReasoning() {
         String val = getRuntimeConfig().getModelRouter().getSmartModelReasoning();
-        return val != null ? val : botProperties.getRouter().getSmartModelReasoning();
+        return val != null ? val : DEFAULT_SMART_REASONING;
     }
 
     public String getCodingModel() {
         String val = getRuntimeConfig().getModelRouter().getCodingModel();
-        return val != null ? val : botProperties.getRouter().getCodingModel();
+        return val != null ? val : DEFAULT_CODING_MODEL;
     }
 
     public String getCodingModelReasoning() {
         String val = getRuntimeConfig().getModelRouter().getCodingModelReasoning();
-        return val != null ? val : botProperties.getRouter().getCodingModelReasoning();
+        return val != null ? val : DEFAULT_CODING_REASONING;
     }
 
     public String getDeepModel() {
         String val = getRuntimeConfig().getModelRouter().getDeepModel();
-        return val != null ? val : botProperties.getRouter().getDeepModel();
+        return val != null ? val : DEFAULT_DEEP_MODEL;
     }
 
     public String getDeepModelReasoning() {
         String val = getRuntimeConfig().getModelRouter().getDeepModelReasoning();
-        return val != null ? val : botProperties.getRouter().getDeepModelReasoning();
+        return val != null ? val : DEFAULT_DEEP_REASONING;
     }
 
     public double getTemperature() {
         Double val = getRuntimeConfig().getModelRouter().getTemperature();
-        return val != null ? val : botProperties.getRouter().getTemperature();
+        return val != null ? val : DEFAULT_TEMPERATURE;
     }
 
     public boolean isDynamicTierEnabled() {
         Boolean val = getRuntimeConfig().getModelRouter().getDynamicTierEnabled();
-        return val != null ? val : botProperties.getRouter().isDynamicTierEnabled();
+        return val != null ? val : true;
     }
 
     // ==================== Brave Search ====================
 
     public boolean isBraveSearchEnabled() {
         Boolean val = getRuntimeConfig().getTools().getBraveSearchEnabled();
-        return val != null ? val : botProperties.getTools().getBraveSearch().isEnabled();
+        return val != null && val;
     }
 
     public String getBraveSearchApiKey() {
         String val = getRuntimeConfig().getTools().getBraveSearchApiKey();
-        if (val != null && !val.isBlank()) {
-            return val;
-        }
-        return botProperties.getTools().getBraveSearch().getApiKey();
+        return val != null ? val : "";
+    }
+
+    public boolean isFilesystemEnabled() {
+        Boolean val = getRuntimeConfig().getTools().getFilesystemEnabled();
+        return val != null ? val : true;
+    }
+
+    public boolean isShellEnabled() {
+        Boolean val = getRuntimeConfig().getTools().getShellEnabled();
+        return val != null ? val : true;
+    }
+
+    public boolean isSkillManagementEnabled() {
+        Boolean val = getRuntimeConfig().getTools().getSkillManagementEnabled();
+        return val != null ? val : true;
+    }
+
+    public boolean isSkillTransitionEnabled() {
+        Boolean val = getRuntimeConfig().getTools().getSkillTransitionEnabled();
+        return val != null ? val : true;
+    }
+
+    public boolean isTierToolEnabled() {
+        Boolean val = getRuntimeConfig().getTools().getTierEnabled();
+        return val != null ? val : true;
+    }
+
+    public boolean isGoalManagementEnabled() {
+        Boolean val = getRuntimeConfig().getTools().getGoalManagementEnabled();
+        return val != null ? val : true;
     }
 
     // ==================== Voice ====================
 
     public boolean isVoiceEnabled() {
         Boolean val = getRuntimeConfig().getVoice().getEnabled();
-        return val != null ? val : botProperties.getVoice().isEnabled();
+        return val != null && val;
     }
 
     public String getVoiceApiKey() {
         String val = getRuntimeConfig().getVoice().getApiKey();
-        if (val != null && !val.isBlank()) {
-            return val;
-        }
-        return botProperties.getVoice().getApiKey();
+        return val != null ? val : "";
     }
 
     public String getVoiceId() {
         String val = getRuntimeConfig().getVoice().getVoiceId();
-        return val != null ? val : botProperties.getVoice().getVoiceId();
+        return val != null ? val : DEFAULT_VOICE_ID;
     }
 
     public String getTtsModelId() {
         String val = getRuntimeConfig().getVoice().getTtsModelId();
-        return val != null ? val : botProperties.getVoice().getTtsModelId();
+        return val != null ? val : DEFAULT_TTS_MODEL;
     }
 
     public String getSttModelId() {
         String val = getRuntimeConfig().getVoice().getSttModelId();
-        return val != null ? val : botProperties.getVoice().getSttModelId();
+        return val != null ? val : DEFAULT_STT_MODEL;
     }
 
     public float getVoiceSpeed() {
         Float val = getRuntimeConfig().getVoice().getSpeed();
-        return val != null ? val : botProperties.getVoice().getSpeed();
+        return val != null ? val : DEFAULT_VOICE_SPEED;
     }
 
     // ==================== IMAP ====================
 
     public BotProperties.ImapToolProperties getResolvedImapConfig() {
         RuntimeConfig.ImapConfig rc = getRuntimeConfig().getTools().getImap();
-        BotProperties.ImapToolProperties base = botProperties.getTools().getImap();
         BotProperties.ImapToolProperties resolved = new BotProperties.ImapToolProperties();
-        resolved.setEnabled(rc.getEnabled() != null ? rc.getEnabled() : base.isEnabled());
-        resolved.setHost(rc.getHost() != null ? rc.getHost() : base.getHost());
-        resolved.setPort(rc.getPort() != null ? rc.getPort() : base.getPort());
-        resolved.setUsername(rc.getUsername() != null ? rc.getUsername() : base.getUsername());
-        resolved.setPassword(rc.getPassword() != null ? rc.getPassword() : base.getPassword());
-        resolved.setSecurity(rc.getSecurity() != null ? rc.getSecurity() : base.getSecurity());
-        resolved.setSslTrust(rc.getSslTrust() != null ? rc.getSslTrust() : base.getSslTrust());
-        resolved.setConnectTimeout(rc.getConnectTimeout() != null ? rc.getConnectTimeout() : base.getConnectTimeout());
-        resolved.setReadTimeout(rc.getReadTimeout() != null ? rc.getReadTimeout() : base.getReadTimeout());
-        resolved.setMaxBodyLength(rc.getMaxBodyLength() != null ? rc.getMaxBodyLength() : base.getMaxBodyLength());
+        resolved.setEnabled(rc.getEnabled() != null && rc.getEnabled());
+        resolved.setHost(rc.getHost() != null ? rc.getHost() : "");
+        resolved.setPort(rc.getPort() != null ? rc.getPort() : DEFAULT_IMAP_PORT);
+        resolved.setUsername(rc.getUsername() != null ? rc.getUsername() : "");
+        resolved.setPassword(rc.getPassword() != null ? rc.getPassword() : "");
+        resolved.setSecurity(rc.getSecurity() != null ? rc.getSecurity() : DEFAULT_IMAP_SECURITY);
+        resolved.setSslTrust(rc.getSslTrust() != null ? rc.getSslTrust() : "");
+        resolved.setConnectTimeout(
+                rc.getConnectTimeout() != null ? rc.getConnectTimeout() : DEFAULT_IMAP_CONNECT_TIMEOUT);
+        resolved.setReadTimeout(rc.getReadTimeout() != null ? rc.getReadTimeout() : DEFAULT_IMAP_READ_TIMEOUT);
+        resolved.setMaxBodyLength(rc.getMaxBodyLength() != null ? rc.getMaxBodyLength() : DEFAULT_IMAP_MAX_BODY_LENGTH);
         resolved.setDefaultMessageLimit(
-                rc.getDefaultMessageLimit() != null ? rc.getDefaultMessageLimit() : base.getDefaultMessageLimit());
+                rc.getDefaultMessageLimit() != null ? rc.getDefaultMessageLimit() : DEFAULT_IMAP_DEFAULT_MESSAGE_LIMIT);
         return resolved;
     }
 
@@ -215,18 +264,126 @@ public class RuntimeConfigService {
 
     public BotProperties.SmtpToolProperties getResolvedSmtpConfig() {
         RuntimeConfig.SmtpConfig rc = getRuntimeConfig().getTools().getSmtp();
-        BotProperties.SmtpToolProperties base = botProperties.getTools().getSmtp();
         BotProperties.SmtpToolProperties resolved = new BotProperties.SmtpToolProperties();
-        resolved.setEnabled(rc.getEnabled() != null ? rc.getEnabled() : base.isEnabled());
-        resolved.setHost(rc.getHost() != null ? rc.getHost() : base.getHost());
-        resolved.setPort(rc.getPort() != null ? rc.getPort() : base.getPort());
-        resolved.setUsername(rc.getUsername() != null ? rc.getUsername() : base.getUsername());
-        resolved.setPassword(rc.getPassword() != null ? rc.getPassword() : base.getPassword());
-        resolved.setSecurity(rc.getSecurity() != null ? rc.getSecurity() : base.getSecurity());
-        resolved.setSslTrust(rc.getSslTrust() != null ? rc.getSslTrust() : base.getSslTrust());
-        resolved.setConnectTimeout(rc.getConnectTimeout() != null ? rc.getConnectTimeout() : base.getConnectTimeout());
-        resolved.setReadTimeout(rc.getReadTimeout() != null ? rc.getReadTimeout() : base.getReadTimeout());
+        resolved.setEnabled(rc.getEnabled() != null && rc.getEnabled());
+        resolved.setHost(rc.getHost() != null ? rc.getHost() : "");
+        resolved.setPort(rc.getPort() != null ? rc.getPort() : DEFAULT_SMTP_PORT);
+        resolved.setUsername(rc.getUsername() != null ? rc.getUsername() : "");
+        resolved.setPassword(rc.getPassword() != null ? rc.getPassword() : "");
+        resolved.setSecurity(rc.getSecurity() != null ? rc.getSecurity() : DEFAULT_SMTP_SECURITY);
+        resolved.setSslTrust(rc.getSslTrust() != null ? rc.getSslTrust() : "");
+        resolved.setConnectTimeout(
+                rc.getConnectTimeout() != null ? rc.getConnectTimeout() : DEFAULT_SMTP_CONNECT_TIMEOUT);
+        resolved.setReadTimeout(rc.getReadTimeout() != null ? rc.getReadTimeout() : DEFAULT_SMTP_READ_TIMEOUT);
         return resolved;
+    }
+
+    // ==================== Auto Mode ====================
+
+    public boolean isAutoModeEnabled() {
+        Boolean val = getRuntimeConfig().getAutoMode().getEnabled();
+        return val != null && val;
+    }
+
+    public int getAutoTickIntervalSeconds() {
+        Integer val = getRuntimeConfig().getAutoMode().getTickIntervalSeconds();
+        return val != null ? val : DEFAULT_AUTO_TICK_INTERVAL_SECONDS;
+    }
+
+    public int getAutoTaskTimeLimitMinutes() {
+        Integer val = getRuntimeConfig().getAutoMode().getTaskTimeLimitMinutes();
+        return val != null ? val : DEFAULT_AUTO_TIMEOUT_MINUTES;
+    }
+
+    public boolean isAutoStartEnabled() {
+        Boolean val = getRuntimeConfig().getAutoMode().getAutoStart();
+        return val != null ? val : true;
+    }
+
+    public int getAutoMaxGoals() {
+        Integer val = getRuntimeConfig().getAutoMode().getMaxGoals();
+        return val != null ? val : DEFAULT_AUTO_MAX_GOALS;
+    }
+
+    public String getAutoModelTier() {
+        String val = getRuntimeConfig().getAutoMode().getModelTier();
+        return val != null ? val : DEFAULT_AUTO_MODEL_TIER;
+    }
+
+    public boolean isAutoNotifyMilestonesEnabled() {
+        Boolean val = getRuntimeConfig().getAutoMode().getNotifyMilestones();
+        return val != null ? val : true;
+    }
+
+    // ==================== Rate Limit ====================
+
+    public boolean isRateLimitEnabled() {
+        Boolean val = getRuntimeConfig().getRateLimit().getEnabled();
+        return val != null ? val : true;
+    }
+
+    public int getUserRequestsPerMinute() {
+        Integer val = getRuntimeConfig().getRateLimit().getUserRequestsPerMinute();
+        return val != null ? val : DEFAULT_RATE_USER_PER_MINUTE;
+    }
+
+    public int getUserRequestsPerHour() {
+        Integer val = getRuntimeConfig().getRateLimit().getUserRequestsPerHour();
+        return val != null ? val : DEFAULT_RATE_USER_PER_HOUR;
+    }
+
+    public int getUserRequestsPerDay() {
+        Integer val = getRuntimeConfig().getRateLimit().getUserRequestsPerDay();
+        return val != null ? val : DEFAULT_RATE_USER_PER_DAY;
+    }
+
+    public int getChannelMessagesPerSecond() {
+        Integer val = getRuntimeConfig().getRateLimit().getChannelMessagesPerSecond();
+        return val != null ? val : DEFAULT_RATE_CHANNEL_PER_SECOND;
+    }
+
+    public int getLlmRequestsPerMinute() {
+        Integer val = getRuntimeConfig().getRateLimit().getLlmRequestsPerMinute();
+        return val != null ? val : DEFAULT_RATE_LLM_PER_MINUTE;
+    }
+
+    // ==================== Security ====================
+
+    public boolean isSanitizeInputEnabled() {
+        Boolean val = getRuntimeConfig().getSecurity().getSanitizeInput();
+        return val != null ? val : true;
+    }
+
+    public boolean isPromptInjectionDetectionEnabled() {
+        Boolean val = getRuntimeConfig().getSecurity().getDetectPromptInjection();
+        return val != null ? val : true;
+    }
+
+    public boolean isCommandInjectionDetectionEnabled() {
+        Boolean val = getRuntimeConfig().getSecurity().getDetectCommandInjection();
+        return val != null ? val : true;
+    }
+
+    public int getMaxInputLength() {
+        Integer val = getRuntimeConfig().getSecurity().getMaxInputLength();
+        return val != null ? val : DEFAULT_MAX_INPUT_LENGTH;
+    }
+
+    // ==================== Compaction ====================
+
+    public boolean isCompactionEnabled() {
+        Boolean val = getRuntimeConfig().getCompaction().getEnabled();
+        return val != null ? val : true;
+    }
+
+    public int getCompactionMaxContextTokens() {
+        Integer val = getRuntimeConfig().getCompaction().getMaxContextTokens();
+        return val != null ? val : DEFAULT_AUTO_COMPACT_MAX_TOKENS;
+    }
+
+    public int getCompactionKeepLastMessages() {
+        Integer val = getRuntimeConfig().getCompaction().getKeepLastMessages();
+        return val != null ? val : DEFAULT_AUTO_COMPACT_KEEP_LAST;
     }
 
     // ==================== Invite Codes ====================

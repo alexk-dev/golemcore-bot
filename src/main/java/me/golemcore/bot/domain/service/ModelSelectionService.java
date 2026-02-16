@@ -41,6 +41,7 @@ import java.util.Map;
 public class ModelSelectionService {
 
     private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
     private final ModelConfigService modelConfigService;
     private final UserPreferencesService preferencesService;
 
@@ -86,7 +87,7 @@ public class ModelSelectionService {
     public int resolveMaxInputTokens(String tier) {
         ModelSelection selection = resolveForTier(tier);
         if (selection.model() == null) {
-            return properties.getAutoCompact().getMaxContextTokens();
+            return runtimeConfigService.getCompactionMaxContextTokens();
         }
         return modelConfigService.getMaxInputTokens(selection.model(), selection.reasoning());
     }
@@ -169,12 +170,15 @@ public class ModelSelectionService {
     }
 
     private ModelSelection resolveFromRouter(String tier) {
-        BotProperties.ModelRouterProperties router = properties.getRouter();
         return switch (tier) {
-        case "deep" -> new ModelSelection(router.getDeepModel(), router.getDeepModelReasoning());
-        case "coding" -> new ModelSelection(router.getCodingModel(), router.getCodingModelReasoning());
-        case "smart" -> new ModelSelection(router.getSmartModel(), router.getSmartModelReasoning());
-        default -> new ModelSelection(router.getBalancedModel(), router.getBalancedModelReasoning());
+        case "deep" ->
+            new ModelSelection(runtimeConfigService.getDeepModel(), runtimeConfigService.getDeepModelReasoning());
+        case "coding" ->
+            new ModelSelection(runtimeConfigService.getCodingModel(), runtimeConfigService.getCodingModelReasoning());
+        case "smart" ->
+            new ModelSelection(runtimeConfigService.getSmartModel(), runtimeConfigService.getSmartModelReasoning());
+        default -> new ModelSelection(runtimeConfigService.getBalancedModel(),
+                runtimeConfigService.getBalancedModelReasoning());
         };
     }
 

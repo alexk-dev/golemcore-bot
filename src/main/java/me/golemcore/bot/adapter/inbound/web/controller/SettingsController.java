@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.adapter.inbound.web.dto.PreferencesUpdateRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.SettingsResponse;
 import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.TelegramRestartEvent;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -31,6 +32,9 @@ import java.util.Map;
 @RequestMapping("/api/settings")
 @RequiredArgsConstructor
 public class SettingsController {
+
+    private static final String TELEGRAM_AUTH_MODE_USER = "user";
+    private static final String TELEGRAM_AUTH_MODE_INVITE = "invite";
 
     private final UserPreferencesService preferencesService;
     private final ModelSelectionService modelSelectionService;
@@ -121,6 +125,7 @@ public class SettingsController {
     @PutMapping("/runtime/telegram")
     public Mono<ResponseEntity<RuntimeConfig>> updateTelegramConfig(
             @RequestBody RuntimeConfig.TelegramConfig telegramConfig) {
+        normalizeAndValidateTelegramConfig(telegramConfig);
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         config.setTelegram(telegramConfig);
         runtimeConfigService.updateRuntimeConfig(config);
@@ -210,7 +215,7 @@ public class SettingsController {
 
     @PostMapping("/telegram/restart")
     public Mono<ResponseEntity<Void>> restartTelegram() {
-        eventPublisher.publishEvent(new TelegramRestartEvent(this));
+        eventPublisher.publishEvent(new TelegramRestartEvent());
         return Mono.just(ResponseEntity.ok().build());
     }
 
@@ -225,14 +230,32 @@ public class SettingsController {
             RuntimeConfig.CompactionConfig compaction) {
     }
 
-    /**
-     * Event published when Telegram adapter should restart.
-     */
-    public static class TelegramRestartEvent extends org.springframework.context.ApplicationEvent {
-        private static final long serialVersionUID = 1L;
+    private void normalizeAndValidateTelegramConfig(RuntimeConfig.TelegramConfig telegramConfig) {
+        String authMode = telegramConfig.getAuthMode();
+        if (authMode == null || authMode.isBlank()) {
+            telegramConfig.setAuthMode(TELEGRAM_AUTH_MODE_INVITE);
+            authMode = TELEGRAM_AUTH_MODE_INVITE;
+        }
 
-        public TelegramRestartEvent(Object source) {
-            super(source);
+        if (!TELEGRAM_AUTH_MODE_USER.equals(authMode) && !TELEGRAM_AUTH_MODE_INVITE.equals(authMode)) {
+            throw new IllegalArgumentException("telegram.authMode must be 'user' or 'invite'");
+        }
+
+        List<String> allowedUsers = telegramConfig.getAllowedUsers();
+        if (allowedUsers == null) {
+            telegramConfig.setAllowedUsers(List.of());
+            return;
+        }
+
+        for (String userId : allowedUsers) {
+            if (userId == null || !userId.matches("\\d+")) {
+                throw new IllegalArgumentException("telegram.allowedUsers must contain numeric IDs only");
+            }
+        }
+
+        if (TELEGRAM_AUTH_MODE_USER.equals(authMode) && allowedUsers.size() > 1) {
+            throw new IllegalArgumentException("telegram.allowedUsers supports only one ID in user mode");
         }
     }
+
 }

@@ -2,6 +2,7 @@ package me.golemcore.bot.tools;
 
 import me.golemcore.bot.domain.model.Attachment;
 import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.security.InjectionGuard;
 import org.junit.jupiter.api.BeforeEach;
@@ -13,6 +14,8 @@ import java.nio.file.Path;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class FileSystemToolTest {
 
@@ -34,11 +37,16 @@ class FileSystemToolTest {
     Path tempDir;
 
     private FileSystemTool tool;
+    private RuntimeConfigService runtimeConfigService;
 
     @BeforeEach
     void setUp() {
         BotProperties properties = createTestProperties(tempDir.toString());
-        tool = new FileSystemTool(properties, new InjectionGuard());
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isFilesystemEnabled()).thenReturn(true);
+        when(runtimeConfigService.isPromptInjectionDetectionEnabled()).thenReturn(true);
+        when(runtimeConfigService.isCommandInjectionDetectionEnabled()).thenReturn(true);
+        tool = new FileSystemTool(properties, runtimeConfigService, new InjectionGuard(runtimeConfigService));
     }
 
     private static BotProperties createTestProperties(String workspace) {
@@ -207,7 +215,14 @@ class FileSystemToolTest {
     void disabledTool() throws Exception {
         BotProperties disabledProps = createTestProperties(tempDir.toString());
         disabledProps.getTools().getFilesystem().setEnabled(false);
-        FileSystemTool disabledTool = new FileSystemTool(disabledProps, new InjectionGuard());
+        RuntimeConfigService disabledRuntimeConfigService = mock(RuntimeConfigService.class);
+        when(disabledRuntimeConfigService.isFilesystemEnabled()).thenReturn(false);
+        when(disabledRuntimeConfigService.isPromptInjectionDetectionEnabled()).thenReturn(true);
+        when(disabledRuntimeConfigService.isCommandInjectionDetectionEnabled()).thenReturn(true);
+        FileSystemTool disabledTool = new FileSystemTool(
+                disabledProps,
+                disabledRuntimeConfigService,
+                new InjectionGuard(disabledRuntimeConfigService));
 
         ToolResult result = disabledTool.execute(Map.of(
                 OPERATION, READ_FILE,

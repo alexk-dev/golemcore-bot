@@ -4,7 +4,9 @@ import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.SecurityWebFiltersOrder;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
@@ -43,6 +45,17 @@ public class DashboardSecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .httpBasic(ServerHttpSecurity.HttpBasicSpec::disable)
                 .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
+                .exceptionHandling(exceptionHandlingSpec -> exceptionHandlingSpec
+                        .authenticationEntryPoint((exchange, ex) -> {
+                            exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+                            exchange.getResponse().getHeaders().remove(HttpHeaders.WWW_AUTHENTICATE);
+                            return exchange.getResponse().setComplete();
+                        })
+                        .accessDeniedHandler((exchange, ex) -> {
+                            exchange.getResponse().setStatusCode(HttpStatus.FORBIDDEN);
+                            exchange.getResponse().getHeaders().remove(HttpHeaders.WWW_AUTHENTICATE);
+                            return exchange.getResponse().setComplete();
+                        }))
                 .addFilterBefore(jwtAuthenticationFilter, SecurityWebFiltersOrder.AUTHENTICATION)
                 .authorizeExchange(exchanges -> exchanges
                         .pathMatchers("/api/auth/login", "/api/auth/mfa-status", "/api/auth/refresh").permitAll()

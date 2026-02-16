@@ -24,16 +24,22 @@ export default function Topbar() {
     <div className="topbar d-flex align-items-center justify-content-end px-4 py-2">
       <div className="d-flex align-items-center gap-2">
         <Button
-          variant={theme === 'light' ? 'outline-secondary' : 'outline-light'}
-          size="sm"
+          variant="secondary"
+          className="text-decoration-none d-flex align-items-center justify-content-center p-0"
+          style={{ width: 34, height: 34, borderRadius: '8px' }}
           onClick={toggleTheme}
           title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
         >
-          {theme === 'light' ? <FiMoon size={16} /> : <FiSun size={16} />}
+          {theme === 'light' ? <FiMoon size={18} /> : <FiSun size={18} />}
         </Button>
-        <Button variant="outline-secondary" size="sm" onClick={handleLogout}>
-          <FiLogOut size={14} className="me-1" />
-          Logout
+        <Button 
+          variant="secondary"
+          className="text-decoration-none d-flex align-items-center px-3"
+          style={{ height: 34, borderRadius: '8px' }}
+          onClick={handleLogout}
+        >
+          <FiLogOut size={16} className="me-2" />
+          <span className="fw-medium small">Logout</span>
         </Button>
       </div>
     </div>

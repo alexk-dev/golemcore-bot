@@ -78,7 +78,7 @@ public class AutoConfiguration {
     @PostConstruct
     public void init() {
         log.info("Java AI Bot starting...");
-        log.info("Balanced Model: {}", properties.getRouter().getBalancedModel());
+        log.info("Balanced Model: {}", runtimeConfigService.getBalancedModel());
         log.info("LLM Provider: {}", properties.getLlm().getProvider());
         log.info("Storage Path: {}", properties.getStorage().getLocal().getBasePath());
 

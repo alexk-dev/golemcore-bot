@@ -157,7 +157,7 @@ public class ResponseRoutingSystem implements AgentSystem {
         }
         String chatId = session.getChatId();
         try {
-            channel.sendMessage(chatId, outgoing.getText()).get(30, TimeUnit.SECONDS);
+            channel.sendMessage(chatId, outgoing.getText(), outgoing.getHints()).get(30, TimeUnit.SECONDS);
             return null;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

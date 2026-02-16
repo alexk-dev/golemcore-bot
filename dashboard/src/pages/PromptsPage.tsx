@@ -71,9 +71,9 @@ export default function PromptsPage() {
 
   return (
     <div>
-      <div className="d-flex align-items-center justify-content-between mb-4">
+      <div className="section-header d-flex align-items-center justify-content-between">
         <h4 className="mb-0">Prompts</h4>
-        <Button size="sm" variant="outline-primary" onClick={() => setShowCreate(!showCreate)}>
+        <Button size="sm" variant="primary" onClick={() => setShowCreate(!showCreate)}>
           + New Section
         </Button>
       </div>
@@ -146,8 +146,8 @@ export default function PromptsPage() {
                 </Form.Group>
                 <div className="d-flex gap-2">
                   <Button size="sm" onClick={handleSave}>Save</Button>
-                  <Button size="sm" variant="outline-secondary" onClick={handlePreview}>Preview</Button>
-                  <Button size="sm" variant="outline-danger" onClick={handleDelete}>Delete</Button>
+                  <Button size="sm" variant="secondary" onClick={handlePreview}>Preview</Button>
+                  <Button size="sm" variant="danger" onClick={handleDelete}>Delete</Button>
                 </div>
                 {preview && (
                   <Card className="mt-3 bg-body-tertiary">

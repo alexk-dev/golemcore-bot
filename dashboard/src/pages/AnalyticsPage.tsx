@@ -1,12 +1,12 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Card, Row, Col, ButtonGroup, Button, Spinner } from 'react-bootstrap';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { useUsageStats, useUsageByModel } from '../hooks/useUsage';
-
-const COLORS = ['#6366f1', '#06b6d4', '#f59e0b', '#ef4444', '#10b981', '#8b5cf6'];
+import { useThemeStore } from '../store/themeStore';
 
 export default function AnalyticsPage() {
   const [period, setPeriod] = useState('24h');
+  const theme = useThemeStore((s) => s.theme);
   const { data: stats, isLoading: statsLoading } = useUsageStats(period);
   const { data: byModel, isLoading: modelLoading } = useUsageByModel(period);
 
@@ -18,13 +18,43 @@ export default function AnalyticsPage() {
       }))
     : [];
 
+  const chartPalette = useMemo(() => {
+    if (typeof window === 'undefined') {
+      return {
+        axisColor: '#6c757d',
+        tooltipBg: '#ffffff',
+        tooltipBorder: '#dee2e6',
+        primary: '#0d6efd',
+        fills: ['#0d6efd', '#198754', '#ffc107', '#dc3545', '#0dcaf0', '#6c757d'],
+      };
+    }
+
+    const css = window.getComputedStyle(document.documentElement);
+    const readVar = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
+
+    return {
+      axisColor: readVar('--bs-secondary-color', '#6c757d'),
+      tooltipBg: readVar('--bs-body-bg', '#ffffff'),
+      tooltipBorder: readVar('--bs-border-color', '#dee2e6'),
+      primary: readVar('--bs-primary', '#0d6efd'),
+      fills: [
+        readVar('--bs-primary', '#0d6efd'),
+        readVar('--bs-success', '#198754'),
+        readVar('--bs-warning', '#ffc107'),
+        readVar('--bs-danger', '#dc3545'),
+        readVar('--bs-info', '#0dcaf0'),
+        readVar('--bs-secondary', '#6c757d'),
+      ],
+    };
+  }, [theme]);
+
   return (
     <div>
-      <div className="d-flex align-items-center justify-content-between mb-4">
+      <div className="section-header d-flex align-items-center justify-content-between">
         <h4 className="mb-0">Analytics</h4>
         <ButtonGroup size="sm">
           {['24h', '7d', '30d'].map((p) => (
-            <Button key={p} variant={period === p ? 'primary' : 'outline-primary'} onClick={() => setPeriod(p)}>
+            <Button key={p} variant={period === p ? 'primary' : 'secondary'} onClick={() => setPeriod(p)}>
               {p}
             </Button>
           ))}
@@ -81,10 +111,15 @@ export default function AnalyticsPage() {
                 <Card.Title>Tokens by Model</Card.Title>
                 <ResponsiveContainer width="100%" height={300}>
                   <AreaChart data={modelData}>
-                    <XAxis dataKey="name" />
-                    <YAxis />
-                    <Tooltip />
-                    <Area type="monotone" dataKey="tokens" fill="#6366f1" stroke="#6366f1" />
+                    <XAxis dataKey="name" tick={{ fill: chartPalette.axisColor }} />
+                    <YAxis tick={{ fill: chartPalette.axisColor }} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: chartPalette.tooltipBg,
+                        borderColor: chartPalette.tooltipBorder,
+                      }}
+                    />
+                    <Area type="monotone" dataKey="tokens" fill={chartPalette.primary} stroke={chartPalette.primary} fillOpacity={0.2} />
                   </AreaChart>
                 </ResponsiveContainer>
               </Card.Body>
@@ -98,10 +133,15 @@ export default function AnalyticsPage() {
                   <PieChart>
                     <Pie data={modelData} dataKey="tokens" nameKey="name" cx="50%" cy="50%" outerRadius={100}>
                       {modelData.map((_, i) => (
-                        <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                        <Cell key={i} fill={chartPalette.fills[i % chartPalette.fills.length]} />
                       ))}
                     </Pie>
-                    <Tooltip />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: chartPalette.tooltipBg,
+                        borderColor: chartPalette.tooltipBorder,
+                      }}
+                    />
                   </PieChart>
                 </ResponsiveContainer>
               </Card.Body>

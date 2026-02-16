@@ -3,7 +3,6 @@ package me.golemcore.bot.adapter.inbound.telegram;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.i18n.MessageService;
 import me.golemcore.bot.port.inbound.CommandPort;
 import me.golemcore.bot.security.AllowlistValidator;
@@ -48,12 +47,6 @@ class TelegramAdapterHandleMessageTest {
     @BeforeEach
     @SuppressWarnings("unchecked")
     void setUp() {
-        BotProperties properties = mock(BotProperties.class);
-        BotProperties.ChannelProperties telegramProps = new BotProperties.ChannelProperties();
-        telegramProps.setEnabled(true);
-        telegramProps.setToken("test-token");
-        when(properties.getChannels()).thenReturn(Map.of("telegram", telegramProps));
-
         allowlistValidator = mock(AllowlistValidator.class);
         when(allowlistValidator.isAllowed("telegram", "123")).thenReturn(true);
         when(allowlistValidator.isBlocked("123")).thenReturn(false);
@@ -70,7 +63,6 @@ class TelegramAdapterHandleMessageTest {
         when(runtimeConfigService.getTelegramToken()).thenReturn("test-token");
 
         adapter = new TelegramAdapter(
-                properties,
                 runtimeConfigService,
                 allowlistValidator,
                 eventPublisher,

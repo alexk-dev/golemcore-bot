@@ -1,14 +1,18 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Badge, Form } from 'react-bootstrap';
+import { Badge } from 'react-bootstrap';
 import { useAuthStore } from '../../store/authStore';
+import { useContextPanelStore } from '../../store/contextPanelStore';
 import { listSessions, getSession } from '../../api/sessions';
+import { getGoals } from '../../api/goals';
 import { updatePreferences } from '../../api/settings';
 import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
+import ContextPanel from './ContextPanel';
 
 const SESSION_KEY = 'golem-chat-session-id';
 const INITIAL_MESSAGES = 50;
 const LOAD_MORE_COUNT = 50;
+const GOALS_POLL_INTERVAL = 30000;
 
 function getChatSessionId(): string {
   let id = localStorage.getItem(SESSION_KEY);
@@ -39,6 +43,7 @@ export default function ChatWindow() {
   const token = useAuthStore((s) => s.accessToken);
   const chatSessionId = useRef(getChatSessionId()).current;
   const shouldAutoScroll = useRef(true);
+  const { panelOpen, togglePanel, setTurnMetadata, setGoals } = useContextPanelStore();
 
   // Load history from backend on mount
   useEffect(() => {
@@ -48,10 +53,8 @@ export default function ChatWindow() {
         const sorted = sessions.sort((a, b) =>
           (b.updatedAt ?? b.createdAt ?? '').localeCompare(a.updatedAt ?? a.createdAt ?? '')
         );
-        // Find matching session or the latest active one
         const match = sorted.find((s) => s.chatId === chatSessionId) ?? sorted[0];
         if (match) {
-          // If we found a different session, update our session ID
           if (match.chatId !== chatSessionId) {
             localStorage.setItem(SESSION_KEY, match.chatId);
           }
@@ -65,7 +68,6 @@ export default function ChatWindow() {
             .filter((m) => m.role === 'user' || m.role === 'assistant')
             .map((m) => ({ role: m.role, content: m.content }));
           setAllMessages(history);
-          // Show only the last N messages initially
           setVisibleStart(Math.max(0, history.length - INITIAL_MESSAGES));
         }
         setHistoryLoaded(true);
@@ -73,23 +75,32 @@ export default function ChatWindow() {
       .catch(() => setHistoryLoaded(true));
   }, [chatSessionId, historyLoaded]);
 
+  // Poll goals every 30s
+  useEffect(() => {
+    const fetchGoals = () => {
+      getGoals()
+        .then((res) => setGoals(res.goals, res.featureEnabled, res.autoModeEnabled))
+        .catch(() => { /* ignore */ });
+    };
+    fetchGoals();
+    const interval = setInterval(fetchGoals, GOALS_POLL_INTERVAL);
+    return () => clearInterval(interval);
+  }, [setGoals]);
+
   // Infinite scroll — load more on scroll to top
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
 
-    // Check if user scrolled near bottom
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
     shouldAutoScroll.current = nearBottom;
 
-    // Load more when scrolled to top
     if (el.scrollTop < 50 && visibleStart > 0 && !loadingMore) {
       setLoadingMore(true);
       const prevScrollHeight = el.scrollHeight;
       const newStart = Math.max(0, visibleStart - LOAD_MORE_COUNT);
       setVisibleStart(newStart);
 
-      // Preserve scroll position after loading more
       requestAnimationFrame(() => {
         const newScrollHeight = el.scrollHeight;
         el.scrollTop = newScrollHeight - prevScrollHeight;
@@ -106,7 +117,6 @@ export default function ChatWindow() {
     ws.onopen = () => setConnected(true);
     ws.onclose = () => {
       setConnected(false);
-      // Auto-reconnect after 3s
       setTimeout(() => connect(), 3000);
     };
     ws.onmessage = (event) => {
@@ -119,6 +129,20 @@ export default function ChatWindow() {
         }
         if (data.type === 'assistant_chunk' || data.type === 'assistant_done') {
           setTyping(false);
+
+          // Extract hints for context panel
+          if (data.hint) {
+            setTurnMetadata({
+              model: data.hint.model ?? null,
+              tier: data.hint.tier ?? null,
+              inputTokens: data.hint.inputTokens ?? null,
+              outputTokens: data.hint.outputTokens ?? null,
+              totalTokens: data.hint.totalTokens ?? null,
+              latencyMs: data.hint.latencyMs ?? null,
+              maxContextTokens: data.hint.maxContextTokens ?? null,
+            });
+          }
+
           setAllMessages((prev) => {
             const last = prev[prev.length - 1];
             if (last && last.role === 'assistant' && data.type === 'assistant_chunk') {
@@ -134,7 +158,7 @@ export default function ChatWindow() {
 
     wsRef.current = ws;
     return () => ws.close();
-  }, [token]);
+  }, [token, setTurnMetadata]);
 
   useEffect(() => {
     const cleanup = connect();
@@ -175,61 +199,58 @@ export default function ChatWindow() {
   const hasMore = visibleStart > 0;
 
   return (
-    <div className="chat-container">
-      {/* Toolbar */}
-      <div className="chat-toolbar">
-        <div className="d-flex align-items-center gap-2 flex-grow-1">
-          <span className={`status-dot ${connected ? 'online' : 'offline'}`} />
-          <small className="text-muted">{connected ? 'Connected' : 'Reconnecting...'}</small>
-        </div>
-        <div className="d-flex align-items-center gap-2">
-          <Form.Select
-            size="sm"
-            value={tier}
-            onChange={(e) => handleTierChange(e.target.value)}
-            style={{ width: 120 }}
+    <div className="chat-page-layout">
+      <div className="chat-container">
+        {/* Toolbar */}
+        <div className="chat-toolbar d-flex align-items-center">
+          <div className="d-flex align-items-center gap-2 flex-grow-1">
+            <span className={`status-dot ${connected ? 'online' : 'offline'}`} />
+            <small className="text-body-secondary">{connected ? 'Connected' : 'Reconnecting...'}</small>
+          </div>
+          <button
+            className="btn btn-sm btn-outline-secondary panel-toggle-btn"
+            onClick={togglePanel}
+            title={panelOpen ? 'Hide context panel' : 'Show context panel'}
           >
-            <option value="balanced">Balanced</option>
-            <option value="smart">Smart</option>
-            <option value="coding">Coding</option>
-            <option value="deep">Deep</option>
-          </Form.Select>
-          <Form.Check
-            type="switch"
-            label={<small className="text-muted">Force</small>}
-            checked={tierForce}
-            onChange={(e) => handleForceChange(e.target.checked)}
-          />
+            {panelOpen ? '\u00BB' : '\u00AB'}
+          </button>
         </div>
+
+        {/* Messages */}
+        <div className="chat-window" ref={scrollRef} onScroll={handleScroll}>
+          {hasMore && (
+            <div className="text-center py-2">
+              {loadingMore ? (
+                <small className="text-body-secondary">Loading...</small>
+              ) : (
+                <Badge bg="secondary" className="cursor-pointer" style={{ cursor: 'pointer' }}
+                  onClick={() => setVisibleStart(Math.max(0, visibleStart - LOAD_MORE_COUNT))}>
+                  Load earlier messages
+                </Badge>
+              )}
+            </div>
+          )}
+          {visibleMessages.map((msg, i) => (
+            <MessageBubble key={visibleStart + i} role={msg.role} content={msg.content} />
+          ))}
+          {typing && (
+            <div className="typing-indicator">
+              <span /><span /><span />
+            </div>
+          )}
+          <div ref={bottomRef} />
+        </div>
+
+        {/* Input */}
+        <ChatInput onSend={handleSend} disabled={!connected} />
       </div>
 
-      {/* Messages */}
-      <div className="chat-window" ref={scrollRef} onScroll={handleScroll}>
-        {hasMore && (
-          <div className="text-center py-2">
-            {loadingMore ? (
-              <small className="text-muted">Loading...</small>
-            ) : (
-              <Badge bg="secondary" className="cursor-pointer" style={{ cursor: 'pointer' }}
-                onClick={() => setVisibleStart(Math.max(0, visibleStart - LOAD_MORE_COUNT))}>
-                Load earlier messages
-              </Badge>
-            )}
-          </div>
-        )}
-        {visibleMessages.map((msg, i) => (
-          <MessageBubble key={visibleStart + i} role={msg.role} content={msg.content} />
-        ))}
-        {typing && (
-          <div className="typing-indicator">
-            <span /><span /><span />
-          </div>
-        )}
-        <div ref={bottomRef} />
-      </div>
-
-      {/* Input */}
-      <ChatInput onSend={handleSend} disabled={!connected} />
+      <ContextPanel
+        tier={tier}
+        tierForce={tierForce}
+        onTierChange={handleTierChange}
+        onForceChange={handleForceChange}
+      />
     </div>
   );
 }

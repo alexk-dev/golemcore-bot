@@ -4,7 +4,6 @@ import me.golemcore.bot.domain.model.ConfirmationCallbackEvent;
 import me.golemcore.bot.domain.model.PlanApprovalCallbackEvent;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.i18n.MessageService;
 import me.golemcore.bot.port.inbound.CommandPort;
 import me.golemcore.bot.security.AllowlistValidator;
@@ -36,11 +35,6 @@ class TelegramAdapterCallbackTest {
 
     @BeforeEach
     void setUp() {
-        BotProperties properties = mock(BotProperties.class);
-        BotProperties.ChannelProperties telegramProps = new BotProperties.ChannelProperties();
-        telegramProps.setEnabled(true);
-        when(properties.getChannels()).thenReturn(java.util.Map.of("telegram", telegramProps));
-
         eventPublisher = mock(ApplicationEventPublisher.class);
         telegramClient = mock(TelegramClient.class);
 
@@ -49,7 +43,6 @@ class TelegramAdapterCallbackTest {
         when(runtimeConfigService.getTelegramToken()).thenReturn("test-token");
 
         adapter = new TelegramAdapter(
-                properties,
                 runtimeConfigService,
                 mock(AllowlistValidator.class),
                 eventPublisher,

@@ -248,7 +248,7 @@ class LlmUsageTrackerImplTest {
 
     @Test
     void shouldSkipOldRecordsOnLoad() {
-        Instant oldTimestamp = Instant.now().minus(Duration.ofDays(10));
+        Instant oldTimestamp = Instant.now().minus(Duration.ofDays(40));
         String oldLine = "{\"inputTokens\":100,\"outputTokens\":50,\"totalTokens\":150,\"providerId\":\"p\",\"model\":\"m\",\"timestamp\":\""
                 + oldTimestamp + "\"}";
 
@@ -262,6 +262,33 @@ class LlmUsageTrackerImplTest {
 
         UsageStats stats = freshTracker.getStats("p", Duration.ofHours(24));
         assertEquals(0, stats.getTotalRequests());
+    }
+
+    @Test
+    void shouldLoadPrettyPrintedSingleJsonObjectOnLoad() {
+        Instant now = Instant.now();
+        String prettyObject = """
+                {
+                  "inputTokens": 100,
+                  "outputTokens": 50,
+                  "totalTokens": 150,
+                  "providerId": "p",
+                  "model": "m",
+                  "timestamp": "%s"
+                }
+                """.formatted(now.toString());
+
+        when(storagePort.listObjects(USAGE_DIR, ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of("single.json")));
+        when(storagePort.getText(USAGE_DIR, "single.json"))
+                .thenReturn(CompletableFuture.completedFuture(prettyObject));
+
+        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, properties, objectMapper);
+        freshTracker.init();
+
+        UsageStats stats = freshTracker.getStats("p", Duration.ofHours(24));
+        assertEquals(1, stats.getTotalRequests());
+        assertEquals(150, stats.getTotalTokens());
     }
 
     @Test

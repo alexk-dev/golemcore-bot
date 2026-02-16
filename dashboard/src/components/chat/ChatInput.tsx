@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Button, Form, InputGroup } from 'react-bootstrap';
+import { Button, Form } from 'react-bootstrap';
 import { FiSend } from 'react-icons/fi';
 
 interface Props {
@@ -33,7 +33,7 @@ export default function ChatInput({ onSend, disabled }: Props) {
   return (
     <div className="chat-input-area">
       <Form onSubmit={handleSubmit}>
-        <InputGroup>
+        <div className="d-flex align-items-end gap-2">
           <Form.Control
             as="textarea"
             ref={inputRef}
@@ -41,14 +41,20 @@ export default function ChatInput({ onSend, disabled }: Props) {
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Type a message... (Shift+Enter for new line)"
+            placeholder="Type a message..."
             disabled={disabled}
-            style={{ resize: 'none', maxHeight: 120, overflow: 'auto' }}
+            style={{ resize: 'none', maxHeight: 150, overflowY: 'auto', minHeight: '44px' }}
           />
-          <Button type="submit" variant="primary" disabled={disabled || !text.trim()}>
-            <FiSend size={16} />
+          <Button 
+            type="submit" 
+            variant="primary" 
+            disabled={disabled || !text.trim()}
+            className="rounded-circle d-flex align-items-center justify-content-center"
+            style={{ width: '44px', height: '44px', flexShrink: 0 }}
+          >
+            <FiSend size={18} />
           </Button>
-        </InputGroup>
+        </div>
       </Form>
     </div>
   );

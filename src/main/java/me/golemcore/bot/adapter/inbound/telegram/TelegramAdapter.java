@@ -20,12 +20,11 @@ package me.golemcore.bot.adapter.inbound.telegram;
 
 import me.golemcore.bot.domain.model.ConfirmationCallbackEvent;
 import me.golemcore.bot.domain.model.PlanApprovalCallbackEvent;
+import me.golemcore.bot.domain.model.TelegramRestartEvent;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AudioFormat;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.adapter.inbound.web.controller.SettingsController;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.i18n.MessageService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.port.inbound.ChannelPort;
@@ -104,7 +103,6 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
     private static final int TELEGRAM_MAX_MESSAGE_LENGTH = 4096;
     private static final int TELEGRAM_MAX_CAPTION_LENGTH = 1024;
 
-    private final BotProperties properties;
     private final RuntimeConfigService runtimeConfigService;
     private final AllowlistValidator allowlistValidator;
     private final ApplicationEventPublisher eventPublisher;
@@ -170,7 +168,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
         }
 
         try {
-            String token = properties.getChannels().get(CHANNEL_TYPE).getToken();
+            String token = runtimeConfigService.getTelegramToken();
             botsApplication.registerBot(token, this);
             running = true;
             log.info("Telegram adapter started");
@@ -199,7 +197,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
      * Handle restart request from dashboard settings UI.
      */
     @EventListener
-    public void onTelegramRestart(SettingsController.TelegramRestartEvent event) {
+    public void onTelegramRestart(TelegramRestartEvent event) {
         log.info("[Telegram] Restart requested from dashboard");
         if (running) {
             stop();
@@ -387,7 +385,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
         org.telegram.telegrambots.meta.api.objects.File file = telegramClient.execute(getFile);
 
         String filePath = file.getFilePath();
-        String token = properties.getChannels().get(CHANNEL_TYPE).getToken();
+        String token = runtimeConfigService.getTelegramToken();
         String fileUrl = "https://api.telegram.org/file/bot" + token + "/" + filePath;
 
         try (InputStream is = URI.create(fileUrl).toURL().openStream()) {

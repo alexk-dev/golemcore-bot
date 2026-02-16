@@ -6,7 +6,7 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.ToolResult;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,16 +25,17 @@ class SkillTransitionToolTest {
     private static final String ANALYZER = "analyzer";
 
     private SkillComponent skillComponent;
+    private RuntimeConfigService runtimeConfigService;
     private SkillTransitionTool tool;
 
     @BeforeEach
     void setUp() {
         skillComponent = mock(SkillComponent.class);
-        BotProperties properties = new BotProperties();
-        properties.getTools().getSkillTransition().setEnabled(true);
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isSkillTransitionEnabled()).thenReturn(true);
         ObjectMapper objectMapper = new ObjectMapper();
 
-        tool = new SkillTransitionTool(skillComponent, properties, objectMapper);
+        tool = new SkillTransitionTool(skillComponent, runtimeConfigService, objectMapper);
     }
 
     @AfterEach
@@ -176,10 +177,10 @@ class SkillTransitionToolTest {
 
     @Test
     void disabledTool() {
-        BotProperties properties = new BotProperties();
-        properties.getTools().getSkillTransition().setEnabled(false);
+        RuntimeConfigService disabledRuntimeConfigService = mock(RuntimeConfigService.class);
+        when(disabledRuntimeConfigService.isSkillTransitionEnabled()).thenReturn(false);
         SkillTransitionTool disabledTool = new SkillTransitionTool(
-                skillComponent, properties, new ObjectMapper());
+                skillComponent, disabledRuntimeConfigService, new ObjectMapper());
 
         assertFalse(disabledTool.isEnabled());
     }

@@ -22,6 +22,7 @@ import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.port.outbound.StoragePort;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,6 +30,8 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.time.Clock;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -51,6 +54,10 @@ public class SessionService implements SessionPort {
     private final Clock clock;
 
     private static final String SESSIONS_DIR = "sessions";
+    private static final String JSON_EXTENSION = ".json";
+    private static final String PATH_SEPARATOR = "/";
+    private static final String LEGACY_PATH_SEPARATOR = "\\\\";
+    private static final String SESSION_ID_SEPARATOR = ":";
 
     private final Map<String, AgentSession> sessionCache = new ConcurrentHashMap<>();
 
@@ -192,9 +199,15 @@ public class SessionService implements SessionPort {
         try {
             List<String> files = storagePort.listObjects(SESSIONS_DIR, "").join();
             for (String file : files) {
-                if (file.endsWith(".json")) {
-                    String sessionId = file.substring(0, file.length() - 5);
-                    sessionCache.computeIfAbsent(sessionId, id -> load(id).orElse(null));
+                if (!file.endsWith(JSON_EXTENSION)) {
+                    continue;
+                }
+                Optional<AgentSession> loaded = loadFromStoredFile(file);
+                if (loaded.isPresent()) {
+                    AgentSession session = loaded.get();
+                    if (session.getId() != null && !session.getId().isBlank()) {
+                        sessionCache.putIfAbsent(session.getId(), session);
+                    }
                 }
             }
         } catch (Exception e) { // NOSONAR
@@ -218,7 +231,111 @@ public class SessionService implements SessionPort {
         return Optional.empty();
     }
 
+    private Optional<AgentSession> loadFromStoredFile(String filePath) {
+        try {
+            String json = storagePort.getText(SESSIONS_DIR, filePath).join();
+            if (json == null || json.isBlank()) {
+                return Optional.empty();
+            }
+            AgentSession session;
+            try {
+                session = objectMapper.readValue(json, AgentSession.class);
+            } catch (IOException e) {
+                session = parseSessionFromJsonTree(json);
+            }
+            enrichLegacySessionFields(session, filePath);
+            return Optional.of(session);
+        } catch (IOException | RuntimeException e) { // NOSONAR - intentionally catch all for fallback
+            log.debug("Failed to parse session file {}: {}", filePath, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private void enrichLegacySessionFields(AgentSession session, String filePath) {
+        if (session.getId() == null || session.getId().isBlank()) {
+            String normalized = filePath.replace(LEGACY_PATH_SEPARATOR, PATH_SEPARATOR);
+            String withoutExtension = normalized.endsWith(JSON_EXTENSION)
+                    ? normalized.substring(0, normalized.length() - JSON_EXTENSION.length())
+                    : normalized;
+            String derivedId = withoutExtension.replace(PATH_SEPARATOR, SESSION_ID_SEPARATOR);
+            session.setId(derivedId);
+        }
+
+        String sessionId = session.getId();
+        if (sessionId == null || sessionId.isBlank()) {
+            return;
+        }
+
+        int separatorIndex = sessionId.indexOf(SESSION_ID_SEPARATOR);
+        if ((session.getChannelType() == null || session.getChannelType().isBlank()) && separatorIndex > 0) {
+            session.setChannelType(sessionId.substring(0, separatorIndex));
+        }
+        if ((session.getChatId() == null || session.getChatId().isBlank())
+                && separatorIndex >= 0 && separatorIndex + 1 < sessionId.length()) {
+            session.setChatId(sessionId.substring(separatorIndex + 1));
+        }
+    }
+
     private String buildSessionId(String channelType, String chatId) {
         return channelType + ":" + chatId;
+    }
+
+    private AgentSession parseSessionFromJsonTree(String json) throws IOException {
+        JsonNode root = objectMapper.readTree(json);
+
+        List<Message> messages = new ArrayList<>();
+        JsonNode messagesNode = root.path("messages");
+        if (messagesNode.isArray()) {
+            for (JsonNode messageNode : messagesNode) {
+                Message message = Message.builder()
+                        .id(readText(messageNode, "id"))
+                        .role(readText(messageNode, "role"))
+                        .content(readText(messageNode, "content"))
+                        .timestamp(parseInstant(readText(messageNode, "timestamp")))
+                        .build();
+                messages.add(message);
+            }
+        }
+
+        AgentSession.AgentSessionBuilder builder = AgentSession.builder()
+                .id(readText(root, "id"))
+                .channelType(readText(root, "channelType"))
+                .chatId(readText(root, "chatId"))
+                .messages(messages)
+                .createdAt(parseInstant(readText(root, "createdAt")))
+                .updatedAt(parseInstant(readText(root, "updatedAt")));
+
+        String state = readText(root, "state");
+        if (state != null && !state.isBlank()) {
+            try {
+                builder.state(AgentSession.SessionState.valueOf(state));
+            } catch (IllegalArgumentException e) {
+                // keep default state
+            }
+        }
+        return builder.build();
+    }
+
+    private String readText(JsonNode node, String fieldName) {
+        JsonNode value = node.path(fieldName);
+        if (value.isMissingNode() || value.isNull()) {
+            return null;
+        }
+        String text = value.asText(null);
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        return text;
+    }
+
+    private Instant parseInstant(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Instant.parse(value);
+        } catch (DateTimeParseException e) {
+            return null;
+        }
     }
 }

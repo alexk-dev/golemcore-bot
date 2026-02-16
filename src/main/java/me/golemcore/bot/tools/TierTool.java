@@ -23,8 +23,8 @@ import me.golemcore.bot.domain.loop.AgentContextHolder;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -58,7 +58,7 @@ public class TierTool implements ToolComponent {
     private static final Set<String> VALID_TIERS = Set.of("balanced", "smart", "coding", "deep");
 
     private final UserPreferencesService userPreferencesService;
-    private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
 
     @Override
     public String getToolName() {
@@ -117,6 +117,6 @@ public class TierTool implements ToolComponent {
 
     @Override
     public boolean isEnabled() {
-        return properties.getTools().getTier().isEnabled();
+        return runtimeConfigService.isTierToolEnabled();
     }
 }

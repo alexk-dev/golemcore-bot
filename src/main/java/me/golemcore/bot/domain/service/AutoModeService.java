@@ -21,7 +21,6 @@ package me.golemcore.bot.domain.service;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.DiaryEntry;
 import me.golemcore.bot.domain.model.Goal;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.StoragePort;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -60,20 +59,21 @@ public class AutoModeService {
 
     private final StoragePort storagePort;
     private final ObjectMapper objectMapper;
-    private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
 
     // In-memory state
     private volatile boolean enabled = false;
     private volatile List<Goal> goalsCache;
 
-    public AutoModeService(StoragePort storagePort, ObjectMapper objectMapper, BotProperties properties) {
+    public AutoModeService(StoragePort storagePort, ObjectMapper objectMapper,
+            RuntimeConfigService runtimeConfigService) {
         this.storagePort = storagePort;
         this.objectMapper = objectMapper;
-        this.properties = properties;
+        this.runtimeConfigService = runtimeConfigService;
     }
 
     public boolean isFeatureEnabled() {
-        return properties.getAuto().isEnabled();
+        return runtimeConfigService.isAutoModeEnabled();
     }
 
     // ==================== State management ====================
@@ -102,8 +102,8 @@ public class AutoModeService {
         long activeCount = goals.stream()
                 .filter(g -> g.getStatus() == Goal.GoalStatus.ACTIVE)
                 .count();
-        if (activeCount >= properties.getAuto().getMaxGoals()) {
-            throw new IllegalStateException("Maximum active goals reached: " + properties.getAuto().getMaxGoals());
+        if (activeCount >= runtimeConfigService.getAutoMaxGoals()) {
+            throw new IllegalStateException("Maximum active goals reached: " + runtimeConfigService.getAutoMaxGoals());
         }
 
         Goal goal = Goal.builder()
@@ -144,9 +144,9 @@ public class AutoModeService {
         Goal goal = getGoal(goalId)
                 .orElseThrow(() -> new IllegalArgumentException(GOAL_NOT_FOUND + goalId));
 
-        if (goal.getTasks().size() >= properties.getAuto().getMaxTasksPerGoal()) {
+        if (goal.getTasks().size() >= 20) {
             throw new IllegalStateException(
-                    "Maximum tasks per goal reached: " + properties.getAuto().getMaxTasksPerGoal());
+                    "Maximum tasks per goal reached: 20");
         }
 
         AutoTask task = AutoTask.builder()
@@ -356,7 +356,7 @@ public class AutoModeService {
             }
         }
 
-        int maxEntries = properties.getAuto().getMaxDiaryEntriesInContext();
+        int maxEntries = 10;
         List<DiaryEntry> recentDiary = getRecentDiary(maxEntries);
         if (!recentDiary.isEmpty()) {
             sb.append("\n## Recent Diary (last ").append(recentDiary.size()).append(")\n");

@@ -25,7 +25,7 @@ import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.AutoModeService;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -98,14 +98,14 @@ public class GoalManagementTool implements ToolComponent {
     private static final String ERR_MISSING_GOAL_ID = "Missing required parameter: goal_id";
 
     private final AutoModeService autoModeService;
-    private final boolean enabled;
+    private final RuntimeConfigService runtimeConfigService;
 
     private Consumer<MilestoneEvent> milestoneCallback;
 
-    public GoalManagementTool(BotProperties properties, AutoModeService autoModeService) {
-        this.enabled = properties.getTools().getGoalManagement().isEnabled();
+    public GoalManagementTool(RuntimeConfigService runtimeConfigService, AutoModeService autoModeService) {
+        this.runtimeConfigService = runtimeConfigService;
         this.autoModeService = autoModeService;
-        log.info("GoalManagementTool enabled: {}", enabled);
+        log.info("GoalManagementTool initialized");
     }
 
     public void setMilestoneCallback(Consumer<MilestoneEvent> callback) {
@@ -114,7 +114,7 @@ public class GoalManagementTool implements ToolComponent {
 
     @Override
     public boolean isEnabled() {
-        return enabled;
+        return runtimeConfigService.isGoalManagementEnabled();
     }
 
     @Override
@@ -170,7 +170,7 @@ public class GoalManagementTool implements ToolComponent {
         return CompletableFuture.supplyAsync(() -> {
             log.info("[GoalManagement] Execute: {}", parameters);
 
-            if (!enabled) {
+            if (!isEnabled()) {
                 return ToolResult.failure("Goal management tool is disabled");
             }
 

@@ -84,30 +84,23 @@ public class BraveSearchTool implements ToolComponent {
     private final UserPreferencesService userPreferencesService;
 
     private BraveSearchApi searchApi;
-    private boolean enabled;
-    private String apiKey;
     private int defaultCount;
 
     @PostConstruct
     public void init() {
-        this.enabled = runtimeConfigService.isBraveSearchEnabled();
-        this.apiKey = runtimeConfigService.getBraveSearchApiKey();
         this.defaultCount = properties.getTools().getBraveSearch().getDefaultCount();
 
-        if (enabled && (apiKey == null || apiKey.isBlank())) {
-            log.warn("Brave Search tool is enabled but API key is not configured. Disabling.");
-            this.enabled = false;
-        }
-
-        if (enabled) {
-            this.searchApi = feignClientFactory.create(BraveSearchApi.class, "https://api.search.brave.com");
-            log.info("Brave Search tool initialized (default results: {})", defaultCount);
-        }
+        this.searchApi = feignClientFactory.create(BraveSearchApi.class, "https://api.search.brave.com");
+        log.info("Brave Search tool initialized (default results: {})", defaultCount);
     }
 
     @Override
     public boolean isEnabled() {
-        return enabled;
+        if (!runtimeConfigService.isBraveSearchEnabled()) {
+            return false;
+        }
+        String apiKey = runtimeConfigService.getBraveSearchApiKey();
+        return apiKey != null && !apiKey.isBlank();
     }
 
     @Override
@@ -136,6 +129,9 @@ public class BraveSearchTool implements ToolComponent {
             if (query == null || query.isBlank()) {
                 return ToolResult.failure("Search query is required");
             }
+            if (!isEnabled()) {
+                return ToolResult.failure("Brave Search tool is disabled or API key is missing");
+            }
 
             int count = defaultCount;
             if (parameters.containsKey(PARAM_COUNT)) {
@@ -154,6 +150,7 @@ public class BraveSearchTool implements ToolComponent {
             try {
                 log.debug("Brave Search: query='{}', count={}, attempt={}", query, count, attempt);
 
+                String apiKey = runtimeConfigService.getBraveSearchApiKey();
                 BraveSearchResponse response = searchApi.search(apiKey, query, count);
                 return buildSuccessResult(query, response);
 

@@ -18,45 +18,40 @@ import static org.mockito.Mockito.*;
 class ModelSelectionServiceTest {
 
     private BotProperties properties;
+    private RuntimeConfigService runtimeConfigService;
     private ModelConfigService modelConfigService;
     private UserPreferencesService preferencesService;
     private ModelSelectionService service;
 
-    private BotProperties.ModelRouterProperties routerProperties;
     private BotProperties.ModelSelectionProperties modelSelectionProperties;
-    private BotProperties.AutoCompactProperties autoCompactProperties;
     private UserPreferences userPreferences;
 
     @BeforeEach
     void setUp() {
         properties = mock(BotProperties.class);
+        runtimeConfigService = mock(RuntimeConfigService.class);
         modelConfigService = mock(ModelConfigService.class);
         preferencesService = mock(UserPreferencesService.class);
 
-        routerProperties = new BotProperties.ModelRouterProperties();
-        routerProperties.setBalancedModel("openai/gpt-5.1");
-        routerProperties.setBalancedModelReasoning("medium");
-        routerProperties.setSmartModel("openai/gpt-5.1");
-        routerProperties.setSmartModelReasoning("high");
-        routerProperties.setCodingModel("openai/gpt-5.2");
-        routerProperties.setCodingModelReasoning("medium");
-        routerProperties.setDeepModel("openai/gpt-5.2");
-        routerProperties.setDeepModelReasoning("xhigh");
+        when(runtimeConfigService.getBalancedModel()).thenReturn("openai/gpt-5.1");
+        when(runtimeConfigService.getBalancedModelReasoning()).thenReturn("medium");
+        when(runtimeConfigService.getSmartModel()).thenReturn("openai/gpt-5.1");
+        when(runtimeConfigService.getSmartModelReasoning()).thenReturn("high");
+        when(runtimeConfigService.getCodingModel()).thenReturn("openai/gpt-5.2");
+        when(runtimeConfigService.getCodingModelReasoning()).thenReturn("medium");
+        when(runtimeConfigService.getDeepModel()).thenReturn("openai/gpt-5.2");
+        when(runtimeConfigService.getDeepModelReasoning()).thenReturn("xhigh");
+        when(runtimeConfigService.getCompactionMaxContextTokens()).thenReturn(50000);
 
         modelSelectionProperties = new BotProperties.ModelSelectionProperties();
         modelSelectionProperties.setAllowedProviders(List.of("openai", "anthropic"));
 
-        autoCompactProperties = new BotProperties.AutoCompactProperties();
-        autoCompactProperties.setMaxContextTokens(50000);
-
-        when(properties.getRouter()).thenReturn(routerProperties);
         when(properties.getModelSelection()).thenReturn(modelSelectionProperties);
-        when(properties.getAutoCompact()).thenReturn(autoCompactProperties);
 
         userPreferences = UserPreferences.builder().build();
         when(preferencesService.getPreferences()).thenReturn(userPreferences);
 
-        service = new ModelSelectionService(properties, modelConfigService, preferencesService);
+        service = new ModelSelectionService(properties, runtimeConfigService, modelConfigService, preferencesService);
     }
 
     // =====================================================
@@ -259,8 +254,8 @@ class ModelSelectionServiceTest {
     @Test
     void shouldReturnAutoCompactFallbackWhenModelIsNull() {
         // Arrange
-        routerProperties.setBalancedModel(null);
-        routerProperties.setBalancedModelReasoning(null);
+        when(runtimeConfigService.getBalancedModel()).thenReturn(null);
+        when(runtimeConfigService.getBalancedModelReasoning()).thenReturn(null);
 
         // Act
         int result = service.resolveMaxInputTokens("balanced");

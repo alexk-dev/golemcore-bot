@@ -24,6 +24,7 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
+import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import org.junit.jupiter.api.BeforeEach;
@@ -46,13 +47,16 @@ class OutgoingResponsePreparationSystemTest {
 
     private UserPreferencesService preferencesService;
     private BotProperties properties;
+    private ModelSelectionService modelSelectionService;
     private OutgoingResponsePreparationSystem system;
 
     @BeforeEach
     void setUp() {
         preferencesService = mock(UserPreferencesService.class);
         properties = new BotProperties();
-        system = new OutgoingResponsePreparationSystem(preferencesService, properties);
+        modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokens(anyString())).thenReturn(128000);
+        system = new OutgoingResponsePreparationSystem(preferencesService, properties, modelSelectionService);
     }
 
     // ── identity ──

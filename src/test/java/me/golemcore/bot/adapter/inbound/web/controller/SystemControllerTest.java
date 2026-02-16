@@ -1,12 +1,16 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
 import me.golemcore.bot.adapter.inbound.web.dto.SystemHealthResponse;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 
+import java.util.Collections;
+import java.util.concurrent.CompletableFuture;
 import java.util.List;
 import java.util.Map;
 
@@ -23,6 +27,8 @@ class SystemControllerTest {
     private ChannelPort telegramPort;
     private ChannelPort webPort;
     private BotProperties botProperties;
+    private RuntimeConfigService runtimeConfigService;
+    private StoragePort storagePort;
     private SystemController controller;
 
     @BeforeEach
@@ -36,7 +42,16 @@ class SystemControllerTest {
         when(webPort.isRunning()).thenReturn(false);
 
         botProperties = new BotProperties();
-        controller = new SystemController(List.of(telegramPort, webPort), botProperties);
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        storagePort = mock(StoragePort.class);
+        when(storagePort.listObjects("sessions", ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of("telegram:1.json")));
+        when(storagePort.listObjects("usage", ""))
+                .thenReturn(CompletableFuture.completedFuture(Collections.emptyList()));
+        when(runtimeConfigService.isVoiceEnabled()).thenReturn(false);
+        when(runtimeConfigService.isAutoModeEnabled()).thenReturn(false);
+        controller = new SystemController(List.of(telegramPort, webPort), botProperties, runtimeConfigService,
+                storagePort);
     }
 
     @Test
@@ -80,6 +95,20 @@ class SystemControllerTest {
                     assertEquals(true, body.get(0).get("running"));
                     assertEquals("web", body.get(1).get("type"));
                     assertEquals(false, body.get(1).get("running"));
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldReturnDiagnostics() {
+        StepVerifier.create(controller.getDiagnostics())
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    Map<String, Object> body = response.getBody();
+                    assertNotNull(body);
+                    assertTrue(body.containsKey("storage"));
+                    assertTrue(body.containsKey("environment"));
+                    assertTrue(body.containsKey("runtime"));
                 })
                 .verifyComplete();
     }

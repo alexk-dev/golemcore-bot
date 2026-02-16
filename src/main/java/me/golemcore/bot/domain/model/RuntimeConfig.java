@@ -50,8 +50,9 @@ public class RuntimeConfig {
     public static class TelegramConfig {
         private Boolean enabled;
         private String token;
-        /** "allowlist" or "invite" */
-        private String authMode;
+        /** "user" or "invite" */
+        @Builder.Default
+        private String authMode = "invite";
         @Builder.Default
         private List<String> allowedUsers = new ArrayList<>();
         @Builder.Default
@@ -158,7 +159,7 @@ public class RuntimeConfig {
     public static class AutoModeConfig {
         private Boolean enabled;
         private Integer tickIntervalSeconds;
-        private Integer taskTimeoutMinutes;
+        private Integer taskTimeLimitMinutes;
         private Boolean autoStart;
         private Integer maxGoals;
         private String modelTier;
@@ -174,6 +175,8 @@ public class RuntimeConfig {
         private Integer userRequestsPerMinute;
         private Integer userRequestsPerHour;
         private Integer userRequestsPerDay;
+        private Integer channelMessagesPerSecond;
+        private Integer llmRequestsPerMinute;
     }
 
     @Data

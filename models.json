@@ -1,5 +1,19 @@
 {
   "models": {
+    "gpt-5.2": {
+      "provider": "openai",
+      "displayName": "GPT-5.2",
+      "supportsTemperature": false,
+      "reasoning": {
+        "default": "medium",
+        "levels": {
+          "low":    { "maxInputTokens": 1000000 },
+          "medium": { "maxInputTokens": 1000000 },
+          "high":   { "maxInputTokens": 500000 },
+          "xhigh":  { "maxInputTokens": 250000 }
+        }
+      }
+    },
     "gpt-5.1": {
       "provider": "openai",
       "displayName": "GPT-5.1",
@@ -14,9 +28,9 @@
         }
       }
     },
-    "gpt-5.2": {
+    "gpt-5": {
       "provider": "openai",
-      "displayName": "GPT-5.2",
+      "displayName": "GPT-5",
       "supportsTemperature": false,
       "reasoning": {
         "default": "medium",
@@ -41,28 +55,49 @@
         }
       }
     },
-    "gpt-4o": {
+    "gpt-5-nano": {
       "provider": "openai",
-      "displayName": "GPT-4o",
-      "supportsTemperature": true,
-      "maxInputTokens": 128000
-    },
-    "gpt-4-turbo": {
-      "provider": "openai",
-      "displayName": "GPT-4 Turbo",
-      "supportsTemperature": true,
-      "maxInputTokens": 128000
-    },
-    "o1": {
-      "provider": "openai",
-      "displayName": "o1",
+      "displayName": "GPT-5 Nano",
       "supportsTemperature": false,
       "reasoning": {
         "default": "medium",
         "levels": {
-          "low":    { "maxInputTokens": 200000 },
-          "medium": { "maxInputTokens": 200000 },
-          "high":   { "maxInputTokens": 200000 }
+          "low":    { "maxInputTokens": 256000 },
+          "medium": { "maxInputTokens": 256000 },
+          "high":   { "maxInputTokens": 128000 }
+        }
+      }
+    },
+    "gpt-5-chat-latest": {
+      "provider": "openai",
+      "displayName": "GPT-5 Chat Latest",
+      "supportsTemperature": true,
+      "maxInputTokens": 1000000
+    },
+    "gpt-5-codex-preview": {
+      "provider": "openai",
+      "displayName": "GPT-5 Codex Preview",
+      "supportsTemperature": false,
+      "reasoning": {
+        "default": "medium",
+        "levels": {
+          "low":    { "maxInputTokens": 1000000 },
+          "medium": { "maxInputTokens": 1000000 },
+          "high":   { "maxInputTokens": 500000 },
+          "xhigh":  { "maxInputTokens": 250000 }
+        }
+      }
+    },
+    "gpt-5-spark": {
+      "provider": "openai",
+      "displayName": "GPT-5 Spark",
+      "supportsTemperature": false,
+      "reasoning": {
+        "default": "low",
+        "levels": {
+          "low":    { "maxInputTokens": 1000000 },
+          "medium": { "maxInputTokens": 500000 },
+          "high":   { "maxInputTokens": 250000 }
         }
       }
     },
@@ -79,18 +114,37 @@
         }
       }
     },
-    "o3-mini": {
+    "o3-pro": {
       "provider": "openai",
-      "displayName": "o3 Mini",
+      "displayName": "o3 Pro",
+      "supportsTemperature": false,
+      "reasoning": {
+        "default": "high",
+        "levels": {
+          "low":    { "maxInputTokens": 200000 },
+          "medium": { "maxInputTokens": 200000 },
+          "high":   { "maxInputTokens": 200000 }
+        }
+      }
+    },
+    "o4-mini": {
+      "provider": "openai",
+      "displayName": "o4 Mini",
       "supportsTemperature": false,
       "reasoning": {
         "default": "medium",
         "levels": {
-          "low":    { "maxInputTokens": 128000 },
-          "medium": { "maxInputTokens": 128000 },
-          "high":   { "maxInputTokens": 128000 }
+          "low":    { "maxInputTokens": 200000 },
+          "medium": { "maxInputTokens": 200000 },
+          "high":   { "maxInputTokens": 200000 }
         }
       }
+    },
+    "claude-sonnet-4-5": {
+      "provider": "anthropic",
+      "displayName": "Claude Sonnet 4.5",
+      "supportsTemperature": true,
+      "maxInputTokens": 200000
     },
     "claude-sonnet-4-20250514": {
       "provider": "anthropic",
@@ -98,25 +152,60 @@
       "supportsTemperature": true,
       "maxInputTokens": 200000
     },
-    "claude-3-5-sonnet": {
+    "claude-opus-4-1": {
       "provider": "anthropic",
-      "displayName": "Claude 3.5 Sonnet",
+      "displayName": "Claude Opus 4.1",
       "supportsTemperature": true,
       "maxInputTokens": 200000
     },
-    "claude-3-opus": {
+    "claude-opus-4-20250514": {
       "provider": "anthropic",
-      "displayName": "Claude 3 Opus",
+      "displayName": "Claude Opus 4",
       "supportsTemperature": true,
       "maxInputTokens": 200000
     },
-    "claude-3-haiku": {
+    "claude-3-7-sonnet": {
       "provider": "anthropic",
-      "displayName": "Claude 3 Haiku",
+      "displayName": "Claude 3.7 Sonnet",
       "supportsTemperature": true,
       "maxInputTokens": 200000
     },
-
+    "claude-3-5-haiku": {
+      "provider": "anthropic",
+      "displayName": "Claude 3.5 Haiku",
+      "supportsTemperature": true,
+      "maxInputTokens": 200000
+    },
+    "gemini-2.5-pro": {
+      "provider": "google",
+      "displayName": "Gemini 2.5 Pro",
+      "supportsTemperature": true,
+      "maxInputTokens": 1048576
+    },
+    "gemini-2.5-pro-preview": {
+      "provider": "google",
+      "displayName": "Gemini 2.5 Pro Preview",
+      "supportsTemperature": true,
+      "maxInputTokens": 1048576
+    },
+    "gemini-2.5-flash": {
+      "provider": "google",
+      "displayName": "Gemini 2.5 Flash",
+      "supportsTemperature": true,
+      "maxInputTokens": 1048576
+    },
+    "gemini-2.5-flash-preview": {
+      "provider": "google",
+      "displayName": "Gemini 2.5 Flash Preview",
+      "supportsTemperature": true,
+      "maxInputTokens": 1048576
+    },
+    "gemini-2.5-flash-lite": {
+      "provider": "google",
+      "displayName": "Gemini 2.5 Flash Lite",
+      "supportsTemperature": true,
+      "maxInputTokens": 1048576
+    },
     "glm-4-plus": {
       "provider": "zhipu",
       "displayName": "GLM-4 Plus",

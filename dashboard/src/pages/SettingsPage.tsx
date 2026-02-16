@@ -191,11 +191,11 @@ function TelegramTab({ config }: { config: TelegramConfig }) {
   const [enabled, setEnabled] = useState(config.enabled ?? false);
   const [token, setToken] = useState(config.token ?? '');
   const [showToken, setShowToken] = useState(false);
-  const [authMode, setAuthMode] = useState(config.authMode ?? 'allowlist');
-  const [allowedUsers, setAllowedUsers] = useState(config.allowedUsers?.join(', ') ?? '');
+  const [authMode, setAuthMode] = useState(config.authMode ?? 'invite');
+  const [allowedUserId, setAllowedUserId] = useState((config.allowedUsers?.[0] ?? '').replace(/\D/g, ''));
 
   const handleSave = async () => {
-    const users = allowedUsers.split(',').map(u => u.trim()).filter(Boolean);
+    const users = allowedUserId ? [allowedUserId] : [];
     await updateTelegram.mutateAsync({
       ...config, enabled, token: token || null, authMode, allowedUsers: users,
     });
@@ -219,29 +219,39 @@ function TelegramTab({ config }: { config: TelegramConfig }) {
               onChange={(e) => setToken(e.target.value)}
               placeholder="123456:ABC-DEF..."
             />
-            <Button variant="outline-secondary" onClick={() => setShowToken(!showToken)}>
+            <Button variant="secondary" onClick={() => setShowToken(!showToken)}>
               {showToken ? 'Hide' : 'Show'}
             </Button>
           </InputGroup>
         </Form.Group>
 
         <Form.Group className="mb-3">
-          <Form.Label className="small fw-medium">
-            Auth Mode <Tip text="Controls how users authenticate: allowlist (explicit IDs) or invite codes (shareable codes)" />
-          </Form.Label>
-          <Form.Select size="sm" value={authMode} onChange={(e) => setAuthMode(e.target.value)}>
-            <option value="allowlist">Allowlist</option>
-            <option value="invite">Invite Codes</option>
-          </Form.Select>
-        </Form.Group>
+              <Form.Label className="small fw-medium">
+                Auth Mode <Tip text="Controls how users authenticate: user (single explicit ID) or invite codes (shareable codes)" />
+              </Form.Label>
+              <Form.Select
+                size="sm"
+                value={authMode}
+                onChange={(e) => setAuthMode(e.target.value as 'user' | 'invite')}
+              >
+                <option value="user">User</option>
+                <option value="invite">Invite Codes</option>
+              </Form.Select>
+            </Form.Group>
 
-        {authMode === 'allowlist' && (
+        {authMode === 'user' && (
           <Form.Group className="mb-3">
             <Form.Label className="small fw-medium">
-              Allowed User IDs <Tip text="Telegram numeric user IDs, comma-separated" />
+              Allowed User ID <Tip text="Single Telegram numeric user ID" />
             </Form.Label>
-            <Form.Control size="sm" type="text" value={allowedUsers}
-              onChange={(e) => setAllowedUsers(e.target.value)} placeholder="12345, 67890" />
+            <Form.Control
+              size="sm"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={allowedUserId}
+              onChange={(e) => setAllowedUserId(e.target.value.replace(/\D/g, ''))}
+            />
           </Form.Group>
         )}
 
@@ -249,7 +259,7 @@ function TelegramTab({ config }: { config: TelegramConfig }) {
           <div className="mb-3">
             <div className="d-flex align-items-center justify-content-between mb-2">
               <span className="small fw-medium">Invite Codes <Tip text="Single-use codes that grant Telegram access when redeemed" /></span>
-              <Button variant="outline-primary" size="sm"
+              <Button variant="primary" size="sm"
                 onClick={() => genInvite.mutate(undefined, { onSuccess: () => toast.success('Invite code generated') })}>
                 Generate Code
               </Button>
@@ -264,9 +274,9 @@ function TelegramTab({ config }: { config: TelegramConfig }) {
                       <td><Badge bg={ic.used ? 'secondary' : 'success'}>{ic.used ? 'Used' : 'Active'}</Badge></td>
                       <td className="small text-muted">{new Date(ic.createdAt).toLocaleDateString()}</td>
                       <td className="text-end">
-                        <Button size="sm" variant="link" className="p-0 me-2"
+                        <Button size="sm" variant="secondary" className="me-2"
                           onClick={() => { navigator.clipboard.writeText(ic.code); toast.success('Copied!'); }}>Copy</Button>
-                        <Button size="sm" variant="link" className="p-0 text-danger"
+                        <Button size="sm" variant="danger"
                           onClick={() => delInvite.mutate(ic.code, { onSuccess: () => toast.success('Revoked') })}>Revoke</Button>
                       </td>
                     </tr>
@@ -281,7 +291,7 @@ function TelegramTab({ config }: { config: TelegramConfig }) {
 
         <div className="d-flex gap-2 pt-2 border-top">
           <Button variant="primary" size="sm" onClick={handleSave}>Save</Button>
-          <Button variant="outline-warning" size="sm"
+          <Button variant="warning" size="sm"
             onClick={() => restart.mutate(undefined, { onSuccess: () => toast.success('Telegram restarting...') })}>
             Restart Bot
           </Button>
@@ -321,7 +331,6 @@ function ModelsTab({ config }: { config: ModelRouterConfig }) {
   };
 
   const tierCards = [
-    { key: 'balanced', label: 'Balanced', color: 'primary', modelField: 'balancedModel' as const, reasoningField: 'balancedModelReasoning' as const },
     { key: 'smart', label: 'Smart', color: 'success', modelField: 'smartModel' as const, reasoningField: 'smartModelReasoning' as const },
     { key: 'coding', label: 'Coding', color: 'info', modelField: 'codingModel' as const, reasoningField: 'codingModelReasoning' as const },
     { key: 'deep', label: 'Deep', color: 'warning', modelField: 'deepModel' as const, reasoningField: 'deepModelReasoning' as const },
@@ -353,6 +362,18 @@ function ModelsTab({ config }: { config: ModelRouterConfig }) {
       </Card>
 
       <Row className="g-3 mb-3">
+        <Col md={6} lg={3}>
+          <TierModelCard
+            label="Routing"
+            color="primary"
+            providers={providers}
+            providerNames={providerNames}
+            modelValue={form.balancedModel ?? ''}
+            reasoningValue={form.balancedModelReasoning ?? ''}
+            onModelChange={(val) => setForm({ ...form, balancedModel: val || null, balancedModelReasoning: null })}
+            onReasoningChange={(val) => setForm({ ...form, balancedModelReasoning: val || null })}
+          />
+        </Col>
         {tierCards.map(({ key, label, color, modelField, reasoningField }) => (
           <Col md={6} lg={3} key={key}>
             <TierModelCard
@@ -721,7 +742,7 @@ function VoiceTab({ config }: { config: VoiceConfig }) {
           <InputGroup size="sm">
             <Form.Control type={showKey ? 'text' : 'password'} value={form.apiKey ?? ''}
               onChange={(e) => setForm({ ...form, apiKey: e.target.value || null })} />
-            <Button variant="outline-secondary" onClick={() => setShowKey(!showKey)}>
+            <Button variant="secondary" onClick={() => setShowKey(!showKey)}>
               {showKey ? 'Hide' : 'Show'}
             </Button>
           </InputGroup>
@@ -847,7 +868,7 @@ function WebhooksTab() {
           onChange={(e) => setForm({ ...form, enabled: e.target.checked })} className="mb-3" />
 
         <Row className="g-3 mb-3">
-          <Col md={4}>
+          <Col md={6}>
             <Form.Group>
               <Form.Label className="small fw-medium">
                 Bearer Token <Tip text="Secret token for authenticating incoming webhook requests" />
@@ -855,13 +876,13 @@ function WebhooksTab() {
               <InputGroup size="sm">
                 <Form.Control type="password" value={form.token ?? ''}
                   onChange={(e) => setForm({ ...form, token: e.target.value || null })} />
-                <Button variant="outline-secondary" onClick={handleGenerateToken} title="Generate random token">
+                <Button variant="secondary" onClick={handleGenerateToken} title="Generate random token">
                   Generate
                 </Button>
               </InputGroup>
             </Form.Group>
           </Col>
-          <Col md={4}>
+          <Col md={6}>
             <Form.Group>
               <Form.Label className="small fw-medium">
                 Max Payload Size <Tip text="Maximum allowed webhook request body size in bytes" />
@@ -883,7 +904,7 @@ function WebhooksTab() {
 
         <div className="d-flex align-items-center justify-content-between mb-2">
           <span className="small fw-medium">Hook Mappings <Tip text="Named endpoints (/api/hooks/{name}) that map incoming webhooks to bot actions" /></span>
-          <Button variant="outline-primary" size="sm" onClick={addMapping}>Add Webhook</Button>
+          <Button variant="primary" size="sm" onClick={addMapping}>Add Webhook</Button>
         </div>
 
         {form.mappings.length > 0 ? (
@@ -896,11 +917,11 @@ function WebhooksTab() {
                   <td><Badge bg={m.action === 'agent' ? 'primary' : 'secondary'}>{m.action}</Badge></td>
                   <td className="small">{m.authMode}</td>
                   <td className="text-end">
-                    <Button size="sm" variant="link" className="p-0 me-2"
+                    <Button size="sm" variant="secondary" className="me-2"
                       onClick={() => setEditIdx(editIdx === idx ? null : idx)}>
                       {editIdx === idx ? 'Close' : 'Edit'}
                     </Button>
-                    <Button size="sm" variant="link" className="p-0 text-danger" onClick={() => removeMapping(idx)}>Delete</Button>
+                    <Button size="sm" variant="danger" onClick={() => removeMapping(idx)}>Delete</Button>
                   </td>
                 </tr>
               ))}
@@ -1002,7 +1023,7 @@ function AutoModeTab({ config }: { config: AutoModeConfig }) {
   useEffect(() => { setForm({ ...config }); }, [config]);
 
   const handleSave = async () => {
-    await updateAuto.mutateAsync(form);
+    await updateAuto.mutateAsync({ ...form, tickIntervalSeconds: 1 });
     toast.success('Auto mode settings saved');
   };
 
@@ -1019,19 +1040,10 @@ function AutoModeTab({ config }: { config: AutoModeConfig }) {
           <Col md={4}>
             <Form.Group>
               <Form.Label className="small fw-medium">
-                Tick Interval (seconds) <Tip text="How often the bot checks for pending tasks and goals" />
+                Task Time Limit (minutes) <Tip text="Maximum time a single autonomous task can run before being stopped" />
               </Form.Label>
-              <Form.Control size="sm" type="number" value={form.tickIntervalSeconds ?? 30}
-                onChange={(e) => setForm({ ...form, tickIntervalSeconds: parseInt(e.target.value) || null })} />
-            </Form.Group>
-          </Col>
-          <Col md={4}>
-            <Form.Group>
-              <Form.Label className="small fw-medium">
-                Task Timeout (minutes) <Tip text="Maximum time a single autonomous task can run before being stopped" />
-              </Form.Label>
-              <Form.Control size="sm" type="number" value={form.taskTimeoutMinutes ?? 10}
-                onChange={(e) => setForm({ ...form, taskTimeoutMinutes: parseInt(e.target.value) || null })} />
+              <Form.Control size="sm" type="number" value={form.taskTimeLimitMinutes ?? 10}
+                onChange={(e) => setForm({ ...form, taskTimeLimitMinutes: parseInt(e.target.value) || null })} />
             </Form.Group>
           </Col>
           <Col md={4}>

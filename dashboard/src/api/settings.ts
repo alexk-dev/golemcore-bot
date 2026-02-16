@@ -36,7 +36,7 @@ export interface RuntimeConfig {
 export interface TelegramConfig {
   enabled: boolean | null;
   token: string | null;
-  authMode: string | null;
+  authMode: 'user' | 'invite' | null;
   allowedUsers: string[];
   inviteCodes: InviteCode[];
 }
@@ -113,7 +113,7 @@ export interface VoiceConfig {
 export interface AutoModeConfig {
   enabled: boolean | null;
   tickIntervalSeconds: number | null;
-  taskTimeoutMinutes: number | null;
+  taskTimeLimitMinutes: number | null;
   autoStart: boolean | null;
   maxGoals: number | null;
   modelTier: string | null;

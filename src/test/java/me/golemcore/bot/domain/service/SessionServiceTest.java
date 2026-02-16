@@ -392,6 +392,40 @@ class SessionServiceTest {
         assertNotNull(all);
     }
 
+    @Test
+    void listAllLoadsSessionWithUnknownComputedFields() {
+        String jsonWithUnknowns = """
+                {
+                  "id": "telegram:456",
+                  "channelType": "telegram",
+                  "chatId": "456",
+                  "messages": [
+                    {
+                      "id": "m1",
+                      "role": "user",
+                      "content": "hello",
+                      "timestamp": "2026-01-15T10:00:00Z",
+                      "userMessage": true,
+                      "assistantMessage": false
+                    }
+                  ],
+                  "state": "ACTIVE",
+                  "createdAt": "2026-01-15T10:00:00Z",
+                  "updatedAt": "2026-01-15T10:00:00Z"
+                }
+                """;
+        when(storagePort.listObjects(SESSIONS_DIR, ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of("telegram:456.json")));
+        when(storagePort.getText(SESSIONS_DIR, "telegram:456.json"))
+                .thenReturn(CompletableFuture.completedFuture(jsonWithUnknowns));
+
+        List<AgentSession> all = service.listAll();
+
+        assertEquals(1, all.size());
+        assertEquals("telegram:456", all.get(0).getId());
+        assertEquals(1, all.get(0).getMessages().size());
+    }
+
     // ==================== getMessageCount ====================
 
     @Test

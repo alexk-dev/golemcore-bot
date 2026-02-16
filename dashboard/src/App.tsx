@@ -8,6 +8,7 @@ import SettingsPage from './pages/SettingsPage';
 import PromptsPage from './pages/PromptsPage';
 import SkillsPage from './pages/SkillsPage';
 import SessionsPage from './pages/SessionsPage';
+import DiagnosticsPage from './pages/DiagnosticsPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.accessToken);
@@ -32,6 +33,7 @@ export default function App() {
                 <Route path="/prompts" element={<PromptsPage />} />
                 <Route path="/skills" element={<SkillsPage />} />
                 <Route path="/sessions" element={<SessionsPage />} />
+                <Route path="/diagnostics" element={<DiagnosticsPage />} />
               </Routes>
             </DashboardLayout>
           </ProtectedRoute>

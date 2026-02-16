@@ -5,6 +5,7 @@ import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolDefinition;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import dev.langchain4j.data.message.AiMessage;
@@ -64,18 +65,23 @@ class Langchain4jAdapterTest {
 
     private BotProperties properties;
     private ModelConfigService modelConfig;
+    private RuntimeConfigService runtimeConfigService;
     private Langchain4jAdapter adapter;
 
     @BeforeEach
     void setUp() {
         properties = new BotProperties();
         modelConfig = mock(ModelConfigService.class);
+        runtimeConfigService = mock(RuntimeConfigService.class);
         when(modelConfig.supportsTemperature(anyString())).thenReturn(true);
         when(modelConfig.getProvider(anyString())).thenReturn(OPENAI);
         when(modelConfig.isReasoningRequired(anyString())).thenReturn(false);
         when(modelConfig.getAllModels()).thenReturn(Map.of());
+        when(runtimeConfigService.getTemperature()).thenReturn(0.7);
+        when(runtimeConfigService.getBalancedModel()).thenReturn(OPENAI + "/gpt-5.1");
+        when(runtimeConfigService.getBalancedModelReasoning()).thenReturn("medium");
 
-        adapter = new Langchain4jAdapter(properties, modelConfig);
+        adapter = new Langchain4jAdapter(properties, runtimeConfigService, modelConfig);
     }
 
     // ===== getProviderId =====

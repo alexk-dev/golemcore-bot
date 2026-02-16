@@ -2,7 +2,6 @@ package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.LlmPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,6 +22,7 @@ class CompactionServiceTest {
     private static final String HELLO = "Hello";
 
     private LlmPort llmPort;
+    private RuntimeConfigService runtimeConfigService;
     private Clock clock;
     private CompactionService service;
 
@@ -30,10 +30,12 @@ class CompactionServiceTest {
     void setUp() {
         llmPort = mock(LlmPort.class);
         when(llmPort.isAvailable()).thenReturn(true);
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.getBalancedModel()).thenReturn("openai/gpt-5.1");
+        when(runtimeConfigService.getBalancedModelReasoning()).thenReturn("medium");
         clock = Clock.fixed(Instant.parse("2026-01-01T12:00:00Z"), ZoneOffset.UTC);
 
-        BotProperties properties = new BotProperties();
-        service = new CompactionService(llmPort, properties, clock);
+        service = new CompactionService(llmPort, runtimeConfigService, clock);
     }
 
     @Test
@@ -73,8 +75,7 @@ class CompactionServiceTest {
 
     @Test
     void summarizeReturnsNullWhenNoAdapter() {
-        BotProperties properties = new BotProperties();
-        CompactionService nullService = new CompactionService(null, properties, clock);
+        CompactionService nullService = new CompactionService(null, runtimeConfigService, clock);
 
         List<Message> messages = List.of(
                 Message.builder().role(ROLE_USER).content(HELLO).timestamp(Instant.now()).build());

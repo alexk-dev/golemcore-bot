@@ -15,7 +15,9 @@ export default function SessionsPage() {
 
   return (
     <div>
-      <h4 className="mb-4">Sessions</h4>
+      <div className="section-header">
+        <h4 className="mb-0">Sessions</h4>
+      </div>
       <Table hover responsive>
         <thead>
           <tr>
@@ -43,7 +45,7 @@ export default function SessionsPage() {
                 <div className="d-flex gap-1">
                   <Button
                     size="sm"
-                    variant="outline-primary"
+                    variant="primary"
                     onClick={async () => {
                       const r = await compactMut.mutateAsync({ id: s.id });
                       toast.success(`Removed ${r.removed} messages`);
@@ -53,14 +55,14 @@ export default function SessionsPage() {
                   </Button>
                   <Button
                     size="sm"
-                    variant="outline-warning"
+                    variant="warning"
                     onClick={() => { clearMut.mutate(s.id); toast.success('Cleared'); }}
                   >
                     Clear
                   </Button>
                   <Button
                     size="sm"
-                    variant="outline-danger"
+                    variant="danger"
                     onClick={() => { deleteMut.mutate(s.id); toast.success('Deleted'); }}
                   >
                     Delete

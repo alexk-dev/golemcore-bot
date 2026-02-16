@@ -24,7 +24,9 @@ import me.golemcore.bot.domain.model.UsageStats;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.StoragePort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -92,10 +94,12 @@ public class LlmUsageTrackerImpl implements UsageTrackingPort {
     private static final String METRIC_LATENCY_AVG = "llm.latency.avg_ms";
     private static final String PATH_SEPARATOR = "/";
 
-    private static final int RETENTION_DAYS = 7;
+    private static final int RETENTION_DAYS = 30;
     private static final int EVICTION_INTERVAL_HOURS = 1;
     private static final int EXECUTOR_TERMINATION_TIMEOUT_SECONDS = 2;
     private static final long DEFAULT_AVERAGE_LATENCY = 0L;
+    private static final TypeReference<List<LlmUsage>> USAGE_LIST_TYPE = new TypeReference<>() {
+    };
 
     private static final Duration RETENTION_PERIOD = Duration.ofDays(RETENTION_DAYS);
 
@@ -141,27 +145,27 @@ public class LlmUsageTrackerImpl implements UsageTrackingPort {
             int loaded = 0;
             int skippedOld = 0;
             for (String file : files) {
-                if (!file.endsWith(JSONL_EXTENSION))
+                if (!file.endsWith(JSONL_EXTENSION) && !file.endsWith(".json")) {
                     continue;
+                }
                 try {
                     String content = storagePort.getText(USAGE_DIR, file).join();
-                    if (content == null || content.isBlank())
+                    if (content == null || content.isBlank()) {
                         continue;
-                    for (String line : content.split(NEWLINE)) {
-                        if (line.isBlank())
+                    }
+
+                    List<LlmUsage> parsedUsages = parseUsageFileContent(file, content);
+                    for (LlmUsage usage : parsedUsages) {
+                        if (usage == null) {
                             continue;
-                        try {
-                            LlmUsage usage = objectMapper.readValue(line, LlmUsage.class);
-                            // Only load records within retention window
-                            if (usage.getTimestamp() != null && usage.getTimestamp().isBefore(cutoff)) {
-                                skippedOld++;
-                                continue;
-                            }
-                            indexUsage(usage);
-                            loaded++;
-                        } catch (JsonProcessingException e) {
-                            log.debug("{} Skipping malformed line in {}: {}", LOG_PREFIX, file, e.getMessage());
                         }
+                        // Only load records within retention window
+                        if (usage.getTimestamp() != null && usage.getTimestamp().isBefore(cutoff)) {
+                            skippedOld++;
+                            continue;
+                        }
+                        indexUsage(usage);
+                        loaded++;
                     }
                 } catch (RuntimeException e) {
                     log.warn("{} Failed to read file {}: {}", LOG_PREFIX, file, e.getMessage());
@@ -172,6 +176,45 @@ public class LlmUsageTrackerImpl implements UsageTrackingPort {
         } catch (RuntimeException e) {
             log.warn("{} Failed to load persisted usage", LOG_PREFIX, e);
         }
+    }
+
+    private List<LlmUsage> parseUsageFileContent(String file, String content) {
+        String trimmed = content.trim();
+        if (trimmed.isEmpty()) {
+            return List.of();
+        }
+
+        if (trimmed.startsWith("[")) {
+            try {
+                return objectMapper.readValue(trimmed, USAGE_LIST_TYPE);
+            } catch (JsonProcessingException e) {
+                log.debug("{} Failed to parse JSON array in {}: {}", LOG_PREFIX, file, e.getMessage());
+            }
+        }
+
+        if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+            try {
+                ObjectMapper strictMapper = objectMapper.copy()
+                        .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+                LlmUsage single = strictMapper.readValue(trimmed, LlmUsage.class);
+                return List.of(single);
+            } catch (JsonProcessingException e) {
+                // Not a single JSON object, fall through to JSONL parsing.
+            }
+        }
+
+        List<LlmUsage> usages = new ArrayList<>();
+        for (String line : content.split(NEWLINE)) {
+            if (line.isBlank()) {
+                continue;
+            }
+            try {
+                usages.add(objectMapper.readValue(line, LlmUsage.class));
+            } catch (JsonProcessingException e) {
+                log.debug("{} Skipping malformed line in {}: {}", LOG_PREFIX, file, e.getMessage());
+            }
+        }
+        return usages;
     }
 
     private void indexUsage(LlmUsage usage) {

@@ -15,6 +15,7 @@ import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.SkillTemplateEngine;
 import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -56,6 +57,7 @@ class ContextBuildingSystemPromptTest {
     private AutoModeService autoModeService;
     private PlanService planService;
     private PromptSectionService promptSectionService;
+    private RuntimeConfigService runtimeConfigService;
     private UserPreferencesService userPreferencesService;
     private ContextBuildingSystem system;
 
@@ -71,7 +73,9 @@ class ContextBuildingSystemPromptTest {
         autoModeService = mock(AutoModeService.class);
         planService = mock(PlanService.class);
         promptSectionService = mock(PromptSectionService.class);
+        runtimeConfigService = mock(RuntimeConfigService.class);
         userPreferencesService = mock(UserPreferencesService.class);
+        when(runtimeConfigService.getAutoModelTier()).thenReturn(TIER_SMART);
 
         when(memoryComponent.getMemoryContext()).thenReturn("");
         when(skillComponent.getSkillsSummary()).thenReturn("");
@@ -91,6 +95,7 @@ class ContextBuildingSystemPromptTest {
                 autoModeService,
                 planService,
                 promptSectionService,
+                runtimeConfigService,
                 userPreferencesService);
     }
 
@@ -211,6 +216,7 @@ class ContextBuildingSystemPromptTest {
                 autoModeService,
                 planService,
                 promptSectionService,
+                runtimeConfigService,
                 userPreferencesService);
 
         AgentContext ctx = createContext();
@@ -375,8 +381,6 @@ class ContextBuildingSystemPromptTest {
     @Test
     void setsAutoModeTierForAutoMessages() {
         when(promptSectionService.isEnabled()).thenReturn(false);
-        properties.getAuto().setModelTier(TIER_SMART);
-
         Map<String, Object> meta = new HashMap<>();
         meta.put("auto.mode", true);
         List<Message> messages = new ArrayList<>(List.of(

@@ -4,8 +4,8 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.UserPreferences;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -31,17 +31,17 @@ class DynamicTierSystemTest {
     private static final String CONTENT_HELLO = "Hello";
     private static final String ARG_COMMAND = "command";
 
-    private BotProperties properties;
+    private RuntimeConfigService runtimeConfigService;
     private UserPreferencesService preferencesService;
     private DynamicTierSystem system;
 
     @BeforeEach
     void setUp() {
-        properties = new BotProperties();
-        properties.getRouter().setDynamicTierEnabled(true);
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isDynamicTierEnabled()).thenReturn(true);
         preferencesService = mock(UserPreferencesService.class);
         when(preferencesService.getPreferences()).thenReturn(UserPreferences.builder().build());
-        system = new DynamicTierSystem(properties, preferencesService);
+        system = new DynamicTierSystem(runtimeConfigService, preferencesService);
     }
 
     @Test
@@ -53,7 +53,7 @@ class DynamicTierSystemTest {
     @Test
     void isEnabledReflectsConfig() {
         assertTrue(system.isEnabled());
-        properties.getRouter().setDynamicTierEnabled(false);
+        when(runtimeConfigService.isDynamicTierEnabled()).thenReturn(false);
         assertFalse(system.isEnabled());
     }
 
@@ -325,7 +325,7 @@ class DynamicTierSystemTest {
 
     @Test
     void disabledSystemSkips() {
-        properties.getRouter().setDynamicTierEnabled(false);
+        when(runtimeConfigService.isDynamicTierEnabled()).thenReturn(false);
         assertFalse(system.isEnabled());
     }
 

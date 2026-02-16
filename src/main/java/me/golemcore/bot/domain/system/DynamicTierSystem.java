@@ -20,8 +20,8 @@ package me.golemcore.bot.domain.system;
 
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -45,7 +45,7 @@ import java.util.Set;
 @Slf4j
 public class DynamicTierSystem implements AgentSystem {
 
-    private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
     private final UserPreferencesService userPreferencesService;
 
     private static final String TOOL_NAME_SHELL = "shell";
@@ -80,7 +80,7 @@ public class DynamicTierSystem implements AgentSystem {
 
     @Override
     public boolean isEnabled() {
-        return properties.getRouter().isDynamicTierEnabled();
+        return runtimeConfigService.isDynamicTierEnabled();
     }
 
     @Override

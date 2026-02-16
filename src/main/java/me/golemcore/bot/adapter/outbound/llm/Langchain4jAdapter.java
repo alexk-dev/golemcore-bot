@@ -25,6 +25,7 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.LlmUsage;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolDefinition;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import me.golemcore.bot.port.outbound.LlmPort;
@@ -107,6 +108,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             .compile("\"reset_seconds\"\\s*:\\s*(\\d+)");
 
     private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
     private final ModelConfigService modelConfig;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -120,8 +122,8 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             return;
 
         // Use balanced model from router config
-        String model = properties.getRouter().getBalancedModel();
-        String reasoning = properties.getRouter().getBalancedModelReasoning();
+        String model = runtimeConfigService.getBalancedModel();
+        String reasoning = runtimeConfigService.getBalancedModelReasoning();
         this.currentModel = model;
 
         try {
@@ -193,7 +195,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         }
 
         if (supportsTemperature(modelName)) {
-            builder.temperature(properties.getRouter().getTemperature());
+            builder.temperature(runtimeConfigService.getTemperature());
         }
 
         return builder.build();
@@ -212,7 +214,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         }
 
         if (supportsTemperature(fullModel)) {
-            builder.temperature(properties.getRouter().getTemperature());
+            builder.temperature(runtimeConfigService.getTemperature());
         } else {
             log.debug("Using reasoning model: {}, effort: {}", modelName,
                     reasoningEffort != null ? reasoningEffort : "default");

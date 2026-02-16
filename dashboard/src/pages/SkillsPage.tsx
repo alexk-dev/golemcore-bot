@@ -88,9 +88,9 @@ export default function SkillsPage() {
 
   return (
     <div>
-      <div className="d-flex align-items-center justify-content-between mb-4">
+      <div className="section-header d-flex align-items-center justify-content-between">
         <h4 className="mb-0">Skills</h4>
-        <Button size="sm" variant="outline-primary" onClick={() => setShowCreate(true)}>
+        <Button size="sm" variant="primary" onClick={() => setShowCreate(true)}>
           + New Skill
         </Button>
       </div>
@@ -157,7 +157,7 @@ export default function SkillsPage() {
                   </Button>
                   <Button
                     size="sm"
-                    variant="outline-danger"
+                    variant="danger"
                     onClick={handleDelete}
                     disabled={deleteMutation.isPending}
                   >

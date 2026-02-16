@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.socket.WebSocketSession;
 import reactor.core.publisher.Mono;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -64,6 +65,18 @@ public class WebChannelAdapter implements ChannelPort {
                 "type", "assistant_chunk",
                 "text", content,
                 "sessionId", chatId));
+    }
+
+    @Override
+    public CompletableFuture<Void> sendMessage(String chatId, String content, Map<String, Object> hints) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("type", "assistant_chunk");
+        payload.put("text", content);
+        payload.put("sessionId", chatId);
+        if (hints != null && !hints.isEmpty()) {
+            payload.put("hint", hints);
+        }
+        return sendJsonToChat(chatId, payload);
     }
 
     @Override
