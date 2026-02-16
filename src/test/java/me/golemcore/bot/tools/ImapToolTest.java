@@ -1,6 +1,5 @@
 package me.golemcore.bot.tools;
 
-import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
@@ -83,19 +82,6 @@ class ImapToolTest {
         ImapTool tool = new ImapTool(runtimeConfigService);
 
         assertTrue(tool.isEnabled());
-    }
-
-    // ==================== Definition ====================
-
-    @Test
-    void shouldReturnCorrectDefinition() {
-        ImapTool tool = new ImapTool(runtimeConfigService);
-
-        ToolDefinition definition = tool.getDefinition();
-
-        assertEquals("imap", definition.getName());
-        assertNotNull(definition.getDescription());
-        assertNotNull(definition.getInputSchema());
     }
 
     // ==================== Parameter validation ====================

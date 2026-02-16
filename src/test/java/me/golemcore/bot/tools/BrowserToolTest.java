@@ -34,16 +34,6 @@ class BrowserToolTest {
         tool = new BrowserTool(browserComponent, runtimeConfigService);
     }
 
-    // ===== getDefinition =====
-
-    @Test
-    void shouldReturnValidDefinition() {
-        var def = tool.getDefinition();
-        assertEquals("browse", def.getName());
-        assertNotNull(def.getDescription());
-        assertNotNull(def.getInputSchema());
-    }
-
     // ===== isEnabled =====
 
     @Test

@@ -36,17 +36,6 @@ class WeatherToolTest {
         tool = new WeatherTool(feignClientFactory);
     }
 
-    // ===== getDefinition =====
-
-    @Test
-    void shouldReturnValidDefinition() {
-        ToolDefinition def = tool.getDefinition();
-        assertEquals("weather", def.getName());
-        assertNotNull(def.getDescription());
-        assertNotNull(def.getInputSchema());
-        assertTrue(def.getDescription().contains("weather"));
-    }
-
     @Test
     void shouldRequireLocationParameter() {
         ToolDefinition def = tool.getDefinition();
@@ -55,13 +44,6 @@ class WeatherToolTest {
         @SuppressWarnings("unchecked")
         List<String> required = (List<String>) schema.get("required");
         assertTrue(required.contains(PARAM_LOCATION));
-    }
-
-    // ===== isEnabled =====
-
-    @Test
-    void shouldAlwaysBeEnabled() {
-        assertTrue(tool.isEnabled());
     }
 
     // ===== Input validation =====

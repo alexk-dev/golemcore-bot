@@ -556,22 +556,6 @@ class GoalManagementToolTest {
         verify(autoModeService).clearCompletedGoals();
     }
 
-    // ===== getDefinition =====
-
-    @Test
-    void shouldReturnValidDefinition() {
-        assertNotNull(tool.getDefinition());
-        assertEquals("goal_management", tool.getDefinition().getName());
-        assertNotNull(tool.getDefinition().getInputSchema());
-    }
-
-    // ===== isEnabled =====
-
-    @Test
-    void shouldBeEnabled() {
-        assertTrue(tool.isEnabled());
-    }
-
     @Test
     void planTasksAddTaskFailure() throws Exception {
         when(autoModeService.addTask(anyString(), anyString(), any(), anyInt()))

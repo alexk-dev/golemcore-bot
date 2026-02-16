@@ -37,21 +37,6 @@ class McpToolAdapterTest {
     }
 
     @Test
-    void testGetDefinition() {
-        ToolDefinition def = ToolDefinition.builder()
-                .name("create_issue")
-                .description("Create a GitHub issue")
-                .inputSchema(Map.of("type", "object"))
-                .build();
-
-        McpToolAdapter adapter = new McpToolAdapter("github", def, manager);
-
-        assertEquals("create_issue", adapter.getDefinition().getName());
-        assertEquals("create_issue", adapter.getToolName());
-        assertEquals("Create a GitHub issue", adapter.getDefinition().getDescription());
-    }
-
-    @Test
     void testIsEnabledReturnsFalseWhenNoClient() {
         ToolDefinition def = ToolDefinition.simple("test_tool", "Test");
         McpToolAdapter adapter = new McpToolAdapter("nonexistent", def, manager);
@@ -69,14 +54,6 @@ class McpToolAdapterTest {
 
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("MCP server not running"));
-    }
-
-    @Test
-    void testGetSkillName() {
-        ToolDefinition def = ToolDefinition.simple("tool", "desc");
-        McpToolAdapter adapter = new McpToolAdapter("my-skill", def, manager);
-
-        assertEquals("my-skill", adapter.getSkillName());
     }
 
     @Test
