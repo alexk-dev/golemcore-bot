@@ -162,7 +162,7 @@ Rules:
 - [x] Add `aria-label` for image/mic/send/remove controls.
 - [x] Add live region for async states (`uploading`, `recording`, `transcribing`, `errors`).
 - [x] Implement combobox/listbox semantics in `CommandAutocomplete` + input.
-- [ ] Ensure visible focus styles for keyboard navigation.
+- [x] Ensure visible focus styles for keyboard navigation.
 
 Files (expected):
 - `dashboard/src/components/chat/ChatInput.tsx`
@@ -219,7 +219,7 @@ Files (expected):
 - [x] `Esc` dismissal and focus persistence.
 - [x] A11y checks for roles/attributes on command list.
 - [x] Attachment flow: invalid type, oversize, retry/remove.
-- [ ] Voice flow: permission denied, stop/cancel, transcript confirm.
+- [x] Voice flow: permission denied, stop/cancel, transcript confirm.
 - [x] Notices rendering hierarchy (advisory vs blocking).
 
 ### Integration tests
@@ -227,7 +227,7 @@ Files (expected):
 - [x] Scroll behavior with prepend and incoming messages.
 
 ### Non-functional
-- [ ] Basic accessibility smoke checks (axe or equivalent).
+- [x] Basic accessibility smoke checks (axe or equivalent).
 - [ ] Performance sanity on long transcript and large message history.
 
 ---

@@ -129,6 +129,13 @@
   padding: 0.5rem 0;
 }
 
+// Visible focus styles for keyboard users (ADR-0010 Phase A)
+.chat-container :is(button, [role='button'], textarea, input, select):focus-visible {
+  outline: 2px solid var(--bs-primary);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.2);
+}
+
 // ==================== Cards ====================
 
 .settings-card {

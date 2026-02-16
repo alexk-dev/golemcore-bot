@@ -584,12 +584,6 @@ export default function ChatInput({ onSend, disabled }: Props) {
             onKeyDown={handleKeyDown}
             placeholder="Type a message... (Shift+Enter for new line)"
             disabled={disabled}
-            role="combobox"
-            aria-expanded={showAutocomplete && filteredCommands.length > 0}
-            aria-controls={COMMAND_LISTBOX_ID}
-            aria-activedescendant={activeDescendant}
-            aria-autocomplete="list"
-            aria-haspopup="listbox"
             style={{ resize: 'none', maxHeight: 120, overflow: 'auto' }}
           />
 

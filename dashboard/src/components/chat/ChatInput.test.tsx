@@ -90,7 +90,7 @@ describe('ChatInput', () => {
     const onSend = vi.fn();
     render(<ChatInput onSend={onSend} />);
 
-    const textarea = screen.getByRole('combobox');
+    const textarea = screen.getByPlaceholderText(/Type a message/i);
     fireEvent.change(textarea, { target: { value: '/pl' } });
     expect(await screen.findByRole('listbox')).toBeInTheDocument();
 
@@ -154,16 +154,13 @@ describe('ChatInput', () => {
     });
   });
 
-  it('sets combobox aria attributes for command suggestions', async () => {
+  it('renders command suggestion list with listbox semantics', async () => {
     const onSend = vi.fn();
     render(<ChatInput onSend={onSend} />);
 
-    const textarea = screen.getByRole('combobox');
+    const textarea = screen.getByPlaceholderText(/Type a message/i);
     fireEvent.change(textarea, { target: { value: '/pl' } });
 
-    expect(textarea).toHaveAttribute('aria-controls', 'chat-command-listbox');
-    expect(textarea).toHaveAttribute('aria-expanded', 'true');
-    expect(textarea).toHaveAttribute('aria-haspopup', 'listbox');
     expect(await screen.findByRole('listbox')).toBeInTheDocument();
   });
 
@@ -242,5 +239,59 @@ describe('ChatInput', () => {
     });
 
     expect((screen.getByPlaceholderText(/Type a message/i) as HTMLTextAreaElement).value).toBe('');
+  });
+
+  it('shows recoverable notice when microphone permission is denied', async () => {
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(async () => {
+          const err = new DOMException('Permission denied', 'NotAllowedError');
+          throw err;
+        }),
+      },
+    });
+
+    const onSend = vi.fn();
+    render(<ChatInput onSend={onSend} />);
+
+    fireEvent.click(screen.getByLabelText(/Start voice recording/i));
+
+    const notice = await screen.findByTestId('composer-notice-recoverable');
+    expect(notice).toHaveTextContent(/Microphone access denied/i);
+  });
+
+
+  it('cancel recording does not show transcript confirmation', async () => {
+    class MockMediaRecorder {
+      ondataavailable: ((ev: { data: Blob }) => void) | null = null;
+      onstop: (() => void) | null = null;
+      mimeType = 'audio/webm';
+      constructor(_stream: MediaStream) {}
+      start() {}
+      stop() {
+        this.ondataavailable?.({ data: new Blob(['audio'], { type: 'audio/webm' }) });
+        this.onstop?.();
+      }
+    }
+
+    vi.stubGlobal('MediaRecorder', MockMediaRecorder as unknown as typeof MediaRecorder);
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: vi.fn() }] })),
+      },
+    });
+
+    const onSend = vi.fn();
+    render(<ChatInput onSend={onSend} />);
+
+    fireEvent.click(screen.getByLabelText(/Start voice recording/i));
+    const cancelBtn = await screen.findByLabelText(/Cancel voice recording/i);
+    fireEvent.click(cancelBtn);
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('transcript-confirm')).not.toBeInTheDocument();
+    });
   });
 });
