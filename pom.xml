@@ -335,6 +335,13 @@
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
                 <version>${jacoco.version}</version>
+                <configuration>
+                    <excludes>
+                        <!-- Generated protobuf classes -->
+                        <exclude>me/golemcore/bot/proto/**</exclude>
+                        <exclude>me/golemcore/bot/adapter/inbound/web/proto/**</exclude>
+                    </excludes>
+                </configuration>
                 <executions>
                     <execution>
                         <goals>
