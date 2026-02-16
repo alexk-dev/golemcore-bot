@@ -87,6 +87,7 @@ export default function ChatInput({ onSend, disabled }: Props) {
   const [recording, setRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [processingVoice, setProcessingVoice] = useState(false);
+  const [pendingTranscript, setPendingTranscript] = useState<string | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [autocompleteDismissed, setAutocompleteDismissed] = useState(false);
@@ -122,8 +123,9 @@ export default function ChatInput({ onSend, disabled }: Props) {
     if (uploading) return 'Uploading image...';
     if (recording) return `Recording ${formatDuration(recordingSeconds)}`;
     if (processingVoice) return 'Transcribing...';
+    if (pendingTranscript) return 'Transcript ready for confirmation';
     return '';
-  }, [uploading, recording, processingVoice, recordingSeconds]);
+  }, [uploading, recording, processingVoice, recordingSeconds, pendingTranscript]);
 
   const activeDescendant = showAutocomplete && filteredCommands.length > 0
     ? `${COMMAND_LISTBOX_ID}-option-${selectedCmdIndex}`
@@ -188,6 +190,7 @@ export default function ChatInput({ onSend, disabled }: Props) {
     setText('');
     setAttachments([]);
     setErrorText(null);
+    setPendingTranscript(null);
   };
 
   const applySelectedCommand = () => {
@@ -405,7 +408,7 @@ export default function ChatInput({ onSend, disabled }: Props) {
         try {
           setProcessingVoice(true);
           const res = await transcribeVoice(blob);
-          setText((prev) => (prev ? `${prev} ${res.text}` : res.text));
+          setPendingTranscript(res.text);
         } catch (err) {
           setErrorText(formatApiError(err, 'Voice transcription failed'));
         } finally {
@@ -484,6 +487,33 @@ export default function ChatInput({ onSend, disabled }: Props) {
             </div>
           ))}
         </div>
+      )}
+
+      {pendingTranscript && (
+        <Alert variant="info" className="chat-input-alert mb-2 py-2" role="status" data-testid="transcript-confirm">
+          <div className="mb-2">Transcript ready: <em>{pendingTranscript}</em></div>
+          <div className="d-flex gap-2">
+            <Button
+              size="sm"
+              variant="primary"
+              type="button"
+              onClick={() => {
+                setText((prev) => (prev ? `${prev} ${pendingTranscript}` : pendingTranscript));
+                setPendingTranscript(null);
+              }}
+            >
+              Insert transcript
+            </Button>
+            <Button
+              size="sm"
+              variant="outline-secondary"
+              type="button"
+              onClick={() => setPendingTranscript(null)}
+            >
+              Discard transcript
+            </Button>
+          </div>
+        </Alert>
       )}
 
       {commandMode && (

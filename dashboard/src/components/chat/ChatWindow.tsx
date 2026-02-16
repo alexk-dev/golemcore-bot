@@ -40,6 +40,8 @@ export default function ChatWindow() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [tier, setTier] = useState('balanced');
   const [tierForce, setTierForce] = useState(false);
+  const [showAdvancedControls, setShowAdvancedControls] = useState(false);
+  const [unseenCount, setUnseenCount] = useState(0);
   const wsRef = useRef<WebSocket | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -99,6 +101,9 @@ export default function ChatWindow() {
 
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
     shouldAutoScroll.current = nearBottom;
+    if (nearBottom) {
+      setUnseenCount(0);
+    }
 
     if (el.scrollTop < 50) {
       requestLoadMore();
@@ -127,6 +132,8 @@ export default function ChatWindow() {
           setTyping(false);
           if (shouldAutoScroll.current) {
             scrollBehaviorRef.current = 'auto';
+          } else {
+            setUnseenCount((x) => x + 1);
           }
           setAllMessages((prev) => {
             const last = prev[prev.length - 1];
@@ -165,6 +172,7 @@ export default function ChatWindow() {
     if (shouldAutoScroll.current) {
       bottomRef.current?.scrollIntoView({ behavior: scrollBehaviorRef.current });
       scrollBehaviorRef.current = 'auto';
+      setUnseenCount(0);
     }
   }, [allMessages, typing, visibleStart]);
 
@@ -174,6 +182,7 @@ export default function ChatWindow() {
       setAllMessages((prev) => [...prev, newMsg]);
       shouldAutoScroll.current = true;
       scrollBehaviorRef.current = 'smooth';
+      setUnseenCount(0);
       wsRef.current.send(JSON.stringify({ text, sessionId: chatSessionId }));
     }
   };
@@ -207,6 +216,20 @@ export default function ChatWindow() {
           <small className="text-muted">{connected ? 'Connected' : 'Reconnecting...'}</small>
         </div>
         <div className="d-flex align-items-center gap-2" aria-label="Advanced model controls">
+          <Button
+            size="sm"
+            variant="outline-secondary"
+            onClick={() => setShowAdvancedControls((x) => !x)}
+            aria-expanded={showAdvancedControls}
+            aria-controls="advanced-controls-panel"
+          >
+            Model controls
+          </Button>
+        </div>
+      </div>
+
+      {showAdvancedControls && (
+        <div id="advanced-controls-panel" className="px-2 pb-2 d-flex align-items-center gap-2">
           <Form.Select
             size="sm"
             value={tier}
@@ -226,7 +249,7 @@ export default function ChatWindow() {
             onChange={(e) => handleForceChange(e.target.checked)}
           />
         </div>
-      </div>
+      )}
 
       <div className="chat-window" ref={scrollRef} onScroll={handleScroll} aria-busy={loadingMore}>
         {hasMore && (
@@ -257,6 +280,24 @@ export default function ChatWindow() {
         )}
         <div ref={bottomRef} />
       </div>
+
+      {unseenCount > 0 && (
+        <div className="text-center py-2">
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={() => {
+              shouldAutoScroll.current = true;
+              scrollBehaviorRef.current = 'smooth';
+              setUnseenCount(0);
+              bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            aria-label="Jump to latest messages"
+          >
+            New messages ({unseenCount})
+          </Button>
+        </div>
+      )}
 
       <ChatInput onSend={handleSend} disabled={!connected} />
     </div>

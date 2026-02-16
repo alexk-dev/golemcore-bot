@@ -166,4 +166,81 @@ describe('ChatInput', () => {
     expect(textarea).toHaveAttribute('aria-haspopup', 'listbox');
     expect(await screen.findByRole('listbox')).toBeInTheDocument();
   });
+
+  it('shows transcript confirmation and inserts text only after explicit confirm', async () => {
+    class MockMediaRecorder {
+      ondataavailable: ((ev: { data: Blob }) => void) | null = null;
+      onstop: (() => void) | null = null;
+      mimeType = 'audio/webm';
+      constructor(_stream: MediaStream) {}
+      start() {}
+      stop() {
+        this.ondataavailable?.({ data: new Blob(['audio'], { type: 'audio/webm' }) });
+        this.onstop?.();
+      }
+    }
+
+    vi.stubGlobal('MediaRecorder', MockMediaRecorder as unknown as typeof MediaRecorder);
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: vi.fn() }] })),
+      },
+    });
+
+    const onSend = vi.fn();
+    render(<ChatInput onSend={onSend} />);
+
+    fireEvent.click(screen.getByLabelText(/Start voice recording/i));
+    const stopBtn = await screen.findByLabelText(/Stop voice recording/i);
+    fireEvent.click(stopBtn);
+
+    expect(await screen.findByTestId('transcript-confirm')).toBeInTheDocument();
+    const textarea = screen.getByPlaceholderText(/Type a message/i) as HTMLTextAreaElement;
+    expect(textarea.value).toBe('');
+
+    fireEvent.click(screen.getByRole('button', { name: /Insert transcript/i }));
+
+    await waitFor(() => {
+      expect((screen.getByPlaceholderText(/Type a message/i) as HTMLTextAreaElement).value).toContain('hello from voice');
+    });
+  });
+
+  it('discards transcript confirmation without mutating text', async () => {
+    class MockMediaRecorder {
+      ondataavailable: ((ev: { data: Blob }) => void) | null = null;
+      onstop: (() => void) | null = null;
+      mimeType = 'audio/webm';
+      constructor(_stream: MediaStream) {}
+      start() {}
+      stop() {
+        this.ondataavailable?.({ data: new Blob(['audio'], { type: 'audio/webm' }) });
+        this.onstop?.();
+      }
+    }
+
+    vi.stubGlobal('MediaRecorder', MockMediaRecorder as unknown as typeof MediaRecorder);
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: vi.fn() }] })),
+      },
+    });
+
+    const onSend = vi.fn();
+    render(<ChatInput onSend={onSend} />);
+
+    fireEvent.click(screen.getByLabelText(/Start voice recording/i));
+    const stopBtn = await screen.findByLabelText(/Stop voice recording/i);
+    fireEvent.click(stopBtn);
+
+    expect(await screen.findByTestId('transcript-confirm')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Discard transcript/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('transcript-confirm')).not.toBeInTheDocument();
+    });
+
+    expect((screen.getByPlaceholderText(/Type a message/i) as HTMLTextAreaElement).value).toBe('');
+  });
 });

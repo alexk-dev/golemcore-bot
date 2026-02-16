@@ -194,14 +194,14 @@ Files (expected):
 
 - [x] Replace pure toggle with explicit record lifecycle controls.
 - [x] Add elapsed timer.
-- [ ] Add transcript confirmation before insertion.
+- [x] Add transcript confirmation before insertion.
 - [x] Add clear failure actions for permission/device issues.
 
 ## Phase F — Message List and Toolbar IA (should)
 
-- [ ] Add “new messages” indicator while user is reading older history.
+- [x] Add "new messages" indicator while user is reading older history.
 - [x] Tune auto-scroll policy to prevent disruptive jumps.
-- [ ] Move tier/force into advanced section with help tooltip.
+- [x] Move tier/force into advanced section with help tooltip.
 
 ## Phase G — Structured Message Rendering Contract (future-proof)
 

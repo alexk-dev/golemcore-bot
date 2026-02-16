@@ -35,6 +35,7 @@ vi.mock('./ChatInput', () => ({
 
 class MockWebSocket {
   static OPEN = 1;
+  static instances: MockWebSocket[] = [];
   readyState = 1;
   onopen: (() => void) | null = null;
   onclose: (() => void) | null = null;
@@ -43,6 +44,7 @@ class MockWebSocket {
   close = vi.fn();
 
   constructor(_url: string) {
+    MockWebSocket.instances.push(this);
     setTimeout(() => this.onopen?.(), 0);
   }
 }
@@ -54,6 +56,7 @@ describe('ChatWindow', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    MockWebSocket.instances = [];
     globalThis.WebSocket = MockWebSocket as unknown as typeof WebSocket;
     Element.prototype.scrollIntoView = scrollIntoViewMock;
 
@@ -151,6 +154,48 @@ describe('ChatWindow', () => {
 
     await waitFor(() => {
       expect(scrollIntoViewMock).toHaveBeenCalledWith({ behavior: 'smooth' });
+    });
+  });
+
+  it('shows new messages pill when user is away from bottom and jumps to latest on click', async () => {
+    render(<ChatWindow />);
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('message-bubble').length).toBe(50);
+      expect(MockWebSocket.instances.length).toBeGreaterThan(0);
+    });
+
+    const chatWindow = document.querySelector('.chat-window') as HTMLDivElement;
+    Object.defineProperty(chatWindow, 'scrollHeight', { configurable: true, value: 1000 });
+    Object.defineProperty(chatWindow, 'clientHeight', { configurable: true, value: 400 });
+    Object.defineProperty(chatWindow, 'scrollTop', { configurable: true, writable: true, value: 0 });
+
+    fireEvent.scroll(chatWindow);
+
+    MockWebSocket.instances[0].onmessage?.({ data: JSON.stringify({ type: 'assistant_done', text: 'new incoming' }) });
+
+    const pill = await screen.findByRole('button', { name: /Jump to latest messages/i });
+    expect(pill).toHaveTextContent(/New messages/i);
+
+    fireEvent.click(pill);
+
+    await waitFor(() => {
+      expect(scrollIntoViewMock).toHaveBeenCalledWith({ behavior: 'smooth' });
+    });
+  });
+
+  it('toggles advanced model controls in collapsible panel', async () => {
+    render(<ChatWindow />);
+
+    const toggle = screen.getByRole('button', { name: /Model controls/i });
+    expect(screen.queryByLabelText(/Model tier/i)).not.toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(await screen.findByLabelText(/Model tier/i)).toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/Model tier/i)).not.toBeInTheDocument();
     });
   });
 });
