@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import ChatWindow from './ChatWindow';
 
 const listSessionsMock = vi.fn();
@@ -172,7 +172,9 @@ describe('ChatWindow', () => {
 
     fireEvent.scroll(chatWindow);
 
-    MockWebSocket.instances[0].onmessage?.({ data: JSON.stringify({ type: 'assistant_done', text: 'new incoming' }) });
+    await act(async () => {
+      MockWebSocket.instances[0].onmessage?.({ data: JSON.stringify({ type: 'assistant_done', text: 'new incoming' }) });
+    });
 
     const pill = await screen.findByRole('button', { name: /Jump to latest messages/i });
     expect(pill).toHaveTextContent(/New messages/i);
