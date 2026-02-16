@@ -6,8 +6,15 @@
 
     <description>PMD rules for GolemCore Bot</description>
 
-    <!-- Error Prone - all rules (bugs and potential errors) -->
-    <rule ref="category/java/errorprone.xml" />
+    <!-- Error Prone - all rules except overly noisy ones -->
+    <rule ref="category/java/errorprone.xml">
+        <!-- Duplicate string literals are normal in test files (test data, assertion values).
+             Source constants are enforced via code review. -->
+        <exclude name="AvoidDuplicateLiterals" />
+        <!-- Literal values in if-conditions are acceptable when guarded by named constants
+             or when the meaning is obvious from context (e.g. "telegram", 20). -->
+        <exclude name="AvoidLiteralsInIfCondition" />
+    </rule>
 
     <!-- Best Practices - important rules only -->
     <rule ref="category/java/bestpractices.xml/UnusedPrivateField" />

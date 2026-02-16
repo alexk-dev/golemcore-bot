@@ -1,7 +1,6 @@
 package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.model.AudioFormat;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler.VoiceSendResult;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.VoicePort;

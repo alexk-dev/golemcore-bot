@@ -405,11 +405,11 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     public List<String> getSupportedModels() {
         // Build from models.json — provider/modelName for each configured provider
         List<String> models = new ArrayList<>();
-        Map<String, me.golemcore.bot.infrastructure.config.ModelConfigService.ModelSettings> modelsConfig = modelConfig
+        Map<String, ModelConfigService.ModelSettings> modelsConfig = modelConfig
                 .getAllModels();
 
         if (modelsConfig != null) {
-            for (Map.Entry<String, me.golemcore.bot.infrastructure.config.ModelConfigService.ModelSettings> entry : modelsConfig
+            for (Map.Entry<String, ModelConfigService.ModelSettings> entry : modelsConfig
                     .entrySet()) {
                 String modelName = entry.getKey();
                 String provider = entry.getValue().getProvider();
@@ -479,7 +479,8 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                     for (Message.ToolCall tc : msg.getToolCalls()) {
                         String id = tc.getId();
                         if (id == null || id.isBlank()) {
-                            id = SYNTH_ID_PREFIX + synthCounter++;
+                            synthCounter++;
+                            id = SYNTH_ID_PREFIX + synthCounter;
                             pendingSynthIds.addLast(id);
                         }
                         emittedToolCallIds.add(id);
@@ -497,9 +498,12 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             case "tool" -> {
                 String toolCallId = msg.getToolCallId();
                 if (toolCallId == null || toolCallId.isBlank()) {
-                    toolCallId = pendingSynthIds.isEmpty()
-                            ? SYNTH_ID_PREFIX + synthCounter++
-                            : pendingSynthIds.pollFirst();
+                    if (pendingSynthIds.isEmpty()) {
+                        synthCounter++;
+                        toolCallId = SYNTH_ID_PREFIX + synthCounter;
+                    } else {
+                        toolCallId = pendingSynthIds.pollFirst();
+                    }
                 }
                 if (emittedToolCallIds.contains(toolCallId)) {
                     messages.add(ToolExecutionResultMessage.from(

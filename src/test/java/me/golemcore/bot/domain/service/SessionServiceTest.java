@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -139,7 +139,7 @@ class SessionServiceTest {
                 .id("m1")
                 .role("assistant")
                 .content("done")
-                .metadata(new java.util.LinkedHashMap<>(java.util.Map.of("model", "openai/gpt-5.3-codex",
+                .metadata(new LinkedHashMap<>(Map.of("model", "openai/gpt-5.3-codex",
                         "modelTier", "coding")))
                 .timestamp(FIXED_TIME)
                 .build());

@@ -54,6 +54,7 @@ public class AutoModeService {
 
     private static final String AUTO_DIR = "auto";
     private static final String GOAL_NOT_FOUND = "Goal not found: ";
+    private static final int MAX_TASKS_PER_GOAL = 20;
     private static final TypeReference<List<Goal>> GOAL_LIST_TYPE_REF = new TypeReference<>() {
     };
 
@@ -144,9 +145,9 @@ public class AutoModeService {
         Goal goal = getGoal(goalId)
                 .orElseThrow(() -> new IllegalArgumentException(GOAL_NOT_FOUND + goalId));
 
-        if (goal.getTasks().size() >= 20) {
+        if (goal.getTasks().size() >= MAX_TASKS_PER_GOAL) {
             throw new IllegalStateException(
-                    "Maximum tasks per goal reached: 20");
+                    "Maximum tasks per goal reached: " + MAX_TASKS_PER_GOAL);
         }
 
         AutoTask task = AutoTask.builder()

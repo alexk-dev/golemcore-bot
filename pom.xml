@@ -323,6 +323,10 @@
                     <rulesets>
                         <ruleset>misc/pmd-ruleset.xml</ruleset>
                     </rulesets>
+                    <excludes>
+                        <exclude>**/proto/session/v1/*.java</exclude>
+                        <exclude>**/web/proto/*.java</exclude>
+                    </excludes>
                 </configuration>
             </plugin>
 
@@ -475,6 +479,10 @@
                             <rulesets>
                                 <ruleset>misc/pmd-ruleset.xml</ruleset>
                             </rulesets>
+                            <excludes>
+                                <exclude>**/proto/session/v1/*.java</exclude>
+                                <exclude>**/web/proto/*.java</exclude>
+                            </excludes>
                         </configuration>
                         <executions>
                             <execution>

@@ -146,7 +146,7 @@ class DashboardAuthServiceTest {
     void shouldRejectInvalidMfaVerificationCode() {
         authService.init();
 
-        boolean enabled = authService.enableMfa("JBSWY3DPEHPK3PXP", "000000");
+        authService.enableMfa("JBSWY3DPEHPK3PXP", "000000");
         // TOTP code is time-based, this will almost certainly be wrong
         // but the test verifies the flow works without exceptions
         assertNotNull(authService.getCredentials());

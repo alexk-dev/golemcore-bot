@@ -80,6 +80,7 @@ class AllowlistValidatorTest {
     }
 
     @Test
+    @SuppressWarnings("PMD.NullAssignment")
     void shouldDenyTelegramUserWhenRuntimeConfigAllowlistIsNull() {
         // Arrange — null means no one is allowed
         runtimeConfigService.telegramAllowedUsers = null;

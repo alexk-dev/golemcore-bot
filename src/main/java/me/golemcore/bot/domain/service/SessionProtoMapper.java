@@ -27,6 +27,8 @@ import java.util.Map;
  */
 public class SessionProtoMapper {
 
+    private static final int LONG_BIT_LENGTH = 63;
+
     public AgentSessionRecord toProto(AgentSession session) {
         AgentSessionRecord.Builder builder = AgentSessionRecord.newBuilder();
         putIfNotBlank(session.getId(), builder::setId);
@@ -183,7 +185,7 @@ public class SessionProtoMapper {
         }
         if (value instanceof BigInteger) {
             BigInteger bigInteger = (BigInteger) value;
-            if (bigInteger.bitLength() <= 63) {
+            if (bigInteger.bitLength() <= LONG_BIT_LENGTH) {
                 return builder.setIntValue(bigInteger.longValue()).build();
             }
             return builder.setStringValue(bigInteger.toString()).build();

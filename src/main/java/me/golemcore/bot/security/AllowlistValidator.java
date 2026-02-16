@@ -35,6 +35,8 @@ import java.util.List;
 @Slf4j
 public class AllowlistValidator {
 
+    private static final String CHANNEL_TELEGRAM = "telegram";
+
     private final BotProperties properties;
     private final RuntimeConfigService runtimeConfigService;
 
@@ -49,7 +51,7 @@ public class AllowlistValidator {
         }
 
         // Telegram allowlist is RuntimeConfig-only (no properties fallback)
-        if ("telegram".equals(channelType)) {
+        if (CHANNEL_TELEGRAM.equals(channelType)) {
             List<String> runtimeAllowed = runtimeConfigService.getTelegramAllowedUsers();
             boolean allowed = runtimeAllowed != null && runtimeAllowed.contains(userId);
             if (!allowed) {

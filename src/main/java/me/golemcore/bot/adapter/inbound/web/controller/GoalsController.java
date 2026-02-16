@@ -1,7 +1,6 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
 import lombok.RequiredArgsConstructor;
-import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.service.AutoModeService;
 import org.springframework.http.ResponseEntity;

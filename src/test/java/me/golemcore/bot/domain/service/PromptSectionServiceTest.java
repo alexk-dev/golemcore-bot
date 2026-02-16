@@ -2,7 +2,6 @@ package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.model.PromptSection;
 import me.golemcore.bot.domain.model.UserPreferences;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;

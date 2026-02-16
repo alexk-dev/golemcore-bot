@@ -416,8 +416,8 @@ public class SessionService implements SessionPort {
         if (state != null && !state.isBlank()) {
             try {
                 builder.state(AgentSession.SessionState.valueOf(state));
-            } catch (IllegalArgumentException e) {
-                // keep default state
+            } catch (IllegalArgumentException e) { // NOSONAR — keep default state for unknown values
+                log.debug("Unknown session state '{}', using default", state);
             }
         }
         return builder.build();
@@ -446,7 +446,7 @@ public class SessionService implements SessionPort {
         }
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({ "unchecked", "PMD.ReturnEmptyCollectionRatherThanNull" })
     private Map<String, Object> parseArguments(JsonNode node) {
         if (node == null || node.isMissingNode() || node.isNull() || !node.isObject()) {
             return null;

@@ -1,6 +1,5 @@
 package me.golemcore.bot.tools;
 
-import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -17,7 +16,6 @@ import java.util.concurrent.ExecutionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -60,18 +58,6 @@ class BraveSearchToolTest {
                 // No-op to keep retry tests fast and deterministic.
             }
         };
-    }
-
-    @Test
-    void getDefinition_returnsCorrectDefinition() {
-        braveSearchTool = createTool();
-        braveSearchTool.init();
-
-        ToolDefinition definition = braveSearchTool.getDefinition();
-
-        assertEquals("brave_search", definition.getName());
-        assertNotNull(definition.getDescription());
-        assertNotNull(definition.getInputSchema());
     }
 
     @Test

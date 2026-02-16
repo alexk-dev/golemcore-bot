@@ -198,8 +198,7 @@ public class LlmUsageTrackerImpl implements UsageTrackingPort {
                         .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
                 LlmUsage single = strictMapper.readValue(trimmed, LlmUsage.class);
                 return List.of(single);
-            } catch (JsonProcessingException e) {
-                // Not a single JSON object, fall through to JSONL parsing.
+            } catch (JsonProcessingException ignored) { // NOSONAR — not a single JSON object, fall through to JSONL
             }
         }
 
