@@ -12,6 +12,8 @@ import {
   updateAutoConfig,
   updateAdvancedConfig,
   updateRuntimeSecrets,
+  getRuntimeModules,
+  updateRuntimeModules,
   generateInviteCode,
   deleteInviteCode,
   restartTelegram,
@@ -25,6 +27,7 @@ import {
   CompactionConfig,
   WebhookConfig,
   SecretUpdateRequest,
+  RuntimeModulePayload,
 } from '../api/settings';
 
 export function useSettings() {
@@ -132,5 +135,18 @@ export function useUpdateRuntimeSecrets() {
   return useMutation({
     mutationFn: (payload: SecretUpdateRequest) => updateRuntimeSecrets(payload),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+
+export function useRuntimeModules() {
+  return useQuery({ queryKey: ['runtime-modules'], queryFn: getRuntimeModules });
+}
+
+export function useUpdateRuntimeModules() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: Record<string, RuntimeModulePayload>) => updateRuntimeModules(patch),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-modules'] }),
   });
 }

@@ -21,6 +21,8 @@ import type {
   WebhookConfig, HookMapping, ImapConfig, SmtpConfig, SecretUpdateRequest,
 } from '../api/settings';
 import { FiHelpCircle } from 'react-icons/fi';
+import ModuleSettingsSection from '../components/settings/ModuleSettingsSection';
+import { braveModuleDefinition, elevenLabsModuleDefinition } from '../components/settings/moduleDefinitions';
 
 // ==================== Tooltip Helper ====================
 
@@ -514,17 +516,7 @@ function ToolsTab({ config }: { config: ToolsConfig }) {
               </div>
             ))}
           </div>
-          {form.braveSearchEnabled && (
-            <Form.Group className="mb-3">
-              <Form.Label className="small fw-medium">
-                Brave Search API Key <Tip text="Get your free API key at brave.com/search/api" />
-              </Form.Label>
-              <Form.Control size="sm" type="password" value={form.braveSearchApiKey ?? ''}
-                onChange={(e) => setForm({ ...form, braveSearchApiKey: e.target.value || null })}
-                placeholder="BSA-..." />
-              <Form.Text className="text-muted">Leave as *** to keep current key</Form.Text>
-            </Form.Group>
-          )}
+          <ModuleSettingsSection def={braveModuleDefinition} />
           <Button variant="primary" size="sm" onClick={handleSave}>Save</Button>
         </Card.Body>
       </Card>
@@ -720,7 +712,6 @@ function VoiceTab({ config }: { config: VoiceConfig }) {
   const updateVoice = useUpdateVoice();
   const updateSecrets = useUpdateRuntimeSecrets();
   const [form, setForm] = useState<VoiceConfig>({ ...config });
-  const [showKey, setShowKey] = useState(false);
 
   useEffect(() => { setForm({ ...config }); }, [config]);
 
@@ -740,19 +731,7 @@ function VoiceTab({ config }: { config: VoiceConfig }) {
           checked={form.enabled ?? false}
           onChange={(e) => setForm({ ...form, enabled: e.target.checked })} className="mb-3" />
 
-        <Form.Group className="mb-3">
-          <Form.Label className="small fw-medium">
-            API Key <Tip text="Your ElevenLabs API key from elevenlabs.io/app/settings/api-keys" />
-          </Form.Label>
-          <InputGroup size="sm">
-            <Form.Control type={showKey ? 'text' : 'password'} value={form.apiKey ?? ''}
-              onChange={(e) => setForm({ ...form, apiKey: e.target.value || null })} />
-            <Form.Text className="text-muted">Leave as *** to keep current API key</Form.Text>
-            <Button variant="outline-secondary" onClick={() => setShowKey(!showKey)}>
-              {showKey ? 'Hide' : 'Show'}
-            </Button>
-          </InputGroup>
-        </Form.Group>
+        <ModuleSettingsSection def={elevenLabsModuleDefinition} />
 
         <Row className="g-3">
           <Col md={6}>

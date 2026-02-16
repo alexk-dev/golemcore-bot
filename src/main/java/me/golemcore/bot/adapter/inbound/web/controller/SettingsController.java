@@ -1,5 +1,6 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.adapter.inbound.web.dto.PreferencesUpdateRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.SettingsResponse;
@@ -7,6 +8,7 @@ import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.RuntimeModuleConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.ResponseEntity;
@@ -37,6 +39,7 @@ public class SettingsController {
     private final UserPreferencesService preferencesService;
     private final ModelSelectionService modelSelectionService;
     private final RuntimeConfigService runtimeConfigService;
+    private final RuntimeModuleConfigService runtimeModuleConfigService;
     private final ApplicationEventPublisher eventPublisher;
 
     @GetMapping
@@ -121,6 +124,17 @@ public class SettingsController {
         RuntimeConfig merged = preserveExistingSecrets(current, config);
         runtimeConfigService.updateRuntimeConfig(merged);
         return Mono.just(ResponseEntity.ok(maskSecrets(runtimeConfigService.getRuntimeConfig())));
+    }
+
+    @GetMapping("/runtime/modules")
+    public Mono<ResponseEntity<Map<String, JsonNode>>> getRuntimeModules() {
+        return Mono.just(ResponseEntity.ok(runtimeModuleConfigService.getAllMasked()));
+    }
+
+    @PutMapping("/runtime/modules")
+    public Mono<ResponseEntity<Map<String, JsonNode>>> updateRuntimeModules(
+            @RequestBody Map<String, JsonNode> patch) {
+        return Mono.just(ResponseEntity.ok(runtimeModuleConfigService.patchMasked(patch)));
     }
 
     @PutMapping("/runtime/secrets")

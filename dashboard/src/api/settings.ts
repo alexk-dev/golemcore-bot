@@ -237,3 +237,18 @@ export async function deleteInviteCode(code: string): Promise<void> {
 export async function restartTelegram(): Promise<void> {
   await client.post('/settings/telegram/restart');
 }
+
+
+export type RuntimeModulePayload = Record<string, unknown>;
+
+export async function getRuntimeModules(): Promise<Record<string, RuntimeModulePayload>> {
+  const { data } = await client.get('/settings/runtime/modules');
+  return data;
+}
+
+export async function updateRuntimeModules(
+  patch: Record<string, RuntimeModulePayload>,
+): Promise<Record<string, RuntimeModulePayload>> {
+  const { data } = await client.put('/settings/runtime/modules', patch);
+  return data;
+}
