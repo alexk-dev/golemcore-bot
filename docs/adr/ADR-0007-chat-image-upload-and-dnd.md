@@ -65,14 +65,16 @@ Images are uploaded first, then referenced in outbound chat message payload.
 - [x] Add upload endpoint and media storage service.
 - [x] Return normalized metadata DTO.
 - [ ] Add cleanup policy (TTL or session-linked lifecycle).
+- [x] Enforce max files per request.
 
 ### Phase B — Chat input integration
 - [x] Add attach button + DnD area.
 - [x] Add preview/remove states.
 - [x] Upload before send; include refs in outbound payload.
+- [x] Enforce UI-side max count and per-file size.
 
 ### Phase C — Message rendering
-- [ ] Render sent image thumbnails in user bubbles.
+- [x] Render sent image thumbnails in user bubbles.
 - [ ] Render assistant-generated image attachments when present.
 
 ### Phase D — Tests

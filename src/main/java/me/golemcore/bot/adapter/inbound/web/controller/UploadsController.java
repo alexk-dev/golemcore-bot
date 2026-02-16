@@ -36,14 +36,27 @@ public class UploadsController {
 
     private static final String DIR = "uploads";
     private static final long MAX_IMAGE_BYTES = 10L * 1024L * 1024L;
+    private static final int MAX_FILES_PER_REQUEST = 5;
 
     private final StoragePort storage;
     private final ObjectMapper objectMapper;
 
     @PostMapping(value = "/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public Mono<ResponseEntity<List<ImageUploadResponse>>> uploadImages(@RequestPart("files") Flux<FilePart> files) {
-        return files.concatMap(this::storeImage)
-                .collectList()
+        return files.collectList()
+                .flatMap(fileParts -> {
+                    if (fileParts.isEmpty()) {
+                        return Mono.error(new ResponseStatusException(BAD_REQUEST, "No files uploaded"));
+                    }
+                    if (fileParts.size() > MAX_FILES_PER_REQUEST) {
+                        return Mono.error(new ResponseStatusException(
+                                BAD_REQUEST,
+                                "Too many files. Max allowed: " + MAX_FILES_PER_REQUEST));
+                    }
+                    return Flux.fromIterable(fileParts)
+                            .concatMap(this::storeImage)
+                            .collectList();
+                })
                 .map(ResponseEntity::ok);
     }
 
@@ -94,15 +107,15 @@ public class UploadsController {
                     dataBuffer.read(bytes);
                     DataBufferUtils.release(dataBuffer);
                     acc.append(bytes);
+                    if (acc.totalSize() > MAX_IMAGE_BYTES) {
+                        throw new ResponseStatusException(BAD_REQUEST, "Image too large");
+                    }
                     return acc;
                 })
                 .flatMap(acc -> {
                     byte[] content = acc.toByteArray();
                     if (content.length == 0) {
                         return Mono.error(new ResponseStatusException(BAD_REQUEST, "Empty file"));
-                    }
-                    if (content.length > MAX_IMAGE_BYTES) {
-                        return Mono.error(new ResponseStatusException(BAD_REQUEST, "Image too large"));
                     }
 
                     String id = UUID.randomUUID().toString();
@@ -142,6 +155,10 @@ public class UploadsController {
         void append(byte[] chunk) {
             chunks.add(chunk);
             total += chunk.length;
+        }
+
+        int totalSize() {
+            return total;
         }
 
         byte[] toByteArray() {

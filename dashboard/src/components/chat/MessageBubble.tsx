@@ -57,6 +57,22 @@ function parseMessageParts(content: string): Part[] {
   return parts;
 }
 
+function extractImageUrls(content: string): string[] {
+  const regex = /\[image\]\(([^)]+)\)/g;
+  const urls: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(content)) !== null) {
+    if (match[1]) {
+      urls.push(match[1]);
+    }
+  }
+  return urls;
+}
+
+function stripImageMarkdown(content: string): string {
+  return content.replace(/\n?\[image\]\([^)]+\)/g, '').trimEnd();
+}
+
 function ModelHintBadge({ model }: { model?: ModelHint }) {
   if (!model || (!model.id && !model.tier && !model.provider)) {
     return null;
@@ -73,12 +89,25 @@ function ModelHintBadge({ model }: { model?: ModelHint }) {
 }
 
 export default function MessageBubble({ role, content, model }: Props) {
-  const parts = parseMessageParts(content);
+  const imageUrls = extractImageUrls(content);
+  const textContent = stripImageMarkdown(content);
+  const parts = parseMessageParts(textContent);
 
   return (
     <div className={`d-flex ${role === 'user' ? 'justify-content-end' : 'justify-content-start'} fade-in`}>
       <div className={`message-bubble ${role}`}>
         {role === 'assistant' && <ModelHintBadge model={model} />}
+
+        {imageUrls.length > 0 && (
+          <div className="message-images-grid">
+            {imageUrls.map((url, idx) => (
+              <a key={`${url}-${idx}`} href={url} target="_blank" rel="noreferrer" className="message-image-link">
+                <img src={url} alt={`attachment-${idx + 1}`} className="message-image-thumb" loading="lazy" />
+              </a>
+            ))}
+          </div>
+        )}
+
         {parts.map((part, idx) =>
           part.type === 'diff' ? (
             <DiffViewer key={idx} diffText={part.value} />

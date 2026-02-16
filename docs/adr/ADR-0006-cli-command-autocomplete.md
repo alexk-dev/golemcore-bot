@@ -69,8 +69,8 @@ Implement a **command registry + autocomplete UI** in dashboard chat input, back
 - [x] Integrate into `ChatInput` with keyboard navigation.
 
 ### Phase C — Validation + Hinting
-- [ ] Parse input into command + args.
-- [ ] Show required/missing args warnings.
+- [x] Parse input into command + args.
+- [x] Show required/missing args warnings.
 - [ ] Render examples in suggestion panel.
 
 ### Phase D — Tests

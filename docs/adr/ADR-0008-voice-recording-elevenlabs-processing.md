@@ -64,6 +64,7 @@ Implement **in-browser voice recording** and send audio to backend endpoint that
 - [x] Add endpoint + request validation.
 - [x] Add ElevenLabs adapter via port.
 - [x] Add config and secret loading.
+- [x] Add payload size guardrail.
 
 ### Phase B — Frontend recorder
 - [x] Add mic button and state machine.
@@ -71,9 +72,9 @@ Implement **in-browser voice recording** and send audio to backend endpoint that
 - [x] Put transcript into text input.
 
 ### Phase C — Error handling
-- [ ] Permission denied UX.
-- [ ] Timeout/failure user-friendly messages.
-- [ ] Size/duration constraints.
+- [x] Permission denied UX.
+- [x] Timeout/failure user-friendly messages.
+- [x] Size/duration constraints.
 
 ### Phase D — Tests
 - [ ] Backend unit tests with mocked ElevenLabs adapter.

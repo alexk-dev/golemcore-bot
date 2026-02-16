@@ -365,108 +365,6 @@
   }
 }
 
-// ==================== Diff Viewer ====================
-
-.gc-diff-viewer {
-  margin-top: 0.5rem;
-  border: 1px solid var(--bs-border-color);
-  border-radius: 0.65rem;
-  overflow: hidden;
-  background: var(--bs-body-bg);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
-}
-
-.gc-diff-header {
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  padding: 0.45rem 0.7rem;
-  color: var(--bs-secondary-color);
-  background: var(--bs-tertiary-bg);
-  border-bottom: 1px solid var(--bs-border-color);
-}
-
-.gc-diff-body {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
-  font-size: 0.8rem;
-  overflow-x: auto;
-}
-
-.gc-diff-line {
-  display: grid;
-  grid-template-columns: 52px minmax(0, 1fr);
-  align-items: start;
-  min-height: 1.4rem;
-
-  .gc-diff-ln {
-    user-select: none;
-    text-align: right;
-    padding: 0.12rem 0.6rem 0.12rem 0.4rem;
-    color: var(--bs-secondary-color);
-    border-right: 1px solid var(--bs-border-color);
-    background: rgba(127, 127, 127, 0.08);
-  }
-
-  code {
-    white-space: pre;
-    padding: 0.12rem 0.6rem;
-    margin: 0;
-    color: inherit;
-    background: transparent;
-    display: block;
-    line-height: 1.45;
-  }
-
-  &.context {
-    background: transparent;
-  }
-
-  &.meta {
-    background: rgba(13, 110, 253, 0.08);
-    color: var(--bs-info-text-emphasis, #084298);
-  }
-
-  &.hunk {
-    background: rgba(111, 66, 193, 0.12);
-    color: #5a32a3;
-  }
-
-  &.add {
-    background: rgba(25, 135, 84, 0.14);
-    color: #0f5132;
-    animation: diff-pop-add 260ms ease-out;
-  }
-
-  &.del {
-    background: rgba(220, 53, 69, 0.14);
-    color: #842029;
-    animation: diff-pop-del 260ms ease-out;
-  }
-}
-
-@keyframes diff-pop-add {
-  from {
-    transform: translateX(6px);
-    opacity: 0.55;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
-}
-
-@keyframes diff-pop-del {
-  from {
-    transform: translateX(-6px);
-    opacity: 0.55;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
-}
-
 // ==================== Command Autocomplete ====================
 
 .command-autocomplete {
@@ -543,4 +441,27 @@
   border-radius: 999px;
   background: rgba(108, 117, 125, 0.2);
   color: var(--bs-secondary-color);
+}
+
+.chat-input-alert {
+  font-size: 0.82rem;
+}
+
+.message-images-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 0.45rem;
+  margin-bottom: 0.5rem;
+}
+
+.message-image-link {
+  display: block;
+}
+
+.message-image-thumb {
+  width: 100%;
+  max-width: 180px;
+  border-radius: 0.5rem;
+  border: 1px solid var(--bs-border-color);
+  object-fit: cover;
 }

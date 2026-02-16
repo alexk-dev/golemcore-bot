@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Badge, Button, Form, InputGroup } from 'react-bootstrap';
+import { Alert, Badge, Button, Form, InputGroup } from 'react-bootstrap';
 import { FiImage, FiMic, FiSend, FiX } from 'react-icons/fi';
 import { useCommands } from '../../hooks/useCommands';
 import CommandAutocomplete, { filterCommands } from './CommandAutocomplete';
@@ -11,6 +11,31 @@ interface Props {
   disabled?: boolean;
 }
 
+const MAX_ATTACHMENTS = 5;
+const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
+const MAX_VOICE_BYTES = 25 * 1024 * 1024;
+
+function parseRequiredArgsFromUsage(usage: string): string[] {
+  const required = usage.match(/<[^>]+>/g) ?? [];
+  return required.map((x) => x.replace(/[<>]/g, '').trim()).filter(Boolean);
+}
+
+function getMissingRequiredArgs(input: string, usage?: string): string[] {
+  if (!input.startsWith('/') || !usage) return [];
+  const requiredArgs = parseRequiredArgsFromUsage(usage);
+  if (requiredArgs.length === 0) return [];
+
+  const tokens = input.trim().split(/\s+/);
+  const providedArgs = Math.max(0, tokens.length - 1);
+  return requiredArgs.slice(providedArgs);
+}
+
+function formatApiError(error: unknown, fallback: string): string {
+  const e = error as { response?: { data?: { message?: string; error?: string } } };
+  const backendMessage = e?.response?.data?.message || e?.response?.data?.error;
+  return backendMessage ? `${fallback}: ${backendMessage}` : fallback;
+}
+
 export default function ChatInput({ onSend, disabled }: Props) {
   const [text, setText] = useState('');
   const [selectedCmdIndex, setSelectedCmdIndex] = useState(0);
@@ -18,6 +43,7 @@ export default function ChatInput({ onSend, disabled }: Props) {
   const [uploading, setUploading] = useState(false);
   const [recording, setRecording] = useState(false);
   const [processingVoice, setProcessingVoice] = useState(false);
+  const [errorText, setErrorText] = useState<string | null>(null);
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -28,6 +54,18 @@ export default function ChatInput({ onSend, disabled }: Props) {
   const commands = commandsQuery.data ?? [];
   const filteredCommands = useMemo(() => filterCommands(commands, text).slice(0, 8), [commands, text]);
   const showAutocomplete = text.startsWith('/') && text.trim().length > 0;
+
+  const selectedCommand = useMemo(() => {
+    if (!text.startsWith('/')) return undefined;
+    const commandName = text.slice(1).trim().split(/\s+/)[0]?.toLowerCase();
+    if (!commandName) return undefined;
+    return commands.find((c) => c.name.toLowerCase() === commandName);
+  }, [commands, text]);
+
+  const missingArgs = useMemo(
+    () => getMissingRequiredArgs(text, selectedCommand?.usage),
+    [selectedCommand?.usage, text]
+  );
 
   useEffect(() => {
     if (!disabled) inputRef.current?.focus();
@@ -49,6 +87,7 @@ export default function ChatInput({ onSend, disabled }: Props) {
     onSend(`${trimmed}${attachmentSuffix}`.trim());
     setText('');
     setAttachments([]);
+    setErrorText(null);
   };
 
   const applySelectedCommand = () => {
@@ -84,13 +123,36 @@ export default function ChatInput({ onSend, disabled }: Props) {
 
   const processFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    const images = Array.from(files).filter((f) => f.type.startsWith('image/'));
-    if (images.length === 0) return;
+
+    setErrorText(null);
+
+    const roomLeft = Math.max(0, MAX_ATTACHMENTS - attachments.length);
+    if (roomLeft === 0) {
+      setErrorText(`You can attach up to ${MAX_ATTACHMENTS} images per message.`);
+      return;
+    }
+
+    const images = Array.from(files)
+      .filter((f) => f.type.startsWith('image/'))
+      .slice(0, roomLeft);
+
+    if (images.length === 0) {
+      setErrorText('Only image files are supported for attachments.');
+      return;
+    }
+
+    const oversized = images.find((f) => f.size > MAX_IMAGE_SIZE_BYTES);
+    if (oversized) {
+      setErrorText(`Image "${oversized.name}" exceeds 10MB limit.`);
+      return;
+    }
 
     try {
       setUploading(true);
       const uploaded = await uploadImages(images);
-      setAttachments((prev) => [...prev, ...uploaded]);
+      setAttachments((prev) => [...prev, ...uploaded].slice(0, MAX_ATTACHMENTS));
+    } catch (err) {
+      setErrorText(formatApiError(err, 'Image upload failed'));
     } finally {
       setUploading(false);
     }
@@ -117,32 +179,54 @@ export default function ChatInput({ onSend, disabled }: Props) {
       return;
     }
 
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const recorder = new MediaRecorder(stream);
-    mediaChunksRef.current = [];
+    setErrorText(null);
 
-    recorder.ondataavailable = (ev) => {
-      if (ev.data.size > 0) {
-        mediaChunksRef.current.push(ev.data);
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setErrorText('Voice input is not supported in this browser.');
+        return;
       }
-    };
 
-    recorder.onstop = async () => {
-      stream.getTracks().forEach((t) => t.stop());
-      const blob = new Blob(mediaChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
-      if (blob.size === 0) return;
-      try {
-        setProcessingVoice(true);
-        const res = await transcribeVoice(blob);
-        setText((prev) => (prev ? `${prev} ${res.text}` : res.text));
-      } finally {
-        setProcessingVoice(false);
-      }
-    };
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      mediaChunksRef.current = [];
 
-    recorder.start();
-    mediaRecorderRef.current = recorder;
-    setRecording(true);
+      recorder.ondataavailable = (ev) => {
+        if (ev.data.size > 0) {
+          mediaChunksRef.current.push(ev.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(mediaChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        if (blob.size === 0) return;
+
+        if (blob.size > MAX_VOICE_BYTES) {
+          setErrorText('Voice recording is too large. Please keep it shorter.');
+          return;
+        }
+
+        try {
+          setProcessingVoice(true);
+          const res = await transcribeVoice(blob);
+          setText((prev) => (prev ? `${prev} ${res.text}` : res.text));
+        } catch (err) {
+          setErrorText(formatApiError(err, 'Voice transcription failed'));
+        } finally {
+          setProcessingVoice(false);
+        }
+      };
+
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setRecording(true);
+    } catch (err) {
+      const message = (err as DOMException)?.name === 'NotAllowedError'
+        ? 'Microphone access denied. Please allow microphone permission.'
+        : 'Cannot start recording. Please check microphone settings.';
+      setErrorText(message);
+    }
   };
 
   return (
@@ -171,6 +255,21 @@ export default function ChatInput({ onSend, disabled }: Props) {
               </button>
             </div>
           ))}
+        </div>
+      )}
+
+      {(missingArgs.length > 0 || errorText) && (
+        <div className="mb-2">
+          {missingArgs.length > 0 && (
+            <Badge bg="warning" text="dark" className="me-2">
+              Missing args: {missingArgs.join(', ')}
+            </Badge>
+          )}
+          {errorText && (
+            <Alert variant="warning" className="chat-input-alert mb-0 py-2">
+              {errorText}
+            </Alert>
+          )}
         </div>
       )}
 

@@ -21,6 +21,8 @@ import static org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE;
 @RequiredArgsConstructor
 public class VoiceController {
 
+    private static final int MAX_AUDIO_BYTES = 25 * 1024 * 1024;
+
     private final VoicePort voicePort;
 
     @PostMapping(value = "/transcribe", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -37,6 +39,9 @@ public class VoiceController {
                     dataBuffer.read(bytes);
                     org.springframework.core.io.buffer.DataBufferUtils.release(dataBuffer);
                     acc.append(bytes);
+                    if (acc.size() > MAX_AUDIO_BYTES) {
+                        throw new ResponseStatusException(BAD_REQUEST, "Audio file is too large");
+                    }
                     return acc;
                 })
                 .flatMap(acc -> {
@@ -81,6 +86,10 @@ public class VoiceController {
         void append(byte[] b) {
             chunks.add(b);
             size += b.length;
+        }
+
+        int size() {
+            return size;
         }
 
         byte[] toByteArray() {
