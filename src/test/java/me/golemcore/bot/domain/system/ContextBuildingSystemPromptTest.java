@@ -628,4 +628,87 @@ class ContextBuildingSystemPromptTest {
 
         assertFalse(ctx.getSystemPrompt().contains("# Model Tier"));
     }
+
+    // ===== RAG error paths =====
+
+    @Test
+    void ragQueryExceptionDoesNotBreakPipeline() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(ragPort.isAvailable()).thenReturn(true);
+        when(runtimeConfigService.getRagQueryMode()).thenReturn("hybrid");
+        when(ragPort.query(anyString(), anyString()))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("RAG timeout")));
+
+        AgentContext ctx = createContext();
+        system.process(ctx);
+
+        assertNotNull(ctx.getSystemPrompt());
+        assertFalse(ctx.getSystemPrompt().contains("# Relevant Memory"));
+    }
+
+    @Test
+    void ragSkippedWhenBlankResult() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(ragPort.isAvailable()).thenReturn(true);
+        when(runtimeConfigService.getRagQueryMode()).thenReturn("hybrid");
+        when(ragPort.query(anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture("   "));
+
+        AgentContext ctx = createContext();
+        system.process(ctx);
+
+        assertFalse(ctx.getSystemPrompt().contains("# Relevant Memory"));
+    }
+
+    @Test
+    void ragSkippedWhenNoUserMessages() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(ragPort.isAvailable()).thenReturn(true);
+
+        AgentContext ctx = AgentContext.builder()
+                .session(AgentSession.builder().chatId("ch1").build())
+                .messages(new ArrayList<>(List.of(
+                        Message.builder().role("system").content("System init").timestamp(Instant.now()).build())))
+                .build();
+        system.process(ctx);
+
+        verify(ragPort, never()).query(anyString(), anyString());
+    }
+
+    @Test
+    void ragSkippedWhenEmptyMessages() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(ragPort.isAvailable()).thenReturn(true);
+
+        AgentContext ctx = AgentContext.builder()
+                .session(AgentSession.builder().chatId("ch1").build())
+                .messages(new ArrayList<>())
+                .build();
+        system.process(ctx);
+
+        verify(ragPort, never()).query(anyString(), anyString());
+    }
+
+    // ===== Skill template variable rendering =====
+
+    @Test
+    void rendersSkillContentWithTemplateVariables() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+
+        Skill skill = Skill.builder()
+                .name("greeter")
+                .description("Greet user")
+                .content("Hello {{USER_NAME}}, welcome to {{PRODUCT}}!")
+                .resolvedVariables(Map.of("USER_NAME", "Alice", "PRODUCT", "GolemCore"))
+                .available(true)
+                .build();
+
+        AgentContext ctx = createContext();
+        ctx.setActiveSkill(skill);
+        system.process(ctx);
+
+        String prompt = ctx.getSystemPrompt();
+        assertTrue(prompt.contains("Hello Alice, welcome to GolemCore!"));
+        assertFalse(prompt.contains("{{USER_NAME}}"));
+    }
 }
