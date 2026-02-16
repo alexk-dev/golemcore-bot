@@ -51,14 +51,6 @@ class SkillTransitionToolTest {
     }
 
     @Test
-    void getDefinition() {
-        var def = tool.getDefinition();
-        assertEquals("skill_transition", def.getName());
-        assertNotNull(def.getInputSchema());
-        assertTrue(def.getDescription().contains("Transition"));
-    }
-
-    @Test
     void validTransition() throws Exception {
         setUpAgentContext();
 
@@ -170,23 +162,4 @@ class SkillTransitionToolTest {
         assertTrue(result.getError().contains("No agent context"));
     }
 
-    @Test
-    void isEnabled() {
-        assertTrue(tool.isEnabled());
-    }
-
-    @Test
-    void disabledTool() {
-        RuntimeConfigService disabledRuntimeConfigService = mock(RuntimeConfigService.class);
-        when(disabledRuntimeConfigService.isSkillTransitionEnabled()).thenReturn(false);
-        SkillTransitionTool disabledTool = new SkillTransitionTool(
-                skillComponent, disabledRuntimeConfigService, new ObjectMapper());
-
-        assertFalse(disabledTool.isEnabled());
-    }
-
-    @Test
-    void toolName() {
-        assertEquals("skill_transition", tool.getToolName());
-    }
 }

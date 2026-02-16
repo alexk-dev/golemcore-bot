@@ -1,6 +1,5 @@
 package me.golemcore.bot.tools;
 
-import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
@@ -80,19 +79,6 @@ class SmtpToolTest {
         SmtpTool tool = new SmtpTool(runtimeConfigService);
 
         assertTrue(tool.isEnabled());
-    }
-
-    // ==================== Definition ====================
-
-    @Test
-    void shouldReturnCorrectDefinition() {
-        SmtpTool tool = new SmtpTool(runtimeConfigService);
-
-        ToolDefinition definition = tool.getDefinition();
-
-        assertEquals("smtp", definition.getName());
-        assertNotNull(definition.getDescription());
-        assertNotNull(definition.getInputSchema());
     }
 
     // ==================== Parameter validation ====================

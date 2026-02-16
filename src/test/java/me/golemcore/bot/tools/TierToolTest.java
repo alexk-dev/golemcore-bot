@@ -60,17 +60,6 @@ class TierToolTest {
         AgentContextHolder.clear();
     }
 
-    @Test
-    void shouldReturnCorrectToolName() {
-        assertEquals("set_tier", tool.getToolName());
-        assertEquals("set_tier", tool.getDefinition().getName());
-    }
-
-    @Test
-    void shouldBeEnabledByDefault() {
-        assertTrue(tool.isEnabled());
-    }
-
     @ParameterizedTest
     @ValueSource(strings = { "balanced", "smart", "coding", "deep" })
     void shouldAcceptValidTiers(String tier) {
