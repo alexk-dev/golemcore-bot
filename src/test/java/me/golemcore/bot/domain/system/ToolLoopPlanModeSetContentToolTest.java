@@ -77,7 +77,8 @@ class ToolLoopPlanModeSetContentToolTest {
 
         ToolExecutorPort toolExecutor = mock(ToolExecutorPort.class);
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
-        when(modelSelectionService.resolveForTier(any())).thenReturn(new ModelSelectionService.ModelSelection(null, null));
+        when(modelSelectionService.resolveForTier(any()))
+                .thenReturn(new ModelSelectionService.ModelSelection(null, null));
 
         DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
                 llmPort,
