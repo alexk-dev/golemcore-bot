@@ -156,8 +156,12 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 try {
                     outcome = toolExecutor.execute(context, tc);
                 } catch (Exception e) {
+                    String details = e.getMessage();
+                    if (details == null || details.isBlank()) {
+                        details = e.getClass().getSimpleName();
+                    }
                     outcome = ToolExecutionOutcome.synthetic(tc, ToolFailureKind.EXECUTION_FAILED,
-                            "Tool execution failed: " + e.getMessage());
+                            "Tool execution failed: " + details);
                 }
                 toolExecutions++;
 
