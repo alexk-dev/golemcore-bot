@@ -22,6 +22,7 @@ import java.util.concurrent.CompletableFuture;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -1271,4 +1272,142 @@ class PlanServiceTest {
         assertEquals("Partial output already captured", recoveredStep.getResult());
         assertEquals(FIXED_INSTANT, recoveredStep.getExecutedAt());
     }
+
+    @Test
+    void shouldReturnActivePlanIdOptional() {
+        assertTrue(service.getActivePlanIdOptional().isEmpty());
+
+        service.activatePlanMode(TEST_CHAT_ID, TEST_MODEL_TIER);
+
+        assertTrue(service.getActivePlanIdOptional().isPresent());
+        assertEquals(service.getActivePlanId(), service.getActivePlanIdOptional().orElseThrow());
+    }
+
+    @Test
+    void shouldFinalizeWithDefaultMarkdownWhenCallingConvenienceFinalize() throws Exception {
+        Plan plan = Plan.builder()
+                .id("plan-default-md")
+                .title("Plan without markdown")
+                .status(Plan.PlanStatus.COLLECTING)
+                .steps(new ArrayList<>())
+                .createdAt(FIXED_INSTANT)
+                .updatedAt(FIXED_INSTANT)
+                .build();
+
+        String plansJson = objectMapper.writeValueAsString(List.of(plan));
+        when(storagePort.getText(AUTO_DIR, PLANS_FILE))
+                .thenReturn(CompletableFuture.completedFuture(plansJson));
+
+        service.finalizePlan("plan-default-md");
+
+        Plan saved = service.getPlan("plan-default-md").orElseThrow();
+        assertEquals(Plan.PlanStatus.READY, saved.getStatus());
+        assertTrue(saved.getMarkdown().contains("# Plan"));
+        assertTrue(saved.getMarkdown().contains("TODO: plan_markdown not provided"));
+    }
+
+    @Test
+    void shouldThrowWhenFinalizingWithBlankMarkdown() throws Exception {
+        Plan plan = Plan.builder()
+                .id("plan-blank-md")
+                .status(Plan.PlanStatus.COLLECTING)
+                .steps(new ArrayList<>())
+                .createdAt(FIXED_INSTANT)
+                .updatedAt(FIXED_INSTANT)
+                .build();
+
+        String plansJson = objectMapper.writeValueAsString(List.of(plan));
+        when(storagePort.getText(AUTO_DIR, PLANS_FILE))
+                .thenReturn(CompletableFuture.completedFuture(plansJson));
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.finalizePlan("plan-blank-md", "   ", null));
+        assertTrue(ex.getMessage().contains("plan_markdown must not be blank"));
+    }
+
+    @Test
+    void shouldThrowWhenFinalizingInTerminalStatus() throws Exception {
+        Plan plan = Plan.builder()
+                .id("plan-terminal")
+                .status(Plan.PlanStatus.CANCELLED)
+                .steps(new ArrayList<>())
+                .createdAt(FIXED_INSTANT)
+                .updatedAt(FIXED_INSTANT)
+                .build();
+
+        String plansJson = objectMapper.writeValueAsString(List.of(plan));
+        when(storagePort.getText(AUTO_DIR, PLANS_FILE))
+                .thenReturn(CompletableFuture.completedFuture(plansJson));
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> service.finalizePlan("plan-terminal", "# Any", null));
+        assertTrue(ex.getMessage().contains("Can only finalize/update plans"));
+    }
+
+    @Test
+    void shouldCreateRevisionWhenFinalizingExecutingPlan() throws Exception {
+        Plan plan = Plan.builder()
+                .id("plan-executing-revision")
+                .title("Old title")
+                .chatId(TEST_CHAT_ID)
+                .modelTier(TEST_MODEL_TIER)
+                .status(Plan.PlanStatus.EXECUTING)
+                .steps(new ArrayList<>())
+                .createdAt(FIXED_INSTANT)
+                .updatedAt(FIXED_INSTANT)
+                .build();
+
+        String plansJson = objectMapper.writeValueAsString(List.of(plan));
+        when(storagePort.getText(AUTO_DIR, PLANS_FILE))
+                .thenReturn(CompletableFuture.completedFuture(plansJson));
+
+        service.finalizePlan("plan-executing-revision", "# Revised", "Revised title");
+
+        Plan oldPlan = service.getPlan("plan-executing-revision").orElseThrow();
+        assertEquals(Plan.PlanStatus.CANCELLED, oldPlan.getStatus());
+
+        String newPlanId = service.getActivePlanId();
+        assertNotNull(newPlanId);
+        assertNotSame("plan-executing-revision", newPlanId);
+
+        Plan revision = service.getPlan(newPlanId).orElseThrow();
+        assertEquals(Plan.PlanStatus.READY, revision.getStatus());
+        assertEquals("# Revised", revision.getMarkdown());
+        assertEquals("Revised title", revision.getTitle());
+    }
+
+    @Test
+    void shouldKeepExecutedAtWhenRecoveringInProgressStepWithTimestamp() throws Exception {
+        Instant originalExecutedAt = Instant.parse("2026-02-10T09:00:00Z");
+        PlanStep inProgress = PlanStep.builder()
+                .id("step-existing-executed-at")
+                .planId("plan-executing-3")
+                .toolName(TOOL_SHELL)
+                .order(0)
+                .status(PlanStep.StepStatus.IN_PROGRESS)
+                .result("already has result")
+                .createdAt(FIXED_INSTANT)
+                .executedAt(originalExecutedAt)
+                .build();
+
+        Plan executing = Plan.builder()
+                .id("plan-executing-3")
+                .status(Plan.PlanStatus.EXECUTING)
+                .steps(new ArrayList<>(List.of(inProgress)))
+                .createdAt(FIXED_INSTANT)
+                .updatedAt(FIXED_INSTANT)
+                .build();
+
+        String plansJson = objectMapper.writeValueAsString(List.of(executing));
+        when(storagePort.getText(AUTO_DIR, PLANS_FILE))
+                .thenReturn(CompletableFuture.completedFuture(plansJson));
+
+        Plan recovered = service.getPlans().get(0);
+        PlanStep recoveredStep = recovered.getSteps().get(0);
+
+        assertEquals(PlanStep.StepStatus.FAILED, recoveredStep.getStatus());
+        assertEquals("already has result", recoveredStep.getResult());
+        assertEquals(originalExecutedAt, recoveredStep.getExecutedAt());
+    }
+
 }
