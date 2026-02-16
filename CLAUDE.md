@@ -8,8 +8,12 @@
 ./mvnw clean verify -P strict       # full check (tests + PMD + SpotBugs)
 ```
 
-**Required env vars:** `OPENAI_API_KEY` (or `ANTHROPIC_API_KEY`).
-**Optional:** `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ENABLED`, `TELEGRAM_ALLOWED_USERS`.
+To run the app locally, configure provider API keys in `preferences/runtime-config.json` (recommended: via the dashboard at `/dashboard`).
+
+Common env vars (Spring) for local/Docker:
+
+- `STORAGE_PATH` (workspace base path)
+- `TOOLS_WORKSPACE` (sandbox for filesystem/shell tools)
 
 ---
 

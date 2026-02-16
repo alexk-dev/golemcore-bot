@@ -1,297 +1,99 @@
 # Quick Start Guide
 
-Get GolemCore Bot running in 5 minutes.
+Get GolemCore Bot running quickly (Docker or JAR) and configure it via the web dashboard.
 
 ## Prerequisites
 
 - 🐳 Docker (recommended) OR ☕ Java 17+ with Maven 3.x
-- 🔑 LLM API key (OpenAI or Anthropic)
 
-## Installation
+## Method 1: Docker (Recommended)
 
-### Method 1: Docker (Recommended)
-
-#### 1. Clone & Build Image
+### 1. Clone & Build
 
 ```bash
 git clone https://github.com/alexk-dev/golemcore-bot.git
 cd golemcore-bot
-
-# Build Docker image with Jib (no Docker daemon needed)
 ./mvnw compile jib:dockerBuild
 ```
 
-#### 2. Configure LLM Provider
-
-Choose any provider:
-
-```bash
-# OpenAI
-export OPENAI_API_KEY=sk-proj-your-key-here
-
-# OR Anthropic
-export ANTHROPIC_API_KEY=sk-ant-your-key-here
-
-```
-
-#### 3. Run Container
+### 2. Run (Persist Workspace + Sandbox)
 
 ```bash
 docker run -d \
   --name golemcore-bot \
-  -e OPENAI_API_KEY \
+  --shm-size=256m \
+  --cap-add=SYS_ADMIN \
+  -e STORAGE_PATH=/app/workspace \
+  -e TOOLS_WORKSPACE=/app/sandbox \
   -v golemcore-bot-data:/app/workspace \
+  -v golemcore-bot-sandbox:/app/sandbox \
   -p 8080:8080 \
   --restart unless-stopped \
   golemcore-bot:latest
 
-# Check logs
 docker logs -f golemcore-bot
 ```
 
-You'll see:
-```
-  ____              _____  ____        _
- |_  /_____   ____ |  _  ||  _ \  ___ | |_
-  | |/ _  \ \ / /  / /_\ \ | |_) |/ _ \| __|
- /  | (_| |\ V /   |  _  | |  _ <| (_) | |_
-/___|\__,_| \_/    |_| |_| |_| \_\\___/ \__|
+Why the extra Docker flags?
 
-:: GolemCore Bot ::        (v0.1.0-SNAPSHOT)
-```
+- `--shm-size=256m` and `--cap-add=SYS_ADMIN` are needed for the browser tool (Playwright/Chromium) in containers.
 
-### Method 2: JAR (Alternative)
+### 3. Open Dashboard + Login
 
-```bash
-# Clone & Build
-git clone https://github.com/alexk-dev/golemcore-bot.git
-cd golemcore-bot
-./mvnw clean package -DskipTests
+- Open `http://localhost:8080/dashboard`
+- Username: `admin`
+- On first start, the bot prints a temporary admin password in logs.
 
-# Configure LLM
-export OPENAI_API_KEY=sk-proj-...  # or ANTHROPIC_API_KEY
+See: [Dashboard Guide](DASHBOARD.md)
 
-# Run
-java -jar target/golemcore-bot-0.1.0-SNAPSHOT.jar
+### 4. Configure LLM Providers
+
+In the dashboard Settings, set at least one provider API key (stored in `preferences/runtime-config.json`).
+
+Example runtime config snippet:
+
+```json
+{
+  "llm": {
+    "providers": {
+      "openai": { "apiKey": "sk-proj-..." },
+      "anthropic": { "apiKey": "sk-ant-..." }
+    }
+  }
+}
 ```
 
 ## Your First Conversation
 
-### CLI Mode (Default)
+Use the dashboard chat UI.
 
-The bot runs in CLI mode by default. Interact via Docker logs:
+Slash commands work in chat (e.g. `/help`, `/skills`, `/status`).
 
-```bash
-# Attach to running container
-docker attach golemcore-bot
+## Telegram (Optional)
 
-# Or via logs
-docker logs -f golemcore-bot
-```
+Enable Telegram in dashboard Settings (stored in runtime config):
 
-Type in terminal:
-```
-You: Hello!
-Bot: Hello! I'm your AI assistant. How can I help you today?
-```
+- `telegram.enabled=true`
+- `telegram.token=<bot token>`
+- Add users to the allowlist (or use invite-only mode)
 
-### Telegram Mode
+After saving settings, restart Telegram from the dashboard (or restart the container).
+
+## Method 2: JAR (Alternative)
 
 ```bash
-# Get bot token from @BotFather on Telegram
-
-# Run with Telegram enabled
-docker run -d \
-  --name golemcore-bot \
-  -e OPENAI_API_KEY=sk-... \
-  -e TELEGRAM_ENABLED=true \
-  -e TELEGRAM_BOT_TOKEN=123456:ABC-DEF... \
-  -e TELEGRAM_ALLOWED_USERS=123456789 \
-  -v golemcore-bot-data:/app/workspace \
-  golemcore-bot:latest
+git clone https://github.com/alexk-dev/golemcore-bot.git
+cd golemcore-bot
+./mvnw clean package -DskipTests
+java -jar target/golemcore-bot-0.1.0-SNAPSHOT.jar
 ```
 
-Send `/help` to your bot on Telegram to see available commands.
-
-## Essential Commands
-
-### Basic Commands
-
-| Command | Description |
-|---------|-------------|
-| `/help` | Show all available commands |
-| `/skills` | List available skills |
-| `/tools` | List enabled tools |
-| `/status` | Show session info + usage stats |
-| `/new` or `/reset` | Start new conversation |
-| `/compact [N]` | Compact conversation history, keep last N messages (default: 10) |
-| `/stop` | Stop the current run (interrupt) |
-| `/model [subcommand]` | Per-user model selection (list, set, reset) |
-| `/tier [tier] [force]` | Set model tier (balanced/smart/coding/deep) |
-| `/settings` | Change language (Telegram only) |
-
-### Auto Mode Commands
-
-Available when `AUTO_MODE_ENABLED=true`:
-
-| Command | Description |
-|---------|-------------|
-| `/auto [on\|off]` | Toggle autonomous mode |
-| `/goals` | List active goals |
-| `/goal <description>` | Create a new goal |
-| `/tasks` | List tasks for active goals |
-| `/diary [N]` | Show last N diary entries (default: 10) |
-
-## Enable Advanced Features
-
-### Model Tier Management
-
-Control which model handles your requests. See [Model Routing Guide](MODEL_ROUTING.md) for tier priority, skill overrides, and dynamic upgrades.
-
-```bash
-# In chat:
-/tier coding             # Switch to coding-optimized model
-/tier smart force        # Lock to smart model (ignores skill overrides)
-```
-
-Skills can also declare a preferred tier via `model_tier` in their YAML frontmatter.
-
-Override which model is used for each tier with `/model`:
-```bash
-# In chat:
-/model list                      # See available models
-/model coding openai/gpt-5.2    # Set specific model for coding tier
-/model coding reasoning high     # Change reasoning level
-```
-
-### Web Search (Brave)
-
-```bash
-docker run -d \
-  -e OPENAI_API_KEY=sk-... \
-  -e BRAVE_SEARCH_ENABLED=true \
-  -e BRAVE_SEARCH_API_KEY=your-brave-api-key \
-  -v golemcore-bot-data:/app/workspace \
-  golemcore-bot:latest
-```
-
-Get free API key: https://brave.com/search/api/ (2000 queries/month)
-
-### Auto Mode (Autonomous Goals)
-
-Enables the bot to work independently on long-term goals with periodic tick-based execution. See [Auto Mode Guide](AUTO_MODE.md) for the full tick cycle, goal management, and diary system.
-
-```bash
-docker run -d \
-  -e OPENAI_API_KEY=sk-... \
-  -e AUTO_MODE_ENABLED=true \
-  -e AUTO_MODE_INTERVAL=15 \
-  -v golemcore-bot-data:/app/workspace \
-  golemcore-bot:latest
-```
-
-Create a goal via Telegram or CLI:
-```
-You: /goal "Research and summarize latest AI news"
-```
-
-Bot will work on it autonomously every 15 minutes.
-
-## Docker Compose (All Features)
-
-Create `docker-compose.yml`:
-
-```yaml
-version: '3.8'
-services:
-  golemcore-bot:
-    image: golemcore-bot:latest
-    container_name: golemcore-bot
-    restart: unless-stopped
-    environment:
-      # LLM Provider
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-
-      # Telegram
-      TELEGRAM_ENABLED: true
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
-      TELEGRAM_ALLOWED_USERS: ${TELEGRAM_ALLOWED_USERS}
-
-      # Advanced Features
-      BRAVE_SEARCH_ENABLED: true
-      BRAVE_SEARCH_API_KEY: ${BRAVE_SEARCH_API_KEY}
-      AUTO_MODE_ENABLED: true
-      AUTO_MODE_INTERVAL: 15
-    volumes:
-      - ./workspace:/app/workspace
-      - ./sandbox:/app/sandbox
-    ports:
-      - "8080:8080"
-```
-
-Run:
-```bash
-docker-compose up -d
-```
+Then open the dashboard at `http://localhost:8080/dashboard` and configure providers.
 
 ## Next Steps
 
-- 📖 [Configuration Guide](CONFIGURATION.md) — All settings explained
-- 🎯 [Skill System](SKILLS.md) — Create custom skills
-- 🛠️ [Tools Guide](TOOLS.md) — Use built-in tools
-- 🚀 [Deployment](DEPLOYMENT.md) — Production deployment
-
-## Troubleshooting
-
-### "LLM provider not configured"
-
-✅ **Fix:** Set any LLM provider API key:
-```bash
-docker run -e OPENAI_API_KEY=sk-... golemcore-bot:latest
-# OR
-docker run -e ANTHROPIC_API_KEY=sk-ant-... golemcore-bot:latest
-```
-
-### "Rate limit exceeded"
-
-✅ **Fix:** Adjust limits via environment variables:
-```bash
-docker run \
-  -e OPENAI_API_KEY=sk-... \
-  -e BOT_RATE_LIMIT_USER_REQUESTS_PER_MINUTE=10 \
-  golemcore-bot:latest
-```
-
-### "Tool confirmation timeout"
-
-✅ **Fix:** Increase timeout or disable confirmations:
-```bash
-docker run \
-  -e OPENAI_API_KEY=sk-... \
-  -e TOOL_CONFIRMATION_TIMEOUT=120 \
-  golemcore-bot:latest
-
-# OR disable confirmations (not recommended)
-docker run \
-  -e OPENAI_API_KEY=sk-... \
-  -e TOOL_CONFIRMATION_ENABLED=false \
-  golemcore-bot:latest
-```
-
-### Container won't start
-
-✅ **Fix:** Check logs:
-```bash
-docker logs golemcore-bot
-```
-
-Common issues:
-- Missing API key
-- Port 8080 already in use (change with `-p 8081:8080`)
-- Volume permission issues (use `docker volume` instead of bind mounts)
-
-## Support
-
-- 🐛 Report issues: [GitHub Issues](https://github.com/alexk-dev/golemcore-bot/issues)
-- 💬 Ask questions: [GitHub Discussions](https://github.com/alexk-dev/golemcore-bot/discussions)
-- 📚 Read docs: [Documentation](../docs/)
+- 📖 [Configuration Guide](CONFIGURATION.md)
+- 🛠️ [Tools Guide](TOOLS.md)
+- 🎯 [Skills Guide](SKILLS.md)
+- 🧠 [Model Routing Guide](MODEL_ROUTING.md)
+- 🚀 [Deployment Guide](DEPLOYMENT.md)
