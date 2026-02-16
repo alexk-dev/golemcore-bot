@@ -74,6 +74,7 @@ Implement a **command registry + autocomplete UI** in dashboard chat input, back
 - [ ] Render examples in suggestion panel.
 
 ### Phase D — Tests
+- [x] Backend controller test for `GET /api/commands` mapping.
 - [ ] Unit tests for filter + keyboard reducer.
 - [ ] Component tests for selection/autocomplete flow.
 - [ ] Integration test: command selected -> message sent correctly.

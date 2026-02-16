@@ -5,6 +5,7 @@ import me.golemcore.bot.adapter.inbound.web.dto.SettingsResponse;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.RuntimeModuleConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -28,6 +29,7 @@ class SettingsControllerTest {
     private UserPreferencesService preferencesService;
     private ModelSelectionService modelSelectionService;
     private RuntimeConfigService runtimeConfigService;
+    private RuntimeModuleConfigService runtimeModuleConfigService;
     private ApplicationEventPublisher eventPublisher;
     private SettingsController controller;
 
@@ -36,9 +38,10 @@ class SettingsControllerTest {
         preferencesService = mock(UserPreferencesService.class);
         modelSelectionService = mock(ModelSelectionService.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
+        runtimeModuleConfigService = mock(RuntimeModuleConfigService.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
         controller = new SettingsController(preferencesService, modelSelectionService, runtimeConfigService,
-                eventPublisher);
+                runtimeModuleConfigService, eventPublisher);
     }
 
     @Test

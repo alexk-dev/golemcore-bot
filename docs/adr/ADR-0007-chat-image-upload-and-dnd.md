@@ -78,7 +78,7 @@ Images are uploaded first, then referenced in outbound chat message payload.
 - [ ] Render assistant-generated image attachments when present.
 
 ### Phase D — Tests
-- [ ] Backend validation tests (size/type/count).
+- [x] Backend validation tests (size/type/count) for upload controller.
 - [ ] Frontend DnD tests.
 - [ ] End-to-end: upload -> send -> persisted message refs.
 

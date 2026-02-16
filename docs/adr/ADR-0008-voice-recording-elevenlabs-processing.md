@@ -77,7 +77,7 @@ Implement **in-browser voice recording** and send audio to backend endpoint that
 - [x] Size/duration constraints.
 
 ### Phase D — Tests
-- [ ] Backend unit tests with mocked ElevenLabs adapter.
+- [x] Backend tests for voice endpoint availability/empty payload/success path.
 - [ ] Frontend tests for recorder state transitions.
 - [ ] Integration test for upload->transcript flow.
 
