@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useLayoutEffect } from 'react';
 import { Button, Form } from 'react-bootstrap';
 import { useAuthStore } from '../../store/authStore';
 import { listSessions, getSession } from '../../api/sessions';
@@ -46,6 +46,23 @@ export default function ChatWindow() {
   const token = useAuthStore((s) => s.accessToken);
   const chatSessionId = useRef(getChatSessionId()).current;
   const shouldAutoScroll = useRef(true);
+  const prependAnchorRef = useRef<{ pending: boolean; prevScrollHeight: number }>({
+    pending: false,
+    prevScrollHeight: 0,
+  });
+  const scrollBehaviorRef = useRef<'auto' | 'smooth'>('auto');
+
+  const requestLoadMore = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el || visibleStart <= 0 || loadingMore) return;
+
+    prependAnchorRef.current = {
+      pending: true,
+      prevScrollHeight: el.scrollHeight,
+    };
+    setLoadingMore(true);
+    setVisibleStart((prev) => Math.max(0, prev - LOAD_MORE_COUNT));
+  }, [loadingMore, visibleStart]);
 
   useEffect(() => {
     if (historyLoaded) return;
@@ -83,19 +100,10 @@ export default function ChatWindow() {
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
     shouldAutoScroll.current = nearBottom;
 
-    if (el.scrollTop < 50 && visibleStart > 0 && !loadingMore) {
-      setLoadingMore(true);
-      const prevScrollHeight = el.scrollHeight;
-      const newStart = Math.max(0, visibleStart - LOAD_MORE_COUNT);
-      setVisibleStart(newStart);
-
-      requestAnimationFrame(() => {
-        const newScrollHeight = el.scrollHeight;
-        el.scrollTop = newScrollHeight - prevScrollHeight;
-        setLoadingMore(false);
-      });
+    if (el.scrollTop < 50) {
+      requestLoadMore();
     }
-  }, [visibleStart, loadingMore]);
+  }, [requestLoadMore]);
 
   const connect = useCallback(() => {
     if (!token) return;
@@ -117,6 +125,9 @@ export default function ChatWindow() {
         }
         if (data.type === 'assistant_chunk' || data.type === 'assistant_done') {
           setTyping(false);
+          if (shouldAutoScroll.current) {
+            scrollBehaviorRef.current = 'auto';
+          }
           setAllMessages((prev) => {
             const last = prev[prev.length - 1];
             if (last && last.role === 'assistant' && data.type === 'assistant_chunk') {
@@ -139,17 +150,30 @@ export default function ChatWindow() {
     return cleanup;
   }, [connect]);
 
-  useEffect(() => {
-    if (shouldAutoScroll.current) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    if (prependAnchorRef.current.pending) {
+      const delta = el.scrollHeight - prependAnchorRef.current.prevScrollHeight;
+      el.scrollTop += Math.max(0, delta);
+      prependAnchorRef.current.pending = false;
+      setLoadingMore(false);
+      return;
     }
-  }, [allMessages, typing]);
+
+    if (shouldAutoScroll.current) {
+      bottomRef.current?.scrollIntoView({ behavior: scrollBehaviorRef.current });
+      scrollBehaviorRef.current = 'auto';
+    }
+  }, [allMessages, typing, visibleStart]);
 
   const handleSend = (text: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       const newMsg = { role: 'user', content: text };
       setAllMessages((prev) => [...prev, newMsg]);
       shouldAutoScroll.current = true;
+      scrollBehaviorRef.current = 'smooth';
       wsRef.current.send(JSON.stringify({ text, sessionId: chatSessionId }));
     }
   };
@@ -204,16 +228,16 @@ export default function ChatWindow() {
         </div>
       </div>
 
-      <div className="chat-window" ref={scrollRef} onScroll={handleScroll}>
+      <div className="chat-window" ref={scrollRef} onScroll={handleScroll} aria-busy={loadingMore}>
         {hasMore && (
           <div className="text-center py-2">
             {loadingMore ? (
-              <small className="text-muted">Loading...</small>
+              <small className="text-muted" role="status" aria-live="polite">Loading...</small>
             ) : (
               <Button
                 size="sm"
                 variant="outline-secondary"
-                onClick={() => setVisibleStart(Math.max(0, visibleStart - LOAD_MORE_COUNT))}
+                onClick={requestLoadMore}
                 aria-label="Load earlier messages"
               >
                 Load earlier messages
