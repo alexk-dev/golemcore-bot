@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { type ReactElement, useState } from 'react';
 import { Badge, Card, ListGroup, Row, Col, Button, Form, Spinner, Modal, Placeholder } from 'react-bootstrap';
 import { useSkills, useSkill, useCreateSkill, useUpdateSkill, useDeleteSkill } from '../hooks/useSkills';
 import toast from 'react-hot-toast';
@@ -12,7 +12,7 @@ model_tier: balanced
 
 `;
 
-export default function SkillsPage() {
+export default function SkillsPage(): ReactElement {
   const { data: skills, isLoading } = useSkills();
   const createMutation = useCreateSkill();
   const updateMutation = useUpdateSkill();
@@ -25,7 +25,7 @@ export default function SkillsPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [newName, setNewName] = useState('');
 
-  const { data: detail } = useSkill(selected || '');
+  const { data: detail } = useSkill(selected ?? '');
 
   if (isLoading) {
     return (
@@ -64,31 +64,35 @@ export default function SkillsPage() {
     s.name.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleSelect = (name: string) => {
+  const handleSelect = (name: string): void => {
     setSelected(name);
   };
 
   // Sync editor content when detail loads
-  const currentContent = selected === detail?.name ? detail?.content || '' : '';
+  const currentContent = selected === detail?.name ? (detail?.content ?? '') : '';
   const editorContent = selected === detail?.name && editContent === '' ? currentContent : editContent;
 
-  const handleSelectAndLoad = (name: string) => {
+  const handleSelectAndLoad = (name: string): void => {
     handleSelect(name);
     setEditContent('');
   };
 
-  const handleSave = async () => {
-    if (!selected) {return;}
+  const handleSave = async (): Promise<void> => {
+    if (selected == null || selected.length === 0) {
+      return;
+    }
     try {
-      await updateMutation.mutateAsync({ name: selected, content: editContent || currentContent });
+      await updateMutation.mutateAsync({ name: selected, content: editContent.length > 0 ? editContent : currentContent });
       toast.success('Skill saved');
     } catch {
       toast.error('Failed to save skill');
     }
   };
 
-  const handleDelete = async () => {
-    if (!selected) {return;}
+  const handleDelete = async (): Promise<void> => {
+    if (selected == null || selected.length === 0) {
+      return;
+    }
     try {
       await deleteMutation.mutateAsync(selected);
       setSelected(null);
@@ -100,13 +104,16 @@ export default function SkillsPage() {
     }
   };
 
-  const handleCreate = async () => {
-    if (!newName.trim()) {return;}
+  const handleCreate = async (): Promise<void> => {
+    const trimmedName = newName.trim();
+    if (trimmedName.length === 0) {
+      return;
+    }
     try {
-      await createMutation.mutateAsync({ name: newName.trim(), content: SKILL_TEMPLATE });
+      await createMutation.mutateAsync({ name: trimmedName, content: SKILL_TEMPLATE });
       setShowCreate(false);
       setNewName('');
-      setSelected(newName.trim());
+      setSelected(trimmedName);
       setEditContent('');
       toast.success('Skill created');
     } catch (err: unknown) {
@@ -152,7 +159,7 @@ export default function SkillsPage() {
                     {s.available ? 'on' : 'off'}
                   </Badge>
                   {s.hasMcp && <Badge bg="info">MCP</Badge>}
-                  {s.modelTier && s.modelTier !== 'balanced' && (
+                  {s.modelTier != null && s.modelTier.length > 0 && s.modelTier !== 'balanced' && (
                     <Badge className="text-bg-warning">{s.modelTier}</Badge>
                   )}
                 </div>
@@ -164,13 +171,13 @@ export default function SkillsPage() {
           </ListGroup>
         </Col>
         <Col md={8}>
-          {selected && detail ? (
+          {selected != null && selected.length > 0 && detail != null ? (
             <Card>
               <Card.Header className="d-flex justify-content-between align-items-center">
                 <span className="fw-semibold">{selected}</span>
                 <div className="d-flex gap-1">
                   {detail.hasMcp && <Badge bg="info">MCP</Badge>}
-                  {detail.modelTier && <Badge bg="secondary">{detail.modelTier}</Badge>}
+                  {detail.modelTier != null && detail.modelTier.length > 0 && <Badge bg="secondary">{detail.modelTier}</Badge>}
                 </div>
               </Card.Header>
               <Card.Body>
@@ -185,7 +192,7 @@ export default function SkillsPage() {
                   />
                 </Form.Group>
                 <div className="d-flex gap-2">
-                  <Button size="sm" onClick={handleSave} disabled={updateMutation.isPending}>
+                  <Button size="sm" onClick={() => { void handleSave(); }} disabled={updateMutation.isPending}>
                     {updateMutation.isPending ? 'Saving...' : 'Save'}
                   </Button>
                   <Button
@@ -227,7 +234,7 @@ export default function SkillsPage() {
         </Modal.Body>
         <Modal.Footer>
           <Button variant="secondary" size="sm" onClick={() => setShowCreate(false)}>Cancel</Button>
-          <Button size="sm" onClick={handleCreate} disabled={createMutation.isPending}>
+          <Button size="sm" onClick={() => { void handleCreate(); }} disabled={createMutation.isPending}>
             {createMutation.isPending ? 'Creating...' : 'Create'}
           </Button>
         </Modal.Footer>
@@ -236,11 +243,11 @@ export default function SkillsPage() {
       <ConfirmModal
         show={showDeleteConfirm}
         title="Delete Skill"
-        message={selected ? `Skill "${selected}" will be permanently deleted. This action cannot be undone.` : ''}
+        message={selected != null && selected.length > 0 ? `Skill "${selected}" will be permanently deleted. This action cannot be undone.` : ''}
         confirmLabel="Delete"
         confirmVariant="danger"
         isProcessing={deleteMutation.isPending}
-        onConfirm={handleDelete}
+        onConfirm={() => { void handleDelete(); }}
         onCancel={() => setShowDeleteConfirm(false)}
       />
     </div>

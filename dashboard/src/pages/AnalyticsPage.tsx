@@ -1,24 +1,32 @@
-import { useMemo, useState } from 'react';
+import { type ReactElement, useMemo, useState } from 'react';
 import { Card, Row, Col, ButtonGroup, Button, Spinner, Placeholder } from 'react-bootstrap';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { useUsageStats, useUsageByModel } from '../hooks/useUsage';
-import { useThemeStore } from '../store/themeStore';
+import type { UsageByModelEntry } from '../api/usage';
 
-export default function AnalyticsPage() {
+interface ChartPalette {
+  axisColor: string;
+  tooltipBg: string;
+  tooltipBorder: string;
+  tooltipText: string;
+  primary: string;
+  fills: string[];
+}
+
+export default function AnalyticsPage(): ReactElement {
   const [period, setPeriod] = useState('24h');
-  const theme = useThemeStore((s) => s.theme);
   const { data: stats, isLoading: statsLoading } = useUsageStats(period);
   const { data: byModel, isLoading: modelLoading } = useUsageByModel(period);
 
-  const modelData = byModel
-    ? Object.entries(byModel).map(([name, val]: [string, any]) => ({
+  const modelData = byModel != null
+    ? Object.entries(byModel).map(([name, val]: [string, UsageByModelEntry]) => ({
         name,
         tokens: val.totalTokens,
         requests: val.requests,
       }))
     : [];
 
-  const chartPalette = useMemo(() => {
+  const chartPalette = useMemo<ChartPalette>(() => {
     if (typeof window === 'undefined') {
       return {
         axisColor: '#6c757d',
@@ -31,7 +39,10 @@ export default function AnalyticsPage() {
     }
 
     const css = window.getComputedStyle(document.documentElement);
-    const readVar = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
+    const readVar = (name: string, fallback: string): string => {
+      const cssValue = css.getPropertyValue(name).trim();
+      return cssValue.length > 0 ? cssValue : fallback;
+    };
 
       return {
         axisColor: readVar('--bs-secondary-color', '#6c757d'),
@@ -48,7 +59,7 @@ export default function AnalyticsPage() {
         readVar('--bs-secondary', '#6c757d'),
       ],
     };
-  }, [theme]);
+  }, []);
 
   return (
     <div>

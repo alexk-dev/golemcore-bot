@@ -16,15 +16,31 @@ function scrubSecret(): null {
   return null;
 }
 
-function toUiRuntimeConfig(data: any): RuntimeConfig {
-  const cfg = { ...data };
+type UnknownRecord = Record<string, unknown>;
+
+interface RuntimeConfigUiRecord extends UnknownRecord {
+  telegram?: UnknownRecord;
+  llm?: {
+    providers?: Record<string, UnknownRecord>;
+  } & UnknownRecord;
+  tools?: {
+    imap?: UnknownRecord;
+    smtp?: UnknownRecord;
+  } & UnknownRecord;
+  voice?: UnknownRecord;
+  rag?: UnknownRecord;
+}
+
+function toUiRuntimeConfig(data: RuntimeConfigUiRecord): RuntimeConfig {
+  const cfg: RuntimeConfigUiRecord = { ...data };
   if (cfg.telegram) {
     cfg.telegram = { ...cfg.telegram, token: scrubSecret() };
   }
-  if (cfg.llm?.providers) {
-    const providers: Record<string, any> = {};
-    Object.entries(cfg.llm.providers).forEach(([name, provider]: [string, any]) => {
-      const hasApiKey = Boolean(provider?.apiKey?.present) || Boolean(provider?.apiKey?.value);
+  if (cfg.llm?.providers != null) {
+    const providers: Record<string, UnknownRecord> = {};
+    Object.entries(cfg.llm.providers).forEach(([name, provider]) => {
+      const providerApiKey = provider.apiKey as UnknownRecord | undefined;
+      const hasApiKey = Boolean(providerApiKey?.present) || Boolean(providerApiKey?.value);
       providers[name] = {
         ...provider,
         apiKey: scrubSecret(),
@@ -47,11 +63,11 @@ function toUiRuntimeConfig(data: any): RuntimeConfig {
   if (cfg.rag) {
     cfg.rag = { ...cfg.rag, apiKey: scrubSecret() };
   }
-  return cfg as RuntimeConfig;
+  return cfg as unknown as RuntimeConfig;
 }
 
-function toBackendRuntimeConfig(config: RuntimeConfig): any {
-  const payload: any = {
+function toBackendRuntimeConfig(config: RuntimeConfig): UnknownRecord {
+  const payload: UnknownRecord = {
     ...config,
     telegram: {
       ...config.telegram,
@@ -60,7 +76,7 @@ function toBackendRuntimeConfig(config: RuntimeConfig): any {
     llm: {
       ...config.llm,
       providers: Object.fromEntries(
-        Object.entries(config.llm?.providers ?? {}).map(([name, provider]) => [
+        Object.entries(config.llm.providers).map(([name, provider]) => [
           name,
           {
             baseUrl: provider.baseUrl,
@@ -72,33 +88,33 @@ function toBackendRuntimeConfig(config: RuntimeConfig): any {
     },
     tools: {
       ...config.tools,
-      braveSearchApiKey: toSecretPayload(config.tools?.braveSearchApiKey ?? null),
-      imap: config.tools?.imap
+      braveSearchApiKey: toSecretPayload(config.tools.braveSearchApiKey ?? null),
+      imap: config.tools.imap
         ? {
           ...config.tools.imap,
           password: toSecretPayload(config.tools.imap.password ?? null),
         }
-        : config.tools?.imap,
-      smtp: config.tools?.smtp
+        : config.tools.imap,
+      smtp: config.tools.smtp
         ? {
           ...config.tools.smtp,
           password: toSecretPayload(config.tools.smtp.password ?? null),
         }
-        : config.tools?.smtp,
+        : config.tools.smtp,
     },
     voice: {
       ...config.voice,
-      apiKey: toSecretPayload(config.voice?.apiKey ?? null),
+      apiKey: toSecretPayload(config.voice.apiKey ?? null),
     },
     rag: {
       ...config.rag,
-      apiKey: toSecretPayload(config.rag?.apiKey ?? null),
+      apiKey: toSecretPayload(config.rag.apiKey ?? null),
     },
   };
   return payload;
 }
 
-function toBackendWebhookConfig(config: WebhookConfig): any {
+function toBackendWebhookConfig(config: WebhookConfig): UnknownRecord {
   return {
     ...config,
     token: toSecretPayload(config.token ?? null),
@@ -109,23 +125,29 @@ function toBackendWebhookConfig(config: WebhookConfig): any {
   };
 }
 
-export async function getSettings() {
-  const { data } = await client.get('/settings');
+export interface SettingsResponse extends Record<string, unknown> {
+  language?: string;
+  timezone?: string;
+  webhooks?: WebhookConfig;
+}
+
+export async function getSettings(): Promise<SettingsResponse> {
+  const { data } = await client.get<SettingsResponse>('/settings');
   return data;
 }
 
-export async function updatePreferences(prefs: Record<string, unknown>) {
-  const { data } = await client.put('/settings/preferences', prefs);
+export async function updatePreferences(prefs: Record<string, unknown>): Promise<SettingsResponse> {
+  const { data } = await client.put<SettingsResponse>('/settings/preferences', prefs);
   return data;
 }
 
-export async function getModels() {
-  const { data } = await client.get('/settings/models');
+export async function getModels(): Promise<UnknownRecord> {
+  const { data } = await client.get<UnknownRecord>('/settings/models');
   return data;
 }
 
-export async function updateTierOverrides(overrides: Record<string, { model: string; reasoning: string }>) {
-  const { data } = await client.put('/settings/tier-overrides', overrides);
+export async function updateTierOverrides(overrides: Record<string, { model: string; reasoning: string }>): Promise<UnknownRecord> {
+  const { data } = await client.put<UnknownRecord>('/settings/tier-overrides', overrides);
   return data;
 }
 
@@ -337,23 +359,23 @@ export interface HookMapping {
 }
 
 export async function getRuntimeConfig(): Promise<RuntimeConfig> {
-  const { data } = await client.get('/settings/runtime');
+  const { data } = await client.get<RuntimeConfigUiRecord>('/settings/runtime');
   return toUiRuntimeConfig(data);
 }
 
 export async function updateRuntimeConfig(config: RuntimeConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put('/settings/runtime', toBackendRuntimeConfig(config));
+  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime', toBackendRuntimeConfig(config));
   return toUiRuntimeConfig(data);
 }
 
 export async function updateTelegramConfig(config: TelegramConfig): Promise<RuntimeConfig> {
   const payload = { ...config, token: toSecretPayload(config.token ?? null) };
-  const { data } = await client.put('/settings/runtime/telegram', payload);
+  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/telegram', payload);
   return toUiRuntimeConfig(data);
 }
 
 export async function updateModelRouterConfig(config: ModelRouterConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put('/settings/runtime/models', config);
+  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/models', config);
   return toUiRuntimeConfig(data);
 }
 
@@ -371,7 +393,7 @@ export async function updateLlmConfig(config: LlmConfig): Promise<RuntimeConfig>
       ]),
     ),
   };
-  const { data } = await client.put('/settings/runtime/llm', payload);
+  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/llm', payload);
   return toUiRuntimeConfig(data);
 }
 
@@ -392,44 +414,44 @@ export async function updateToolsConfig(config: ToolsConfig): Promise<RuntimeCon
       }
       : config.smtp,
   };
-  const { data } = await client.put('/settings/runtime/tools', payload);
+  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/tools', payload);
   return toUiRuntimeConfig(data);
 }
 
 export async function updateVoiceConfig(config: VoiceConfig): Promise<RuntimeConfig> {
   const payload = { ...config, apiKey: toSecretPayload(config.apiKey ?? null) };
-  const { data } = await client.put('/settings/runtime/voice', payload);
+  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/voice', payload);
   return toUiRuntimeConfig(data);
 }
 
 export async function updateMemoryConfig(config: MemoryConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put('/settings/runtime/memory', config);
+  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/memory', config);
   return toUiRuntimeConfig(data);
 }
 
 export async function updateSkillsConfig(config: SkillsConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put('/settings/runtime/skills', config);
+  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/skills', config);
   return toUiRuntimeConfig(data);
 }
 
 export async function updateTurnConfig(config: TurnConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put('/settings/runtime/turn', config);
+  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/turn', config);
   return toUiRuntimeConfig(data);
 }
 
 export async function updateUsageConfig(config: UsageConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put('/settings/runtime/usage', config);
+  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/usage', config);
   return toUiRuntimeConfig(data);
 }
 
 export async function updateRagConfig(config: RagConfig): Promise<RuntimeConfig> {
   const payload = { ...config, apiKey: toSecretPayload(config.apiKey ?? null) };
-  const { data } = await client.put('/settings/runtime/rag', payload);
+  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/rag', payload);
   return toUiRuntimeConfig(data);
 }
 
 export async function updateMcpConfig(config: McpConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put('/settings/runtime/mcp', config);
+  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/mcp', config);
   return toUiRuntimeConfig(data);
 }
 
@@ -438,7 +460,7 @@ export async function updateWebhooksConfig(config: WebhookConfig): Promise<void>
 }
 
 export async function updateAutoConfig(config: AutoModeConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put('/settings/runtime/auto', config);
+  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/auto', config);
   return toUiRuntimeConfig(data);
 }
 
@@ -447,13 +469,12 @@ export async function updateAdvancedConfig(config: {
   security?: SecurityConfig;
   compaction?: CompactionConfig;
 }): Promise<RuntimeConfig> {
-  const { data } = await client.put('/settings/runtime/advanced', config);
+  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/advanced', config);
   return toUiRuntimeConfig(data);
 }
 
 export async function generateInviteCode(): Promise<InviteCode> {
-  const params = {};
-  const { data } = await client.post('/settings/telegram/invite-codes', null, { params });
+  const { data } = await client.post<InviteCode>('/settings/telegram/invite-codes', null, { params: {} });
   return data;
 }
 

@@ -32,6 +32,34 @@ interface CommandDefinition {
   description: string;
 }
 
+interface SpeechRecognitionAlternativeLike {
+  transcript: string;
+}
+
+interface SpeechRecognitionResultLike {
+  0: SpeechRecognitionAlternativeLike;
+}
+
+interface SpeechRecognitionEventLike {
+  results: ArrayLike<SpeechRecognitionResultLike>;
+}
+
+interface SpeechRecognitionLike {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onend: (() => void) | null;
+  onerror: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+
+interface WindowWithSpeechRecognition extends Window {
+  SpeechRecognition?: new () => SpeechRecognitionLike;
+  webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+}
+
 const CHAT_COMMANDS: CommandDefinition[] = [
   { name: 'help', description: 'Show available commands' },
   { name: 'skills', description: 'List available skills' },
@@ -68,7 +96,7 @@ function parseCommandInput(text: string): ParsedCommandInput | null {
   const commandPart = firstLine.slice(1);
   const hasTrailingSpace = /\s$/.test(commandPart);
   const trimmed = commandPart.trim();
-  const tokens = trimmed ? trimmed.split(/\s+/) : [];
+  const tokens = trimmed.length > 0 ? trimmed.split(/\s+/) : [];
 
   if (tokens.length === 0) {
     return {
@@ -144,7 +172,7 @@ export default function ChatInput({ onSend, disabled }: Props) {
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const modelIds = useMemo(() => {
     const groupedModels = availableModels ?? {};
     return Object.values(groupedModels)
@@ -160,7 +188,7 @@ export default function ChatInput({ onSend, disabled }: Props) {
   }, [availableModels]);
   const commandInput = useMemo(() => parseCommandInput(text), [text]);
   const commandSuggestions = useMemo(() => {
-    if (!commandInput) {
+    if (commandInput == null) {
       return [] as CommandSuggestion[];
     }
 
@@ -295,17 +323,17 @@ export default function ChatInput({ onSend, disabled }: Props) {
 
     return [] as CommandSuggestion[];
   }, [commandInput, modelIds, modelReasoningLevels, text]);
-  const isCommandMenuOpen = !disabled && commandSuggestions.length > 0;
+  const isCommandMenuOpen = disabled !== true && commandSuggestions.length > 0;
 
   useEffect(() => {
-    if (!disabled) {
+    if (disabled !== true) {
       inputRef.current?.focus();
     }
   }, [disabled]);
 
   useEffect(() => {
     return () => {
-      if (recognitionRef.current) {
+      if (recognitionRef.current != null) {
         recognitionRef.current.stop();
       }
       setAttachments((prev) => {
@@ -341,7 +369,7 @@ export default function ChatInput({ onSend, disabled }: Props) {
         id: crypto.randomUUID(),
         type: 'image',
         name: file.name,
-        mimeType: file.type || 'image/png',
+        mimeType: file.type.length > 0 ? file.type : 'image/png',
         dataBase64: base64Data,
         previewUrl,
       });
@@ -355,11 +383,11 @@ export default function ChatInput({ onSend, disabled }: Props) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (disabled) {
+    if (disabled === true) {
       return;
     }
     const trimmed = text.trim();
-    if (!trimmed && attachments.length === 0) {
+    if (trimmed.length === 0 && attachments.length === 0) {
       return;
     }
 
@@ -402,7 +430,7 @@ export default function ChatInput({ onSend, disabled }: Props) {
 
     if (isCommandMenuOpen && (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey))) {
       const selected = commandSuggestions[activeCommandIndex] ?? commandSuggestions[0];
-      if (selected) {
+      if (selected != null) {
         e.preventDefault();
         applyCommandSuggestion(selected);
         return;
@@ -439,19 +467,20 @@ export default function ChatInput({ onSend, disabled }: Props) {
       return;
     }
 
+    const speechWindow = window as WindowWithSpeechRecognition;
     const SpeechRecognitionCtor =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
 
-    if (!SpeechRecognitionCtor) {
+    if (SpeechRecognitionCtor == null) {
       return;
     }
 
     const recognition = new SpeechRecognitionCtor();
     recognition.continuous = false;
     recognition.interimResults = true;
-    recognition.lang = navigator.language || 'en-US';
+    recognition.lang = navigator.language.length > 0 ? navigator.language : 'en-US';
 
-    recognition.onresult = (event: any) => {
+    recognition.onresult = (event: SpeechRecognitionEventLike) => {
       let transcript = '';
       for (let i = 0; i < event.results.length; i += 1) {
         transcript += event.results[i][0].transcript;
@@ -480,7 +509,7 @@ export default function ChatInput({ onSend, disabled }: Props) {
   const removeAttachment = (id: string) => {
     setAttachments((prev) => {
       const target = prev.find((item) => item.id === id);
-      if (target) {
+      if (target != null) {
         URL.revokeObjectURL(target.previewUrl);
       }
       return prev.filter((item) => item.id !== id);
@@ -489,7 +518,8 @@ export default function ChatInput({ onSend, disabled }: Props) {
 
   const speechSupported =
     typeof window !== 'undefined' &&
-    Boolean((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+    (((window as WindowWithSpeechRecognition).SpeechRecognition != null)
+      || ((window as WindowWithSpeechRecognition).webkitSpeechRecognition != null));
 
   return (
     <div className="chat-input-area">
@@ -498,7 +528,7 @@ export default function ChatInput({ onSend, disabled }: Props) {
           className={`chat-input-shell d-flex align-items-end gap-2 ${isDragOver ? 'chat-drop-target-active' : ''}`}
           onDragOver={(e) => {
             e.preventDefault();
-            if (!disabled) {
+            if (disabled !== true) {
               setIsDragOver(true);
             }
           }}
@@ -552,7 +582,7 @@ export default function ChatInput({ onSend, disabled }: Props) {
             <Button
               type="button"
               variant={isRecording ? 'danger' : 'secondary'}
-              disabled={disabled || !speechSupported}
+              disabled={disabled === true || !speechSupported}
               onClick={handleVoiceToggle}
               className="chat-inline-icon-btn d-flex align-items-center justify-content-center"
               title={speechSupported ? 'Voice input' : 'Voice input is not supported in this browser'}
@@ -565,7 +595,7 @@ export default function ChatInput({ onSend, disabled }: Props) {
           <Button
             type="submit"
             variant="primary"
-            disabled={disabled || (!text.trim() && attachments.length === 0)}
+            disabled={disabled === true || (text.trim().length === 0 && attachments.length === 0)}
             className="chat-send-btn rounded-circle d-flex align-items-center justify-content-center"
           >
             <FiSend size={18} />

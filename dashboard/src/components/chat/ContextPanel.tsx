@@ -26,7 +26,7 @@ export default function ContextPanel({ tier, tierForce, onTierChange, onForceCha
   if (!panelOpen) {return null;}
 
   const contextPercent =
-    turnMetadata.inputTokens != null && turnMetadata.maxContextTokens
+    turnMetadata.inputTokens != null && turnMetadata.maxContextTokens != null
       ? Math.min(100, Math.round((turnMetadata.inputTokens / turnMetadata.maxContextTokens) * 100))
       : null;
 
@@ -49,7 +49,7 @@ export default function ContextPanel({ tier, tierForce, onTierChange, onForceCha
         <div className="section-value">
           <span className="font-mono">
             {turnMetadata.model ?? '--'}
-            {turnMetadata.reasoning ? `:${turnMetadata.reasoning}` : ''}
+            {turnMetadata.reasoning != null && turnMetadata.reasoning.length > 0 ? `:${turnMetadata.reasoning}` : ''}
           </span>
         </div>
         <div className="d-flex align-items-center gap-2 mt-1">

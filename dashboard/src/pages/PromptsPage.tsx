@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { type ReactElement, useState } from 'react';
 import { Card, ListGroup, Row, Col, Button, Form, Badge, Spinner, Placeholder } from 'react-bootstrap';
 import { usePrompts, useUpdatePrompt } from '../hooks/usePrompts';
 import { previewPrompt } from '../api/prompts';
 import toast from 'react-hot-toast';
 
-export default function PromptsPage() {
+export default function PromptsPage(): ReactElement {
   const { data: sections, isLoading } = usePrompts();
   const updateMutation = useUpdatePrompt();
 
@@ -49,9 +49,9 @@ export default function PromptsPage() {
 
   const current = sections?.find((s) => s.name === selected);
 
-  const handleSelect = (name: string) => {
+  const handleSelect = (name: string): void => {
     const section = sections?.find((s) => s.name === name);
-    if (section) {
+    if (section != null) {
       setSelected(name);
       setEditContent(section.content);
       setEditDesc(section.description);
@@ -60,8 +60,10 @@ export default function PromptsPage() {
     }
   };
 
-  const handleSave = async () => {
-    if (!selected) {return;}
+  const handleSave = async (): Promise<void> => {
+    if (selected == null || selected.length === 0) {
+      return;
+    }
     await updateMutation.mutateAsync({
       name: selected,
       section: { content: editContent, description: editDesc, order: editOrder, enabled: true },
@@ -69,8 +71,10 @@ export default function PromptsPage() {
     toast.success('Saved');
   };
 
-  const handlePreview = async () => {
-    if (!selected) {return;}
+  const handlePreview = async (): Promise<void> => {
+    if (selected == null || selected.length === 0) {
+      return;
+    }
     const result = await previewPrompt(selected);
     setPreview(result.rendered);
   };
@@ -99,7 +103,7 @@ export default function PromptsPage() {
           </ListGroup>
         </Col>
         <Col md={8}>
-          {current ? (
+          {current != null ? (
             <Card>
               <Card.Body>
                 <Form.Group className="mb-2">
@@ -130,13 +134,13 @@ export default function PromptsPage() {
                   />
                 </Form.Group>
                 <div className="d-flex gap-2">
-                  <Button size="sm" onClick={handleSave}>Save</Button>
-                  <Button size="sm" variant="secondary" onClick={handlePreview}>Preview</Button>
+                  <Button size="sm" onClick={() => { void handleSave(); }}>Save</Button>
+                  <Button size="sm" variant="secondary" onClick={() => { void handlePreview(); }}>Preview</Button>
                 </div>
                 <small className="text-body-secondary d-block mt-2">
                   System prompts are built-in and cannot be deleted.
                 </small>
-                {preview && (
+                {preview.length > 0 && (
                   <Card className="mt-3 bg-body-tertiary">
                     <Card.Body>
                       <pre className="mb-0 sessions-message code-text">

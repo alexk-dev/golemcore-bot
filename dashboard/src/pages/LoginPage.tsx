@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react';
+import { type ReactElement, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Container } from 'react-bootstrap';
 import { getMfaStatus, login } from '../api/auth';
 import { useAuthStore } from '../store/authStore';
 import LoginForm from '../components/auth/LoginForm';
 
-export default function LoginPage() {
+export default function LoginPage(): ReactElement {
   const [mfaRequired, setMfaRequired] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -14,14 +14,16 @@ export default function LoginPage() {
   const nav = useNavigate();
 
   useEffect(() => {
-    if (token) {nav('/', { replace: true });}
+    if (token != null && token.length > 0) {
+      nav('/', { replace: true });
+    }
   }, [token, nav]);
 
   useEffect(() => {
     getMfaStatus().then((r) => setMfaRequired(r.mfaRequired)).catch(() => {});
   }, []);
 
-  const handleSubmit = async (password: string, mfaCode?: string) => {
+  const handleSubmit = async (password: string, mfaCode?: string): Promise<void> => {
     setLoading(true);
     setError(null);
     try {

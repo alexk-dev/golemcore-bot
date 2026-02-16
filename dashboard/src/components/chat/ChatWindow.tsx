@@ -16,7 +16,7 @@ const GOALS_POLL_INTERVAL = 30000;
 
 function getChatSessionId(): string {
   let id = localStorage.getItem(SESSION_KEY);
-  if (!id) {
+  if (id == null || id.length === 0) {
     id = crypto.randomUUID();
     localStorage.setItem(SESSION_KEY, id);
   }
@@ -41,6 +41,24 @@ interface ChatAttachmentPayload {
 interface OutboundChatPayload {
   text: string;
   attachments: ChatAttachmentPayload[];
+}
+
+interface AssistantHint {
+  model?: string | null;
+  tier?: string | null;
+  reasoning?: string | null;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  totalTokens?: number | null;
+  latencyMs?: number | null;
+  maxContextTokens?: number | null;
+}
+
+interface SocketMessage {
+  type?: string;
+  eventType?: string;
+  text?: string;
+  hint?: AssistantHint;
 }
 
 export default function ChatWindow() {
@@ -69,7 +87,7 @@ export default function ChatWindow() {
           (b.updatedAt ?? b.createdAt ?? '').localeCompare(a.updatedAt ?? a.createdAt ?? '')
         );
         const match = sorted.find((s) => s.chatId === chatSessionId) ?? sorted[0];
-        if (match) {
+        if (match != null) {
           if (match.chatId !== chatSessionId) {
             localStorage.setItem(SESSION_KEY, match.chatId);
           }
@@ -78,7 +96,7 @@ export default function ChatWindow() {
         return null;
       })
       .then((detail) => {
-        if (detail && detail.messages.length > 0) {
+        if (detail != null && detail.messages.length > 0) {
           const history: ChatMessage[] = detail.messages
             .filter((m) => m.role === 'user' || m.role === 'assistant')
             .map((m) => ({
@@ -110,7 +128,7 @@ export default function ChatWindow() {
   // Infinite scroll — load more on scroll to top
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
-    if (!el) {return;}
+    if (el == null) {return;}
 
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
     shouldAutoScroll.current = nearBottom;
@@ -130,7 +148,7 @@ export default function ChatWindow() {
   }, [visibleStart, loadingMore]);
 
   const connect = useCallback(() => {
-    if (!token) {return;}
+    if (token == null || token.length === 0) {return;}
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(`${protocol}//${window.location.host}/ws/chat?token=${token}`);
 
@@ -141,7 +159,7 @@ export default function ChatWindow() {
     };
     ws.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data);
+        const data = JSON.parse(event.data) as SocketMessage;
         if (data.type === 'system_event' && data.eventType === 'typing') {
           setTyping(true);
           setTimeout(() => setTyping(false), 3000);
@@ -151,7 +169,7 @@ export default function ChatWindow() {
           setTyping(false);
 
           // Extract hints for context panel
-          if (data.hint) {
+          if (data.hint != null) {
             setTurnMetadata({
               model: data.hint.model ?? null,
               tier: data.hint.tier ?? null,
@@ -165,14 +183,14 @@ export default function ChatWindow() {
           }
 
           setAllMessages((prev) => {
-            const last = prev[prev.length - 1];
+            const last = prev.length > 0 ? prev[prev.length - 1] : undefined;
             const chunkModel = data.hint?.model ?? null;
             const chunkTier = data.hint?.tier ?? null;
             const chunkReasoning = data.hint?.reasoning ?? null;
             if (last?.role === 'assistant' && data.type === 'assistant_chunk') {
               return [...prev.slice(0, -1), {
                 role: 'assistant',
-                content: last.content + data.text,
+                content: `${last.content}${data.text ?? ''}`,
                 model: chunkModel ?? last.model ?? null,
                 tier: chunkTier ?? last.tier ?? null,
                 reasoning: chunkReasoning ?? last.reasoning ?? null,
@@ -214,7 +232,7 @@ export default function ChatWindow() {
       const fallback = attachments.length > 0
         ? `[${attachments.length} image attachment${attachments.length > 1 ? 's' : ''}]`
         : '';
-      const newMsg = { role: 'user', content: trimmed || fallback };
+      const newMsg = { role: 'user', content: trimmed.length > 0 ? trimmed : fallback };
       setAllMessages((prev) => [...prev, newMsg]);
       shouldAutoScroll.current = true;
       wsRef.current.send(JSON.stringify({

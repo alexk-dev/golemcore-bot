@@ -1,22 +1,21 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type {
-  TelegramConfig,
-  ModelRouterConfig,
-  LlmConfig,
-  ToolsConfig,
-  VoiceConfig,
-  MemoryConfig,
-  SkillsConfig,
-  TurnConfig,
-  UsageConfig,
-  RagConfig,
-  McpConfig,
-  AutoModeConfig,
-  RateLimitConfig,
-  SecurityConfig,
-  CompactionConfig,
-  WebhookConfig} from '../api/settings';
+import { type UseMutationResult, type UseQueryResult, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
+  type TelegramConfig,
+  type ModelRouterConfig,
+  type LlmConfig,
+  type ToolsConfig,
+  type VoiceConfig,
+  type MemoryConfig,
+  type SkillsConfig,
+  type TurnConfig,
+  type UsageConfig,
+  type RagConfig,
+  type McpConfig,
+  type AutoModeConfig,
+  type RateLimitConfig,
+  type SecurityConfig,
+  type CompactionConfig,
+  type WebhookConfig,
   getSettings,
   updatePreferences,
   getModels,
@@ -37,18 +36,18 @@ import {
   updateAdvancedConfig,
   generateInviteCode,
   deleteInviteCode,
-  restartTelegram
+  restartTelegram,
 } from '../api/settings';
 
-export function useSettings() {
+export function useSettings(): UseQueryResult<Awaited<ReturnType<typeof getSettings>>, unknown> {
   return useQuery({ queryKey: ['settings'], queryFn: getSettings });
 }
 
-export function useModels() {
+export function useModels(): UseQueryResult<Awaited<ReturnType<typeof getModels>>, unknown> {
   return useQuery({ queryKey: ['settings', 'models'], queryFn: getModels });
 }
 
-export function useUpdatePreferences() {
+export function useUpdatePreferences(): UseMutationResult<Awaited<ReturnType<typeof updatePreferences>>, unknown, Record<string, unknown>> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: updatePreferences,
@@ -58,11 +57,11 @@ export function useUpdatePreferences() {
 
 // ==================== Runtime Config ====================
 
-export function useRuntimeConfig() {
+export function useRuntimeConfig(): UseQueryResult<Awaited<ReturnType<typeof getRuntimeConfig>>, unknown> {
   return useQuery({ queryKey: ['runtime-config'], queryFn: getRuntimeConfig });
 }
 
-export function useUpdateTelegram() {
+export function useUpdateTelegram(): UseMutationResult<Awaited<ReturnType<typeof updateTelegramConfig>>, unknown, TelegramConfig> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: TelegramConfig) => updateTelegramConfig(config),
@@ -70,7 +69,7 @@ export function useUpdateTelegram() {
   });
 }
 
-export function useUpdateModelRouter() {
+export function useUpdateModelRouter(): UseMutationResult<Awaited<ReturnType<typeof updateModelRouterConfig>>, unknown, ModelRouterConfig> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: ModelRouterConfig) => updateModelRouterConfig(config),
@@ -78,7 +77,7 @@ export function useUpdateModelRouter() {
   });
 }
 
-export function useUpdateLlm() {
+export function useUpdateLlm(): UseMutationResult<Awaited<ReturnType<typeof updateLlmConfig>>, unknown, LlmConfig> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: LlmConfig) => updateLlmConfig(config),
@@ -86,7 +85,7 @@ export function useUpdateLlm() {
   });
 }
 
-export function useUpdateTools() {
+export function useUpdateTools(): UseMutationResult<Awaited<ReturnType<typeof updateToolsConfig>>, unknown, ToolsConfig> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: ToolsConfig) => updateToolsConfig(config),
@@ -94,7 +93,7 @@ export function useUpdateTools() {
   });
 }
 
-export function useUpdateVoice() {
+export function useUpdateVoice(): UseMutationResult<Awaited<ReturnType<typeof updateVoiceConfig>>, unknown, VoiceConfig> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: VoiceConfig) => updateVoiceConfig(config),
@@ -102,7 +101,7 @@ export function useUpdateVoice() {
   });
 }
 
-export function useUpdateMemory() {
+export function useUpdateMemory(): UseMutationResult<Awaited<ReturnType<typeof updateMemoryConfig>>, unknown, MemoryConfig> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: MemoryConfig) => updateMemoryConfig(config),
@@ -110,7 +109,7 @@ export function useUpdateMemory() {
   });
 }
 
-export function useUpdateSkills() {
+export function useUpdateSkills(): UseMutationResult<Awaited<ReturnType<typeof updateSkillsConfig>>, unknown, SkillsConfig> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: SkillsConfig) => updateSkillsConfig(config),
@@ -118,7 +117,7 @@ export function useUpdateSkills() {
   });
 }
 
-export function useUpdateTurn() {
+export function useUpdateTurn(): UseMutationResult<Awaited<ReturnType<typeof updateTurnConfig>>, unknown, TurnConfig> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: TurnConfig) => updateTurnConfig(config),
@@ -126,7 +125,7 @@ export function useUpdateTurn() {
   });
 }
 
-export function useUpdateUsage() {
+export function useUpdateUsage(): UseMutationResult<Awaited<ReturnType<typeof updateUsageConfig>>, unknown, UsageConfig> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: UsageConfig) => updateUsageConfig(config),
@@ -134,7 +133,7 @@ export function useUpdateUsage() {
   });
 }
 
-export function useUpdateRag() {
+export function useUpdateRag(): UseMutationResult<Awaited<ReturnType<typeof updateRagConfig>>, unknown, RagConfig> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: RagConfig) => updateRagConfig(config),
@@ -142,7 +141,7 @@ export function useUpdateRag() {
   });
 }
 
-export function useUpdateMcp() {
+export function useUpdateMcp(): UseMutationResult<Awaited<ReturnType<typeof updateMcpConfig>>, unknown, McpConfig> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: McpConfig) => updateMcpConfig(config),
@@ -150,7 +149,7 @@ export function useUpdateMcp() {
   });
 }
 
-export function useUpdateWebhooks() {
+export function useUpdateWebhooks(): UseMutationResult<Awaited<ReturnType<typeof updateWebhooksConfig>>, unknown, WebhookConfig> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: WebhookConfig) => updateWebhooksConfig(config),
@@ -158,7 +157,7 @@ export function useUpdateWebhooks() {
   });
 }
 
-export function useUpdateAuto() {
+export function useUpdateAuto(): UseMutationResult<Awaited<ReturnType<typeof updateAutoConfig>>, unknown, AutoModeConfig> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: AutoModeConfig) => updateAutoConfig(config),
@@ -166,7 +165,11 @@ export function useUpdateAuto() {
   });
 }
 
-export function useUpdateAdvanced() {
+export function useUpdateAdvanced(): UseMutationResult<
+  Awaited<ReturnType<typeof updateAdvancedConfig>>,
+  unknown,
+  { rateLimit?: RateLimitConfig; security?: SecurityConfig; compaction?: CompactionConfig }
+> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: { rateLimit?: RateLimitConfig; security?: SecurityConfig; compaction?: CompactionConfig }) =>
@@ -175,7 +178,7 @@ export function useUpdateAdvanced() {
   });
 }
 
-export function useGenerateInviteCode() {
+export function useGenerateInviteCode(): UseMutationResult<Awaited<ReturnType<typeof generateInviteCode>>, unknown, void> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => generateInviteCode(),
@@ -183,7 +186,7 @@ export function useGenerateInviteCode() {
   });
 }
 
-export function useDeleteInviteCode() {
+export function useDeleteInviteCode(): UseMutationResult<Awaited<ReturnType<typeof deleteInviteCode>>, unknown, string> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (code: string) => deleteInviteCode(code),
@@ -191,6 +194,6 @@ export function useDeleteInviteCode() {
   });
 }
 
-export function useRestartTelegram() {
+export function useRestartTelegram(): UseMutationResult<Awaited<ReturnType<typeof restartTelegram>>, unknown, void> {
   return useMutation({ mutationFn: restartTelegram });
 }

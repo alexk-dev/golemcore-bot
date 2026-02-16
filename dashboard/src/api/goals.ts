@@ -24,6 +24,6 @@ export interface GoalsResponse {
 }
 
 export async function getGoals(): Promise<GoalsResponse> {
-  const { data } = await client.get('/goals');
+  const { data } = await client.get<GoalsResponse>('/goals');
   return data;
 }

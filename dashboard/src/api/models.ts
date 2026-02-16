@@ -26,17 +26,17 @@ export interface AvailableModel {
 }
 
 export async function getModelsConfig(): Promise<ModelsConfig> {
-  const { data } = await client.get('/models');
+  const { data } = await client.get<ModelsConfig>('/models');
   return data;
 }
 
 export async function replaceModelsConfig(config: ModelsConfig): Promise<ModelsConfig> {
-  const { data } = await client.put('/models', config);
+  const { data } = await client.put<ModelsConfig>('/models', config);
   return data;
 }
 
 export async function getAvailableModels(): Promise<Record<string, AvailableModel[]>> {
-  const { data } = await client.get('/models/available');
+  const { data } = await client.get<Record<string, AvailableModel[]>>('/models/available');
   return data;
 }
 

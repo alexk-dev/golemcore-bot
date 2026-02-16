@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { type ReactElement, useState, useEffect, useMemo } from 'react';
 import {
   Card, Form, Button, Row, Col, Spinner,
   Table, Badge, InputGroup, OverlayTrigger, Tooltip, Placeholder,
@@ -10,7 +10,7 @@ import {
   useUpdateLlm,
   useUpdateVoice, useUpdateMemory, useUpdateSkills,
   useUpdateTurn,
-  useUpdateWebhooks, useUpdateAuto, useUpdateAdvanced,
+  useUpdateAuto,
   useUpdateUsage,
   useUpdateRag,
   useUpdateMcp,
@@ -21,7 +21,7 @@ import { useMe } from '../hooks/useAuth';
 import { changePassword } from '../api/auth';
 import MfaSetup from '../components/auth/MfaSetup';
 import toast from 'react-hot-toast';
-import { useQueryClient } from '@tanstack/react-query';
+import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 import type {
   TelegramConfig, ModelRouterConfig, LlmConfig, ToolsConfig, VoiceConfig,
   MemoryConfig, SkillsConfig,
@@ -29,8 +29,8 @@ import type {
   UsageConfig,
   RagConfig,
   McpConfig,
-  AutoModeConfig, RateLimitConfig, SecurityConfig, CompactionConfig,
-  WebhookConfig, HookMapping, ImapConfig, SmtpConfig,
+  AutoModeConfig,
+  ImapConfig, SmtpConfig,
 } from '../api/settings';
 import {
   FiHelpCircle, FiSliders, FiSend, FiCpu, FiTool, FiMic,
@@ -39,10 +39,12 @@ import {
 } from 'react-icons/fi';
 import ConfirmModal from '../components/common/ConfirmModal';
 import { useBrowserHealthPing } from '../hooks/useSystem';
+import WebhooksTab from './settings/WebhooksTab';
+import { AdvancedTab } from './settings/AdvancedTab';
 
 // ==================== Tooltip Helper ====================
 
-function Tip({ text }: { text: string }) {
+function Tip({ text }: { text: string }): ReactElement {
   return (
     <OverlayTrigger
       placement="top"
@@ -57,12 +59,21 @@ function hasDiff<T>(current: T, initial: T): boolean {
   return JSON.stringify(current) !== JSON.stringify(initial);
 }
 
-function SaveStateHint({ isDirty }: { isDirty: boolean }) {
+function SaveStateHint({ isDirty }: { isDirty: boolean }): ReactElement {
   return (
     <small className="text-body-secondary">
       {isDirty ? 'Unsaved changes' : 'All changes saved'}
     </small>
   );
+}
+
+function toNullableString(value: string): string | null {
+  return value.length > 0 ? value : null;
+}
+
+function toNullableInt(value: string): number | null {
+  const parsed = parseInt(value, 10);
+  return Number.isNaN(parsed) ? null : parsed;
 }
 
 // ==================== Main ====================
@@ -96,6 +107,21 @@ const SETTINGS_SECTIONS = [
 ] as const;
 
 type SettingsSectionKey = typeof SETTINGS_SECTIONS[number]['key'];
+
+interface GeneralSettingsData {
+  language?: string;
+  timezone?: string;
+}
+
+interface AuthMe {
+  mfaEnabled?: boolean;
+}
+
+interface GeneralTabProps {
+  settings: GeneralSettingsData | undefined;
+  me: AuthMe | undefined;
+  qc: QueryClient;
+}
 
 const SETTINGS_BLOCKS: Array<{
   key: string;
@@ -154,7 +180,7 @@ function isSettingsSectionKey(value: string | undefined): value is SettingsSecti
   return SETTINGS_SECTIONS.some((s) => s.key === value);
 }
 
-export default function SettingsPage() {
+export default function SettingsPage(): ReactElement {
   const navigate = useNavigate();
   const { section } = useParams<{ section?: string }>();
   const { data: settings, isLoading: settingsLoading } = useSettings();
@@ -164,7 +190,7 @@ export default function SettingsPage() {
 
   const selectedSection = isSettingsSectionKey(section) ? section : null;
 
-  const sectionMeta = selectedSection
+  const sectionMeta = selectedSection != null
     ? SETTINGS_SECTIONS.find((s) => s.key === selectedSection) ?? null
     : null;
 
@@ -189,7 +215,7 @@ export default function SettingsPage() {
     );
   }
 
-  if (!selectedSection) {
+  if (selectedSection == null) {
     return (
       <div>
         <div className="page-header">
@@ -205,7 +231,7 @@ export default function SettingsPage() {
             <Row className="g-3">
               {block.sections.map((sectionKey) => {
                 const item = SETTINGS_SECTIONS.find((section) => section.key === sectionKey);
-                if (!item) {
+                if (item == null) {
                   return null;
                 }
 
@@ -248,35 +274,35 @@ export default function SettingsPage() {
       </div>
 
       {selectedSection === 'general' && <GeneralTab settings={settings} me={me} qc={qc} />}
-      {selectedSection === 'telegram' && rc && <TelegramTab config={rc.telegram} voiceConfig={rc.voice} />}
-      {selectedSection === 'models' && rc && <ModelsTab config={rc.modelRouter} llmConfig={rc.llm} />}
-      {selectedSection === 'llm-providers' && rc && <LlmProvidersTab config={rc.llm} modelRouter={rc.modelRouter} />}
+      {selectedSection === 'telegram' && rc != null && <TelegramTab config={rc.telegram} voiceConfig={rc.voice} />}
+      {selectedSection === 'models' && rc != null && <ModelsTab config={rc.modelRouter} llmConfig={rc.llm} />}
+      {selectedSection === 'llm-providers' && rc != null && <LlmProvidersTab config={rc.llm} modelRouter={rc.modelRouter} />}
 
-      {selectedSection === 'tool-browser' && rc && <ToolsTab config={rc.tools} mode="browser" />}
-      {selectedSection === 'tool-brave' && rc && <ToolsTab config={rc.tools} mode="brave" />}
-      {selectedSection === 'tool-filesystem' && rc && <ToolsTab config={rc.tools} mode="filesystem" />}
-      {selectedSection === 'tool-shell' && rc && <ToolsTab config={rc.tools} mode="shell" />}
-      {selectedSection === 'tool-email' && rc && <ToolsTab config={rc.tools} mode="email" />}
-      {selectedSection === 'tool-automation' && rc && <ToolsTab config={rc.tools} mode="automation" />}
-      {selectedSection === 'tool-goals' && rc && <ToolsTab config={rc.tools} mode="goals" />}
+      {selectedSection === 'tool-browser' && rc != null && <ToolsTab config={rc.tools} mode="browser" />}
+      {selectedSection === 'tool-brave' && rc != null && <ToolsTab config={rc.tools} mode="brave" />}
+      {selectedSection === 'tool-filesystem' && rc != null && <ToolsTab config={rc.tools} mode="filesystem" />}
+      {selectedSection === 'tool-shell' && rc != null && <ToolsTab config={rc.tools} mode="shell" />}
+      {selectedSection === 'tool-email' && rc != null && <ToolsTab config={rc.tools} mode="email" />}
+      {selectedSection === 'tool-automation' && rc != null && <ToolsTab config={rc.tools} mode="automation" />}
+      {selectedSection === 'tool-goals' && rc != null && <ToolsTab config={rc.tools} mode="goals" />}
 
-      {selectedSection === 'voice-elevenlabs' && rc && <VoiceTab config={rc.voice} />}
-      {selectedSection === 'memory' && rc && <MemoryTab config={rc.memory} />}
-      {selectedSection === 'skills' && rc && <SkillsTab config={rc.skills} />}
-      {selectedSection === 'turn' && rc && <TurnTab config={rc.turn} />}
-      {selectedSection === 'usage' && rc && <UsageTab config={rc.usage} />}
-      {selectedSection === 'rag' && rc && <RagTab config={rc.rag} />}
-      {selectedSection === 'mcp' && rc && <McpTab config={rc.mcp} />}
+      {selectedSection === 'voice-elevenlabs' && rc != null && <VoiceTab config={rc.voice} />}
+      {selectedSection === 'memory' && rc != null && <MemoryTab config={rc.memory} />}
+      {selectedSection === 'skills' && rc != null && <SkillsTab config={rc.skills} />}
+      {selectedSection === 'turn' && rc != null && <TurnTab config={rc.turn} />}
+      {selectedSection === 'usage' && rc != null && <UsageTab config={rc.usage} />}
+      {selectedSection === 'rag' && rc != null && <RagTab config={rc.rag} />}
+      {selectedSection === 'mcp' && rc != null && <McpTab config={rc.mcp} />}
       {selectedSection === 'webhooks' && <WebhooksTab />}
-      {selectedSection === 'auto' && rc && <AutoModeTab config={rc.autoMode} />}
+      {selectedSection === 'auto' && rc != null && <AutoModeTab config={rc.autoMode} />}
 
-      {selectedSection === 'advanced-rate-limit' && rc && (
+      {selectedSection === 'advanced-rate-limit' && rc != null && (
         <AdvancedTab rateLimit={rc.rateLimit} security={rc.security} compaction={rc.compaction} mode="rateLimit" />
       )}
-      {selectedSection === 'advanced-security' && rc && (
+      {selectedSection === 'advanced-security' && rc != null && (
         <AdvancedTab rateLimit={rc.rateLimit} security={rc.security} compaction={rc.compaction} mode="security" />
       )}
-      {selectedSection === 'advanced-compaction' && rc && (
+      {selectedSection === 'advanced-compaction' && rc != null && (
         <AdvancedTab rateLimit={rc.rateLimit} security={rc.security} compaction={rc.compaction} mode="compaction" />
       )}
     </div>
@@ -285,7 +311,7 @@ export default function SettingsPage() {
 
 // ==================== General Tab ====================
 
-function GeneralTab({ settings, me, qc }: { settings: any; me: any; qc: any }) {
+function GeneralTab({ settings, me, qc }: GeneralTabProps): ReactElement {
   const updatePrefs = useUpdatePreferences();
   const [language, setLanguage] = useState(settings?.language ?? 'en');
   const [timezone, setTimezone] = useState(settings?.timezone ?? 'UTC');
@@ -299,13 +325,17 @@ function GeneralTab({ settings, me, qc }: { settings: any; me: any; qc: any }) {
 
   const isPrefsDirty = language !== (settings?.language ?? 'en') || timezone !== (settings?.timezone ?? 'UTC');
 
-  const handleSavePrefs = async (e: React.FormEvent) => {
+  const handleSavePrefs = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     await updatePrefs.mutateAsync({ language, timezone });
     toast.success('Preferences saved');
   };
 
-  const handleChangePassword = async (e: React.FormEvent) => {
+  const handleSavePrefsSubmit = (e: React.FormEvent): void => {
+    void handleSavePrefs(e);
+  };
+
+  const handleChangePassword = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     const result = await changePassword(oldPwd, newPwd);
     if (result.success) {
@@ -317,13 +347,17 @@ function GeneralTab({ settings, me, qc }: { settings: any; me: any; qc: any }) {
     }
   };
 
+  const handleChangePasswordSubmit = (e: React.FormEvent): void => {
+    void handleChangePassword(e);
+  };
+
   return (
     <Row className="g-3">
       <Col lg={6}>
         <Card className="settings-card">
           <Card.Body>
             <Card.Title className="h6 mb-3">Preferences</Card.Title>
-            <Form onSubmit={handleSavePrefs}>
+            <Form onSubmit={handleSavePrefsSubmit}>
               <Form.Group className="mb-3">
                 <Form.Label className="small fw-medium">
                   Language <Tip text="UI and bot response language" />
@@ -362,12 +396,12 @@ function GeneralTab({ settings, me, qc }: { settings: any; me: any; qc: any }) {
       <Col lg={6}>
         <MfaSetup
           mfaEnabled={me?.mfaEnabled ?? false}
-          onUpdate={() => qc.invalidateQueries({ queryKey: ['auth', 'me'] })}
+          onUpdate={() => { void qc.invalidateQueries({ queryKey: ['auth', 'me'] }); }}
         />
         <Card className="settings-card mt-3">
           <Card.Body>
             <Card.Title className="h6 mb-3">Change Password</Card.Title>
-            <Form onSubmit={handleChangePassword}>
+            <Form onSubmit={handleChangePasswordSubmit}>
               <Form.Group className="mb-3">
                 <Form.Label className="small fw-medium">Current Password</Form.Label>
                 <Form.Control size="sm" type="password" value={oldPwd} onChange={(e) => setOldPwd(e.target.value)} required />
@@ -387,7 +421,7 @@ function GeneralTab({ settings, me, qc }: { settings: any; me: any; qc: any }) {
 
 // ==================== Telegram Tab ====================
 
-function TelegramTab({ config, voiceConfig }: { config: TelegramConfig; voiceConfig: VoiceConfig }) {
+function TelegramTab({ config, voiceConfig }: { config: TelegramConfig; voiceConfig: VoiceConfig }): ReactElement {
   const updateTelegram = useUpdateTelegram();
   const updateVoice = useUpdateVoice();
   const genInvite = useGenerateInviteCode();
@@ -419,9 +453,9 @@ function TelegramTab({ config, voiceConfig }: { config: TelegramConfig; voiceCon
     () => ({
       ...config,
       enabled,
-      token: token || null,
+      token: toNullableString(token),
       authMode,
-      allowedUsers: allowedUserId ? [allowedUserId] : [],
+      allowedUsers: allowedUserId.length > 0 ? [allowedUserId] : [],
     }),
     [config, enabled, token, authMode, allowedUserId],
   );
@@ -432,7 +466,7 @@ function TelegramTab({ config, voiceConfig }: { config: TelegramConfig; voiceCon
       enabled: config.enabled ?? false,
       token: config.token ?? null,
       authMode: config.authMode ?? 'invite_only',
-      allowedUsers: (config.allowedUsers?.[0] ?? '').replace(/\D/g, '')
+      allowedUsers: (config.allowedUsers?.[0] ?? '').replace(/\D/g, '').length > 0
         ? [(config.allowedUsers?.[0] ?? '').replace(/\D/g, '')]
         : [],
     }),
@@ -441,7 +475,7 @@ function TelegramTab({ config, voiceConfig }: { config: TelegramConfig; voiceCon
 
   const isTelegramDirty = hasDiff(currentConfig, initialConfig);
 
-  const handleSave = async () => {
+  const handleSave = async (): Promise<void> => {
     await updateTelegram.mutateAsync(currentConfig);
     await updateVoice.mutateAsync({
       ...voiceConfig,
@@ -451,8 +485,8 @@ function TelegramTab({ config, voiceConfig }: { config: TelegramConfig; voiceCon
     toast.success('Telegram settings saved');
   };
 
-  const handleRevokeCode = async () => {
-    if (!revokeCode) {
+  const handleRevokeCode = async (): Promise<void> => {
+    if (revokeCode == null || revokeCode.length === 0) {
       return;
     }
     await delInvite.mutateAsync(revokeCode);
@@ -533,7 +567,10 @@ function TelegramTab({ config, voiceConfig }: { config: TelegramConfig; voiceCon
                       <td className="small text-body-secondary">{new Date(ic.createdAt).toLocaleDateString()}</td>
                       <td className="text-end">
                         <Button size="sm" variant="secondary" className="me-2"
-                          onClick={() => { navigator.clipboard.writeText(ic.code); toast.success('Copied!'); }}>Copy</Button>
+                          onClick={() => {
+                            void navigator.clipboard.writeText(ic.code);
+                            toast.success('Copied!');
+                          }}>Copy</Button>
                         <Button size="sm" variant="danger"
                           onClick={() => setRevokeCode(ic.code)}>Revoke</Button>
                       </td>
@@ -575,7 +612,7 @@ function TelegramTab({ config, voiceConfig }: { config: TelegramConfig; voiceCon
         </Card>
 
         <div className="d-flex flex-wrap align-items-center gap-2 pt-2 border-top">
-          <Button variant="primary" size="sm" onClick={handleSave} disabled={!isTelegramDirty || updateTelegram.isPending}>
+          <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isTelegramDirty || updateTelegram.isPending}>
             {updateTelegram.isPending ? 'Saving...' : 'Save'}
           </Button>
           <Button variant="warning" size="sm"
@@ -587,13 +624,13 @@ function TelegramTab({ config, voiceConfig }: { config: TelegramConfig; voiceCon
       </Card.Body>
 
       <ConfirmModal
-        show={!!revokeCode}
+        show={revokeCode != null && revokeCode.length > 0}
         title="Revoke Invite Code"
         message="This invite code will stop working immediately. This action cannot be undone."
         confirmLabel="Revoke"
         confirmVariant="danger"
         isProcessing={delInvite.isPending}
-        onConfirm={handleRevokeCode}
+        onConfirm={() => { void handleRevokeCode(); }}
         onCancel={() => setRevokeCode(null)}
       />
     </Card>
@@ -609,7 +646,7 @@ interface AvailableModel {
   reasoningLevels: string[];
 }
 
-function ModelsTab({ config, llmConfig }: { config: ModelRouterConfig; llmConfig: LlmConfig }) {
+function ModelsTab({ config, llmConfig }: { config: ModelRouterConfig; llmConfig: LlmConfig }): ReactElement {
   const updateRouter = useUpdateModelRouter();
   const { data: available } = useAvailableModels();
   const [form, setForm] = useState<ModelRouterConfig>({ ...config });
@@ -622,7 +659,7 @@ function ModelsTab({ config, llmConfig }: { config: ModelRouterConfig; llmConfig
   }, [llmConfig]);
 
   const providers = useMemo(() => {
-    if (!available) {
+    if (available == null) {
       return {} as Record<string, AvailableModel[]>;
     }
 
@@ -637,7 +674,7 @@ function ModelsTab({ config, llmConfig }: { config: ModelRouterConfig; llmConfig
   const providerNames = useMemo(() => Object.keys(providers), [providers]);
   const isModelsDirty = useMemo(() => hasDiff(form, config), [form, config]);
 
-  const handleSave = async () => {
+  const handleSave = async (): Promise<void> => {
     await updateRouter.mutateAsync(form);
     toast.success('Model router settings saved');
   };
@@ -695,8 +732,8 @@ function ModelsTab({ config, llmConfig }: { config: ModelRouterConfig; llmConfig
             providerNames={providerNames}
             modelValue={form.routingModel ?? ''}
             reasoningValue={form.routingModelReasoning ?? ''}
-            onModelChange={(val) => setForm({ ...form, routingModel: val || null, routingModelReasoning: null })}
-            onReasoningChange={(val) => setForm({ ...form, routingModelReasoning: val || null })}
+            onModelChange={(val) => setForm({ ...form, routingModel: toNullableString(val), routingModelReasoning: null })}
+            onReasoningChange={(val) => setForm({ ...form, routingModelReasoning: toNullableString(val) })}
           />
         </Col>
         {tierCards.map(({ key, label, color, modelField, reasoningField }) => (
@@ -708,15 +745,15 @@ function ModelsTab({ config, llmConfig }: { config: ModelRouterConfig; llmConfig
               providerNames={providerNames}
               modelValue={form[modelField] ?? ''}
               reasoningValue={form[reasoningField] ?? ''}
-              onModelChange={(val) => setForm({ ...form, [modelField]: val || null, [reasoningField]: null })}
-              onReasoningChange={(val) => setForm({ ...form, [reasoningField]: val || null })}
+              onModelChange={(val) => setForm({ ...form, [modelField]: toNullableString(val), [reasoningField]: null })}
+              onReasoningChange={(val) => setForm({ ...form, [reasoningField]: toNullableString(val) })}
             />
           </Col>
         ))}
       </Row>
 
       <div className="d-flex align-items-center gap-2">
-        <Button variant="primary" size="sm" onClick={handleSave} disabled={!isModelsDirty || updateRouter.isPending}>
+        <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isModelsDirty || updateRouter.isPending}>
           {updateRouter.isPending ? 'Saving...' : 'Save Model Configuration'}
         </Button>
         <SaveStateHint isDirty={isModelsDirty} />
@@ -734,10 +771,10 @@ function TierModelCard({ label, color, providers, providerNames, modelValue, rea
   reasoningValue: string;
   onModelChange: (v: string) => void;
   onReasoningChange: (v: string) => void;
-}) {
+}): ReactElement {
   // Determine selected provider from current model
   const selectedProvider = useMemo(() => {
-    if (!modelValue) {return providerNames[0] ?? '';}
+    if (modelValue.length === 0) {return providerNames[0] ?? '';}
     for (const [prov, models] of Object.entries(providers)) {
       if (models.some((m) => m.id === modelValue)) {return prov;}
     }
@@ -777,7 +814,7 @@ function TierModelCard({ label, color, providers, providerNames, modelValue, rea
             onChange={(e) => onModelChange(e.target.value)}>
             <option value="">Default</option>
             {modelsForProvider.map((m) => (
-              <option key={m.id} value={m.id}>{m.displayName || m.id}</option>
+              <option key={m.id} value={m.id}>{m.displayName ?? m.id}</option>
             ))}
           </Form.Select>
         </Form.Group>
@@ -799,7 +836,7 @@ function TierModelCard({ label, color, providers, providerNames, modelValue, rea
   );
 }
 
-function LlmProvidersTab({ config, modelRouter }: { config: LlmConfig; modelRouter: ModelRouterConfig }) {
+function LlmProvidersTab({ config, modelRouter }: { config: LlmConfig; modelRouter: ModelRouterConfig }): ReactElement {
   const updateLlm = useUpdateLlm();
   const [form, setForm] = useState<LlmConfig>({ providers: { ...(config.providers ?? {}) } });
   const [newProviderName, setNewProviderName] = useState('');
@@ -816,9 +853,9 @@ function LlmProvidersTab({ config, modelRouter }: { config: LlmConfig; modelRout
     return Array.from(new Set(combinedProviderNames)).sort();
   }, [providerNames]);
 
-  const addProvider = () => {
+  const addProvider = (): void => {
     const name = newProviderName.trim();
-    if (!name) {
+    if (name.length === 0) {
       return;
     }
     const normalizedName = name.toLowerCase();
@@ -826,7 +863,7 @@ function LlmProvidersTab({ config, modelRouter }: { config: LlmConfig; modelRout
       toast.error('Provider name must match [a-z0-9][a-z0-9_-]*');
       return;
     }
-    if (form.providers[normalizedName]) {
+    if (Object.prototype.hasOwnProperty.call(form.providers, normalizedName)) {
       toast.error('Provider already exists');
       return;
     }
@@ -862,7 +899,7 @@ function LlmProvidersTab({ config, modelRouter }: { config: LlmConfig; modelRout
     return used;
   }, [modelRouter]);
 
-  const handleSave = async () => {
+  const handleSave = async (): Promise<void> => {
     await updateLlm.mutateAsync(form);
     toast.success('LLM provider settings saved');
   };
@@ -916,10 +953,10 @@ function LlmProvidersTab({ config, modelRouter }: { config: LlmConfig; modelRout
                   <Form.Group className="mb-2">
                     <Form.Label className="small fw-medium d-flex align-items-center gap-2">
                       <span>API Key</span>
-                      {form.providers[provider]?.apiKeyPresent && (
+                      {form.providers[provider]?.apiKeyPresent === true && (
                         <Badge bg="success-subtle" text="success">Secret set</Badge>
                       )}
-                      {!!form.providers[provider]?.apiKey && (
+                      {(form.providers[provider]?.apiKey?.length ?? 0) > 0 && (
                         <Badge bg="warning-subtle" text="warning">Will update on save</Badge>
                       )}
                     </Form.Label>
@@ -931,18 +968,18 @@ function LlmProvidersTab({ config, modelRouter }: { config: LlmConfig; modelRout
                         autoCapitalize="off"
                         spellCheck={false}
                         data-lpignore="true"
-                        placeholder={form.providers[provider]?.apiKeyPresent
-                          ? 'Secret is configured (hidden)'
-                          : ''}
+                         placeholder={form.providers[provider]?.apiKeyPresent === true
+                           ? 'Secret is configured (hidden)'
+                           : ''}
                         type={showKeys[provider] ? 'text' : 'password'}
                         value={form.providers[provider]?.apiKey ?? ''}
-                        onChange={(e) => setForm({
-                          ...form,
-                          providers: {
-                            ...form.providers,
-                            [provider]: { ...form.providers[provider], apiKey: e.target.value || null },
-                          },
-                        })}
+                         onChange={(e) => setForm({
+                           ...form,
+                           providers: {
+                             ...form.providers,
+                            [provider]: { ...form.providers[provider], apiKey: toNullableString(e.target.value) },
+                           },
+                         })}
                       />
                       <Button
                         variant="secondary"
@@ -957,13 +994,13 @@ function LlmProvidersTab({ config, modelRouter }: { config: LlmConfig; modelRout
                     <Form.Control
                       size="sm"
                       value={form.providers[provider]?.baseUrl ?? ''}
-                      onChange={(e) => setForm({
-                        ...form,
-                        providers: {
-                          ...form.providers,
-                          [provider]: { ...form.providers[provider], baseUrl: e.target.value || null },
-                        },
-                      })}
+                         onChange={(e) => setForm({
+                          ...form,
+                          providers: {
+                            ...form.providers,
+                          [provider]: { ...form.providers[provider], baseUrl: toNullableString(e.target.value) },
+                          },
+                        })}
                     />
                   </Form.Group>
                   <Form.Group>
@@ -980,7 +1017,7 @@ function LlmProvidersTab({ config, modelRouter }: { config: LlmConfig; modelRout
                           ...form.providers,
                           [provider]: {
                             ...form.providers[provider],
-                            requestTimeoutSeconds: parseInt(e.target.value, 10) || 300,
+                             requestTimeoutSeconds: toNullableInt(e.target.value) ?? 300,
                           },
                         },
                       })}
@@ -993,7 +1030,7 @@ function LlmProvidersTab({ config, modelRouter }: { config: LlmConfig; modelRout
         </Row>
 
         <div className="d-flex align-items-center gap-2 mt-3">
-          <Button variant="primary" size="sm" onClick={handleSave} disabled={!isDirty || updateLlm.isPending}>
+          <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateLlm.isPending}>
             {updateLlm.isPending ? 'Saving...' : 'Save'}
           </Button>
           <SaveStateHint isDirty={isDirty} />
@@ -1018,7 +1055,7 @@ type ToolsMode =
   | 'tier'
   | 'goals';
 
-function ToolsTab({ config, mode = 'all' }: { config: ToolsConfig; mode?: ToolsMode }) {
+function ToolsTab({ config, mode = 'all' }: { config: ToolsConfig; mode?: ToolsMode }): ReactElement {
   const updateTools = useUpdateTools();
   const browserHealthPing = useBrowserHealthPing();
   const [form, setForm] = useState<ToolsConfig>({ ...config });
@@ -1047,7 +1084,7 @@ function ToolsTab({ config, mode = 'all' }: { config: ToolsConfig; mode?: ToolsM
   };
 
   const selectedToolKey = keyByMode[mode];
-  const selectedTool = selectedToolKey ? tools.find((t) => t.key === selectedToolKey) : null;
+  const selectedTool = selectedToolKey != null ? tools.find((t) => t.key === selectedToolKey) : null;
 
   const showToolToggles = mode === 'all';
   const showBraveApiKey = mode === 'all' || mode === 'brave';
@@ -1059,16 +1096,16 @@ function ToolsTab({ config, mode = 'all' }: { config: ToolsConfig; mode?: ToolsM
   const automationTools = tools.filter((t) =>
     t.key === 'skillManagementEnabled' || t.key === 'skillTransitionEnabled' || t.key === 'tierEnabled');
 
-  const handleSave = async () => {
+  const handleSave = async (): Promise<void> => {
     await updateTools.mutateAsync(form);
     toast.success('Tools settings saved');
   };
 
-  const updateImap = (partial: Partial<ImapConfig>) => {
+  const updateImap = (partial: Partial<ImapConfig>): void => {
     setForm({ ...form, imap: { ...form.imap, ...partial } });
   };
 
-  const updateSmtp = (partial: Partial<SmtpConfig>) => {
+  const updateSmtp = (partial: Partial<SmtpConfig>): void => {
     setForm({ ...form, smtp: { ...form.smtp, ...partial } });
   };
 
@@ -1097,7 +1134,7 @@ function ToolsTab({ config, mode = 'all' }: { config: ToolsConfig; mode?: ToolsM
         </Card>
       )}
 
-      {!showToolToggles && selectedTool && mode !== 'brave' && (
+      {!showToolToggles && selectedTool != null && mode !== 'brave' && (
         <Card className="settings-card mb-3">
           <Card.Body>
             <Card.Title className="h6 mb-3">{selectedTool.label}</Card.Title>
@@ -1127,7 +1164,7 @@ function ToolsTab({ config, mode = 'all' }: { config: ToolsConfig; mode?: ToolsM
                 Brave Search API Key <Tip text="Get your free API key at brave.com/search/api" />
               </Form.Label>
               <Form.Control size="sm" type="password" value={form.braveSearchApiKey ?? ''}
-                onChange={(e) => setForm({ ...form, braveSearchApiKey: e.target.value || null })}
+                onChange={(e) => setForm({ ...form, braveSearchApiKey: toNullableString(e.target.value) })}
                 placeholder="BSA-..." />
             </Form.Group>
           </Card.Body>
@@ -1272,7 +1309,7 @@ function ToolsTab({ config, mode = 'all' }: { config: ToolsConfig; mode?: ToolsM
                   <Form.Control
                     size="sm"
                     value={form.browserUserAgent ?? ''}
-                    onChange={(e) => setForm({ ...form, browserUserAgent: e.target.value || null })}
+                    onChange={(e) => setForm({ ...form, browserUserAgent: toNullableString(e.target.value) })}
                   />
                 </Form.Group>
               </Col>
@@ -1288,13 +1325,13 @@ function ToolsTab({ config, mode = 'all' }: { config: ToolsConfig; mode?: ToolsM
                 >
                   {browserHealthPing.isPending ? 'Pinging...' : 'Ping Browser'}
                 </Button>
-                {browserHealthPing.data && (
+                {browserHealthPing.data != null && (
                   <Badge bg={browserHealthPing.data.ok ? 'success' : 'danger'}>
                     {browserHealthPing.data.ok ? 'Healthy' : 'Failed'}
                   </Badge>
                 )}
               </div>
-              {browserHealthPing.data && (
+              {browserHealthPing.data != null && (
                 <div className="meta-text">
                   {browserHealthPing.data.message}
                 </div>
@@ -1313,7 +1350,7 @@ function ToolsTab({ config, mode = 'all' }: { config: ToolsConfig; mode?: ToolsM
                 Brave Search API Key <Tip text="Get your free API key at brave.com/search/api" />
               </Form.Label>
               <Form.Control size="sm" type="password" value={form.braveSearchApiKey ?? ''}
-                onChange={(e) => setForm({ ...form, braveSearchApiKey: e.target.value || null })}
+                onChange={(e) => setForm({ ...form, braveSearchApiKey: toNullableString(e.target.value) })}
                 placeholder="BSA-..." />
             </Form.Group>
           </Card.Body>
@@ -1338,7 +1375,7 @@ function ToolsTab({ config, mode = 'all' }: { config: ToolsConfig; mode?: ToolsM
             <Form.Check type="switch" label="Enable IMAP" checked={form.imap?.enabled ?? false}
               onChange={(e) => updateImap({ enabled: e.target.checked })} className="mb-3" />
           )}
-          {form.imap?.enabled && (
+          {form.imap?.enabled === true && (
             <>
               <Row className="g-3 mb-3">
                 <Col md={6}>
@@ -1347,7 +1384,7 @@ function ToolsTab({ config, mode = 'all' }: { config: ToolsConfig; mode?: ToolsM
                       Host <Tip text="IMAP server hostname (e.g. imap.gmail.com)" />
                     </Form.Label>
                     <Form.Control size="sm" value={form.imap?.host ?? ''}
-                      onChange={(e) => updateImap({ host: e.target.value || null })}
+                      onChange={(e) => updateImap({ host: toNullableString(e.target.value) })}
                       placeholder="imap.gmail.com" />
                   </Form.Group>
                 </Col>
@@ -1357,7 +1394,7 @@ function ToolsTab({ config, mode = 'all' }: { config: ToolsConfig; mode?: ToolsM
                       Port <Tip text="IMAP port (993 for SSL, 143 for plain/STARTTLS)" />
                     </Form.Label>
                     <Form.Control size="sm" type="number" value={form.imap?.port ?? 993}
-                      onChange={(e) => updateImap({ port: parseInt(e.target.value) || null })} />
+                      onChange={(e) => updateImap({ port: toNullableInt(e.target.value) })} />
                   </Form.Group>
                 </Col>
                 <Col md={3}>
@@ -1379,7 +1416,7 @@ function ToolsTab({ config, mode = 'all' }: { config: ToolsConfig; mode?: ToolsM
                   <Form.Group>
                     <Form.Label className="small fw-medium">Username</Form.Label>
                     <Form.Control size="sm" value={form.imap?.username ?? ''}
-                      onChange={(e) => updateImap({ username: e.target.value || null })}
+                      onChange={(e) => updateImap({ username: toNullableString(e.target.value) })}
                       placeholder="user@example.com" />
                   </Form.Group>
                 </Col>
@@ -1389,7 +1426,7 @@ function ToolsTab({ config, mode = 'all' }: { config: ToolsConfig; mode?: ToolsM
                       Password <Tip text="For Gmail, use an App Password (not your regular password)" />
                     </Form.Label>
                     <Form.Control size="sm" type="password" value={form.imap?.password ?? ''}
-                      onChange={(e) => updateImap({ password: e.target.value || null })} />
+                      onChange={(e) => updateImap({ password: toNullableString(e.target.value) })} />
                   </Form.Group>
                 </Col>
               </Row>
@@ -1400,7 +1437,7 @@ function ToolsTab({ config, mode = 'all' }: { config: ToolsConfig; mode?: ToolsM
                       Max Body Length <Tip text="Maximum number of characters to read from email body" />
                     </Form.Label>
                     <Form.Control size="sm" type="number" value={form.imap?.maxBodyLength ?? 50000}
-                      onChange={(e) => updateImap({ maxBodyLength: parseInt(e.target.value) || null })} />
+                      onChange={(e) => updateImap({ maxBodyLength: toNullableInt(e.target.value) })} />
                   </Form.Group>
                 </Col>
                 <Col md={4}>
@@ -1409,7 +1446,7 @@ function ToolsTab({ config, mode = 'all' }: { config: ToolsConfig; mode?: ToolsM
                       Default Message Limit <Tip text="Max emails returned per listing request" />
                     </Form.Label>
                     <Form.Control size="sm" type="number" value={form.imap?.defaultMessageLimit ?? 20}
-                      onChange={(e) => updateImap({ defaultMessageLimit: parseInt(e.target.value) || null })} />
+                      onChange={(e) => updateImap({ defaultMessageLimit: toNullableInt(e.target.value) })} />
                   </Form.Group>
                 </Col>
                 <Col md={4}>
@@ -1418,7 +1455,7 @@ function ToolsTab({ config, mode = 'all' }: { config: ToolsConfig; mode?: ToolsM
                       SSL Trust <Tip text="SSL certificate trust configuration. Leave blank for default, or set to '*' to trust all." />
                     </Form.Label>
                     <Form.Control size="sm" value={form.imap?.sslTrust ?? ''}
-                      onChange={(e) => updateImap({ sslTrust: e.target.value || null })}
+                      onChange={(e) => updateImap({ sslTrust: toNullableString(e.target.value) })}
                       placeholder="*" />
                   </Form.Group>
                 </Col>
@@ -1446,7 +1483,7 @@ function ToolsTab({ config, mode = 'all' }: { config: ToolsConfig; mode?: ToolsM
             <Form.Check type="switch" label="Enable SMTP" checked={form.smtp?.enabled ?? false}
               onChange={(e) => updateSmtp({ enabled: e.target.checked })} className="mb-3" />
           )}
-          {form.smtp?.enabled && (
+          {form.smtp?.enabled === true && (
             <>
               <Row className="g-3 mb-3">
                 <Col md={6}>
@@ -1455,7 +1492,7 @@ function ToolsTab({ config, mode = 'all' }: { config: ToolsConfig; mode?: ToolsM
                       Host <Tip text="SMTP server hostname (e.g. smtp.gmail.com)" />
                     </Form.Label>
                     <Form.Control size="sm" value={form.smtp?.host ?? ''}
-                      onChange={(e) => updateSmtp({ host: e.target.value || null })}
+                      onChange={(e) => updateSmtp({ host: toNullableString(e.target.value) })}
                       placeholder="smtp.gmail.com" />
                   </Form.Group>
                 </Col>
@@ -1465,7 +1502,7 @@ function ToolsTab({ config, mode = 'all' }: { config: ToolsConfig; mode?: ToolsM
                       Port <Tip text="SMTP port (587 for STARTTLS, 465 for SSL, 25 for plain)" />
                     </Form.Label>
                     <Form.Control size="sm" type="number" value={form.smtp?.port ?? 587}
-                      onChange={(e) => updateSmtp({ port: parseInt(e.target.value) || null })} />
+                      onChange={(e) => updateSmtp({ port: toNullableInt(e.target.value) })} />
                   </Form.Group>
                 </Col>
                 <Col md={3}>
@@ -1487,7 +1524,7 @@ function ToolsTab({ config, mode = 'all' }: { config: ToolsConfig; mode?: ToolsM
                   <Form.Group>
                     <Form.Label className="small fw-medium">Username</Form.Label>
                     <Form.Control size="sm" value={form.smtp?.username ?? ''}
-                      onChange={(e) => updateSmtp({ username: e.target.value || null })}
+                      onChange={(e) => updateSmtp({ username: toNullableString(e.target.value) })}
                       placeholder="user@example.com" />
                   </Form.Group>
                 </Col>
@@ -1497,7 +1534,7 @@ function ToolsTab({ config, mode = 'all' }: { config: ToolsConfig; mode?: ToolsM
                       Password <Tip text="For Gmail, use an App Password (not your regular password)" />
                     </Form.Label>
                     <Form.Control size="sm" type="password" value={form.smtp?.password ?? ''}
-                      onChange={(e) => updateSmtp({ password: e.target.value || null })} />
+                      onChange={(e) => updateSmtp({ password: toNullableString(e.target.value) })} />
                   </Form.Group>
                 </Col>
               </Row>
@@ -1508,7 +1545,7 @@ function ToolsTab({ config, mode = 'all' }: { config: ToolsConfig; mode?: ToolsM
                       SSL Trust <Tip text="SSL certificate trust configuration. Leave blank for default." />
                     </Form.Label>
                     <Form.Control size="sm" value={form.smtp?.sslTrust ?? ''}
-                      onChange={(e) => updateSmtp({ sslTrust: e.target.value || null })}
+                      onChange={(e) => updateSmtp({ sslTrust: toNullableString(e.target.value) })}
                       placeholder="*" />
                   </Form.Group>
                 </Col>
@@ -1520,7 +1557,7 @@ function ToolsTab({ config, mode = 'all' }: { config: ToolsConfig; mode?: ToolsM
 
       {mode !== 'browser' && (
         <div className="d-flex align-items-center gap-2">
-          <Button variant="primary" size="sm" onClick={handleSave} disabled={!isToolsDirty || updateTools.isPending}>
+          <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isToolsDirty || updateTools.isPending}>
             {updateTools.isPending ? 'Saving...' : 'Save Tool Settings'}
           </Button>
           <SaveStateHint isDirty={isToolsDirty} />
@@ -1532,7 +1569,7 @@ function ToolsTab({ config, mode = 'all' }: { config: ToolsConfig; mode?: ToolsM
 
 // ==================== Voice Tab ====================
 
-function VoiceTab({ config }: { config: VoiceConfig }) {
+function VoiceTab({ config }: { config: VoiceConfig }): ReactElement {
   const updateVoice = useUpdateVoice();
   const [form, setForm] = useState<VoiceConfig>({ ...config });
   const [showKey, setShowKey] = useState(false);
@@ -1540,7 +1577,7 @@ function VoiceTab({ config }: { config: VoiceConfig }) {
 
   useEffect(() => { setForm({ ...config }); }, [config]);
 
-  const handleSave = async () => {
+  const handleSave = async (): Promise<void> => {
     await updateVoice.mutateAsync(form);
     toast.success('Voice settings saved');
   };
@@ -1559,7 +1596,7 @@ function VoiceTab({ config }: { config: VoiceConfig }) {
           </Form.Label>
           <InputGroup size="sm">
             <Form.Control type={showKey ? 'text' : 'password'} value={form.apiKey ?? ''}
-              onChange={(e) => setForm({ ...form, apiKey: e.target.value || null })} />
+              onChange={(e) => setForm({ ...form, apiKey: toNullableString(e.target.value) })} />
             <Button variant="secondary" onClick={() => setShowKey(!showKey)}>
               {showKey ? 'Hide' : 'Show'}
             </Button>
@@ -1573,7 +1610,7 @@ function VoiceTab({ config }: { config: VoiceConfig }) {
                 Voice ID <Tip text="ElevenLabs voice identifier. Find voices at elevenlabs.io/voice-library" />
               </Form.Label>
               <Form.Control size="sm" value={form.voiceId ?? ''}
-                onChange={(e) => setForm({ ...form, voiceId: e.target.value || null })} />
+                onChange={(e) => setForm({ ...form, voiceId: toNullableString(e.target.value) })} />
             </Form.Group>
           </Col>
           <Col md={6}>
@@ -1595,7 +1632,7 @@ function VoiceTab({ config }: { config: VoiceConfig }) {
                 TTS Model <Tip text="Text-to-speech model. eleven_multilingual_v2 supports 29 languages." />
               </Form.Label>
               <Form.Control size="sm" value={form.ttsModelId ?? ''}
-                onChange={(e) => setForm({ ...form, ttsModelId: e.target.value || null })}
+                onChange={(e) => setForm({ ...form, ttsModelId: toNullableString(e.target.value) })}
                 placeholder="eleven_multilingual_v2" />
             </Form.Group>
           </Col>
@@ -1605,14 +1642,14 @@ function VoiceTab({ config }: { config: VoiceConfig }) {
                 STT Model <Tip text="Speech-to-text model for transcribing voice messages." />
               </Form.Label>
               <Form.Control size="sm" value={form.sttModelId ?? ''}
-                onChange={(e) => setForm({ ...form, sttModelId: e.target.value || null })}
+                onChange={(e) => setForm({ ...form, sttModelId: toNullableString(e.target.value) })}
                 placeholder="scribe_v1" />
             </Form.Group>
           </Col>
         </Row>
 
         <div className="mt-3 d-flex align-items-center gap-2">
-          <Button variant="primary" size="sm" onClick={handleSave} disabled={!isVoiceDirty || updateVoice.isPending}>
+          <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isVoiceDirty || updateVoice.isPending}>
             {updateVoice.isPending ? 'Saving...' : 'Save'}
           </Button>
           <SaveStateHint isDirty={isVoiceDirty} />
@@ -1622,7 +1659,7 @@ function VoiceTab({ config }: { config: VoiceConfig }) {
   );
 }
 
-function MemoryTab({ config }: { config: MemoryConfig }) {
+function MemoryTab({ config }: { config: MemoryConfig }): ReactElement {
   const updateMemory = useUpdateMemory();
   const [form, setForm] = useState<MemoryConfig>({ ...config });
   const isDirty = useMemo(() => hasDiff(form, config), [form, config]);
@@ -1631,7 +1668,7 @@ function MemoryTab({ config }: { config: MemoryConfig }) {
     setForm({ ...config });
   }, [config]);
 
-  const handleSave = async () => {
+  const handleSave = async (): Promise<void> => {
     await updateMemory.mutateAsync(form);
     toast.success('Memory settings saved');
   };
@@ -1657,11 +1694,11 @@ function MemoryTab({ config }: { config: MemoryConfig }) {
             min={1}
             max={90}
             value={form.recentDays ?? 7}
-            onChange={(e) => setForm({ ...form, recentDays: parseInt(e.target.value, 10) || null })}
+            onChange={(e) => setForm({ ...form, recentDays: toNullableInt(e.target.value) })}
           />
         </Form.Group>
         <div className="d-flex align-items-center gap-2">
-          <Button variant="primary" size="sm" onClick={handleSave} disabled={!isDirty || updateMemory.isPending}>
+          <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateMemory.isPending}>
             {updateMemory.isPending ? 'Saving...' : 'Save'}
           </Button>
           <SaveStateHint isDirty={isDirty} />
@@ -1671,7 +1708,7 @@ function MemoryTab({ config }: { config: MemoryConfig }) {
   );
 }
 
-function SkillsTab({ config }: { config: SkillsConfig }) {
+function SkillsTab({ config }: { config: SkillsConfig }): ReactElement {
   const updateSkills = useUpdateSkills();
   const [form, setForm] = useState<SkillsConfig>({ ...config });
   const isDirty = useMemo(() => hasDiff(form, config), [form, config]);
@@ -1680,7 +1717,7 @@ function SkillsTab({ config }: { config: SkillsConfig }) {
     setForm({ ...config });
   }, [config]);
 
-  const handleSave = async () => {
+  const handleSave = async (): Promise<void> => {
     await updateSkills.mutateAsync(form);
     toast.success('Skills runtime settings saved');
   };
@@ -1704,7 +1741,7 @@ function SkillsTab({ config }: { config: SkillsConfig }) {
           className="mb-3"
         />
         <div className="d-flex align-items-center gap-2">
-          <Button variant="primary" size="sm" onClick={handleSave} disabled={!isDirty || updateSkills.isPending}>
+          <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateSkills.isPending}>
             {updateSkills.isPending ? 'Saving...' : 'Save'}
           </Button>
           <SaveStateHint isDirty={isDirty} />
@@ -1714,7 +1751,7 @@ function SkillsTab({ config }: { config: SkillsConfig }) {
   );
 }
 
-function TurnTab({ config }: { config: TurnConfig }) {
+function TurnTab({ config }: { config: TurnConfig }): ReactElement {
   const updateTurn = useUpdateTurn();
   const [form, setForm] = useState<TurnConfig>({ ...config });
   const isDirty = useMemo(() => hasDiff(form, config), [form, config]);
@@ -1723,7 +1760,7 @@ function TurnTab({ config }: { config: TurnConfig }) {
     setForm({ ...config });
   }, [config]);
 
-  const handleSave = async () => {
+  const handleSave = async (): Promise<void> => {
     await updateTurn.mutateAsync(form);
     toast.success('Turn budget settings saved');
   };
@@ -1743,7 +1780,7 @@ function TurnTab({ config }: { config: TurnConfig }) {
                 type="number"
                 min={1}
                 value={form.maxLlmCalls ?? 200}
-                onChange={(e) => setForm({ ...form, maxLlmCalls: parseInt(e.target.value, 10) || null })}
+                onChange={(e) => setForm({ ...form, maxLlmCalls: toNullableInt(e.target.value) })}
               />
             </Form.Group>
           </Col>
@@ -1757,7 +1794,7 @@ function TurnTab({ config }: { config: TurnConfig }) {
                 type="number"
                 min={1}
                 value={form.maxToolExecutions ?? 500}
-                onChange={(e) => setForm({ ...form, maxToolExecutions: parseInt(e.target.value, 10) || null })}
+                onChange={(e) => setForm({ ...form, maxToolExecutions: toNullableInt(e.target.value) })}
               />
             </Form.Group>
           </Col>
@@ -1769,14 +1806,14 @@ function TurnTab({ config }: { config: TurnConfig }) {
               <Form.Control
                 size="sm"
                 value={form.deadline ?? 'PT1H'}
-                onChange={(e) => setForm({ ...form, deadline: e.target.value || null })}
+                onChange={(e) => setForm({ ...form, deadline: toNullableString(e.target.value) })}
                 placeholder="PT1H"
               />
             </Form.Group>
           </Col>
         </Row>
         <div className="d-flex align-items-center gap-2">
-          <Button variant="primary" size="sm" onClick={handleSave} disabled={!isDirty || updateTurn.isPending}>
+          <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateTurn.isPending}>
             {updateTurn.isPending ? 'Saving...' : 'Save'}
           </Button>
           <SaveStateHint isDirty={isDirty} />
@@ -1786,7 +1823,7 @@ function TurnTab({ config }: { config: TurnConfig }) {
   );
 }
 
-function UsageTab({ config }: { config: UsageConfig }) {
+function UsageTab({ config }: { config: UsageConfig }): ReactElement {
   const updateUsage = useUpdateUsage();
   const [form, setForm] = useState<UsageConfig>({ ...config });
   const isDirty = useMemo(() => hasDiff(form, config), [form, config]);
@@ -1795,7 +1832,7 @@ function UsageTab({ config }: { config: UsageConfig }) {
     setForm({ ...config });
   }, [config]);
 
-  const handleSave = async () => {
+  const handleSave = async (): Promise<void> => {
     await updateUsage.mutateAsync(form);
     toast.success('Usage settings saved');
   };
@@ -1812,7 +1849,7 @@ function UsageTab({ config }: { config: UsageConfig }) {
           className="mb-3"
         />
         <div className="d-flex align-items-center gap-2">
-          <Button variant="primary" size="sm" onClick={handleSave} disabled={!isDirty || updateUsage.isPending}>
+          <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateUsage.isPending}>
             {updateUsage.isPending ? 'Saving...' : 'Save'}
           </Button>
           <SaveStateHint isDirty={isDirty} />
@@ -1822,7 +1859,7 @@ function UsageTab({ config }: { config: UsageConfig }) {
   );
 }
 
-function RagTab({ config }: { config: RagConfig }) {
+function RagTab({ config }: { config: RagConfig }): ReactElement {
   const updateRag = useUpdateRag();
   const [form, setForm] = useState<RagConfig>({ ...config });
   const [showApiKey, setShowApiKey] = useState(false);
@@ -1832,7 +1869,7 @@ function RagTab({ config }: { config: RagConfig }) {
     setForm({ ...config });
   }, [config]);
 
-  const handleSave = async () => {
+  const handleSave = async (): Promise<void> => {
     await updateRag.mutateAsync(form);
     toast.success('RAG settings saved');
   };
@@ -1857,7 +1894,7 @@ function RagTab({ config }: { config: RagConfig }) {
               <Form.Control
                 size="sm"
                 value={form.url ?? ''}
-                onChange={(e) => setForm({ ...form, url: e.target.value || null })}
+                onChange={(e) => setForm({ ...form, url: toNullableString(e.target.value) })}
                 placeholder="http://localhost:9621"
               />
             </Form.Group>
@@ -1910,7 +1947,7 @@ function RagTab({ config }: { config: RagConfig }) {
                 <Form.Control
                   type={showApiKey ? 'text' : 'password'}
                   value={form.apiKey ?? ''}
-                  onChange={(e) => setForm({ ...form, apiKey: e.target.value || null })}
+                  onChange={(e) => setForm({ ...form, apiKey: toNullableString(e.target.value) })}
                 />
                 <Button variant="secondary" onClick={() => setShowApiKey(!showApiKey)}>
                   {showApiKey ? 'Hide' : 'Show'}
@@ -1921,7 +1958,7 @@ function RagTab({ config }: { config: RagConfig }) {
         </Row>
 
         <div className="d-flex align-items-center gap-2 mt-3">
-          <Button variant="primary" size="sm" onClick={handleSave} disabled={!isDirty || updateRag.isPending}>
+          <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateRag.isPending}>
             {updateRag.isPending ? 'Saving...' : 'Save'}
           </Button>
           <SaveStateHint isDirty={isDirty} />
@@ -1931,7 +1968,7 @@ function RagTab({ config }: { config: RagConfig }) {
   );
 }
 
-function McpTab({ config }: { config: McpConfig }) {
+function McpTab({ config }: { config: McpConfig }): ReactElement {
   const updateMcp = useUpdateMcp();
   const [form, setForm] = useState<McpConfig>({ ...config });
   const isDirty = useMemo(() => hasDiff(form, config), [form, config]);
@@ -1940,7 +1977,7 @@ function McpTab({ config }: { config: McpConfig }) {
     setForm({ ...config });
   }, [config]);
 
-  const handleSave = async () => {
+  const handleSave = async (): Promise<void> => {
     await updateMcp.mutateAsync(form);
     toast.success('MCP settings saved');
   };
@@ -1966,7 +2003,7 @@ function McpTab({ config }: { config: McpConfig }) {
                 min={1}
                 max={300}
                 value={form.defaultStartupTimeout ?? 30}
-                onChange={(e) => setForm({ ...form, defaultStartupTimeout: parseInt(e.target.value, 10) || null })}
+                onChange={(e) => setForm({ ...form, defaultStartupTimeout: toNullableInt(e.target.value) })}
               />
             </Form.Group>
           </Col>
@@ -1979,13 +2016,13 @@ function McpTab({ config }: { config: McpConfig }) {
                 min={1}
                 max={120}
                 value={form.defaultIdleTimeout ?? 5}
-                onChange={(e) => setForm({ ...form, defaultIdleTimeout: parseInt(e.target.value, 10) || null })}
+                onChange={(e) => setForm({ ...form, defaultIdleTimeout: toNullableInt(e.target.value) })}
               />
             </Form.Group>
           </Col>
         </Row>
         <div className="d-flex align-items-center gap-2">
-          <Button variant="primary" size="sm" onClick={handleSave} disabled={!isDirty || updateMcp.isPending}>
+          <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateMcp.isPending}>
             {updateMcp.isPending ? 'Saving...' : 'Save'}
           </Button>
           <SaveStateHint isDirty={isDirty} />
@@ -1995,251 +2032,16 @@ function McpTab({ config }: { config: McpConfig }) {
   );
 }
 
-// ==================== Webhooks Tab ====================
-
-function generateSecureToken(): string {
-  const array = new Uint8Array(32);
-  crypto.getRandomValues(array);
-  return Array.from(array, b => b.toString(16).padStart(2, '0')).join('');
-}
-
-function WebhooksTab() {
-  const { data: settings } = useSettings();
-  const updateWebhooks = useUpdateWebhooks();
-
-  const webhookConfig: WebhookConfig = settings?.webhooks ?? {
-    enabled: false, token: null, maxPayloadSize: 65536,
-    defaultTimeoutSeconds: 300, mappings: [],
-  };
-
-  const [form, setForm] = useState<WebhookConfig>(webhookConfig);
-  const [editIdx, setEditIdx] = useState<number | null>(null);
-  const [deleteMappingIdx, setDeleteMappingIdx] = useState<number | null>(null);
-  const isWebhooksDirty = useMemo(() => hasDiff(form, webhookConfig), [form, webhookConfig]);
-
-  useEffect(() => {
-    if (settings?.webhooks) {setForm(settings.webhooks);}
-  }, [settings]);
-
-  const handleSave = async () => {
-    await updateWebhooks.mutateAsync(form);
-    toast.success('Webhook settings saved');
-  };
-
-  const handleGenerateToken = () => {
-    const token = generateSecureToken();
-    setForm({ ...form, token });
-    toast.success('Token generated');
-  };
-
-  const addMapping = () => {
-    const newMapping: HookMapping = {
-      name: '', action: 'wake', authMode: 'bearer',
-      hmacHeader: null, hmacSecret: null, hmacPrefix: null,
-      messageTemplate: null, model: null,
-      deliver: false, channel: null, to: null,
-    };
-    setForm({ ...form, mappings: [...form.mappings, newMapping] });
-    setEditIdx(form.mappings.length);
-  };
-
-  const removeMapping = (idx: number) => {
-    const mappings = form.mappings.filter((_, i) => i !== idx);
-    setForm({ ...form, mappings });
-    if (editIdx === idx) {setEditIdx(null);}
-  };
-
-  const updateMapping = (idx: number, partial: Partial<HookMapping>) => {
-    const mappings = form.mappings.map((m, i) => i === idx ? { ...m, ...partial } : m);
-    setForm({ ...form, mappings });
-  };
-
-  return (
-    <Card className="settings-card">
-      <Card.Body>
-        <Card.Title className="h6 mb-3">
-          Webhooks <Tip text="Inbound HTTP webhooks allow external services to trigger bot actions" />
-        </Card.Title>
-        <Form.Check type="switch" label="Enable Webhooks" checked={form.enabled}
-          onChange={(e) => setForm({ ...form, enabled: e.target.checked })} className="mb-3" />
-
-        <Row className="g-3 mb-3">
-          <Col md={6}>
-            <Form.Group>
-              <Form.Label className="small fw-medium">
-                Bearer Token <Tip text="Secret token for authenticating incoming webhook requests" />
-              </Form.Label>
-              <InputGroup size="sm">
-                <Form.Control type="password" value={form.token ?? ''}
-                  onChange={(e) => setForm({ ...form, token: e.target.value || null })} />
-                <Button variant="secondary" onClick={handleGenerateToken} title="Generate random token">
-                  Generate
-                </Button>
-              </InputGroup>
-            </Form.Group>
-          </Col>
-          <Col md={6}>
-            <Form.Group>
-              <Form.Label className="small fw-medium">
-                Max Payload Size <Tip text="Maximum allowed webhook request body size in bytes" />
-              </Form.Label>
-              <Form.Control size="sm" type="number" value={form.maxPayloadSize}
-                onChange={(e) => setForm({ ...form, maxPayloadSize: parseInt(e.target.value) || 65536 })} />
-            </Form.Group>
-          </Col>
-          <Col md={4}>
-            <Form.Group>
-              <Form.Label className="small fw-medium">
-                Default Timeout (s) <Tip text="Maximum time in seconds for the bot to process an agent webhook request" />
-              </Form.Label>
-              <Form.Control size="sm" type="number" value={form.defaultTimeoutSeconds}
-                onChange={(e) => setForm({ ...form, defaultTimeoutSeconds: parseInt(e.target.value) || 300 })} />
-            </Form.Group>
-          </Col>
-        </Row>
-
-        <div className="d-flex align-items-center justify-content-between mb-2">
-          <span className="small fw-medium">Hook Mappings <Tip text="Named endpoints (/api/hooks/{name}) that map incoming webhooks to bot actions" /></span>
-          <Button variant="primary" size="sm" onClick={addMapping}>Add Webhook</Button>
-        </div>
-
-        {form.mappings.length > 0 ? (
-          <Table size="sm" hover className="mb-3">
-            <thead><tr><th>Name</th><th>Action</th><th>Auth</th><th></th></tr></thead>
-            <tbody>
-              {form.mappings.map((m, idx) => (
-                <tr key={idx}>
-                  <td>{m.name || <em className="text-body-secondary">unnamed</em>}</td>
-                  <td><Badge bg={m.action === 'agent' ? 'primary' : 'secondary'}>{m.action}</Badge></td>
-                  <td className="small">{m.authMode}</td>
-                  <td className="text-end">
-                    <Button size="sm" variant="secondary" className="me-2"
-                      onClick={() => setEditIdx(editIdx === idx ? null : idx)}>
-                      {editIdx === idx ? 'Close' : 'Edit'}
-                    </Button>
-                    <Button size="sm" variant="danger" onClick={() => setDeleteMappingIdx(idx)}>Delete</Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-        ) : (
-          <p className="text-body-secondary small">No webhook mappings configured</p>
-        )}
-
-        {editIdx !== null && form.mappings[editIdx] && (
-          <Card className="mb-3 webhook-editor-card border">
-            <Card.Body className="p-3">
-              <Row className="g-2">
-                <Col md={4}>
-                  <Form.Group>
-                    <Form.Label className="small fw-medium">
-                      Name <Tip text="URL path segment: /api/hooks/{name}" />
-                    </Form.Label>
-                    <Form.Control size="sm" value={form.mappings[editIdx].name}
-                      onChange={(e) => updateMapping(editIdx, { name: e.target.value })} />
-                  </Form.Group>
-                </Col>
-                <Col md={4}>
-                  <Form.Group>
-                    <Form.Label className="small fw-medium">
-                      Action <Tip text="'wake' sends a fire-and-forget message; 'agent' runs a full agent turn and waits for response" />
-                    </Form.Label>
-                    <Form.Select size="sm" value={form.mappings[editIdx].action}
-                      onChange={(e) => updateMapping(editIdx, { action: e.target.value })}>
-                      <option value="wake">Wake</option>
-                      <option value="agent">Agent</option>
-                    </Form.Select>
-                  </Form.Group>
-                </Col>
-                <Col md={4}>
-                  <Form.Group>
-                    <Form.Label className="small fw-medium">
-                      Auth Mode <Tip text="'bearer' uses Authorization header; 'hmac' uses HMAC-SHA256 signature verification" />
-                    </Form.Label>
-                    <Form.Select size="sm" value={form.mappings[editIdx].authMode}
-                      onChange={(e) => updateMapping(editIdx, { authMode: e.target.value })}>
-                      <option value="bearer">Bearer</option>
-                      <option value="hmac">HMAC</option>
-                    </Form.Select>
-                  </Form.Group>
-                </Col>
-                <Col md={12}>
-                  <Form.Group>
-                    <Form.Label className="small fw-medium">
-                      Message Template <Tip text="Template for the message sent to the bot. Use {field.path} placeholders to extract values from webhook JSON payload." />
-                    </Form.Label>
-                    <Form.Control size="sm" as="textarea" rows={2}
-                      value={form.mappings[editIdx].messageTemplate ?? ''}
-                      onChange={(e) => updateMapping(editIdx, { messageTemplate: e.target.value || null })}
-                      placeholder="e.g. New {action.type} event: {repository.full_name}" />
-                  </Form.Group>
-                </Col>
-                <Col md={4}>
-                  <Form.Check type="switch" label={<>Deliver to channel <Tip text="Forward the bot response to a messaging channel (e.g. Telegram)" /></>}
-                    className="mt-2"
-                    checked={form.mappings[editIdx].deliver}
-                    onChange={(e) => updateMapping(editIdx, { deliver: e.target.checked })} />
-                </Col>
-                {form.mappings[editIdx].deliver && (
-                  <>
-                    <Col md={4}>
-                      <Form.Group>
-                        <Form.Label className="small fw-medium">Channel</Form.Label>
-                        <Form.Control size="sm" value={form.mappings[editIdx].channel ?? ''}
-                          onChange={(e) => updateMapping(editIdx, { channel: e.target.value || null })} placeholder="telegram" />
-                      </Form.Group>
-                    </Col>
-                    <Col md={4}>
-                      <Form.Group>
-                        <Form.Label className="small fw-medium">To (Chat ID)</Form.Label>
-                        <Form.Control size="sm" value={form.mappings[editIdx].to ?? ''}
-                          onChange={(e) => updateMapping(editIdx, { to: e.target.value || null })} />
-                      </Form.Group>
-                    </Col>
-                  </>
-                )}
-              </Row>
-            </Card.Body>
-          </Card>
-        )}
-
-        <div className="d-flex align-items-center gap-2">
-          <Button variant="primary" size="sm" onClick={handleSave} disabled={!isWebhooksDirty || updateWebhooks.isPending}>
-            {updateWebhooks.isPending ? 'Saving...' : 'Save'}
-          </Button>
-          <SaveStateHint isDirty={isWebhooksDirty} />
-        </div>
-      </Card.Body>
-
-      <ConfirmModal
-        show={deleteMappingIdx !== null}
-        title="Delete Webhook Mapping"
-        message="This mapping will be removed permanently from runtime settings. This action cannot be undone."
-        confirmLabel="Delete"
-        confirmVariant="danger"
-        onConfirm={() => {
-          if (deleteMappingIdx !== null) {
-            removeMapping(deleteMappingIdx);
-            setDeleteMappingIdx(null);
-          }
-        }}
-        onCancel={() => setDeleteMappingIdx(null)}
-      />
-    </Card>
-  );
-}
-
 // ==================== Auto Mode Tab ====================
 
-function AutoModeTab({ config }: { config: AutoModeConfig }) {
+function AutoModeTab({ config }: { config: AutoModeConfig }): ReactElement {
   const updateAuto = useUpdateAuto();
   const [form, setForm] = useState<AutoModeConfig>({ ...config });
   const isAutoDirty = useMemo(() => hasDiff(form, config), [form, config]);
 
   useEffect(() => { setForm({ ...config }); }, [config]);
 
-  const handleSave = async () => {
+  const handleSave = async (): Promise<void> => {
     await updateAuto.mutateAsync({ ...form, tickIntervalSeconds: 1 });
     toast.success('Auto mode settings saved');
   };
@@ -2260,7 +2062,7 @@ function AutoModeTab({ config }: { config: AutoModeConfig }) {
                 Task Time Limit (minutes) <Tip text="Maximum time a single autonomous task can run before being stopped" />
               </Form.Label>
               <Form.Control size="sm" type="number" value={form.taskTimeLimitMinutes ?? 10}
-                onChange={(e) => setForm({ ...form, taskTimeLimitMinutes: parseInt(e.target.value) || null })} />
+                onChange={(e) => setForm({ ...form, taskTimeLimitMinutes: toNullableInt(e.target.value) })} />
             </Form.Group>
           </Col>
           <Col md={4}>
@@ -2269,7 +2071,7 @@ function AutoModeTab({ config }: { config: AutoModeConfig }) {
                 Max Goals <Tip text="Maximum number of concurrent goals the bot can work on" />
               </Form.Label>
               <Form.Control size="sm" type="number" value={form.maxGoals ?? 3}
-                onChange={(e) => setForm({ ...form, maxGoals: parseInt(e.target.value) || null })} />
+                onChange={(e) => setForm({ ...form, maxGoals: toNullableInt(e.target.value) })} />
             </Form.Group>
           </Col>
         </Row>
@@ -2298,164 +2100,12 @@ function AutoModeTab({ config }: { config: AutoModeConfig }) {
           onChange={(e) => setForm({ ...form, notifyMilestones: e.target.checked })} className="mb-3" />
 
         <div className="d-flex align-items-center gap-2">
-          <Button variant="primary" size="sm" onClick={handleSave} disabled={!isAutoDirty || updateAuto.isPending}>
+          <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isAutoDirty || updateAuto.isPending}>
             {updateAuto.isPending ? 'Saving...' : 'Save'}
           </Button>
           <SaveStateHint isDirty={isAutoDirty} />
         </div>
       </Card.Body>
     </Card>
-  );
-}
-
-// ==================== Advanced Tab ====================
-
-type AdvancedMode = 'all' | 'rateLimit' | 'security' | 'compaction';
-
-function AdvancedTab({ rateLimit, security, compaction, mode = 'all' }: {
-  rateLimit: RateLimitConfig; security: SecurityConfig; compaction: CompactionConfig; mode?: AdvancedMode;
-}) {
-  const updateAdvanced = useUpdateAdvanced();
-  const [rl, setRl] = useState<RateLimitConfig>({ ...rateLimit });
-  const [sec, setSec] = useState<SecurityConfig>({ ...security });
-  const [comp, setComp] = useState<CompactionConfig>({ ...compaction });
-  const isAdvancedDirty = useMemo(
-    () => hasDiff(rl, rateLimit) || hasDiff(sec, security) || hasDiff(comp, compaction),
-    [rl, rateLimit, sec, security, comp, compaction],
-  );
-
-  useEffect(() => { setRl({ ...rateLimit }); }, [rateLimit]);
-  useEffect(() => { setSec({ ...security }); }, [security]);
-  useEffect(() => { setComp({ ...compaction }); }, [compaction]);
-
-  const handleSave = async () => {
-    await updateAdvanced.mutateAsync({ rateLimit: rl, security: sec, compaction: comp });
-    toast.success('Advanced settings saved');
-  };
-
-  const showRateLimit = mode === 'all' || mode === 'rateLimit';
-  const showSecurity = mode === 'all' || mode === 'security';
-  const showCompaction = mode === 'all' || mode === 'compaction';
-
-  return (
-    <>
-      <Row className="g-3 mb-3">
-        {showRateLimit && <Col lg={4}>
-          <Card className="settings-card h-100">
-            <Card.Body>
-              <Card.Title className="h6 mb-3">
-                Rate Limiting <Tip text="Throttle user requests to prevent abuse and manage API costs" />
-              </Card.Title>
-              <Form.Check type="switch" label="Enable" checked={rl.enabled ?? true}
-                onChange={(e) => setRl({ ...rl, enabled: e.target.checked })} className="mb-3" />
-              <Form.Group className="mb-2">
-                <Form.Label className="small fw-medium">
-                  Requests/minute <Tip text="Maximum LLM requests per user per minute" />
-                </Form.Label>
-                <Form.Control size="sm" type="number" value={rl.userRequestsPerMinute ?? 20}
-                  onChange={(e) => setRl({ ...rl, userRequestsPerMinute: parseInt(e.target.value) || null })} />
-              </Form.Group>
-              <Form.Group className="mb-2">
-                <Form.Label className="small fw-medium">
-                  Requests/hour <Tip text="Maximum LLM requests per user per hour" />
-                </Form.Label>
-                <Form.Control size="sm" type="number" value={rl.userRequestsPerHour ?? 100}
-                  onChange={(e) => setRl({ ...rl, userRequestsPerHour: parseInt(e.target.value) || null })} />
-              </Form.Group>
-              <Form.Group>
-                <Form.Label className="small fw-medium">
-                  Requests/day <Tip text="Maximum LLM requests per user per day" />
-                </Form.Label>
-                <Form.Control size="sm" type="number" value={rl.userRequestsPerDay ?? 500}
-                  onChange={(e) => setRl({ ...rl, userRequestsPerDay: parseInt(e.target.value) || null })} />
-              </Form.Group>
-            </Card.Body>
-          </Card>
-        </Col>}
-
-        {showCompaction && <Col lg={4}>
-          <Card className="settings-card h-100">
-            <Card.Body>
-              <Card.Title className="h6 mb-3">
-                Context Compaction <Tip text="Automatically compress conversation history when it approaches the token limit" />
-              </Card.Title>
-              <Form.Check type="switch" label="Enable" checked={comp.enabled ?? true}
-                onChange={(e) => setComp({ ...comp, enabled: e.target.checked })} className="mb-3" />
-              <Form.Group className="mb-2">
-                <Form.Label className="small fw-medium">
-                  Max Context Tokens <Tip text="Token threshold that triggers automatic context compaction" />
-                </Form.Label>
-                <Form.Control size="sm" type="number" value={comp.maxContextTokens ?? 50000}
-                  onChange={(e) => setComp({ ...comp, maxContextTokens: parseInt(e.target.value) || null })} />
-              </Form.Group>
-              <Form.Group>
-                <Form.Label className="small fw-medium">
-                  Keep Last Messages <Tip text="Number of recent messages to preserve during compaction" />
-                </Form.Label>
-                <Form.Control size="sm" type="number" value={comp.keepLastMessages ?? 20}
-                  onChange={(e) => setComp({ ...comp, keepLastMessages: parseInt(e.target.value) || null })} />
-              </Form.Group>
-            </Card.Body>
-          </Card>
-        </Col>}
-
-        {showSecurity && <Col lg={4}>
-          <Card className="settings-card h-100">
-            <Card.Body>
-              <Card.Title className="h6 mb-3">
-                Security <Tip text="Input validation and injection detection for incoming messages" />
-              </Card.Title>
-              <Form.Check type="switch"
-                label={<>Sanitize input <Tip text="Strip potentially dangerous characters and HTML from user messages" /></>}
-                checked={sec.sanitizeInput ?? true}
-                onChange={(e) => setSec({ ...sec, sanitizeInput: e.target.checked })} className="mb-2" />
-              <Form.Check type="switch"
-                label={<>Detect prompt injection <Tip text="Detect and block attempts to override the system prompt" /></>}
-                checked={sec.detectPromptInjection ?? true}
-                onChange={(e) => setSec({ ...sec, detectPromptInjection: e.target.checked })} className="mb-2" />
-              <Form.Check type="switch"
-                label={<>Detect command injection <Tip text="Detect and block shell command injection attempts in tool parameters" /></>}
-                checked={sec.detectCommandInjection ?? true}
-                onChange={(e) => setSec({ ...sec, detectCommandInjection: e.target.checked })} className="mb-3" />
-              <Form.Check type="switch"
-                label={<>Enable allowlist gate <Tip text="If disabled, allowlist checks are bypassed." /></>}
-                checked={sec.allowlistEnabled ?? true}
-                onChange={(e) => setSec({ ...sec, allowlistEnabled: e.target.checked })} className="mb-2" />
-              <Form.Check type="switch"
-                label={<>Tool confirmation <Tip text="Require user confirmation for destructive tool actions." /></>}
-                checked={sec.toolConfirmationEnabled ?? false}
-                onChange={(e) => setSec({ ...sec, toolConfirmationEnabled: e.target.checked })} className="mb-3" />
-              <Form.Group>
-                <Form.Label className="small fw-medium">
-                  Max Input Length <Tip text="Maximum allowed characters per user message" />
-                </Form.Label>
-                <Form.Control size="sm" type="number" value={sec.maxInputLength ?? 10000}
-                  onChange={(e) => setSec({ ...sec, maxInputLength: parseInt(e.target.value) || null })} />
-              </Form.Group>
-              <Form.Group className="mt-2">
-                <Form.Label className="small fw-medium">
-                  Tool Confirmation Timeout (seconds)
-                </Form.Label>
-                <Form.Control
-                  size="sm"
-                  type="number"
-                  min={5}
-                  max={600}
-                  value={sec.toolConfirmationTimeoutSeconds ?? 60}
-                  onChange={(e) => setSec({ ...sec, toolConfirmationTimeoutSeconds: parseInt(e.target.value, 10) || null })}
-                />
-              </Form.Group>
-            </Card.Body>
-          </Card>
-        </Col>}
-      </Row>
-
-      <div className="d-flex align-items-center gap-2">
-        <Button variant="primary" size="sm" onClick={handleSave} disabled={!isAdvancedDirty || updateAdvanced.isPending}>
-          {updateAdvanced.isPending ? 'Saving...' : 'Save All'}
-        </Button>
-        <SaveStateHint isDirty={isAdvancedDirty} />
-      </div>
-    </>
   );
 }

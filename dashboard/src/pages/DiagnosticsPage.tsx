@@ -1,21 +1,22 @@
+import type { ReactElement } from 'react';
 import { Alert, Badge, Button, Card, Col, Row, Spinner, Table } from 'react-bootstrap';
 import { useSystemDiagnostics } from '../hooks/useSystem';
 
-function ValueCell({ value }: { value: string | null }) {
-  if (!value || value.trim() === '') {
+function ValueCell({ value }: { value: string | null }): ReactElement {
+  if (value == null || value.trim() === '') {
     return <span className="text-body-secondary">not set</span>;
   }
   return <code>{value}</code>;
 }
 
-export default function DiagnosticsPage() {
+export default function DiagnosticsPage(): ReactElement {
   const { data, isLoading, isError, refetch, isFetching } = useSystemDiagnostics();
 
   if (isLoading) {
     return <Spinner />;
   }
 
-  if (isError || !data) {
+  if (isError || data == null) {
     return <Alert variant="danger">Failed to load diagnostics data.</Alert>;
   }
 
@@ -23,7 +24,7 @@ export default function DiagnosticsPage() {
     <div>
       <div className="section-header d-flex align-items-center justify-content-between">
         <h4 className="mb-0">Diagnostics</h4>
-        <Button size="sm" variant="secondary" onClick={() => refetch()} disabled={isFetching}>
+        <Button size="sm" variant="secondary" onClick={() => { void refetch(); }} disabled={isFetching}>
           {isFetching ? 'Refreshing...' : 'Refresh'}
         </Button>
       </div>

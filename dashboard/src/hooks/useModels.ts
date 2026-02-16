@@ -1,51 +1,50 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type {
-  ModelSettings} from '../api/models';
+import { type UseMutationResult, type UseQueryResult, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
+  type ModelSettings,
   getModelsConfig,
   getAvailableModels,
   saveModel,
   deleteModel,
-  reloadModels
+  reloadModels,
 } from '../api/models';
 
-export function useModelsConfig() {
+export function useModelsConfig(): UseQueryResult<Awaited<ReturnType<typeof getModelsConfig>>, unknown> {
   return useQuery({ queryKey: ['models-config'], queryFn: getModelsConfig });
 }
 
-export function useAvailableModels() {
+export function useAvailableModels(): UseQueryResult<Awaited<ReturnType<typeof getAvailableModels>>, unknown> {
   return useQuery({ queryKey: ['models-available'], queryFn: getAvailableModels });
 }
 
-export function useSaveModel() {
+export function useSaveModel(): UseMutationResult<Awaited<ReturnType<typeof saveModel>>, unknown, { id: string; settings: ModelSettings }> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, settings }: { id: string; settings: ModelSettings }) => saveModel(id, settings),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['models-config'] });
-      qc.invalidateQueries({ queryKey: ['models-available'] });
+      void qc.invalidateQueries({ queryKey: ['models-config'] });
+      void qc.invalidateQueries({ queryKey: ['models-available'] });
     },
   });
 }
 
-export function useDeleteModel() {
+export function useDeleteModel(): UseMutationResult<Awaited<ReturnType<typeof deleteModel>>, unknown, string> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => deleteModel(id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['models-config'] });
-      qc.invalidateQueries({ queryKey: ['models-available'] });
+      void qc.invalidateQueries({ queryKey: ['models-config'] });
+      void qc.invalidateQueries({ queryKey: ['models-available'] });
     },
   });
 }
 
-export function useReloadModels() {
+export function useReloadModels(): UseMutationResult<Awaited<ReturnType<typeof reloadModels>>, unknown, void> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: reloadModels,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['models-config'] });
-      qc.invalidateQueries({ queryKey: ['models-available'] });
+      void qc.invalidateQueries({ queryKey: ['models-config'] });
+      void qc.invalidateQueries({ queryKey: ['models-available'] });
     },
   });
 }

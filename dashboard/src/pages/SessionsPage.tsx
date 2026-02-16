@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { type ReactElement, useState } from 'react';
 import { Table, Button, Badge, Modal, Spinner, Card, Placeholder } from 'react-bootstrap';
 import { useSessions, useSession, useDeleteSession, useCompactSession, useClearSession } from '../hooks/useSessions';
 import toast from 'react-hot-toast';
 import ConfirmModal from '../components/common/ConfirmModal';
 
-export default function SessionsPage() {
+export default function SessionsPage(): ReactElement {
   const { data: sessions, isLoading } = useSessions();
   const deleteMut = useDeleteSession();
   const compactMut = useCompactSession();
@@ -13,8 +13,8 @@ export default function SessionsPage() {
   const [confirmAction, setConfirmAction] = useState<{ type: 'clear' | 'delete'; sessionId: string } | null>(null);
   const { data: detail } = useSession(viewId ?? '');
 
-  const handleConfirmAction = async () => {
-    if (!confirmAction) {
+  const handleConfirmAction = async (): Promise<void> => {
+    if (confirmAction == null) {
       return;
     }
 
@@ -84,15 +84,17 @@ export default function SessionsPage() {
               <td><Badge bg="secondary">{s.channelType}</Badge></td>
               <td>{s.messageCount}</td>
               <td><Badge bg={s.state === 'ACTIVE' ? 'success' : 'warning'}>{s.state}</Badge></td>
-              <td className="small">{s.updatedAt ? new Date(s.updatedAt).toLocaleString() : '-'}</td>
+               <td className="small">{s.updatedAt != null && s.updatedAt.length > 0 ? new Date(s.updatedAt).toLocaleString() : '-'}</td>
               <td>
                 <div className="d-flex gap-1">
                   <Button
                     size="sm"
                     variant="primary"
-                    onClick={async () => {
-                      const r = await compactMut.mutateAsync({ id: s.id });
-                      toast.success(`Removed ${r.removed} messages`);
+                    onClick={() => {
+                      void (async () => {
+                        const r = await compactMut.mutateAsync({ id: s.id });
+                        toast.success(`Removed ${r.removed} messages`);
+                      })();
                     }}
                   >
                     Compact
@@ -120,7 +122,7 @@ export default function SessionsPage() {
         </tbody>
       </Table>
 
-      <Modal show={!!viewId} onHide={() => setViewId(null)} size="lg">
+      <Modal show={viewId != null && viewId.length > 0} onHide={() => setViewId(null)} size="lg">
         <Modal.Header closeButton>
           <Modal.Title>Session: {viewId}</Modal.Title>
         </Modal.Header>
@@ -129,14 +131,14 @@ export default function SessionsPage() {
             <div key={i} className={`mb-2 p-2 rounded ${msg.role === 'user' ? 'bg-primary-subtle text-primary-emphasis' : 'bg-body-tertiary'}`}>
               <div className="fw-bold small">{msg.role}</div>
               <div className="sessions-message">{msg.content}</div>
-              {msg.timestamp && <div className="sessions-message-meta">{msg.timestamp}</div>}
+              {msg.timestamp != null && msg.timestamp.length > 0 && <div className="sessions-message-meta">{msg.timestamp}</div>}
             </div>
           ))}
         </Modal.Body>
       </Modal>
 
       <ConfirmModal
-        show={!!confirmAction}
+        show={confirmAction != null}
         title={confirmAction?.type === 'clear' ? 'Clear Session' : 'Delete Session'}
         message={
           confirmAction?.type === 'clear'
@@ -146,7 +148,7 @@ export default function SessionsPage() {
         confirmLabel={confirmAction?.type === 'clear' ? 'Clear' : 'Delete'}
         confirmVariant={confirmAction?.type === 'clear' ? 'warning' : 'danger'}
         isProcessing={clearMut.isPending || deleteMut.isPending}
-        onConfirm={handleConfirmAction}
+        onConfirm={() => { void handleConfirmAction(); }}
         onCancel={() => setConfirmAction(null)}
       />
     </div>

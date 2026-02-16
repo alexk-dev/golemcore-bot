@@ -32,26 +32,26 @@ export interface MessageInfo {
 }
 
 export async function listSessions(channel?: string): Promise<SessionSummary[]> {
-  const { data } = await client.get('/sessions', { params: channel ? { channel } : {} });
+  const { data } = await client.get<SessionSummary[]>('/sessions', { params: channel ? { channel } : {} });
   return data;
 }
 
 export async function getSession(id: string): Promise<SessionDetail> {
-  const { data } = await client.get(`/sessions/${encodeURIComponent(id)}`);
+  const { data } = await client.get<SessionDetail>(`/sessions/${encodeURIComponent(id)}`);
   return data;
 }
 
-export async function deleteSession(id: string) {
+export async function deleteSession(id: string): Promise<void> {
   await client.delete(`/sessions/${encodeURIComponent(id)}`);
 }
 
-export async function compactSession(id: string, keepLast = 20) {
-  const { data } = await client.post(`/sessions/${encodeURIComponent(id)}/compact`, null, {
+export async function compactSession(id: string, keepLast = 20): Promise<{ removed: number }> {
+  const { data } = await client.post<{ removed: number }>(`/sessions/${encodeURIComponent(id)}/compact`, null, {
     params: { keepLast },
   });
-  return data as { removed: number };
+  return data;
 }
 
-export async function clearSession(id: string) {
+export async function clearSession(id: string): Promise<void> {
   await client.post(`/sessions/${encodeURIComponent(id)}/clear`);
 }

@@ -11,34 +11,34 @@ export interface SkillInfo {
 }
 
 export async function listSkills(): Promise<SkillInfo[]> {
-  const { data } = await client.get('/skills');
+  const { data } = await client.get<SkillInfo[]>('/skills');
   return data;
 }
 
 export async function getSkill(name: string): Promise<SkillInfo> {
-  const { data } = await client.get(`/skills/${name}`);
+  const { data } = await client.get<SkillInfo>(`/skills/${name}`);
   return data;
 }
 
 export async function createSkill(name: string, content: string): Promise<SkillInfo> {
-  const { data } = await client.post('/skills', { name, content });
+  const { data } = await client.post<SkillInfo>('/skills', { name, content });
   return data;
 }
 
-export async function updateSkill(name: string, content: string) {
-  const { data } = await client.put(`/skills/${name}`, { content });
+export async function updateSkill(name: string, content: string): Promise<SkillInfo> {
+  const { data } = await client.put<SkillInfo>(`/skills/${name}`, { content });
   return data;
 }
 
-export async function deleteSkill(name: string) {
+export async function deleteSkill(name: string): Promise<void> {
   await client.delete(`/skills/${name}`);
 }
 
-export async function reloadSkill(name: string) {
+export async function reloadSkill(name: string): Promise<void> {
   await client.post(`/skills/${name}/reload`);
 }
 
-export async function getMcpStatus(name: string) {
-  const { data } = await client.get(`/skills/${name}/mcp-status`);
-  return data as { hasMcp: boolean; running?: boolean; tools?: string[] };
+export async function getMcpStatus(name: string): Promise<{ hasMcp: boolean; running?: boolean; tools?: string[] }> {
+  const { data } = await client.get<{ hasMcp: boolean; running?: boolean; tools?: string[] }>(`/skills/${name}/mcp-status`);
+  return data;
 }
