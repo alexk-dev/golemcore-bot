@@ -109,6 +109,37 @@ describe('ChatWindow', () => {
     });
   });
 
+  it('keeps viewport anchor while prepending earlier history', async () => {
+    const { container } = render(<ChatWindow />);
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('message-bubble').length).toBe(50);
+    });
+
+    const chatWindow = container.querySelector('.chat-window') as HTMLDivElement;
+    let readCount = 0;
+
+    Object.defineProperty(chatWindow, 'scrollHeight', {
+      configurable: true,
+      get: () => {
+        readCount += 1;
+        return readCount === 1 ? 1000 : 1400;
+      },
+    });
+    Object.defineProperty(chatWindow, 'scrollTop', {
+      configurable: true,
+      writable: true,
+      value: 0,
+    });
+
+    const loadMore = screen.getByRole('button', { name: /Load earlier messages/i });
+    fireEvent.click(loadMore);
+
+    await waitFor(() => {
+      expect(chatWindow.scrollTop).toBe(400);
+    });
+  });
+
   it('uses smooth scroll behavior when user sends a message', async () => {
     render(<ChatWindow />);
 

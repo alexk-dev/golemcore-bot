@@ -186,21 +186,21 @@ Files (expected):
 ## Phase D — Attachment UX Hardening (should)
 
 - [x] Add drag-over visual state and drop hint.
-- [ ] Add per-file states and progress UI.
-- [ ] Use stable client-generated IDs for attachment chips.
-- [ ] Add retry for failed uploads.
+- [x] Add per-file states and progress UI.
+- [x] Use stable client-generated IDs for attachment chips.
+- [x] Add retry for failed uploads.
 
 ## Phase E — Voice UX Hardening (should)
 
-- [ ] Replace pure toggle with explicit record lifecycle controls.
-- [ ] Add elapsed timer.
+- [x] Replace pure toggle with explicit record lifecycle controls.
+- [x] Add elapsed timer.
 - [ ] Add transcript confirmation before insertion.
-- [ ] Add clear failure actions for permission/device issues.
+- [x] Add clear failure actions for permission/device issues.
 
 ## Phase F — Message List and Toolbar IA (should)
 
 - [ ] Add “new messages” indicator while user is reading older history.
-- [ ] Tune auto-scroll policy to prevent disruptive jumps.
+- [x] Tune auto-scroll policy to prevent disruptive jumps.
 - [ ] Move tier/force into advanced section with help tooltip.
 
 ## Phase G — Structured Message Rendering Contract (future-proof)
@@ -218,13 +218,13 @@ Files (expected):
 - [x] Keyboard navigation and acceptance behavior for autocomplete.
 - [x] `Esc` dismissal and focus persistence.
 - [x] A11y checks for roles/attributes on command list.
-- [ ] Attachment flow: invalid type, oversize, retry/remove.
+- [x] Attachment flow: invalid type, oversize, retry/remove.
 - [ ] Voice flow: permission denied, stop/cancel, transcript confirm.
 - [x] Notices rendering hierarchy (advisory vs blocking).
 
 ### Integration tests
-- [ ] Chat send flow with image refs and command mode transitions.
-- [ ] Scroll behavior with prepend and incoming messages.
+- [x] Chat send flow with image refs and command mode transitions.
+- [x] Scroll behavior with prepend and incoming messages.
 
 ### Non-functional
 - [ ] Basic accessibility smoke checks (axe or equivalent).
@@ -238,31 +238,3 @@ Files (expected):
 - Existing upload and voice endpoints remain unchanged.
 - UI behavior improves without breaking message protocol.
 - Structured message part schema (Phase G) will be additive first, then default.
-
----
-
-## Risks and Mitigations
-
-1. **Risk:** Increased UI complexity from state machine.
-   - **Mitigation:** Keep reducer/state transitions explicit and covered by tests.
-
-2. **Risk:** A11y regressions during rapid iteration.
-   - **Mitigation:** Add role/aria assertions in tests; include accessibility checklist in PR template.
-
-3. **Risk:** Voice UX inconsistency across browsers.
-   - **Mitigation:** Capability detection + graceful fallback messages.
-
-4. **Risk:** Renderer migration impacts existing content formatting.
-   - **Mitigation:** Add compatibility parser and feature-flag rollout.
-
----
-
-## Definition of Done
-
-- [ ] All Phase A-C tasks implemented and tested.
-- [ ] No non-semantic click-only controls remain in chat core flows.
-- [ ] Command composer behavior predictable with keyboard-only usage.
-- [ ] Upload and voice flows provide explicit progress + recoverability.
-- [ ] Message list scroll behavior stable under prepend/stream updates.
-- [ ] UX copy reviewed and consistent.
-- [ ] ADR status updated from `Proposed` to `Accepted` after implementation.
