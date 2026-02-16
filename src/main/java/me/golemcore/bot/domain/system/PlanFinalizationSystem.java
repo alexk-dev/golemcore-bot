@@ -108,13 +108,17 @@ public class PlanFinalizationSystem implements AgentSystem {
         }
 
         // Persist canonical markdown draft (SSOT) and move plan state forward.
+        // Note: for EXECUTING plans PlanService can create a new revision with a new
+        // id.
         planService.finalizePlan(plan.getId(), finalizeArgs.planMarkdown(), finalizeArgs.title());
 
-        // Publish event for Telegram approval UI
-        eventPublisher.publishEvent(new PlanReadyEvent(plan.getId(), chatId));
-        context.setAttribute(ContextAttributes.PLAN_APPROVAL_NEEDED, plan.getId());
+        // Publish event for Telegram approval UI using the current active plan id
+        // (important for EXECUTING -> READY revision flow).
+        String readyPlanId = planService.getActivePlan().map(Plan::getId).orElse(plan.getId());
+        eventPublisher.publishEvent(new PlanReadyEvent(readyPlanId, chatId));
+        context.setAttribute(ContextAttributes.PLAN_APPROVAL_NEEDED, readyPlanId);
 
-        log.info("[PlanSetContent] Plan '{}' updated and ready for approval", plan.getId());
+        log.info("[PlanSetContent] Plan '{}' updated and ready for approval", readyPlanId);
 
         return context;
     }

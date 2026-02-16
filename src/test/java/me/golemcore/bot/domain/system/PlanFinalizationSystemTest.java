@@ -236,4 +236,42 @@ class PlanFinalizationSystemTest {
 
         return context;
     }
+
+    @Test
+    void shouldPublishReadyEventForRevisionIdWhenExecutingPlanFinalized() {
+        when(planService.isPlanModeActive()).thenReturn(true);
+
+        Plan executingPlan = Plan.builder()
+                .id(PLAN_ID)
+                .status(Plan.PlanStatus.EXECUTING)
+                .steps(new ArrayList<>())
+                .build();
+        Plan revisedPlan = Plan.builder()
+                .id("plan-456")
+                .status(Plan.PlanStatus.READY)
+                .steps(new ArrayList<>())
+                .build();
+
+        when(planService.getActivePlan())
+                .thenReturn(Optional.of(executingPlan))
+                .thenReturn(Optional.of(revisedPlan));
+
+        LlmResponse response = LlmResponse.builder()
+                .toolCalls(List.of(me.golemcore.bot.domain.model.Message.ToolCall.builder()
+                        .id("tc1")
+                        .name(me.golemcore.bot.tools.PlanSetContentTool.TOOL_NAME)
+                        .arguments(java.util.Map.of("plan_markdown", "# Revised plan"))
+                        .build()))
+                .build();
+
+        AgentContext context = buildContext(null);
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+
+        system.process(context);
+
+        verify(planService).finalizePlan(eq(PLAN_ID), eq("# Revised plan"), any());
+        verify(eventPublisher).publishEvent(eq(new PlanReadyEvent("plan-456", CHAT_ID)));
+        assertEquals("plan-456", context.getAttribute(ContextAttributes.PLAN_APPROVAL_NEEDED));
+    }
+
 }
