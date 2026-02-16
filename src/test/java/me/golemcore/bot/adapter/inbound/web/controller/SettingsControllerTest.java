@@ -183,4 +183,49 @@ class SettingsControllerTest {
         verify(runtimeConfigService).updateRuntimeConfig(cfg);
     }
 
+    @Test
+    void shouldPreserveTelegramTokenWhenMaskedValueSent() {
+        me.golemcore.bot.domain.model.RuntimeConfig current = me.golemcore.bot.domain.model.RuntimeConfig.builder()
+                .build();
+        current.getTelegram().setToken("real-token");
+
+        me.golemcore.bot.domain.model.RuntimeConfig incoming = me.golemcore.bot.domain.model.RuntimeConfig.builder()
+                .build();
+        incoming.getTelegram().setToken("***");
+
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current, current);
+
+        StepVerifier.create(controller.updateRuntimeConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        verify(runtimeConfigService).updateRuntimeConfig(incoming);
+        assertEquals("real-token", incoming.getTelegram().getToken());
+    }
+
+    @Test
+    void shouldPreserveToolSecretsWhenMaskedValueSent() {
+        me.golemcore.bot.domain.model.RuntimeConfig current = me.golemcore.bot.domain.model.RuntimeConfig.builder()
+                .build();
+        current.getTools().setBraveSearchApiKey("real-brave");
+        current.getTools().getImap().setPassword("real-imap");
+        current.getTools().getSmtp().setPassword("real-smtp");
+
+        me.golemcore.bot.domain.model.RuntimeConfig incoming = me.golemcore.bot.domain.model.RuntimeConfig.builder()
+                .build();
+        incoming.getTools().setBraveSearchApiKey("***");
+        incoming.getTools().getImap().setPassword("***");
+        incoming.getTools().getSmtp().setPassword("***");
+
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current, current);
+
+        StepVerifier.create(controller.updateRuntimeConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        assertEquals("real-brave", incoming.getTools().getBraveSearchApiKey());
+        assertEquals("real-imap", incoming.getTools().getImap().getPassword());
+        assertEquals("real-smtp", incoming.getTools().getSmtp().getPassword());
+    }
+
 }

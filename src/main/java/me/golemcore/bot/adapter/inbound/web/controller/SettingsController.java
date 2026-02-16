@@ -117,7 +117,9 @@ public class SettingsController {
 
     @PutMapping("/runtime")
     public Mono<ResponseEntity<RuntimeConfig>> updateRuntimeConfig(@RequestBody RuntimeConfig config) {
-        runtimeConfigService.updateRuntimeConfig(config);
+        RuntimeConfig current = runtimeConfigService.getRuntimeConfig();
+        RuntimeConfig merged = preserveMaskedSecrets(current, config);
+        runtimeConfigService.updateRuntimeConfig(merged);
         return Mono.just(ResponseEntity.ok(maskSecrets(runtimeConfigService.getRuntimeConfig())));
     }
 
@@ -125,7 +127,17 @@ public class SettingsController {
     public Mono<ResponseEntity<RuntimeConfig>> updateTelegramConfig(
             @RequestBody RuntimeConfig.TelegramConfig telegramConfig) {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        config.setTelegram(telegramConfig);
+        RuntimeConfig.TelegramConfig merged = telegramConfig;
+        if (isMaskedSecret(telegramConfig.getToken())) {
+            merged = RuntimeConfig.TelegramConfig.builder()
+                    .enabled(telegramConfig.getEnabled())
+                    .token(config.getTelegram().getToken())
+                    .authMode(telegramConfig.getAuthMode())
+                    .allowedUsers(telegramConfig.getAllowedUsers())
+                    .inviteCodes(telegramConfig.getInviteCodes())
+                    .build();
+        }
+        config.setTelegram(merged);
         runtimeConfigService.updateRuntimeConfig(config);
         return Mono.just(ResponseEntity.ok(maskSecrets(runtimeConfigService.getRuntimeConfig())));
     }
@@ -143,7 +155,8 @@ public class SettingsController {
     public Mono<ResponseEntity<RuntimeConfig>> updateToolsConfig(
             @RequestBody RuntimeConfig.ToolsConfig toolsConfig) {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        config.setTools(toolsConfig);
+        RuntimeConfig.ToolsConfig merged = mergeToolsWithSecretPreservation(config.getTools(), toolsConfig);
+        config.setTools(merged);
         runtimeConfigService.updateRuntimeConfig(config);
         return Mono.just(ResponseEntity.ok(maskSecrets(runtimeConfigService.getRuntimeConfig())));
     }
@@ -152,7 +165,18 @@ public class SettingsController {
     public Mono<ResponseEntity<RuntimeConfig>> updateVoiceConfig(
             @RequestBody RuntimeConfig.VoiceConfig voiceConfig) {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        config.setVoice(voiceConfig);
+        RuntimeConfig.VoiceConfig merged = voiceConfig;
+        if (isMaskedSecret(voiceConfig.getApiKey())) {
+            merged = RuntimeConfig.VoiceConfig.builder()
+                    .enabled(voiceConfig.getEnabled())
+                    .apiKey(config.getVoice().getApiKey())
+                    .voiceId(voiceConfig.getVoiceId())
+                    .ttsModelId(voiceConfig.getTtsModelId())
+                    .sttModelId(voiceConfig.getSttModelId())
+                    .speed(voiceConfig.getSpeed())
+                    .build();
+        }
+        config.setVoice(merged);
         runtimeConfigService.updateRuntimeConfig(config);
         return Mono.just(ResponseEntity.ok(maskSecrets(runtimeConfigService.getRuntimeConfig())));
     }
@@ -217,6 +241,51 @@ public class SettingsController {
         return Mono.just(ResponseEntity.ok().build());
     }
 
+    private RuntimeConfig preserveMaskedSecrets(RuntimeConfig current, RuntimeConfig incoming) {
+        RuntimeConfig merged = incoming;
+
+        if (incoming.getTelegram() != null && current.getTelegram() != null
+                && isMaskedSecret(incoming.getTelegram().getToken())) {
+            incoming.getTelegram().setToken(current.getTelegram().getToken());
+        }
+
+        if (incoming.getVoice() != null && current.getVoice() != null
+                && isMaskedSecret(incoming.getVoice().getApiKey())) {
+            incoming.getVoice().setApiKey(current.getVoice().getApiKey());
+        }
+
+        if (incoming.getTools() != null && current.getTools() != null) {
+            incoming.setTools(mergeToolsWithSecretPreservation(current.getTools(), incoming.getTools()));
+        }
+
+        return merged;
+    }
+
+    private RuntimeConfig.ToolsConfig mergeToolsWithSecretPreservation(
+            RuntimeConfig.ToolsConfig current,
+            RuntimeConfig.ToolsConfig incoming) {
+
+        if (incoming == null) {
+            return current;
+        }
+
+        if (isMaskedSecret(incoming.getBraveSearchApiKey())) {
+            incoming.setBraveSearchApiKey(current.getBraveSearchApiKey());
+        }
+
+        if (incoming.getImap() != null && current.getImap() != null
+                && isMaskedSecret(incoming.getImap().getPassword())) {
+            incoming.getImap().setPassword(current.getImap().getPassword());
+        }
+
+        if (incoming.getSmtp() != null && current.getSmtp() != null
+                && isMaskedSecret(incoming.getSmtp().getPassword())) {
+            incoming.getSmtp().setPassword(current.getSmtp().getPassword());
+        }
+
+        return incoming;
+    }
+
     private RuntimeConfig maskSecrets(RuntimeConfig source) {
         RuntimeConfig masked = source;
 
@@ -243,6 +312,10 @@ public class SettingsController {
 
     private String maskValue(String value) {
         return value != null && !value.isBlank() ? SECRET_MASK : value;
+    }
+
+    private boolean isMaskedSecret(String value) {
+        return SECRET_MASK.equals(value);
     }
 
     // ==================== DTOs ====================
