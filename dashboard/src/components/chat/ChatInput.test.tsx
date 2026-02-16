@@ -24,14 +24,15 @@ describe('ChatInput', () => {
     vi.restoreAllMocks();
   });
 
-  it('shows warning for missing required command args', async () => {
+  it('shows advisory notice for missing required command args', async () => {
     const onSend = vi.fn();
     render(<ChatInput onSend={onSend} />);
 
     const textarea = screen.getByPlaceholderText(/Type a message/i);
     fireEvent.change(textarea, { target: { value: '/plan' } });
 
-    expect(await screen.findByText(/Missing args:/i)).toBeInTheDocument();
+    const advisory = await screen.findByTestId('composer-notice-advisory');
+    expect(advisory).toHaveTextContent(/Missing args:/i);
   });
 
   it('shows command mode indicator for slash command input', async () => {
@@ -112,7 +113,7 @@ describe('ChatInput', () => {
     });
   });
 
-  it('shows file type validation error for non-image upload', async () => {
+  it('shows file type validation error for non-image upload as recoverable notice', async () => {
     const onSend = vi.fn();
     render(<ChatInput onSend={onSend} />);
 
@@ -123,8 +124,9 @@ describe('ChatInput', () => {
       target: { files: [file] },
     });
 
-    const alert = await screen.findByRole('alert');
+    const alert = await screen.findByTestId('composer-notice-recoverable');
     expect(alert).toHaveTextContent(/Only image files are supported/i);
+    expect(alert).toHaveTextContent(/Please adjust input and try again/i);
   });
 
   it('sets combobox aria attributes for command suggestions', async () => {

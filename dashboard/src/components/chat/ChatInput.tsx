@@ -11,6 +11,15 @@ interface Props {
   disabled?: boolean;
 }
 
+type NoticeLevel = 'advisory' | 'blocking' | 'recoverable';
+
+interface ComposerNotice {
+  id: string;
+  level: NoticeLevel;
+  message: string;
+  actionHint?: string;
+}
+
 const MAX_ATTACHMENTS = 5;
 const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
 const MAX_VOICE_BYTES = 25 * 1024 * 1024;
@@ -35,6 +44,19 @@ function formatApiError(error: unknown, fallback: string): string {
   const e = error as { response?: { data?: { message?: string; error?: string } } };
   const backendMessage = e?.response?.data?.message || e?.response?.data?.error;
   return backendMessage ? `${fallback}: ${backendMessage}` : fallback;
+}
+
+function classifyErrorLevel(errorText: string): NoticeLevel {
+  const normalized = errorText.toLowerCase();
+  if (
+    normalized.includes('failed')
+    || normalized.includes('cannot')
+    || normalized.includes('denied')
+    || normalized.includes('please')
+  ) {
+    return 'recoverable';
+  }
+  return 'blocking';
 }
 
 export default function ChatInput({ onSend, disabled }: Props) {
@@ -83,6 +105,37 @@ export default function ChatInput({ onSend, disabled }: Props) {
   const activeDescendant = showAutocomplete && filteredCommands.length > 0
     ? `${COMMAND_LISTBOX_ID}-option-${selectedCmdIndex}`
     : undefined;
+
+  const notices = useMemo<ComposerNotice[]>(() => {
+    const result: ComposerNotice[] = [];
+
+    if (missingArgs.length > 0) {
+      result.push({
+        id: 'missing-args',
+        level: 'advisory',
+        message: `Missing args: ${missingArgs.join(', ')}`,
+        actionHint: 'You can still send this message, but the command may be incomplete.',
+      });
+    }
+
+    if (errorText) {
+      const level = classifyErrorLevel(errorText);
+      result.push({
+        id: 'error',
+        level,
+        message: errorText,
+        actionHint: level === 'recoverable'
+          ? 'Please adjust input and try again.'
+          : 'Resolve this issue before sending.',
+      });
+    }
+
+    return result;
+  }, [missingArgs, errorText]);
+
+  const advisoryNotices = notices.filter((n) => n.level === 'advisory');
+  const blockingNotices = notices.filter((n) => n.level === 'blocking');
+  const recoverableNotices = notices.filter((n) => n.level === 'recoverable');
 
   useEffect(() => {
     if (!disabled) inputRef.current?.focus();
@@ -166,7 +219,7 @@ export default function ChatInput({ onSend, disabled }: Props) {
 
     const roomLeft = Math.max(0, MAX_ATTACHMENTS - attachments.length);
     if (roomLeft === 0) {
-      setErrorText(`You can attach up to ${MAX_ATTACHMENTS} images per message.`);
+      setErrorText(`You can attach up to ${MAX_ATTACHMENTS} images per message. Remove one and try again.`);
       return;
     }
 
@@ -175,13 +228,13 @@ export default function ChatInput({ onSend, disabled }: Props) {
       .slice(0, roomLeft);
 
     if (images.length === 0) {
-      setErrorText('Only image files are supported for attachments.');
+      setErrorText('Only image files are supported for attachments. Please choose JPG, PNG, or WebP.');
       return;
     }
 
     const oversized = images.find((f) => f.size > MAX_IMAGE_SIZE_BYTES);
     if (oversized) {
-      setErrorText(`Image "${oversized.name}" exceeds 10MB limit.`);
+      setErrorText(`Image "${oversized.name}" exceeds 10MB limit. Please choose a smaller file.`);
       return;
     }
 
@@ -227,7 +280,7 @@ export default function ChatInput({ onSend, disabled }: Props) {
 
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
-        setErrorText('Voice input is not supported in this browser.');
+        setErrorText('Voice input is not supported in this browser. Please use text input.');
         return;
       }
 
@@ -247,7 +300,7 @@ export default function ChatInput({ onSend, disabled }: Props) {
         if (blob.size === 0) return;
 
         if (blob.size > MAX_VOICE_BYTES) {
-          setErrorText('Voice recording is too large. Please keep it shorter.');
+          setErrorText('Voice recording is too large. Please keep it shorter and try again.');
           return;
         }
 
@@ -267,8 +320,8 @@ export default function ChatInput({ onSend, disabled }: Props) {
       setRecording(true);
     } catch (err) {
       const message = (err as DOMException)?.name === 'NotAllowedError'
-        ? 'Microphone access denied. Please allow microphone permission.'
-        : 'Cannot start recording. Please check microphone settings.';
+        ? 'Microphone access denied. Please allow microphone permission and retry.'
+        : 'Cannot start recording. Please check microphone settings and retry.';
       setErrorText(message);
     }
   };
@@ -281,7 +334,7 @@ export default function ChatInput({ onSend, disabled }: Props) {
       onDragLeave={handleDragLeave}
     >
       <div className="visually-hidden" aria-live="polite" aria-atomic="true">
-        {statusText || errorText || (missingArgs.length > 0 ? `Missing command arguments: ${missingArgs.join(', ')}` : '')}
+        {statusText || (notices.length > 0 ? notices.map((n) => n.message).join('. ') : '')}
       </div>
 
       {showAutocomplete && (
@@ -319,18 +372,29 @@ export default function ChatInput({ onSend, disabled }: Props) {
         </div>
       )}
 
-      {missingArgs.length > 0 && (
-        <div className="mb-2">
+      {advisoryNotices.map((notice) => (
+        <div key={notice.id} className="mb-2" data-testid="composer-notice-advisory">
           <Badge bg="secondary" className="me-2">Hint</Badge>
-          <small className="text-muted">Missing args: {missingArgs.join(', ')}</small>
+          <small className="text-muted">{notice.message}</small>
+          {notice.actionHint && (
+            <small className="d-block text-muted">{notice.actionHint}</small>
+          )}
         </div>
-      )}
+      ))}
 
-      {errorText && (
-        <Alert variant="warning" className="chat-input-alert mb-2 py-2" role="alert">
-          {errorText}
+      {recoverableNotices.map((notice) => (
+        <Alert key={notice.id} variant="warning" className="chat-input-alert mb-2 py-2" role="alert" data-testid="composer-notice-recoverable">
+          <div>{notice.message}</div>
+          {notice.actionHint && <small className="d-block mt-1">{notice.actionHint}</small>}
         </Alert>
-      )}
+      ))}
+
+      {blockingNotices.map((notice) => (
+        <Alert key={notice.id} variant="danger" className="chat-input-alert mb-2 py-2" role="alert" data-testid="composer-notice-blocking">
+          <div>{notice.message}</div>
+          {notice.actionHint && <small className="d-block mt-1">{notice.actionHint}</small>}
+        </Alert>
+      ))}
 
       {dragActive && (
         <div className="chat-drag-overlay" role="status" aria-live="polite">

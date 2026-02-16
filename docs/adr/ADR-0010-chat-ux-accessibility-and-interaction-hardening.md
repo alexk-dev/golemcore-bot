@@ -1,6 +1,6 @@
 # ADR-0010: Chat UX Accessibility and Interaction Hardening
 
-- **Status:** Proposed
+- **Status:** In Progress
 - **Date:** 2026-02-16
 - **Owners:** UI/UX + Frontend + Backend API
 - **Related:**
@@ -158,10 +158,10 @@ Rules:
 
 ## Phase A — Accessibility and Semantics (must)
 
-- [ ] Replace non-semantic clickable badge with `<button>`.
-- [ ] Add `aria-label` for image/mic/send/remove controls.
-- [ ] Add live region for async states (`uploading`, `recording`, `transcribing`, `errors`).
-- [ ] Implement combobox/listbox semantics in `CommandAutocomplete` + input.
+- [x] Replace non-semantic clickable badge with `<button>`.
+- [x] Add `aria-label` for image/mic/send/remove controls.
+- [x] Add live region for async states (`uploading`, `recording`, `transcribing`, `errors`).
+- [x] Implement combobox/listbox semantics in `CommandAutocomplete` + input.
 - [ ] Ensure visible focus styles for keyboard navigation.
 
 Files (expected):
@@ -172,20 +172,20 @@ Files (expected):
 
 ## Phase B — Keyboard and Composer Behavior (must)
 
-- [ ] Introduce explicit key handling policy (`Enter`, `Tab`, `Esc`, arrows).
-- [ ] Add command acceptance on `Enter` when suggestion highlighted.
-- [ ] Add command mode visual indicator in composer.
-- [ ] Avoid accidental submit when suggestion popup is active and no explicit acceptance intent.
+- [x] Introduce explicit key handling policy (`Enter`, `Tab`, `Esc`, arrows).
+- [x] Add command acceptance on `Enter` when suggestion highlighted.
+- [x] Add command mode visual indicator in composer.
+- [x] Avoid accidental submit when suggestion popup is active and no explicit acceptance intent.
 
 ## Phase C — Error Model and Copy (must)
 
-- [ ] Introduce UI-level `ComposerNotice` model (`advisory | blocking | recoverable`).
-- [ ] Split rendering of advisory vs error blocks.
-- [ ] Standardize copy with actionable guidance (retry/remove/permissions).
+- [x] Introduce UI-level `ComposerNotice` model (`advisory | blocking | recoverable`).
+- [x] Split rendering of advisory vs error blocks.
+- [x] Standardize copy with actionable guidance (retry/remove/permissions).
 
 ## Phase D — Attachment UX Hardening (should)
 
-- [ ] Add drag-over visual state and drop hint.
+- [x] Add drag-over visual state and drop hint.
 - [ ] Add per-file states and progress UI.
 - [ ] Use stable client-generated IDs for attachment chips.
 - [ ] Add retry for failed uploads.
@@ -215,12 +215,12 @@ Files (expected):
 ## Testing Strategy
 
 ### Unit/UI tests (Vitest + Testing Library)
-- [ ] Keyboard navigation and acceptance behavior for autocomplete.
-- [ ] `Esc` dismissal and focus persistence.
-- [ ] A11y checks for roles/attributes on command list.
+- [x] Keyboard navigation and acceptance behavior for autocomplete.
+- [x] `Esc` dismissal and focus persistence.
+- [x] A11y checks for roles/attributes on command list.
 - [ ] Attachment flow: invalid type, oversize, retry/remove.
 - [ ] Voice flow: permission denied, stop/cancel, transcript confirm.
-- [ ] Notices rendering hierarchy (advisory vs blocking).
+- [x] Notices rendering hierarchy (advisory vs blocking).
 
 ### Integration tests
 - [ ] Chat send flow with image refs and command mode transitions.
