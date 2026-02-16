@@ -170,7 +170,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
         }
 
         try {
-            String token = properties.getChannels().get(CHANNEL_TYPE).getToken();
+            String token = runtimeConfigService.getTelegramToken();
             botsApplication.registerBot(token, this);
             running = true;
             log.info("Telegram adapter started");
@@ -387,7 +387,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
         org.telegram.telegrambots.meta.api.objects.File file = telegramClient.execute(getFile);
 
         String filePath = file.getFilePath();
-        String token = properties.getChannels().get(CHANNEL_TYPE).getToken();
+        String token = runtimeConfigService.getTelegramToken();
         String fileUrl = "https://api.telegram.org/file/bot" + token + "/" + filePath;
 
         try (InputStream is = URI.create(fileUrl).toURL().openStream()) {

@@ -27,8 +27,12 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * Validates users against channel-specific allowlists and global blocklists.
- * Checks RuntimeConfig first, then falls back to BotProperties.
+ * Validates users against runtime-config allowlists and global blocklists.
+ *
+ * <p>
+ * Telegram allowlist is resolved strictly from RuntimeConfig (SSOT). No
+ * fallback to application.properties for allowed users.
+ * </p>
  */
 @Component
 @RequiredArgsConstructor
@@ -44,34 +48,26 @@ public class AllowlistValidator {
     public boolean isAllowed(String channelType, String userId) {
         log.trace("[Security] Allowlist check: channel={}, user={}", channelType, userId);
 
-        // For telegram, check RuntimeConfig first
         if ("telegram".equals(channelType)) {
-            List<String> runtimeAllowed = runtimeConfigService.getTelegramAllowedUsers();
-            if (runtimeAllowed != null && !runtimeAllowed.isEmpty()) {
-                boolean allowed = runtimeAllowed.contains(userId);
-                if (!allowed) {
-                    log.warn("[Security] Unauthorized: channel={}, user={}", channelType, userId);
-                }
-                return allowed;
+            List<String> runtimeAllowed = runtimeConfigService.getTelegramAllowedUserIds();
+            if (runtimeAllowed == null || runtimeAllowed.isEmpty()) {
+                return true; // No restriction if runtime allowlist is empty
             }
+            boolean allowed = runtimeAllowed.contains(userId);
+            if (!allowed) {
+                log.warn("[Security] Unauthorized: channel={}, user={}", channelType, userId);
+            }
+            return allowed;
         }
 
+        // Non-telegram channels: no channel-level allowlist restrictions.
+        // Telegram authorization is managed via RuntimeConfig only.
         BotProperties.ChannelProperties channelProps = properties.getChannels().get(channelType);
         if (channelProps == null) {
             log.warn("[Security] Unauthorized: channel={}, user={} (unknown channel)", channelType, userId);
             return false;
         }
-
-        List<String> allowedUsers = channelProps.getAllowFrom();
-        if (allowedUsers == null || allowedUsers.isEmpty()) {
-            return true; // No restriction if list is empty
-        }
-
-        boolean allowed = allowedUsers.contains(userId);
-        if (!allowed) {
-            log.warn("[Security] Unauthorized: channel={}, user={}", channelType, userId);
-        }
-        return allowed;
+        return true;
     }
 
     /**

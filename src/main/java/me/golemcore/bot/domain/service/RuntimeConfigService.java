@@ -97,8 +97,8 @@ public class RuntimeConfigService {
         return val != null ? val : "";
     }
 
-    public List<String> getTelegramAllowedUsers() {
-        List<String> users = ensureLoaded().getTelegram().getAllowedUsers();
+    public List<String> getTelegramAllowedUserIds() {
+        List<String> users = ensureLoaded().getTelegram().getAllowedUserIds();
         return users != null ? List.copyOf(users) : List.of();
     }
 
@@ -294,7 +294,7 @@ public class RuntimeConfigService {
                 }
                 ic.setUsed(true);
 
-                List<String> allowed = cfg.getTelegram().getAllowedUsers();
+                List<String> allowed = cfg.getTelegram().getAllowedUserIds();
                 if (!allowed.contains(userId)) {
                     allowed.add(userId);
                 }
@@ -358,8 +358,8 @@ public class RuntimeConfigService {
         if (normalized.getTelegram() == null) {
             normalized.setTelegram(new RuntimeConfig.TelegramConfig());
         }
-        if (normalized.getTelegram().getAllowedUsers() == null) {
-            normalized.getTelegram().setAllowedUsers(new ArrayList<>());
+        if (normalized.getTelegram().getAllowedUserIds() == null) {
+            normalized.getTelegram().setAllowedUserIds(new ArrayList<>());
         }
         if (normalized.getTelegram().getInviteCodes() == null) {
             normalized.getTelegram().setInviteCodes(new ArrayList<>());

@@ -194,13 +194,13 @@ function TelegramTab({ config }: { config: TelegramConfig }) {
   const [enabled, setEnabled] = useState(config.enabled ?? false);
   const [token, setToken] = useState(config.token ?? '');
   const [showToken, setShowToken] = useState(false);
-  const [authMode, setAuthMode] = useState(config.authMode ?? 'allowlist');
-  const [allowedUsers, setAllowedUsers] = useState(config.allowedUsers?.join(', ') ?? '');
+  const [authMode, setAuthMode] = useState(config.authMode ?? 'allowed-user-id');
+  const [allowedUserIds, setAllowedUserIds] = useState(config.allowedUserIds?.join(', ') ?? '');
 
   const handleSave = async () => {
-    const users = allowedUsers.split(',').map(u => u.trim()).filter(Boolean);
+    const users = allowedUserIds.split(',').map(u => u.trim()).filter(Boolean);
     await updateTelegram.mutateAsync({
-      ...config, enabled, token: config.token, authMode, allowedUsers: users,
+      ...config, enabled, token: config.token, authMode, allowedUserIds: users,
     });
     if (token && token !== '***') {
       await updateSecrets.mutateAsync({ telegramToken: token });
@@ -233,21 +233,21 @@ function TelegramTab({ config }: { config: TelegramConfig }) {
 
         <Form.Group className="mb-3">
           <Form.Label className="small fw-medium">
-            Auth Mode <Tip text="Controls how users authenticate: allowlist (explicit IDs) or invite codes (shareable codes)" />
+            Auth Mode <Tip text="Controls how users authenticate: allowed-user-id (explicit IDs) or invite codes (shareable codes)" />
           </Form.Label>
           <Form.Select size="sm" value={authMode} onChange={(e) => setAuthMode(e.target.value)}>
-            <option value="allowlist">Allowlist</option>
+            <option value="allowed-user-id">Allowed User IDs</option>
             <option value="invite">Invite Codes</option>
           </Form.Select>
         </Form.Group>
 
-        {authMode === 'allowlist' && (
+        {authMode === 'allowed-user-id' && (
           <Form.Group className="mb-3">
             <Form.Label className="small fw-medium">
               Allowed User IDs <Tip text="Telegram numeric user IDs, comma-separated" />
             </Form.Label>
-            <Form.Control size="sm" type="text" value={allowedUsers}
-              onChange={(e) => setAllowedUsers(e.target.value)} placeholder="12345, 67890" />
+            <Form.Control size="sm" type="text" value={allowedUserIds}
+              onChange={(e) => setAllowedUserIds(e.target.value)} placeholder="12345, 67890" />
           </Form.Group>
         )}
 

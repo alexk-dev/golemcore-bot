@@ -51,7 +51,6 @@ class TelegramAdapterHandleMessageTest {
         BotProperties properties = mock(BotProperties.class);
         BotProperties.ChannelProperties telegramProps = new BotProperties.ChannelProperties();
         telegramProps.setEnabled(true);
-        telegramProps.setToken("test-token");
         when(properties.getChannels()).thenReturn(Map.of("telegram", telegramProps));
 
         allowlistValidator = mock(AllowlistValidator.class);

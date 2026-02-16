@@ -122,8 +122,6 @@ public class BotProperties {
     @Data
     public static class ChannelProperties {
         private boolean enabled = false;
-        private String token;
-        private List<String> allowFrom = new ArrayList<>();
     }
 
     @Data

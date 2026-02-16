@@ -169,7 +169,7 @@ public class SettingsController {
                 .enabled(telegramConfig.getEnabled())
                 .token(config.getTelegram().getToken())
                 .authMode(telegramConfig.getAuthMode())
-                .allowedUsers(telegramConfig.getAllowedUsers())
+                .allowedUserIds(telegramConfig.getAllowedUserIds())
                 .inviteCodes(telegramConfig.getInviteCodes())
                 .build();
         config.setTelegram(merged);

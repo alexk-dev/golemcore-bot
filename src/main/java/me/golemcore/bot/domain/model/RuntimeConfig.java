@@ -53,7 +53,7 @@ public class RuntimeConfig {
         /** "allowlist" or "invite" */
         private String authMode;
         @Builder.Default
-        private List<String> allowedUsers = new ArrayList<>();
+        private List<String> allowedUserIds = new ArrayList<>();
         @Builder.Default
         private List<InviteCode> inviteCodes = new ArrayList<>();
     }

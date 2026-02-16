@@ -34,22 +34,15 @@ class AllowlistValidatorTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        // Return empty list so tests fall through to BotProperties by default
-        when(runtimeConfigService.getTelegramAllowedUsers()).thenReturn(Collections.emptyList());
         validator = new AllowlistValidator(properties, runtimeConfigService);
     }
 
     // ==================== isAllowed() ====================
 
     @Test
-    void shouldAllowUserWhenUserIsInAllowlist() {
+    void shouldAllowTelegramUserWhenRuntimeAllowlistContainsUser() {
         // Arrange
-        BotProperties.ChannelProperties channelProps = new BotProperties.ChannelProperties();
-        channelProps.setAllowFrom(List.of(USER_1, "user2", "user3"));
-
-        Map<String, BotProperties.ChannelProperties> channels = new HashMap<>();
-        channels.put(CHANNEL_TELEGRAM, channelProps);
-        when(properties.getChannels()).thenReturn(channels);
+        when(runtimeConfigService.getTelegramAllowedUserIds()).thenReturn(List.of(USER_1, "user2"));
 
         // Act
         boolean result = validator.isAllowed(CHANNEL_TELEGRAM, "user2");
@@ -59,14 +52,9 @@ class AllowlistValidatorTest {
     }
 
     @Test
-    void shouldDenyUserWhenUserIsNotInAllowlist() {
+    void shouldDenyTelegramUserWhenRuntimeAllowlistDoesNotContainUser() {
         // Arrange
-        BotProperties.ChannelProperties channelProps = new BotProperties.ChannelProperties();
-        channelProps.setAllowFrom(List.of(USER_1, "user2"));
-
-        Map<String, BotProperties.ChannelProperties> channels = new HashMap<>();
-        channels.put(CHANNEL_TELEGRAM, channelProps);
-        when(properties.getChannels()).thenReturn(channels);
+        when(runtimeConfigService.getTelegramAllowedUserIds()).thenReturn(List.of(USER_1, "user2"));
 
         // Act
         boolean result = validator.isAllowed(CHANNEL_TELEGRAM, "unknown_user");
@@ -76,14 +64,9 @@ class AllowlistValidatorTest {
     }
 
     @Test
-    void shouldAllowAllUsersWhenAllowlistIsEmpty() {
+    void shouldAllowAllTelegramUsersWhenRuntimeAllowlistIsEmpty() {
         // Arrange
-        BotProperties.ChannelProperties channelProps = new BotProperties.ChannelProperties();
-        channelProps.setAllowFrom(new ArrayList<>());
-
-        Map<String, BotProperties.ChannelProperties> channels = new HashMap<>();
-        channels.put(CHANNEL_TELEGRAM, channelProps);
-        when(properties.getChannels()).thenReturn(channels);
+        when(runtimeConfigService.getTelegramAllowedUserIds()).thenReturn(Collections.emptyList());
 
         // Act
         boolean result = validator.isAllowed(CHANNEL_TELEGRAM, USER_ANY);
@@ -93,14 +76,9 @@ class AllowlistValidatorTest {
     }
 
     @Test
-    void shouldAllowAllUsersWhenAllowlistIsNull() {
+    void shouldAllowAllTelegramUsersWhenRuntimeAllowlistIsNull() {
         // Arrange
-        BotProperties.ChannelProperties channelProps = new BotProperties.ChannelProperties();
-        channelProps.setAllowFrom(null);
-
-        Map<String, BotProperties.ChannelProperties> channels = new HashMap<>();
-        channels.put(CHANNEL_TELEGRAM, channelProps);
-        when(properties.getChannels()).thenReturn(channels);
+        when(runtimeConfigService.getTelegramAllowedUserIds()).thenReturn(null);
 
         // Act
         boolean result = validator.isAllowed(CHANNEL_TELEGRAM, USER_ANY);
@@ -112,6 +90,7 @@ class AllowlistValidatorTest {
     @Test
     void shouldDenyUserWhenChannelTypeIsUnknown() {
         // Arrange
+        when(runtimeConfigService.getTelegramAllowedUserIds()).thenReturn(Collections.emptyList());
         Map<String, BotProperties.ChannelProperties> channels = new HashMap<>();
         when(properties.getChannels()).thenReturn(channels);
 
@@ -125,15 +104,50 @@ class AllowlistValidatorTest {
     @Test
     void shouldDenyUserWhenChannelPropertiesIsNull() {
         // Arrange
+        when(runtimeConfigService.getTelegramAllowedUserIds()).thenReturn(Collections.emptyList());
         Map<String, BotProperties.ChannelProperties> channels = new HashMap<>();
-        channels.put(CHANNEL_TELEGRAM, null);
+        channels.put("web", null);
         when(properties.getChannels()).thenReturn(channels);
 
         // Act
-        boolean result = validator.isAllowed(CHANNEL_TELEGRAM, USER_1);
+        boolean result = validator.isAllowed("web", USER_1);
 
         // Assert
         assertFalse(result);
+    }
+
+    @Test
+    void shouldAllowNonTelegramUserWhenChannelExists() {
+        // Arrange
+        when(runtimeConfigService.getTelegramAllowedUserIds()).thenReturn(Collections.emptyList());
+        BotProperties.ChannelProperties channelProps = new BotProperties.ChannelProperties();
+
+        Map<String, BotProperties.ChannelProperties> channels = new HashMap<>();
+        channels.put("web", channelProps);
+        when(properties.getChannels()).thenReturn(channels);
+
+        // Act
+        boolean result = validator.isAllowed("web", "user2");
+
+        // Assert
+        assertTrue(result);
+    }
+
+    @Test
+    void shouldAllowNonTelegramAllUsersWhenChannelExists() {
+        // Arrange
+        when(runtimeConfigService.getTelegramAllowedUserIds()).thenReturn(Collections.emptyList());
+        BotProperties.ChannelProperties channelProps = new BotProperties.ChannelProperties();
+
+        Map<String, BotProperties.ChannelProperties> channels = new HashMap<>();
+        channels.put("web", channelProps);
+        when(properties.getChannels()).thenReturn(channels);
+
+        // Act
+        boolean result = validator.isAllowed("web", USER_ANY);
+
+        // Assert
+        assertTrue(result);
     }
 
     // ==================== isBlocked() ====================

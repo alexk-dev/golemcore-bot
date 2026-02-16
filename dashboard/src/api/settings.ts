@@ -37,7 +37,7 @@ export interface TelegramConfig {
   enabled: boolean | null;
   token: string | null;
   authMode: string | null;
-  allowedUsers: string[];
+  allowedUserIds: string[];
   inviteCodes: InviteCode[];
 }
 
