@@ -32,6 +32,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class SettingsController {
 
+    private static final String SECRET_MASK = "***";
+
     private final UserPreferencesService preferencesService;
     private final ModelSelectionService modelSelectionService;
     private final RuntimeConfigService runtimeConfigService;
@@ -109,13 +111,14 @@ public class SettingsController {
 
     @GetMapping("/runtime")
     public Mono<ResponseEntity<RuntimeConfig>> getRuntimeConfig() {
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfig()));
+        RuntimeConfig runtimeConfig = runtimeConfigService.getRuntimeConfig();
+        return Mono.just(ResponseEntity.ok(maskSecrets(runtimeConfig)));
     }
 
     @PutMapping("/runtime")
     public Mono<ResponseEntity<RuntimeConfig>> updateRuntimeConfig(@RequestBody RuntimeConfig config) {
         runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfig()));
+        return Mono.just(ResponseEntity.ok(maskSecrets(runtimeConfigService.getRuntimeConfig())));
     }
 
     @PutMapping("/runtime/telegram")
@@ -124,7 +127,7 @@ public class SettingsController {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         config.setTelegram(telegramConfig);
         runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfig()));
+        return Mono.just(ResponseEntity.ok(maskSecrets(runtimeConfigService.getRuntimeConfig())));
     }
 
     @PutMapping("/runtime/models")
@@ -133,7 +136,7 @@ public class SettingsController {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         config.setModelRouter(modelRouterConfig);
         runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfig()));
+        return Mono.just(ResponseEntity.ok(maskSecrets(runtimeConfigService.getRuntimeConfig())));
     }
 
     @PutMapping("/runtime/tools")
@@ -142,7 +145,7 @@ public class SettingsController {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         config.setTools(toolsConfig);
         runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfig()));
+        return Mono.just(ResponseEntity.ok(maskSecrets(runtimeConfigService.getRuntimeConfig())));
     }
 
     @PutMapping("/runtime/voice")
@@ -151,7 +154,7 @@ public class SettingsController {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         config.setVoice(voiceConfig);
         runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfig()));
+        return Mono.just(ResponseEntity.ok(maskSecrets(runtimeConfigService.getRuntimeConfig())));
     }
 
     @PutMapping("/runtime/webhooks")
@@ -169,7 +172,7 @@ public class SettingsController {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         config.setAutoMode(autoConfig);
         runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfig()));
+        return Mono.just(ResponseEntity.ok(maskSecrets(runtimeConfigService.getRuntimeConfig())));
     }
 
     @PutMapping("/runtime/advanced")
@@ -186,7 +189,7 @@ public class SettingsController {
             config.setCompaction(request.compaction());
         }
         runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfig()));
+        return Mono.just(ResponseEntity.ok(maskSecrets(runtimeConfigService.getRuntimeConfig())));
     }
 
     // ==================== Invite Codes ====================
@@ -212,6 +215,34 @@ public class SettingsController {
     public Mono<ResponseEntity<Void>> restartTelegram() {
         eventPublisher.publishEvent(new TelegramRestartEvent(this));
         return Mono.just(ResponseEntity.ok().build());
+    }
+
+    private RuntimeConfig maskSecrets(RuntimeConfig source) {
+        RuntimeConfig masked = source;
+
+        if (masked.getTelegram() != null) {
+            masked.getTelegram().setToken(maskValue(masked.getTelegram().getToken()));
+        }
+
+        if (masked.getTools() != null) {
+            masked.getTools().setBraveSearchApiKey(maskValue(masked.getTools().getBraveSearchApiKey()));
+            if (masked.getTools().getImap() != null) {
+                masked.getTools().getImap().setPassword(maskValue(masked.getTools().getImap().getPassword()));
+            }
+            if (masked.getTools().getSmtp() != null) {
+                masked.getTools().getSmtp().setPassword(maskValue(masked.getTools().getSmtp().getPassword()));
+            }
+        }
+
+        if (masked.getVoice() != null) {
+            masked.getVoice().setApiKey(maskValue(masked.getVoice().getApiKey()));
+        }
+
+        return masked;
+    }
+
+    private String maskValue(String value) {
+        return value != null && !value.isBlank() ? SECRET_MASK : value;
     }
 
     // ==================== DTOs ====================

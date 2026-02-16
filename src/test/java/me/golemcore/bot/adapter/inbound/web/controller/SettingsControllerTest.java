@@ -140,4 +140,47 @@ class SettingsControllerTest {
         assertNotNull(prefs.getTierOverrides());
         assertEquals("gpt-4o", prefs.getTierOverrides().get("standard").getModel());
     }
+
+    @Test
+    void shouldMaskSecretsInRuntimeConfigResponse() {
+        me.golemcore.bot.domain.model.RuntimeConfig cfg = me.golemcore.bot.domain.model.RuntimeConfig.builder().build();
+        cfg.getTelegram().setToken("telegram-secret");
+        cfg.getTools().setBraveSearchApiKey("brave-key");
+        cfg.getTools().getImap().setPassword("imap-pass");
+        cfg.getTools().getSmtp().setPassword("smtp-pass");
+        cfg.getVoice().setApiKey("voice-key");
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(cfg);
+
+        StepVerifier.create(controller.getRuntimeConfig())
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    var body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals("***", body.getTelegram().getToken());
+                    assertEquals("***", body.getTools().getBraveSearchApiKey());
+                    assertEquals("***", body.getTools().getImap().getPassword());
+                    assertEquals("***", body.getTools().getSmtp().getPassword());
+                    assertEquals("***", body.getVoice().getApiKey());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldMaskSecretsAfterRuntimeUpdate() {
+        me.golemcore.bot.domain.model.RuntimeConfig cfg = me.golemcore.bot.domain.model.RuntimeConfig.builder().build();
+        cfg.getTelegram().setToken("telegram-secret");
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(cfg);
+
+        StepVerifier.create(controller.updateRuntimeConfig(cfg))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    var body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals("***", body.getTelegram().getToken());
+                })
+                .verifyComplete();
+
+        verify(runtimeConfigService).updateRuntimeConfig(cfg);
+    }
+
 }
