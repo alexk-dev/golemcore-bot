@@ -1,0 +1,72 @@
+/*
+ * Copyright 2026 Aleksei Kuleshov
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * Contact: alex@kuleshov.tech
+ */
+
+package me.golemcore.bot.adapter.inbound.webhook.dto;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+/**
+ * Common response body for all webhook endpoints.
+ */
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class WebhookResponse {
+
+    /** Status: {@code "accepted"} or {@code "error"}. */
+    private String status;
+
+    /** Run identifier (only for {@code /agent} endpoint). */
+    private String runId;
+
+    /** Session identifier used for this request. */
+    private String chatId;
+
+    /** Error message (only when {@code status="error"}). */
+    @JsonProperty("error")
+    private String errorMessage;
+
+    public static WebhookResponse accepted(String chatId) {
+        return WebhookResponse.builder()
+                .status("accepted")
+                .chatId(chatId)
+                .build();
+    }
+
+    public static WebhookResponse accepted(String runId, String chatId) {
+        return WebhookResponse.builder()
+                .status("accepted")
+                .runId(runId)
+                .chatId(chatId)
+                .build();
+    }
+
+    public static WebhookResponse error(String message) {
+        return WebhookResponse.builder()
+                .status("error")
+                .errorMessage(message)
+                .build();
+    }
+}

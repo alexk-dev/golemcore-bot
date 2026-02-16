@@ -189,6 +189,28 @@ model_tier: coding
 
 When a skill with `model_tier` is active, the skill's tier is used (unless the user has force enabled).
 
+### `/model` Command (Per-User Model Selection)
+
+Override the default model for any tier:
+
+```bash
+/model                           # Show model+reasoning for all tiers
+/model list                      # List available models (filtered by allowed providers)
+/model <tier> <provider/model>   # Override model for a tier
+/model <tier> reasoning <level>  # Set reasoning level for a tier
+/model <tier> reset              # Remove override, revert to default
+```
+
+Overrides persist across conversations and work alongside `/tier` (tier selects complexity level, model selects the actual LLM).
+
+### Model Selection (Allowed Providers)
+
+```bash
+BOT_MODEL_SELECTION_ALLOWED_PROVIDERS=openai,anthropic   # default
+```
+
+Controls which providers appear in `/model list` and are accepted in `/model set`. Restricts user model choices to approved providers only.
+
 ---
 
 ## Storage
@@ -613,30 +635,79 @@ Edit `models.json` in working directory to add custom models.
   "models": {
     "gpt-5.1": {
       "provider": "openai",
-      "reasoningRequired": true,
+      "displayName": "GPT-5.1",
       "supportsTemperature": false,
-      "maxInputTokens": 128000
+      "reasoning": {
+        "default": "medium",
+        "levels": {
+          "low":    { "maxInputTokens": 1000000 },
+          "medium": { "maxInputTokens": 1000000 },
+          "high":   { "maxInputTokens": 500000 },
+          "xhigh":  { "maxInputTokens": 250000 }
+        }
+      }
     },
     "my-model": {
       "provider": "custom",
-      "reasoningRequired": false,
+      "displayName": "My Model",
       "supportsTemperature": true,
       "maxInputTokens": 32000
     }
   },
   "defaults": {
-    "provider": "openai",
-    "reasoningRequired": false,
     "supportsTemperature": true,
     "maxInputTokens": 128000
   }
 }
 ```
 
+> **Note:** Reasoning models use `reasoning.levels` for per-level context limits. Non-reasoning models use the flat `maxInputTokens`. The `displayName` field is shown in `/model list` output.
+
 Then reference in config:
 
 ```bash
 export BOT_ROUTER_BALANCED_MODEL=custom/my-model
+```
+
+---
+
+## Webhooks
+
+> **Deep dive:** See [Webhooks Guide](WEBHOOKS.md) for the full endpoint reference, custom mappings, message templates, and architecture.
+
+Webhook configuration is stored in **UserPreferences** (not environment variables). Edit via bot conversation or directly in `~/.golemcore/workspace/preferences/settings.json`:
+
+```json
+{
+  "webhooks": {
+    "enabled": true,
+    "token": "your-secret-token",
+    "maxPayloadSize": 65536,
+    "defaultTimeoutSeconds": 300,
+    "mappings": []
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `webhooks.enabled` | boolean | `false` | Master switch for all webhook endpoints |
+| `webhooks.token` | string | `null` | Shared secret for Bearer authentication |
+| `webhooks.maxPayloadSize` | int | `65536` | Max payload size in bytes (64KB) |
+| `webhooks.defaultTimeoutSeconds` | int | `300` | Default timeout for `/agent` runs |
+| `webhooks.mappings` | array | `[]` | Custom hook mappings |
+
+**Endpoints:**
+- `POST /api/hooks/wake` — fire-and-forget event trigger (200 OK)
+- `POST /api/hooks/agent` — full agent turn, async (202 Accepted)
+- `POST /api/hooks/{name}` — custom mapped webhook
+
+**Quick test:**
+```bash
+curl -X POST http://localhost:8080/api/hooks/wake \
+  -H "Authorization: Bearer your-secret-token" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Hello from webhook"}'
 ```
 
 ---
@@ -647,4 +718,5 @@ export BOT_ROUTER_BALANCED_MODEL=custom/my-model
 - [Skills Guide](SKILLS.md)
 - [Tools Reference](TOOLS.md)
 - [MCP Integration](MCP.md)
+- [Webhooks Guide](WEBHOOKS.md)
 - [Deployment Guide](DEPLOYMENT.md)

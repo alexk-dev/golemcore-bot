@@ -4,6 +4,7 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
+import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.system.toolloop.DefaultHistoryWriter;
 import me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem;
 import me.golemcore.bot.domain.system.toolloop.ToolExecutorPort;
@@ -19,9 +20,11 @@ import java.util.ArrayList;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class ToolLoopModelTierSelectionTest {
 
@@ -41,9 +44,9 @@ class ToolLoopModelTierSelectionTest {
                 .modelTier("coding")
                 .build();
 
-        BotProperties.ModelRouterProperties router = new BotProperties.ModelRouterProperties();
-        router.setCodingModel("my-coding-model");
-        router.setCodingModelReasoning("low");
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveForTier("coding")).thenReturn(
+                new ModelSelectionService.ModelSelection("my-coding-model", "low"));
 
         AtomicReference<LlmRequest> captured = new AtomicReference<>();
 
@@ -66,7 +69,7 @@ class ToolLoopModelTierSelectionTest {
                 new DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 settings,
-                router,
+                modelSelectionService,
                 null,
                 Clock.fixed(Instant.parse("2026-02-01T00:00:00Z"), ZoneOffset.UTC));
 

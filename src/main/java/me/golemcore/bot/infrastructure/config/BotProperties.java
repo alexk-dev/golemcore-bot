@@ -82,6 +82,8 @@ public class BotProperties {
     private TurnProperties turn = new TurnProperties();
     private ToolLoopProperties toolLoop = new ToolLoopProperties();
     private PlanProperties plan = new PlanProperties();
+    private ModelSelectionProperties modelSelection = new ModelSelectionProperties();
+    private DashboardProperties dashboard = new DashboardProperties();
 
     @Data
     public static class AgentProperties {
@@ -494,6 +496,26 @@ public class BotProperties {
         private int maxStepsPerPlan = 50;
         private boolean stopOnFailure = true;
         private String defaultModelTier = "smart";
+    }
+
+    // ==================== MODEL SELECTION (user model overrides)
+    // ====================
+
+    @Data
+    public static class ModelSelectionProperties {
+        private List<String> allowedProviders = List.of("openai", "anthropic");
+    }
+
+    // ==================== DASHBOARD ====================
+
+    @Data
+    public static class DashboardProperties {
+        private boolean enabled = false;
+        private String adminPasswordHash = "";
+        private String jwtSecret = "";
+        private int jwtExpirationMinutes = 30;
+        private int refreshExpirationDays = 7;
+        private String corsAllowedOrigins = "";
     }
 
     // ==================== PROMPTS (system prompt sections) ====================

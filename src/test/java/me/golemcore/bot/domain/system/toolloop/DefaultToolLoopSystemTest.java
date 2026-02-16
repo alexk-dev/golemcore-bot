@@ -9,6 +9,7 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationView;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
@@ -44,6 +45,7 @@ class DefaultToolLoopSystemTest {
     private static final String TOOL_NAME = "test_tool";
     private static final String CONTENT_DONE = "Done";
     private static final String CONTENT_HELLO = "Hello";
+    private static final String USER_DENIED = "User denied";
 
     @Mock
     private LlmPort llmPort;
@@ -60,10 +62,12 @@ class DefaultToolLoopSystemTest {
     @Mock
     private PlanService planService;
 
+    @Mock
+    private ModelSelectionService modelSelectionService;
+
     private BotProperties.TurnProperties turnSettings;
 
     private BotProperties.ToolLoopProperties settings;
-    private BotProperties.ModelRouterProperties router;
     private Clock clock;
     private DefaultToolLoopSystem system;
 
@@ -77,18 +81,15 @@ class DefaultToolLoopSystemTest {
         settings.setStopOnConfirmationDenied(true);
         settings.setStopOnToolPolicyDenied(false);
 
-        router = new BotProperties.ModelRouterProperties();
-        router.setBalancedModel(MODEL_BALANCED);
-        router.setSmartModel("gpt-4o-smart");
-        router.setCodingModel("gpt-4o-coding");
-        router.setDeepModel("o3");
+        when(modelSelectionService.resolveForTier(any())).thenReturn(
+                new ModelSelectionService.ModelSelection(MODEL_BALANCED, null));
 
         when(viewBuilder.buildView(any(), any()))
                 .thenReturn(new ConversationView(List.of(), List.of()));
 
         turnSettings = new BotProperties.TurnProperties();
         system = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, viewBuilder,
-                turnSettings, settings, router, planService, clock);
+                turnSettings, settings, modelSelectionService, planService, clock);
     }
 
     private AgentContext buildContext() {
@@ -243,8 +244,8 @@ class DefaultToolLoopSystemTest {
 
         ToolExecutionOutcome outcome = new ToolExecutionOutcome(
                 TOOL_CALL_ID, TOOL_NAME,
-                ToolResult.failure(ToolFailureKind.CONFIRMATION_DENIED, "User denied"),
-                "User denied", false, null);
+                ToolResult.failure(ToolFailureKind.CONFIRMATION_DENIED, USER_DENIED),
+                USER_DENIED, false, null);
         when(toolExecutor.execute(any(), any())).thenReturn(outcome);
 
         ToolLoopTurnResult result = system.processTurn(context);
@@ -362,7 +363,7 @@ class DefaultToolLoopSystemTest {
     @Test
     void shouldUseDefaultsWhenSettingsAreNull() {
         DefaultToolLoopSystem nullSettingsSystem = new DefaultToolLoopSystem(
-                llmPort, toolExecutor, historyWriter, viewBuilder, null, router, planService, clock);
+                llmPort, toolExecutor, historyWriter, viewBuilder, null, modelSelectionService, planService, clock);
 
         AgentContext context = buildContext();
         LlmResponse response = finalResponse(CONTENT_HELLO);
@@ -373,10 +374,10 @@ class DefaultToolLoopSystemTest {
         assertTrue(result.finalAnswerReady());
     }
 
-    // ==================== Null router ====================
+    // ==================== Null modelSelectionService ====================
 
     @Test
-    void shouldUseNullModelWhenRouterIsNull() {
+    void shouldUseNullModelWhenModelSelectionServiceIsNull() {
         DefaultToolLoopSystem nullRouterSystem = new DefaultToolLoopSystem(
                 llmPort, toolExecutor, historyWriter, viewBuilder, settings, null, planService, clock);
 
@@ -617,6 +618,48 @@ class DefaultToolLoopSystemTest {
         assertFalse(replacedResponse.hasToolCalls(), "LLM_RESPONSE should have no tool calls after stop");
         assertTrue(replacedResponse.getContent().contains("reached max internal LLM calls"),
                 "LLM_RESPONSE content should contain the stop reason");
+    }
+
+    @Test
+    void shouldSetToolLoopLimitReachedWhenMaxLlmCallsExhausted() {
+        turnSettings.setMaxLlmCalls(1);
+        AgentContext context = buildContext();
+        Message.ToolCall tc = toolCall(TOOL_CALL_ID, TOOL_NAME);
+
+        LlmResponse withTools = toolCallResponse(List.of(tc));
+        when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(withTools));
+
+        ToolExecutionOutcome outcome = new ToolExecutionOutcome(
+                TOOL_CALL_ID, TOOL_NAME, ToolResult.success("ok"), "ok", false, null);
+        when(toolExecutor.execute(any(), any())).thenReturn(outcome);
+
+        system.processTurn(context);
+
+        Boolean limitReached = context.getAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REACHED);
+        assertTrue(Boolean.TRUE.equals(limitReached),
+                "TOOL_LOOP_LIMIT_REACHED should be set when LLM call limit exhausted");
+    }
+
+    @Test
+    void shouldNotSetToolLoopLimitReachedOnConfirmationDenied() {
+        settings.setStopOnConfirmationDenied(true);
+        AgentContext context = buildContext();
+        Message.ToolCall tc = toolCall(TOOL_CALL_ID, TOOL_NAME);
+
+        LlmResponse withTools = toolCallResponse(List.of(tc));
+        when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(withTools));
+
+        ToolExecutionOutcome outcome = new ToolExecutionOutcome(
+                TOOL_CALL_ID, TOOL_NAME,
+                ToolResult.failure(ToolFailureKind.CONFIRMATION_DENIED, USER_DENIED),
+                USER_DENIED, false, null);
+        when(toolExecutor.execute(any(), any())).thenReturn(outcome);
+
+        system.processTurn(context);
+
+        Boolean limitReached = context.getAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REACHED);
+        assertFalse(Boolean.TRUE.equals(limitReached),
+                "TOOL_LOOP_LIMIT_REACHED should NOT be set for confirmation denied stop");
     }
 
     // ==================== Conversation view diagnostics ====================

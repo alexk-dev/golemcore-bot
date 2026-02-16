@@ -238,6 +238,42 @@ export BOT_VOICE_TELEGRAM_RESPOND_WITH_VOICE=true
 - **Primary:** LLM starts response with voice prefix — auto-detected and synthesized
 - **Secondary:** `send_voice` tool for explicit voice output
 
+### Can I trigger the bot via HTTP webhooks?
+
+**Yes** — three endpoint types:
+
+| Endpoint | Purpose | Response |
+|----------|---------|----------|
+| `POST /api/hooks/wake` | Fire-and-forget event | 200 OK |
+| `POST /api/hooks/agent` | Full agent turn (async) | 202 Accepted |
+| `POST /api/hooks/{name}` | Custom mapped webhook | 200/202 |
+
+**Quick start:**
+```bash
+curl -X POST http://localhost:8080/api/hooks/wake \
+  -H "Authorization: Bearer your-token" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "CI build failed"}'
+```
+
+**Configuration:** Stored in UserPreferences (`settings.json`), not environment variables.
+
+**Authentication:** Bearer token or HMAC-SHA256 (for GitHub-style webhooks).
+
+**Custom mappings:** Transform raw JSON from external services using `{field.path}` templates:
+```json
+{
+  "name": "github-push",
+  "authMode": "hmac",
+  "hmacHeader": "x-hub-signature-256",
+  "hmacSecret": "secret",
+  "hmacPrefix": "sha256=",
+  "messageTemplate": "Push to {repository.name} by {pusher.name}"
+}
+```
+
+See: [docs/WEBHOOKS.md](docs/WEBHOOKS.md)
+
 ### Can it browse the web?
 
 **Yes** — via `BrowserTool`:

@@ -4,9 +4,9 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.CompactionService;
+import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.SessionPort;
-import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -14,8 +14,18 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 class AutoCompactionSystemTest {
 
@@ -25,15 +35,15 @@ class AutoCompactionSystemTest {
     private SessionPort sessionService;
     private CompactionService compactionService;
     private BotProperties properties;
-    private ModelConfigService modelConfigService;
+    private ModelSelectionService modelSelectionService;
     private AutoCompactionSystem system;
 
     @BeforeEach
     void setUp() {
         sessionService = mock(SessionPort.class);
         compactionService = mock(CompactionService.class);
-        modelConfigService = mock(ModelConfigService.class);
-        when(modelConfigService.getMaxInputTokens(anyString())).thenReturn(128000);
+        modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokens(any())).thenReturn(128000);
 
         properties = new BotProperties();
         properties.getAutoCompact().setEnabled(true);
@@ -42,7 +52,7 @@ class AutoCompactionSystemTest {
         properties.getAutoCompact().setSystemPromptOverheadTokens(100);
         properties.getAutoCompact().setCharsPerToken(1.0); // 1:1 for easy test math
 
-        system = new AutoCompactionSystem(sessionService, compactionService, properties, modelConfigService);
+        system = new AutoCompactionSystem(sessionService, compactionService, properties, modelSelectionService);
     }
 
     @Test
@@ -223,7 +233,7 @@ class AutoCompactionSystemTest {
     void usesModelMaxInputTokensWithCap() {
         // Model has 16K limit, 80% = 12800 tokens. Config max is 1000. Should use
         // min(12800, 1000) = 1000
-        when(modelConfigService.getMaxInputTokens(anyString())).thenReturn(16000);
+        when(modelSelectionService.resolveMaxInputTokens(anyString())).thenReturn(16000);
 
         // 20 chars + 100 overhead = 120 tokens, below 1000
         List<Message> small = List.of(

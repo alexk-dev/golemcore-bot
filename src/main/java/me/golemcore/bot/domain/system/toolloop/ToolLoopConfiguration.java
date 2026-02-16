@@ -1,5 +1,6 @@
 package me.golemcore.bot.domain.system.toolloop;
 
+import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder;
@@ -44,8 +45,8 @@ public class ToolLoopConfiguration {
     @Bean
     public ToolLoopSystem toolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutorPort,
             HistoryWriter historyWriter, ConversationViewBuilder viewBuilder, BotProperties botProperties,
-            PlanService planService) {
+            ModelSelectionService modelSelectionService, PlanService planService) {
         return new DefaultToolLoopSystem(llmPort, toolExecutorPort, historyWriter, viewBuilder,
-                botProperties.getTurn(), botProperties.getToolLoop(), botProperties.getRouter(), planService);
+                botProperties.getTurn(), botProperties.getToolLoop(), modelSelectionService, planService);
     }
 }

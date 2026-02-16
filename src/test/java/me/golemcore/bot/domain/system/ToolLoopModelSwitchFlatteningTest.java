@@ -6,6 +6,7 @@ import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.system.toolloop.DefaultHistoryWriter;
 import me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem;
 import me.golemcore.bot.domain.system.toolloop.ToolExecutorPort;
@@ -24,9 +25,13 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class ToolLoopModelSwitchFlatteningTest {
 
@@ -68,8 +73,9 @@ class ToolLoopModelSwitchFlatteningTest {
                 .modelTier("coding")
                 .build();
 
-        BotProperties.ModelRouterProperties router = new BotProperties.ModelRouterProperties();
-        router.setCodingModel("new");
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveForTier("coding")).thenReturn(
+                new ModelSelectionService.ModelSelection("new", null));
 
         AtomicReference<LlmRequest> captured = new AtomicReference<>();
         LlmPort llmPort = mock(LlmPort.class);
@@ -91,7 +97,7 @@ class ToolLoopModelSwitchFlatteningTest {
                 new DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
                 settings,
-                router,
+                modelSelectionService,
                 null,
                 Clock.fixed(Instant.parse("2026-02-01T00:00:00Z"), ZoneOffset.UTC));
 

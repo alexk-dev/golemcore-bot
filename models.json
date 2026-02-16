@@ -2,204 +2,253 @@
   "models": {
     "gpt-5.1": {
       "provider": "openai",
-      "reasoningRequired": true,
+      "displayName": "GPT-5.1",
       "supportsTemperature": false,
-      "maxInputTokens": 1000000
+      "reasoning": {
+        "default": "medium",
+        "levels": {
+          "low":    { "maxInputTokens": 1000000 },
+          "medium": { "maxInputTokens": 1000000 },
+          "high":   { "maxInputTokens": 500000 },
+          "xhigh":  { "maxInputTokens": 250000 }
+        }
+      }
     },
     "gpt-5.2": {
       "provider": "openai",
-      "reasoningRequired": true,
+      "displayName": "GPT-5.2",
       "supportsTemperature": false,
-      "maxInputTokens": 1000000
+      "reasoning": {
+        "default": "medium",
+        "levels": {
+          "low":    { "maxInputTokens": 1000000 },
+          "medium": { "maxInputTokens": 1000000 },
+          "high":   { "maxInputTokens": 500000 },
+          "xhigh":  { "maxInputTokens": 250000 }
+        }
+      }
     },
     "gpt-5-mini": {
       "provider": "openai",
-      "reasoningRequired": true,
+      "displayName": "GPT-5 Mini",
       "supportsTemperature": false,
-      "maxInputTokens": 1000000
+      "reasoning": {
+        "default": "medium",
+        "levels": {
+          "low":    { "maxInputTokens": 1000000 },
+          "medium": { "maxInputTokens": 1000000 },
+          "high":   { "maxInputTokens": 500000 }
+        }
+      }
     },
     "gpt-4o": {
       "provider": "openai",
-      "reasoningRequired": false,
+      "displayName": "GPT-4o",
       "supportsTemperature": true,
       "maxInputTokens": 128000
     },
     "gpt-4-turbo": {
       "provider": "openai",
-      "reasoningRequired": false,
+      "displayName": "GPT-4 Turbo",
       "supportsTemperature": true,
       "maxInputTokens": 128000
     },
     "o1": {
       "provider": "openai",
-      "reasoningRequired": true,
+      "displayName": "o1",
       "supportsTemperature": false,
-      "maxInputTokens": 200000
+      "reasoning": {
+        "default": "medium",
+        "levels": {
+          "low":    { "maxInputTokens": 200000 },
+          "medium": { "maxInputTokens": 200000 },
+          "high":   { "maxInputTokens": 200000 }
+        }
+      }
     },
     "o3": {
       "provider": "openai",
-      "reasoningRequired": true,
+      "displayName": "o3",
       "supportsTemperature": false,
-      "maxInputTokens": 200000
+      "reasoning": {
+        "default": "medium",
+        "levels": {
+          "low":    { "maxInputTokens": 200000 },
+          "medium": { "maxInputTokens": 200000 },
+          "high":   { "maxInputTokens": 200000 }
+        }
+      }
     },
     "o3-mini": {
       "provider": "openai",
-      "reasoningRequired": true,
+      "displayName": "o3 Mini",
       "supportsTemperature": false,
-      "maxInputTokens": 128000
+      "reasoning": {
+        "default": "medium",
+        "levels": {
+          "low":    { "maxInputTokens": 128000 },
+          "medium": { "maxInputTokens": 128000 },
+          "high":   { "maxInputTokens": 128000 }
+        }
+      }
     },
     "claude-sonnet-4-20250514": {
       "provider": "anthropic",
-      "reasoningRequired": false,
+      "displayName": "Claude Sonnet 4",
       "supportsTemperature": true,
       "maxInputTokens": 200000
     },
     "claude-3-5-sonnet": {
       "provider": "anthropic",
-      "reasoningRequired": false,
+      "displayName": "Claude 3.5 Sonnet",
       "supportsTemperature": true,
       "maxInputTokens": 200000
     },
     "claude-3-opus": {
       "provider": "anthropic",
-      "reasoningRequired": false,
+      "displayName": "Claude 3 Opus",
       "supportsTemperature": true,
       "maxInputTokens": 200000
     },
     "claude-3-haiku": {
       "provider": "anthropic",
-      "reasoningRequired": false,
+      "displayName": "Claude 3 Haiku",
       "supportsTemperature": true,
       "maxInputTokens": 200000
     },
 
     "glm-4-plus": {
       "provider": "zhipu",
-      "reasoningRequired": false,
+      "displayName": "GLM-4 Plus",
       "supportsTemperature": true,
       "maxInputTokens": 128000
     },
     "glm-4": {
       "provider": "zhipu",
-      "reasoningRequired": false,
+      "displayName": "GLM-4",
       "supportsTemperature": true,
       "maxInputTokens": 128000
     },
     "glm-4-air": {
       "provider": "zhipu",
-      "reasoningRequired": false,
+      "displayName": "GLM-4 Air",
       "supportsTemperature": true,
       "maxInputTokens": 128000
     },
     "glm-4-flash": {
       "provider": "zhipu",
-      "reasoningRequired": false,
+      "displayName": "GLM-4 Flash",
       "supportsTemperature": true,
       "maxInputTokens": 128000
     },
     "glm-4-long": {
       "provider": "zhipu",
-      "reasoningRequired": false,
+      "displayName": "GLM-4 Long",
       "supportsTemperature": true,
       "maxInputTokens": 1000000
     },
 
     "qwen-max": {
       "provider": "qwen",
-      "reasoningRequired": false,
+      "displayName": "Qwen Max",
       "supportsTemperature": true,
       "maxInputTokens": 32000
     },
     "qwen-plus": {
       "provider": "qwen",
-      "reasoningRequired": false,
+      "displayName": "Qwen Plus",
       "supportsTemperature": true,
       "maxInputTokens": 131072
     },
     "qwen-turbo": {
       "provider": "qwen",
-      "reasoningRequired": false,
+      "displayName": "Qwen Turbo",
       "supportsTemperature": true,
       "maxInputTokens": 131072
     },
     "qwen2.5-72b-instruct": {
       "provider": "qwen",
-      "reasoningRequired": false,
+      "displayName": "Qwen 2.5 72B",
       "supportsTemperature": true,
       "maxInputTokens": 131072
     },
     "qwen2.5-32b-instruct": {
       "provider": "qwen",
-      "reasoningRequired": false,
+      "displayName": "Qwen 2.5 32B",
       "supportsTemperature": true,
       "maxInputTokens": 131072
     },
     "qwen-3-32b": {
       "provider": "qwen",
-      "reasoningRequired": false,
+      "displayName": "Qwen 3 32B",
       "supportsTemperature": true,
       "maxInputTokens": 131072
     },
     "qwen2.5-14b-instruct": {
       "provider": "qwen",
-      "reasoningRequired": false,
+      "displayName": "Qwen 2.5 14B",
       "supportsTemperature": true,
       "maxInputTokens": 131072
     },
     "qwen2.5-7b-instruct": {
       "provider": "qwen",
-      "reasoningRequired": false,
+      "displayName": "Qwen 2.5 7B",
       "supportsTemperature": true,
       "maxInputTokens": 131072
     },
     "qwq-32b": {
       "provider": "qwen",
-      "reasoningRequired": true,
+      "displayName": "QwQ 32B",
       "supportsTemperature": true,
-      "maxInputTokens": 131072
+      "reasoning": {
+        "default": "medium",
+        "levels": {
+          "low":    { "maxInputTokens": 131072 },
+          "medium": { "maxInputTokens": 131072 },
+          "high":   { "maxInputTokens": 131072 }
+        }
+      }
     },
 
     "gpt-oss-120b": {
       "provider": "cerebras",
-      "reasoningRequired": false,
+      "displayName": "GPT-OSS 120B",
       "supportsTemperature": true,
       "maxInputTokens": 131072
     },
     "zai-glm-4.7": {
       "provider": "cerebras",
-      "reasoningRequired": false,
+      "displayName": "ZAI GLM-4.7",
       "supportsTemperature": true,
       "maxInputTokens": 131072
     },
     "llama-3.3-70b": {
       "provider": "cerebras",
-      "reasoningRequired": false,
+      "displayName": "Llama 3.3 70B",
       "supportsTemperature": true,
       "maxInputTokens": 131072
     },
 
     "deepinfra/openai/gpt-oss-120b": {
       "provider": "deepinfra",
-      "reasoningRequired": false,
+      "displayName": "GPT-OSS 120B (DeepInfra)",
       "supportsTemperature": true,
       "maxInputTokens": 131072
     },
     "deepinfra/deepseek-ai/DeepSeek-V3.2": {
       "provider": "deepinfra",
-      "reasoningRequired": false,
+      "displayName": "DeepSeek V3.2 (DeepInfra)",
       "supportsTemperature": true,
       "maxInputTokens": 163840
     },
     "deepinfra/moonshotai/Kimi-K2.5": {
       "provider": "deepinfra",
-      "reasoningRequired": false,
+      "displayName": "Kimi K2.5 (DeepInfra)",
       "supportsTemperature": true,
       "maxInputTokens": 262144
     }
   },
   "defaults": {
-    "provider": "openai",
-    "reasoningRequired": false,
     "supportsTemperature": true,
     "maxInputTokens": 128000
   }

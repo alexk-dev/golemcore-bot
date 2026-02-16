@@ -132,9 +132,12 @@ class Langchain4jAdapterTest {
         openaiProps.setApiKey(KEY);
         properties.getLlm().getLangchain4j().getProviders().put(OPENAI, openaiProps);
 
-        ModelConfigService.ModelSettings openaiSettings = new ModelConfigService.ModelSettings(OPENAI, false, true);
-        ModelConfigService.ModelSettings anthropicSettings = new ModelConfigService.ModelSettings("anthropic", false,
-                true);
+        ModelConfigService.ModelSettings openaiSettings = new ModelConfigService.ModelSettings();
+        openaiSettings.setProvider(OPENAI);
+        openaiSettings.setSupportsTemperature(true);
+        ModelConfigService.ModelSettings anthropicSettings = new ModelConfigService.ModelSettings();
+        anthropicSettings.setProvider("anthropic");
+        anthropicSettings.setSupportsTemperature(true);
 
         when(modelConfig.getAllModels()).thenReturn(Map.of(
                 "gpt-4o", openaiSettings,
