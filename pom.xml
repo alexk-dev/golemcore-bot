@@ -30,7 +30,7 @@
         <telegram.version>9.3.0</telegram.version>
         <langchain4j.version>1.11.0</langchain4j.version>
         <playwright.version>1.49.0</playwright.version>
-        <jjwt.version>0.12.6</jjwt.version>
+        <jjwt.version>0.13.0</jjwt.version>
         <totp.version>1.7.1</totp.version>
 
         <spotbugs.version>4.9.8.2</spotbugs.version>
