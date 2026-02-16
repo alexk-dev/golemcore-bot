@@ -24,9 +24,10 @@ import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.LlmUsage;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import me.golemcore.bot.port.outbound.LlmPort;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -115,7 +116,6 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     private static final java.util.regex.Pattern RESET_SECONDS_PATTERN = java.util.regex.Pattern
             .compile("\"reset_seconds\"\\s*:\\s*(\\d+)");
 
-    private final BotProperties properties;
     private final RuntimeConfigService runtimeConfigService;
     private final ModelConfigService modelConfig;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -161,11 +161,10 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         }
     }
 
-    private BotProperties.ProviderProperties getProviderConfig(String providerName) {
-        var config = properties.getLlm().getLangchain4j().getProviders().get(providerName);
+    private RuntimeConfig.LlmProviderConfig getProviderConfig(String providerName) {
+        RuntimeConfig.LlmProviderConfig config = runtimeConfigService.getLlmProviderConfig(providerName);
         if (config == null) {
-            throw new IllegalStateException("Provider not configured: " + providerName
-                    + ". Add bot.llm.langchain4j.providers." + providerName + ".api-key");
+            throw new IllegalStateException("Provider not configured in runtime config: " + providerName);
         }
         return config;
     }
@@ -179,7 +178,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
      */
     private ChatModel createModel(String model, String reasoningEffort) {
         String provider = getProvider(model);
-        BotProperties.ProviderProperties config = getProviderConfig(provider);
+        RuntimeConfig.LlmProviderConfig config = getProviderConfig(provider);
         String modelName = stripProviderPrefix(model);
 
         if (PROVIDER_ANTHROPIC.equals(provider)) {
@@ -190,13 +189,18 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         }
     }
 
-    private ChatModel createAnthropicModel(String modelName, BotProperties.ProviderProperties config) {
+    private ChatModel createAnthropicModel(String modelName, RuntimeConfig.LlmProviderConfig config) {
+        String apiKey = Secret.valueOrEmpty(config.getApiKey());
+        if (apiKey.isBlank()) {
+            throw new IllegalStateException("Missing apiKey for provider anthropic in runtime config");
+        }
         var builder = AnthropicChatModel.builder()
-                .apiKey(config.getApiKey())
+                .apiKey(apiKey)
                 .modelName(modelName)
                 .maxRetries(0) // Retry handled by our backoff logic
                 .maxTokens(4096)
-                .timeout(properties.getLlm().getRequestTimeout());
+                .timeout(java.time.Duration.ofSeconds(
+                        config.getRequestTimeoutSeconds() != null ? config.getRequestTimeoutSeconds() : 300));
 
         if (config.getBaseUrl() != null) {
             builder.baseUrl(config.getBaseUrl());
@@ -210,12 +214,17 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     }
 
     private ChatModel createOpenAiModel(String modelName, String fullModel,
-            String reasoningEffort, BotProperties.ProviderProperties config) {
+            String reasoningEffort, RuntimeConfig.LlmProviderConfig config) {
+        String apiKey = Secret.valueOrEmpty(config.getApiKey());
+        if (apiKey.isBlank()) {
+            throw new IllegalStateException("Missing apiKey for provider in runtime config");
+        }
         var builder = OpenAiChatModel.builder()
-                .apiKey(config.getApiKey())
+                .apiKey(apiKey)
                 .modelName(modelName)
                 .maxRetries(0) // Retry handled by our backoff logic
-                .timeout(properties.getLlm().getRequestTimeout());
+                .timeout(java.time.Duration.ofSeconds(
+                        config.getRequestTimeoutSeconds() != null ? config.getRequestTimeoutSeconds() : 300));
 
         if (config.getBaseUrl() != null) {
             builder.baseUrl(config.getBaseUrl());
@@ -252,6 +261,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             ChatModel modelToUse = getModelForRequest(request);
             List<ChatMessage> messages = convertMessages(request);
             List<ToolSpecification> tools = convertTools(request);
+            boolean compatibilityFlatteningApplied = false;
 
             for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
                 try {
@@ -267,7 +277,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                         response = modelToUse.chat(messages);
                     }
 
-                    return convertResponse(response);
+                    return convertResponse(response, compatibilityFlatteningApplied);
                 } catch (Exception e) {
                     if (isRateLimitError(e) && attempt < MAX_RETRIES) {
                         long exponentialBackoffMs = (long) (INITIAL_BACKOFF_MS * Math.pow(BACKOFF_MULTIPLIER, attempt));
@@ -279,11 +289,16 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                                 attempt + 1, MAX_RETRIES, backoffMs,
                                 resetSeconds > 0 ? " (server requested " + resetSeconds + "s)" : "");
                         try {
-                            Thread.sleep(backoffMs);
+                            sleepBeforeRetry(backoffMs);
                         } catch (InterruptedException ie) {
                             Thread.currentThread().interrupt();
                             throw new RuntimeException("LLM chat interrupted during retry backoff", ie);
                         }
+                    } else if (!compatibilityFlatteningApplied && isUnsupportedFunctionRoleError(e)) {
+                        compatibilityFlatteningApplied = true;
+                        messages = convertMessagesWithFlattenedToolHistory(request);
+                        log.warn(
+                                "[LLM] Retrying request with flattened tool history due to unsupported function/tool role");
                     } else {
                         log.error("LLM chat failed", e);
                         throw new RuntimeException("LLM chat failed: " + e.getMessage(), e);
@@ -385,14 +400,15 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     public List<String> getSupportedModels() {
         // Build from models.json — provider/modelName for each configured provider
         List<String> models = new ArrayList<>();
-        var providers = properties.getLlm().getLangchain4j().getProviders();
-        var modelsConfig = modelConfig.getAllModels();
+        Map<String, me.golemcore.bot.infrastructure.config.ModelConfigService.ModelSettings> modelsConfig = modelConfig
+                .getAllModels();
 
         if (modelsConfig != null) {
-            for (var entry : modelsConfig.entrySet()) {
+            for (Map.Entry<String, me.golemcore.bot.infrastructure.config.ModelConfigService.ModelSettings> entry : modelsConfig
+                    .entrySet()) {
                 String modelName = entry.getKey();
                 String provider = entry.getValue().getProvider();
-                if (providers.containsKey(provider)) {
+                if (runtimeConfigService.hasLlmProviderApiKey(provider)) {
                     models.add(provider + "/" + modelName);
                 }
             }
@@ -407,8 +423,8 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
 
     @Override
     public boolean isAvailable() {
-        return properties.getLlm().getLangchain4j().getProviders().values().stream()
-                .anyMatch(p -> p.getApiKey() != null && !p.getApiKey().isBlank());
+        return runtimeConfigService.getConfiguredLlmProviders().stream()
+                .anyMatch(runtimeConfigService::hasLlmProviderApiKey);
     }
 
     @Override
@@ -420,18 +436,31 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     };
 
     private List<ChatMessage> convertMessages(LlmRequest request) {
+        return convertMessages(request.getSystemPrompt(), request.getMessages());
+    }
+
+    private List<ChatMessage> convertMessagesWithFlattenedToolHistory(LlmRequest request) {
+        List<Message> flattenedMessages = Message.flattenToolMessages(request.getMessages());
+        return convertMessages(request.getSystemPrompt(), flattenedMessages);
+    }
+
+    private List<ChatMessage> convertMessages(String systemPrompt, List<Message> requestMessages) {
         List<ChatMessage> messages = new ArrayList<>();
 
         // Add system message
-        if (request.getSystemPrompt() != null && !request.getSystemPrompt().isBlank()) {
-            messages.add(SystemMessage.from(request.getSystemPrompt()));
+        if (systemPrompt != null && !systemPrompt.isBlank()) {
+            messages.add(SystemMessage.from(systemPrompt));
         }
 
         // Convert conversation messages — tool call IDs and names are passed through
         // as-is. Model switches are handled upstream by ToolLoop/request-time
         // conversation view building which
         // flattens tool messages to plain text before they reach the adapter.
-        for (Message msg : request.getMessages()) {
+        if (requestMessages == null) {
+            return messages;
+        }
+
+        for (Message msg : requestMessages) {
             switch (msg.getRole()) {
             case "user" -> messages.add(toUserMessage(msg));
             case "assistant" -> {
@@ -445,21 +474,39 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                             .toList();
                     messages.add(AiMessage.from(toolRequests));
                 } else {
-                    messages.add(AiMessage.from(msg.getContent()));
+                    messages.add(AiMessage.from(nonNullText(msg.getContent())));
                 }
             }
             case "tool" -> {
                 messages.add(ToolExecutionResultMessage.from(
                         msg.getToolCallId(),
                         msg.getToolName(),
-                        msg.getContent()));
+                        nonNullText(msg.getContent())));
             }
-            case "system" -> messages.add(SystemMessage.from(msg.getContent()));
+            case "system" -> messages.add(SystemMessage.from(nonNullText(msg.getContent())));
             default -> log.warn("Unknown message role: {}, treating as user message", msg.getRole());
             }
         }
 
         return messages;
+    }
+
+    private String nonNullText(String text) {
+        return text != null ? text : "";
+    }
+
+    private boolean isUnsupportedFunctionRoleError(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null
+                    && message.contains("unsupported_value")
+                    && message.contains("does not support 'function'")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     @SuppressWarnings("unchecked")
@@ -630,7 +677,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         }
     }
 
-    private LlmResponse convertResponse(ChatResponse response) {
+    private LlmResponse convertResponse(ChatResponse response, boolean compatibilityFlatteningApplied) {
         AiMessage aiMessage = response.aiMessage();
 
         // Convert tool calls if present
@@ -661,6 +708,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 .usage(usage)
                 .model(currentModel)
                 .finishReason(response.finishReason() != null ? response.finishReason().name() : "stop")
+                .compatibilityFlatteningApplied(compatibilityFlatteningApplied)
                 .build();
     }
 
@@ -686,5 +734,9 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             log.warn("Failed to parse tool arguments: {}", e.getMessage());
             return Collections.emptyMap();
         }
+    }
+
+    protected void sleepBeforeRetry(long backoffMs) throws InterruptedException {
+        Thread.sleep(backoffMs);
     }
 }

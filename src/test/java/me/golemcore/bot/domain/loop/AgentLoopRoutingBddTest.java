@@ -28,7 +28,6 @@ import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.system.AgentSystem;
 import me.golemcore.bot.domain.system.ResponseRoutingSystem;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.RateLimitPort;
@@ -58,9 +57,6 @@ class AgentLoopRoutingBddTest {
         // Given
         SessionPort sessionPort = mock(SessionPort.class);
         RateLimitPort rateLimitPort = mock(RateLimitPort.class);
-
-        BotProperties props = new BotProperties();
-        props.getAgent().setMaxIterations(2);
 
         UserPreferencesService preferencesService = mock(UserPreferencesService.class);
         // NOTE: getMessage(key, args...) is varargs, so exact matching on (key, 2)
@@ -133,7 +129,6 @@ class AgentLoopRoutingBddTest {
         AgentLoop loop = new AgentLoop(
                 sessionPort,
                 rateLimitPort,
-                props,
                 List.of(requester, routing),
                 List.of(channel),
                 mockRuntimeConfigService(2),

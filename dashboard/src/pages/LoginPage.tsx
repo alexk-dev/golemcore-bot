@@ -14,7 +14,7 @@ export default function LoginPage() {
   const nav = useNavigate();
 
   useEffect(() => {
-    if (token) nav('/', { replace: true });
+    if (token) {nav('/', { replace: true });}
   }, [token, nav]);
 
   useEffect(() => {

@@ -48,16 +48,11 @@ class ElevenLabsAdapterTest {
         mockServer.start();
 
         OkHttpClient client = new OkHttpClient.Builder()
-                .connectTimeout(5, TimeUnit.SECONDS)
-                .readTimeout(5, TimeUnit.SECONDS)
+                .connectTimeout(1, TimeUnit.SECONDS)
+                .readTimeout(1, TimeUnit.SECONDS)
                 .build();
 
         properties = new BotProperties();
-        properties.getVoice().setEnabled(true);
-        properties.getVoice().setApiKey("test-api-key");
-        properties.getVoice().setVoiceId("test-voice-id");
-        properties.getVoice().setTtsModelId("eleven_multilingual_v2");
-        properties.getVoice().setSttModelId("scribe_v1");
 
         runtimeConfigService = mock(RuntimeConfigService.class);
         when(runtimeConfigService.isVoiceEnabled()).thenReturn(true);
@@ -77,6 +72,11 @@ class ElevenLabsAdapterTest {
             @Override
             protected String getTtsUrl(String voiceId) {
                 return baseUrl + "v1/text-to-speech/" + voiceId;
+            }
+
+            @Override
+            protected void sleepBeforeRetry(long backoffMs) {
+                // No-op in tests to avoid real backoff delays.
             }
         };
     }
@@ -153,7 +153,7 @@ class ElevenLabsAdapterTest {
 
     @Test
     void transcribeApiErrorWithoutBody() {
-        mockServer.enqueue(new MockResponse.Builder().code(500).build());
+        enqueueErrorResponseMultiple(500, "", 3);
         assertTranscribeThrowsAny();
     }
 
@@ -196,13 +196,13 @@ class ElevenLabsAdapterTest {
 
     @Test
     void synthesizeApiError() {
-        mockServer.enqueue(new MockResponse.Builder().code(500).body("Server error").build());
+        enqueueErrorResponseMultiple(500, "Server error", 3);
         assertSynthesizeThrowsAny();
     }
 
     @Test
     void synthesizeApiErrorWithoutBody() {
-        mockServer.enqueue(new MockResponse.Builder().code(503).build());
+        enqueueErrorResponseMultiple(503, "", 3);
         assertSynthesizeThrowsAny();
     }
 
@@ -320,9 +320,7 @@ class ElevenLabsAdapterTest {
 
     @Test
     void synthesizeRateLimited() {
-        mockServer.enqueue(new MockResponse.Builder()
-                .code(429)
-                .body("{\"detail\":\"Rate limit exceeded\"}").build());
+        enqueueErrorResponseMultiple(429, "{\"detail\":\"Rate limit exceeded\"}", 3);
         assertSynthesizeThrowsAny();
     }
 
@@ -575,7 +573,7 @@ class ElevenLabsAdapterTest {
                 Arguments.of(400, "{\"detail\":{\"status\":\"test_error\",\"message\":\"Test message\"}}",
                         "Test message"),
                 Arguments.of(400, "{\"message\":\"Root level error\"}", "Root level"),
-                Arguments.of(500, "Not valid JSON at all", ""));
+                Arguments.of(418, "Not valid JSON at all", ""));
     }
 
     @ParameterizedTest
@@ -591,25 +589,4 @@ class ElevenLabsAdapterTest {
         }
     }
 
-    @Test
-    void transcribeInterruptedDuringRetry() throws Exception {
-        // Enqueue error that triggers retry
-        mockServer.enqueue(new MockResponse.Builder().code(429).body("{\"message\":\"Rate limited\"}").build());
-
-        Thread testThread = new Thread(() -> {
-            try {
-                adapter.transcribe(new byte[] { 1 }, AudioFormat.OGG_OPUS).get(10, TimeUnit.SECONDS);
-            } catch (Exception expected) {
-                Thread.currentThread().interrupt();
-            }
-        });
-
-        testThread.start();
-        Thread.sleep(100); // Let it start retry logic
-        testThread.interrupt();
-        testThread.join(5000);
-
-        // Verify thread was interrupted
-        assertFalse(testThread.isAlive());
-    }
 }

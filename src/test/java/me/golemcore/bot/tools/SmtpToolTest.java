@@ -8,6 +8,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import jakarta.mail.MessagingException;
+import jakarta.mail.internet.MimeMessage;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -324,15 +326,9 @@ class SmtpToolTest {
         params.put(PARAM_BODY, "Hello");
         params.put("cc", "   ");
 
-        // This should NOT fail on CC validation — blank CC is skipped
-        // It will fail on Transport.send() since we have no real SMTP server,
-        // but it proves the CC validation was skipped
         ToolResult result = tool.execute(params).get();
 
-        // Either success (unlikely without real SMTP) or error NOT about invalid email
-        if (!result.isSuccess()) {
-            assertFalse(result.getError().contains("Invalid email"));
-        }
+        assertTrue(result.isSuccess());
     }
 
     @Test
@@ -348,9 +344,7 @@ class SmtpToolTest {
 
         ToolResult result = tool.execute(params).get();
 
-        if (!result.isSuccess()) {
-            assertFalse(result.getError().contains("Invalid email"));
-        }
+        assertTrue(result.isSuccess());
     }
 
     // ==================== reply_email ====================
@@ -427,23 +421,21 @@ class SmtpToolTest {
 
     @Test
     void shouldHandleSmtpConnectionError() throws ExecutionException, InterruptedException {
-        SmtpTool tool = createConfiguredTool();
+        SmtpTool tool = createConfiguredFailingTool();
 
-        // Attempting to send with a fake SMTP host will throw
         ToolResult result = tool.execute(Map.of(
                 PARAM_OPERATION, OP_SEND_EMAIL,
                 PARAM_TO, TEST_RECIPIENT,
                 PARAM_SUBJECT, "Test",
                 PARAM_BODY, "Hello")).get();
 
-        // Should fail gracefully with SMTP error, not crash
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("SMTP"));
     }
 
     @Test
     void shouldHandleReplyConnectionError() throws ExecutionException, InterruptedException {
-        SmtpTool tool = createConfiguredTool();
+        SmtpTool tool = createConfiguredFailingTool();
 
         Map<String, Object> params = new HashMap<>();
         params.put(PARAM_OPERATION, OP_REPLY_EMAIL);
@@ -460,7 +452,7 @@ class SmtpToolTest {
 
     @Test
     void shouldHandleReplyWithReferencesConnectionError() throws ExecutionException, InterruptedException {
-        SmtpTool tool = createConfiguredTool();
+        SmtpTool tool = createConfiguredFailingTool();
 
         Map<String, Object> params = new HashMap<>();
         params.put(PARAM_OPERATION, OP_REPLY_EMAIL);
@@ -472,7 +464,6 @@ class SmtpToolTest {
 
         ToolResult result = tool.execute(params).get();
 
-        // Will fail due to no real SMTP, but exercises the reply headers code path
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("SMTP"));
     }
@@ -489,13 +480,13 @@ class SmtpToolTest {
 
         ToolResult result = tool.execute(params).get();
 
-        // Will fail at transport but exercises the Re: prefix detection path
-        assertFalse(result.isSuccess());
+        assertTrue(result.isSuccess());
+        assertTrue(result.getOutput().contains("Re: Already prefixed"));
     }
 
     @Test
     void shouldHandleHtmlSendAttempt() throws ExecutionException, InterruptedException {
-        SmtpTool tool = createConfiguredTool();
+        SmtpTool tool = createConfiguredFailingTool();
 
         Map<String, Object> params = new HashMap<>();
         params.put(PARAM_OPERATION, OP_SEND_EMAIL);
@@ -506,14 +497,13 @@ class SmtpToolTest {
 
         ToolResult result = tool.execute(params).get();
 
-        // Will fail at transport, but exercises html=true code path
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("SMTP"));
     }
 
     @Test
     void shouldHandleSendWithValidCcAndBcc() throws ExecutionException, InterruptedException {
-        SmtpTool tool = createConfiguredTool();
+        SmtpTool tool = createConfiguredFailingTool();
 
         Map<String, Object> params = new HashMap<>();
         params.put(PARAM_OPERATION, OP_SEND_EMAIL);
@@ -525,7 +515,6 @@ class SmtpToolTest {
 
         ToolResult result = tool.execute(params).get();
 
-        // Will fail at transport, but exercises CC/BCC address setting
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("SMTP"));
     }
@@ -541,6 +530,21 @@ class SmtpToolTest {
 
     private SmtpTool createConfiguredTool() {
         configureProperties();
-        return new SmtpTool(runtimeConfigService);
+        return new SmtpTool(runtimeConfigService) {
+            @Override
+            protected void deliver(MimeMessage message) {
+                // No-op in tests to avoid real SMTP connections.
+            }
+        };
+    }
+
+    private SmtpTool createConfiguredFailingTool() {
+        configureProperties();
+        return new SmtpTool(runtimeConfigService) {
+            @Override
+            protected void deliver(MimeMessage message) throws MessagingException {
+                throw new MessagingException("Simulated SMTP failure");
+            }
+        };
     }
 }

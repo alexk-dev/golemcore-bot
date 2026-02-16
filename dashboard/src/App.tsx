@@ -1,41 +1,56 @@
+import { Suspense, lazy } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store/authStore';
 import DashboardLayout from './components/layout/DashboardLayout';
-import LoginPage from './pages/LoginPage';
-import ChatPage from './pages/ChatPage';
-import AnalyticsPage from './pages/AnalyticsPage';
-import SettingsPage from './pages/SettingsPage';
-import PromptsPage from './pages/PromptsPage';
-import SkillsPage from './pages/SkillsPage';
-import SessionsPage from './pages/SessionsPage';
-import DiagnosticsPage from './pages/DiagnosticsPage';
+
+const LoginPage = lazy(() => import('./pages/LoginPage'));
+const ChatPage = lazy(() => import('./pages/ChatPage'));
+const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const PromptsPage = lazy(() => import('./pages/PromptsPage'));
+const SkillsPage = lazy(() => import('./pages/SkillsPage'));
+const SessionsPage = lazy(() => import('./pages/SessionsPage'));
+const DiagnosticsPage = lazy(() => import('./pages/DiagnosticsPage'));
+
+function RouteFallback() {
+  return <div className="dashboard-main text-secondary">Loading...</div>;
+}
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.accessToken);
-  if (!token) return <Navigate to="/login" replace />;
+  if (!token) {return <Navigate to="/login" replace />;}
   return <>{children}</>;
 }
 
 export default function App() {
   return (
     <Routes>
-      <Route path="/login" element={<LoginPage />} />
+      <Route
+        path="/login"
+        element={
+          <Suspense fallback={<RouteFallback />}>
+            <LoginPage />
+          </Suspense>
+        }
+      />
       <Route
         path="/*"
         element={
           <ProtectedRoute>
             <DashboardLayout>
-              <Routes>
-                <Route path="/" element={<ChatPage />} />
-                <Route path="/chat" element={<ChatPage />} />
-                <Route path="/analytics" element={<AnalyticsPage />} />
-                <Route path="/settings" element={<SettingsPage />} />
-                <Route path="/settings/:section" element={<SettingsPage />} />
-                <Route path="/prompts" element={<PromptsPage />} />
-                <Route path="/skills" element={<SkillsPage />} />
-                <Route path="/sessions" element={<SessionsPage />} />
-                <Route path="/diagnostics" element={<DiagnosticsPage />} />
-              </Routes>
+              <Suspense fallback={<RouteFallback />}>
+                <Routes>
+                  <Route path="/" element={<ChatPage />} />
+                  <Route path="/chat" element={<ChatPage />} />
+                  <Route path="/analytics" element={<AnalyticsPage />} />
+                  <Route path="/settings" element={<SettingsPage />} />
+                  <Route path="/settings/:section" element={<SettingsPage />} />
+                  <Route path="/prompts" element={<PromptsPage />} />
+                  <Route path="/skills" element={<SkillsPage />} />
+                  <Route path="/sessions" element={<SessionsPage />} />
+                  <Route path="/diagnostics" element={<DiagnosticsPage />} />
+                </Routes>
+              </Suspense>
             </DashboardLayout>
           </ProtectedRoute>
         }

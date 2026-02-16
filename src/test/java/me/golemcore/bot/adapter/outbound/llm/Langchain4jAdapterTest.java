@@ -4,9 +4,9 @@ import me.golemcore.bot.domain.model.LlmChunk;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
@@ -66,14 +66,12 @@ class Langchain4jAdapterTest {
     private static final String TEST = "test";
     private static final String TEST_CAPITALIZED = "Test";
 
-    private BotProperties properties;
     private ModelConfigService modelConfig;
     private RuntimeConfigService runtimeConfigService;
     private Langchain4jAdapter adapter;
 
     @BeforeEach
     void setUp() {
-        properties = new BotProperties();
         modelConfig = mock(ModelConfigService.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
         when(modelConfig.supportsTemperature(anyString())).thenReturn(true);
@@ -83,8 +81,17 @@ class Langchain4jAdapterTest {
         when(runtimeConfigService.getTemperature()).thenReturn(0.7);
         when(runtimeConfigService.getBalancedModel()).thenReturn(OPENAI + "/gpt-5.1");
         when(runtimeConfigService.getBalancedModelReasoning()).thenReturn("medium");
+        when(runtimeConfigService.getConfiguredLlmProviders()).thenReturn(List.of());
+        when(runtimeConfigService.hasLlmProviderApiKey(anyString())).thenReturn(false);
+        when(runtimeConfigService.getLlmProviderConfig(anyString()))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder().build());
 
-        adapter = new Langchain4jAdapter(properties, runtimeConfigService, modelConfig);
+        adapter = new Langchain4jAdapter(runtimeConfigService, modelConfig) {
+            @Override
+            protected void sleepBeforeRetry(long backoffMs) {
+                // No-op for deterministic fast retry tests.
+            }
+        };
     }
 
     // ===== getProviderId =====
@@ -98,9 +105,8 @@ class Langchain4jAdapterTest {
 
     @Test
     void shouldBeAvailableWhenApiKeyConfigured() {
-        BotProperties.ProviderProperties providerProps = new BotProperties.ProviderProperties();
-        providerProps.setApiKey("test-key");
-        properties.getLlm().getLangchain4j().getProviders().put(OPENAI, providerProps);
+        when(runtimeConfigService.getConfiguredLlmProviders()).thenReturn(List.of(OPENAI));
+        when(runtimeConfigService.hasLlmProviderApiKey(OPENAI)).thenReturn(true);
 
         assertTrue(adapter.isAvailable());
     }
@@ -112,9 +118,8 @@ class Langchain4jAdapterTest {
 
     @Test
     void shouldNotBeAvailableWhenApiKeyBlank() {
-        BotProperties.ProviderProperties providerProps = new BotProperties.ProviderProperties();
-        providerProps.setApiKey("  ");
-        properties.getLlm().getLangchain4j().getProviders().put(OPENAI, providerProps);
+        when(runtimeConfigService.getConfiguredLlmProviders()).thenReturn(List.of(OPENAI));
+        when(runtimeConfigService.hasLlmProviderApiKey(OPENAI)).thenReturn(false);
 
         assertFalse(adapter.isAvailable());
     }
@@ -137,9 +142,8 @@ class Langchain4jAdapterTest {
 
     @Test
     void shouldReturnModelsFromConfig() {
-        BotProperties.ProviderProperties openaiProps = new BotProperties.ProviderProperties();
-        openaiProps.setApiKey(KEY);
-        properties.getLlm().getLangchain4j().getProviders().put(OPENAI, openaiProps);
+        when(runtimeConfigService.hasLlmProviderApiKey(OPENAI)).thenReturn(true);
+        when(runtimeConfigService.hasLlmProviderApiKey("anthropic")).thenReturn(false);
 
         ModelConfigService.ModelSettings openaiSettings = new ModelConfigService.ModelSettings();
         openaiSettings.setProvider(OPENAI);
@@ -722,11 +726,6 @@ class Langchain4jAdapterTest {
 
     @Test
     void shouldUseDifferentModelForRequest() throws Exception {
-        // Set up provider config for both models
-        BotProperties.ProviderProperties openaiProps = new BotProperties.ProviderProperties();
-        openaiProps.setApiKey("test-key");
-        properties.getLlm().getLangchain4j().getProviders().put(OPENAI, openaiProps);
-
         ChatModel mockModel = mock(ChatModel.class);
         injectChatModel(mockModel, OPENAI + "/gpt-5.1");
 

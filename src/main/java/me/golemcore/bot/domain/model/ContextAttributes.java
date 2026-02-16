@@ -45,6 +45,9 @@ public final class ContextAttributes {
     /** Duration ? latency of the last LLM call (best-effort). */
     public static final String LLM_LATENCY = "llm.latency";
 
+    /** Boolean ? compatibility fallback flattened tool history for this turn. */
+    public static final String LLM_COMPAT_FLATTEN_FALLBACK_USED = "llm.compat.flatten.fallback.used";
+
     /** Boolean — tools were executed in this iteration. */
 
     /**

@@ -1,7 +1,5 @@
 import { Badge, Form, ProgressBar } from 'react-bootstrap';
 import { useContextPanelStore } from '../../store/contextPanelStore';
-import { updatePreferences } from '../../api/settings';
-import { useState } from 'react';
 
 const TIER_COLORS: Record<string, string> = {
   balanced: 'secondary',
@@ -11,7 +9,7 @@ const TIER_COLORS: Record<string, string> = {
 };
 
 function formatNumber(n: number | null): string {
-  if (n == null) return '--';
+  if (n == null) {return '--';}
   return n.toLocaleString();
 }
 
@@ -25,7 +23,7 @@ interface Props {
 export default function ContextPanel({ tier, tierForce, onTierChange, onForceChange }: Props) {
   const { panelOpen, turnMetadata, goals, goalsFeatureEnabled } = useContextPanelStore();
 
-  if (!panelOpen) return null;
+  if (!panelOpen) {return null;}
 
   const contextPercent =
     turnMetadata.inputTokens != null && turnMetadata.maxContextTokens

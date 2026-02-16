@@ -35,13 +35,11 @@ import java.util.Map;
  * All bot configuration is organized under the {@code bot.*} prefix. This class
  * contains nested property classes for different subsystems:
  * <ul>
- * <li>{@link AgentProperties} - agent loop configuration</li>
  * <li>{@link LlmProperties} - LLM provider settings</li>
  * <li>{@link ChannelProperties} - input channels (Telegram, etc.)</li>
  * <li>{@link StorageProperties} - persistence configuration</li>
  * <li>{@link SecurityProperties} - security and access control</li>
  * <li>{@link ToolsProperties} - tool enablement and configuration</li>
- * <li>{@link McpClientProperties} - MCP client settings</li>
  * <li>And many more subsystems...</li>
  * </ul>
  *
@@ -56,18 +54,14 @@ import java.util.Map;
 @Data
 public class BotProperties {
 
-    private AgentProperties agent = new AgentProperties();
     private LlmProperties llm = new LlmProperties();
     private Map<String, ChannelProperties> channels = new HashMap<>();
     private StorageProperties storage = new StorageProperties();
     private MemoryProperties memory = new MemoryProperties();
     private SkillsProperties skills = new SkillsProperties();
     private SecurityProperties security = new SecurityProperties();
-    private BrowserProperties browser = new BrowserProperties();
     private HttpProperties http = new HttpProperties();
-    private VoiceProperties voice = new VoiceProperties();
     private ToolsProperties tools = new ToolsProperties();
-    private McpClientProperties mcp = new McpClientProperties();
     private PromptsProperties prompts = new PromptsProperties();
     private AutoCompactProperties autoCompact = new AutoCompactProperties();
     private TurnProperties turn = new TurnProperties();
@@ -77,27 +71,8 @@ public class BotProperties {
     private DashboardProperties dashboard = new DashboardProperties();
 
     @Data
-    public static class AgentProperties {
-        private int maxIterations = 20;
-    }
-
-    @Data
     public static class LlmProperties {
         private String provider = "langchain4j";
-        /** Canonical per-request timeout for any LLM provider adapter. */
-        private java.time.Duration requestTimeout = java.time.Duration.ofSeconds(300);
-        private Langchain4jProperties langchain4j = new Langchain4jProperties();
-    }
-
-    @Data
-    public static class Langchain4jProperties {
-        private Map<String, ProviderProperties> providers = new HashMap<>();
-    }
-
-    @Data
-    public static class ProviderProperties {
-        private String apiKey;
-        private String baseUrl;
     }
 
     @Data
@@ -140,29 +115,12 @@ public class BotProperties {
 
     @Data
     public static class SecurityProperties {
-        private boolean sanitizeInput = true;
-        private boolean detectPromptInjection = true;
-        private boolean detectCommandInjection = true;
-        private int maxInputLength = 10000;
         private AllowlistProperties allowlist = new AllowlistProperties();
-        private ToolConfirmationProperties toolConfirmation = new ToolConfirmationProperties();
-    }
-
-    @Data
-    public static class ToolConfirmationProperties {
-        private boolean enabled = true;
-        private int timeoutSeconds = 60;
     }
 
     @Data
     public static class AllowlistProperties {
-        private boolean enabled = true;
         private List<String> blockedUsers = new ArrayList<>();
-    }
-
-    @Data
-    public static class BrowserProperties {
-        private boolean enabled = true;
     }
 
     @Data
@@ -172,22 +130,6 @@ public class BotProperties {
         private long writeTimeout = 60000;
         private int maxIdleConnections = 5;
         private long keepAliveDuration = 300000;
-    }
-
-    @Data
-    public static class VoiceProperties {
-        private boolean enabled = false;
-        private String apiKey = "";
-        private String voiceId = "21m00Tcm4TlvDq8ikWAM";
-        private String ttsModelId = "eleven_multilingual_v2";
-        private String sttModelId = "scribe_v1";
-        private float speed = 1.0f;
-        private TelegramVoiceProperties telegram = new TelegramVoiceProperties();
-    }
-
-    @Data
-    public static class TelegramVoiceProperties {
-        private boolean respondWithVoice = true;
     }
 
     // ==================== TOOLS ====================
@@ -260,15 +202,6 @@ public class BotProperties {
         private String sslTrust = "";
         private int connectTimeout = 10000;
         private int readTimeout = 30000;
-    }
-
-    // ==================== MCP CLIENT ====================
-
-    @Data
-    public static class McpClientProperties {
-        private boolean enabled = true;
-        private int defaultStartupTimeout = 30;
-        private int defaultIdleTimeout = 5;
     }
 
     // ==================== RAG (LightRAG) ====================

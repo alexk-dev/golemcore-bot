@@ -146,7 +146,7 @@ jobs:
 
       - name: Build and push app image (${{ matrix.arch }})
         run: |
-          ./mvnw compile jib:build \
+          ./mvnw prepare-package jib:build \
             -DskipTests \
             -DskipGitHooks=true \
             -Djib.from.image=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-base:latest \

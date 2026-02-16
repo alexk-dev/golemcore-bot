@@ -1,10 +1,6 @@
-// GolemCore Dashboard — Bootswatch Zephyr + Bootstrap 5.3 native dark mode
+// GolemCore Dashboard overrides for prebuilt Bootswatch Zephyr CSS
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
-
-@import 'bootswatch/dist/zephyr/variables';
-@import 'bootstrap/scss/bootstrap';
-@import 'bootswatch/dist/zephyr/bootswatch';
 
 :root {
   --sidebar-width: 260px;
@@ -268,6 +264,21 @@ body {
   }
 }
 
+.user-command-token {
+  display: inline-block;
+  padding: 0.08rem 0.45rem;
+  margin-right: 0.2rem;
+  border-radius: 0.45rem;
+  background-color: rgba(var(--bs-primary-rgb), 0.2);
+  font-family: var(--font-mono);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.user-command-args {
+  white-space: pre-wrap;
+}
+
 @keyframes message-pop {
   from { opacity: 0; transform: translateY(10px) scale(0.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }
@@ -286,6 +297,7 @@ body {
   border: 1px solid var(--bs-border-color);
   border-radius: 1rem;
   background-color: var(--bs-body-bg);
+  position: relative;
 
   textarea.form-control {
     border-radius: 1rem;
@@ -339,6 +351,54 @@ body {
   width: 46px;
   height: 46px;
   flex-shrink: 0;
+}
+
+.chat-command-menu {
+  position: absolute;
+  left: 0.75rem;
+  right: 0.75rem;
+  bottom: calc(100% + 0.4rem);
+  background-color: var(--bs-body-bg);
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.75rem;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  padding: 0.25rem;
+  max-height: 240px;
+  overflow-y: auto;
+  z-index: 20;
+}
+
+.chat-command-item {
+  width: 100%;
+  border: none;
+  border-radius: 0.55rem;
+  background: transparent;
+  color: var(--bs-body-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  text-align: left;
+  padding: 0.45rem 0.6rem;
+}
+
+.chat-command-item:hover,
+.chat-command-item.active {
+  background-color: var(--bs-secondary-bg);
+}
+
+.chat-command-name {
+  font-family: var(--font-mono);
+  font-size: 0.83rem;
+  color: var(--bs-primary);
+}
+
+.chat-command-desc {
+  font-size: 0.78rem;
+  color: var(--bs-secondary-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chat-input-hint {

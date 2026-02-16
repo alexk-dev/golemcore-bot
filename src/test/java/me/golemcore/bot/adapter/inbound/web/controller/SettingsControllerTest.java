@@ -2,6 +2,8 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 
 import me.golemcore.bot.adapter.inbound.web.dto.PreferencesUpdateRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.SettingsResponse;
+import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -16,6 +18,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -39,6 +42,7 @@ class SettingsControllerTest {
         eventPublisher = mock(ApplicationEventPublisher.class);
         controller = new SettingsController(preferencesService, modelSelectionService, runtimeConfigService,
                 eventPublisher);
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(RuntimeConfig.builder().build());
     }
 
     @Test
@@ -139,5 +143,67 @@ class SettingsControllerTest {
         verify(preferencesService).savePreferences(prefs);
         assertNotNull(prefs.getTierOverrides());
         assertEquals("gpt-4o", prefs.getTierOverrides().get("standard").getModel());
+    }
+
+    @Test
+    void shouldRejectLlmProviderRemovalWhenUsedByModelRouter() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .modelRouter(RuntimeConfig.ModelRouterConfig.builder()
+                        .balancedModel("openai/gpt-5.1")
+                        .build())
+                .llm(RuntimeConfig.LlmConfig.builder()
+                        .providers(new LinkedHashMap<>(Map.of(
+                                "openai", RuntimeConfig.LlmProviderConfig.builder().apiKey(Secret.of("x")).build(),
+                                "anthropic", RuntimeConfig.LlmProviderConfig.builder().apiKey(Secret.of("y")).build())))
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.LlmConfig update = RuntimeConfig.LlmConfig.builder()
+                .providers(new LinkedHashMap<>(Map.of(
+                        "anthropic", RuntimeConfig.LlmProviderConfig.builder().apiKey(Secret.of("y")).build())))
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateLlmConfig(update));
+        assertTrue(error.getMessage().contains("Cannot remove provider 'openai'"));
+    }
+
+    @Test
+    void shouldRejectInvalidLlmProviderName() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .modelRouter(RuntimeConfig.ModelRouterConfig.builder().build())
+                .llm(RuntimeConfig.LlmConfig.builder().providers(new LinkedHashMap<>()).build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.LlmConfig update = RuntimeConfig.LlmConfig.builder()
+                .providers(new LinkedHashMap<>(Map.of(
+                        "Bad Name", RuntimeConfig.LlmProviderConfig.builder().apiKey(Secret.of("x")).build())))
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateLlmConfig(update));
+        assertTrue(error.getMessage().contains("llm.providers keys must be lowercase"));
+    }
+
+    @Test
+    void shouldRejectInvalidLlmProviderTimeout() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .modelRouter(RuntimeConfig.ModelRouterConfig.builder().build())
+                .llm(RuntimeConfig.LlmConfig.builder().providers(new LinkedHashMap<>()).build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.LlmConfig update = RuntimeConfig.LlmConfig.builder()
+                .providers(new LinkedHashMap<>(Map.of(
+                        "openai",
+                        RuntimeConfig.LlmProviderConfig.builder().apiKey(Secret.of("x"))
+                                .requestTimeoutSeconds(0).build())))
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateLlmConfig(update));
+        assertTrue(error.getMessage().contains("requestTimeoutSeconds must be between 1 and 3600"));
     }
 }

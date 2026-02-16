@@ -20,7 +20,6 @@ package me.golemcore.bot.adapter.outbound.confirmation;
 
 import me.golemcore.bot.domain.model.ConfirmationCallbackEvent;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.ConfirmationPort;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
@@ -71,8 +70,8 @@ import java.util.concurrent.*;
  * <p>
  * Configuration:
  * <ul>
- * <li>{@code bot.security.tool-confirmation.enabled} - Enable/disable
- * <li>{@code bot.security.tool-confirmation.timeout-seconds} - Timeout
+ * <li>RuntimeConfig.security.toolConfirmationEnabled - Enable/disable
+ * <li>RuntimeConfig.security.toolConfirmationTimeoutSeconds - Timeout
  * </ul>
  *
  * @see me.golemcore.bot.port.outbound.ConfirmationPort
@@ -83,21 +82,14 @@ import java.util.concurrent.*;
 public class TelegramConfirmationAdapter implements ConfirmationPort {
 
     private final Map<String, PendingConfirmation> pending = new ConcurrentHashMap<>();
-    private final BotProperties properties;
     private final RuntimeConfigService runtimeConfigService;
-    private final int timeoutSeconds;
-    private final boolean enabled;
 
     private volatile TelegramClient telegramClient;
     private ScheduledExecutorService cleanupExecutor;
 
-    public TelegramConfirmationAdapter(BotProperties properties, RuntimeConfigService runtimeConfigService) {
-        this.properties = properties;
+    public TelegramConfirmationAdapter(RuntimeConfigService runtimeConfigService) {
         this.runtimeConfigService = runtimeConfigService;
-        BotProperties.ToolConfirmationProperties config = properties.getSecurity().getToolConfirmation();
-        this.enabled = config.isEnabled();
-        this.timeoutSeconds = config.getTimeoutSeconds();
-        log.info("TelegramConfirmationAdapter enabled: {}, timeout: {}s", enabled, timeoutSeconds);
+        log.info("TelegramConfirmationAdapter initialized");
     }
 
     @PostConstruct
@@ -109,9 +101,10 @@ public class TelegramConfirmationAdapter implements ConfirmationPort {
             return t;
         });
         cleanupExecutor.scheduleAtFixedRate(() -> {
-            long cutoff = System.currentTimeMillis() - (timeoutSeconds + 30) * 1000L;
             pending.entrySet().removeIf(e -> {
-                if (e.getValue().createdAt() < cutoff) {
+                long timeoutSeconds = runtimeConfigService.getToolConfirmationTimeoutSeconds();
+                long dynamicCutoff = System.currentTimeMillis() - (timeoutSeconds + 30) * 1000L;
+                if (e.getValue().createdAt() < dynamicCutoff) {
                     e.getValue().future().completeExceptionally(new TimeoutException("Stale confirmation cleaned up"));
                     return true;
                 }
@@ -142,7 +135,7 @@ public class TelegramConfirmationAdapter implements ConfirmationPort {
 
     @Override
     public boolean isAvailable() {
-        return enabled && getOrCreateClient() != null;
+        return runtimeConfigService.isToolConfirmationEnabled() && getOrCreateClient() != null;
     }
 
     private TelegramClient getOrCreateClient() {
@@ -182,7 +175,7 @@ public class TelegramConfirmationAdapter implements ConfirmationPort {
             return CompletableFuture.completedFuture(true);
         }
 
-        return future.orTimeout(timeoutSeconds, TimeUnit.SECONDS)
+        return future.orTimeout(runtimeConfigService.getToolConfirmationTimeoutSeconds(), TimeUnit.SECONDS)
                 .exceptionally(ex -> {
                     log.info("Confirmation {} timed out or failed, denying", confirmationId);
                     pending.remove(confirmationId);

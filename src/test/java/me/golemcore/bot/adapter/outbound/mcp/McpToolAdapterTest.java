@@ -2,7 +2,7 @@ package me.golemcore.bot.adapter.outbound.mcp;
 
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,6 +12,8 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Tests for McpToolAdapter — definition, execute delegation, and isEnabled.
@@ -22,9 +24,11 @@ class McpToolAdapterTest {
 
     @BeforeEach
     void setUp() {
-        BotProperties properties = new BotProperties();
-        properties.getMcp().setEnabled(true);
-        manager = new McpClientManager(properties, new ObjectMapper());
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isMcpEnabled()).thenReturn(true);
+        when(runtimeConfigService.getMcpDefaultStartupTimeout()).thenReturn(30);
+        when(runtimeConfigService.getMcpDefaultIdleTimeout()).thenReturn(5);
+        manager = new McpClientManager(runtimeConfigService, new ObjectMapper());
     }
 
     @AfterEach

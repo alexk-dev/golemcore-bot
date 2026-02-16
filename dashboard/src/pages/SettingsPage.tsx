@@ -7,11 +7,13 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   useSettings, useUpdatePreferences, useRuntimeConfig,
   useUpdateTelegram, useUpdateModelRouter, useUpdateTools,
+  useUpdateLlm,
   useUpdateVoice, useUpdateMemory, useUpdateSkills,
   useUpdateTurn,
   useUpdateWebhooks, useUpdateAuto, useUpdateAdvanced,
   useUpdateUsage,
   useUpdateRag,
+  useUpdateMcp,
   useGenerateInviteCode, useDeleteInviteCode, useRestartTelegram,
 } from '../hooks/useSettings';
 import { useAvailableModels } from '../hooks/useModels';
@@ -21,18 +23,19 @@ import MfaSetup from '../components/auth/MfaSetup';
 import toast from 'react-hot-toast';
 import { useQueryClient } from '@tanstack/react-query';
 import type {
-  TelegramConfig, ModelRouterConfig, ToolsConfig, VoiceConfig,
+  TelegramConfig, ModelRouterConfig, LlmConfig, ToolsConfig, VoiceConfig,
   MemoryConfig, SkillsConfig,
   TurnConfig,
   UsageConfig,
   RagConfig,
+  McpConfig,
   AutoModeConfig, RateLimitConfig, SecurityConfig, CompactionConfig,
   WebhookConfig, HookMapping, ImapConfig, SmtpConfig,
 } from '../api/settings';
 import {
   FiHelpCircle, FiSliders, FiSend, FiCpu, FiTool, FiMic,
   FiGlobe, FiPlayCircle, FiShield, FiSearch, FiHardDrive, FiBarChart2,
-  FiTerminal, FiMail, FiCompass, FiShuffle,
+  FiTerminal, FiMail, FiCompass, FiShuffle, FiKey,
 } from 'react-icons/fi';
 import ConfirmModal from '../components/common/ConfirmModal';
 import { useBrowserHealthPing } from '../hooks/useSystem';
@@ -68,6 +71,7 @@ const SETTINGS_SECTIONS = [
   { key: 'general', title: 'General', description: 'Preferences, account security, and MFA', icon: <FiSliders size={18} /> },
   { key: 'telegram', title: 'Telegram', description: 'Bot token, auth mode, and invite codes', icon: <FiSend size={18} /> },
   { key: 'models', title: 'Model Router', description: 'Routing and tier model configuration', icon: <FiCpu size={18} /> },
+  { key: 'llm-providers', title: 'LLM Providers', description: 'Provider API keys and base URLs', icon: <FiKey size={18} /> },
 
   { key: 'tool-browser', title: 'Browser', description: 'Web browsing tool runtime status and behavior', icon: <FiCompass size={18} /> },
   { key: 'tool-brave', title: 'Brave Search', description: 'Brave API search tool', icon: <FiSearch size={18} /> },
@@ -83,6 +87,7 @@ const SETTINGS_SECTIONS = [
   { key: 'turn', title: 'Turn Budget', description: 'Runtime limits for LLM/tool calls and deadline', icon: <FiCpu size={18} /> },
   { key: 'usage', title: 'Usage Tracking', description: 'Enable/disable analytics usage tracking', icon: <FiBarChart2 size={18} /> },
   { key: 'rag', title: 'RAG', description: 'LightRAG integration settings', icon: <FiGlobe size={18} /> },
+  { key: 'mcp', title: 'MCP', description: 'Model Context Protocol runtime defaults', icon: <FiTool size={18} /> },
   { key: 'webhooks', title: 'Webhooks', description: 'Incoming hooks, auth, and delivery actions', icon: <FiGlobe size={18} /> },
   { key: 'auto', title: 'Auto Mode', description: 'Autonomous run behavior and constraints', icon: <FiPlayCircle size={18} /> },
   { key: 'advanced-rate-limit', title: 'Rate Limit', description: 'Request throttling configuration', icon: <FiShield size={18} /> },
@@ -91,6 +96,59 @@ const SETTINGS_SECTIONS = [
 ] as const;
 
 type SettingsSectionKey = typeof SETTINGS_SECTIONS[number]['key'];
+
+const SETTINGS_BLOCKS: Array<{
+  key: string;
+  title: string;
+  description: string;
+  sections: SettingsSectionKey[];
+}> = [
+  {
+    key: 'core',
+    title: 'Core',
+    description: 'Main runtime settings and access configuration',
+    sections: ['general', 'telegram', 'models', 'llm-providers'],
+  },
+  {
+    key: 'tools',
+    title: 'Tools',
+    description: 'Tool-specific runtime behavior and integrations',
+    sections: ['tool-browser', 'tool-brave', 'tool-filesystem', 'tool-shell', 'tool-email', 'tool-automation', 'tool-goals'],
+  },
+  {
+    key: 'runtime',
+    title: 'Runtime',
+    description: 'Agent execution, memory, usage, and autonomy',
+    sections: ['voice-elevenlabs', 'memory', 'skills', 'turn', 'usage', 'rag', 'mcp', 'auto', 'webhooks'],
+  },
+  {
+    key: 'advanced',
+    title: 'Advanced',
+    description: 'Security and infrastructure guardrails',
+    sections: ['advanced-rate-limit', 'advanced-security', 'advanced-compaction'],
+  },
+];
+
+const KNOWN_LLM_PROVIDER_BASE_URLS: Record<string, string> = {
+  openai: 'https://api.openai.com/v1',
+  openrouter: 'https://openrouter.ai/api/v1',
+  anthropic: 'https://api.anthropic.com',
+  google: 'https://generativelanguage.googleapis.com/v1beta/openai',
+  kimi: 'https://api.moonshot.ai/v1',
+  groq: 'https://api.groq.com/openai/v1',
+  together: 'https://api.together.xyz/v1',
+  fireworks: 'https://api.fireworks.ai/inference/v1',
+  deepseek: 'https://api.deepseek.com/v1',
+  mistral: 'https://api.mistral.ai/v1',
+  xai: 'https://api.x.ai/v1',
+  perplexity: 'https://api.perplexity.ai',
+  zhipu: 'https://open.bigmodel.cn/api/paas/v4',
+  qwen: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+  cerebras: 'https://api.cerebras.ai/v1',
+  deepinfra: 'https://api.deepinfra.com/v1/openai',
+};
+
+const KNOWN_LLM_PROVIDERS: string[] = Object.keys(KNOWN_LLM_PROVIDER_BASE_URLS);
 
 function isSettingsSectionKey(value: string | undefined): value is SettingsSectionKey {
   return SETTINGS_SECTIONS.some((s) => s.key === value);
@@ -138,26 +196,41 @@ export default function SettingsPage() {
           <h4>Settings</h4>
           <p className="text-body-secondary mb-0">Select a settings category</p>
         </div>
-        <Row className="g-3">
-          {SETTINGS_SECTIONS.map((item) => (
-            <Col md={6} lg={4} xl={3} key={item.key}>
-              <Card className="settings-card h-100">
-                <Card.Body className="d-flex flex-column">
-                  <div className="d-flex align-items-center gap-2 mb-2">
-                    <span className="text-primary">{item.icon}</span>
-                    <Card.Title className="h6 mb-0">{item.title}</Card.Title>
-                  </div>
-                  <Card.Text className="text-body-secondary small mb-3">{item.description}</Card.Text>
-                  <div className="mt-auto">
-                    <Button size="sm" variant="primary" onClick={() => navigate(`/settings/${item.key}`)}>
-                      Open
-                    </Button>
-                  </div>
-                </Card.Body>
-              </Card>
-            </Col>
-          ))}
-        </Row>
+        {SETTINGS_BLOCKS.map((block) => (
+          <div key={block.key} className="mb-4">
+            <div className="mb-2">
+              <h6 className="mb-1">{block.title}</h6>
+              <p className="text-body-secondary small mb-0">{block.description}</p>
+            </div>
+            <Row className="g-3">
+              {block.sections.map((sectionKey) => {
+                const item = SETTINGS_SECTIONS.find((section) => section.key === sectionKey);
+                if (!item) {
+                  return null;
+                }
+
+                return (
+                  <Col md={6} lg={4} xl={3} key={item.key}>
+                    <Card className="settings-card h-100">
+                      <Card.Body className="d-flex flex-column">
+                        <div className="d-flex align-items-center gap-2 mb-2">
+                          <span className="text-primary">{item.icon}</span>
+                          <Card.Title className="h6 mb-0">{item.title}</Card.Title>
+                        </div>
+                        <Card.Text className="text-body-secondary small mb-3">{item.description}</Card.Text>
+                        <div className="mt-auto">
+                          <Button size="sm" variant="primary" onClick={() => navigate(`/settings/${item.key}`)}>
+                            Open
+                          </Button>
+                        </div>
+                      </Card.Body>
+                    </Card>
+                  </Col>
+                );
+              })}
+            </Row>
+          </div>
+        ))}
       </div>
     );
   }
@@ -176,7 +249,8 @@ export default function SettingsPage() {
 
       {selectedSection === 'general' && <GeneralTab settings={settings} me={me} qc={qc} />}
       {selectedSection === 'telegram' && rc && <TelegramTab config={rc.telegram} voiceConfig={rc.voice} />}
-      {selectedSection === 'models' && rc && <ModelsTab config={rc.modelRouter} />}
+      {selectedSection === 'models' && rc && <ModelsTab config={rc.modelRouter} llmConfig={rc.llm} />}
+      {selectedSection === 'llm-providers' && rc && <LlmProvidersTab config={rc.llm} modelRouter={rc.modelRouter} />}
 
       {selectedSection === 'tool-browser' && rc && <ToolsTab config={rc.tools} mode="browser" />}
       {selectedSection === 'tool-brave' && rc && <ToolsTab config={rc.tools} mode="brave" />}
@@ -192,6 +266,7 @@ export default function SettingsPage() {
       {selectedSection === 'turn' && rc && <TurnTab config={rc.turn} />}
       {selectedSection === 'usage' && rc && <UsageTab config={rc.usage} />}
       {selectedSection === 'rag' && rc && <RagTab config={rc.rag} />}
+      {selectedSection === 'mcp' && rc && <McpTab config={rc.mcp} />}
       {selectedSection === 'webhooks' && <WebhooksTab />}
       {selectedSection === 'auto' && rc && <AutoModeTab config={rc.autoMode} />}
 
@@ -534,7 +609,7 @@ interface AvailableModel {
   reasoningLevels: string[];
 }
 
-function ModelsTab({ config }: { config: ModelRouterConfig }) {
+function ModelsTab({ config, llmConfig }: { config: ModelRouterConfig; llmConfig: LlmConfig }) {
   const updateRouter = useUpdateModelRouter();
   const { data: available } = useAvailableModels();
   const [form, setForm] = useState<ModelRouterConfig>({ ...config });
@@ -542,10 +617,22 @@ function ModelsTab({ config }: { config: ModelRouterConfig }) {
   useEffect(() => { setForm({ ...config }); }, [config]);
 
   // Group models by provider
+  const configuredProviderNames = useMemo(() => {
+    return Object.keys(llmConfig.providers ?? {});
+  }, [llmConfig]);
+
   const providers = useMemo(() => {
-    if (!available) return {} as Record<string, AvailableModel[]>;
-    return available as Record<string, AvailableModel[]>;
-  }, [available]);
+    if (!available) {
+      return {} as Record<string, AvailableModel[]>;
+    }
+
+    const availableByProvider = available as Record<string, AvailableModel[]>;
+    const configuredSet = new Set(configuredProviderNames);
+
+    return Object.fromEntries(
+      Object.entries(availableByProvider).filter(([provider]) => configuredSet.has(provider)),
+    );
+  }, [available, configuredProviderNames]);
 
   const providerNames = useMemo(() => Object.keys(providers), [providers]);
   const isModelsDirty = useMemo(() => hasDiff(form, config), [form, config]);
@@ -588,6 +675,18 @@ function ModelsTab({ config }: { config: ModelRouterConfig }) {
       </Card>
 
       <Row className="g-3 mb-3">
+        {providerNames.length === 0 && (
+          <Col xs={12}>
+            <Card className="settings-card">
+              <Card.Body className="py-2">
+                <small className="text-body-secondary">
+                  No LLM providers configured. Add at least one provider in `LLM Providers` to select models here.
+                </small>
+              </Card.Body>
+            </Card>
+          </Col>
+        )}
+
         <Col md={6} lg={3}>
           <TierModelCard
             label="Routing"
@@ -638,9 +737,9 @@ function TierModelCard({ label, color, providers, providerNames, modelValue, rea
 }) {
   // Determine selected provider from current model
   const selectedProvider = useMemo(() => {
-    if (!modelValue) return providerNames[0] ?? '';
+    if (!modelValue) {return providerNames[0] ?? '';}
     for (const [prov, models] of Object.entries(providers)) {
-      if (models.some((m) => m.id === modelValue)) return prov;
+      if (models.some((m) => m.id === modelValue)) {return prov;}
     }
     return providerNames[0] ?? '';
   }, [modelValue, providers, providerNames]);
@@ -652,6 +751,7 @@ function TierModelCard({ label, color, providers, providerNames, modelValue, rea
   const modelsForProvider = providers[provider] ?? [];
   const selectedModel = modelsForProvider.find((m) => m.id === modelValue);
   const reasoningLevels = selectedModel?.reasoningLevels ?? [];
+  const hasProviders = providerNames.length > 0;
 
   return (
     <Card className="tier-card h-100">
@@ -661,7 +761,9 @@ function TierModelCard({ label, color, providers, providerNames, modelValue, rea
         <Form.Group className="mb-2">
           <Form.Label className="small fw-medium mb-1">Provider</Form.Label>
           <Form.Select size="sm" value={provider}
+            disabled={!hasProviders}
             onChange={(e) => { setProvider(e.target.value); onModelChange(''); }}>
+            {!hasProviders && <option value="">No providers</option>}
             {providerNames.map((p) => (
               <option key={p} value={p}>{p}</option>
             ))}
@@ -671,6 +773,7 @@ function TierModelCard({ label, color, providers, providerNames, modelValue, rea
         <Form.Group className="mb-2">
           <Form.Label className="small fw-medium mb-1">Model</Form.Label>
           <Form.Select size="sm" value={modelValue}
+            disabled={!hasProviders}
             onChange={(e) => onModelChange(e.target.value)}>
             <option value="">Default</option>
             {modelsForProvider.map((m) => (
@@ -691,6 +794,210 @@ function TierModelCard({ label, color, providers, providerNames, modelValue, rea
             </Form.Select>
           </Form.Group>
         )}
+      </Card.Body>
+    </Card>
+  );
+}
+
+function LlmProvidersTab({ config, modelRouter }: { config: LlmConfig; modelRouter: ModelRouterConfig }) {
+  const updateLlm = useUpdateLlm();
+  const [form, setForm] = useState<LlmConfig>({ providers: { ...(config.providers ?? {}) } });
+  const [newProviderName, setNewProviderName] = useState('');
+  const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
+  const isDirty = useMemo(() => hasDiff(form, config), [form, config]);
+
+  useEffect(() => {
+    setForm({ providers: { ...(config.providers ?? {}) } });
+  }, [config]);
+
+  const providerNames = Object.keys(form.providers ?? {});
+  const knownProviderSuggestions = useMemo(() => {
+    const combinedProviderNames = [...KNOWN_LLM_PROVIDERS, ...providerNames];
+    return Array.from(new Set(combinedProviderNames)).sort();
+  }, [providerNames]);
+
+  const addProvider = () => {
+    const name = newProviderName.trim();
+    if (!name) {
+      return;
+    }
+    const normalizedName = name.toLowerCase();
+    if (!/^[a-z0-9][a-z0-9_-]*$/.test(normalizedName)) {
+      toast.error('Provider name must match [a-z0-9][a-z0-9_-]*');
+      return;
+    }
+    if (form.providers[normalizedName]) {
+      toast.error('Provider already exists');
+      return;
+    }
+    setForm({
+      providers: {
+        ...form.providers,
+        [normalizedName]: {
+          apiKey: null,
+          apiKeyPresent: false,
+          baseUrl: KNOWN_LLM_PROVIDER_BASE_URLS[normalizedName] ?? null,
+          requestTimeoutSeconds: 300,
+        },
+      },
+    });
+    setNewProviderName('');
+  };
+
+  const usedProviders = useMemo(() => {
+    const used = new Set<string>();
+    const models = [
+      modelRouter.routingModel,
+      modelRouter.balancedModel,
+      modelRouter.smartModel,
+      modelRouter.codingModel,
+      modelRouter.deepModel,
+    ].filter(Boolean) as string[];
+    models.forEach((m) => {
+      const idx = m.indexOf('/');
+      if (idx > 0) {
+        used.add(m.substring(0, idx));
+      }
+    });
+    return used;
+  }, [modelRouter]);
+
+  const handleSave = async () => {
+    await updateLlm.mutateAsync(form);
+    toast.success('LLM provider settings saved');
+  };
+
+  return (
+    <Card className="settings-card">
+      <Card.Body>
+        <Card.Title className="h6 mb-3">LLM Providers</Card.Title>
+        <div className="small text-body-secondary mb-3">
+          Runtime provider list and credentials. No fallback from application properties.
+        </div>
+
+        <InputGroup className="mb-3" size="sm">
+          <Form.Control
+            placeholder="new provider name (e.g. perplexity)"
+            list="known-llm-providers"
+            value={newProviderName}
+            onChange={(e) => setNewProviderName(e.target.value)}
+          />
+          <Button variant="secondary" onClick={addProvider}>Add provider</Button>
+        </InputGroup>
+        <datalist id="known-llm-providers">
+          {knownProviderSuggestions.map((providerName) => (
+            <option key={providerName} value={providerName} />
+          ))}
+        </datalist>
+
+        <Row className="g-3">
+          {providerNames.map((provider) => (
+            <Col md={6} key={provider}>
+              <Card className="h-100">
+                <Card.Body>
+                  <div className="d-flex align-items-center justify-content-between mb-3">
+                    <Card.Title className="h6 text-capitalize mb-0">{provider}</Card.Title>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={usedProviders.has(provider)}
+                      title={usedProviders.has(provider)
+                        ? 'Provider is used by model router tiers and cannot be removed'
+                        : 'Remove provider'}
+                      onClick={() => {
+                        const next = { ...form.providers };
+                        delete next[provider];
+                        setForm({ providers: next });
+                      }}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                  <Form.Group className="mb-2">
+                    <Form.Label className="small fw-medium d-flex align-items-center gap-2">
+                      <span>API Key</span>
+                      {form.providers[provider]?.apiKeyPresent && (
+                        <Badge bg="success-subtle" text="success">Secret set</Badge>
+                      )}
+                      {!!form.providers[provider]?.apiKey && (
+                        <Badge bg="warning-subtle" text="warning">Will update on save</Badge>
+                      )}
+                    </Form.Label>
+                    <InputGroup size="sm">
+                      <Form.Control
+                        name={`llm-api-key-${provider}`}
+                        autoComplete="new-password"
+                        autoCorrect="off"
+                        autoCapitalize="off"
+                        spellCheck={false}
+                        data-lpignore="true"
+                        placeholder={form.providers[provider]?.apiKeyPresent
+                          ? 'Secret is configured (hidden)'
+                          : ''}
+                        type={showKeys[provider] ? 'text' : 'password'}
+                        value={form.providers[provider]?.apiKey ?? ''}
+                        onChange={(e) => setForm({
+                          ...form,
+                          providers: {
+                            ...form.providers,
+                            [provider]: { ...form.providers[provider], apiKey: e.target.value || null },
+                          },
+                        })}
+                      />
+                      <Button
+                        variant="secondary"
+                        onClick={() => setShowKeys({ ...showKeys, [provider]: !showKeys[provider] })}
+                      >
+                        {showKeys[provider] ? 'Hide' : 'Show'}
+                      </Button>
+                    </InputGroup>
+                  </Form.Group>
+                  <Form.Group className="mb-2">
+                    <Form.Label className="small fw-medium">Base URL</Form.Label>
+                    <Form.Control
+                      size="sm"
+                      value={form.providers[provider]?.baseUrl ?? ''}
+                      onChange={(e) => setForm({
+                        ...form,
+                        providers: {
+                          ...form.providers,
+                          [provider]: { ...form.providers[provider], baseUrl: e.target.value || null },
+                        },
+                      })}
+                    />
+                  </Form.Group>
+                  <Form.Group>
+                    <Form.Label className="small fw-medium">Request Timeout (seconds)</Form.Label>
+                    <Form.Control
+                      size="sm"
+                      type="number"
+                      min={1}
+                      max={3600}
+                      value={form.providers[provider]?.requestTimeoutSeconds ?? 300}
+                      onChange={(e) => setForm({
+                        ...form,
+                        providers: {
+                          ...form.providers,
+                          [provider]: {
+                            ...form.providers[provider],
+                            requestTimeoutSeconds: parseInt(e.target.value, 10) || 300,
+                          },
+                        },
+                      })}
+                    />
+                  </Form.Group>
+                </Card.Body>
+              </Card>
+            </Col>
+          ))}
+        </Row>
+
+        <div className="d-flex align-items-center gap-2 mt-3">
+          <Button variant="primary" size="sm" onClick={handleSave} disabled={!isDirty || updateLlm.isPending}>
+            {updateLlm.isPending ? 'Saving...' : 'Save'}
+          </Button>
+          <SaveStateHint isDirty={isDirty} />
+        </div>
       </Card.Body>
     </Card>
   );
@@ -1624,6 +1931,70 @@ function RagTab({ config }: { config: RagConfig }) {
   );
 }
 
+function McpTab({ config }: { config: McpConfig }) {
+  const updateMcp = useUpdateMcp();
+  const [form, setForm] = useState<McpConfig>({ ...config });
+  const isDirty = useMemo(() => hasDiff(form, config), [form, config]);
+
+  useEffect(() => {
+    setForm({ ...config });
+  }, [config]);
+
+  const handleSave = async () => {
+    await updateMcp.mutateAsync(form);
+    toast.success('MCP settings saved');
+  };
+
+  return (
+    <Card className="settings-card">
+      <Card.Body>
+        <Card.Title className="h6 mb-3">MCP (Model Context Protocol)</Card.Title>
+        <Form.Check
+          type="switch"
+          label="Enable MCP"
+          checked={form.enabled ?? true}
+          onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
+          className="mb-3"
+        />
+        <Row className="g-3 mb-3">
+          <Col md={6}>
+            <Form.Group>
+              <Form.Label className="small fw-medium">Default Startup Timeout (s)</Form.Label>
+              <Form.Control
+                size="sm"
+                type="number"
+                min={1}
+                max={300}
+                value={form.defaultStartupTimeout ?? 30}
+                onChange={(e) => setForm({ ...form, defaultStartupTimeout: parseInt(e.target.value, 10) || null })}
+              />
+            </Form.Group>
+          </Col>
+          <Col md={6}>
+            <Form.Group>
+              <Form.Label className="small fw-medium">Default Idle Timeout (min)</Form.Label>
+              <Form.Control
+                size="sm"
+                type="number"
+                min={1}
+                max={120}
+                value={form.defaultIdleTimeout ?? 5}
+                onChange={(e) => setForm({ ...form, defaultIdleTimeout: parseInt(e.target.value, 10) || null })}
+              />
+            </Form.Group>
+          </Col>
+        </Row>
+        <div className="d-flex align-items-center gap-2">
+          <Button variant="primary" size="sm" onClick={handleSave} disabled={!isDirty || updateMcp.isPending}>
+            {updateMcp.isPending ? 'Saving...' : 'Save'}
+          </Button>
+          <SaveStateHint isDirty={isDirty} />
+        </div>
+      </Card.Body>
+    </Card>
+  );
+}
+
 // ==================== Webhooks Tab ====================
 
 function generateSecureToken(): string {
@@ -1647,7 +2018,7 @@ function WebhooksTab() {
   const isWebhooksDirty = useMemo(() => hasDiff(form, webhookConfig), [form, webhookConfig]);
 
   useEffect(() => {
-    if (settings?.webhooks) setForm(settings.webhooks);
+    if (settings?.webhooks) {setForm(settings.webhooks);}
   }, [settings]);
 
   const handleSave = async () => {
@@ -1675,7 +2046,7 @@ function WebhooksTab() {
   const removeMapping = (idx: number) => {
     const mappings = form.mappings.filter((_, i) => i !== idx);
     setForm({ ...form, mappings });
-    if (editIdx === idx) setEditIdx(null);
+    if (editIdx === idx) {setEditIdx(null);}
   };
 
   const updateMapping = (idx: number, partial: Partial<HookMapping>) => {
@@ -2046,12 +2417,33 @@ function AdvancedTab({ rateLimit, security, compaction, mode = 'all' }: {
                 label={<>Detect command injection <Tip text="Detect and block shell command injection attempts in tool parameters" /></>}
                 checked={sec.detectCommandInjection ?? true}
                 onChange={(e) => setSec({ ...sec, detectCommandInjection: e.target.checked })} className="mb-3" />
+              <Form.Check type="switch"
+                label={<>Enable allowlist gate <Tip text="If disabled, allowlist checks are bypassed." /></>}
+                checked={sec.allowlistEnabled ?? true}
+                onChange={(e) => setSec({ ...sec, allowlistEnabled: e.target.checked })} className="mb-2" />
+              <Form.Check type="switch"
+                label={<>Tool confirmation <Tip text="Require user confirmation for destructive tool actions." /></>}
+                checked={sec.toolConfirmationEnabled ?? false}
+                onChange={(e) => setSec({ ...sec, toolConfirmationEnabled: e.target.checked })} className="mb-3" />
               <Form.Group>
                 <Form.Label className="small fw-medium">
                   Max Input Length <Tip text="Maximum allowed characters per user message" />
                 </Form.Label>
                 <Form.Control size="sm" type="number" value={sec.maxInputLength ?? 10000}
                   onChange={(e) => setSec({ ...sec, maxInputLength: parseInt(e.target.value) || null })} />
+              </Form.Group>
+              <Form.Group className="mt-2">
+                <Form.Label className="small fw-medium">
+                  Tool Confirmation Timeout (seconds)
+                </Form.Label>
+                <Form.Control
+                  size="sm"
+                  type="number"
+                  min={5}
+                  max={600}
+                  value={sec.toolConfirmationTimeoutSeconds ?? 60}
+                  onChange={(e) => setSec({ ...sec, toolConfirmationTimeoutSeconds: parseInt(e.target.value, 10) || null })}
+                />
               </Form.Group>
             </Card.Body>
           </Card>

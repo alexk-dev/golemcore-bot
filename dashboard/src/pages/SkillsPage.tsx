@@ -78,7 +78,7 @@ export default function SkillsPage() {
   };
 
   const handleSave = async () => {
-    if (!selected) return;
+    if (!selected) {return;}
     try {
       await updateMutation.mutateAsync({ name: selected, content: editContent || currentContent });
       toast.success('Skill saved');
@@ -88,7 +88,7 @@ export default function SkillsPage() {
   };
 
   const handleDelete = async () => {
-    if (!selected) return;
+    if (!selected) {return;}
     try {
       await deleteMutation.mutateAsync(selected);
       setSelected(null);
@@ -101,7 +101,7 @@ export default function SkillsPage() {
   };
 
   const handleCreate = async () => {
-    if (!newName.trim()) return;
+    if (!newName.trim()) {return;}
     try {
       await createMutation.mutateAsync({ name: newName.trim(), content: SKILL_TEMPLATE });
       setShowCreate(false);

@@ -4,7 +4,7 @@ import { useState } from 'react';
 
 interface Props {
   role: string;
-  content: string;
+  content: string | null | undefined;
   model?: string | null;
   tier?: string | null;
 }
@@ -51,27 +51,41 @@ function parseToolCalls(content: string): { text: string; tools: { tool: string;
   return { text, tools };
 }
 
+function parseLeadingCommand(content: string): { command: string; args: string } | null {
+  const firstLine = content.split('\n')[0] ?? '';
+  if (!firstLine.startsWith('/')) {
+    return null;
+  }
+
+  const firstToken = firstLine.split(/\s+/)[0] ?? '';
+  if (!/^\/[a-z0-9_-]+$/i.test(firstToken)) {
+    return null;
+  }
+
+  const command = firstToken;
+  const args = content.slice(command.length);
+  return { command, args };
+}
+
 export default function MessageBubble({ role, content, model, tier }: Props) {
+  const safeContent = content ?? '';
   const isAssistant = role === 'assistant';
   const normalizedTier = (tier ?? '').toLowerCase();
   const tierMeta = TIER_META[normalizedTier] ?? null;
+  const leadingCommand = parseLeadingCommand(safeContent);
 
   if (isAssistant) {
-    const { text, tools } = parseToolCalls(content);
+    const { text, tools } = parseToolCalls(safeContent);
 
     return (
       <div className={`d-flex w-100 justify-content-start fade-in`}>
         <div className="message-bubble assistant">
-          {(model || tier) && (
-            <div className="d-flex align-items-center gap-2 mb-2">
-              {tier && (
-                <span className={`badge ${tierMeta?.className ?? 'text-bg-secondary'}`}>
-                  {tierMeta?.label ?? tier}
-                </span>
-              )}
-              {model && <small className="text-body-secondary">{model}</small>}
-            </div>
-          )}
+          <div className="d-flex align-items-center gap-2 mb-2">
+            <span className={`badge ${tierMeta?.className ?? 'text-bg-secondary'}`}>
+              {tierMeta?.label ?? (tier ?? 'Unknown tier')}
+            </span>
+            <small className="text-body-secondary">{model ?? 'Model unavailable'}</small>
+          </div>
           {tools.map((t, i) => (
             <ToolCallCard key={i} tool={t.tool} result={t.result} />
           ))}
@@ -88,7 +102,12 @@ export default function MessageBubble({ role, content, model, tier }: Props) {
   return (
     <div className="d-flex w-100 justify-content-end fade-in">
       <div className="message-bubble user">
-        {content}
+        {leadingCommand ? (
+          <>
+            <span className="user-command-token">{leadingCommand.command}</span>
+            {leadingCommand.args && <span className="user-command-args">{leadingCommand.args}</span>}
+          </>
+        ) : safeContent}
       </div>
     </div>
   );

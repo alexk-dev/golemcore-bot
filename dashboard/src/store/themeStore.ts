@@ -9,8 +9,8 @@ interface ThemeState {
 
 function getInitialTheme(): Theme {
   const stored = localStorage.getItem('theme');
-  if (stored === 'dark' || stored === 'light') return stored;
-  if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) return 'dark';
+  if (stored === 'dark' || stored === 'light') {return stored;}
+  if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) {return 'dark';}
   return 'light';
 }
 

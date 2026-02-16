@@ -4,10 +4,13 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Application-level runtime settings that override BotProperties defaults.
@@ -24,6 +27,9 @@ public class RuntimeConfig {
 
     @Builder.Default
     private ModelRouterConfig modelRouter = new ModelRouterConfig();
+
+    @Builder.Default
+    private LlmConfig llm = new LlmConfig();
 
     @Builder.Default
     private ToolsConfig tools = new ToolsConfig();
@@ -58,13 +64,16 @@ public class RuntimeConfig {
     @Builder.Default
     private RagConfig rag = new RagConfig();
 
+    @Builder.Default
+    private McpConfig mcp = new McpConfig();
+
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
     public static class TelegramConfig {
         private Boolean enabled;
-        private String token;
+        private Secret token;
         /** "user" or "invite_only" */
         @Builder.Default
         private String authMode = "invite_only";
@@ -107,7 +116,28 @@ public class RuntimeConfig {
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class LlmConfig {
+        @Builder.Default
+        private Map<String, LlmProviderConfig> providers = new LinkedHashMap<>();
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class LlmProviderConfig {
+        private Secret apiKey;
+        private String baseUrl;
+        private Integer requestTimeoutSeconds;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
     public static class ToolsConfig {
+        private Boolean browserEnabled;
         private String browserType;
         private Integer browserTimeout;
         private String browserUserAgent;
@@ -116,7 +146,7 @@ public class RuntimeConfig {
         private String browserApiProvider;
         private Boolean browserHeadless;
         private Boolean braveSearchEnabled;
-        private String braveSearchApiKey;
+        private Secret braveSearchApiKey;
         private Boolean skillManagementEnabled;
         private Boolean skillTransitionEnabled;
         private Boolean tierEnabled;
@@ -136,7 +166,7 @@ public class RuntimeConfig {
         private String host;
         private Integer port;
         private String username;
-        private String password;
+        private Secret password;
         private String security;
         private String sslTrust;
         private Integer connectTimeout;
@@ -154,7 +184,7 @@ public class RuntimeConfig {
         private String host;
         private Integer port;
         private String username;
-        private String password;
+        private Secret password;
         private String security;
         private String sslTrust;
         private Integer connectTimeout;
@@ -167,7 +197,7 @@ public class RuntimeConfig {
     @Builder
     public static class VoiceConfig {
         private Boolean enabled;
-        private String apiKey;
+        private Secret apiKey;
         private String voiceId;
         private String ttsModelId;
         private String sttModelId;
@@ -212,6 +242,9 @@ public class RuntimeConfig {
         private Boolean detectPromptInjection;
         private Boolean detectCommandInjection;
         private Integer maxInputLength;
+        private Boolean allowlistEnabled;
+        private Boolean toolConfirmationEnabled;
+        private Integer toolConfirmationTimeoutSeconds;
     }
 
     @Data
@@ -274,9 +307,19 @@ public class RuntimeConfig {
     public static class RagConfig {
         private Boolean enabled;
         private String url;
-        private String apiKey;
+        private Secret apiKey;
         private String queryMode;
         private Integer timeoutSeconds;
         private Integer indexMinLength;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class McpConfig {
+        private Boolean enabled;
+        private Integer defaultStartupTimeout;
+        private Integer defaultIdleTimeout;
     }
 }

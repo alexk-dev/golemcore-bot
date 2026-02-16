@@ -44,6 +44,10 @@ public class AllowlistValidator {
     public boolean isAllowed(String channelType, String userId) {
         log.trace("[Security] Allowlist check: channel={}, user={}", channelType, userId);
 
+        if (!runtimeConfigService.isAllowlistEnabled()) {
+            return true;
+        }
+
         // Telegram allowlist is RuntimeConfig-only (no properties fallback)
         if ("telegram".equals(channelType)) {
             List<String> runtimeAllowed = runtimeConfigService.getTelegramAllowedUsers();
@@ -76,6 +80,9 @@ public class AllowlistValidator {
      * Check if a user is globally blocked.
      */
     public boolean isBlocked(String userId) {
+        if (!runtimeConfigService.isAllowlistEnabled()) {
+            return false;
+        }
         List<String> blockedUsers = properties.getSecurity().getAllowlist().getBlockedUsers();
         if (blockedUsers == null || blockedUsers.isEmpty()) {
             return false;

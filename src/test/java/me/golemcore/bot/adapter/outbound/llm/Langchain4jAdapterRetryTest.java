@@ -76,6 +76,6 @@ class Langchain4jAdapterRetryTest {
     private Langchain4jAdapter createMinimalAdapter() {
         // Create with nulls -- only testing isRateLimitError/sanitize which don't use
         // fields
-        return new Langchain4jAdapter(null, null, null);
+        return new Langchain4jAdapter(null, null);
     }
 }

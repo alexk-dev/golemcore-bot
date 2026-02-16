@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.stereotype.Service;
@@ -17,7 +18,7 @@ import java.util.List;
 /**
  * Service for managing application-level runtime configuration. Loads from
  * {@code preferences/runtime-config.json} via StoragePort and provides typed
- * getters with BotProperties fallback.
+ * getters.
  */
 @Service
 @Slf4j
@@ -48,6 +49,9 @@ public class RuntimeConfigService {
     private static final int DEFAULT_RATE_CHANNEL_PER_SECOND = 30;
     private static final int DEFAULT_RATE_LLM_PER_MINUTE = 60;
     private static final int DEFAULT_MAX_INPUT_LENGTH = 10000;
+    private static final boolean DEFAULT_ALLOWLIST_ENABLED = true;
+    private static final boolean DEFAULT_TOOL_CONFIRMATION_ENABLED = false;
+    private static final int DEFAULT_TOOL_CONFIRMATION_TIMEOUT_SECONDS = 60;
     private static final int DEFAULT_AUTO_TICK_INTERVAL_SECONDS = 30;
     private static final int DEFAULT_AUTO_TIMEOUT_MINUTES = 10;
     private static final int DEFAULT_AUTO_MAX_GOALS = 3;
@@ -69,6 +73,7 @@ public class RuntimeConfigService {
     private static final int DEFAULT_SMTP_READ_TIMEOUT = 30000;
     private static final String DEFAULT_SMTP_SECURITY = "starttls";
     private static final String DEFAULT_BROWSER_API_PROVIDER = "brave";
+    private static final boolean DEFAULT_BROWSER_ENABLED = true;
     private static final String DEFAULT_BROWSER_TYPE = "playwright";
     private static final boolean DEFAULT_BROWSER_HEADLESS = true;
     private static final int DEFAULT_BROWSER_TIMEOUT_MS = 30000;
@@ -77,7 +82,9 @@ public class RuntimeConfigService {
     private static final String DEFAULT_RAG_QUERY_MODE = "hybrid";
     private static final int DEFAULT_RAG_TIMEOUT_SECONDS = 10;
     private static final int DEFAULT_RAG_INDEX_MIN_LENGTH = 50;
-
+    private static final boolean DEFAULT_MCP_ENABLED = true;
+    private static final int DEFAULT_MCP_STARTUP_TIMEOUT = 30;
+    private static final int DEFAULT_MCP_IDLE_TIMEOUT = 5;
     private final StoragePort storagePort;
     private final ObjectMapper objectMapper;
 
@@ -97,16 +104,33 @@ public class RuntimeConfigService {
             synchronized (this) {
                 if (config == null) {
                     config = loadOrCreate();
+                    normalizeRuntimeConfig(config);
                 }
             }
         }
         return config;
     }
 
+    public RuntimeConfig getRuntimeConfigForApi() {
+        RuntimeConfig source = getRuntimeConfig();
+        try {
+            String json = objectMapper.writeValueAsString(source);
+            RuntimeConfig copy = objectMapper.readValue(json, RuntimeConfig.class);
+            redactSecrets(copy);
+            return copy;
+        } catch (IOException e) {
+            log.warn("[RuntimeConfig] Failed to build redacted runtime config: {}", e.getMessage());
+            RuntimeConfig fallback = RuntimeConfig.builder().build();
+            redactSecrets(fallback);
+            return fallback;
+        }
+    }
+
     /**
      * Update and persist RuntimeConfig.
      */
     public void updateRuntimeConfig(RuntimeConfig newConfig) {
+        normalizeRuntimeConfig(newConfig);
         this.config = newConfig;
         persist(newConfig);
     }
@@ -119,8 +143,7 @@ public class RuntimeConfigService {
     }
 
     public String getTelegramToken() {
-        String val = getRuntimeConfig().getTelegram().getToken();
-        return val != null ? val : "";
+        return Secret.valueOrEmpty(getRuntimeConfig().getTelegram().getToken());
     }
 
     public List<String> getTelegramAllowedUsers() {
@@ -129,6 +152,28 @@ public class RuntimeConfigService {
     }
 
     // ==================== Model Router ====================
+
+    public RuntimeConfig.LlmProviderConfig getLlmProviderConfig(String providerName) {
+        RuntimeConfig.LlmProviderConfig runtime = getRuntimeLlmProviderConfig(providerName);
+        return runtime != null ? runtime : RuntimeConfig.LlmProviderConfig.builder().build();
+    }
+
+    public boolean hasLlmProviderApiKey(String providerName) {
+        RuntimeConfig.LlmProviderConfig provider = getLlmProviderConfig(providerName);
+        return Secret.hasValue(provider.getApiKey());
+    }
+
+    public List<String> getConfiguredLlmProviders() {
+        return new ArrayList<>(getRuntimeConfig().getLlm().getProviders().keySet());
+    }
+
+    private RuntimeConfig.LlmProviderConfig getRuntimeLlmProviderConfig(String providerName) {
+        RuntimeConfig.LlmConfig llm = getRuntimeConfig().getLlm();
+        if (llm == null || providerName == null) {
+            return null;
+        }
+        return llm.getProviders().get(providerName);
+    }
 
     public String getBalancedModel() {
         String val = getRuntimeConfig().getModelRouter().getBalancedModel();
@@ -197,6 +242,11 @@ public class RuntimeConfigService {
         return val != null && !val.isBlank() ? val : DEFAULT_BROWSER_API_PROVIDER;
     }
 
+    public boolean isBrowserEnabled() {
+        Boolean val = getRuntimeConfig().getTools().getBrowserEnabled();
+        return val != null ? val : DEFAULT_BROWSER_ENABLED;
+    }
+
     public String getBrowserType() {
         String val = getRuntimeConfig().getTools().getBrowserType();
         return val != null && !val.isBlank() ? val : DEFAULT_BROWSER_TYPE;
@@ -223,8 +273,7 @@ public class RuntimeConfigService {
     }
 
     public String getBraveSearchApiKey() {
-        String val = getRuntimeConfig().getTools().getBraveSearchApiKey();
-        return val != null ? val : "";
+        return Secret.valueOrEmpty(getRuntimeConfig().getTools().getBraveSearchApiKey());
     }
 
     public boolean isFilesystemEnabled() {
@@ -280,8 +329,7 @@ public class RuntimeConfigService {
     }
 
     public String getRagApiKey() {
-        String val = getRuntimeConfig().getRag().getApiKey();
-        return val != null ? val : "";
+        return Secret.valueOrEmpty(getRuntimeConfig().getRag().getApiKey());
     }
 
     public String getRagQueryMode() {
@@ -299,9 +347,25 @@ public class RuntimeConfigService {
         return val != null ? val : DEFAULT_RAG_INDEX_MIN_LENGTH;
     }
 
+    // ==================== MCP ====================
+
+    public boolean isMcpEnabled() {
+        Boolean val = getRuntimeConfig().getMcp().getEnabled();
+        return val != null ? val : DEFAULT_MCP_ENABLED;
+    }
+
+    public int getMcpDefaultStartupTimeout() {
+        Integer val = getRuntimeConfig().getMcp().getDefaultStartupTimeout();
+        return val != null ? val : DEFAULT_MCP_STARTUP_TIMEOUT;
+    }
+
+    public int getMcpDefaultIdleTimeout() {
+        Integer val = getRuntimeConfig().getMcp().getDefaultIdleTimeout();
+        return val != null ? val : DEFAULT_MCP_IDLE_TIMEOUT;
+    }
+
     public String getVoiceApiKey() {
-        String val = getRuntimeConfig().getVoice().getApiKey();
-        return val != null ? val : "";
+        return Secret.valueOrEmpty(getRuntimeConfig().getVoice().getApiKey());
     }
 
     public String getVoiceId() {
@@ -343,7 +407,7 @@ public class RuntimeConfigService {
         resolved.setHost(rc.getHost() != null ? rc.getHost() : "");
         resolved.setPort(rc.getPort() != null ? rc.getPort() : DEFAULT_IMAP_PORT);
         resolved.setUsername(rc.getUsername() != null ? rc.getUsername() : "");
-        resolved.setPassword(rc.getPassword() != null ? rc.getPassword() : "");
+        resolved.setPassword(Secret.valueOrEmpty(rc.getPassword()));
         resolved.setSecurity(rc.getSecurity() != null ? rc.getSecurity() : DEFAULT_IMAP_SECURITY);
         resolved.setSslTrust(rc.getSslTrust() != null ? rc.getSslTrust() : "");
         resolved.setConnectTimeout(
@@ -364,7 +428,7 @@ public class RuntimeConfigService {
         resolved.setHost(rc.getHost() != null ? rc.getHost() : "");
         resolved.setPort(rc.getPort() != null ? rc.getPort() : DEFAULT_SMTP_PORT);
         resolved.setUsername(rc.getUsername() != null ? rc.getUsername() : "");
-        resolved.setPassword(rc.getPassword() != null ? rc.getPassword() : "");
+        resolved.setPassword(Secret.valueOrEmpty(rc.getPassword()));
         resolved.setSecurity(rc.getSecurity() != null ? rc.getSecurity() : DEFAULT_SMTP_SECURITY);
         resolved.setSslTrust(rc.getSslTrust() != null ? rc.getSslTrust() : "");
         resolved.setConnectTimeout(
@@ -462,6 +526,21 @@ public class RuntimeConfigService {
     public int getMaxInputLength() {
         Integer val = getRuntimeConfig().getSecurity().getMaxInputLength();
         return val != null ? val : DEFAULT_MAX_INPUT_LENGTH;
+    }
+
+    public boolean isAllowlistEnabled() {
+        Boolean val = getRuntimeConfig().getSecurity().getAllowlistEnabled();
+        return val != null ? val : DEFAULT_ALLOWLIST_ENABLED;
+    }
+
+    public boolean isToolConfirmationEnabled() {
+        Boolean val = getRuntimeConfig().getSecurity().getToolConfirmationEnabled();
+        return val != null ? val : DEFAULT_TOOL_CONFIRMATION_ENABLED;
+    }
+
+    public int getToolConfirmationTimeoutSeconds() {
+        Integer val = getRuntimeConfig().getSecurity().getToolConfirmationTimeoutSeconds();
+        return val != null ? val : DEFAULT_TOOL_CONFIRMATION_TIMEOUT_SECONDS;
     }
 
     // ==================== Compaction ====================
@@ -669,5 +748,83 @@ public class RuntimeConfigService {
         persist(defaultConfig);
         log.info("[RuntimeConfig] Created default runtime config");
         return defaultConfig;
+    }
+
+    private void normalizeRuntimeConfig(RuntimeConfig cfg) {
+        if (cfg == null) {
+            return;
+        }
+        if (cfg.getLlm() == null) {
+            cfg.setLlm(RuntimeConfig.LlmConfig.builder().build());
+        }
+        if (cfg.getLlm().getProviders() == null) {
+            cfg.getLlm().setProviders(new java.util.LinkedHashMap<>());
+        }
+        normalizeSecretFlags(cfg);
+    }
+
+    private void normalizeSecretFlags(RuntimeConfig cfg) {
+        cfg.getTelegram().setToken(normalizeSecret(cfg.getTelegram().getToken()));
+        cfg.getTools().setBraveSearchApiKey(normalizeSecret(cfg.getTools().getBraveSearchApiKey()));
+        cfg.getVoice().setApiKey(normalizeSecret(cfg.getVoice().getApiKey()));
+        cfg.getRag().setApiKey(normalizeSecret(cfg.getRag().getApiKey()));
+
+        RuntimeConfig.ImapConfig imapConfig = cfg.getTools().getImap();
+        if (imapConfig != null) {
+            imapConfig.setPassword(normalizeSecret(imapConfig.getPassword()));
+        }
+
+        RuntimeConfig.SmtpConfig smtpConfig = cfg.getTools().getSmtp();
+        if (smtpConfig != null) {
+            smtpConfig.setPassword(normalizeSecret(smtpConfig.getPassword()));
+        }
+
+        if (cfg.getLlm() != null && cfg.getLlm().getProviders() != null) {
+            for (RuntimeConfig.LlmProviderConfig providerConfig : cfg.getLlm().getProviders().values()) {
+                if (providerConfig != null) {
+                    providerConfig.setApiKey(normalizeSecret(providerConfig.getApiKey()));
+                }
+            }
+        }
+    }
+
+    private Secret normalizeSecret(Secret secret) {
+        if (secret == null) {
+            return null;
+        }
+        if (secret.getEncrypted() == null) {
+            secret.setEncrypted(false);
+        }
+        if (secret.getPresent() == null) {
+            secret.setPresent(Secret.hasValue(secret));
+        } else if (Secret.hasValue(secret)) {
+            secret.setPresent(true);
+        }
+        return secret;
+    }
+
+    private void redactSecrets(RuntimeConfig cfg) {
+        cfg.getTelegram().setToken(Secret.redacted(cfg.getTelegram().getToken()));
+        cfg.getTools().setBraveSearchApiKey(Secret.redacted(cfg.getTools().getBraveSearchApiKey()));
+        cfg.getVoice().setApiKey(Secret.redacted(cfg.getVoice().getApiKey()));
+        cfg.getRag().setApiKey(Secret.redacted(cfg.getRag().getApiKey()));
+
+        RuntimeConfig.ImapConfig imapConfig = cfg.getTools().getImap();
+        if (imapConfig != null) {
+            imapConfig.setPassword(Secret.redacted(imapConfig.getPassword()));
+        }
+
+        RuntimeConfig.SmtpConfig smtpConfig = cfg.getTools().getSmtp();
+        if (smtpConfig != null) {
+            smtpConfig.setPassword(Secret.redacted(smtpConfig.getPassword()));
+        }
+
+        if (cfg.getLlm() != null && cfg.getLlm().getProviders() != null) {
+            for (RuntimeConfig.LlmProviderConfig providerConfig : cfg.getLlm().getProviders().values()) {
+                if (providerConfig != null) {
+                    providerConfig.setApiKey(Secret.redacted(providerConfig.getApiKey()));
+                }
+            }
+        }
     }
 }

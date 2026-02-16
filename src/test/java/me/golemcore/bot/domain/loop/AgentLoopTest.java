@@ -38,7 +38,6 @@ import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.system.AgentSystem;
 import me.golemcore.bot.domain.system.ResponseRoutingSystem;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.RateLimitPort;
@@ -68,8 +67,6 @@ class AgentLoopTest {
     void shouldResetTypedControlFlagsAndToolResultsBetweenIterations() {
         SessionPort sessionPort = mock(SessionPort.class);
         RateLimitPort rateLimitPort = mock(RateLimitPort.class);
-        BotProperties props = new BotProperties();
-        props.getAgent().setMaxIterations(2);
 
         UserPreferencesService preferencesService = mock(UserPreferencesService.class);
         when(preferencesService.getMessage(any(), any())).thenReturn("x");
@@ -134,7 +131,6 @@ class AgentLoopTest {
         AgentLoop loop = new AgentLoop(
                 sessionPort,
                 rateLimitPort,
-                props,
                 List.of(verifier),
                 List.of(channel),
                 mockRuntimeConfigService(2),
@@ -160,8 +156,6 @@ class AgentLoopTest {
     void shouldSendUnsentLlmResponseAsFeedbackGuarantee() {
         SessionPort sessionPort = mock(SessionPort.class);
         RateLimitPort rateLimitPort = mock(RateLimitPort.class);
-        BotProperties props = new BotProperties();
-        props.getAgent().setMaxIterations(1);
 
         UserPreferencesService preferencesService = mock(UserPreferencesService.class);
         when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
@@ -213,7 +207,6 @@ class AgentLoopTest {
         AgentLoop loop = new AgentLoop(
                 sessionPort,
                 rateLimitPort,
-                props,
                 List.of(system,
                         new ResponseRoutingSystem(List.of(channel), preferencesService,
                                 mock(VoiceResponseHandler.class))),
@@ -246,8 +239,6 @@ class AgentLoopTest {
         // Arrange
         SessionPort sessionPort = mock(SessionPort.class);
         RateLimitPort rateLimitPort = mock(RateLimitPort.class);
-        BotProperties props = new BotProperties();
-        props.getAgent().setMaxIterations(1);
 
         UserPreferencesService preferencesService = mock(UserPreferencesService.class);
         when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
@@ -305,7 +296,6 @@ class AgentLoopTest {
         AgentLoop loop = new AgentLoop(
                 sessionPort,
                 rateLimitPort,
-                props,
                 List.of(disabledSystem),
                 List.of(channel),
                 mockRuntimeConfigService(1),
@@ -334,8 +324,6 @@ class AgentLoopTest {
         // Arrange
         SessionPort sessionPort = mock(SessionPort.class);
         RateLimitPort rateLimitPort = mock(RateLimitPort.class);
-        BotProperties props = new BotProperties();
-        props.getAgent().setMaxIterations(1);
 
         UserPreferencesService preferencesService = mock(UserPreferencesService.class);
         when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
@@ -412,7 +400,6 @@ class AgentLoopTest {
         AgentLoop loop = new AgentLoop(
                 sessionPort,
                 rateLimitPort,
-                props,
                 List.of(throwingSystem, inspectorSystem),
                 List.of(channel),
                 mockRuntimeConfigService(1),
@@ -446,7 +433,6 @@ class AgentLoopTest {
         // Arrange
         SessionPort sessionPort = mock(SessionPort.class);
         RateLimitPort rateLimitPort = mock(RateLimitPort.class);
-        BotProperties props = new BotProperties();
         UserPreferencesService preferencesService = mock(UserPreferencesService.class);
         LlmPort llmPort = mock(LlmPort.class);
         Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
@@ -457,7 +443,6 @@ class AgentLoopTest {
         AgentLoop loop = new AgentLoop(
                 sessionPort,
                 rateLimitPort,
-                props,
                 List.of(),
                 List.of(channel),
                 mockRuntimeConfigService(1),
@@ -474,8 +459,6 @@ class AgentLoopTest {
         // Arrange
         SessionPort sessionPort = mock(SessionPort.class);
         RateLimitPort rateLimitPort = mock(RateLimitPort.class);
-        BotProperties props = new BotProperties();
-        props.getAgent().setMaxIterations(1);
 
         UserPreferencesService preferencesService = mock(UserPreferencesService.class);
         when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
@@ -535,7 +518,6 @@ class AgentLoopTest {
         AgentLoop loop = new AgentLoop(
                 sessionPort,
                 rateLimitPort,
-                props,
                 List.of(failureSystem, routingSystem),
                 List.of(channel),
                 mockRuntimeConfigService(1),
@@ -565,8 +547,6 @@ class AgentLoopTest {
         // Arrange
         SessionPort sessionPort = mock(SessionPort.class);
         RateLimitPort rateLimitPort = mock(RateLimitPort.class);
-        BotProperties props = new BotProperties();
-        props.getAgent().setMaxIterations(1);
 
         UserPreferencesService preferencesService = mock(UserPreferencesService.class);
         when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
@@ -622,7 +602,6 @@ class AgentLoopTest {
         AgentLoop loop = new AgentLoop(
                 sessionPort,
                 rateLimitPort,
-                props,
                 List.of(nullMessagesSystem, routingSystem),
                 List.of(channel),
                 mockRuntimeConfigService(1),
@@ -649,8 +628,6 @@ class AgentLoopTest {
         // Arrange — build a message with null content and verify the loop handles it
         SessionPort sessionPort = mock(SessionPort.class);
         RateLimitPort rateLimitPort = mock(RateLimitPort.class);
-        BotProperties props = new BotProperties();
-        props.getAgent().setMaxIterations(1);
 
         UserPreferencesService preferencesService = mock(UserPreferencesService.class);
         when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
@@ -679,7 +656,6 @@ class AgentLoopTest {
         AgentLoop loop = new AgentLoop(
                 sessionPort,
                 rateLimitPort,
-                props,
                 List.of(),
                 List.of(channel),
                 mockRuntimeConfigService(1),
@@ -707,8 +683,6 @@ class AgentLoopTest {
         // Arrange
         SessionPort sessionPort = mock(SessionPort.class);
         RateLimitPort rateLimitPort = mock(RateLimitPort.class);
-        BotProperties props = new BotProperties();
-        props.getAgent().setMaxIterations(1);
 
         UserPreferencesService preferencesService = mock(UserPreferencesService.class);
         when(preferencesService.getMessage(any())).thenReturn("generic fallback");
@@ -773,7 +747,6 @@ class AgentLoopTest {
         AgentLoop loop = new AgentLoop(
                 sessionPort,
                 rateLimitPort,
-                props,
                 List.of(turnOutcomeSystem, routingSystem),
                 List.of(channel),
                 mockRuntimeConfigService(1),

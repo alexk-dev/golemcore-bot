@@ -1,26 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import {
-  getSettings,
-  updatePreferences,
-  getModels,
-  getRuntimeConfig,
-  updateTelegramConfig,
-  updateModelRouterConfig,
-  updateToolsConfig,
-  updateVoiceConfig,
-  updateMemoryConfig,
-  updateSkillsConfig,
-  updateTurnConfig,
-  updateUsageConfig,
-  updateRagConfig,
-  updateWebhooksConfig,
-  updateAutoConfig,
-  updateAdvancedConfig,
-  generateInviteCode,
-  deleteInviteCode,
-  restartTelegram,
+import type {
   TelegramConfig,
   ModelRouterConfig,
+  LlmConfig,
   ToolsConfig,
   VoiceConfig,
   MemoryConfig,
@@ -28,11 +10,34 @@ import {
   TurnConfig,
   UsageConfig,
   RagConfig,
+  McpConfig,
   AutoModeConfig,
   RateLimitConfig,
   SecurityConfig,
   CompactionConfig,
-  WebhookConfig,
+  WebhookConfig} from '../api/settings';
+import {
+  getSettings,
+  updatePreferences,
+  getModels,
+  getRuntimeConfig,
+  updateTelegramConfig,
+  updateModelRouterConfig,
+  updateLlmConfig,
+  updateToolsConfig,
+  updateVoiceConfig,
+  updateMemoryConfig,
+  updateSkillsConfig,
+  updateTurnConfig,
+  updateUsageConfig,
+  updateRagConfig,
+  updateMcpConfig,
+  updateWebhooksConfig,
+  updateAutoConfig,
+  updateAdvancedConfig,
+  generateInviteCode,
+  deleteInviteCode,
+  restartTelegram
 } from '../api/settings';
 
 export function useSettings() {
@@ -69,6 +74,14 @@ export function useUpdateModelRouter() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: ModelRouterConfig) => updateModelRouterConfig(config),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useUpdateLlm() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (config: LlmConfig) => updateLlmConfig(config),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
   });
 }
@@ -125,6 +138,14 @@ export function useUpdateRag() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: RagConfig) => updateRagConfig(config),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useUpdateMcp() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (config: McpConfig) => updateMcpConfig(config),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
   });
 }

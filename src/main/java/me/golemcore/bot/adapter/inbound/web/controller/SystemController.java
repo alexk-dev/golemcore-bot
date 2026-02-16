@@ -115,7 +115,7 @@ public class SystemController {
     @GetMapping("/browser/health")
     public Mono<ResponseEntity<Map<String, Object>>> getBrowserHealth() {
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("enabled", botProperties.getBrowser().isEnabled());
+        result.put("enabled", runtimeConfigService.isBrowserEnabled());
         result.put("type", runtimeConfigService.getBrowserType());
         result.put("provider", runtimeConfigService.getBrowserApiProvider());
         result.put("headless", runtimeConfigService.isBrowserHeadless());

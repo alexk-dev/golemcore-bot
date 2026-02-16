@@ -53,10 +53,18 @@ class BraveSearchToolTest {
         when(userPreferencesService.getMessage("tool.brave.error")).thenReturn(ERROR_MSG);
     }
 
+    private BraveSearchTool createTool() {
+        return new BraveSearchTool(feignClientFactory, properties, runtimeConfigService, userPreferencesService) {
+            @Override
+            protected void sleepBeforeRetry(long millis) {
+                // No-op to keep retry tests fast and deterministic.
+            }
+        };
+    }
+
     @Test
     void getDefinition_returnsCorrectDefinition() {
-        braveSearchTool = new BraveSearchTool(feignClientFactory, properties, runtimeConfigService,
-                userPreferencesService);
+        braveSearchTool = createTool();
         braveSearchTool.init();
 
         ToolDefinition definition = braveSearchTool.getDefinition();
@@ -68,8 +76,7 @@ class BraveSearchToolTest {
 
     @Test
     void isEnabled_falseByDefault() {
-        braveSearchTool = new BraveSearchTool(feignClientFactory, properties, runtimeConfigService,
-                userPreferencesService);
+        braveSearchTool = createTool();
         braveSearchTool.init();
 
         assertFalse(braveSearchTool.isEnabled());
@@ -80,8 +87,7 @@ class BraveSearchToolTest {
         when(runtimeConfigService.isBraveSearchEnabled()).thenReturn(true);
         when(runtimeConfigService.getBraveSearchApiKey()).thenReturn("");
 
-        braveSearchTool = new BraveSearchTool(feignClientFactory, properties, runtimeConfigService,
-                userPreferencesService);
+        braveSearchTool = createTool();
         braveSearchTool.init();
 
         assertFalse(braveSearchTool.isEnabled());
@@ -95,8 +101,7 @@ class BraveSearchToolTest {
         when(feignClientFactory.create(eq(BraveSearchTool.BraveSearchApi.class), anyString()))
                 .thenReturn(mock(BraveSearchTool.BraveSearchApi.class));
 
-        braveSearchTool = new BraveSearchTool(feignClientFactory, properties, runtimeConfigService,
-                userPreferencesService);
+        braveSearchTool = createTool();
         braveSearchTool.init();
 
         assertTrue(braveSearchTool.isEnabled());
@@ -104,8 +109,7 @@ class BraveSearchToolTest {
 
     @Test
     void execute_failsWithNoQuery() throws ExecutionException, InterruptedException {
-        braveSearchTool = new BraveSearchTool(feignClientFactory, properties, runtimeConfigService,
-                userPreferencesService);
+        braveSearchTool = createTool();
         braveSearchTool.init();
 
         ToolResult result = braveSearchTool.execute(Map.of()).get();
@@ -116,8 +120,7 @@ class BraveSearchToolTest {
 
     @Test
     void execute_failsWithBlankQuery() throws ExecutionException, InterruptedException {
-        braveSearchTool = new BraveSearchTool(feignClientFactory, properties, runtimeConfigService,
-                userPreferencesService);
+        braveSearchTool = createTool();
         braveSearchTool.init();
 
         ToolResult result = braveSearchTool.execute(Map.of(QUERY, "   ")).get();
@@ -272,8 +275,7 @@ class BraveSearchToolTest {
         when(feignClientFactory.create(eq(BraveSearchTool.BraveSearchApi.class), anyString()))
                 .thenReturn(mockApi);
 
-        braveSearchTool = new BraveSearchTool(feignClientFactory, properties, runtimeConfigService,
-                userPreferencesService);
+        braveSearchTool = createTool();
         braveSearchTool.init();
         return mockApi;
     }

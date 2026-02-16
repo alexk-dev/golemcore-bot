@@ -2,10 +2,9 @@ package me.golemcore.bot.security;
 
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -15,6 +14,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class AllowlistValidatorTest {
@@ -23,19 +23,19 @@ class AllowlistValidatorTest {
     private static final String USER_1 = "user1";
     private static final String USER_ANY = "any_user";
 
-    @Mock
     private BotProperties properties;
 
-    @Mock
-    private RuntimeConfigService runtimeConfigService;
+    private StubRuntimeConfigService runtimeConfigService;
 
     private AllowlistValidator validator;
 
     @BeforeEach
     void setUp() {
-        MockitoAnnotations.openMocks(this);
+        properties = mock(BotProperties.class);
+        runtimeConfigService = new StubRuntimeConfigService();
+        runtimeConfigService.allowlistEnabled = true;
         // Telegram defaults: empty RuntimeConfig allowlist (deny all)
-        when(runtimeConfigService.getTelegramAllowedUsers()).thenReturn(Collections.emptyList());
+        runtimeConfigService.telegramAllowedUsers = Collections.emptyList();
         validator = new AllowlistValidator(properties, runtimeConfigService);
     }
 
@@ -46,7 +46,7 @@ class AllowlistValidatorTest {
     @Test
     void shouldAllowTelegramUserWhenInRuntimeConfigAllowlist() {
         // Arrange
-        when(runtimeConfigService.getTelegramAllowedUsers()).thenReturn(List.of(USER_1, "user2", "user3"));
+        runtimeConfigService.telegramAllowedUsers = List.of(USER_1, "user2", "user3");
 
         // Act
         boolean result = validator.isAllowed(CHANNEL_TELEGRAM, "user2");
@@ -58,7 +58,7 @@ class AllowlistValidatorTest {
     @Test
     void shouldDenyTelegramUserWhenNotInRuntimeConfigAllowlist() {
         // Arrange
-        when(runtimeConfigService.getTelegramAllowedUsers()).thenReturn(List.of(USER_1, "user2"));
+        runtimeConfigService.telegramAllowedUsers = List.of(USER_1, "user2");
 
         // Act
         boolean result = validator.isAllowed(CHANNEL_TELEGRAM, "unknown_user");
@@ -70,7 +70,7 @@ class AllowlistValidatorTest {
     @Test
     void shouldDenyTelegramUserWhenRuntimeConfigAllowlistIsEmpty() {
         // Arrange — empty list means no one is allowed
-        when(runtimeConfigService.getTelegramAllowedUsers()).thenReturn(Collections.emptyList());
+        runtimeConfigService.telegramAllowedUsers = Collections.emptyList();
 
         // Act
         boolean result = validator.isAllowed(CHANNEL_TELEGRAM, USER_ANY);
@@ -82,7 +82,7 @@ class AllowlistValidatorTest {
     @Test
     void shouldDenyTelegramUserWhenRuntimeConfigAllowlistIsNull() {
         // Arrange — null means no one is allowed
-        when(runtimeConfigService.getTelegramAllowedUsers()).thenReturn(null);
+        runtimeConfigService.telegramAllowedUsers = null;
 
         // Act
         boolean result = validator.isAllowed(CHANNEL_TELEGRAM, USER_ANY);
@@ -252,5 +252,24 @@ class AllowlistValidatorTest {
 
         // Assert
         assertFalse(result);
+    }
+
+    private static class StubRuntimeConfigService extends RuntimeConfigService {
+        private boolean allowlistEnabled;
+        private List<String> telegramAllowedUsers;
+
+        StubRuntimeConfigService() {
+            super(mock(StoragePort.class));
+        }
+
+        @Override
+        public boolean isAllowlistEnabled() {
+            return allowlistEnabled;
+        }
+
+        @Override
+        public List<String> getTelegramAllowedUsers() {
+            return telegramAllowedUsers;
+        }
     }
 }

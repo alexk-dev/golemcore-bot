@@ -159,7 +159,7 @@ public class BraveSearchTool implements ToolComponent {
                     long backoffMs = (long) (INITIAL_BACKOFF_MS * Math.pow(BACKOFF_MULTIPLIER, attempt));
                     log.warn("[BraveSearch] Rate limit hit (attempt {}/{}), retrying in {}ms",
                             attempt + 1, MAX_RETRIES, backoffMs);
-                    sleep(backoffMs);
+                    sleepBeforeRetry(backoffMs);
                 } else if (e.status() == HTTP_TOO_MANY_REQUESTS) {
                     log.error("[BraveSearch] Rate limit exceeded after {} retries for query: {}", MAX_RETRIES, query);
                     return ToolResult.failure(userPreferencesService.getMessage("tool.brave.rate_limit"));
@@ -203,7 +203,7 @@ public class BraveSearchTool implements ToolComponent {
                         .toList()));
     }
 
-    private void sleep(long millis) {
+    protected void sleepBeforeRetry(long millis) {
         try {
             Thread.sleep(millis);
         } catch (InterruptedException e) {

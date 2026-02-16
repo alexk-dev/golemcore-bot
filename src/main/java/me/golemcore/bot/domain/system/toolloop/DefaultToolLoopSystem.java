@@ -134,6 +134,11 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             LlmResponse response = llmPort.chat(buildRequest(context)).join();
             llmCalls++;
             context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+            boolean compatFlatteningUsed = response != null && response.isCompatibilityFlatteningApplied();
+            context.setAttribute(ContextAttributes.LLM_COMPAT_FLATTEN_FALLBACK_USED, compatFlatteningUsed);
+            if (compatFlatteningUsed) {
+                log.info("[ToolLoop] Compatibility fallback applied: flattened tool history for LLM request");
+            }
 
             // 2) Final answer (no tool calls)
             if (response == null || !response.hasToolCalls()) {

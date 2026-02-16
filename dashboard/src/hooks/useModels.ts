@@ -1,11 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import type {
+  ModelSettings} from '../api/models';
 import {
   getModelsConfig,
   getAvailableModels,
   saveModel,
   deleteModel,
-  reloadModels,
-  ModelSettings,
+  reloadModels
 } from '../api/models';
 
 export function useModelsConfig() {

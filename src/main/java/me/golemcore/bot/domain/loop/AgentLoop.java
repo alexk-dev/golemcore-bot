@@ -33,7 +33,6 @@ import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.domain.system.AgentSystem;
 import me.golemcore.bot.domain.system.ResponseRoutingSystem;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.RateLimitPort;
@@ -72,7 +71,6 @@ public class AgentLoop {
 
     private final SessionPort sessionService;
     private final RateLimitPort rateLimiter;
-    private final BotProperties properties;
     private final List<AgentSystem> systems;
     private final RuntimeConfigService runtimeConfigService;
     private final UserPreferencesService preferencesService;
@@ -101,13 +99,12 @@ public class AgentLoop {
     }
 
     public AgentLoop(SessionPort sessionService, RateLimitPort rateLimiter,
-            BotProperties properties, List<AgentSystem> systems,
+            List<AgentSystem> systems,
             List<ChannelPort> channelPorts, RuntimeConfigService runtimeConfigService,
             UserPreferencesService preferencesService,
             LlmPort llmPort, Clock clock) {
         this.sessionService = sessionService;
         this.rateLimiter = rateLimiter;
-        this.properties = properties;
         this.systems = systems;
         this.runtimeConfigService = runtimeConfigService;
         this.preferencesService = preferencesService;

@@ -364,7 +364,7 @@ public class ShellTool implements ToolComponent {
                 return output.toString();
             });
 
-            boolean completed = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
+            boolean completed = waitForProcess(process, timeoutSeconds);
             long duration = System.currentTimeMillis() - startTime;
 
             if (!completed) {
@@ -412,5 +412,9 @@ public class ShellTool implements ToolComponent {
         } catch (ExecutionException e) {
             return ToolResult.failure("Error reading output: " + e.getMessage());
         }
+    }
+
+    protected boolean waitForProcess(Process process, int timeoutSeconds) throws InterruptedException {
+        return process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
     }
 }

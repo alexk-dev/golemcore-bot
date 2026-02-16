@@ -253,7 +253,7 @@ public class SmtpTool implements ToolComponent {
         message.setContent(body, html ? "text/html; charset=UTF-8" : "text/plain; charset=UTF-8");
         message.setSentDate(new Date());
 
-        Transport.send(message);
+        deliver(message);
 
         log.info("[SMTP] Email sent to: {}", to);
 
@@ -290,5 +290,9 @@ public class SmtpTool implements ToolComponent {
             sanitized = sanitized.replace(config.getPassword(), "***");
         }
         return sanitized;
+    }
+
+    protected void deliver(MimeMessage message) throws MessagingException {
+        Transport.send(message);
     }
 }

@@ -61,7 +61,7 @@ export default function ChatWindow() {
 
   // Load history from backend on mount
   useEffect(() => {
-    if (historyLoaded) return;
+    if (historyLoaded) {return;}
     listSessions('web')
       .then((sessions) => {
         const sorted = sessions.sort((a, b) =>
@@ -80,7 +80,12 @@ export default function ChatWindow() {
         if (detail && detail.messages.length > 0) {
           const history: ChatMessage[] = detail.messages
             .filter((m) => m.role === 'user' || m.role === 'assistant')
-            .map((m) => ({ role: m.role, content: m.content, model: m.model, tier: m.modelTier }));
+            .map((m) => ({
+              role: m.role,
+              content: m.content ?? '',
+              model: m.model,
+              tier: m.modelTier,
+            }));
           setAllMessages(history);
           setVisibleStart(Math.max(0, history.length - INITIAL_MESSAGES));
         }
@@ -104,7 +109,7 @@ export default function ChatWindow() {
   // Infinite scroll — load more on scroll to top
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
-    if (!el) return;
+    if (!el) {return;}
 
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
     shouldAutoScroll.current = nearBottom;
@@ -124,7 +129,7 @@ export default function ChatWindow() {
   }, [visibleStart, loadingMore]);
 
   const connect = useCallback(() => {
-    if (!token) return;
+    if (!token) {return;}
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(`${protocol}//${window.location.host}/ws/chat?token=${token}`);
 
@@ -161,7 +166,7 @@ export default function ChatWindow() {
             const last = prev[prev.length - 1];
             const chunkModel = data.hint?.model ?? null;
             const chunkTier = data.hint?.tier ?? null;
-            if (last && last.role === 'assistant' && data.type === 'assistant_chunk') {
+            if (last?.role === 'assistant' && data.type === 'assistant_chunk') {
               return [...prev.slice(0, -1), {
                 role: 'assistant',
                 content: last.content + data.text,
@@ -171,7 +176,7 @@ export default function ChatWindow() {
             }
             return [...prev, {
               role: 'assistant',
-              content: data.text,
+              content: data.text ?? '',
               model: chunkModel,
               tier: chunkTier,
             }];

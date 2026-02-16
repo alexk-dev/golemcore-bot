@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Form } from 'react-bootstrap';
 import { FiMic, FiPaperclip, FiSend, FiSquare, FiX } from 'react-icons/fi';
+import { useAvailableModels } from '../../hooks/useModels';
 
 export interface ChatAttachmentPayload {
   type: 'image';
@@ -17,6 +18,106 @@ interface ChatAttachmentDraft extends ChatAttachmentPayload {
 interface OutboundChatPayload {
   text: string;
   attachments: ChatAttachmentPayload[];
+}
+
+interface CommandSuggestion {
+  key: string;
+  label: string;
+  description: string;
+  insertText: string;
+}
+
+interface CommandDefinition {
+  name: string;
+  description: string;
+}
+
+const CHAT_COMMANDS: CommandDefinition[] = [
+  { name: 'help', description: 'Show available commands' },
+  { name: 'skills', description: 'List available skills' },
+  { name: 'tools', description: 'List enabled tools' },
+  { name: 'status', description: 'Show session status' },
+  { name: 'new', description: 'Start a new conversation' },
+  { name: 'reset', description: 'Reset conversation' },
+  { name: 'compact', description: 'Compact conversation history' },
+  { name: 'tier', description: 'Set model tier' },
+  { name: 'model', description: 'Configure per-tier models' },
+  { name: 'stop', description: 'Stop current run' },
+  { name: 'auto', description: 'Toggle auto mode' },
+  { name: 'goals', description: 'List goals' },
+  { name: 'goal', description: 'Create a goal' },
+  { name: 'tasks', description: 'List tasks' },
+  { name: 'diary', description: 'Show diary entries' },
+  { name: 'schedule', description: 'Manage schedules' },
+  { name: 'plan', description: 'Plan mode control' },
+  { name: 'plans', description: 'List plans' },
+];
+
+interface ParsedCommandInput {
+  tokens: string[];
+  activeTokenIndex: number;
+  activeQuery: string;
+}
+
+function parseCommandInput(text: string): ParsedCommandInput | null {
+  const firstLine = text.split('\n')[0] ?? '';
+  if (!firstLine.startsWith('/')) {
+    return null;
+  }
+
+  const commandPart = firstLine.slice(1);
+  const hasTrailingSpace = /\s$/.test(commandPart);
+  const trimmed = commandPart.trim();
+  const tokens = trimmed ? trimmed.split(/\s+/) : [];
+
+  if (tokens.length === 0) {
+    return {
+      tokens: [],
+      activeTokenIndex: 0,
+      activeQuery: '',
+    };
+  }
+
+  if (hasTrailingSpace) {
+    return {
+      tokens,
+      activeTokenIndex: tokens.length,
+      activeQuery: '',
+    };
+  }
+
+  const activeTokenIndex = Math.max(0, tokens.length - 1);
+  const activeQuery = (tokens[activeTokenIndex] ?? '').toLowerCase();
+  return {
+    tokens,
+    activeTokenIndex,
+    activeQuery,
+  };
+}
+
+function withAppliedToken(currentText: string, tokens: string[], activeTokenIndex: number, value: string): string {
+  const nextTokens = [...tokens];
+  if (activeTokenIndex >= nextTokens.length) {
+    nextTokens.push(value);
+  } else {
+    nextTokens[activeTokenIndex] = value;
+  }
+  const commandLine = `/${nextTokens.join(' ')} `;
+  const newlineIndex = currentText.indexOf('\n');
+  if (newlineIndex < 0) {
+    return commandLine;
+  }
+  return `${commandLine}${currentText.slice(newlineIndex)}`;
+}
+
+function toSuggestions(options: Array<{ value: string; description: string; label?: string }>,
+  parsed: ParsedCommandInput, text: string): CommandSuggestion[] {
+  return options.map((option) => ({
+    key: `${parsed.activeTokenIndex}:${option.value}`,
+    label: option.label ?? option.value,
+    description: option.description,
+    insertText: withAppliedToken(text, parsed.tokens, parsed.activeTokenIndex, option.value),
+  }));
 }
 
 interface Props {
@@ -38,10 +139,163 @@ export default function ChatInput({ onSend, disabled }: Props) {
   const [isRecording, setIsRecording] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [attachments, setAttachments] = useState<ChatAttachmentDraft[]>([]);
+  const [activeCommandIndex, setActiveCommandIndex] = useState(0);
+  const { data: availableModels } = useAvailableModels();
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
+  const modelIds = useMemo(() => {
+    const groupedModels = availableModels ?? {};
+    return Object.values(groupedModels)
+      .flatMap((models) => models.map((model) => model.id))
+      .sort();
+  }, [availableModels]);
+  const modelReasoningLevels = useMemo(() => {
+    const groupedModels = availableModels ?? {};
+    return Array.from(new Set(
+      Object.values(groupedModels)
+        .flatMap((models) => models.flatMap((model) => model.reasoningLevels ?? [])),
+    )).sort();
+  }, [availableModels]);
+  const commandInput = useMemo(() => parseCommandInput(text), [text]);
+  const commandSuggestions = useMemo(() => {
+    if (!commandInput) {
+      return [] as CommandSuggestion[];
+    }
+
+    const { tokens, activeTokenIndex, activeQuery } = commandInput;
+    const commandName = (tokens[0] ?? '').toLowerCase();
+
+    if (activeTokenIndex === 0) {
+      const options = CHAT_COMMANDS
+        .filter((command) => command.name.startsWith(activeQuery))
+        .slice(0, 8)
+        .map((command) => ({ value: command.name, label: `/${command.name}`, description: command.description }));
+      return toSuggestions(options, commandInput, text);
+    }
+
+    if (commandName === 'tier') {
+      if (activeTokenIndex === 1) {
+        return toSuggestions(
+          ['balanced', 'smart', 'coding', 'deep']
+            .filter((value) => value.startsWith(activeQuery))
+            .map((value) => ({ value, description: 'Model tier' })),
+          commandInput,
+          text,
+        );
+      }
+      if (activeTokenIndex === 2 && (tokens[1] ?? '').length > 0) {
+        return toSuggestions(
+          ['force']
+            .filter((value) => value.startsWith(activeQuery))
+            .map((value) => ({ value, description: 'Pin selected tier' })),
+          commandInput,
+          text,
+        );
+      }
+    }
+
+    if (commandName === 'plan' && activeTokenIndex === 1) {
+      return toSuggestions(
+        ['on', 'off', 'status', 'approve', 'cancel', 'resume']
+          .filter((value) => value.startsWith(activeQuery))
+          .map((value) => ({ value, description: 'Plan mode action' })),
+        commandInput,
+        text,
+      );
+    }
+
+    if (commandName === 'compact' && activeTokenIndex === 1) {
+      return toSuggestions(
+        ['20', '50', '100']
+          .filter((value) => value.startsWith(activeQuery))
+          .map((value) => ({ value, description: 'Keep last N messages during compaction' })),
+        commandInput,
+        text,
+      );
+    }
+
+    if (commandName === 'schedule' && activeTokenIndex === 1) {
+      return toSuggestions(
+        [
+          { value: 'list', description: 'List active schedules' },
+          { value: 'goal', description: 'Schedule a goal by id' },
+          { value: 'task', description: 'Schedule a task by id' },
+          { value: 'delete', description: 'Delete schedule by id' },
+          { value: 'help', description: 'Show schedule command help' },
+        ]
+          .filter((option) => option.value.startsWith(activeQuery)),
+        commandInput,
+        text,
+      );
+    }
+
+    if (commandName === 'auto' && activeTokenIndex === 1) {
+      return toSuggestions(
+        ['on', 'off']
+          .filter((value) => value.startsWith(activeQuery))
+          .map((value) => ({ value, description: 'Auto mode state' })),
+        commandInput,
+        text,
+      );
+    }
+
+    if (commandName === 'diary' && activeTokenIndex === 1) {
+      return toSuggestions(
+        ['10', '25', '50']
+          .filter((value) => value.startsWith(activeQuery))
+          .map((value) => ({ value, description: 'Recent entries count' })),
+        commandInput,
+        text,
+      );
+    }
+
+    if (commandName === 'model') {
+      if (activeTokenIndex === 1) {
+        return toSuggestions(
+          ['list', 'balanced', 'smart', 'coding', 'deep']
+            .filter((value) => value.startsWith(activeQuery))
+            .map((value) => ({ value, description: value === 'list' ? 'List available models' : 'Model tier' })),
+          commandInput,
+          text,
+        );
+      }
+
+      const selectedTier = tokens[1] ?? '';
+      const isTierSelection = ['balanced', 'smart', 'coding', 'deep'].includes(selectedTier);
+      if (isTierSelection && activeTokenIndex === 2) {
+        const controlOptions = [
+          { value: 'reasoning', description: 'Set reasoning level for tier model' },
+          { value: 'reset', description: 'Reset tier override to default' },
+        ];
+        const modelOptions = modelIds.slice(0, 24).map((value) => ({ value, description: 'Available model' }));
+        return toSuggestions(
+          [...controlOptions, ...modelOptions]
+            .filter((option) => option.value.startsWith(activeQuery))
+            .slice(0, 10),
+          commandInput,
+          text,
+        );
+      }
+
+      if (isTierSelection && (tokens[2] ?? '') === 'reasoning' && activeTokenIndex === 3) {
+        const levels = modelReasoningLevels.length > 0
+          ? modelReasoningLevels
+          : ['minimal', 'low', 'medium', 'high'];
+        return toSuggestions(
+          levels
+            .filter((value) => value.startsWith(activeQuery))
+            .map((value) => ({ value, description: 'Reasoning level' })),
+          commandInput,
+          text,
+        );
+      }
+    }
+
+    return [] as CommandSuggestion[];
+  }, [commandInput, modelIds, modelReasoningLevels, text]);
+  const isCommandMenuOpen = !disabled && commandSuggestions.length > 0;
 
   useEffect(() => {
     if (!disabled) {
@@ -123,7 +377,38 @@ export default function ChatInput({ onSend, disabled }: Props) {
     clearAttachments();
   };
 
+  const applyCommandSuggestion = (suggestion: CommandSuggestion) => {
+    setText(suggestion.insertText);
+    setActiveCommandIndex(0);
+    inputRef.current?.focus();
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (isCommandMenuOpen && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      e.preventDefault();
+      const direction = e.key === 'ArrowDown' ? 1 : -1;
+      setActiveCommandIndex((prev) => {
+        const next = prev + direction;
+        if (next < 0) {
+          return commandSuggestions.length - 1;
+        }
+        if (next >= commandSuggestions.length) {
+          return 0;
+        }
+        return next;
+      });
+      return;
+    }
+
+    if (isCommandMenuOpen && (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey))) {
+      const selected = commandSuggestions[activeCommandIndex] ?? commandSuggestions[0];
+      if (selected) {
+        e.preventDefault();
+        applyCommandSuggestion(selected);
+        return;
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit(e);
@@ -225,12 +510,32 @@ export default function ChatInput({ onSend, disabled }: Props) {
             ref={inputRef}
             rows={1}
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {
+              setText(e.target.value);
+              setActiveCommandIndex(0);
+            }}
             onKeyDown={handleKeyDown}
             placeholder="Type a message or drop images..."
             disabled={disabled}
             className="chat-textarea"
           />
+
+          {isCommandMenuOpen && (
+            <div className="chat-command-menu">
+              {commandSuggestions.map((suggestion, index) => (
+                <button
+                  key={suggestion.key}
+                  type="button"
+                  className={`chat-command-item ${index === activeCommandIndex ? 'active' : ''}`}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => applyCommandSuggestion(suggestion)}
+                >
+                  <span className="chat-command-name">{suggestion.label}</span>
+                  <span className="chat-command-desc">{suggestion.description}</span>
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="d-flex align-items-center gap-1 chat-inline-actions">
             <Button
@@ -296,7 +601,7 @@ export default function ChatInput({ onSend, disabled }: Props) {
         />
 
         <small className="chat-input-hint text-body-secondary d-block mt-2">
-          Enter to send, Shift+Enter for new line, drag and drop images to attach.
+          Enter to send, Shift+Enter for new line, type / for commands, drag and drop images to attach.
         </small>
       </Form>
     </div>

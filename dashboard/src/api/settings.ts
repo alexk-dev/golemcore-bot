@@ -1,5 +1,114 @@
 import client from './client';
 
+interface SecretPayload {
+  value: string | null;
+  encrypted: boolean;
+}
+
+function toSecretPayload(value: string | null | undefined): SecretPayload | null {
+  if (value == null || value === '') {
+    return null;
+  }
+  return { value, encrypted: false };
+}
+
+function scrubSecret(): null {
+  return null;
+}
+
+function toUiRuntimeConfig(data: any): RuntimeConfig {
+  const cfg = { ...data };
+  if (cfg.telegram) {
+    cfg.telegram = { ...cfg.telegram, token: scrubSecret() };
+  }
+  if (cfg.llm?.providers) {
+    const providers: Record<string, any> = {};
+    Object.entries(cfg.llm.providers).forEach(([name, provider]: [string, any]) => {
+      const hasApiKey = Boolean(provider?.apiKey?.present) || Boolean(provider?.apiKey?.value);
+      providers[name] = {
+        ...provider,
+        apiKey: scrubSecret(),
+        apiKeyPresent: hasApiKey,
+      };
+    });
+    cfg.llm = { ...cfg.llm, providers };
+  }
+  if (cfg.tools) {
+    cfg.tools = {
+      ...cfg.tools,
+      braveSearchApiKey: scrubSecret(),
+      imap: cfg.tools.imap ? { ...cfg.tools.imap, password: scrubSecret() } : cfg.tools.imap,
+      smtp: cfg.tools.smtp ? { ...cfg.tools.smtp, password: scrubSecret() } : cfg.tools.smtp,
+    };
+  }
+  if (cfg.voice) {
+    cfg.voice = { ...cfg.voice, apiKey: scrubSecret() };
+  }
+  if (cfg.rag) {
+    cfg.rag = { ...cfg.rag, apiKey: scrubSecret() };
+  }
+  return cfg as RuntimeConfig;
+}
+
+function toBackendRuntimeConfig(config: RuntimeConfig): any {
+  const payload: any = {
+    ...config,
+    telegram: {
+      ...config.telegram,
+      token: toSecretPayload(config.telegram?.token ?? null),
+    },
+    llm: {
+      ...config.llm,
+      providers: Object.fromEntries(
+        Object.entries(config.llm?.providers ?? {}).map(([name, provider]) => [
+          name,
+          {
+            baseUrl: provider.baseUrl,
+            requestTimeoutSeconds: provider.requestTimeoutSeconds,
+            apiKey: toSecretPayload(provider.apiKey ?? null),
+          },
+        ]),
+      ),
+    },
+    tools: {
+      ...config.tools,
+      braveSearchApiKey: toSecretPayload(config.tools?.braveSearchApiKey ?? null),
+      imap: config.tools?.imap
+        ? {
+          ...config.tools.imap,
+          password: toSecretPayload(config.tools.imap.password ?? null),
+        }
+        : config.tools?.imap,
+      smtp: config.tools?.smtp
+        ? {
+          ...config.tools.smtp,
+          password: toSecretPayload(config.tools.smtp.password ?? null),
+        }
+        : config.tools?.smtp,
+    },
+    voice: {
+      ...config.voice,
+      apiKey: toSecretPayload(config.voice?.apiKey ?? null),
+    },
+    rag: {
+      ...config.rag,
+      apiKey: toSecretPayload(config.rag?.apiKey ?? null),
+    },
+  };
+  return payload;
+}
+
+function toBackendWebhookConfig(config: WebhookConfig): any {
+  return {
+    ...config,
+    token: toSecretPayload(config.token ?? null),
+    mappings: (config.mappings ?? []).map((mapping) => ({
+      ...mapping,
+      hmacSecret: toSecretPayload(mapping.hmacSecret ?? null),
+    })),
+  };
+}
+
 export async function getSettings() {
   const { data } = await client.get('/settings');
   return data;
@@ -25,6 +134,7 @@ export async function updateTierOverrides(overrides: Record<string, { model: str
 export interface RuntimeConfig {
   telegram: TelegramConfig;
   modelRouter: ModelRouterConfig;
+  llm: LlmConfig;
   tools: ToolsConfig;
   voice: VoiceConfig;
   memory: MemoryConfig;
@@ -32,10 +142,22 @@ export interface RuntimeConfig {
   turn: TurnConfig;
   usage: UsageConfig;
   rag: RagConfig;
+  mcp: McpConfig;
   autoMode: AutoModeConfig;
   rateLimit: RateLimitConfig;
   security: SecurityConfig;
   compaction: CompactionConfig;
+}
+
+export interface LlmConfig {
+  providers: Record<string, LlmProviderConfig>;
+}
+
+export interface LlmProviderConfig {
+  apiKey: string | null;
+  apiKeyPresent?: boolean;
+  baseUrl: string | null;
+  requestTimeoutSeconds: number | null;
 }
 
 export interface MemoryConfig {
@@ -175,6 +297,15 @@ export interface SecurityConfig {
   detectPromptInjection: boolean | null;
   detectCommandInjection: boolean | null;
   maxInputLength: number | null;
+  allowlistEnabled: boolean | null;
+  toolConfirmationEnabled: boolean | null;
+  toolConfirmationTimeoutSeconds: number | null;
+}
+
+export interface McpConfig {
+  enabled: boolean | null;
+  defaultStartupTimeout: number | null;
+  defaultIdleTimeout: number | null;
 }
 
 export interface CompactionConfig {
@@ -207,66 +338,108 @@ export interface HookMapping {
 
 export async function getRuntimeConfig(): Promise<RuntimeConfig> {
   const { data } = await client.get('/settings/runtime');
-  return data;
+  return toUiRuntimeConfig(data);
 }
 
 export async function updateRuntimeConfig(config: RuntimeConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put('/settings/runtime', config);
-  return data;
+  const { data } = await client.put('/settings/runtime', toBackendRuntimeConfig(config));
+  return toUiRuntimeConfig(data);
 }
 
 export async function updateTelegramConfig(config: TelegramConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put('/settings/runtime/telegram', config);
-  return data;
+  const payload = { ...config, token: toSecretPayload(config.token ?? null) };
+  const { data } = await client.put('/settings/runtime/telegram', payload);
+  return toUiRuntimeConfig(data);
 }
 
 export async function updateModelRouterConfig(config: ModelRouterConfig): Promise<RuntimeConfig> {
   const { data } = await client.put('/settings/runtime/models', config);
-  return data;
+  return toUiRuntimeConfig(data);
+}
+
+export async function updateLlmConfig(config: LlmConfig): Promise<RuntimeConfig> {
+  const payload = {
+    ...config,
+    providers: Object.fromEntries(
+      Object.entries(config.providers ?? {}).map(([name, provider]) => [
+        name,
+        {
+          baseUrl: provider.baseUrl,
+          requestTimeoutSeconds: provider.requestTimeoutSeconds,
+          apiKey: toSecretPayload(provider.apiKey ?? null),
+        },
+      ]),
+    ),
+  };
+  const { data } = await client.put('/settings/runtime/llm', payload);
+  return toUiRuntimeConfig(data);
 }
 
 export async function updateToolsConfig(config: ToolsConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put('/settings/runtime/tools', config);
-  return data;
+  const payload = {
+    ...config,
+    braveSearchApiKey: toSecretPayload(config.braveSearchApiKey ?? null),
+    imap: config.imap
+      ? {
+        ...config.imap,
+        password: toSecretPayload(config.imap.password ?? null),
+      }
+      : config.imap,
+    smtp: config.smtp
+      ? {
+        ...config.smtp,
+        password: toSecretPayload(config.smtp.password ?? null),
+      }
+      : config.smtp,
+  };
+  const { data } = await client.put('/settings/runtime/tools', payload);
+  return toUiRuntimeConfig(data);
 }
 
 export async function updateVoiceConfig(config: VoiceConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put('/settings/runtime/voice', config);
-  return data;
+  const payload = { ...config, apiKey: toSecretPayload(config.apiKey ?? null) };
+  const { data } = await client.put('/settings/runtime/voice', payload);
+  return toUiRuntimeConfig(data);
 }
 
 export async function updateMemoryConfig(config: MemoryConfig): Promise<RuntimeConfig> {
   const { data } = await client.put('/settings/runtime/memory', config);
-  return data;
+  return toUiRuntimeConfig(data);
 }
 
 export async function updateSkillsConfig(config: SkillsConfig): Promise<RuntimeConfig> {
   const { data } = await client.put('/settings/runtime/skills', config);
-  return data;
+  return toUiRuntimeConfig(data);
 }
 
 export async function updateTurnConfig(config: TurnConfig): Promise<RuntimeConfig> {
   const { data } = await client.put('/settings/runtime/turn', config);
-  return data;
+  return toUiRuntimeConfig(data);
 }
 
 export async function updateUsageConfig(config: UsageConfig): Promise<RuntimeConfig> {
   const { data } = await client.put('/settings/runtime/usage', config);
-  return data;
+  return toUiRuntimeConfig(data);
 }
 
 export async function updateRagConfig(config: RagConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put('/settings/runtime/rag', config);
-  return data;
+  const payload = { ...config, apiKey: toSecretPayload(config.apiKey ?? null) };
+  const { data } = await client.put('/settings/runtime/rag', payload);
+  return toUiRuntimeConfig(data);
+}
+
+export async function updateMcpConfig(config: McpConfig): Promise<RuntimeConfig> {
+  const { data } = await client.put('/settings/runtime/mcp', config);
+  return toUiRuntimeConfig(data);
 }
 
 export async function updateWebhooksConfig(config: WebhookConfig): Promise<void> {
-  await client.put('/settings/runtime/webhooks', config);
+  await client.put('/settings/runtime/webhooks', toBackendWebhookConfig(config));
 }
 
 export async function updateAutoConfig(config: AutoModeConfig): Promise<RuntimeConfig> {
   const { data } = await client.put('/settings/runtime/auto', config);
-  return data;
+  return toUiRuntimeConfig(data);
 }
 
 export async function updateAdvancedConfig(config: {
@@ -275,7 +448,7 @@ export async function updateAdvancedConfig(config: {
   compaction?: CompactionConfig;
 }): Promise<RuntimeConfig> {
   const { data } = await client.put('/settings/runtime/advanced', config);
-  return data;
+  return toUiRuntimeConfig(data);
 }
 
 export async function generateInviteCode(): Promise<InviteCode> {

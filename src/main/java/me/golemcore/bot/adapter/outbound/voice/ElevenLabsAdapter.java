@@ -137,7 +137,7 @@ public class ElevenLabsAdapter implements VoicePort {
                         long backoffMs = (long) Math.pow(2, attempt) * 1000;
                         log.info("[ElevenLabs] {} retrying after {} (attempt {}/{}), backoff={}ms",
                                 operationName, response.code(), attempt, maxRetries, backoffMs);
-                        Thread.sleep(backoffMs);
+                        sleepBeforeRetry(backoffMs);
                         continue;
                     }
                     handleErrorResponse(response, body, elapsed, operationName);
@@ -292,6 +292,10 @@ public class ElevenLabsAdapter implements VoicePort {
 
     protected String getTtsUrl(String voiceId) {
         return String.format(DEFAULT_TTS_URL_TEMPLATE, voiceId);
+    }
+
+    protected void sleepBeforeRetry(long backoffMs) throws InterruptedException {
+        Thread.sleep(backoffMs);
     }
 
     @Data

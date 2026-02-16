@@ -21,7 +21,6 @@ package me.golemcore.bot.adapter.outbound.browser;
 import me.golemcore.bot.domain.component.BrowserComponent;
 import me.golemcore.bot.domain.model.BrowserPage;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.BrowserPort;
 import com.microsoft.playwright.*;
 import com.microsoft.playwright.options.LoadState;
@@ -52,10 +51,10 @@ import java.util.concurrent.CompletableFuture;
  * <p>
  * Configuration:
  * <ul>
- * <li>{@code bot.browser.enabled} - Enable/disable browser
- * <li>{@code bot.browser.headless} - Run in headless mode
- * <li>{@code bot.browser.timeout} - Page load timeout (ms)
- * <li>{@code bot.browser.user-agent} - Custom user agent
+ * <li>RuntimeConfig.tools.browserEnabled - Enable/disable browser
+ * <li>RuntimeConfig.tools.browserHeadless - Run in headless mode
+ * <li>RuntimeConfig.tools.browserTimeout - Page load timeout (ms)
+ * <li>RuntimeConfig.tools.browserUserAgent - Custom user agent
  * </ul>
  *
  * <p>
@@ -69,7 +68,6 @@ import java.util.concurrent.CompletableFuture;
 @Slf4j
 public class PlaywrightAdapter implements BrowserPort, BrowserComponent {
 
-    private final BotProperties properties;
     private final RuntimeConfigService runtimeConfigService;
 
     private Playwright playwright;
@@ -79,7 +77,7 @@ public class PlaywrightAdapter implements BrowserPort, BrowserComponent {
 
     @SuppressWarnings("PMD.CloseResource")
     private synchronized void ensureInitialized() {
-        if (initialized || !properties.getBrowser().isEnabled()) {
+        if (initialized || !runtimeConfigService.isBrowserEnabled()) {
             return;
         }
 
@@ -236,7 +234,7 @@ public class PlaywrightAdapter implements BrowserPort, BrowserComponent {
 
     @Override
     public boolean isAvailable() {
-        return properties.getBrowser().isEnabled() && browser != null && browser.isConnected();
+        return runtimeConfigService.isBrowserEnabled() && browser != null && browser.isConnected();
     }
 
     @Override

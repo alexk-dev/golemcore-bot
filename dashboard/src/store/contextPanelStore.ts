@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Goal } from '../api/goals';
+import type { Goal } from '../api/goals';
 
 export interface TurnMetadata {
   model: string | null;

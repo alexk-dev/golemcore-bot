@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.adapter.inbound.web.dto.PreferencesUpdateRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.SettingsResponse;
 import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.TelegramRestartEvent;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.ModelSelectionService;
@@ -22,8 +23,10 @@ import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Settings and preferences management endpoints.
@@ -113,13 +116,15 @@ public class SettingsController {
 
     @GetMapping("/runtime")
     public Mono<ResponseEntity<RuntimeConfig>> getRuntimeConfig() {
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfig()));
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
 
     @PutMapping("/runtime")
     public Mono<ResponseEntity<RuntimeConfig>> updateRuntimeConfig(@RequestBody RuntimeConfig config) {
+        mergeRuntimeSecrets(runtimeConfigService.getRuntimeConfig(), config);
+        validateLlmConfig(config.getLlm(), config.getModelRouter());
         runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfig()));
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
 
     @PutMapping("/runtime/telegram")
@@ -127,9 +132,10 @@ public class SettingsController {
             @RequestBody RuntimeConfig.TelegramConfig telegramConfig) {
         normalizeAndValidateTelegramConfig(telegramConfig);
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        telegramConfig.setToken(mergeSecret(config.getTelegram().getToken(), telegramConfig.getToken()));
         config.setTelegram(telegramConfig);
         runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfig()));
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
 
     @PutMapping("/runtime/models")
@@ -138,25 +144,38 @@ public class SettingsController {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         config.setModelRouter(modelRouterConfig);
         runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfig()));
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    }
+
+    @PutMapping("/runtime/llm")
+    public Mono<ResponseEntity<RuntimeConfig>> updateLlmConfig(
+            @RequestBody RuntimeConfig.LlmConfig llmConfig) {
+        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        mergeLlmSecrets(config.getLlm(), llmConfig);
+        validateLlmConfig(llmConfig, config.getModelRouter());
+        config.setLlm(llmConfig);
+        runtimeConfigService.updateRuntimeConfig(config);
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
 
     @PutMapping("/runtime/tools")
     public Mono<ResponseEntity<RuntimeConfig>> updateToolsConfig(
             @RequestBody RuntimeConfig.ToolsConfig toolsConfig) {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        mergeToolsSecrets(config.getTools(), toolsConfig);
         config.setTools(toolsConfig);
         runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfig()));
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
 
     @PutMapping("/runtime/voice")
     public Mono<ResponseEntity<RuntimeConfig>> updateVoiceConfig(
             @RequestBody RuntimeConfig.VoiceConfig voiceConfig) {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        voiceConfig.setApiKey(mergeSecret(config.getVoice().getApiKey(), voiceConfig.getApiKey()));
         config.setVoice(voiceConfig);
         runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfig()));
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
 
     @PutMapping("/runtime/turn")
@@ -165,7 +184,7 @@ public class SettingsController {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         config.setTurn(turnConfig);
         runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfig()));
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
 
     @PutMapping("/runtime/memory")
@@ -174,7 +193,7 @@ public class SettingsController {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         config.setMemory(memoryConfig);
         runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfig()));
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
 
     @PutMapping("/runtime/skills")
@@ -183,7 +202,7 @@ public class SettingsController {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         config.setSkills(skillsConfig);
         runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfig()));
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
 
     @PutMapping("/runtime/usage")
@@ -192,22 +211,33 @@ public class SettingsController {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         config.setUsage(usageConfig);
         runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfig()));
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
 
     @PutMapping("/runtime/rag")
     public Mono<ResponseEntity<RuntimeConfig>> updateRagConfig(
             @RequestBody RuntimeConfig.RagConfig ragConfig) {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        ragConfig.setApiKey(mergeSecret(config.getRag().getApiKey(), ragConfig.getApiKey()));
         config.setRag(ragConfig);
         runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfig()));
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    }
+
+    @PutMapping("/runtime/mcp")
+    public Mono<ResponseEntity<RuntimeConfig>> updateMcpConfig(
+            @RequestBody RuntimeConfig.McpConfig mcpConfig) {
+        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        config.setMcp(mcpConfig);
+        runtimeConfigService.updateRuntimeConfig(config);
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
 
     @PutMapping("/runtime/webhooks")
     public Mono<ResponseEntity<Void>> updateWebhooksConfig(
             @RequestBody UserPreferences.WebhookConfig webhookConfig) {
         UserPreferences prefs = preferencesService.getPreferences();
+        mergeWebhookSecrets(prefs.getWebhooks(), webhookConfig);
         prefs.setWebhooks(webhookConfig);
         preferencesService.savePreferences(prefs);
         return Mono.just(ResponseEntity.ok().build());
@@ -219,7 +249,7 @@ public class SettingsController {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         config.setAutoMode(autoConfig);
         runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfig()));
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
 
     @PutMapping("/runtime/advanced")
@@ -307,6 +337,204 @@ public class SettingsController {
 
         if (TELEGRAM_AUTH_MODE_INVITE.equals(authMode) && !allowedUsers.isEmpty()) {
             throw new IllegalArgumentException("telegram.allowedUsers must be empty in invite_only mode");
+        }
+    }
+
+    private void validateLlmConfig(RuntimeConfig.LlmConfig llmConfig,
+            RuntimeConfig.ModelRouterConfig modelRouterConfig) {
+        if (llmConfig == null) {
+            throw new IllegalArgumentException("llm config is required");
+        }
+
+        Map<String, RuntimeConfig.LlmProviderConfig> providers = llmConfig.getProviders();
+        if (providers == null) {
+            llmConfig.setProviders(new LinkedHashMap<>());
+            return;
+        }
+
+        Set<String> normalizedNames = new LinkedHashSet<>();
+        for (Map.Entry<String, RuntimeConfig.LlmProviderConfig> entry : providers.entrySet()) {
+            String providerName = entry.getKey();
+            RuntimeConfig.LlmProviderConfig providerConfig = entry.getValue();
+
+            if (providerName == null || providerName.isBlank()) {
+                throw new IllegalArgumentException("llm.providers keys must be non-empty");
+            }
+            if (!providerName.equals(providerName.trim())) {
+                throw new IllegalArgumentException("llm.providers keys must not have leading/trailing spaces");
+            }
+            if (!providerName.equals(providerName.toLowerCase())) {
+                throw new IllegalArgumentException("llm.providers keys must be lowercase");
+            }
+            if (!providerName.matches("[a-z0-9][a-z0-9_-]*")) {
+                throw new IllegalArgumentException(
+                        "llm.providers keys must match [a-z0-9][a-z0-9_-]*");
+            }
+            if (!normalizedNames.add(providerName)) {
+                throw new IllegalArgumentException("llm.providers contains duplicate provider key: " + providerName);
+            }
+            if (providerConfig == null) {
+                throw new IllegalArgumentException("llm.providers." + providerName + " config is required");
+            }
+
+            Integer requestTimeoutSeconds = providerConfig.getRequestTimeoutSeconds();
+            if (requestTimeoutSeconds != null && (requestTimeoutSeconds < 1 || requestTimeoutSeconds > 3600)) {
+                throw new IllegalArgumentException(
+                        "llm.providers." + providerName + ".requestTimeoutSeconds must be between 1 and 3600");
+            }
+
+            String baseUrl = providerConfig.getBaseUrl();
+            if (baseUrl != null && !baseUrl.isBlank()) {
+                if (!isValidHttpUrl(baseUrl)) {
+                    throw new IllegalArgumentException(
+                            "llm.providers." + providerName + ".baseUrl must be a valid http(s) URL");
+                }
+            }
+        }
+
+        Set<String> providersUsedByModelRouter = getProvidersUsedByModelRouter(modelRouterConfig);
+        for (String usedProvider : providersUsedByModelRouter) {
+            if (!providers.containsKey(usedProvider)) {
+                throw new IllegalArgumentException(
+                        "Cannot remove provider '" + usedProvider + "' because it is used by model router tiers");
+            }
+        }
+    }
+
+    private Set<String> getProvidersUsedByModelRouter(RuntimeConfig.ModelRouterConfig modelRouterConfig) {
+        Set<String> usedProviders = new LinkedHashSet<>();
+        if (modelRouterConfig == null) {
+            return usedProviders;
+        }
+        addProviderFromModel(usedProviders, modelRouterConfig.getRoutingModel());
+        addProviderFromModel(usedProviders, modelRouterConfig.getBalancedModel());
+        addProviderFromModel(usedProviders, modelRouterConfig.getSmartModel());
+        addProviderFromModel(usedProviders, modelRouterConfig.getCodingModel());
+        addProviderFromModel(usedProviders, modelRouterConfig.getDeepModel());
+        return usedProviders;
+    }
+
+    private void addProviderFromModel(Set<String> usedProviders, String model) {
+        if (model == null || model.isBlank()) {
+            return;
+        }
+        int delimiterIndex = model.indexOf('/');
+        if (delimiterIndex <= 0) {
+            return;
+        }
+        usedProviders.add(model.substring(0, delimiterIndex));
+    }
+
+    private void mergeRuntimeSecrets(RuntimeConfig current, RuntimeConfig incoming) {
+        if (current == null || incoming == null) {
+            return;
+        }
+        if (incoming.getTelegram() != null && current.getTelegram() != null) {
+            incoming.getTelegram()
+                    .setToken(mergeSecret(current.getTelegram().getToken(), incoming.getTelegram().getToken()));
+        }
+        if (incoming.getVoice() != null && current.getVoice() != null) {
+            incoming.getVoice().setApiKey(mergeSecret(current.getVoice().getApiKey(), incoming.getVoice().getApiKey()));
+        }
+        if (incoming.getRag() != null && current.getRag() != null) {
+            incoming.getRag().setApiKey(mergeSecret(current.getRag().getApiKey(), incoming.getRag().getApiKey()));
+        }
+        mergeLlmSecrets(current.getLlm(), incoming.getLlm());
+        mergeToolsSecrets(current.getTools(), incoming.getTools());
+    }
+
+    private void mergeLlmSecrets(RuntimeConfig.LlmConfig current, RuntimeConfig.LlmConfig incoming) {
+        if (current == null || incoming == null || incoming.getProviders() == null) {
+            return;
+        }
+        Map<String, RuntimeConfig.LlmProviderConfig> currentProviders = current.getProviders();
+        for (Map.Entry<String, RuntimeConfig.LlmProviderConfig> entry : incoming.getProviders().entrySet()) {
+            RuntimeConfig.LlmProviderConfig incomingProvider = entry.getValue();
+            RuntimeConfig.LlmProviderConfig currentProvider = currentProviders != null
+                    ? currentProviders.get(entry.getKey())
+                    : null;
+            if (incomingProvider != null && currentProvider != null) {
+                incomingProvider.setApiKey(mergeSecret(currentProvider.getApiKey(), incomingProvider.getApiKey()));
+            }
+        }
+    }
+
+    private void mergeToolsSecrets(RuntimeConfig.ToolsConfig current, RuntimeConfig.ToolsConfig incoming) {
+        if (current == null || incoming == null) {
+            return;
+        }
+        incoming.setBraveSearchApiKey(mergeSecret(current.getBraveSearchApiKey(), incoming.getBraveSearchApiKey()));
+
+        RuntimeConfig.ImapConfig currentImap = current.getImap();
+        RuntimeConfig.ImapConfig incomingImap = incoming.getImap();
+        if (incomingImap != null && currentImap != null) {
+            incomingImap.setPassword(mergeSecret(currentImap.getPassword(), incomingImap.getPassword()));
+        }
+
+        RuntimeConfig.SmtpConfig currentSmtp = current.getSmtp();
+        RuntimeConfig.SmtpConfig incomingSmtp = incoming.getSmtp();
+        if (incomingSmtp != null && currentSmtp != null) {
+            incomingSmtp.setPassword(mergeSecret(currentSmtp.getPassword(), incomingSmtp.getPassword()));
+        }
+    }
+
+    private void mergeWebhookSecrets(UserPreferences.WebhookConfig current, UserPreferences.WebhookConfig incoming) {
+        if (incoming == null) {
+            return;
+        }
+        if (current != null) {
+            incoming.setToken(mergeSecret(current.getToken(), incoming.getToken()));
+        }
+        if (incoming.getMappings() == null || incoming.getMappings().isEmpty() || current == null
+                || current.getMappings() == null) {
+            return;
+        }
+
+        Map<String, UserPreferences.HookMapping> currentByName = new LinkedHashMap<>();
+        for (UserPreferences.HookMapping mapping : current.getMappings()) {
+            if (mapping != null && mapping.getName() != null) {
+                currentByName.put(mapping.getName(), mapping);
+            }
+        }
+
+        for (UserPreferences.HookMapping mapping : incoming.getMappings()) {
+            if (mapping == null || mapping.getName() == null) {
+                continue;
+            }
+            UserPreferences.HookMapping existing = currentByName.get(mapping.getName());
+            if (existing != null) {
+                mapping.setHmacSecret(mergeSecret(existing.getHmacSecret(), mapping.getHmacSecret()));
+            }
+        }
+    }
+
+    private Secret mergeSecret(Secret current, Secret incoming) {
+        if (incoming == null) {
+            return current;
+        }
+        if (!Secret.hasValue(incoming)) {
+            Secret retained = current != null ? current : Secret.builder().build();
+            if (incoming.getEncrypted() != null) {
+                retained.setEncrypted(incoming.getEncrypted());
+            }
+            retained.setPresent(Secret.hasValue(retained));
+            return retained;
+        }
+        return Secret.builder()
+                .value(incoming.getValue())
+                .encrypted(Boolean.TRUE.equals(incoming.getEncrypted()))
+                .present(true)
+                .build();
+    }
+
+    private boolean isValidHttpUrl(String value) {
+        try {
+            java.net.URI uri = new java.net.URI(value);
+            String scheme = uri.getScheme();
+            String host = uri.getHost();
+            return host != null && ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme));
+        } catch (java.net.URISyntaxException ignored) {
+            return false;
         }
     }
 

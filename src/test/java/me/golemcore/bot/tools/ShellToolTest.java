@@ -79,11 +79,20 @@ class ShellToolTest {
     @Test
     @DisabledOnOs(OS.WINDOWS)
     void executeWithTimeout() throws Exception {
+        ShellTool timeoutTool = new ShellTool(createTestProperties(tempDir.toString(), true), runtimeConfigService,
+                new InjectionGuard(runtimeConfigService)) {
+            @Override
+            protected boolean waitForProcess(Process process, int timeoutSeconds) {
+                return false;
+            }
+        };
+
         Map<String, Object> params = Map.of(
-                COMMAND, "sleep 10",
+                COMMAND, "echo fast",
                 TIMEOUT, 1);
 
-        ToolResult result = tool.execute(params).get();
+        ToolResult result = timeoutTool.execute(params).get();
+        timeoutTool.shutdown();
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("timed out"));
     }

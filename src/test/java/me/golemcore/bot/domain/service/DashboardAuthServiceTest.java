@@ -22,6 +22,15 @@ import static org.mockito.Mockito.when;
 
 class DashboardAuthServiceTest {
 
+    private static final String PASSWORD = "my-password";
+    private static final String OLD_PASSWORD = "old-password";
+    private static final String NEW_PASSWORD = "new-password";
+    private static final String EXISTING_PASSWORD = "existing-password";
+    private static final BCryptPasswordEncoder TEST_ENCODER = new BCryptPasswordEncoder(4);
+    private static final String PASSWORD_HASH = TEST_ENCODER.encode(PASSWORD);
+    private static final String OLD_PASSWORD_HASH = TEST_ENCODER.encode(OLD_PASSWORD);
+    private static final String EXISTING_PASSWORD_HASH = TEST_ENCODER.encode(EXISTING_PASSWORD);
+
     private DashboardAuthService authService;
     private StoragePort storagePort;
     private BotProperties botProperties;
@@ -61,7 +70,7 @@ class DashboardAuthServiceTest {
 
     @Test
     void shouldUseConfiguredPasswordHash() {
-        String hash = new BCryptPasswordEncoder().encode("configured-password");
+        String hash = PASSWORD_HASH;
         botProperties.getDashboard().setAdminPasswordHash(hash);
 
         authService.init();
@@ -73,9 +82,8 @@ class DashboardAuthServiceTest {
 
     @Test
     void shouldLoadExistingCredentials() throws Exception {
-        String hash = new BCryptPasswordEncoder().encode("existing-password");
         String json = new ObjectMapper().findAndRegisterModules().writeValueAsString(
-                AdminCredentials.builder().passwordHash(hash).build());
+                AdminCredentials.builder().passwordHash(EXISTING_PASSWORD_HASH).build());
 
         when(storagePort.exists(anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(true));
@@ -86,16 +94,15 @@ class DashboardAuthServiceTest {
 
         AdminCredentials creds = authService.getCredentials();
         assertNotNull(creds);
-        assertEquals(hash, creds.getPasswordHash());
+        assertEquals(EXISTING_PASSWORD_HASH, creds.getPasswordHash());
     }
 
     @Test
     void shouldAuthenticateWithCorrectPassword() {
-        String hash = new BCryptPasswordEncoder().encode("my-password");
-        botProperties.getDashboard().setAdminPasswordHash(hash);
+        botProperties.getDashboard().setAdminPasswordHash(PASSWORD_HASH);
         authService.init();
 
-        DashboardAuthService.TokenPair tokens = authService.authenticate("my-password", null);
+        DashboardAuthService.TokenPair tokens = authService.authenticate(PASSWORD, null);
         assertNotNull(tokens);
         assertNotNull(tokens.getAccessToken());
         assertNotNull(tokens.getRefreshToken());
@@ -103,8 +110,7 @@ class DashboardAuthServiceTest {
 
     @Test
     void shouldRejectWrongPassword() {
-        String hash = new BCryptPasswordEncoder().encode("my-password");
-        botProperties.getDashboard().setAdminPasswordHash(hash);
+        botProperties.getDashboard().setAdminPasswordHash(PASSWORD_HASH);
         authService.init();
 
         DashboardAuthService.TokenPair tokens = authService.authenticate("wrong-password", null);
@@ -148,26 +154,24 @@ class DashboardAuthServiceTest {
 
     @Test
     void shouldChangePassword() {
-        String hash = new BCryptPasswordEncoder().encode("old-password");
-        botProperties.getDashboard().setAdminPasswordHash(hash);
+        botProperties.getDashboard().setAdminPasswordHash(OLD_PASSWORD_HASH);
         authService.init();
 
-        boolean changed = authService.changePassword("old-password", "new-password");
+        boolean changed = authService.changePassword(OLD_PASSWORD, NEW_PASSWORD);
         assertTrue(changed);
 
         // Verify new password works
-        DashboardAuthService.TokenPair tokens = authService.authenticate("new-password", null);
+        DashboardAuthService.TokenPair tokens = authService.authenticate(NEW_PASSWORD, null);
         assertNotNull(tokens);
 
         // Verify old password no longer works
-        DashboardAuthService.TokenPair oldTokens = authService.authenticate("old-password", null);
+        DashboardAuthService.TokenPair oldTokens = authService.authenticate(OLD_PASSWORD, null);
         assertNull(oldTokens);
     }
 
     @Test
     void shouldRejectPasswordChangeWithWrongOldPassword() {
-        String hash = new BCryptPasswordEncoder().encode("old-password");
-        botProperties.getDashboard().setAdminPasswordHash(hash);
+        botProperties.getDashboard().setAdminPasswordHash(OLD_PASSWORD_HASH);
         authService.init();
 
         boolean changed = authService.changePassword("wrong-old-password", "new-password");
@@ -176,8 +180,7 @@ class DashboardAuthServiceTest {
 
     @Test
     void shouldDisableMfaWithCorrectPassword() {
-        String hash = new BCryptPasswordEncoder().encode("my-password");
-        botProperties.getDashboard().setAdminPasswordHash(hash);
+        botProperties.getDashboard().setAdminPasswordHash(PASSWORD_HASH);
         authService.init();
 
         // Manually enable MFA
@@ -185,15 +188,14 @@ class DashboardAuthServiceTest {
         creds.setMfaEnabled(true);
         creds.setMfaSecret("JBSWY3DPEHPK3PXP");
 
-        boolean disabled = authService.disableMfa("my-password");
+        boolean disabled = authService.disableMfa(PASSWORD);
         assertTrue(disabled);
         assertFalse(authService.isMfaEnabled());
     }
 
     @Test
     void shouldRejectMfaDisableWithWrongPassword() {
-        String hash = new BCryptPasswordEncoder().encode("my-password");
-        botProperties.getDashboard().setAdminPasswordHash(hash);
+        botProperties.getDashboard().setAdminPasswordHash(PASSWORD_HASH);
         authService.init();
 
         boolean disabled = authService.disableMfa("wrong-password");
@@ -202,11 +204,10 @@ class DashboardAuthServiceTest {
 
     @Test
     void shouldRefreshAccessToken() {
-        String hash = new BCryptPasswordEncoder().encode("my-password");
-        botProperties.getDashboard().setAdminPasswordHash(hash);
+        botProperties.getDashboard().setAdminPasswordHash(PASSWORD_HASH);
         authService.init();
 
-        DashboardAuthService.TokenPair original = authService.authenticate("my-password", null);
+        DashboardAuthService.TokenPair original = authService.authenticate(PASSWORD, null);
         assertNotNull(original);
 
         DashboardAuthService.TokenPair refreshed = authService.refreshAccessToken(original.getRefreshToken());
@@ -224,11 +225,10 @@ class DashboardAuthServiceTest {
 
     @Test
     void shouldRejectAccessTokenAsRefreshToken() {
-        String hash = new BCryptPasswordEncoder().encode("my-password");
-        botProperties.getDashboard().setAdminPasswordHash(hash);
+        botProperties.getDashboard().setAdminPasswordHash(PASSWORD_HASH);
         authService.init();
 
-        DashboardAuthService.TokenPair tokens = authService.authenticate("my-password", null);
+        DashboardAuthService.TokenPair tokens = authService.authenticate(PASSWORD, null);
         assertNotNull(tokens);
 
         // Using access token as refresh token should fail
@@ -245,8 +245,7 @@ class DashboardAuthServiceTest {
 
     @Test
     void shouldRejectMfaWhenMfaEnabledButNoCodeProvided() {
-        String hash = new BCryptPasswordEncoder().encode("my-password");
-        botProperties.getDashboard().setAdminPasswordHash(hash);
+        botProperties.getDashboard().setAdminPasswordHash(PASSWORD_HASH);
         authService.init();
 
         // Enable MFA manually
@@ -255,11 +254,11 @@ class DashboardAuthServiceTest {
         creds.setMfaSecret("JBSWY3DPEHPK3PXP");
 
         // Attempt login without MFA code
-        DashboardAuthService.TokenPair tokens = authService.authenticate("my-password", null);
+        DashboardAuthService.TokenPair tokens = authService.authenticate(PASSWORD, null);
         assertNull(tokens);
 
         // Attempt login with blank MFA code
-        DashboardAuthService.TokenPair tokens2 = authService.authenticate("my-password", "  ");
+        DashboardAuthService.TokenPair tokens2 = authService.authenticate(PASSWORD, "  ");
         assertNull(tokens2);
     }
 }

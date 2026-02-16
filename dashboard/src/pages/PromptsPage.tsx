@@ -61,7 +61,7 @@ export default function PromptsPage() {
   };
 
   const handleSave = async () => {
-    if (!selected) return;
+    if (!selected) {return;}
     await updateMutation.mutateAsync({
       name: selected,
       section: { content: editContent, description: editDesc, order: editOrder, enabled: true },
@@ -70,7 +70,7 @@ export default function PromptsPage() {
   };
 
   const handlePreview = async () => {
-    if (!selected) return;
+    if (!selected) {return;}
     const result = await previewPrompt(selected);
     setPreview(result.rendered);
   };
