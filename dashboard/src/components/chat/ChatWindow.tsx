@@ -19,9 +19,16 @@ function getChatSessionId(): string {
   return id;
 }
 
+interface ModelMeta {
+  id?: string;
+  tier?: string;
+  provider?: string;
+}
+
 interface ChatMessage {
   role: string;
   content: string;
+  model?: ModelMeta;
 }
 
 export default function ChatWindow() {
@@ -40,7 +47,6 @@ export default function ChatWindow() {
   const chatSessionId = useRef(getChatSessionId()).current;
   const shouldAutoScroll = useRef(true);
 
-  // Load history from backend on mount
   useEffect(() => {
     if (historyLoaded) return;
     listSessions('web')
@@ -48,10 +54,8 @@ export default function ChatWindow() {
         const sorted = sessions.sort((a, b) =>
           (b.updatedAt ?? b.createdAt ?? '').localeCompare(a.updatedAt ?? a.createdAt ?? '')
         );
-        // Find matching session or the latest active one
         const match = sorted.find((s) => s.chatId === chatSessionId) ?? sorted[0];
         if (match) {
-          // If we found a different session, update our session ID
           if (match.chatId !== chatSessionId) {
             localStorage.setItem(SESSION_KEY, match.chatId);
           }
@@ -65,7 +69,6 @@ export default function ChatWindow() {
             .filter((m) => m.role === 'user' || m.role === 'assistant')
             .map((m) => ({ role: m.role, content: m.content }));
           setAllMessages(history);
-          // Show only the last N messages initially
           setVisibleStart(Math.max(0, history.length - INITIAL_MESSAGES));
         }
         setHistoryLoaded(true);
@@ -73,23 +76,19 @@ export default function ChatWindow() {
       .catch(() => setHistoryLoaded(true));
   }, [chatSessionId, historyLoaded]);
 
-  // Infinite scroll — load more on scroll to top
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
 
-    // Check if user scrolled near bottom
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
     shouldAutoScroll.current = nearBottom;
 
-    // Load more when scrolled to top
     if (el.scrollTop < 50 && visibleStart > 0 && !loadingMore) {
       setLoadingMore(true);
       const prevScrollHeight = el.scrollHeight;
       const newStart = Math.max(0, visibleStart - LOAD_MORE_COUNT);
       setVisibleStart(newStart);
 
-      // Preserve scroll position after loading more
       requestAnimationFrame(() => {
         const newScrollHeight = el.scrollHeight;
         el.scrollTop = newScrollHeight - prevScrollHeight;
@@ -106,7 +105,6 @@ export default function ChatWindow() {
     ws.onopen = () => setConnected(true);
     ws.onclose = () => {
       setConnected(false);
-      // Auto-reconnect after 3s
       setTimeout(() => connect(), 3000);
     };
     ws.onmessage = (event) => {
@@ -122,9 +120,9 @@ export default function ChatWindow() {
           setAllMessages((prev) => {
             const last = prev[prev.length - 1];
             if (last && last.role === 'assistant' && data.type === 'assistant_chunk') {
-              return [...prev.slice(0, -1), { role: 'assistant', content: last.content + data.text }];
+              return [...prev.slice(0, -1), { role: 'assistant', content: last.content + data.text, model: data.model }];
             }
-            return [...prev, { role: 'assistant', content: data.text }];
+            return [...prev, { role: 'assistant', content: data.text, model: data.model }];
           });
         }
       } catch {
@@ -141,7 +139,6 @@ export default function ChatWindow() {
     return cleanup;
   }, [connect]);
 
-  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     if (shouldAutoScroll.current) {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -161,14 +158,18 @@ export default function ChatWindow() {
     setTier(newTier);
     try {
       await updatePreferences({ modelTier: newTier, tierForce });
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   };
 
   const handleForceChange = async (force: boolean) => {
     setTierForce(force);
     try {
       await updatePreferences({ modelTier: tier, tierForce: force });
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   };
 
   const visibleMessages = allMessages.slice(visibleStart);
@@ -176,7 +177,6 @@ export default function ChatWindow() {
 
   return (
     <div className="chat-container">
-      {/* Toolbar */}
       <div className="chat-toolbar">
         <div className="d-flex align-items-center gap-2 flex-grow-1">
           <span className={`status-dot ${connected ? 'online' : 'offline'}`} />
@@ -203,32 +203,31 @@ export default function ChatWindow() {
         </div>
       </div>
 
-      {/* Messages */}
       <div className="chat-window" ref={scrollRef} onScroll={handleScroll}>
         {hasMore && (
           <div className="text-center py-2">
             {loadingMore ? (
               <small className="text-muted">Loading...</small>
             ) : (
-              <Badge bg="secondary" className="cursor-pointer" style={{ cursor: 'pointer' }}
-                onClick={() => setVisibleStart(Math.max(0, visibleStart - LOAD_MORE_COUNT))}>
+              <Badge bg="secondary" className="cursor-pointer" style={{ cursor: 'pointer' }} onClick={() => setVisibleStart(Math.max(0, visibleStart - LOAD_MORE_COUNT))}>
                 Load earlier messages
               </Badge>
             )}
           </div>
         )}
         {visibleMessages.map((msg, i) => (
-          <MessageBubble key={visibleStart + i} role={msg.role} content={msg.content} />
+          <MessageBubble key={visibleStart + i} role={msg.role} content={msg.content} model={msg.model} />
         ))}
         {typing && (
           <div className="typing-indicator">
-            <span /><span /><span />
+            <span />
+            <span />
+            <span />
           </div>
         )}
         <div ref={bottomRef} />
       </div>
 
-      {/* Input */}
       <ChatInput onSend={handleSend} disabled={!connected} />
     </div>
   );

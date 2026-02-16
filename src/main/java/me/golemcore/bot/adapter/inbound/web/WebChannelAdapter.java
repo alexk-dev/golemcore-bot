@@ -69,10 +69,33 @@ public class WebChannelAdapter implements ChannelPort {
     @Override
     public CompletableFuture<Void> sendMessage(Message message) {
         String chatId = message.getChatId();
-        return sendJsonToChat(chatId, Map.of(
-                "type", "assistant_done",
-                "text", message.getContent() != null ? message.getContent() : "",
-                "sessionId", chatId != null ? chatId : ""));
+
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("type", "assistant_done");
+        payload.put("text", message.getContent() != null ? message.getContent() : "");
+        payload.put("sessionId", chatId != null ? chatId : "");
+
+        Map<String, Object> metadata = message.getMetadata();
+        if (metadata != null) {
+            Map<String, Object> model = new java.util.LinkedHashMap<>();
+            Object modelId = metadata.get("modelId");
+            Object tier = metadata.get("tier");
+            Object provider = metadata.get("provider");
+            if (modelId != null) {
+                model.put("id", modelId);
+            }
+            if (tier != null) {
+                model.put("tier", tier);
+            }
+            if (provider != null) {
+                model.put("provider", provider);
+            }
+            if (!model.isEmpty()) {
+                payload.put("model", model);
+            }
+        }
+
+        return sendJsonToChat(chatId, payload);
     }
 
     @Override

@@ -1,6 +1,6 @@
 # ADR-0008: Voice Recording in Chat with ElevenLabs Processing
 
-- **Status:** Proposed
+- **Status:** In Progress
 - **Date:** 2026-02-16
 - **Owner:** Voice + Dashboard team
 
@@ -61,14 +61,14 @@ Implement **in-browser voice recording** and send audio to backend endpoint that
 ## Implementation Plan
 
 ### Phase A — Backend voice transcription API
-- [ ] Add endpoint + request validation.
-- [ ] Add ElevenLabs adapter via port.
-- [ ] Add config and secret loading.
+- [x] Add endpoint + request validation.
+- [x] Add ElevenLabs adapter via port.
+- [x] Add config and secret loading.
 
 ### Phase B — Frontend recorder
-- [ ] Add mic button and state machine.
-- [ ] Record audio and upload blob.
-- [ ] Put transcript into text input.
+- [x] Add mic button and state machine.
+- [x] Record audio and upload blob.
+- [x] Put transcript into text input.
 
 ### Phase C — Error handling
 - [ ] Permission denied UX.

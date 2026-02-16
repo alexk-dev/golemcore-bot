@@ -157,7 +157,34 @@ public class ResponseRoutingSystem implements AgentSystem {
         }
         String chatId = session.getChatId();
         try {
-            channel.sendMessage(chatId, outgoing.getText()).get(30, TimeUnit.SECONDS);
+            String modelId = session.getMetadata() != null
+                    ? (String) session.getMetadata().get(ContextAttributes.LLM_MODEL)
+                    : null;
+            String tier = context.getModelTier();
+            String provider = null;
+            if (modelId != null && modelId.contains("/")) {
+                provider = modelId.substring(0, modelId.indexOf('/'));
+            }
+
+            java.util.Map<String, Object> metadata = new java.util.LinkedHashMap<>();
+            if (modelId != null) {
+                metadata.put("modelId", modelId);
+            }
+            if (tier != null) {
+                metadata.put("tier", tier);
+            }
+            if (provider != null) {
+                metadata.put("provider", provider);
+            }
+
+            Message message = Message.builder()
+                    .role("assistant")
+                    .content(outgoing.getText())
+                    .channelType(session.getChannelType())
+                    .chatId(chatId)
+                    .metadata(metadata)
+                    .build();
+            channel.sendMessage(message).get(30, TimeUnit.SECONDS);
             return null;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

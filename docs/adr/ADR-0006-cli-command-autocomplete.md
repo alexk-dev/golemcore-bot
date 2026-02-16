@@ -1,6 +1,6 @@
 # ADR-0006: CLI-like Commands with Autocomplete in Web Chat
 
-- **Status:** Proposed
+- **Status:** In Progress
 - **Date:** 2026-02-16
 - **Owner:** Dashboard + Runtime team
 
@@ -58,15 +58,15 @@ Implement a **command registry + autocomplete UI** in dashboard chat input, back
 ## Implementation Plan
 
 ### Phase A — Registry and API
-- [ ] Define shared command DTO in backend web layer.
-- [ ] Add `GET /api/commands` in controller.
-- [ ] Populate from `CommandRouter` command map (or dedicated provider).
+- [x] Define shared command DTO in backend web layer.
+- [x] Add `GET /api/commands` in controller.
+- [x] Populate from `CommandRouter` command map (or dedicated provider).
 
 ### Phase B — Frontend Autocomplete
-- [ ] Add `getCommands()` to `dashboard/src/api`.
-- [ ] Add React Query hook `useCommands()`.
-- [ ] Implement `CommandAutocomplete` component.
-- [ ] Integrate into `ChatInput` with keyboard navigation.
+- [x] Add `getCommands()` to `dashboard/src/api`.
+- [x] Add React Query hook `useCommands()`.
+- [x] Implement `CommandAutocomplete` component.
+- [x] Integrate into `ChatInput` with keyboard navigation.
 
 ### Phase C — Validation + Hinting
 - [ ] Parse input into command + args.

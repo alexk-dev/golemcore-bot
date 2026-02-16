@@ -1,6 +1,6 @@
 # ADR-0009: Model Hint Visibility in Chat (Which model answered)
 
-- **Status:** Proposed
+- **Status:** In Progress
 - **Date:** 2026-02-16
 - **Owner:** Routing + Dashboard team
 
@@ -51,14 +51,14 @@ Data source priority:
 ## Implementation Plan
 
 ### Phase A — Backend payload enrichment
-- [ ] Extend websocket JSON schema for assistant messages.
-- [ ] Populate model metadata in `WebChannelAdapter` payload.
-- [ ] Ensure non-web channels unaffected.
+- [x] Extend websocket JSON schema for assistant messages.
+- [x] Populate model metadata in `WebChannelAdapter` payload.
+- [x] Ensure non-web channels unaffected.
 
 ### Phase B — Frontend rendering
-- [ ] Extend chat message state shape.
-- [ ] Render model hint badge in `MessageBubble` for assistant role.
-- [ ] Add compact tooltip with provider/tier/model.
+- [x] Extend chat message state shape.
+- [x] Render model hint badge in `MessageBubble` for assistant role.
+- [x] Add compact tooltip with provider/tier/model.
 
 ### Phase C — Tests
 - [ ] Backend tests for payload serialization.

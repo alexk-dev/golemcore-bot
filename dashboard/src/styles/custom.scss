@@ -466,3 +466,81 @@
     opacity: 1;
   }
 }
+
+// ==================== Command Autocomplete ====================
+
+.command-autocomplete {
+  margin-bottom: 0.5rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.65rem;
+  overflow: hidden;
+  background: var(--bs-body-bg);
+}
+
+.command-item {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--bs-border-color);
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  &.active {
+    background: rgba(13, 110, 253, 0.1);
+  }
+
+  .command-name {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+    font-weight: 600;
+  }
+
+  .command-desc {
+    font-size: 0.82rem;
+    color: var(--bs-secondary-color);
+  }
+
+  .command-usage {
+    font-size: 0.75rem;
+    color: var(--bs-secondary-color);
+  }
+}
+
+.chat-attachments-strip {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.chat-attachment-chip {
+  position: relative;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.5rem;
+  overflow: hidden;
+
+  img {
+    width: 72px;
+    height: 72px;
+    object-fit: cover;
+    display: block;
+  }
+
+  button {
+    position: absolute;
+    right: 0.15rem;
+    top: 0.15rem;
+    padding: 0.05rem 0.25rem;
+    line-height: 1;
+  }
+}
+
+.message-model-hint {
+  display: inline-block;
+  font-size: 0.72rem;
+  line-height: 1.2;
+  margin-bottom: 0.35rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(108, 117, 125, 0.2);
+  color: var(--bs-secondary-color);
+}

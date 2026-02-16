@@ -1,6 +1,6 @@
 # ADR-0007: Image Upload + Drag-and-Drop in Chat
 
-- **Status:** Proposed
+- **Status:** In Progress
 - **Date:** 2026-02-16
 - **Owner:** Dashboard + Media pipeline team
 
@@ -62,14 +62,14 @@ Images are uploaded first, then referenced in outbound chat message payload.
 ## Implementation Plan
 
 ### Phase A — Upload API + storage
-- [ ] Add upload endpoint and media storage service.
-- [ ] Return normalized metadata DTO.
+- [x] Add upload endpoint and media storage service.
+- [x] Return normalized metadata DTO.
 - [ ] Add cleanup policy (TTL or session-linked lifecycle).
 
 ### Phase B — Chat input integration
-- [ ] Add attach button + DnD area.
-- [ ] Add preview/remove states.
-- [ ] Upload before send; include refs in outbound payload.
+- [x] Add attach button + DnD area.
+- [x] Add preview/remove states.
+- [x] Upload before send; include refs in outbound payload.
 
 ### Phase C — Message rendering
 - [ ] Render sent image thumbnails in user bubbles.
