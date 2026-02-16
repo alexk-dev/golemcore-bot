@@ -25,6 +25,7 @@ import reactor.core.publisher.Mono;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -363,7 +364,7 @@ public class SettingsController {
             if (!providerName.equals(providerName.trim())) {
                 throw new IllegalArgumentException("llm.providers keys must not have leading/trailing spaces");
             }
-            if (!providerName.equals(providerName.toLowerCase())) {
+            if (!providerName.equals(providerName.toLowerCase(Locale.ROOT))) {
                 throw new IllegalArgumentException("llm.providers keys must be lowercase");
             }
             if (!providerName.matches("[a-z0-9][a-z0-9_-]*")) {

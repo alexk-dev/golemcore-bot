@@ -85,4 +85,15 @@
             <Class name="~me\.golemcore\.bot\.tools\..*" />
         </Or>
     </Match>
+
+    <!--
+        Protobuf Java classes are generated code. SpotBugs findings in generated
+        messages/builders are not actionable in this repository.
+    -->
+    <Match>
+        <Class name="~me\.golemcore\.bot\.adapter\.inbound\.web\.proto\..*" />
+    </Match>
+    <Match>
+        <Class name="~me\.golemcore\.bot\.proto\.session\.v1\..*" />
+    </Match>
 </FindBugsFilter>

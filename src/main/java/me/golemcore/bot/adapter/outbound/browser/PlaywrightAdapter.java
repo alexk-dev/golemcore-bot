@@ -91,7 +91,7 @@ public class PlaywrightAdapter implements BrowserPort, BrowserComponent {
 
             Browser.NewContextOptions contextOptions = new Browser.NewContextOptions();
             String userAgent = runtimeConfigService.getBrowserUserAgent();
-            if (userAgent != null && !userAgent.isBlank()) {
+            if (!userAgent.isBlank()) {
                 contextOptions.setUserAgent(userAgent);
             }
 

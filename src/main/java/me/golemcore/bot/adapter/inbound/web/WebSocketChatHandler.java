@@ -14,6 +14,7 @@ import org.springframework.web.reactive.socket.WebSocketSession;
 import org.springframework.web.util.UriComponentsBuilder;
 import reactor.core.publisher.Mono;
 
+import java.io.IOException;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -103,7 +104,7 @@ public class WebSocketChatHandler implements WebSocketHandler {
                     .build();
 
             webChannelAdapter.handleIncomingMessage(message, connectionId);
-        } catch (Exception e) { // NOSONAR
+        } catch (IOException | RuntimeException e) { // NOSONAR
             log.warn("[WebSocket] Failed to process incoming message: {}", e.getMessage());
         }
     }

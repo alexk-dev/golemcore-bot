@@ -103,6 +103,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
     private static final int CALLBACK_DATA_PARTS_COUNT = 3;
     private static final int TELEGRAM_MAX_MESSAGE_LENGTH = 4096;
     private static final int TELEGRAM_MAX_CAPTION_LENGTH = 1024;
+    private static final String TELEGRAM_AUTH_MODE_INVITE_ONLY = "invite_only";
     private static final int INVITE_MAX_FAILED_ATTEMPTS = 3;
     private static final int INVITE_COOLDOWN_SECONDS = 30;
 
@@ -301,7 +302,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
         // Check authorization
         if (!isAuthorized(userId)) {
             String authMode = runtimeConfigService.getRuntimeConfig().getTelegram().getAuthMode();
-            if ("invite_only".equals(authMode)) {
+            if (TELEGRAM_AUTH_MODE_INVITE_ONLY.equals(authMode)) {
                 String text = telegramMessage.hasText() ? telegramMessage.getText().trim() : "";
                 if (isInviteCooldownActive(userId)) {
                     long secondsLeft = getInviteCooldownSecondsLeft(userId);

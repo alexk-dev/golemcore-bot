@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
+import java.util.Locale;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -54,7 +55,7 @@ public class PromptsController {
     @PutMapping("/{name}")
     public Mono<ResponseEntity<PromptSectionDto>> updateSection(
             @PathVariable String name, @RequestBody PromptCreateRequest request) {
-        String filename = name.toUpperCase() + ".md";
+        String filename = name.toUpperCase(Locale.ROOT) + ".md";
         String fileContent = buildFileContent(request);
         return Mono.fromFuture(storagePort.putText(PROMPTS_DIR, filename, fileContent))
                 .then(Mono.fromRunnable(promptSectionService::reload))

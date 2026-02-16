@@ -20,6 +20,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
+import java.io.IOException;
 import java.security.SecureRandom;
 import java.time.Instant;
 
@@ -58,7 +59,7 @@ public class DashboardAuthService {
         }
         try {
             loadOrCreateCredentials();
-        } catch (Exception e) { // NOSONAR — startup best-effort
+        } catch (IOException e) { // NOSONAR — startup best-effort
             log.error("[Dashboard] Failed to initialize admin credentials", e);
         }
     }
@@ -154,7 +155,7 @@ public class DashboardAuthService {
                 .build();
     }
 
-    private void loadOrCreateCredentials() throws Exception {
+    private void loadOrCreateCredentials() throws IOException {
         Boolean exists = storagePort.exists(ADMIN_DIR, ADMIN_FILE).join();
         if (Boolean.TRUE.equals(exists)) {
             String json = storagePort.getText(ADMIN_DIR, ADMIN_FILE).join();

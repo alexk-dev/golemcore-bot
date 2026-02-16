@@ -26,6 +26,13 @@ import java.util.function.Consumer;
 @Slf4j
 public class WebChannelAdapter implements ChannelPort {
 
+    private static final String KEY_TYPE = "type";
+    private static final String KEY_SESSION_ID = "sessionId";
+    private static final String KEY_TEXT = "text";
+    private static final String VALUE_ASSISTANT_CHUNK = "assistant_chunk";
+    private static final String VALUE_ASSISTANT_DONE = "assistant_done";
+    private static final String VALUE_SYSTEM_EVENT = "system_event";
+
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -62,17 +69,17 @@ public class WebChannelAdapter implements ChannelPort {
     @Override
     public CompletableFuture<Void> sendMessage(String chatId, String content) {
         return sendJsonToChat(chatId, Map.of(
-                "type", "assistant_chunk",
-                "text", content,
-                "sessionId", chatId));
+                KEY_TYPE, VALUE_ASSISTANT_CHUNK,
+                KEY_TEXT, content,
+                KEY_SESSION_ID, chatId));
     }
 
     @Override
     public CompletableFuture<Void> sendMessage(String chatId, String content, Map<String, Object> hints) {
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("type", "assistant_chunk");
-        payload.put("text", content);
-        payload.put("sessionId", chatId);
+        payload.put(KEY_TYPE, VALUE_ASSISTANT_CHUNK);
+        payload.put(KEY_TEXT, content);
+        payload.put(KEY_SESSION_ID, chatId);
         if (hints != null && !hints.isEmpty()) {
             payload.put("hint", hints);
         }
@@ -83,9 +90,9 @@ public class WebChannelAdapter implements ChannelPort {
     public CompletableFuture<Void> sendMessage(Message message) {
         String chatId = message.getChatId();
         return sendJsonToChat(chatId, Map.of(
-                "type", "assistant_done",
-                "text", message.getContent() != null ? message.getContent() : "",
-                "sessionId", chatId != null ? chatId : ""));
+                KEY_TYPE, VALUE_ASSISTANT_DONE,
+                KEY_TEXT, message.getContent() != null ? message.getContent() : "",
+                KEY_SESSION_ID, chatId != null ? chatId : ""));
     }
 
     @Override
@@ -108,9 +115,9 @@ public class WebChannelAdapter implements ChannelPort {
     @Override
     public void showTyping(String chatId) {
         sendJsonToChat(chatId, Map.of(
-                "type", "system_event",
+                KEY_TYPE, VALUE_SYSTEM_EVENT,
                 "eventType", "typing",
-                "sessionId", chatId));
+                KEY_SESSION_ID, chatId));
     }
 
     public void registerSession(String connectionId, WebSocketSession session) {
