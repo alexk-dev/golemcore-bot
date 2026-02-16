@@ -12,6 +12,7 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.service.AutoModeService;
+import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
 import me.golemcore.bot.domain.service.SkillTemplateEngine;
@@ -119,6 +120,8 @@ class PlanWorkLifecycleBddTest {
                 .thenReturn(CompletableFuture.completedFuture(response1), CompletableFuture.completedFuture(response2));
 
         ToolExecutorPort toolExecutor = mock(ToolExecutorPort.class);
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveForTier(any())).thenReturn(new ModelSelectionService.ModelSelection(null, null));
 
         DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
                 llmPort,
@@ -127,7 +130,7 @@ class PlanWorkLifecycleBddTest {
                 new DefaultConversationViewBuilder(new FlatteningToolMessageMasker()),
                 new BotProperties.TurnProperties(),
                 new BotProperties.ToolLoopProperties(),
-                new BotProperties.ModelRouterProperties(),
+                modelSelectionService,
                 planService,
                 Clock.fixed(Instant.parse("2099-01-01T00:00:00Z"), ZoneOffset.UTC));
 

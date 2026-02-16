@@ -5,6 +5,7 @@ import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.system.toolloop.DefaultHistoryWriter;
 import me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem;
@@ -75,6 +76,8 @@ class ToolLoopPlanModeSetContentToolTest {
         when(planService.getActivePlanId()).thenReturn(PLAN_ID);
 
         ToolExecutorPort toolExecutor = mock(ToolExecutorPort.class);
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveForTier(any())).thenReturn(new ModelSelectionService.ModelSelection(null, null));
 
         DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
                 llmPort,
@@ -83,7 +86,7 @@ class ToolLoopPlanModeSetContentToolTest {
                 new DefaultConversationViewBuilder(new FlatteningToolMessageMasker()),
                 new BotProperties.TurnProperties(),
                 new BotProperties.ToolLoopProperties(),
-                new BotProperties.ModelRouterProperties(),
+                modelSelectionService,
                 planService,
                 Clock.fixed(FAR_FUTURE, ZoneOffset.UTC));
 
