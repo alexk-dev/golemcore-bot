@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Badge, Button, Form, InputGroup } from 'react-bootstrap';
-import { FiImage, FiMic, FiSend, FiX } from 'react-icons/fi';
+import { FiImage, FiMic, FiSend, FiX, FiRefreshCw } from 'react-icons/fi';
 import { useCommands } from '../../hooks/useCommands';
 import CommandAutocomplete, { filterCommands } from './CommandAutocomplete';
 import { uploadImages, ImageUploadResponse } from '../../api/uploads';
@@ -12,12 +12,22 @@ interface Props {
 }
 
 type NoticeLevel = 'advisory' | 'blocking' | 'recoverable';
+type AttachmentStatus = 'uploading' | 'uploaded' | 'failed';
 
 interface ComposerNotice {
   id: string;
   level: NoticeLevel;
   message: string;
   actionHint?: string;
+}
+
+interface AttachmentItem {
+  clientId: string;
+  file?: File;
+  previewUrl?: string;
+  server?: ImageUploadResponse;
+  status: AttachmentStatus;
+  error?: string;
 }
 
 const MAX_ATTACHMENTS = 5;
@@ -59,12 +69,23 @@ function classifyErrorLevel(errorText: string): NoticeLevel {
   return 'blocking';
 }
 
+function generateClientAttachmentId() {
+  return `att-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function formatDuration(totalSeconds: number): string {
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
 export default function ChatInput({ onSend, disabled }: Props) {
   const [text, setText] = useState('');
   const [selectedCmdIndex, setSelectedCmdIndex] = useState(0);
-  const [attachments, setAttachments] = useState<ImageUploadResponse[]>([]);
+  const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
   const [uploading, setUploading] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [processingVoice, setProcessingVoice] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
@@ -74,6 +95,7 @@ export default function ChatInput({ onSend, disabled }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaChunksRef = useRef<BlobPart[]>([]);
+  const discardRecordingRef = useRef(false);
 
   const commandsQuery = useCommands();
   const commands = commandsQuery.data ?? [];
@@ -94,13 +116,14 @@ export default function ChatInput({ onSend, disabled }: Props) {
 
   const commandMode = text.trimStart().startsWith('/');
   const commandTokenOnly = commandMode && !text.trim().includes(' ');
+  const uploadedAttachments = attachments.filter((a) => a.status === 'uploaded' && a.server);
 
   const statusText = useMemo(() => {
     if (uploading) return 'Uploading image...';
-    if (recording) return 'Recording...';
+    if (recording) return `Recording ${formatDuration(recordingSeconds)}`;
     if (processingVoice) return 'Transcribing...';
     return '';
-  }, [uploading, recording, processingVoice]);
+  }, [uploading, recording, processingVoice, recordingSeconds]);
 
   const activeDescendant = showAutocomplete && filteredCommands.length > 0
     ? `${COMMAND_LISTBOX_ID}-option-${selectedCmdIndex}`
@@ -146,13 +169,19 @@ export default function ChatInput({ onSend, disabled }: Props) {
     setAutocompleteDismissed(false);
   }, [text]);
 
+  useEffect(() => {
+    if (!recording) return undefined;
+    const timer = setInterval(() => setRecordingSeconds((x) => x + 1), 1000);
+    return () => clearInterval(timer);
+  }, [recording]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = text.trim();
-    if (!trimmed && attachments.length === 0) return;
+    if (!trimmed && uploadedAttachments.length === 0) return;
 
-    const attachmentSuffix = attachments.length
-      ? `\n\n${attachments.map((a) => `[image](${a.url})`).join('\n')}`
+    const attachmentSuffix = uploadedAttachments.length
+      ? `\n\n${uploadedAttachments.map((a) => `[image](${a.server!.url})`).join('\n')}`
       : '';
 
     onSend(`${trimmed}${attachmentSuffix}`.trim());
@@ -217,7 +246,8 @@ export default function ChatInput({ onSend, disabled }: Props) {
 
     setErrorText(null);
 
-    const roomLeft = Math.max(0, MAX_ATTACHMENTS - attachments.length);
+    const activeCount = attachments.filter((a) => a.status !== 'failed').length;
+    const roomLeft = Math.max(0, MAX_ATTACHMENTS - activeCount);
     if (roomLeft === 0) {
       setErrorText(`You can attach up to ${MAX_ATTACHMENTS} images per message. Remove one and try again.`);
       return;
@@ -238,14 +268,70 @@ export default function ChatInput({ onSend, disabled }: Props) {
       return;
     }
 
+    const pendingItems: AttachmentItem[] = images.map((file) => ({
+      clientId: generateClientAttachmentId(),
+      file,
+      previewUrl: typeof URL !== 'undefined' && URL.createObjectURL ? URL.createObjectURL(file) : undefined,
+      status: 'uploading',
+    }));
+
+    setAttachments((prev) => [...prev, ...pendingItems]);
+
     try {
       setUploading(true);
       const uploaded = await uploadImages(images);
-      setAttachments((prev) => [...prev, ...uploaded].slice(0, MAX_ATTACHMENTS));
+      setAttachments((prev) => {
+        const next = [...prev];
+        pendingItems.forEach((item, index) => {
+          const idx = next.findIndex((x) => x.clientId === item.clientId);
+          if (idx >= 0) {
+            next[idx] = {
+              ...next[idx],
+              status: 'uploaded',
+              server: uploaded[index],
+              error: undefined,
+            };
+          }
+        });
+        return next;
+      });
     } catch (err) {
-      setErrorText(formatApiError(err, 'Image upload failed'));
+      const message = formatApiError(err, 'Image upload failed');
+      setAttachments((prev) => prev.map((item) => (
+        pendingItems.some((p) => p.clientId === item.clientId)
+          ? { ...item, status: 'failed', error: message }
+          : item
+      )));
+      setErrorText(`${message}. You can retry failed files.`);
     } finally {
       setUploading(false);
+    }
+  };
+
+  const retryUpload = async (clientId: string) => {
+    const target = attachments.find((a) => a.clientId === clientId);
+    if (!target?.file) return;
+
+    setErrorText(null);
+    setAttachments((prev) => prev.map((item) => (
+      item.clientId === clientId ? { ...item, status: 'uploading', error: undefined } : item
+    )));
+
+    try {
+      const uploaded = await uploadImages([target.file]);
+      setAttachments((prev) => prev.map((item) => (
+        item.clientId === clientId
+          ? { ...item, status: 'uploaded', server: uploaded[0], error: undefined }
+          : item
+      )));
+    } catch (err) {
+      const message = formatApiError(err, 'Image upload failed');
+      setAttachments((prev) => prev.map((item) => (
+        item.clientId === clientId
+          ? { ...item, status: 'failed', error: message }
+          : item
+      )));
+      setErrorText(`${message}. Retry or remove failed files.`);
     }
   };
 
@@ -269,10 +355,15 @@ export default function ChatInput({ onSend, disabled }: Props) {
     setDragActive(false);
   };
 
+  const stopRecording = (discard = false) => {
+    discardRecordingRef.current = discard;
+    mediaRecorderRef.current?.stop();
+    setRecording(false);
+  };
+
   const toggleRecording = async () => {
     if (recording) {
-      mediaRecorderRef.current?.stop();
-      setRecording(false);
+      stopRecording(false);
       return;
     }
 
@@ -287,6 +378,8 @@ export default function ChatInput({ onSend, disabled }: Props) {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream);
       mediaChunksRef.current = [];
+      discardRecordingRef.current = false;
+      setRecordingSeconds(0);
 
       recorder.ondataavailable = (ev) => {
         if (ev.data.size > 0) {
@@ -296,6 +389,11 @@ export default function ChatInput({ onSend, disabled }: Props) {
 
       recorder.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
+        if (discardRecordingRef.current) {
+          mediaChunksRef.current = [];
+          return;
+        }
+
         const blob = new Blob(mediaChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
         if (blob.size === 0) return;
 
@@ -350,16 +448,39 @@ export default function ChatInput({ onSend, disabled }: Props) {
       {attachments.length > 0 && (
         <div className="chat-attachments-strip" aria-label="Selected attachments">
           {attachments.map((a, idx) => (
-            <div key={`${a.id}-${idx}`} className="chat-attachment-chip">
-              <img src={a.url} alt="attachment" />
-              <button
-                type="button"
-                className="btn btn-sm btn-light"
-                onClick={() => setAttachments((prev) => prev.filter((_, itemIdx) => itemIdx !== idx))}
-                aria-label={`Remove attachment ${idx + 1}`}
-              >
-                <FiX />
-              </button>
+            <div key={a.clientId} className="chat-attachment-chip">
+              {a.status === 'uploaded' && a.server?.url ? (
+                <img src={a.server.url} alt="attachment" />
+              ) : (
+                <div className="d-flex flex-column px-2 py-1" style={{ minWidth: 120 }}>
+                  <small className="text-truncate" title={a.file?.name}>{a.file?.name || `Attachment ${idx + 1}`}</small>
+                  <div className="d-flex align-items-center gap-1 mt-1">
+                    {a.status === 'uploading' && <Badge bg="secondary">Uploading…</Badge>}
+                    {a.status === 'failed' && <Badge bg="danger">Failed</Badge>}
+                  </div>
+                </div>
+              )}
+
+              <div className="d-flex align-items-center gap-1">
+                {a.status === 'failed' && (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-secondary"
+                    onClick={() => retryUpload(a.clientId)}
+                    aria-label={`Retry attachment ${idx + 1}`}
+                  >
+                    <FiRefreshCw />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-sm btn-light"
+                  onClick={() => setAttachments((prev) => prev.filter((item) => item.clientId !== a.clientId))}
+                  aria-label={`Remove attachment ${idx + 1}`}
+                >
+                  <FiX />
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -445,7 +566,7 @@ export default function ChatInput({ onSend, disabled }: Props) {
           <Button
             type="submit"
             variant="primary"
-            disabled={disabled || (!text.trim() && attachments.length === 0)}
+            disabled={disabled || (!text.trim() && uploadedAttachments.length === 0)}
             aria-label="Send message"
           >
             <FiSend size={16} />
@@ -457,8 +578,19 @@ export default function ChatInput({ onSend, disabled }: Props) {
         {(uploading || processingVoice || recording) && (
           <div className="mt-2 d-flex gap-2 align-items-center" aria-live="polite">
             {uploading && <Badge bg="secondary">Uploading image...</Badge>}
-            {recording && <Badge bg="danger">Recording...</Badge>}
+            {recording && <Badge bg="danger">Recording {formatDuration(recordingSeconds)}</Badge>}
             {processingVoice && <Badge bg="info">Transcribing...</Badge>}
+            {recording && (
+              <Button
+                size="sm"
+                variant="outline-danger"
+                type="button"
+                onClick={() => stopRecording(true)}
+                aria-label="Cancel voice recording"
+              >
+                Cancel recording
+              </Button>
+            )}
           </div>
         )}
       </Form>

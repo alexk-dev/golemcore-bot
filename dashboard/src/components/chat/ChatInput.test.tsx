@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ChatInput from './ChatInput';
+import { uploadImages } from '../../api/uploads';
 
 vi.mock('../../hooks/useCommands', () => ({
   useCommands: () => ({
@@ -127,6 +128,30 @@ describe('ChatInput', () => {
     const alert = await screen.findByTestId('composer-notice-recoverable');
     expect(alert).toHaveTextContent(/Only image files are supported/i);
     expect(alert).toHaveTextContent(/Please adjust input and try again/i);
+  });
+
+  it('marks failed upload and allows retry', async () => {
+    const mockedUpload = vi.mocked(uploadImages);
+    mockedUpload
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValueOnce([{ id: 'img2', url: '/api/uploads/images/img2', mimeType: 'image/png', size: 100 }]);
+
+    const onSend = vi.fn();
+    render(<ChatInput onSend={onSend} />);
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const image = new File(['img'], 'a.png', { type: 'image/png' });
+
+    fireEvent.change(fileInput, { target: { files: [image] } });
+
+    expect(await screen.findByLabelText(/Retry attachment/i)).toBeInTheDocument();
+
+    const retryBtn = screen.getByLabelText(/Retry attachment/i);
+    fireEvent.click(retryBtn);
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/Retry attachment/i)).not.toBeInTheDocument();
+    });
   });
 
   it('sets combobox aria attributes for command suggestions', async () => {
