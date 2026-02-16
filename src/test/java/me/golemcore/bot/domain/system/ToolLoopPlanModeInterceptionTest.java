@@ -8,6 +8,7 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.system.toolloop.DefaultHistoryWriter;
 import me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem;
+import me.golemcore.bot.domain.system.toolloop.ToolExecutionOutcome;
 import me.golemcore.bot.domain.system.toolloop.ToolExecutorPort;
 import me.golemcore.bot.domain.system.toolloop.ToolLoopTurnResult;
 import me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder;
@@ -32,13 +33,13 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Tests that plan mode intercepts tool calls inside DefaultToolLoopSystem:
- * steps are recorded via PlanService, synthetic "[Planned]" results are
- * written, and tools are never actually executed.
+ * Plan work no longer intercepts ordinary tools in ToolLoop. Only plan-specific
+ * control tools are handled specially.
  */
 class ToolLoopPlanModeInterceptionTest {
 
@@ -52,8 +53,7 @@ class ToolLoopPlanModeInterceptionTest {
     private static final String PARAM_PATH = "path";
 
     @Test
-    void shouldRecordPlanStepsAndWriteSyntheticResultsWhenPlanModeActive() {
-        // GIVEN: a session with an incoming user message
+    void shouldExecuteRegularToolsNormallyWhenPlanWorkActive() {
         AgentSession session = AgentSession.builder()
                 .id("s1")
                 .channelType(CHANNEL_TYPE)
@@ -74,7 +74,6 @@ class ToolLoopPlanModeInterceptionTest {
                 .messages(new ArrayList<>(session.getMessages()))
                 .build();
 
-        // AND: LLM returns tool calls on first call, then a final text answer
         LlmPort llmPort = mock(LlmPort.class);
         AtomicInteger llmCalls = new AtomicInteger();
 
@@ -104,13 +103,15 @@ class ToolLoopPlanModeInterceptionTest {
             return CompletableFuture.completedFuture(n == 1 ? firstResponse : finalResponse);
         });
 
-        // AND: PlanService is active
         PlanService planService = mock(PlanService.class);
         when(planService.isPlanModeActive()).thenReturn(true);
         when(planService.getActivePlanId()).thenReturn(PLAN_ID);
 
-        // AND: a tool executor that should NOT be called
         ToolExecutorPort toolExecutor = mock(ToolExecutorPort.class);
+        when(toolExecutor.execute(any(), any())).thenAnswer(inv -> {
+            Message.ToolCall tc = inv.getArgument(1);
+            return ToolExecutionOutcome.synthetic(tc, null, "OK");
+        });
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
@@ -126,38 +127,26 @@ class ToolLoopPlanModeInterceptionTest {
                 planService,
                 Clock.fixed(DEADLINE, ZoneOffset.UTC));
 
-        // WHEN
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
 
-        // THEN: final answer is reached
         assertTrue(result.finalAnswerReady());
         assertEquals(2, result.llmCalls());
 
-        // AND: plan steps were recorded (2 tool calls)
-        verify(planService).addStep(eq(PLAN_ID), eq(TOOL_FILE_SYSTEM),
-                eq(Map.of(PARAM_ACTION, "list", PARAM_PATH, "/tmp")), anyString());
-        verify(planService).addStep(eq(PLAN_ID), eq(TOOL_FILE_SYSTEM),
-                eq(Map.of(PARAM_ACTION, "read", PARAM_PATH, "/tmp/a.txt")), anyString());
+        verify(planService, never()).addStep(anyString(), anyString(), any(), anyString());
+        verify(toolExecutor, times(2)).execute(any(), any());
 
-        // AND: tool executor was NEVER called (tools not executed in plan mode)
-        verify(toolExecutor, never()).execute(any(), any());
-
-        // AND: raw history contains synthetic "[Planned]" tool results
-        List<Message> history = session.getMessages();
-        long plannedCount = history.stream()
+        long plannedCount = session.getMessages().stream()
                 .filter(m -> "tool".equals(m.getRole()) && "[Planned]".equals(m.getContent()))
                 .count();
-        assertEquals(2, plannedCount, "Expected 2 synthetic [Planned] tool results");
+        assertEquals(0, plannedCount, "No synthetic [Planned] results expected");
 
-        // AND: final assistant message is present
-        Message lastMsg = history.get(history.size() - 1);
+        Message lastMsg = session.getMessages().get(session.getMessages().size() - 1);
         assertEquals("assistant", lastMsg.getRole());
         assertEquals("Plan complete: 2 steps collected", lastMsg.getContent());
     }
 
     @Test
     void shouldNotInterferWithFinalTextResponseInPlanMode() {
-        // GIVEN: a session with a user message
         AgentSession session = AgentSession.builder()
                 .id("s1")
                 .channelType(CHANNEL_TYPE)
@@ -178,7 +167,6 @@ class ToolLoopPlanModeInterceptionTest {
                 .messages(new ArrayList<>(session.getMessages()))
                 .build();
 
-        // AND: LLM returns a final text answer (no tool calls)
         LlmPort llmPort = mock(LlmPort.class);
         LlmResponse finalResponse = LlmResponse.builder()
                 .content("Here is your plan summary.")
@@ -188,7 +176,6 @@ class ToolLoopPlanModeInterceptionTest {
         when(llmPort.chat(any(LlmRequest.class)))
                 .thenReturn(CompletableFuture.completedFuture(finalResponse));
 
-        // AND: PlanService is active (but no tool calls to intercept)
         PlanService planService = mock(PlanService.class);
         when(planService.isPlanModeActive()).thenReturn(true);
         when(planService.getActivePlanId()).thenReturn(PLAN_ID);
@@ -209,20 +196,14 @@ class ToolLoopPlanModeInterceptionTest {
                 planService,
                 Clock.fixed(DEADLINE, ZoneOffset.UTC));
 
-        // WHEN
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
 
-        // THEN: final answer produced normally
         assertTrue(result.finalAnswerReady());
         assertEquals(1, result.llmCalls());
 
-        // AND: no plan steps added (no tool calls)
         verify(planService, never()).addStep(anyString(), anyString(), any(), anyString());
-
-        // AND: tool executor not called
         verify(toolExecutor, never()).execute(any(), any());
 
-        // AND: final assistant message in history
         Message lastMsg = session.getMessages().get(session.getMessages().size() - 1);
         assertEquals("assistant", lastMsg.getRole());
         assertEquals("Here is your plan summary.", lastMsg.getContent());
