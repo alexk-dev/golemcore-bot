@@ -26,7 +26,7 @@ class SessionServiceTest {
     private static final String CHANNEL_TELEGRAM = "telegram";
     private static final String CHAT_ID = "123";
     private static final String SESSION_ID = "telegram:123";
-    private static final String SESSION_FILE = "telegram:123.json";
+    private static final String SESSION_FILE = "telegram:123.pb";
     private static final String NOT_FOUND = "not found";
     private static final String ROLE_USER = "user";
     private static final String NONEXISTENT = "nonexistent";
@@ -37,6 +37,7 @@ class SessionServiceTest {
     private ObjectMapper objectMapper;
     private Clock clock;
     private SessionService service;
+    private SessionProtoMapper sessionProtoMapper;
 
     @BeforeEach
     void setUp() {
@@ -45,8 +46,13 @@ class SessionServiceTest {
         objectMapper.registerModule(new JavaTimeModule());
         clock = Clock.fixed(FIXED_TIME, ZoneOffset.UTC);
         service = new SessionService(storagePort, objectMapper, clock);
+        sessionProtoMapper = new SessionProtoMapper();
 
-        when(storagePort.putText(anyString(), anyString(), anyString()))
+        when(storagePort.getObject(anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+        when(storagePort.getText(anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+        when(storagePort.putObject(anyString(), anyString(), any(byte[].class)))
                 .thenReturn(CompletableFuture.completedFuture(null));
         when(storagePort.deleteObject(anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
@@ -56,7 +62,7 @@ class SessionServiceTest {
 
     @Test
     void getOrCreateCreatesNewSession() {
-        when(storagePort.getText(SESSIONS_DIR, SESSION_FILE))
+        when(storagePort.getObject(SESSIONS_DIR, SESSION_FILE))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
         AgentSession session = service.getOrCreate(CHANNEL_TELEGRAM, CHAT_ID);
@@ -70,7 +76,7 @@ class SessionServiceTest {
 
     @Test
     void getOrCreateReturnsCachedSession() {
-        when(storagePort.getText(SESSIONS_DIR, SESSION_FILE))
+        when(storagePort.getObject(SESSIONS_DIR, SESSION_FILE))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
         AgentSession first = service.getOrCreate(CHANNEL_TELEGRAM, CHAT_ID);
@@ -82,6 +88,8 @@ class SessionServiceTest {
     @Test
     void getOrCreateCreatesNewWhenStorageLoadFails() {
         // Corrupt JSON in storage — service should gracefully create new session
+        when(storagePort.getObject(SESSIONS_DIR, "telegram:200.pb"))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
         when(storagePort.getText(SESSIONS_DIR, "telegram:200.json"))
                 .thenReturn(CompletableFuture.completedFuture("{corrupt json}"));
 
@@ -96,6 +104,8 @@ class SessionServiceTest {
 
     @Test
     void getReturnsEmptyForUnknownSession() {
+        when(storagePort.getObject(SESSIONS_DIR, "unknown.pb"))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
         when(storagePort.getText(SESSIONS_DIR, "unknown.json"))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
@@ -106,7 +116,7 @@ class SessionServiceTest {
 
     @Test
     void getReturnsCachedSession() {
-        when(storagePort.getText(SESSIONS_DIR, SESSION_FILE))
+        when(storagePort.getObject(SESSIONS_DIR, SESSION_FILE))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
         service.getOrCreate(CHANNEL_TELEGRAM, CHAT_ID);
@@ -116,7 +126,37 @@ class SessionServiceTest {
     }
 
     @Test
+    void getLoadsFromProtobufStorage() {
+        AgentSession stored = AgentSession.builder()
+                .id(SESSION_ID)
+                .channelType(CHANNEL_TELEGRAM)
+                .chatId(CHAT_ID)
+                .build();
+        stored.addMessage(Message.builder()
+                .id("m1")
+                .role("assistant")
+                .content("done")
+                .metadata(new java.util.LinkedHashMap<>(java.util.Map.of("model", "openai/gpt-5.3-codex",
+                        "modelTier", "coding")))
+                .timestamp(FIXED_TIME)
+                .build());
+        byte[] payload = sessionProtoMapper.toProto(stored).toByteArray();
+
+        when(storagePort.getObject(SESSIONS_DIR, SESSION_FILE))
+                .thenReturn(CompletableFuture.completedFuture(payload));
+
+        Optional<AgentSession> result = service.get(SESSION_ID);
+
+        assertTrue(result.isPresent());
+        assertEquals(1, result.get().getMessages().size());
+        assertEquals("openai/gpt-5.3-codex", result.get().getMessages().get(0).getMetadata().get("model"));
+        assertEquals("coding", result.get().getMessages().get(0).getMetadata().get("modelTier"));
+    }
+
+    @Test
     void getReturnsEmptyWhenStorageJsonIsCorrupt() {
+        when(storagePort.getObject(SESSIONS_DIR, "telegram:456.pb"))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
         when(storagePort.getText(SESSIONS_DIR, "telegram:456.json"))
                 .thenReturn(CompletableFuture.completedFuture("{corrupt}"));
 
@@ -127,6 +167,8 @@ class SessionServiceTest {
 
     @Test
     void getReturnsEmptyForBlankJson() {
+        when(storagePort.getObject(SESSIONS_DIR, "blank.pb"))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
         when(storagePort.getText(SESSIONS_DIR, "blank.json"))
                 .thenReturn(CompletableFuture.completedFuture("  "));
 
@@ -137,6 +179,8 @@ class SessionServiceTest {
 
     @Test
     void getReturnsEmptyForNullJson() {
+        when(storagePort.getObject(SESSIONS_DIR, "nulljson.pb"))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
         when(storagePort.getText(SESSIONS_DIR, "nulljson.json"))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
@@ -158,12 +202,12 @@ class SessionServiceTest {
         service.save(session);
 
         assertEquals(FIXED_TIME, session.getUpdatedAt());
-        verify(storagePort).putText(eq(SESSIONS_DIR), eq(SESSION_FILE), anyString());
+        verify(storagePort).putObject(eq(SESSIONS_DIR), eq(SESSION_FILE), any(byte[].class));
     }
 
     @Test
     void saveHandlesStorageFailure() {
-        when(storagePort.putText(anyString(), anyString(), anyString()))
+        when(storagePort.putObject(anyString(), anyString(), any(byte[].class)))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("disk full")));
 
         AgentSession session = AgentSession.builder()
@@ -179,7 +223,7 @@ class SessionServiceTest {
 
     @Test
     void deleteRemovesFromCacheAndStorage() {
-        when(storagePort.getText(SESSIONS_DIR, SESSION_FILE))
+        when(storagePort.getObject(SESSIONS_DIR, SESSION_FILE))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
         service.getOrCreate(CHANNEL_TELEGRAM, CHAT_ID);
@@ -200,7 +244,7 @@ class SessionServiceTest {
 
     @Test
     void clearMessagesRemovesAllMessages() {
-        when(storagePort.getText(SESSIONS_DIR, SESSION_FILE))
+        when(storagePort.getObject(SESSIONS_DIR, SESSION_FILE))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
         AgentSession session = service.getOrCreate(CHANNEL_TELEGRAM, CHAT_ID);
@@ -210,20 +254,20 @@ class SessionServiceTest {
         service.clearMessages(SESSION_ID);
 
         assertEquals(0, session.getMessages().size());
-        verify(storagePort).putText(eq(SESSIONS_DIR), eq(SESSION_FILE), anyString());
+        verify(storagePort).putObject(eq(SESSIONS_DIR), eq(SESSION_FILE), any(byte[].class));
     }
 
     @Test
     void clearMessagesDoesNothingForUnknownSession() {
         service.clearMessages(NONEXISTENT);
-        verify(storagePort, never()).putText(anyString(), anyString(), anyString());
+        verify(storagePort, never()).putObject(anyString(), anyString(), any(byte[].class));
     }
 
     // ==================== compactMessages ====================
 
     @Test
     void compactMessagesRemovesOldMessages() {
-        when(storagePort.getText(SESSIONS_DIR, SESSION_FILE))
+        when(storagePort.getObject(SESSIONS_DIR, SESSION_FILE))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
         AgentSession session = service.getOrCreate(CHANNEL_TELEGRAM, CHAT_ID);
@@ -247,7 +291,7 @@ class SessionServiceTest {
 
     @Test
     void compactMessagesReturnsZeroWhenNotEnoughMessages() {
-        when(storagePort.getText(SESSIONS_DIR, SESSION_FILE))
+        when(storagePort.getObject(SESSIONS_DIR, SESSION_FILE))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
         AgentSession session = service.getOrCreate(CHANNEL_TELEGRAM, CHAT_ID);
@@ -260,7 +304,7 @@ class SessionServiceTest {
 
     @Test
     void compactMessagesKeepLastEqualsTotal() {
-        when(storagePort.getText(SESSIONS_DIR, SESSION_FILE))
+        when(storagePort.getObject(SESSIONS_DIR, SESSION_FILE))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
         AgentSession session = service.getOrCreate(CHANNEL_TELEGRAM, CHAT_ID);
@@ -279,7 +323,7 @@ class SessionServiceTest {
 
     @Test
     void compactWithSummaryReplaceOldMessagesWithSummary() {
-        when(storagePort.getText(SESSIONS_DIR, SESSION_FILE))
+        when(storagePort.getObject(SESSIONS_DIR, SESSION_FILE))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
         AgentSession session = service.getOrCreate(CHANNEL_TELEGRAM, CHAT_ID);
@@ -305,7 +349,7 @@ class SessionServiceTest {
 
     @Test
     void compactWithSummaryReturnsZeroWhenNotEnough() {
-        when(storagePort.getText(SESSIONS_DIR, SESSION_FILE))
+        when(storagePort.getObject(SESSIONS_DIR, SESSION_FILE))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
         AgentSession session = service.getOrCreate(CHANNEL_TELEGRAM, CHAT_ID);
@@ -321,7 +365,7 @@ class SessionServiceTest {
 
     @Test
     void getMessagesToCompactReturnsOldMessages() {
-        when(storagePort.getText(SESSIONS_DIR, SESSION_FILE))
+        when(storagePort.getObject(SESSIONS_DIR, SESSION_FILE))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
         AgentSession session = service.getOrCreate(CHANNEL_TELEGRAM, CHAT_ID);
@@ -344,7 +388,7 @@ class SessionServiceTest {
 
     @Test
     void getMessagesToCompactReturnsEmptyWhenNotEnough() {
-        when(storagePort.getText(SESSIONS_DIR, SESSION_FILE))
+        when(storagePort.getObject(SESSIONS_DIR, SESSION_FILE))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
         AgentSession session = service.getOrCreate(CHANNEL_TELEGRAM, CHAT_ID);
@@ -357,7 +401,7 @@ class SessionServiceTest {
 
     @Test
     void listAllReturnsCachedSessions() {
-        when(storagePort.getText(SESSIONS_DIR, SESSION_FILE))
+        when(storagePort.getObject(SESSIONS_DIR, SESSION_FILE))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
         when(storagePort.listObjects(anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(List.of()));
@@ -426,6 +470,28 @@ class SessionServiceTest {
         assertEquals(1, all.get(0).getMessages().size());
     }
 
+    @Test
+    void migrateLegacySessionsAtStartupConvertsJsonToProtobuf() throws Exception {
+        AgentSession legacy = AgentSession.builder()
+                .id("telegram:777")
+                .channelType(CHANNEL_TELEGRAM)
+                .chatId("777")
+                .createdAt(FIXED_TIME)
+                .updatedAt(FIXED_TIME)
+                .build();
+        String legacyJson = objectMapper.writeValueAsString(legacy);
+
+        when(storagePort.listObjects(SESSIONS_DIR, ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of("telegram:777.json")));
+        when(storagePort.getText(SESSIONS_DIR, "telegram:777.json"))
+                .thenReturn(CompletableFuture.completedFuture(legacyJson));
+
+        service.migrateLegacySessionsAtStartup();
+
+        verify(storagePort).putObject(eq(SESSIONS_DIR), eq("telegram:777.pb"), any(byte[].class));
+        verify(storagePort).deleteObject(SESSIONS_DIR, "telegram:777.json");
+    }
+
     // ==================== getMessageCount ====================
 
     @Test
@@ -435,7 +501,7 @@ class SessionServiceTest {
 
     @Test
     void getMessageCountReturnsCorrectCount() {
-        when(storagePort.getText(SESSIONS_DIR, SESSION_FILE))
+        when(storagePort.getObject(SESSIONS_DIR, SESSION_FILE))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
         AgentSession session = service.getOrCreate(CHANNEL_TELEGRAM, CHAT_ID);

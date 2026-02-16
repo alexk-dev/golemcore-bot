@@ -51,8 +51,8 @@ import java.util.stream.Collectors;
  * <p>
  * Configuration:
  * <ul>
- * <li>{@code bot.tools.brave-search.enabled} - Enable/disable
- * <li>{@code bot.tools.brave-search.api-key} - Brave API key (required)
+ * <li>Enable/disable is controlled via RuntimeConfig (tools.braveSearchEnabled)
+ * <li>API key is controlled via RuntimeConfig (tools.braveSearchApiKey)
  * <li>{@code bot.tools.brave-search.default-count} - Number of results (default
  * 5)
  * </ul>

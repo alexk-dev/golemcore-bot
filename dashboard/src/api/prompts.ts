@@ -23,15 +23,6 @@ export async function updatePrompt(name: string, section: Partial<PromptSection>
   return data;
 }
 
-export async function createPrompt(section: PromptSection) {
-  const { data } = await client.post('/prompts', section);
-  return data;
-}
-
-export async function deletePrompt(name: string) {
-  await client.delete(`/prompts/${name}`);
-}
-
 export async function previewPrompt(name: string) {
   const { data } = await client.post(`/prompts/${name}/preview`);
   return data as { rendered: string };

@@ -29,6 +29,8 @@ public class RuntimeConfigService {
     private static final int INVITE_CODE_LENGTH = 20;
     private static final String DEFAULT_BALANCED_MODEL = "openai/gpt-5.1";
     private static final String DEFAULT_BALANCED_REASONING = "medium";
+    private static final String DEFAULT_ROUTING_MODEL = "openai/gpt-5.2-codex";
+    private static final String DEFAULT_ROUTING_REASONING = "medium";
     private static final String DEFAULT_SMART_MODEL = "openai/gpt-5.1";
     private static final String DEFAULT_SMART_REASONING = "high";
     private static final String DEFAULT_CODING_MODEL = "openai/gpt-5.2";
@@ -52,6 +54,10 @@ public class RuntimeConfigService {
     private static final String DEFAULT_AUTO_MODEL_TIER = "default";
     private static final int DEFAULT_AUTO_COMPACT_MAX_TOKENS = 50000;
     private static final int DEFAULT_AUTO_COMPACT_KEEP_LAST = 20;
+    private static final int DEFAULT_MEMORY_RECENT_DAYS = 7;
+    private static final int DEFAULT_TURN_MAX_LLM_CALLS = 200;
+    private static final int DEFAULT_TURN_MAX_TOOL_EXECUTIONS = 500;
+    private static final java.time.Duration DEFAULT_TURN_DEADLINE = java.time.Duration.ofHours(1);
     private static final int DEFAULT_IMAP_PORT = 993;
     private static final int DEFAULT_IMAP_CONNECT_TIMEOUT = 10000;
     private static final int DEFAULT_IMAP_READ_TIMEOUT = 30000;
@@ -62,6 +68,15 @@ public class RuntimeConfigService {
     private static final int DEFAULT_SMTP_CONNECT_TIMEOUT = 10000;
     private static final int DEFAULT_SMTP_READ_TIMEOUT = 30000;
     private static final String DEFAULT_SMTP_SECURITY = "starttls";
+    private static final String DEFAULT_BROWSER_API_PROVIDER = "brave";
+    private static final String DEFAULT_BROWSER_TYPE = "playwright";
+    private static final boolean DEFAULT_BROWSER_HEADLESS = true;
+    private static final int DEFAULT_BROWSER_TIMEOUT_MS = 30000;
+    private static final String DEFAULT_BROWSER_USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
+    private static final String DEFAULT_RAG_URL = "http://localhost:9621";
+    private static final String DEFAULT_RAG_QUERY_MODE = "hybrid";
+    private static final int DEFAULT_RAG_TIMEOUT_SECONDS = 10;
+    private static final int DEFAULT_RAG_INDEX_MIN_LENGTH = 50;
 
     private final StoragePort storagePort;
     private final ObjectMapper objectMapper;
@@ -120,6 +135,16 @@ public class RuntimeConfigService {
         return val != null ? val : DEFAULT_BALANCED_MODEL;
     }
 
+    public String getRoutingModel() {
+        String val = getRuntimeConfig().getModelRouter().getRoutingModel();
+        return val != null ? val : DEFAULT_ROUTING_MODEL;
+    }
+
+    public String getRoutingModelReasoning() {
+        String val = getRuntimeConfig().getModelRouter().getRoutingModelReasoning();
+        return val != null ? val : DEFAULT_ROUTING_REASONING;
+    }
+
     public String getBalancedModelReasoning() {
         String val = getRuntimeConfig().getModelRouter().getBalancedModelReasoning();
         return val != null ? val : DEFAULT_BALANCED_REASONING;
@@ -167,9 +192,34 @@ public class RuntimeConfigService {
 
     // ==================== Brave Search ====================
 
+    public String getBrowserApiProvider() {
+        String val = getRuntimeConfig().getTools().getBrowserApiProvider();
+        return val != null && !val.isBlank() ? val : DEFAULT_BROWSER_API_PROVIDER;
+    }
+
+    public String getBrowserType() {
+        String val = getRuntimeConfig().getTools().getBrowserType();
+        return val != null && !val.isBlank() ? val : DEFAULT_BROWSER_TYPE;
+    }
+
+    public int getBrowserTimeoutMs() {
+        Integer val = getRuntimeConfig().getTools().getBrowserTimeout();
+        return val != null ? val : DEFAULT_BROWSER_TIMEOUT_MS;
+    }
+
+    public String getBrowserUserAgent() {
+        String val = getRuntimeConfig().getTools().getBrowserUserAgent();
+        return val != null && !val.isBlank() ? val : DEFAULT_BROWSER_USER_AGENT;
+    }
+
+    public boolean isBrowserHeadless() {
+        Boolean val = getRuntimeConfig().getTools().getBrowserHeadless();
+        return val != null ? val : DEFAULT_BROWSER_HEADLESS;
+    }
+
     public boolean isBraveSearchEnabled() {
         Boolean val = getRuntimeConfig().getTools().getBraveSearchEnabled();
-        return val != null && val;
+        return val != null && val && DEFAULT_BROWSER_API_PROVIDER.equals(getBrowserApiProvider());
     }
 
     public String getBraveSearchApiKey() {
@@ -214,6 +264,41 @@ public class RuntimeConfigService {
         return val != null && val;
     }
 
+    public boolean isUsageEnabled() {
+        Boolean val = getRuntimeConfig().getUsage().getEnabled();
+        return val != null ? val : true;
+    }
+
+    public boolean isRagEnabled() {
+        Boolean val = getRuntimeConfig().getRag().getEnabled();
+        return val != null && val;
+    }
+
+    public String getRagUrl() {
+        String val = getRuntimeConfig().getRag().getUrl();
+        return val != null && !val.isBlank() ? val : DEFAULT_RAG_URL;
+    }
+
+    public String getRagApiKey() {
+        String val = getRuntimeConfig().getRag().getApiKey();
+        return val != null ? val : "";
+    }
+
+    public String getRagQueryMode() {
+        String val = getRuntimeConfig().getRag().getQueryMode();
+        return val != null && !val.isBlank() ? val : DEFAULT_RAG_QUERY_MODE;
+    }
+
+    public int getRagTimeoutSeconds() {
+        Integer val = getRuntimeConfig().getRag().getTimeoutSeconds();
+        return val != null ? val : DEFAULT_RAG_TIMEOUT_SECONDS;
+    }
+
+    public int getRagIndexMinLength() {
+        Integer val = getRuntimeConfig().getRag().getIndexMinLength();
+        return val != null ? val : DEFAULT_RAG_INDEX_MIN_LENGTH;
+    }
+
     public String getVoiceApiKey() {
         String val = getRuntimeConfig().getVoice().getApiKey();
         return val != null ? val : "";
@@ -237,6 +322,16 @@ public class RuntimeConfigService {
     public float getVoiceSpeed() {
         Float val = getRuntimeConfig().getVoice().getSpeed();
         return val != null ? val : DEFAULT_VOICE_SPEED;
+    }
+
+    public boolean isTelegramRespondWithVoiceEnabled() {
+        Boolean val = getRuntimeConfig().getVoice().getTelegramRespondWithVoice();
+        return val != null && val;
+    }
+
+    public boolean isTelegramTranscribeIncomingEnabled() {
+        Boolean val = getRuntimeConfig().getVoice().getTelegramTranscribeIncoming();
+        return val != null && val;
     }
 
     // ==================== IMAP ====================
@@ -384,6 +479,87 @@ public class RuntimeConfigService {
     public int getCompactionKeepLastMessages() {
         Integer val = getRuntimeConfig().getCompaction().getKeepLastMessages();
         return val != null ? val : DEFAULT_AUTO_COMPACT_KEEP_LAST;
+    }
+
+    // ==================== Turn Budget ====================
+
+    public int getTurnMaxLlmCalls() {
+        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
+        if (turnConfig == null) {
+            return DEFAULT_TURN_MAX_LLM_CALLS;
+        }
+        Integer val = turnConfig.getMaxLlmCalls();
+        return val != null ? val : DEFAULT_TURN_MAX_LLM_CALLS;
+    }
+
+    public int getTurnMaxToolExecutions() {
+        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
+        if (turnConfig == null) {
+            return DEFAULT_TURN_MAX_TOOL_EXECUTIONS;
+        }
+        Integer val = turnConfig.getMaxToolExecutions();
+        return val != null ? val : DEFAULT_TURN_MAX_TOOL_EXECUTIONS;
+    }
+
+    public java.time.Duration getTurnDeadline() {
+        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
+        if (turnConfig == null || turnConfig.getDeadline() == null || turnConfig.getDeadline().isBlank()) {
+            return DEFAULT_TURN_DEADLINE;
+        }
+        try {
+            return java.time.Duration.parse(turnConfig.getDeadline());
+        } catch (java.time.format.DateTimeParseException e) {
+            return DEFAULT_TURN_DEADLINE;
+        }
+    }
+
+    // ==================== Memory ====================
+
+    public boolean isMemoryEnabled() {
+        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
+        if (memoryConfig == null) {
+            return true;
+        }
+        Boolean val = memoryConfig.getEnabled();
+        return val != null ? val : true;
+    }
+
+    public int getMemoryRecentDays() {
+        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
+        if (memoryConfig == null) {
+            return DEFAULT_MEMORY_RECENT_DAYS;
+        }
+        Integer val = memoryConfig.getRecentDays();
+        return val != null ? val : DEFAULT_MEMORY_RECENT_DAYS;
+    }
+
+    // ==================== Skills ====================
+
+    public boolean isSkillsEnabled() {
+        RuntimeConfig.SkillsConfig skillsConfig = getRuntimeConfig().getSkills();
+        if (skillsConfig == null) {
+            return true;
+        }
+        Boolean val = skillsConfig.getEnabled();
+        return val != null ? val : true;
+    }
+
+    public boolean isSkillsProgressiveLoadingEnabled() {
+        RuntimeConfig.SkillsConfig skillsConfig = getRuntimeConfig().getSkills();
+        if (skillsConfig == null) {
+            return true;
+        }
+        Boolean val = skillsConfig.getProgressiveLoading();
+        return val != null ? val : true;
+    }
+
+    /**
+     * Update the Telegram auth mode and persist.
+     */
+    public void setTelegramAuthMode(String mode) {
+        RuntimeConfig cfg = getRuntimeConfig();
+        cfg.getTelegram().setAuthMode(mode);
+        persist(cfg);
     }
 
     // ==================== Invite Codes ====================

@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Table, Button, Badge, Modal, Spinner } from 'react-bootstrap';
+import { Table, Button, Badge, Modal, Spinner, Card, Placeholder } from 'react-bootstrap';
 import { useSessions, useSession, useDeleteSession, useCompactSession, useClearSession } from '../hooks/useSessions';
 import toast from 'react-hot-toast';
+import ConfirmModal from '../components/common/ConfirmModal';
 
 export default function SessionsPage() {
   const { data: sessions, isLoading } = useSessions();
@@ -9,9 +10,52 @@ export default function SessionsPage() {
   const compactMut = useCompactSession();
   const clearMut = useClearSession();
   const [viewId, setViewId] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ type: 'clear' | 'delete'; sessionId: string } | null>(null);
   const { data: detail } = useSession(viewId ?? '');
 
-  if (isLoading) return <Spinner />;
+  const handleConfirmAction = async () => {
+    if (!confirmAction) {
+      return;
+    }
+
+    try {
+      if (confirmAction.type === 'clear') {
+        await clearMut.mutateAsync(confirmAction.sessionId);
+        toast.success('Cleared');
+      } else {
+        await deleteMut.mutateAsync(confirmAction.sessionId);
+        toast.success('Deleted');
+      }
+    } finally {
+      setConfirmAction(null);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div>
+        <div className="section-header">
+          <h4 className="mb-0">Sessions</h4>
+        </div>
+        <Card>
+          <Card.Body>
+            <Placeholder as="div" animation="glow" className="mb-2">
+              <Placeholder xs={12} />
+            </Placeholder>
+            <Placeholder as="div" animation="glow" className="mb-2">
+              <Placeholder xs={12} />
+            </Placeholder>
+            <Placeholder as="div" animation="glow" className="mb-2">
+              <Placeholder xs={10} />
+            </Placeholder>
+            <div className="d-flex justify-content-center pt-2">
+              <Spinner size="sm" />
+            </div>
+          </Card.Body>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -33,7 +77,7 @@ export default function SessionsPage() {
           {sessions?.map((s) => (
             <tr key={s.id}>
               <td>
-                <Button variant="link" size="sm" className="p-0" onClick={() => setViewId(s.id)}>
+                <Button variant="secondary" size="sm" className="py-0 px-2" onClick={() => setViewId(s.id)}>
                   {s.id}
                 </Button>
               </td>
@@ -56,14 +100,16 @@ export default function SessionsPage() {
                   <Button
                     size="sm"
                     variant="warning"
-                    onClick={() => { clearMut.mutate(s.id); toast.success('Cleared'); }}
+                    onClick={() => setConfirmAction({ type: 'clear', sessionId: s.id })}
+                    disabled={clearMut.isPending || deleteMut.isPending}
                   >
                     Clear
                   </Button>
                   <Button
                     size="sm"
                     variant="danger"
-                    onClick={() => { deleteMut.mutate(s.id); toast.success('Deleted'); }}
+                    onClick={() => setConfirmAction({ type: 'delete', sessionId: s.id })}
+                    disabled={clearMut.isPending || deleteMut.isPending}
                   >
                     Delete
                   </Button>
@@ -78,16 +124,31 @@ export default function SessionsPage() {
         <Modal.Header closeButton>
           <Modal.Title>Session: {viewId}</Modal.Title>
         </Modal.Header>
-        <Modal.Body style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+        <Modal.Body className="sessions-modal-body">
           {detail?.messages.map((msg, i) => (
-            <div key={i} className={`mb-2 p-2 rounded ${msg.role === 'user' ? 'bg-primary bg-opacity-10' : 'bg-body-secondary'}`}>
+            <div key={i} className={`mb-2 p-2 rounded ${msg.role === 'user' ? 'bg-primary-subtle text-primary-emphasis' : 'bg-body-tertiary'}`}>
               <div className="fw-bold small">{msg.role}</div>
-              <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>
-              {msg.timestamp && <div className="text-muted" style={{ fontSize: '0.7rem' }}>{msg.timestamp}</div>}
+              <div className="sessions-message">{msg.content}</div>
+              {msg.timestamp && <div className="sessions-message-meta">{msg.timestamp}</div>}
             </div>
           ))}
         </Modal.Body>
       </Modal>
+
+      <ConfirmModal
+        show={!!confirmAction}
+        title={confirmAction?.type === 'clear' ? 'Clear Session' : 'Delete Session'}
+        message={
+          confirmAction?.type === 'clear'
+            ? 'This will remove all messages from the selected session. This action cannot be undone.'
+            : 'This will permanently delete the selected session. This action cannot be undone.'
+        }
+        confirmLabel={confirmAction?.type === 'clear' ? 'Clear' : 'Delete'}
+        confirmVariant={confirmAction?.type === 'clear' ? 'warning' : 'danger'}
+        isProcessing={clearMut.isPending || deleteMut.isPending}
+        onConfirm={handleConfirmAction}
+        onCancel={() => setConfirmAction(null)}
+      />
     </div>
   );
 }

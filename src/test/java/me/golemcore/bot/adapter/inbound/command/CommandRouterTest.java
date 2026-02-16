@@ -14,6 +14,7 @@ import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.UsageStats;
 import me.golemcore.bot.domain.model.UserPreferences;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.CompactionService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
@@ -159,7 +160,8 @@ class CommandRouterTest {
                 scheduleService,
                 runCoordinator,
                 eventPublisher,
-                properties);
+                properties,
+                mock(RuntimeConfigService.class));
     }
 
     private ToolComponent mockTool(String name, String description, boolean enabled) {

@@ -42,7 +42,6 @@ class ShellToolTest {
 
     private static BotProperties createTestProperties(String workspace, boolean enabled) {
         BotProperties properties = new BotProperties();
-        properties.getTools().getShell().setEnabled(enabled);
         properties.getTools().getShell().setWorkspace(workspace);
         properties.getTools().getShell().setDefaultTimeout(30);
         properties.getTools().getShell().setMaxTimeout(300);

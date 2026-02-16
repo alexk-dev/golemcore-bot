@@ -63,7 +63,7 @@ import java.util.stream.Collectors;
  * </ul>
  *
  * <p>
- * Configuration: {@code bot.tools.goal-management.enabled}
+ * Configuration: RuntimeConfig (tools.goalManagementEnabled)
  *
  * @see me.golemcore.bot.domain.service.AutoModeService
  * @see me.golemcore.bot.auto.AutoModeScheduler

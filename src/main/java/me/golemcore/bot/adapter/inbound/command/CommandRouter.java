@@ -36,6 +36,7 @@ import me.golemcore.bot.domain.service.CompactionService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanExecutionService;
 import me.golemcore.bot.domain.service.PlanService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.domain.service.SessionRunCoordinator;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -125,6 +126,7 @@ public class CommandRouter implements CommandPort {
     private final SessionRunCoordinator runCoordinator;
     private final ApplicationEventPublisher eventPublisher;
     private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
 
     private static final List<String> KNOWN_COMMANDS = List.of(
             "skills", "tools", CMD_STATUS, "new", SUBCMD_RESET, "compact", CMD_HELP,
@@ -148,7 +150,8 @@ public class CommandRouter implements CommandPort {
             ScheduleService scheduleService,
             SessionRunCoordinator runCoordinator,
             ApplicationEventPublisher eventPublisher,
-            BotProperties properties) {
+            BotProperties properties,
+            RuntimeConfigService runtimeConfigService) {
         this.skillComponent = skillComponent;
         this.toolComponents = toolComponents;
         this.sessionService = sessionService;
@@ -163,6 +166,7 @@ public class CommandRouter implements CommandPort {
         this.runCoordinator = runCoordinator;
         this.eventPublisher = eventPublisher;
         this.properties = properties;
+        this.runtimeConfigService = runtimeConfigService;
         log.info("CommandRouter initialized with commands: {}", KNOWN_COMMANDS);
     }
 
@@ -677,7 +681,7 @@ public class CommandRouter implements CommandPort {
             return CommandResult.success(msg("command.goal.created", goal.getTitle()));
         } catch (IllegalStateException e) {
             return CommandResult.failure(msg("command.goal.limit",
-                    properties.getAuto().getMaxGoals()));
+                    runtimeConfigService.getAutoMaxGoals()));
         }
     }
 

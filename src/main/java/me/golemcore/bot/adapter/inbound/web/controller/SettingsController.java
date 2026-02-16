@@ -34,7 +34,7 @@ import java.util.Map;
 public class SettingsController {
 
     private static final String TELEGRAM_AUTH_MODE_USER = "user";
-    private static final String TELEGRAM_AUTH_MODE_INVITE = "invite";
+    private static final String TELEGRAM_AUTH_MODE_INVITE = "invite_only";
 
     private final UserPreferencesService preferencesService;
     private final ModelSelectionService modelSelectionService;
@@ -159,6 +159,51 @@ public class SettingsController {
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfig()));
     }
 
+    @PutMapping("/runtime/turn")
+    public Mono<ResponseEntity<RuntimeConfig>> updateTurnConfig(
+            @RequestBody RuntimeConfig.TurnConfig turnConfig) {
+        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        config.setTurn(turnConfig);
+        runtimeConfigService.updateRuntimeConfig(config);
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfig()));
+    }
+
+    @PutMapping("/runtime/memory")
+    public Mono<ResponseEntity<RuntimeConfig>> updateMemoryConfig(
+            @RequestBody RuntimeConfig.MemoryConfig memoryConfig) {
+        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        config.setMemory(memoryConfig);
+        runtimeConfigService.updateRuntimeConfig(config);
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfig()));
+    }
+
+    @PutMapping("/runtime/skills")
+    public Mono<ResponseEntity<RuntimeConfig>> updateSkillsConfig(
+            @RequestBody RuntimeConfig.SkillsConfig skillsConfig) {
+        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        config.setSkills(skillsConfig);
+        runtimeConfigService.updateRuntimeConfig(config);
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfig()));
+    }
+
+    @PutMapping("/runtime/usage")
+    public Mono<ResponseEntity<RuntimeConfig>> updateUsageConfig(
+            @RequestBody RuntimeConfig.UsageConfig usageConfig) {
+        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        config.setUsage(usageConfig);
+        runtimeConfigService.updateRuntimeConfig(config);
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfig()));
+    }
+
+    @PutMapping("/runtime/rag")
+    public Mono<ResponseEntity<RuntimeConfig>> updateRagConfig(
+            @RequestBody RuntimeConfig.RagConfig ragConfig) {
+        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        config.setRag(ragConfig);
+        runtimeConfigService.updateRuntimeConfig(config);
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfig()));
+    }
+
     @PutMapping("/runtime/webhooks")
     public Mono<ResponseEntity<Void>> updateWebhooksConfig(
             @RequestBody UserPreferences.WebhookConfig webhookConfig) {
@@ -233,12 +278,11 @@ public class SettingsController {
     private void normalizeAndValidateTelegramConfig(RuntimeConfig.TelegramConfig telegramConfig) {
         String authMode = telegramConfig.getAuthMode();
         if (authMode == null || authMode.isBlank()) {
-            telegramConfig.setAuthMode(TELEGRAM_AUTH_MODE_INVITE);
-            authMode = TELEGRAM_AUTH_MODE_INVITE;
+            throw new IllegalArgumentException("telegram.authMode is required");
         }
 
         if (!TELEGRAM_AUTH_MODE_USER.equals(authMode) && !TELEGRAM_AUTH_MODE_INVITE.equals(authMode)) {
-            throw new IllegalArgumentException("telegram.authMode must be 'user' or 'invite'");
+            throw new IllegalArgumentException("telegram.authMode must be 'user' or 'invite_only'");
         }
 
         List<String> allowedUsers = telegramConfig.getAllowedUsers();
@@ -255,6 +299,14 @@ public class SettingsController {
 
         if (TELEGRAM_AUTH_MODE_USER.equals(authMode) && allowedUsers.size() > 1) {
             throw new IllegalArgumentException("telegram.allowedUsers supports only one ID in user mode");
+        }
+
+        if (TELEGRAM_AUTH_MODE_USER.equals(authMode) && allowedUsers.isEmpty()) {
+            throw new IllegalArgumentException("telegram.allowedUsers must contain one ID in user mode");
+        }
+
+        if (TELEGRAM_AUTH_MODE_INVITE.equals(authMode) && !allowedUsers.isEmpty()) {
+            throw new IllegalArgumentException("telegram.allowedUsers must be empty in invite_only mode");
         }
     }
 

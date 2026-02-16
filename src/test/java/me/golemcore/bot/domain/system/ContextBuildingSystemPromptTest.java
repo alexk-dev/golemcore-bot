@@ -297,6 +297,7 @@ class ContextBuildingSystemPromptTest {
     void injectsRagContextWhenAvailable() {
         when(promptSectionService.isEnabled()).thenReturn(false);
         when(ragPort.isAvailable()).thenReturn(true);
+        when(runtimeConfigService.getRagQueryMode()).thenReturn("hybrid");
         when(ragPort.query(anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture("User discussed Java projects last week."));
 

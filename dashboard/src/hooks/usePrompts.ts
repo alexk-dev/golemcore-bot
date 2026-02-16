@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { listPrompts, getPrompt, updatePrompt, createPrompt, deletePrompt } from '../api/prompts';
+import { listPrompts, getPrompt, updatePrompt } from '../api/prompts';
 
 export function usePrompts() {
   return useQuery({ queryKey: ['prompts'], queryFn: listPrompts });
@@ -18,22 +18,6 @@ export function useUpdatePrompt() {
   return useMutation({
     mutationFn: ({ name, section }: { name: string; section: Record<string, unknown> }) =>
       updatePrompt(name, section),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['prompts'] }),
-  });
-}
-
-export function useCreatePrompt() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: createPrompt,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['prompts'] }),
-  });
-}
-
-export function useDeletePrompt() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: deletePrompt,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['prompts'] }),
   });
 }

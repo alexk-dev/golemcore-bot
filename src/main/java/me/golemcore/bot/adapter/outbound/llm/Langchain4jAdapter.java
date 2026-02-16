@@ -33,7 +33,15 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
-import dev.langchain4j.data.message.*;
+import dev.langchain4j.data.image.Image;
+import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.Content;
+import dev.langchain4j.data.message.ImageContent;
+import dev.langchain4j.data.message.SystemMessage;
+import dev.langchain4j.data.message.TextContent;
+import dev.langchain4j.data.message.ToolExecutionResultMessage;
+import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.anthropic.AnthropicChatModel;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
@@ -425,7 +433,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         // flattens tool messages to plain text before they reach the adapter.
         for (Message msg : request.getMessages()) {
             switch (msg.getRole()) {
-            case "user" -> messages.add(UserMessage.from(msg.getContent()));
+            case "user" -> messages.add(toUserMessage(msg));
             case "assistant" -> {
                 if (msg.hasToolCalls()) {
                     List<ToolExecutionRequest> toolRequests = msg.getToolCalls().stream()
@@ -452,6 +460,52 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         }
 
         return messages;
+    }
+
+    @SuppressWarnings("unchecked")
+    private UserMessage toUserMessage(Message msg) {
+        List<Content> contents = new ArrayList<>();
+
+        if (msg.getContent() != null && !msg.getContent().isBlank()) {
+            contents.add(TextContent.from(msg.getContent()));
+        }
+
+        Map<String, Object> metadata = msg.getMetadata();
+        if (metadata != null) {
+            Object attachmentsRaw = metadata.get("attachments");
+            if (attachmentsRaw instanceof List<?> attachments) {
+                for (Object attachmentObj : attachments) {
+                    if (!(attachmentObj instanceof Map<?, ?> attachmentMap)) {
+                        continue;
+                    }
+
+                    Object typeObj = attachmentMap.get("type");
+                    Object mimeObj = attachmentMap.get("mimeType");
+                    Object dataObj = attachmentMap.get("dataBase64");
+
+                    if (!(typeObj instanceof String type)
+                            || !(mimeObj instanceof String mimeType)
+                            || !(dataObj instanceof String base64Data)) {
+                        continue;
+                    }
+                    if (!"image".equals(type) || !mimeType.startsWith("image/") || base64Data.isBlank()) {
+                        continue;
+                    }
+
+                    Image image = Image.builder()
+                            .base64Data(base64Data)
+                            .mimeType(mimeType)
+                            .build();
+                    contents.add(ImageContent.from(image));
+                }
+            }
+        }
+
+        if (contents.isEmpty()) {
+            return UserMessage.from(msg.getContent() != null ? msg.getContent() : "");
+        }
+
+        return UserMessage.from(contents);
     }
 
     private List<ToolSpecification> convertTools(LlmRequest request) {

@@ -3,7 +3,7 @@ import { useSystemDiagnostics } from '../hooks/useSystem';
 
 function ValueCell({ value }: { value: string | null }) {
   if (!value || value.trim() === '') {
-    return <span className="text-muted">not set</span>;
+    return <span className="text-body-secondary">not set</span>;
   }
   return <code>{value}</code>;
 }
@@ -37,9 +37,9 @@ export default function DiagnosticsPage() {
           <Card className="h-100">
             <Card.Body>
               <Card.Title className="h6">Storage</Card.Title>
-              <div className="small text-muted mb-1">Configured</div>
+              <div className="small text-body-secondary mb-1">Configured</div>
               <div className="mb-2"><code>{data.storage.configuredBasePath}</code></div>
-              <div className="small text-muted mb-1">Resolved</div>
+              <div className="small text-body-secondary mb-1">Resolved</div>
               <div className="mb-3"><code>{data.storage.resolvedBasePath}</code></div>
               <div className="d-flex gap-2">
                 <Badge bg="secondary">sessions files: {data.storage.sessionsFiles}</Badge>
@@ -52,9 +52,9 @@ export default function DiagnosticsPage() {
           <Card className="h-100">
             <Card.Body>
               <Card.Title className="h6">Runtime</Card.Title>
-              <div className="small text-muted mb-1">user.dir</div>
+              <div className="small text-body-secondary mb-1">user.dir</div>
               <div className="mb-2"><code>{data.runtime.userDir}</code></div>
-              <div className="small text-muted mb-1">user.home</div>
+              <div className="small text-body-secondary mb-1">user.home</div>
               <div><code>{data.runtime.userHome}</code></div>
             </Card.Body>
           </Card>

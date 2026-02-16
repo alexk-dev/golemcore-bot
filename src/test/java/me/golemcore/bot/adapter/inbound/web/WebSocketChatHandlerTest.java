@@ -16,8 +16,11 @@ import reactor.test.StepVerifier;
 import java.net.URI;
 
 import org.springframework.web.reactive.socket.WebSocketMessage;
+import org.mockito.ArgumentCaptor;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -141,6 +144,36 @@ class WebSocketChatHandlerTest {
 
         StepVerifier.create(handler.handle(session))
                 .verifyComplete();
+    }
+
+    @Test
+    void shouldHandleImageAttachmentWithoutText() {
+        String token = tokenProvider.generateAccessToken("admin");
+
+        WebSocketSession session = mock(WebSocketSession.class);
+        HandshakeInfo handshakeInfo = mock(HandshakeInfo.class);
+        when(session.getHandshakeInfo()).thenReturn(handshakeInfo);
+        when(handshakeInfo.getUri()).thenReturn(URI.create("ws://localhost/ws/chat?token=" + token));
+        when(session.getId()).thenReturn("session-4");
+
+        String imagePayload = "{\"text\":\"\",\"sessionId\":\"chat-4\",\"attachments\":[{\"type\":\"image\",\"name\":\"sample.png\",\"mimeType\":\"image/png\",\"dataBase64\":\"iVBORw0KGgo=\"}]}";
+        WebSocketMessage wsMessage = mock(WebSocketMessage.class);
+        when(wsMessage.getPayloadAsText()).thenReturn(imagePayload);
+        when(session.receive()).thenReturn(Flux.just(wsMessage));
+
+        StepVerifier.create(handler.handle(session))
+                .verifyComplete();
+
+        ArgumentCaptor<AgentLoop.InboundMessageEvent> captor = ArgumentCaptor
+                .forClass(AgentLoop.InboundMessageEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+
+        AgentLoop.InboundMessageEvent event = captor.getValue();
+        assertNotNull(event);
+        assertNotNull(event.message().getMetadata());
+        Object attachments = event.message().getMetadata().get("attachments");
+        assertNotNull(attachments);
+        assertEquals("", event.message().getContent());
     }
 
     @Test

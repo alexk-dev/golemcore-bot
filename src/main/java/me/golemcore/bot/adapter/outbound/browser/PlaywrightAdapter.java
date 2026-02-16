@@ -20,6 +20,7 @@ package me.golemcore.bot.adapter.outbound.browser;
 
 import me.golemcore.bot.domain.component.BrowserComponent;
 import me.golemcore.bot.domain.model.BrowserPage;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.BrowserPort;
 import com.microsoft.playwright.*;
@@ -69,6 +70,7 @@ import java.util.concurrent.CompletableFuture;
 public class PlaywrightAdapter implements BrowserPort, BrowserComponent {
 
     private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
 
     private Playwright playwright;
     private Browser browser;
@@ -86,11 +88,11 @@ public class PlaywrightAdapter implements BrowserPort, BrowserComponent {
         try {
             pw = Playwright.create();
             BrowserType.LaunchOptions launchOptions = new BrowserType.LaunchOptions()
-                    .setHeadless(properties.getBrowser().isHeadless());
+                    .setHeadless(runtimeConfigService.isBrowserHeadless());
             br = pw.chromium().launch(launchOptions);
 
             Browser.NewContextOptions contextOptions = new Browser.NewContextOptions();
-            String userAgent = properties.getBrowser().getUserAgent();
+            String userAgent = runtimeConfigService.getBrowserUserAgent();
             if (userAgent != null && !userAgent.isBlank()) {
                 contextOptions.setUserAgent(userAgent);
             }
@@ -100,7 +102,7 @@ public class PlaywrightAdapter implements BrowserPort, BrowserComponent {
             this.playwright = pw;
             initialized = true;
 
-            log.info("Playwright browser initialized (headless: {})", properties.getBrowser().isHeadless());
+            log.info("Playwright browser initialized (headless: {})", runtimeConfigService.isBrowserHeadless());
         } catch (Exception e) {
             log.warn("Failed to initialize Playwright: {}", e.getMessage());
             // Clean up partially created resources to prevent process leaks
@@ -137,7 +139,7 @@ public class PlaywrightAdapter implements BrowserPort, BrowserComponent {
 
             Page page = context.newPage();
             try {
-                int timeout = properties.getBrowser().getTimeout();
+                int timeout = runtimeConfigService.getBrowserTimeoutMs();
                 page.setDefaultTimeout(timeout);
 
                 page.navigate(url);
@@ -176,7 +178,7 @@ public class PlaywrightAdapter implements BrowserPort, BrowserComponent {
 
             Page page = context.newPage();
             try {
-                int timeout = properties.getBrowser().getTimeout();
+                int timeout = runtimeConfigService.getBrowserTimeoutMs();
                 page.setDefaultTimeout(timeout);
 
                 page.navigate(url);
@@ -200,7 +202,7 @@ public class PlaywrightAdapter implements BrowserPort, BrowserComponent {
 
             Page page = context.newPage();
             try {
-                int timeout = properties.getBrowser().getTimeout();
+                int timeout = runtimeConfigService.getBrowserTimeoutMs();
                 page.setDefaultTimeout(timeout);
 
                 page.navigate(url);

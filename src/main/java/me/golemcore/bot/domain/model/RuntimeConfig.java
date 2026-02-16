@@ -43,6 +43,21 @@ public class RuntimeConfig {
     @Builder.Default
     private CompactionConfig compaction = new CompactionConfig();
 
+    @Builder.Default
+    private TurnConfig turn = new TurnConfig();
+
+    @Builder.Default
+    private MemoryConfig memory = new MemoryConfig();
+
+    @Builder.Default
+    private SkillsConfig skills = new SkillsConfig();
+
+    @Builder.Default
+    private UsageConfig usage = new UsageConfig();
+
+    @Builder.Default
+    private RagConfig rag = new RagConfig();
+
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
@@ -50,9 +65,9 @@ public class RuntimeConfig {
     public static class TelegramConfig {
         private Boolean enabled;
         private String token;
-        /** "user" or "invite" */
+        /** "user" or "invite_only" */
         @Builder.Default
-        private String authMode = "invite";
+        private String authMode = "invite_only";
         @Builder.Default
         private List<String> allowedUsers = new ArrayList<>();
         @Builder.Default
@@ -75,6 +90,8 @@ public class RuntimeConfig {
     @Builder
     public static class ModelRouterConfig {
         private Double temperature;
+        private String routingModel;
+        private String routingModelReasoning;
         private String balancedModel;
         private String balancedModelReasoning;
         private String smartModel;
@@ -91,8 +108,13 @@ public class RuntimeConfig {
     @AllArgsConstructor
     @Builder
     public static class ToolsConfig {
+        private String browserType;
+        private Integer browserTimeout;
+        private String browserUserAgent;
         private Boolean filesystemEnabled;
         private Boolean shellEnabled;
+        private String browserApiProvider;
+        private Boolean browserHeadless;
         private Boolean braveSearchEnabled;
         private String braveSearchApiKey;
         private Boolean skillManagementEnabled;
@@ -150,6 +172,8 @@ public class RuntimeConfig {
         private String ttsModelId;
         private String sttModelId;
         private Float speed;
+        private Boolean telegramRespondWithVoice;
+        private Boolean telegramTranscribeIncoming;
     }
 
     @Data
@@ -198,5 +222,61 @@ public class RuntimeConfig {
         private Boolean enabled;
         private Integer maxContextTokens;
         private Integer keepLastMessages;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class TurnConfig {
+        @Builder.Default
+        private Integer maxLlmCalls = 200;
+        @Builder.Default
+        private Integer maxToolExecutions = 500;
+        @Builder.Default
+        private String deadline = "PT1H";
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class MemoryConfig {
+        @Builder.Default
+        private Boolean enabled = true;
+        @Builder.Default
+        private Integer recentDays = 7;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class SkillsConfig {
+        @Builder.Default
+        private Boolean enabled = true;
+        @Builder.Default
+        private Boolean progressiveLoading = true;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class UsageConfig {
+        private Boolean enabled;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class RagConfig {
+        private Boolean enabled;
+        private String url;
+        private String apiKey;
+        private String queryMode;
+        private Integer timeoutSeconds;
+        private Integer indexMinLength;
     }
 }

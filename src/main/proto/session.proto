@@ -1,0 +1,85 @@
+syntax = "proto3";
+
+package golemcore.sessions.v1;
+
+option java_multiple_files = true;
+option java_package = "me.golemcore.bot.proto.session.v1";
+option java_outer_classname = "SessionProto";
+
+import "google/protobuf/timestamp.proto";
+
+message AgentSessionRecord {
+  string id = 1;
+  string channel_type = 2;
+  string chat_id = 3;
+  repeated MessageRecord messages = 4;
+  map<string, JsonValue> metadata = 5;
+  SessionState state = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+}
+
+message MessageRecord {
+  string id = 1;
+  string role = 2;
+  string content = 3;
+  string channel_type = 4;
+  string chat_id = 5;
+  string sender_id = 6;
+
+  repeated ToolCallRecord tool_calls = 7;
+  string tool_call_id = 8;
+  string tool_name = 9;
+
+  map<string, JsonValue> metadata = 10;
+  google.protobuf.Timestamp timestamp = 11;
+
+  bytes voice_data = 12;
+  string voice_transcription = 13;
+  AudioFormat audio_format = 14;
+}
+
+message ToolCallRecord {
+  string id = 1;
+  string name = 2;
+  map<string, JsonValue> arguments = 3;
+}
+
+message JsonObject {
+  map<string, JsonValue> fields = 1;
+}
+
+message JsonArray {
+  repeated JsonValue items = 1;
+}
+
+message NullValue {
+}
+
+message JsonValue {
+  oneof kind {
+    bool bool_value = 1;
+    int64 int_value = 2;
+    double double_value = 3;
+    string string_value = 4;
+    JsonObject object_value = 5;
+    JsonArray array_value = 6;
+    NullValue null_value = 7;
+  }
+}
+
+enum SessionState {
+  SESSION_STATE_UNSPECIFIED = 0;
+  SESSION_STATE_ACTIVE = 1;
+  SESSION_STATE_PAUSED = 2;
+  SESSION_STATE_TERMINATED = 3;
+}
+
+enum AudioFormat {
+  AUDIO_FORMAT_UNSPECIFIED = 0;
+  AUDIO_FORMAT_OGG_OPUS = 1;
+  AUDIO_FORMAT_MP3 = 2;
+  AUDIO_FORMAT_WAV = 3;
+  AUDIO_FORMAT_PCM_16K = 4;
+  AUDIO_FORMAT_PCM_44K = 5;
+}

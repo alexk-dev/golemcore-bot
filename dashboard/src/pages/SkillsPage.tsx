@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Card, ListGroup, Row, Col, Button, Form, Badge, Spinner, Modal } from 'react-bootstrap';
+import { Badge, Card, ListGroup, Row, Col, Button, Form, Spinner, Modal, Placeholder } from 'react-bootstrap';
 import { useSkills, useSkill, useCreateSkill, useUpdateSkill, useDeleteSkill } from '../hooks/useSkills';
 import toast from 'react-hot-toast';
+import ConfirmModal from '../components/common/ConfirmModal';
 
 const SKILL_TEMPLATE = `---
 description: ""
@@ -21,11 +22,43 @@ export default function SkillsPage() {
   const [editContent, setEditContent] = useState('');
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [newName, setNewName] = useState('');
 
   const { data: detail } = useSkill(selected || '');
 
-  if (isLoading) return <Spinner />;
+  if (isLoading) {
+    return (
+      <div>
+        <div className="section-header d-flex align-items-center justify-content-between">
+          <h4 className="mb-0">Skills</h4>
+        </div>
+        <Row className="g-3">
+          <Col md={4}>
+            <Card>
+              <Card.Body>
+                <Placeholder as="div" animation="glow" className="mb-2"><Placeholder xs={12} /></Placeholder>
+                <Placeholder as="div" animation="glow" className="mb-2"><Placeholder xs={12} /></Placeholder>
+                <Placeholder as="div" animation="glow"><Placeholder xs={10} /></Placeholder>
+              </Card.Body>
+            </Card>
+          </Col>
+          <Col md={8}>
+            <Card>
+              <Card.Body>
+                <Placeholder as="div" animation="glow" className="mb-2"><Placeholder xs={6} /></Placeholder>
+                <Placeholder as="div" animation="glow" className="mb-2"><Placeholder xs={12} /></Placeholder>
+                <Placeholder as="div" animation="glow" className="mb-2"><Placeholder xs={12} /></Placeholder>
+                <div className="d-flex justify-content-center pt-2">
+                  <Spinner size="sm" />
+                </div>
+              </Card.Body>
+            </Card>
+          </Col>
+        </Row>
+      </div>
+    );
+  }
 
   const filtered = skills?.filter((s) =>
     s.name.toLowerCase().includes(search.toLowerCase())
@@ -56,11 +89,11 @@ export default function SkillsPage() {
 
   const handleDelete = async () => {
     if (!selected) return;
-    if (!window.confirm(`Delete skill "${selected}"?`)) return;
     try {
       await deleteMutation.mutateAsync(selected);
       setSelected(null);
       setEditContent('');
+      setShowDeleteConfirm(false);
       toast.success('Skill deleted');
     } catch {
       toast.error('Failed to delete skill');
@@ -120,13 +153,13 @@ export default function SkillsPage() {
                   </Badge>
                   {s.hasMcp && <Badge bg="info">MCP</Badge>}
                   {s.modelTier && s.modelTier !== 'balanced' && (
-                    <Badge bg="warning" text="dark">{s.modelTier}</Badge>
+                    <Badge className="text-bg-warning">{s.modelTier}</Badge>
                   )}
                 </div>
               </ListGroup.Item>
             ))}
             {filtered?.length === 0 && (
-              <ListGroup.Item className="text-muted text-center">No skills found</ListGroup.Item>
+              <ListGroup.Item className="text-body-secondary text-center">No skills found</ListGroup.Item>
             )}
           </ListGroup>
         </Col>
@@ -142,13 +175,13 @@ export default function SkillsPage() {
               </Card.Header>
               <Card.Body>
                 <Form.Group className="mb-3">
-                  <Form.Label className="small text-muted">SKILL.md Content</Form.Label>
+                  <Form.Label className="small text-body-secondary">SKILL.md Content</Form.Label>
                   <Form.Control
                     as="textarea"
                     rows={18}
                     value={editorContent}
                     onChange={(e) => setEditContent(e.target.value)}
-                    style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}
+                    className="code-text"
                   />
                 </Form.Group>
                 <div className="d-flex gap-2">
@@ -158,7 +191,7 @@ export default function SkillsPage() {
                   <Button
                     size="sm"
                     variant="danger"
-                    onClick={handleDelete}
+                    onClick={() => setShowDeleteConfirm(true)}
                     disabled={deleteMutation.isPending}
                   >
                     Delete
@@ -167,7 +200,7 @@ export default function SkillsPage() {
               </Card.Body>
             </Card>
           ) : (
-            <Card className="text-center text-muted py-5">
+            <Card className="text-center text-body-secondary py-5">
               <Card.Body>Select a skill to edit</Card.Body>
             </Card>
           )}
@@ -187,7 +220,7 @@ export default function SkillsPage() {
               placeholder="my-skill"
               autoFocus
             />
-            <Form.Text className="text-muted">
+            <Form.Text className="text-body-secondary">
               Alphanumeric and hyphens only (e.g. my-skill-name)
             </Form.Text>
           </Form.Group>
@@ -199,6 +232,17 @@ export default function SkillsPage() {
           </Button>
         </Modal.Footer>
       </Modal>
+
+      <ConfirmModal
+        show={showDeleteConfirm}
+        title="Delete Skill"
+        message={selected ? `Skill "${selected}" will be permanently deleted. This action cannot be undone.` : ''}
+        confirmLabel="Delete"
+        confirmVariant="danger"
+        isProcessing={deleteMutation.isPending}
+        onConfirm={handleDelete}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
     </div>
   );
 }

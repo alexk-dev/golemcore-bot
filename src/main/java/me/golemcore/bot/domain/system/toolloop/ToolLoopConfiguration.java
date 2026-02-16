@@ -2,6 +2,7 @@ package me.golemcore.bot.domain.system.toolloop;
 
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder;
 import me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker;
@@ -46,9 +47,11 @@ public class ToolLoopConfiguration {
     public ToolLoopSystem toolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutorPort,
             HistoryWriter historyWriter, ConversationViewBuilder viewBuilder, BotProperties botProperties,
             ModelSelectionService modelSelectionService, PlanService planService,
+            RuntimeConfigService runtimeConfigService,
             UsageTrackingPort usageTracker) {
         LlmPort tracked = new UsageTrackingLlmPortDecorator(llmPort, usageTracker);
         return new DefaultToolLoopSystem(tracked, toolExecutorPort, historyWriter, viewBuilder,
-                botProperties.getTurn(), botProperties.getToolLoop(), modelSelectionService, planService);
+                botProperties.getTurn(), botProperties.getToolLoop(), modelSelectionService, planService,
+                runtimeConfigService, Clock.systemUTC());
     }
 }

@@ -31,5 +31,7 @@ public class SessionDetailDto {
         private String timestamp;
         private boolean hasToolCalls;
         private boolean hasVoice;
+        private String model;
+        private String modelTier;
     }
 }

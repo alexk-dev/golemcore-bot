@@ -17,7 +17,12 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <QueryClientProvider client={queryClient}>
       <BrowserRouter basename="/dashboard">
         <App />
-        <Toaster position="top-right" />
+        <Toaster
+          position="top-right"
+          toastOptions={{
+            className: 'bg-body text-body border shadow-sm',
+          }}
+        />
       </BrowserRouter>
     </QueryClientProvider>
   </React.StrictMode>

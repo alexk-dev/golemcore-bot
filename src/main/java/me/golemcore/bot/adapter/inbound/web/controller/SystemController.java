@@ -2,6 +2,7 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 
 import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.adapter.inbound.web.dto.SystemHealthResponse;
+import me.golemcore.bot.domain.component.BrowserComponent;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.ChannelPort;
@@ -15,6 +16,7 @@ import reactor.core.publisher.Mono;
 import java.lang.management.ManagementFactory;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.concurrent.TimeUnit;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,6 +33,7 @@ public class SystemController {
     private final BotProperties botProperties;
     private final RuntimeConfigService runtimeConfigService;
     private final StoragePort storagePort;
+    private final BrowserComponent browserComponent;
 
     @GetMapping("/health")
     public Mono<ResponseEntity<SystemHealthResponse>> health() {
@@ -57,11 +60,9 @@ public class SystemController {
     public Mono<ResponseEntity<Map<String, Object>>> getConfig() {
         Map<String, Object> config = new LinkedHashMap<>();
         config.put("llmProvider", botProperties.getLlm().getProvider());
-        config.put("maxIterations", botProperties.getAgent().getMaxIterations());
-        config.put("memoryEnabled", botProperties.getMemory().isEnabled());
-        config.put("skillsEnabled", botProperties.getSkills().isEnabled());
+        config.put("maxIterations", runtimeConfigService.getTurnMaxLlmCalls());
         config.put("voiceEnabled", runtimeConfigService.isVoiceEnabled());
-        config.put("ragEnabled", botProperties.getRag().isEnabled());
+        config.put("ragEnabled", runtimeConfigService.isRagEnabled());
         config.put("planEnabled", botProperties.getPlan().isEnabled());
         config.put("autoModeEnabled", runtimeConfigService.isAutoModeEnabled());
         config.put("dashboardEnabled", botProperties.getDashboard().isEnabled());
@@ -109,6 +110,33 @@ public class SystemController {
         diagnostics.put("runtime", runtime);
 
         return Mono.just(ResponseEntity.ok(diagnostics));
+    }
+
+    @GetMapping("/browser/health")
+    public Mono<ResponseEntity<Map<String, Object>>> getBrowserHealth() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("enabled", botProperties.getBrowser().isEnabled());
+        result.put("type", runtimeConfigService.getBrowserType());
+        result.put("provider", runtimeConfigService.getBrowserApiProvider());
+        result.put("headless", runtimeConfigService.isBrowserHeadless());
+        result.put("timeoutMs", runtimeConfigService.getBrowserTimeoutMs());
+        result.put("availableBefore", browserComponent.isAvailable());
+
+        try {
+            browserComponent.getBrowserPort()
+                    .getText("https://example.com")
+                    .orTimeout(10, TimeUnit.SECONDS)
+                    .join();
+            result.put("ok", true);
+            result.put("message", "Browser ping successful");
+        } catch (RuntimeException e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            result.put("ok", false);
+            result.put("message", cause.getMessage() != null ? cause.getMessage() : "Browser ping failed");
+        }
+
+        result.put("availableAfter", browserComponent.isAvailable());
+        return Mono.just(ResponseEntity.ok(result));
     }
 
     private int countFiles(String directory) {

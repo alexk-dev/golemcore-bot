@@ -63,6 +63,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 /**
@@ -102,6 +103,8 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
     private static final int CALLBACK_DATA_PARTS_COUNT = 3;
     private static final int TELEGRAM_MAX_MESSAGE_LENGTH = 4096;
     private static final int TELEGRAM_MAX_CAPTION_LENGTH = 1024;
+    private static final int INVITE_MAX_FAILED_ATTEMPTS = 3;
+    private static final int INVITE_COOLDOWN_SECONDS = 30;
 
     private final RuntimeConfigService runtimeConfigService;
     private final AllowlistValidator allowlistValidator;
@@ -117,6 +120,8 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
     private volatile Consumer<Message> messageHandler;
     private volatile boolean running = false;
     private volatile boolean initialized = false;
+    private final Object lifecycleLock = new Object();
+    private final Map<String, InviteAttemptState> inviteAttemptStates = new ConcurrentHashMap<>();
 
     /**
      * Package-private setter for testing — allows injecting a mock TelegramClient.
@@ -157,34 +162,49 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
 
     @Override
     public void start() {
-        if (!isEnabled()) {
-            log.info("Telegram channel disabled");
-            return;
-        }
-        ensureInitialized();
-        if (telegramClient == null) {
-            log.warn("Telegram client not initialized, cannot start");
-            return;
-        }
+        synchronized (lifecycleLock) {
+            if (running) {
+                log.debug("Telegram adapter already running");
+                return;
+            }
+            if (!isEnabled()) {
+                log.info("Telegram channel disabled");
+                return;
+            }
+            ensureInitialized();
+            if (telegramClient == null) {
+                log.warn("Telegram client not initialized, cannot start");
+                return;
+            }
 
-        try {
-            String token = runtimeConfigService.getTelegramToken();
-            botsApplication.registerBot(token, this);
-            running = true;
-            log.info("Telegram adapter started");
-        } catch (Exception e) {
-            log.error("Failed to start Telegram adapter", e);
+            try {
+                String token = runtimeConfigService.getTelegramToken();
+                botsApplication.registerBot(token, this);
+                running = true;
+                log.info("Telegram adapter started");
+            } catch (TelegramApiException e) {
+                if (e.getMessage() != null && e.getMessage().contains("already registered")) {
+                    running = true;
+                    log.warn("Telegram bot already registered; keeping existing polling session active");
+                    return;
+                }
+                log.error("Failed to start Telegram adapter", e);
+            } catch (Exception e) {
+                log.error("Failed to start Telegram adapter", e);
+            }
         }
     }
 
     @Override
     public void stop() {
-        running = false;
-        try {
-            botsApplication.close();
-            log.info("Telegram adapter stopped");
-        } catch (Exception e) {
-            log.error("Error stopping Telegram adapter", e);
+        synchronized (lifecycleLock) {
+            running = false;
+            try {
+                botsApplication.close();
+                log.info("Telegram adapter stopped");
+            } catch (Exception e) {
+                log.error("Error stopping Telegram adapter", e);
+            }
         }
     }
 
@@ -198,12 +218,14 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
      */
     @EventListener
     public void onTelegramRestart(TelegramRestartEvent event) {
-        log.info("[Telegram] Restart requested from dashboard");
-        if (running) {
-            stop();
+        synchronized (lifecycleLock) {
+            log.info("[Telegram] Restart requested from dashboard");
+            if (running) {
+                stop();
+            }
+            initialized = false;
+            start();
         }
-        initialized = false;
-        start();
     }
 
     @Override
@@ -278,8 +300,34 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
 
         // Check authorization
         if (!isAuthorized(userId)) {
-            log.warn("Unauthorized user: {} in chat: {}", userId, chatId);
-            sendMessage(chatId, messageService.getMessage("security.unauthorized"));
+            String authMode = runtimeConfigService.getRuntimeConfig().getTelegram().getAuthMode();
+            if ("invite_only".equals(authMode)) {
+                String text = telegramMessage.hasText() ? telegramMessage.getText().trim() : "";
+                if (isInviteCooldownActive(userId)) {
+                    long secondsLeft = getInviteCooldownSecondsLeft(userId);
+                    sendMessage(chatId, messageService.getMessage("telegram.invite.cooldown", secondsLeft));
+                    return;
+                }
+                if (!text.isEmpty() && runtimeConfigService.redeemInviteCode(text, userId)) {
+                    clearInviteFailures(userId);
+                    log.info("Invite code redeemed by user {} in chat {}", userId, chatId);
+                    sendMessage(chatId, messageService.getMessage("telegram.invite.success"));
+                    return;
+                }
+                if (!text.isEmpty()) {
+                    long secondsLeft = recordInviteFailureAndGetCooldown(userId);
+                    if (secondsLeft > 0) {
+                        sendMessage(chatId, messageService.getMessage("telegram.invite.cooldown", secondsLeft));
+                    } else {
+                        sendMessage(chatId, messageService.getMessage("telegram.invite.invalid"));
+                    }
+                } else {
+                    sendMessage(chatId, messageService.getMessage("telegram.invite.prompt"));
+                }
+            } else {
+                log.warn("Unauthorized user: {} in chat: {}", userId, chatId);
+                sendMessage(chatId, messageService.getMessage("security.unauthorized"));
+            }
             return;
         }
 
@@ -333,7 +381,11 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
 
         // Handle voice messages
         if (telegramMessage.hasVoice()) {
-            processVoiceMessage(telegramMessage, messageBuilder);
+            if (runtimeConfigService.isTelegramTranscribeIncomingEnabled()) {
+                processVoiceMessage(telegramMessage, messageBuilder);
+            } else {
+                messageBuilder.content("[Voice message]");
+            }
         }
 
         Message message = messageBuilder.build();
@@ -346,6 +398,44 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
 
         // Publish event
         eventPublisher.publishEvent(new AgentLoop.InboundMessageEvent(message));
+    }
+
+    private boolean isInviteCooldownActive(String userId) {
+        InviteAttemptState state = inviteAttemptStates.get(userId);
+        return state != null && state.cooldownUntil != null && state.cooldownUntil.isAfter(Instant.now());
+    }
+
+    private long getInviteCooldownSecondsLeft(String userId) {
+        InviteAttemptState state = inviteAttemptStates.get(userId);
+        if (state == null || state.cooldownUntil == null) {
+            return 0;
+        }
+        long seconds = java.time.Duration.between(Instant.now(), state.cooldownUntil).getSeconds();
+        return Math.max(seconds, 0);
+    }
+
+    private long recordInviteFailureAndGetCooldown(String userId) {
+        InviteAttemptState state = inviteAttemptStates.computeIfAbsent(userId, key -> new InviteAttemptState());
+        if (state.cooldownUntil != null && state.cooldownUntil.isAfter(Instant.now())) {
+            return getInviteCooldownSecondsLeft(userId);
+        }
+
+        state.failedAttempts = state.failedAttempts + 1;
+        if (state.failedAttempts >= INVITE_MAX_FAILED_ATTEMPTS) {
+            state.failedAttempts = 0;
+            state.cooldownUntil = Instant.now().plusSeconds(INVITE_COOLDOWN_SECONDS);
+            return INVITE_COOLDOWN_SECONDS;
+        }
+        return 0;
+    }
+
+    private void clearInviteFailures(String userId) {
+        inviteAttemptStates.remove(userId);
+    }
+
+    private static final class InviteAttemptState {
+        private int failedAttempts = 0;
+        private Instant cooldownUntil;
     }
 
     private void processVoiceMessage(

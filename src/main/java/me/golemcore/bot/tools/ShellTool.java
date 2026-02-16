@@ -74,7 +74,7 @@ import java.util.stream.Collectors;
  * <p>
  * Configuration:
  * <ul>
- * <li>{@code bot.tools.shell.enabled} - Enable/disable
+ * <li>Enable/disable is controlled via RuntimeConfig (tools.shellEnabled)
  * <li>{@code bot.tools.shell.workspace} - Working directory
  * <li>{@code bot.tools.shell.default-timeout} - Default timeout (seconds)
  * <li>{@code bot.tools.shell.max-timeout} - Max timeout (seconds)

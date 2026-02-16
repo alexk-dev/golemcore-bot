@@ -28,7 +28,7 @@ import java.util.List;
 
 /**
  * Validates users against channel-specific allowlists and global blocklists.
- * Checks RuntimeConfig first, then falls back to BotProperties.
+ * For Telegram, access is controlled only by RuntimeConfig allowlist.
  */
 @Component
 @RequiredArgsConstructor
@@ -44,16 +44,14 @@ public class AllowlistValidator {
     public boolean isAllowed(String channelType, String userId) {
         log.trace("[Security] Allowlist check: channel={}, user={}", channelType, userId);
 
-        // For telegram, check RuntimeConfig first
+        // Telegram allowlist is RuntimeConfig-only (no properties fallback)
         if ("telegram".equals(channelType)) {
             List<String> runtimeAllowed = runtimeConfigService.getTelegramAllowedUsers();
-            if (runtimeAllowed != null && !runtimeAllowed.isEmpty()) {
-                boolean allowed = runtimeAllowed.contains(userId);
-                if (!allowed) {
-                    log.warn("[Security] Unauthorized: channel={}, user={}", channelType, userId);
-                }
-                return allowed;
+            boolean allowed = runtimeAllowed != null && runtimeAllowed.contains(userId);
+            if (!allowed) {
+                log.warn("[Security] Unauthorized: channel={}, user={}", channelType, userId);
             }
+            return allowed;
         }
 
         BotProperties.ChannelProperties channelProps = properties.getChannels().get(channelType);

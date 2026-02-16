@@ -74,9 +74,9 @@
       "supportsTemperature": true,
       "maxInputTokens": 1000000
     },
-    "gpt-5-codex-preview": {
+    "gpt-5.2-codex": {
       "provider": "openai",
-      "displayName": "GPT-5 Codex Preview",
+      "displayName": "GPT-5.2 Codex",
       "supportsTemperature": false,
       "reasoning": {
         "default": "medium",
@@ -88,9 +88,23 @@
         }
       }
     },
-    "gpt-5-spark": {
+    "gpt-5.3-codex": {
       "provider": "openai",
-      "displayName": "GPT-5 Spark",
+      "displayName": "GPT-5.3 Codex",
+      "supportsTemperature": false,
+      "reasoning": {
+        "default": "medium",
+        "levels": {
+          "low":    { "maxInputTokens": 1000000 },
+          "medium": { "maxInputTokens": 1000000 },
+          "high":   { "maxInputTokens": 500000 },
+          "xhigh":  { "maxInputTokens": 250000 }
+        }
+      }
+    },
+    "gpt-5.3-codex-spark": {
+      "provider": "openai",
+      "displayName": "GPT-5.3 Codex Spark",
       "supportsTemperature": false,
       "reasoning": {
         "default": "low",

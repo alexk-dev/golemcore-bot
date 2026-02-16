@@ -13,6 +13,7 @@ import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 class ResponseRoutingSystemOutgoingResponseTest {
@@ -25,6 +26,7 @@ class ResponseRoutingSystemOutgoingResponseTest {
         ChannelPort channel = mock(ChannelPort.class);
         when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
         when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         me.golemcore.bot.domain.service.VoiceResponseHandler voiceHandler = mock(
                 me.golemcore.bot.domain.service.VoiceResponseHandler.class);
@@ -48,7 +50,7 @@ class ResponseRoutingSystemOutgoingResponseTest {
 
         system.process(context);
 
-        verify(channel).sendMessage(CHAT_ID, "hello");
+        verify(channel).sendMessage(eq(CHAT_ID), eq("hello"), any());
         RoutingOutcome outcome1 = context.getAttribute("routing.outcome");
         assertThat(outcome1).isNotNull();
         assertThat(outcome1.isSentText()).isTrue();
@@ -59,6 +61,7 @@ class ResponseRoutingSystemOutgoingResponseTest {
         ChannelPort channel = mock(ChannelPort.class);
         when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
         when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         me.golemcore.bot.domain.service.VoiceResponseHandler voiceHandler = mock(
                 me.golemcore.bot.domain.service.VoiceResponseHandler.class);
@@ -84,7 +87,7 @@ class ResponseRoutingSystemOutgoingResponseTest {
 
         system.process(context);
 
-        verify(channel).sendMessage(CHAT_ID, "from-outgoing");
+        verify(channel).sendMessage(eq(CHAT_ID), eq("from-outgoing"), any());
         RoutingOutcome outcome2 = context.getAttribute("routing.outcome");
         assertThat(outcome2).isNotNull();
         assertThat(outcome2.isSentText()).isTrue();
@@ -95,6 +98,7 @@ class ResponseRoutingSystemOutgoingResponseTest {
         ChannelPort channel = mock(ChannelPort.class);
         when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
         when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         me.golemcore.bot.domain.service.VoiceResponseHandler voiceHandler = mock(
                 me.golemcore.bot.domain.service.VoiceResponseHandler.class);

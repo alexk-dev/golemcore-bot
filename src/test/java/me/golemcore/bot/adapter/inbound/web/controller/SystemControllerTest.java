@@ -1,6 +1,7 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
 import me.golemcore.bot.adapter.inbound.web.dto.SystemHealthResponse;
+import me.golemcore.bot.domain.component.BrowserComponent;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.ChannelPort;
@@ -50,8 +51,9 @@ class SystemControllerTest {
                 .thenReturn(CompletableFuture.completedFuture(Collections.emptyList()));
         when(runtimeConfigService.isVoiceEnabled()).thenReturn(false);
         when(runtimeConfigService.isAutoModeEnabled()).thenReturn(false);
+        BrowserComponent browserComponent = mock(BrowserComponent.class);
         controller = new SystemController(List.of(telegramPort, webPort), botProperties, runtimeConfigService,
-                storagePort);
+                storagePort, browserComponent);
     }
 
     @Test

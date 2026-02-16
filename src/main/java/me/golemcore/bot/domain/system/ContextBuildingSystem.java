@@ -154,7 +154,7 @@ public class ContextBuildingSystem implements AgentSystem {
             String userQuery = getLastUserMessageText(context);
             if (userQuery != null && !userQuery.isBlank()) {
                 try {
-                    String ragContext = ragPort.query(userQuery, properties.getRag().getQueryMode()).join();
+                    String ragContext = ragPort.query(userQuery, runtimeConfigService.getRagQueryMode()).join();
                     if (ragContext != null && !ragContext.isBlank()) {
                         context.setAttribute(ContextAttributes.RAG_CONTEXT, ragContext);
                         log.debug("[Context] RAG context: {} chars", ragContext.length());

@@ -25,8 +25,8 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.service.ModelSelectionService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -46,17 +46,18 @@ class OutgoingResponsePreparationSystemTest {
     private static final String ROLE_USER = "user";
 
     private UserPreferencesService preferencesService;
-    private BotProperties properties;
     private ModelSelectionService modelSelectionService;
+    private RuntimeConfigService runtimeConfigService;
     private OutgoingResponsePreparationSystem system;
 
     @BeforeEach
     void setUp() {
         preferencesService = mock(UserPreferencesService.class);
-        properties = new BotProperties();
         modelSelectionService = mock(ModelSelectionService.class);
+        runtimeConfigService = mock(RuntimeConfigService.class);
         when(modelSelectionService.resolveMaxInputTokens(anyString())).thenReturn(128000);
-        system = new OutgoingResponsePreparationSystem(preferencesService, properties, modelSelectionService);
+        system = new OutgoingResponsePreparationSystem(preferencesService, modelSelectionService,
+                runtimeConfigService);
     }
 
     // ── identity ──
@@ -378,7 +379,7 @@ class OutgoingResponsePreparationSystemTest {
 
     @Test
     void shouldAutoVoiceRespondWhenIncomingVoice() {
-        properties.getVoice().getTelegram().setRespondWithVoice(true);
+        when(runtimeConfigService.isTelegramRespondWithVoiceEnabled()).thenReturn(true);
 
         AgentContext context = buildContextWithMessages(List.of(
                 Message.builder()
@@ -401,7 +402,7 @@ class OutgoingResponsePreparationSystemTest {
 
     @Test
     void shouldNotAutoVoiceWhenConfigDisabled() {
-        properties.getVoice().getTelegram().setRespondWithVoice(false);
+        when(runtimeConfigService.isTelegramRespondWithVoiceEnabled()).thenReturn(false);
 
         AgentContext context = buildContextWithMessages(List.of(
                 Message.builder()
@@ -424,7 +425,7 @@ class OutgoingResponsePreparationSystemTest {
 
     @Test
     void shouldNotAutoVoiceWhenLastUserMessageHasNoVoiceData() {
-        properties.getVoice().getTelegram().setRespondWithVoice(true);
+        when(runtimeConfigService.isTelegramRespondWithVoiceEnabled()).thenReturn(true);
 
         AgentContext context = buildContextWithMessages(List.of(
                 Message.builder()
@@ -445,7 +446,7 @@ class OutgoingResponsePreparationSystemTest {
 
     @Test
     void shouldNotAutoVoiceWhenOnlyAssistantMessagesPresent() {
-        properties.getVoice().getTelegram().setRespondWithVoice(true);
+        when(runtimeConfigService.isTelegramRespondWithVoiceEnabled()).thenReturn(true);
 
         AgentContext context = buildContextWithMessages(List.of(
                 Message.builder()
@@ -466,7 +467,7 @@ class OutgoingResponsePreparationSystemTest {
 
     @Test
     void shouldNotAutoVoiceWhenMessagesListIsEmpty() {
-        properties.getVoice().getTelegram().setRespondWithVoice(true);
+        when(runtimeConfigService.isTelegramRespondWithVoiceEnabled()).thenReturn(true);
 
         AgentContext context = buildContext();
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
@@ -481,7 +482,7 @@ class OutgoingResponsePreparationSystemTest {
 
     @Test
     void shouldNotAutoVoiceWhenMessagesListIsNull() {
-        properties.getVoice().getTelegram().setRespondWithVoice(true);
+        when(runtimeConfigService.isTelegramRespondWithVoiceEnabled()).thenReturn(true);
 
         AgentContext context = AgentContext.builder()
                 .session(buildSession())
@@ -501,7 +502,7 @@ class OutgoingResponsePreparationSystemTest {
 
     @Test
     void shouldSkipAutoVoiceWhenVoiceAlreadyDetected() {
-        properties.getVoice().getTelegram().setRespondWithVoice(true);
+        when(runtimeConfigService.isTelegramRespondWithVoiceEnabled()).thenReturn(true);
 
         AgentContext context = buildContextWithMessages(List.of(
                 Message.builder()
@@ -524,7 +525,7 @@ class OutgoingResponsePreparationSystemTest {
 
     @Test
     void shouldFindLastUserMessageAmongMixedMessages() {
-        properties.getVoice().getTelegram().setRespondWithVoice(true);
+        when(runtimeConfigService.isTelegramRespondWithVoiceEnabled()).thenReturn(true);
 
         AgentContext context = buildContextWithMessages(List.of(
                 Message.builder()

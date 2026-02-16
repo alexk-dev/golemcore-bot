@@ -51,7 +51,6 @@ class FileSystemToolTest {
 
     private static BotProperties createTestProperties(String workspace) {
         BotProperties properties = new BotProperties();
-        properties.getTools().getFilesystem().setEnabled(true);
         properties.getTools().getFilesystem().setWorkspace(workspace);
         return properties;
     }
@@ -214,7 +213,7 @@ class FileSystemToolTest {
     @Test
     void disabledTool() throws Exception {
         BotProperties disabledProps = createTestProperties(tempDir.toString());
-        disabledProps.getTools().getFilesystem().setEnabled(false);
+        // enabled is now controlled via RuntimeConfigService
         RuntimeConfigService disabledRuntimeConfigService = mock(RuntimeConfigService.class);
         when(disabledRuntimeConfigService.isFilesystemEnabled()).thenReturn(false);
         when(disabledRuntimeConfigService.isPromptInjectionDetectionEnabled()).thenReturn(true);

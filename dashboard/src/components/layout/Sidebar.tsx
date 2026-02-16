@@ -16,7 +16,7 @@ export default function Sidebar() {
   return (
     <div className="sidebar d-flex flex-column">
       <div className="sidebar-brand d-flex align-items-center">
-        <span style={{ fontSize: '1.5rem', lineHeight: 1 }}>&#x1F916;</span>
+        <span className="brand-icon">&#x1F916;</span>
         <span>GolemCore</span>
       </div>
       <Nav className="flex-column flex-grow-1 px-2 py-2">

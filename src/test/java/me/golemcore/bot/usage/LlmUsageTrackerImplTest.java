@@ -3,7 +3,7 @@ package me.golemcore.bot.usage;
 import me.golemcore.bot.domain.model.LlmUsage;
 import me.golemcore.bot.domain.model.UsageMetric;
 import me.golemcore.bot.domain.model.UsageStats;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.StoragePort;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -29,15 +29,15 @@ class LlmUsageTrackerImplTest {
     private static final String KEY_LANGCHAIN4J_GPT52 = PROVIDER_LANGCHAIN4J + "/" + MODEL_GPT_52;
 
     private StoragePort storagePort;
-    private BotProperties properties;
+    private RuntimeConfigService runtimeConfigService;
     private ObjectMapper objectMapper;
     private LlmUsageTrackerImpl tracker;
 
     @BeforeEach
     void setUp() {
         storagePort = mock(StoragePort.class);
-        properties = new BotProperties();
-        properties.getUsage().setEnabled(true);
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isUsageEnabled()).thenReturn(true);
         objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
 
@@ -45,7 +45,7 @@ class LlmUsageTrackerImplTest {
         when(storagePort.listObjects(anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(List.of()));
 
-        tracker = new LlmUsageTrackerImpl(storagePort, properties, objectMapper);
+        tracker = new LlmUsageTrackerImpl(storagePort, runtimeConfigService, objectMapper);
         tracker.init();
     }
 
@@ -157,7 +157,7 @@ class LlmUsageTrackerImplTest {
 
     @Test
     void skipsRecordingWhenDisabled() {
-        properties.getUsage().setEnabled(false);
+        when(runtimeConfigService.isUsageEnabled()).thenReturn(false);
 
         LlmUsage usage = usage(100, 50, Instant.now());
         tracker.recordUsage(PROVIDER_LANGCHAIN4J, MODEL_GPT_51, usage);
@@ -216,7 +216,7 @@ class LlmUsageTrackerImplTest {
         when(storagePort.getText(USAGE_DIR, "test.jsonl"))
                 .thenReturn(CompletableFuture.completedFuture(mixedContent));
 
-        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, properties, objectMapper);
+        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, runtimeConfigService, objectMapper);
         freshTracker.init();
 
         // Should have loaded 2 valid records, skipping the malformed one
@@ -231,7 +231,7 @@ class LlmUsageTrackerImplTest {
         when(storagePort.getText(USAGE_DIR, "empty.jsonl"))
                 .thenReturn(CompletableFuture.completedFuture(""));
 
-        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, properties, objectMapper);
+        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, runtimeConfigService, objectMapper);
         assertDoesNotThrow(() -> freshTracker.init());
     }
 
@@ -240,7 +240,7 @@ class LlmUsageTrackerImplTest {
         when(storagePort.listObjects(USAGE_DIR, ""))
                 .thenReturn(CompletableFuture.completedFuture(List.of("readme.txt", "data.csv")));
 
-        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, properties, objectMapper);
+        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, runtimeConfigService, objectMapper);
         assertDoesNotThrow(() -> freshTracker.init());
         // Should not attempt to read non-jsonl files
         verify(storagePort, never()).getText(eq(USAGE_DIR), eq("readme.txt"));
@@ -257,7 +257,7 @@ class LlmUsageTrackerImplTest {
         when(storagePort.getText(USAGE_DIR, "old.jsonl"))
                 .thenReturn(CompletableFuture.completedFuture(oldLine));
 
-        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, properties, objectMapper);
+        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, runtimeConfigService, objectMapper);
         freshTracker.init();
 
         UsageStats stats = freshTracker.getStats("p", Duration.ofHours(24));
@@ -283,7 +283,7 @@ class LlmUsageTrackerImplTest {
         when(storagePort.getText(USAGE_DIR, "single.json"))
                 .thenReturn(CompletableFuture.completedFuture(prettyObject));
 
-        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, properties, objectMapper);
+        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, runtimeConfigService, objectMapper);
         freshTracker.init();
 
         UsageStats stats = freshTracker.getStats("p", Duration.ofHours(24));
@@ -296,18 +296,18 @@ class LlmUsageTrackerImplTest {
         when(storagePort.listObjects(USAGE_DIR, ""))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("Storage unavailable")));
 
-        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, properties, objectMapper);
+        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, runtimeConfigService, objectMapper);
         assertDoesNotThrow(() -> freshTracker.init());
     }
 
     @Test
     void shouldSkipLoadingWhenDisabled() {
-        properties.getUsage().setEnabled(false);
+        when(runtimeConfigService.isUsageEnabled()).thenReturn(false);
 
         when(storagePort.listObjects(USAGE_DIR, ""))
                 .thenReturn(CompletableFuture.completedFuture(List.of("data.jsonl")));
 
-        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, properties, objectMapper);
+        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, runtimeConfigService, objectMapper);
         freshTracker.init();
 
         // Should not list objects when disabled
@@ -451,7 +451,7 @@ class LlmUsageTrackerImplTest {
         when(storagePort.getText(USAGE_DIR, "bad.jsonl"))
                 .thenThrow(new RuntimeException("Read failed"));
 
-        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, properties, objectMapper);
+        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, runtimeConfigService, objectMapper);
         assertDoesNotThrow(() -> freshTracker.init());
     }
 
@@ -479,7 +479,7 @@ class LlmUsageTrackerImplTest {
         when(storagePort.listObjects(USAGE_DIR, ""))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
-        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, properties, objectMapper);
+        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, runtimeConfigService, objectMapper);
         assertDoesNotThrow(() -> freshTracker.init());
     }
 
@@ -530,7 +530,7 @@ class LlmUsageTrackerImplTest {
         when(storagePort.getText(USAGE_DIR, "blanks.jsonl"))
                 .thenReturn(CompletableFuture.completedFuture(content));
 
-        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, properties, objectMapper);
+        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, runtimeConfigService, objectMapper);
         freshTracker.init();
 
         UsageStats stats = freshTracker.getStats("p", Duration.ofHours(1));
@@ -549,7 +549,7 @@ class LlmUsageTrackerImplTest {
         when(storagePort.getText(USAGE_DIR, "null-ts.jsonl"))
                 .thenReturn(CompletableFuture.completedFuture(line));
 
-        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, properties, objectMapper);
+        LlmUsageTrackerImpl freshTracker = new LlmUsageTrackerImpl(storagePort, runtimeConfigService, objectMapper);
         freshTracker.init();
 
         // Null timestamp records are loaded but filtered out by filterByPeriod

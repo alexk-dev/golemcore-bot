@@ -36,8 +36,8 @@ export default function LoginPage() {
   };
 
   return (
-    <Container className="d-flex align-items-center justify-content-center" style={{ minHeight: '100vh' }}>
-      <Card style={{ width: 400 }} className="shadow-sm">
+    <Container className="login-page d-flex align-items-center justify-content-center">
+      <Card className="login-card shadow-sm">
         <Card.Body>
           <h4 className="text-center mb-4">GolemCore Dashboard</h4>
           <LoginForm

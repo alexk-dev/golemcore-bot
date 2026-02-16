@@ -10,6 +10,7 @@ import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationView;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
 import me.golemcore.bot.port.outbound.LlmPort;
@@ -43,6 +44,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
     private final BotProperties.ToolLoopProperties settings;
     private final ModelSelectionService modelSelectionService;
     private final PlanService planService;
+    private final RuntimeConfigService runtimeConfigService;
     private final Clock clock;
 
     public DefaultToolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutor, HistoryWriter historyWriter,
@@ -64,6 +66,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         this.turnSettings = null;
         this.modelSelectionService = modelSelectionService;
         this.planService = planService;
+        this.runtimeConfigService = null;
         this.clock = clock;
     }
 
@@ -88,8 +91,25 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         this.settings = settings;
         this.modelSelectionService = modelSelectionService;
         this.planService = planService;
+        this.runtimeConfigService = null;
         this.clock = clock;
 
+    }
+
+    public DefaultToolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutor, HistoryWriter historyWriter,
+            ConversationViewBuilder viewBuilder, BotProperties.TurnProperties turnSettings,
+            BotProperties.ToolLoopProperties settings, ModelSelectionService modelSelectionService,
+            PlanService planService, RuntimeConfigService runtimeConfigService, Clock clock) {
+        this.llmPort = llmPort;
+        this.toolExecutor = toolExecutor;
+        this.historyWriter = historyWriter;
+        this.viewBuilder = viewBuilder;
+        this.turnSettings = turnSettings;
+        this.settings = settings;
+        this.modelSelectionService = modelSelectionService;
+        this.planService = planService;
+        this.runtimeConfigService = runtimeConfigService;
+        this.clock = clock;
     }
 
     @Override
@@ -100,10 +120,9 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         int toolExecutions = 0;
         List<Attachment> accumulatedAttachments = new ArrayList<>();
 
-        int maxLlmCalls = turnSettings != null ? turnSettings.getMaxLlmCalls() : 200;
-        int maxToolExecutions = turnSettings != null ? turnSettings.getMaxToolExecutions() : 500;
-        java.time.Duration turnDeadline = turnSettings != null ? turnSettings.getDeadline()
-                : java.time.Duration.ofHours(1);
+        int maxLlmCalls = resolveMaxLlmCalls();
+        int maxToolExecutions = resolveMaxToolExecutions();
+        java.time.Duration turnDeadline = resolveTurnDeadline();
         boolean stopOnToolFailure = settings != null && settings.isStopOnToolFailure();
         boolean stopOnConfirmationDenied = settings == null || settings.isStopOnConfirmationDenied();
         boolean stopOnToolPolicyDenied = settings != null && settings.isStopOnToolPolicyDenied();
@@ -202,6 +221,27 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REACHED, true);
         return stopTurn(context, last, pending, stopReason, llmCalls, toolExecutions);
 
+    }
+
+    private int resolveMaxLlmCalls() {
+        if (runtimeConfigService != null) {
+            return runtimeConfigService.getTurnMaxLlmCalls();
+        }
+        return turnSettings != null ? turnSettings.getMaxLlmCalls() : 200;
+    }
+
+    private int resolveMaxToolExecutions() {
+        if (runtimeConfigService != null) {
+            return runtimeConfigService.getTurnMaxToolExecutions();
+        }
+        return turnSettings != null ? turnSettings.getMaxToolExecutions() : 500;
+    }
+
+    private java.time.Duration resolveTurnDeadline() {
+        if (runtimeConfigService != null) {
+            return runtimeConfigService.getTurnDeadline();
+        }
+        return turnSettings != null ? turnSettings.getDeadline() : java.time.Duration.ofHours(1);
     }
 
     private ToolLoopTurnResult stopTurn(AgentContext context, LlmResponse lastResponse,

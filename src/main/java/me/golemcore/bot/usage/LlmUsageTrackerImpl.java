@@ -21,7 +21,7 @@ package me.golemcore.bot.usage;
 import me.golemcore.bot.domain.model.LlmUsage;
 import me.golemcore.bot.domain.model.UsageMetric;
 import me.golemcore.bot.domain.model.UsageStats;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.StoragePort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -67,7 +67,7 @@ import java.util.stream.Collectors;
  * {@code usage_<timestamp>.jsonl}.
  *
  * <p>
- * Can be disabled via {@code bot.usage.enabled=false}.
+ * Can be disabled via RuntimeConfig ({@code usage.enabled=false}).
  *
  * @since 1.0
  */
@@ -77,7 +77,7 @@ import java.util.stream.Collectors;
 public class LlmUsageTrackerImpl implements UsageTrackingPort {
 
     private final StoragePort storagePort;
-    private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
     private final ObjectMapper objectMapper;
 
     private static final String USAGE_DIR = "usage";
@@ -131,7 +131,7 @@ public class LlmUsageTrackerImpl implements UsageTrackingPort {
     }
 
     private void loadPersistedUsage() {
-        if (!properties.getUsage().isEnabled()) {
+        if (!runtimeConfigService.isUsageEnabled()) {
             return;
         }
         Instant cutoff = Instant.now().minus(RETENTION_PERIOD);
@@ -241,7 +241,7 @@ public class LlmUsageTrackerImpl implements UsageTrackingPort {
 
     @Override
     public void recordUsage(String providerId, String model, LlmUsage usage) {
-        if (!properties.getUsage().isEnabled()) {
+        if (!runtimeConfigService.isUsageEnabled()) {
             return;
         }
 

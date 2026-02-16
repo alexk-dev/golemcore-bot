@@ -25,8 +25,8 @@ import me.golemcore.bot.domain.model.LlmUsage;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.service.ModelSelectionService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -53,8 +53,8 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
     static final String VOICE_PREFIX = "\uD83D\uDD0A";
 
     private final UserPreferencesService preferencesService;
-    private final BotProperties properties;
     private final ModelSelectionService modelSelectionService;
+    private final RuntimeConfigService runtimeConfigService;
 
     @Override
     public String getName() {
@@ -226,8 +226,7 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
     }
 
     private boolean shouldAutoVoiceRespond(AgentContext context) {
-        BotProperties.VoiceProperties voice = properties.getVoice();
-        if (!voice.getTelegram().isRespondWithVoice()) {
+        if (!runtimeConfigService.isTelegramRespondWithVoiceEnabled()) {
             return false;
         }
         return hasIncomingVoice(context);

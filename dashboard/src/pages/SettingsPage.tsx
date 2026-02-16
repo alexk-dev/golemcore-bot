@@ -1,12 +1,17 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
-  Card, Form, Button, Row, Col, Spinner, Tab, Tabs,
-  Table, Badge, InputGroup, OverlayTrigger, Tooltip,
+  Card, Form, Button, Row, Col, Spinner,
+  Table, Badge, InputGroup, OverlayTrigger, Tooltip, Placeholder,
 } from 'react-bootstrap';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   useSettings, useUpdatePreferences, useRuntimeConfig,
   useUpdateTelegram, useUpdateModelRouter, useUpdateTools,
-  useUpdateVoice, useUpdateWebhooks, useUpdateAuto, useUpdateAdvanced,
+  useUpdateVoice, useUpdateMemory, useUpdateSkills,
+  useUpdateTurn,
+  useUpdateWebhooks, useUpdateAuto, useUpdateAdvanced,
+  useUpdateUsage,
+  useUpdateRag,
   useGenerateInviteCode, useDeleteInviteCode, useRestartTelegram,
 } from '../hooks/useSettings';
 import { useAvailableModels } from '../hooks/useModels';
@@ -17,10 +22,20 @@ import toast from 'react-hot-toast';
 import { useQueryClient } from '@tanstack/react-query';
 import type {
   TelegramConfig, ModelRouterConfig, ToolsConfig, VoiceConfig,
+  MemoryConfig, SkillsConfig,
+  TurnConfig,
+  UsageConfig,
+  RagConfig,
   AutoModeConfig, RateLimitConfig, SecurityConfig, CompactionConfig,
   WebhookConfig, HookMapping, ImapConfig, SmtpConfig,
 } from '../api/settings';
-import { FiHelpCircle } from 'react-icons/fi';
+import {
+  FiHelpCircle, FiSliders, FiSend, FiCpu, FiTool, FiMic,
+  FiGlobe, FiPlayCircle, FiShield, FiSearch, FiHardDrive, FiBarChart2,
+  FiTerminal, FiMail, FiCompass, FiShuffle,
+} from 'react-icons/fi';
+import ConfirmModal from '../components/common/ConfirmModal';
+import { useBrowserHealthPing } from '../hooks/useSystem';
 
 // ==================== Tooltip Helper ====================
 
@@ -35,18 +50,114 @@ function Tip({ text }: { text: string }) {
   );
 }
 
+function hasDiff<T>(current: T, initial: T): boolean {
+  return JSON.stringify(current) !== JSON.stringify(initial);
+}
+
+function SaveStateHint({ isDirty }: { isDirty: boolean }) {
+  return (
+    <small className="text-body-secondary">
+      {isDirty ? 'Unsaved changes' : 'All changes saved'}
+    </small>
+  );
+}
+
 // ==================== Main ====================
 
+const SETTINGS_SECTIONS = [
+  { key: 'general', title: 'General', description: 'Preferences, account security, and MFA', icon: <FiSliders size={18} /> },
+  { key: 'telegram', title: 'Telegram', description: 'Bot token, auth mode, and invite codes', icon: <FiSend size={18} /> },
+  { key: 'models', title: 'Model Router', description: 'Routing and tier model configuration', icon: <FiCpu size={18} /> },
+
+  { key: 'tool-browser', title: 'Browser', description: 'Web browsing tool runtime status and behavior', icon: <FiCompass size={18} /> },
+  { key: 'tool-brave', title: 'Brave Search', description: 'Brave API search tool', icon: <FiSearch size={18} /> },
+  { key: 'tool-filesystem', title: 'Filesystem Tool', description: 'Sandbox file read/write operations', icon: <FiHardDrive size={18} /> },
+  { key: 'tool-shell', title: 'Shell Tool', description: 'Sandbox shell command execution', icon: <FiTerminal size={18} /> },
+  { key: 'tool-email', title: 'Email (IMAP/SMTP)', description: 'Email reading and sending integrations', icon: <FiMail size={18} /> },
+  { key: 'tool-automation', title: 'Automation Tools', description: 'Skill management, transitions, and tier switching', icon: <FiShuffle size={18} /> },
+  { key: 'tool-goals', title: 'Goal Management', description: 'Auto mode goal operations', icon: <FiTool size={18} /> },
+
+  { key: 'voice-elevenlabs', title: 'ElevenLabs', description: 'TTS/STT provider settings', icon: <FiMic size={18} /> },
+  { key: 'memory', title: 'Memory', description: 'Conversation memory persistence and retention', icon: <FiHardDrive size={18} /> },
+  { key: 'skills', title: 'Skills Runtime', description: 'Enable skills and progressive loading behavior', icon: <FiTool size={18} /> },
+  { key: 'turn', title: 'Turn Budget', description: 'Runtime limits for LLM/tool calls and deadline', icon: <FiCpu size={18} /> },
+  { key: 'usage', title: 'Usage Tracking', description: 'Enable/disable analytics usage tracking', icon: <FiBarChart2 size={18} /> },
+  { key: 'rag', title: 'RAG', description: 'LightRAG integration settings', icon: <FiGlobe size={18} /> },
+  { key: 'webhooks', title: 'Webhooks', description: 'Incoming hooks, auth, and delivery actions', icon: <FiGlobe size={18} /> },
+  { key: 'auto', title: 'Auto Mode', description: 'Autonomous run behavior and constraints', icon: <FiPlayCircle size={18} /> },
+  { key: 'advanced-rate-limit', title: 'Rate Limit', description: 'Request throttling configuration', icon: <FiShield size={18} /> },
+  { key: 'advanced-security', title: 'Security', description: 'Input sanitization and injection guards', icon: <FiShield size={18} /> },
+  { key: 'advanced-compaction', title: 'Compaction', description: 'Context compaction behavior', icon: <FiShield size={18} /> },
+] as const;
+
+type SettingsSectionKey = typeof SETTINGS_SECTIONS[number]['key'];
+
+function isSettingsSectionKey(value: string | undefined): value is SettingsSectionKey {
+  return SETTINGS_SECTIONS.some((s) => s.key === value);
+}
+
 export default function SettingsPage() {
+  const navigate = useNavigate();
+  const { section } = useParams<{ section?: string }>();
   const { data: settings, isLoading: settingsLoading } = useSettings();
   const { data: rc, isLoading: rcLoading } = useRuntimeConfig();
   const { data: me } = useMe();
   const qc = useQueryClient();
 
+  const selectedSection = isSettingsSectionKey(section) ? section : null;
+
+  const sectionMeta = selectedSection
+    ? SETTINGS_SECTIONS.find((s) => s.key === selectedSection) ?? null
+    : null;
+
   if (settingsLoading || rcLoading) {
     return (
-      <div className="d-flex justify-content-center align-items-center" style={{ minHeight: 300 }}>
-        <Spinner animation="border" variant="primary" />
+      <div>
+        <div className="page-header">
+          <h4>Settings</h4>
+          <p className="text-body-secondary mb-0">Configure your GolemCore instance</p>
+        </div>
+        <Card className="settings-card">
+          <Card.Body>
+            <Placeholder as="div" animation="glow" className="mb-2"><Placeholder xs={8} /></Placeholder>
+            <Placeholder as="div" animation="glow" className="mb-2"><Placeholder xs={12} /></Placeholder>
+            <Placeholder as="div" animation="glow" className="mb-2"><Placeholder xs={12} /></Placeholder>
+            <div className="d-flex justify-content-center pt-2">
+              <Spinner animation="border" size="sm" />
+            </div>
+          </Card.Body>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!selectedSection) {
+    return (
+      <div>
+        <div className="page-header">
+          <h4>Settings</h4>
+          <p className="text-body-secondary mb-0">Select a settings category</p>
+        </div>
+        <Row className="g-3">
+          {SETTINGS_SECTIONS.map((item) => (
+            <Col md={6} lg={4} xl={3} key={item.key}>
+              <Card className="settings-card h-100">
+                <Card.Body className="d-flex flex-column">
+                  <div className="d-flex align-items-center gap-2 mb-2">
+                    <span className="text-primary">{item.icon}</span>
+                    <Card.Title className="h6 mb-0">{item.title}</Card.Title>
+                  </div>
+                  <Card.Text className="text-body-secondary small mb-3">{item.description}</Card.Text>
+                  <div className="mt-auto">
+                    <Button size="sm" variant="primary" onClick={() => navigate(`/settings/${item.key}`)}>
+                      Open
+                    </Button>
+                  </div>
+                </Card.Body>
+              </Card>
+            </Col>
+          ))}
+        </Row>
       </div>
     );
   }
@@ -54,35 +165,45 @@ export default function SettingsPage() {
   return (
     <div>
       <div className="page-header">
-        <h4>Settings</h4>
-        <p className="text-muted mb-0">Configure your GolemCore instance</p>
+        <h4>{sectionMeta?.title ?? 'Settings'}</h4>
+        <p className="text-body-secondary mb-0">{sectionMeta?.description ?? 'Configure your GolemCore instance'}</p>
       </div>
-      <Tabs defaultActiveKey="general" className="mb-3">
-        <Tab eventKey="general" title="General">
-          <GeneralTab settings={settings} me={me} qc={qc} />
-        </Tab>
-        <Tab eventKey="telegram" title="Telegram">
-          {rc && <TelegramTab config={rc.telegram} />}
-        </Tab>
-        <Tab eventKey="models" title="Models">
-          {rc && <ModelsTab config={rc.modelRouter} />}
-        </Tab>
-        <Tab eventKey="tools" title="Tools">
-          {rc && <ToolsTab config={rc.tools} />}
-        </Tab>
-        <Tab eventKey="voice" title="Voice">
-          {rc && <VoiceTab config={rc.voice} />}
-        </Tab>
-        <Tab eventKey="webhooks" title="Webhooks">
-          <WebhooksTab />
-        </Tab>
-        <Tab eventKey="auto" title="Auto Mode">
-          {rc && <AutoModeTab config={rc.autoMode} />}
-        </Tab>
-        <Tab eventKey="advanced" title="Advanced">
-          {rc && <AdvancedTab rateLimit={rc.rateLimit} security={rc.security} compaction={rc.compaction} />}
-        </Tab>
-      </Tabs>
+      <div className="mb-3">
+        <Button variant="secondary" size="sm" onClick={() => navigate('/settings')}>
+          Back to catalog
+        </Button>
+      </div>
+
+      {selectedSection === 'general' && <GeneralTab settings={settings} me={me} qc={qc} />}
+      {selectedSection === 'telegram' && rc && <TelegramTab config={rc.telegram} voiceConfig={rc.voice} />}
+      {selectedSection === 'models' && rc && <ModelsTab config={rc.modelRouter} />}
+
+      {selectedSection === 'tool-browser' && rc && <ToolsTab config={rc.tools} mode="browser" />}
+      {selectedSection === 'tool-brave' && rc && <ToolsTab config={rc.tools} mode="brave" />}
+      {selectedSection === 'tool-filesystem' && rc && <ToolsTab config={rc.tools} mode="filesystem" />}
+      {selectedSection === 'tool-shell' && rc && <ToolsTab config={rc.tools} mode="shell" />}
+      {selectedSection === 'tool-email' && rc && <ToolsTab config={rc.tools} mode="email" />}
+      {selectedSection === 'tool-automation' && rc && <ToolsTab config={rc.tools} mode="automation" />}
+      {selectedSection === 'tool-goals' && rc && <ToolsTab config={rc.tools} mode="goals" />}
+
+      {selectedSection === 'voice-elevenlabs' && rc && <VoiceTab config={rc.voice} />}
+      {selectedSection === 'memory' && rc && <MemoryTab config={rc.memory} />}
+      {selectedSection === 'skills' && rc && <SkillsTab config={rc.skills} />}
+      {selectedSection === 'turn' && rc && <TurnTab config={rc.turn} />}
+      {selectedSection === 'usage' && rc && <UsageTab config={rc.usage} />}
+      {selectedSection === 'rag' && rc && <RagTab config={rc.rag} />}
+      {selectedSection === 'webhooks' && <WebhooksTab />}
+      {selectedSection === 'auto' && rc && <AutoModeTab config={rc.autoMode} />}
+
+      {selectedSection === 'advanced-rate-limit' && rc && (
+        <AdvancedTab rateLimit={rc.rateLimit} security={rc.security} compaction={rc.compaction} mode="rateLimit" />
+      )}
+      {selectedSection === 'advanced-security' && rc && (
+        <AdvancedTab rateLimit={rc.rateLimit} security={rc.security} compaction={rc.compaction} mode="security" />
+      )}
+      {selectedSection === 'advanced-compaction' && rc && (
+        <AdvancedTab rateLimit={rc.rateLimit} security={rc.security} compaction={rc.compaction} mode="compaction" />
+      )}
     </div>
   );
 }
@@ -91,17 +212,21 @@ export default function SettingsPage() {
 
 function GeneralTab({ settings, me, qc }: { settings: any; me: any; qc: any }) {
   const updatePrefs = useUpdatePreferences();
-  const [language, setLanguage] = useState('');
-  const [timezone, setTimezone] = useState('');
+  const [language, setLanguage] = useState(settings?.language ?? 'en');
+  const [timezone, setTimezone] = useState(settings?.timezone ?? 'UTC');
   const [oldPwd, setOldPwd] = useState('');
   const [newPwd, setNewPwd] = useState('');
 
+  useEffect(() => {
+    setLanguage(settings?.language ?? 'en');
+    setTimezone(settings?.timezone ?? 'UTC');
+  }, [settings]);
+
+  const isPrefsDirty = language !== (settings?.language ?? 'en') || timezone !== (settings?.timezone ?? 'UTC');
+
   const handleSavePrefs = async (e: React.FormEvent) => {
     e.preventDefault();
-    const updates: Record<string, unknown> = {};
-    if (language) updates.language = language;
-    if (timezone) updates.timezone = timezone;
-    await updatePrefs.mutateAsync(updates);
+    await updatePrefs.mutateAsync({ language, timezone });
     toast.success('Preferences saved');
   };
 
@@ -130,7 +255,7 @@ function GeneralTab({ settings, me, qc }: { settings: any; me: any; qc: any }) {
                 </Form.Label>
                 <Form.Select
                   size="sm"
-                  defaultValue={settings?.language ?? 'en'}
+                  value={language}
                   onChange={(e) => setLanguage(e.target.value)}
                 >
                   <option value="en">English</option>
@@ -144,12 +269,17 @@ function GeneralTab({ settings, me, qc }: { settings: any; me: any; qc: any }) {
                 <Form.Control
                   size="sm"
                   type="text"
-                  defaultValue={settings?.timezone ?? 'UTC'}
+                  value={timezone}
                   onChange={(e) => setTimezone(e.target.value)}
                   placeholder="UTC"
                 />
               </Form.Group>
-              <Button type="submit" variant="primary" size="sm">Save Preferences</Button>
+              <div className="d-flex align-items-center gap-2">
+                <Button type="submit" variant="primary" size="sm" disabled={!isPrefsDirty || updatePrefs.isPending}>
+                  {updatePrefs.isPending ? 'Saving...' : 'Save Preferences'}
+                </Button>
+                <SaveStateHint isDirty={isPrefsDirty} />
+              </div>
             </Form>
           </Card.Body>
         </Card>
@@ -182,8 +312,9 @@ function GeneralTab({ settings, me, qc }: { settings: any; me: any; qc: any }) {
 
 // ==================== Telegram Tab ====================
 
-function TelegramTab({ config }: { config: TelegramConfig }) {
+function TelegramTab({ config, voiceConfig }: { config: TelegramConfig; voiceConfig: VoiceConfig }) {
   const updateTelegram = useUpdateTelegram();
+  const updateVoice = useUpdateVoice();
   const genInvite = useGenerateInviteCode();
   const delInvite = useDeleteInviteCode();
   const restart = useRestartTelegram();
@@ -191,15 +322,67 @@ function TelegramTab({ config }: { config: TelegramConfig }) {
   const [enabled, setEnabled] = useState(config.enabled ?? false);
   const [token, setToken] = useState(config.token ?? '');
   const [showToken, setShowToken] = useState(false);
-  const [authMode, setAuthMode] = useState(config.authMode ?? 'invite');
+  const [authMode, setAuthMode] = useState(config.authMode ?? 'invite_only');
   const [allowedUserId, setAllowedUserId] = useState((config.allowedUsers?.[0] ?? '').replace(/\D/g, ''));
+  const [telegramRespondWithVoice, setTelegramRespondWithVoice] = useState(voiceConfig.telegramRespondWithVoice ?? false);
+  const [telegramTranscribeIncoming, setTelegramTranscribeIncoming] = useState(voiceConfig.telegramTranscribeIncoming ?? false);
+  const [revokeCode, setRevokeCode] = useState<string | null>(null);
+
+  useEffect(() => {
+    setEnabled(config.enabled ?? false);
+    setToken(config.token ?? '');
+    setAuthMode(config.authMode ?? 'invite_only');
+    setAllowedUserId((config.allowedUsers?.[0] ?? '').replace(/\D/g, ''));
+  }, [config]);
+
+  useEffect(() => {
+    setTelegramRespondWithVoice(voiceConfig.telegramRespondWithVoice ?? false);
+    setTelegramTranscribeIncoming(voiceConfig.telegramTranscribeIncoming ?? false);
+  }, [voiceConfig]);
+
+  const currentConfig = useMemo(
+    () => ({
+      ...config,
+      enabled,
+      token: token || null,
+      authMode,
+      allowedUsers: allowedUserId ? [allowedUserId] : [],
+    }),
+    [config, enabled, token, authMode, allowedUserId],
+  );
+
+  const initialConfig = useMemo(
+    () => ({
+      ...config,
+      enabled: config.enabled ?? false,
+      token: config.token ?? null,
+      authMode: config.authMode ?? 'invite_only',
+      allowedUsers: (config.allowedUsers?.[0] ?? '').replace(/\D/g, '')
+        ? [(config.allowedUsers?.[0] ?? '').replace(/\D/g, '')]
+        : [],
+    }),
+    [config],
+  );
+
+  const isTelegramDirty = hasDiff(currentConfig, initialConfig);
 
   const handleSave = async () => {
-    const users = allowedUserId ? [allowedUserId] : [];
-    await updateTelegram.mutateAsync({
-      ...config, enabled, token: token || null, authMode, allowedUsers: users,
+    await updateTelegram.mutateAsync(currentConfig);
+    await updateVoice.mutateAsync({
+      ...voiceConfig,
+      telegramRespondWithVoice,
+      telegramTranscribeIncoming,
     });
     toast.success('Telegram settings saved');
+  };
+
+  const handleRevokeCode = async () => {
+    if (!revokeCode) {
+      return;
+    }
+    await delInvite.mutateAsync(revokeCode);
+    setRevokeCode(null);
+    toast.success('Revoked');
   };
 
   return (
@@ -232,10 +415,10 @@ function TelegramTab({ config }: { config: TelegramConfig }) {
               <Form.Select
                 size="sm"
                 value={authMode}
-                onChange={(e) => setAuthMode(e.target.value as 'user' | 'invite')}
+                onChange={(e) => setAuthMode(e.target.value as 'user' | 'invite_only')}
               >
                 <option value="user">User</option>
-                <option value="invite">Invite Codes</option>
+                <option value="invite_only">Invite Only</option>
               </Form.Select>
             </Form.Group>
 
@@ -255,7 +438,7 @@ function TelegramTab({ config }: { config: TelegramConfig }) {
           </Form.Group>
         )}
 
-        {authMode === 'invite' && (
+        {authMode === 'invite_only' && (
           <div className="mb-3">
             <div className="d-flex align-items-center justify-content-between mb-2">
               <span className="small fw-medium">Invite Codes <Tip text="Single-use codes that grant Telegram access when redeemed" /></span>
@@ -272,31 +455,72 @@ function TelegramTab({ config }: { config: TelegramConfig }) {
                     <tr key={ic.code}>
                       <td><code className="small">{ic.code}</code></td>
                       <td><Badge bg={ic.used ? 'secondary' : 'success'}>{ic.used ? 'Used' : 'Active'}</Badge></td>
-                      <td className="small text-muted">{new Date(ic.createdAt).toLocaleDateString()}</td>
+                      <td className="small text-body-secondary">{new Date(ic.createdAt).toLocaleDateString()}</td>
                       <td className="text-end">
                         <Button size="sm" variant="secondary" className="me-2"
                           onClick={() => { navigator.clipboard.writeText(ic.code); toast.success('Copied!'); }}>Copy</Button>
                         <Button size="sm" variant="danger"
-                          onClick={() => delInvite.mutate(ic.code, { onSuccess: () => toast.success('Revoked') })}>Revoke</Button>
+                          onClick={() => setRevokeCode(ic.code)}>Revoke</Button>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </Table>
             ) : (
-              <p className="text-muted small mb-0">No invite codes yet</p>
+              <p className="text-body-secondary small mb-0">No invite codes yet</p>
+            )}
+            {(config.allowedUsers ?? []).length > 0 && (
+              <div className="mt-3">
+                <span className="small fw-medium">Registered Users</span>
+                <div className="mt-1">
+                  {config.allowedUsers.map((uid) => (
+                    <Badge key={uid} bg="info" className="me-1">{uid}</Badge>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         )}
 
-        <div className="d-flex gap-2 pt-2 border-top">
-          <Button variant="primary" size="sm" onClick={handleSave}>Save</Button>
+        <Card className="settings-card mt-3">
+          <Card.Body>
+            <Card.Title className="h6 mb-2">Telegram Voice</Card.Title>
+            <Form.Check type="switch"
+              label={<>Respond with Voice <Tip text="If incoming message is voice, bot can answer with synthesized voice." /></>}
+              checked={telegramRespondWithVoice}
+              onChange={(e) => setTelegramRespondWithVoice(e.target.checked)}
+              className="mb-2"
+            />
+            <Form.Check type="switch"
+              label={<>Transcribe Incoming Voice <Tip text="Enable transcription of incoming voice messages before processing." /></>}
+              checked={telegramTranscribeIncoming}
+              onChange={(e) => setTelegramTranscribeIncoming(e.target.checked)}
+            />
+          </Card.Body>
+        </Card>
+
+        <div className="d-flex flex-wrap align-items-center gap-2 pt-2 border-top">
+          <Button variant="primary" size="sm" onClick={handleSave} disabled={!isTelegramDirty || updateTelegram.isPending}>
+            {updateTelegram.isPending ? 'Saving...' : 'Save'}
+          </Button>
           <Button variant="warning" size="sm"
             onClick={() => restart.mutate(undefined, { onSuccess: () => toast.success('Telegram restarting...') })}>
             Restart Bot
           </Button>
+          <SaveStateHint isDirty={isTelegramDirty} />
         </div>
       </Card.Body>
+
+      <ConfirmModal
+        show={!!revokeCode}
+        title="Revoke Invite Code"
+        message="This invite code will stop working immediately. This action cannot be undone."
+        confirmLabel="Revoke"
+        confirmVariant="danger"
+        isProcessing={delInvite.isPending}
+        onConfirm={handleRevokeCode}
+        onCancel={() => setRevokeCode(null)}
+      />
     </Card>
   );
 }
@@ -324,6 +548,7 @@ function ModelsTab({ config }: { config: ModelRouterConfig }) {
   }, [available]);
 
   const providerNames = useMemo(() => Object.keys(providers), [providers]);
+  const isModelsDirty = useMemo(() => hasDiff(form, config), [form, config]);
 
   const handleSave = async () => {
     await updateRouter.mutateAsync(form);
@@ -331,6 +556,7 @@ function ModelsTab({ config }: { config: ModelRouterConfig }) {
   };
 
   const tierCards = [
+    { key: 'balanced', label: 'Balanced', color: 'primary', modelField: 'balancedModel' as const, reasoningField: 'balancedModelReasoning' as const },
     { key: 'smart', label: 'Smart', color: 'success', modelField: 'smartModel' as const, reasoningField: 'smartModelReasoning' as const },
     { key: 'coding', label: 'Coding', color: 'info', modelField: 'codingModel' as const, reasoningField: 'codingModelReasoning' as const },
     { key: 'deep', label: 'Deep', color: 'warning', modelField: 'deepModel' as const, reasoningField: 'deepModelReasoning' as const },
@@ -365,13 +591,13 @@ function ModelsTab({ config }: { config: ModelRouterConfig }) {
         <Col md={6} lg={3}>
           <TierModelCard
             label="Routing"
-            color="primary"
+            color="dark"
             providers={providers}
             providerNames={providerNames}
-            modelValue={form.balancedModel ?? ''}
-            reasoningValue={form.balancedModelReasoning ?? ''}
-            onModelChange={(val) => setForm({ ...form, balancedModel: val || null, balancedModelReasoning: null })}
-            onReasoningChange={(val) => setForm({ ...form, balancedModelReasoning: val || null })}
+            modelValue={form.routingModel ?? ''}
+            reasoningValue={form.routingModelReasoning ?? ''}
+            onModelChange={(val) => setForm({ ...form, routingModel: val || null, routingModelReasoning: null })}
+            onReasoningChange={(val) => setForm({ ...form, routingModelReasoning: val || null })}
           />
         </Col>
         {tierCards.map(({ key, label, color, modelField, reasoningField }) => (
@@ -390,7 +616,12 @@ function ModelsTab({ config }: { config: ModelRouterConfig }) {
         ))}
       </Row>
 
-      <Button variant="primary" size="sm" onClick={handleSave}>Save Model Configuration</Button>
+      <div className="d-flex align-items-center gap-2">
+        <Button variant="primary" size="sm" onClick={handleSave} disabled={!isModelsDirty || updateRouter.isPending}>
+          {updateRouter.isPending ? 'Saving...' : 'Save Model Configuration'}
+        </Button>
+        <SaveStateHint isDirty={isModelsDirty} />
+      </div>
     </>
   );
 }
@@ -467,9 +698,24 @@ function TierModelCard({ label, color, providers, providerNames, modelValue, rea
 
 // ==================== Tools Tab ====================
 
-function ToolsTab({ config }: { config: ToolsConfig }) {
+type ToolsMode =
+  | 'all'
+  | 'browser'
+  | 'brave'
+  | 'filesystem'
+  | 'shell'
+  | 'email'
+  | 'automation'
+  | 'skills'
+  | 'skillTransition'
+  | 'tier'
+  | 'goals';
+
+function ToolsTab({ config, mode = 'all' }: { config: ToolsConfig; mode?: ToolsMode }) {
   const updateTools = useUpdateTools();
+  const browserHealthPing = useBrowserHealthPing();
   const [form, setForm] = useState<ToolsConfig>({ ...config });
+  const isToolsDirty = useMemo(() => hasDiff(form, config), [form, config]);
 
   useEffect(() => { setForm({ ...config }); }, [config]);
 
@@ -482,6 +728,29 @@ function ToolsTab({ config }: { config: ToolsConfig }) {
     { key: 'tierEnabled' as const, label: 'Tier Tool', desc: 'LLM-initiated tier switching', tip: 'Allows the LLM to upgrade/downgrade model tier within a session' },
     { key: 'goalManagementEnabled' as const, label: 'Goal Management', desc: 'Auto mode goal management', tip: 'Allows the LLM to create, update, and complete goals in autonomous mode' },
   ];
+
+  const keyByMode: Partial<Record<ToolsMode, typeof tools[number]['key']>> = {
+    filesystem: 'filesystemEnabled',
+    shell: 'shellEnabled',
+    brave: 'braveSearchEnabled',
+    skills: 'skillManagementEnabled',
+    skillTransition: 'skillTransitionEnabled',
+    tier: 'tierEnabled',
+    goals: 'goalManagementEnabled',
+  };
+
+  const selectedToolKey = keyByMode[mode];
+  const selectedTool = selectedToolKey ? tools.find((t) => t.key === selectedToolKey) : null;
+
+  const showToolToggles = mode === 'all';
+  const showBraveApiKey = mode === 'all' || mode === 'brave';
+  const showImap = mode === 'all' || mode === 'email';
+  const showSmtp = mode === 'all' || mode === 'email';
+  const showBrowserInfo = mode === 'browser';
+  const showAutomationGroup = mode === 'automation';
+  const showInlineEnableToggles = mode === 'all';
+  const automationTools = tools.filter((t) =>
+    t.key === 'skillManagementEnabled' || t.key === 'skillTransitionEnabled' || t.key === 'tierEnabled');
 
   const handleSave = async () => {
     await updateTools.mutateAsync(form);
@@ -498,11 +767,94 @@ function ToolsTab({ config }: { config: ToolsConfig }) {
 
   return (
     <>
-      <Card className="settings-card mb-3">
-        <Card.Body>
-          <Card.Title className="h6 mb-3">Tool Toggles</Card.Title>
-          <div className="mb-3">
-            {tools.map(({ key, label, desc, tip }) => (
+      {showToolToggles && (
+        <Card className="settings-card mb-3">
+          <Card.Body>
+            <Card.Title className="h6 mb-3">Tool Toggles</Card.Title>
+            <div className="mb-0">
+              {tools.map(({ key, label, desc, tip }) => (
+                <div key={key} className="d-flex align-items-start py-2 border-bottom">
+                  <Form.Check type="switch"
+                    checked={form[key] ?? true}
+                    onChange={(e) => setForm({ ...form, [key]: e.target.checked })}
+                    className="me-3"
+                  />
+                  <div>
+                    <div className="fw-medium small">{label} <Tip text={tip} /></div>
+                    <div className="meta-text">{desc}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card.Body>
+        </Card>
+      )}
+
+      {!showToolToggles && selectedTool && mode !== 'brave' && (
+        <Card className="settings-card mb-3">
+          <Card.Body>
+            <Card.Title className="h6 mb-3">{selectedTool.label}</Card.Title>
+            <div className="mb-2">
+              <Badge bg={(form[selectedTool.key] ?? true) ? 'success' : 'secondary'}>
+                {(form[selectedTool.key] ?? true) ? 'Enabled' : 'Disabled'}
+              </Badge>
+            </div>
+            <div className="meta-text mt-2">{selectedTool.desc}</div>
+            <div className="meta-text mt-2">Enable/disable is managed in the Automation Tools card.</div>
+          </Card.Body>
+        </Card>
+      )}
+
+      {mode === 'brave' && (
+        <Card className="settings-card mb-3">
+          <Card.Body>
+            <Card.Title className="h6 mb-3">Brave Search</Card.Title>
+            <Form.Check type="switch"
+              label={<>Enable Brave Search <Tip text="Enable Brave as active browser search provider" /></>}
+              checked={form.braveSearchEnabled ?? true}
+              onChange={(e) => setForm({ ...form, braveSearchEnabled: e.target.checked })}
+              className="mb-3"
+            />
+            <Form.Group>
+              <Form.Label className="small fw-medium">
+                Brave Search API Key <Tip text="Get your free API key at brave.com/search/api" />
+              </Form.Label>
+              <Form.Control size="sm" type="password" value={form.braveSearchApiKey ?? ''}
+                onChange={(e) => setForm({ ...form, braveSearchApiKey: e.target.value || null })}
+                placeholder="BSA-..." />
+            </Form.Group>
+          </Card.Body>
+        </Card>
+      )}
+
+      {showAutomationGroup && (
+        <Card className="settings-card mb-3">
+          <Card.Body>
+            <Card.Title className="h6 mb-3">Automation Tools</Card.Title>
+            <div className="small text-body-secondary mb-3">All tool enable/disable flags are managed here.</div>
+            <div className="d-flex align-items-start py-2 border-bottom">
+              <Form.Check type="switch"
+                checked={form.filesystemEnabled ?? true}
+                onChange={(e) => setForm({ ...form, filesystemEnabled: e.target.checked })}
+                className="me-3"
+              />
+              <div>
+                <div className="fw-medium small">Filesystem <Tip text="Read/write files in sandboxed workspace" /></div>
+                <div className="meta-text">Enable filesystem tool access.</div>
+              </div>
+            </div>
+            <div className="d-flex align-items-start py-2 border-bottom">
+              <Form.Check type="switch"
+                checked={form.shellEnabled ?? true}
+                onChange={(e) => setForm({ ...form, shellEnabled: e.target.checked })}
+                className="me-3"
+              />
+              <div>
+                <div className="fw-medium small">Shell <Tip text="Execute shell commands in sandbox" /></div>
+                <div className="meta-text">Enable shell tool access.</div>
+              </div>
+            </div>
+            {automationTools.map(({ key, label, desc, tip }) => (
               <div key={key} className="d-flex align-items-start py-2 border-bottom">
                 <Form.Check type="switch"
                   checked={form[key] ?? true}
@@ -511,13 +863,145 @@ function ToolsTab({ config }: { config: ToolsConfig }) {
                 />
                 <div>
                   <div className="fw-medium small">{label} <Tip text={tip} /></div>
-                  <div className="text-muted" style={{ fontSize: '0.8rem' }}>{desc}</div>
+                  <div className="meta-text">{desc}</div>
                 </div>
               </div>
             ))}
-          </div>
-          {form.braveSearchEnabled && (
-            <Form.Group className="mb-3">
+            <div className="d-flex align-items-start py-2 border-bottom">
+              <Form.Check type="switch"
+                checked={form.goalManagementEnabled ?? true}
+                onChange={(e) => setForm({ ...form, goalManagementEnabled: e.target.checked })}
+                className="me-3"
+              />
+              <div>
+                <div className="fw-medium small">Goal Management <Tip text="Auto mode goal management operations" /></div>
+                <div className="meta-text">Enable goal management tool.</div>
+              </div>
+            </div>
+            <div className="d-flex align-items-start py-2 border-bottom">
+              <Form.Check type="switch"
+                checked={form.imap?.enabled ?? false}
+                onChange={(e) => setForm({ ...form, imap: { ...form.imap, enabled: e.target.checked } })}
+                className="me-3"
+              />
+              <div>
+                <div className="fw-medium small">IMAP <Tip text="Email reading integration" /></div>
+                <div className="meta-text">Enable IMAP settings and tool operations.</div>
+              </div>
+            </div>
+            <div className="d-flex align-items-start py-2">
+              <Form.Check type="switch"
+                checked={form.smtp?.enabled ?? false}
+                onChange={(e) => setForm({ ...form, smtp: { ...form.smtp, enabled: e.target.checked } })}
+                className="me-3"
+              />
+              <div>
+                <div className="fw-medium small">SMTP <Tip text="Email sending integration" /></div>
+                <div className="meta-text">Enable SMTP settings and tool operations.</div>
+              </div>
+            </div>
+          </Card.Body>
+        </Card>
+      )}
+
+      {showBrowserInfo && (
+        <Card className="settings-card mb-3">
+          <Card.Body>
+            <Card.Title className="h6 mb-2">Browser Tool</Card.Title>
+            <Row className="g-3">
+              <Col md={6}>
+                <Form.Group>
+                  <Form.Label className="small fw-medium">
+                    Browser Engine <Tip text="Browser engine implementation." />
+                  </Form.Label>
+                  <Form.Select size="sm"
+                    value={form.browserType ?? 'playwright'}
+                    onChange={(e) => setForm({ ...form, browserType: e.target.value })}>
+                    <option value="playwright">Playwright</option>
+                  </Form.Select>
+                </Form.Group>
+              </Col>
+              <Col md={6}>
+                <Form.Group>
+                  <Form.Label className="small fw-medium">
+                    Browser API Provider <Tip text="Active provider for browser/search tools." />
+                  </Form.Label>
+                  <Form.Select size="sm"
+                    value={form.browserApiProvider ?? 'brave'}
+                    onChange={(e) => setForm({ ...form, browserApiProvider: e.target.value })}>
+                    <option value="brave">Brave</option>
+                  </Form.Select>
+                </Form.Group>
+              </Col>
+              <Col md={6}>
+                <Form.Group>
+                  <Form.Label className="small fw-medium">
+                    Timeout (ms) <Tip text="Page operation timeout in milliseconds." />
+                  </Form.Label>
+                  <Form.Control
+                    size="sm"
+                    type="number"
+                    min={1000}
+                    max={120000}
+                    step={500}
+                    value={form.browserTimeout ?? 30000}
+                    onChange={(e) => setForm({ ...form, browserTimeout: Number(e.target.value) })}
+                  />
+                </Form.Group>
+              </Col>
+              <Col md={6}>
+                <Form.Check type="switch"
+                  label={<>Headless Browser <Tip text="Run browser automation in headless mode" /></>}
+                  checked={form.browserHeadless ?? true}
+                  onChange={(e) => setForm({ ...form, browserHeadless: e.target.checked })}
+                  className="mt-md-4 mt-2"
+                />
+              </Col>
+              <Col md={12}>
+                <Form.Group>
+                  <Form.Label className="small fw-medium">
+                    User-Agent <Tip text="User-Agent string used for browser sessions." />
+                  </Form.Label>
+                  <Form.Control
+                    size="sm"
+                    value={form.browserUserAgent ?? ''}
+                    onChange={(e) => setForm({ ...form, browserUserAgent: e.target.value || null })}
+                  />
+                </Form.Group>
+              </Col>
+            </Row>
+
+            <div className="mt-3 pt-3 border-top">
+              <div className="d-flex align-items-center gap-2 mb-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => browserHealthPing.mutate()}
+                  disabled={browserHealthPing.isPending}
+                >
+                  {browserHealthPing.isPending ? 'Pinging...' : 'Ping Browser'}
+                </Button>
+                {browserHealthPing.data && (
+                  <Badge bg={browserHealthPing.data.ok ? 'success' : 'danger'}>
+                    {browserHealthPing.data.ok ? 'Healthy' : 'Failed'}
+                  </Badge>
+                )}
+              </div>
+              {browserHealthPing.data && (
+                <div className="meta-text">
+                  {browserHealthPing.data.message}
+                </div>
+              )}
+            </div>
+          </Card.Body>
+        </Card>
+      )}
+
+      {showBraveApiKey && mode !== 'brave' && (form.braveSearchEnabled ?? false) && (
+        <Card className="settings-card mb-3">
+          <Card.Body>
+            <Card.Title className="h6 mb-3">Brave Search Credentials</Card.Title>
+            <Form.Group>
               <Form.Label className="small fw-medium">
                 Brave Search API Key <Tip text="Get your free API key at brave.com/search/api" />
               </Form.Label>
@@ -525,19 +1009,28 @@ function ToolsTab({ config }: { config: ToolsConfig }) {
                 onChange={(e) => setForm({ ...form, braveSearchApiKey: e.target.value || null })}
                 placeholder="BSA-..." />
             </Form.Group>
-          )}
-          <Button variant="primary" size="sm" onClick={handleSave}>Save</Button>
-        </Card.Body>
-      </Card>
+          </Card.Body>
+        </Card>
+      )}
 
       {/* IMAP Settings */}
-      <Card className="settings-card mb-3">
+      {showImap && <Card className="settings-card mb-3">
         <Card.Body>
           <Card.Title className="h6 mb-3">
             IMAP (Email Reading) <Tip text="Read emails from an IMAP mailbox. The bot can search, read, and list emails." />
           </Card.Title>
-          <Form.Check type="switch" label="Enable IMAP" checked={form.imap?.enabled ?? false}
-            onChange={(e) => updateImap({ enabled: e.target.checked })} className="mb-3" />
+          {!showInlineEnableToggles && (
+            <div className="mb-3">
+              <Badge bg={(form.imap?.enabled ?? false) ? 'success' : 'secondary'}>
+                {(form.imap?.enabled ?? false) ? 'Enabled' : 'Disabled'}
+              </Badge>
+              <div className="meta-text mt-2">Enable/disable is managed in the Automation Tools card.</div>
+            </div>
+          )}
+          {showInlineEnableToggles && (
+            <Form.Check type="switch" label="Enable IMAP" checked={form.imap?.enabled ?? false}
+              onChange={(e) => updateImap({ enabled: e.target.checked })} className="mb-3" />
+          )}
           {form.imap?.enabled && (
             <>
               <Row className="g-3 mb-3">
@@ -626,16 +1119,26 @@ function ToolsTab({ config }: { config: ToolsConfig }) {
             </>
           )}
         </Card.Body>
-      </Card>
+      </Card>}
 
       {/* SMTP Settings */}
-      <Card className="settings-card mb-3">
+      {showSmtp && <Card className="settings-card mb-3">
         <Card.Body>
           <Card.Title className="h6 mb-3">
             SMTP (Email Sending) <Tip text="Send emails via SMTP. The bot can compose and send emails on your behalf." />
           </Card.Title>
-          <Form.Check type="switch" label="Enable SMTP" checked={form.smtp?.enabled ?? false}
-            onChange={(e) => updateSmtp({ enabled: e.target.checked })} className="mb-3" />
+          {!showInlineEnableToggles && (
+            <div className="mb-3">
+              <Badge bg={(form.smtp?.enabled ?? false) ? 'success' : 'secondary'}>
+                {(form.smtp?.enabled ?? false) ? 'Enabled' : 'Disabled'}
+              </Badge>
+              <div className="meta-text mt-2">Enable/disable is managed in the Automation Tools card.</div>
+            </div>
+          )}
+          {showInlineEnableToggles && (
+            <Form.Check type="switch" label="Enable SMTP" checked={form.smtp?.enabled ?? false}
+              onChange={(e) => updateSmtp({ enabled: e.target.checked })} className="mb-3" />
+          )}
           {form.smtp?.enabled && (
             <>
               <Row className="g-3 mb-3">
@@ -706,9 +1209,16 @@ function ToolsTab({ config }: { config: ToolsConfig }) {
             </>
           )}
         </Card.Body>
-      </Card>
+      </Card>}
 
-      <Button variant="primary" size="sm" onClick={handleSave}>Save All Tool Settings</Button>
+      {mode !== 'browser' && (
+        <div className="d-flex align-items-center gap-2">
+          <Button variant="primary" size="sm" onClick={handleSave} disabled={!isToolsDirty || updateTools.isPending}>
+            {updateTools.isPending ? 'Saving...' : 'Save Tool Settings'}
+          </Button>
+          <SaveStateHint isDirty={isToolsDirty} />
+        </div>
+      )}
     </>
   );
 }
@@ -719,6 +1229,7 @@ function VoiceTab({ config }: { config: VoiceConfig }) {
   const updateVoice = useUpdateVoice();
   const [form, setForm] = useState<VoiceConfig>({ ...config });
   const [showKey, setShowKey] = useState(false);
+  const isVoiceDirty = useMemo(() => hasDiff(form, config), [form, config]);
 
   useEffect(() => { setForm({ ...config }); }, [config]);
 
@@ -793,8 +1304,320 @@ function VoiceTab({ config }: { config: VoiceConfig }) {
           </Col>
         </Row>
 
-        <div className="mt-3">
-          <Button variant="primary" size="sm" onClick={handleSave}>Save</Button>
+        <div className="mt-3 d-flex align-items-center gap-2">
+          <Button variant="primary" size="sm" onClick={handleSave} disabled={!isVoiceDirty || updateVoice.isPending}>
+            {updateVoice.isPending ? 'Saving...' : 'Save'}
+          </Button>
+          <SaveStateHint isDirty={isVoiceDirty} />
+        </div>
+      </Card.Body>
+    </Card>
+  );
+}
+
+function MemoryTab({ config }: { config: MemoryConfig }) {
+  const updateMemory = useUpdateMemory();
+  const [form, setForm] = useState<MemoryConfig>({ ...config });
+  const isDirty = useMemo(() => hasDiff(form, config), [form, config]);
+
+  useEffect(() => {
+    setForm({ ...config });
+  }, [config]);
+
+  const handleSave = async () => {
+    await updateMemory.mutateAsync(form);
+    toast.success('Memory settings saved');
+  };
+
+  return (
+    <Card className="settings-card">
+      <Card.Body>
+        <Card.Title className="h6 mb-3">Memory</Card.Title>
+        <Form.Check
+          type="switch"
+          label={<>Enable Memory <Tip text="Persist user/assistant exchanges into long-term notes and include memory context in prompts." /></>}
+          checked={form.enabled ?? true}
+          onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
+          className="mb-3"
+        />
+        <Form.Group className="mb-3">
+          <Form.Label className="small fw-medium">
+            Recent Days <Tip text="How many previous daily memory files to include in context." />
+          </Form.Label>
+          <Form.Control
+            size="sm"
+            type="number"
+            min={1}
+            max={90}
+            value={form.recentDays ?? 7}
+            onChange={(e) => setForm({ ...form, recentDays: parseInt(e.target.value, 10) || null })}
+          />
+        </Form.Group>
+        <div className="d-flex align-items-center gap-2">
+          <Button variant="primary" size="sm" onClick={handleSave} disabled={!isDirty || updateMemory.isPending}>
+            {updateMemory.isPending ? 'Saving...' : 'Save'}
+          </Button>
+          <SaveStateHint isDirty={isDirty} />
+        </div>
+      </Card.Body>
+    </Card>
+  );
+}
+
+function SkillsTab({ config }: { config: SkillsConfig }) {
+  const updateSkills = useUpdateSkills();
+  const [form, setForm] = useState<SkillsConfig>({ ...config });
+  const isDirty = useMemo(() => hasDiff(form, config), [form, config]);
+
+  useEffect(() => {
+    setForm({ ...config });
+  }, [config]);
+
+  const handleSave = async () => {
+    await updateSkills.mutateAsync(form);
+    toast.success('Skills runtime settings saved');
+  };
+
+  return (
+    <Card className="settings-card">
+      <Card.Body>
+        <Card.Title className="h6 mb-3">Skills Runtime</Card.Title>
+        <Form.Check
+          type="switch"
+          label={<>Enable Skills <Tip text="Allow loading and using skills from storage at runtime." /></>}
+          checked={form.enabled ?? true}
+          onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
+          className="mb-3"
+        />
+        <Form.Check
+          type="switch"
+          label={<>Progressive Loading <Tip text="Expose skill summaries in context instead of full skill content until routing selects one." /></>}
+          checked={form.progressiveLoading ?? true}
+          onChange={(e) => setForm({ ...form, progressiveLoading: e.target.checked })}
+          className="mb-3"
+        />
+        <div className="d-flex align-items-center gap-2">
+          <Button variant="primary" size="sm" onClick={handleSave} disabled={!isDirty || updateSkills.isPending}>
+            {updateSkills.isPending ? 'Saving...' : 'Save'}
+          </Button>
+          <SaveStateHint isDirty={isDirty} />
+        </div>
+      </Card.Body>
+    </Card>
+  );
+}
+
+function TurnTab({ config }: { config: TurnConfig }) {
+  const updateTurn = useUpdateTurn();
+  const [form, setForm] = useState<TurnConfig>({ ...config });
+  const isDirty = useMemo(() => hasDiff(form, config), [form, config]);
+
+  useEffect(() => {
+    setForm({ ...config });
+  }, [config]);
+
+  const handleSave = async () => {
+    await updateTurn.mutateAsync(form);
+    toast.success('Turn budget settings saved');
+  };
+
+  return (
+    <Card className="settings-card">
+      <Card.Body>
+        <Card.Title className="h6 mb-3">Turn Budget</Card.Title>
+        <Row className="g-3 mb-3">
+          <Col md={4}>
+            <Form.Group>
+              <Form.Label className="small fw-medium">
+                Max LLM Calls <Tip text="Maximum LLM requests within a single turn." />
+              </Form.Label>
+              <Form.Control
+                size="sm"
+                type="number"
+                min={1}
+                value={form.maxLlmCalls ?? 200}
+                onChange={(e) => setForm({ ...form, maxLlmCalls: parseInt(e.target.value, 10) || null })}
+              />
+            </Form.Group>
+          </Col>
+          <Col md={4}>
+            <Form.Group>
+              <Form.Label className="small fw-medium">
+                Max Tool Executions <Tip text="Maximum tool executions within a single turn." />
+              </Form.Label>
+              <Form.Control
+                size="sm"
+                type="number"
+                min={1}
+                value={form.maxToolExecutions ?? 500}
+                onChange={(e) => setForm({ ...form, maxToolExecutions: parseInt(e.target.value, 10) || null })}
+              />
+            </Form.Group>
+          </Col>
+          <Col md={4}>
+            <Form.Group>
+              <Form.Label className="small fw-medium">
+                Deadline <Tip text="Turn deadline in ISO-8601 duration format, e.g. PT1H or PT30M." />
+              </Form.Label>
+              <Form.Control
+                size="sm"
+                value={form.deadline ?? 'PT1H'}
+                onChange={(e) => setForm({ ...form, deadline: e.target.value || null })}
+                placeholder="PT1H"
+              />
+            </Form.Group>
+          </Col>
+        </Row>
+        <div className="d-flex align-items-center gap-2">
+          <Button variant="primary" size="sm" onClick={handleSave} disabled={!isDirty || updateTurn.isPending}>
+            {updateTurn.isPending ? 'Saving...' : 'Save'}
+          </Button>
+          <SaveStateHint isDirty={isDirty} />
+        </div>
+      </Card.Body>
+    </Card>
+  );
+}
+
+function UsageTab({ config }: { config: UsageConfig }) {
+  const updateUsage = useUpdateUsage();
+  const [form, setForm] = useState<UsageConfig>({ ...config });
+  const isDirty = useMemo(() => hasDiff(form, config), [form, config]);
+
+  useEffect(() => {
+    setForm({ ...config });
+  }, [config]);
+
+  const handleSave = async () => {
+    await updateUsage.mutateAsync(form);
+    toast.success('Usage settings saved');
+  };
+
+  return (
+    <Card className="settings-card">
+      <Card.Body>
+        <Card.Title className="h6 mb-3">Usage Tracking</Card.Title>
+        <Form.Check
+          type="switch"
+          label={<>Enable Usage Tracking <Tip text="Enable collection of LLM request/token/latency metrics for Analytics." /></>}
+          checked={form.enabled ?? true}
+          onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
+          className="mb-3"
+        />
+        <div className="d-flex align-items-center gap-2">
+          <Button variant="primary" size="sm" onClick={handleSave} disabled={!isDirty || updateUsage.isPending}>
+            {updateUsage.isPending ? 'Saving...' : 'Save'}
+          </Button>
+          <SaveStateHint isDirty={isDirty} />
+        </div>
+      </Card.Body>
+    </Card>
+  );
+}
+
+function RagTab({ config }: { config: RagConfig }) {
+  const updateRag = useUpdateRag();
+  const [form, setForm] = useState<RagConfig>({ ...config });
+  const [showApiKey, setShowApiKey] = useState(false);
+  const isDirty = useMemo(() => hasDiff(form, config), [form, config]);
+
+  useEffect(() => {
+    setForm({ ...config });
+  }, [config]);
+
+  const handleSave = async () => {
+    await updateRag.mutateAsync(form);
+    toast.success('RAG settings saved');
+  };
+
+  return (
+    <Card className="settings-card">
+      <Card.Body>
+        <Card.Title className="h6 mb-3">RAG (LightRAG)</Card.Title>
+
+        <Form.Check
+          type="switch"
+          label={<>Enable RAG <Tip text="Enable retrieval-augmented generation context for chat responses." /></>}
+          checked={form.enabled ?? false}
+          onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
+          className="mb-3"
+        />
+
+        <Row className="g-3">
+          <Col md={8}>
+            <Form.Group>
+              <Form.Label className="small fw-medium">RAG URL</Form.Label>
+              <Form.Control
+                size="sm"
+                value={form.url ?? ''}
+                onChange={(e) => setForm({ ...form, url: e.target.value || null })}
+                placeholder="http://localhost:9621"
+              />
+            </Form.Group>
+          </Col>
+          <Col md={4}>
+            <Form.Group>
+              <Form.Label className="small fw-medium">Query Mode</Form.Label>
+              <Form.Select
+                size="sm"
+                value={form.queryMode ?? 'hybrid'}
+                onChange={(e) => setForm({ ...form, queryMode: e.target.value })}
+              >
+                <option value="hybrid">hybrid</option>
+                <option value="local">local</option>
+                <option value="global">global</option>
+                <option value="naive">naive</option>
+              </Form.Select>
+            </Form.Group>
+          </Col>
+          <Col md={6}>
+            <Form.Group>
+              <Form.Label className="small fw-medium">Timeout Seconds</Form.Label>
+              <Form.Control
+                size="sm"
+                type="number"
+                min={1}
+                max={120}
+                value={form.timeoutSeconds ?? 10}
+                onChange={(e) => setForm({ ...form, timeoutSeconds: Number(e.target.value) })}
+              />
+            </Form.Group>
+          </Col>
+          <Col md={6}>
+            <Form.Group>
+              <Form.Label className="small fw-medium">Index Min Length</Form.Label>
+              <Form.Control
+                size="sm"
+                type="number"
+                min={1}
+                max={2000}
+                value={form.indexMinLength ?? 50}
+                onChange={(e) => setForm({ ...form, indexMinLength: Number(e.target.value) })}
+              />
+            </Form.Group>
+          </Col>
+          <Col md={12}>
+            <Form.Group>
+              <Form.Label className="small fw-medium">API Key (optional)</Form.Label>
+              <InputGroup size="sm">
+                <Form.Control
+                  type={showApiKey ? 'text' : 'password'}
+                  value={form.apiKey ?? ''}
+                  onChange={(e) => setForm({ ...form, apiKey: e.target.value || null })}
+                />
+                <Button variant="secondary" onClick={() => setShowApiKey(!showApiKey)}>
+                  {showApiKey ? 'Hide' : 'Show'}
+                </Button>
+              </InputGroup>
+            </Form.Group>
+          </Col>
+        </Row>
+
+        <div className="d-flex align-items-center gap-2 mt-3">
+          <Button variant="primary" size="sm" onClick={handleSave} disabled={!isDirty || updateRag.isPending}>
+            {updateRag.isPending ? 'Saving...' : 'Save'}
+          </Button>
+          <SaveStateHint isDirty={isDirty} />
         </div>
       </Card.Body>
     </Card>
@@ -820,6 +1643,8 @@ function WebhooksTab() {
 
   const [form, setForm] = useState<WebhookConfig>(webhookConfig);
   const [editIdx, setEditIdx] = useState<number | null>(null);
+  const [deleteMappingIdx, setDeleteMappingIdx] = useState<number | null>(null);
+  const isWebhooksDirty = useMemo(() => hasDiff(form, webhookConfig), [form, webhookConfig]);
 
   useEffect(() => {
     if (settings?.webhooks) setForm(settings.webhooks);
@@ -913,7 +1738,7 @@ function WebhooksTab() {
             <tbody>
               {form.mappings.map((m, idx) => (
                 <tr key={idx}>
-                  <td>{m.name || <em className="text-muted">unnamed</em>}</td>
+                  <td>{m.name || <em className="text-body-secondary">unnamed</em>}</td>
                   <td><Badge bg={m.action === 'agent' ? 'primary' : 'secondary'}>{m.action}</Badge></td>
                   <td className="small">{m.authMode}</td>
                   <td className="text-end">
@@ -921,18 +1746,18 @@ function WebhooksTab() {
                       onClick={() => setEditIdx(editIdx === idx ? null : idx)}>
                       {editIdx === idx ? 'Close' : 'Edit'}
                     </Button>
-                    <Button size="sm" variant="danger" onClick={() => removeMapping(idx)}>Delete</Button>
+                    <Button size="sm" variant="danger" onClick={() => setDeleteMappingIdx(idx)}>Delete</Button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </Table>
         ) : (
-          <p className="text-muted small">No webhook mappings configured</p>
+          <p className="text-body-secondary small">No webhook mappings configured</p>
         )}
 
         {editIdx !== null && form.mappings[editIdx] && (
-          <Card className="mb-3 border-primary">
+          <Card className="mb-3 webhook-editor-card border">
             <Card.Body className="p-3">
               <Row className="g-2">
                 <Col md={4}>
@@ -1008,8 +1833,28 @@ function WebhooksTab() {
           </Card>
         )}
 
-        <Button variant="primary" size="sm" onClick={handleSave}>Save</Button>
+        <div className="d-flex align-items-center gap-2">
+          <Button variant="primary" size="sm" onClick={handleSave} disabled={!isWebhooksDirty || updateWebhooks.isPending}>
+            {updateWebhooks.isPending ? 'Saving...' : 'Save'}
+          </Button>
+          <SaveStateHint isDirty={isWebhooksDirty} />
+        </div>
       </Card.Body>
+
+      <ConfirmModal
+        show={deleteMappingIdx !== null}
+        title="Delete Webhook Mapping"
+        message="This mapping will be removed permanently from runtime settings. This action cannot be undone."
+        confirmLabel="Delete"
+        confirmVariant="danger"
+        onConfirm={() => {
+          if (deleteMappingIdx !== null) {
+            removeMapping(deleteMappingIdx);
+            setDeleteMappingIdx(null);
+          }
+        }}
+        onCancel={() => setDeleteMappingIdx(null)}
+      />
     </Card>
   );
 }
@@ -1019,6 +1864,7 @@ function WebhooksTab() {
 function AutoModeTab({ config }: { config: AutoModeConfig }) {
   const updateAuto = useUpdateAuto();
   const [form, setForm] = useState<AutoModeConfig>({ ...config });
+  const isAutoDirty = useMemo(() => hasDiff(form, config), [form, config]);
 
   useEffect(() => { setForm({ ...config }); }, [config]);
 
@@ -1080,7 +1926,12 @@ function AutoModeTab({ config }: { config: AutoModeConfig }) {
           checked={form.notifyMilestones ?? true}
           onChange={(e) => setForm({ ...form, notifyMilestones: e.target.checked })} className="mb-3" />
 
-        <Button variant="primary" size="sm" onClick={handleSave}>Save</Button>
+        <div className="d-flex align-items-center gap-2">
+          <Button variant="primary" size="sm" onClick={handleSave} disabled={!isAutoDirty || updateAuto.isPending}>
+            {updateAuto.isPending ? 'Saving...' : 'Save'}
+          </Button>
+          <SaveStateHint isDirty={isAutoDirty} />
+        </div>
       </Card.Body>
     </Card>
   );
@@ -1088,13 +1939,19 @@ function AutoModeTab({ config }: { config: AutoModeConfig }) {
 
 // ==================== Advanced Tab ====================
 
-function AdvancedTab({ rateLimit, security, compaction }: {
-  rateLimit: RateLimitConfig; security: SecurityConfig; compaction: CompactionConfig;
+type AdvancedMode = 'all' | 'rateLimit' | 'security' | 'compaction';
+
+function AdvancedTab({ rateLimit, security, compaction, mode = 'all' }: {
+  rateLimit: RateLimitConfig; security: SecurityConfig; compaction: CompactionConfig; mode?: AdvancedMode;
 }) {
   const updateAdvanced = useUpdateAdvanced();
   const [rl, setRl] = useState<RateLimitConfig>({ ...rateLimit });
   const [sec, setSec] = useState<SecurityConfig>({ ...security });
   const [comp, setComp] = useState<CompactionConfig>({ ...compaction });
+  const isAdvancedDirty = useMemo(
+    () => hasDiff(rl, rateLimit) || hasDiff(sec, security) || hasDiff(comp, compaction),
+    [rl, rateLimit, sec, security, comp, compaction],
+  );
 
   useEffect(() => { setRl({ ...rateLimit }); }, [rateLimit]);
   useEffect(() => { setSec({ ...security }); }, [security]);
@@ -1105,10 +1962,14 @@ function AdvancedTab({ rateLimit, security, compaction }: {
     toast.success('Advanced settings saved');
   };
 
+  const showRateLimit = mode === 'all' || mode === 'rateLimit';
+  const showSecurity = mode === 'all' || mode === 'security';
+  const showCompaction = mode === 'all' || mode === 'compaction';
+
   return (
     <>
       <Row className="g-3 mb-3">
-        <Col lg={4}>
+        {showRateLimit && <Col lg={4}>
           <Card className="settings-card h-100">
             <Card.Body>
               <Card.Title className="h6 mb-3">
@@ -1139,9 +2000,9 @@ function AdvancedTab({ rateLimit, security, compaction }: {
               </Form.Group>
             </Card.Body>
           </Card>
-        </Col>
+        </Col>}
 
-        <Col lg={4}>
+        {showCompaction && <Col lg={4}>
           <Card className="settings-card h-100">
             <Card.Body>
               <Card.Title className="h6 mb-3">
@@ -1165,9 +2026,9 @@ function AdvancedTab({ rateLimit, security, compaction }: {
               </Form.Group>
             </Card.Body>
           </Card>
-        </Col>
+        </Col>}
 
-        <Col lg={4}>
+        {showSecurity && <Col lg={4}>
           <Card className="settings-card h-100">
             <Card.Body>
               <Card.Title className="h6 mb-3">
@@ -1194,10 +2055,15 @@ function AdvancedTab({ rateLimit, security, compaction }: {
               </Form.Group>
             </Card.Body>
           </Card>
-        </Col>
+        </Col>}
       </Row>
 
-      <Button variant="primary" size="sm" onClick={handleSave}>Save All</Button>
+      <div className="d-flex align-items-center gap-2">
+        <Button variant="primary" size="sm" onClick={handleSave} disabled={!isAdvancedDirty || updateAdvanced.isPending}>
+          {updateAdvanced.isPending ? 'Saving...' : 'Save All'}
+        </Button>
+        <SaveStateHint isDirty={isAdvancedDirty} />
+      </div>
     </>
   );
 }

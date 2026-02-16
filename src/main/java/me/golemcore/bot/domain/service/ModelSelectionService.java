@@ -171,6 +171,8 @@ public class ModelSelectionService {
 
     private ModelSelection resolveFromRouter(String tier) {
         return switch (tier) {
+        case "routing" ->
+            new ModelSelection(runtimeConfigService.getRoutingModel(), runtimeConfigService.getRoutingModelReasoning());
         case "deep" ->
             new ModelSelection(runtimeConfigService.getDeepModel(), runtimeConfigService.getDeepModelReasoning());
         case "coding" ->

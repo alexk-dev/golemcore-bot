@@ -27,16 +27,37 @@ export interface RuntimeConfig {
   modelRouter: ModelRouterConfig;
   tools: ToolsConfig;
   voice: VoiceConfig;
+  memory: MemoryConfig;
+  skills: SkillsConfig;
+  turn: TurnConfig;
+  usage: UsageConfig;
+  rag: RagConfig;
   autoMode: AutoModeConfig;
   rateLimit: RateLimitConfig;
   security: SecurityConfig;
   compaction: CompactionConfig;
 }
 
+export interface MemoryConfig {
+  enabled: boolean | null;
+  recentDays: number | null;
+}
+
+export interface SkillsConfig {
+  enabled: boolean | null;
+  progressiveLoading: boolean | null;
+}
+
+export interface TurnConfig {
+  maxLlmCalls: number | null;
+  maxToolExecutions: number | null;
+  deadline: string | null;
+}
+
 export interface TelegramConfig {
   enabled: boolean | null;
   token: string | null;
-  authMode: 'user' | 'invite' | null;
+  authMode: 'user' | 'invite_only' | null;
   allowedUsers: string[];
   inviteCodes: InviteCode[];
 }
@@ -49,6 +70,8 @@ export interface InviteCode {
 
 export interface ModelRouterConfig {
   temperature: number | null;
+  routingModel: string | null;
+  routingModelReasoning: string | null;
   balancedModel: string | null;
   balancedModelReasoning: string | null;
   smartModel: string | null;
@@ -61,8 +84,13 @@ export interface ModelRouterConfig {
 }
 
 export interface ToolsConfig {
+  browserType: string | null;
+  browserTimeout: number | null;
+  browserUserAgent: string | null;
   filesystemEnabled: boolean | null;
   shellEnabled: boolean | null;
+  browserApiProvider: string | null;
+  browserHeadless: boolean | null;
   braveSearchEnabled: boolean | null;
   braveSearchApiKey: string | null;
   skillManagementEnabled: boolean | null;
@@ -108,6 +136,21 @@ export interface VoiceConfig {
   ttsModelId: string | null;
   sttModelId: string | null;
   speed: number | null;
+  telegramRespondWithVoice: boolean | null;
+  telegramTranscribeIncoming: boolean | null;
+}
+
+export interface UsageConfig {
+  enabled: boolean | null;
+}
+
+export interface RagConfig {
+  enabled: boolean | null;
+  url: string | null;
+  apiKey: string | null;
+  queryMode: string | null;
+  timeoutSeconds: number | null;
+  indexMinLength: number | null;
 }
 
 export interface AutoModeConfig {
@@ -189,6 +232,31 @@ export async function updateToolsConfig(config: ToolsConfig): Promise<RuntimeCon
 
 export async function updateVoiceConfig(config: VoiceConfig): Promise<RuntimeConfig> {
   const { data } = await client.put('/settings/runtime/voice', config);
+  return data;
+}
+
+export async function updateMemoryConfig(config: MemoryConfig): Promise<RuntimeConfig> {
+  const { data } = await client.put('/settings/runtime/memory', config);
+  return data;
+}
+
+export async function updateSkillsConfig(config: SkillsConfig): Promise<RuntimeConfig> {
+  const { data } = await client.put('/settings/runtime/skills', config);
+  return data;
+}
+
+export async function updateTurnConfig(config: TurnConfig): Promise<RuntimeConfig> {
+  const { data } = await client.put('/settings/runtime/turn', config);
+  return data;
+}
+
+export async function updateUsageConfig(config: UsageConfig): Promise<RuntimeConfig> {
+  const { data } = await client.put('/settings/runtime/usage', config);
+  return data;
+}
+
+export async function updateRagConfig(config: RagConfig): Promise<RuntimeConfig> {
+  const { data } = await client.put('/settings/runtime/rag', config);
   return data;
 }
 

@@ -26,6 +26,20 @@ function getChatSessionId(): string {
 interface ChatMessage {
   role: string;
   content: string;
+  model?: string | null;
+  tier?: string | null;
+}
+
+interface ChatAttachmentPayload {
+  type: 'image';
+  name: string;
+  mimeType: string;
+  dataBase64: string;
+}
+
+interface OutboundChatPayload {
+  text: string;
+  attachments: ChatAttachmentPayload[];
 }
 
 export default function ChatWindow() {
@@ -66,7 +80,7 @@ export default function ChatWindow() {
         if (detail && detail.messages.length > 0) {
           const history: ChatMessage[] = detail.messages
             .filter((m) => m.role === 'user' || m.role === 'assistant')
-            .map((m) => ({ role: m.role, content: m.content }));
+            .map((m) => ({ role: m.role, content: m.content, model: m.model, tier: m.modelTier }));
           setAllMessages(history);
           setVisibleStart(Math.max(0, history.length - INITIAL_MESSAGES));
         }
@@ -145,10 +159,22 @@ export default function ChatWindow() {
 
           setAllMessages((prev) => {
             const last = prev[prev.length - 1];
+            const chunkModel = data.hint?.model ?? null;
+            const chunkTier = data.hint?.tier ?? null;
             if (last && last.role === 'assistant' && data.type === 'assistant_chunk') {
-              return [...prev.slice(0, -1), { role: 'assistant', content: last.content + data.text }];
+              return [...prev.slice(0, -1), {
+                role: 'assistant',
+                content: last.content + data.text,
+                model: chunkModel ?? last.model ?? null,
+                tier: chunkTier ?? last.tier ?? null,
+              }];
             }
-            return [...prev, { role: 'assistant', content: data.text }];
+            return [...prev, {
+              role: 'assistant',
+              content: data.text,
+              model: chunkModel,
+              tier: chunkTier,
+            }];
           });
         }
       } catch {
@@ -172,12 +198,20 @@ export default function ChatWindow() {
     }
   }, [allMessages, typing]);
 
-  const handleSend = (text: string) => {
+  const handleSend = ({ text, attachments }: OutboundChatPayload) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      const newMsg = { role: 'user', content: text };
+      const trimmed = text.trim();
+      const fallback = attachments.length > 0
+        ? `[${attachments.length} image attachment${attachments.length > 1 ? 's' : ''}]`
+        : '';
+      const newMsg = { role: 'user', content: trimmed || fallback };
       setAllMessages((prev) => [...prev, newMsg]);
       shouldAutoScroll.current = true;
-      wsRef.current.send(JSON.stringify({ text, sessionId: chatSessionId }));
+      wsRef.current.send(JSON.stringify({
+        text,
+        attachments,
+        sessionId: chatSessionId,
+      }));
     }
   };
 
@@ -202,42 +236,52 @@ export default function ChatWindow() {
     <div className="chat-page-layout">
       <div className="chat-container">
         {/* Toolbar */}
-        <div className="chat-toolbar d-flex align-items-center">
-          <div className="d-flex align-items-center gap-2 flex-grow-1">
-            <span className={`status-dot ${connected ? 'online' : 'offline'}`} />
-            <small className="text-body-secondary">{connected ? 'Connected' : 'Reconnecting...'}</small>
+        <div className="chat-toolbar">
+          <div className="chat-toolbar-inner d-flex align-items-center">
+            <div className="d-flex align-items-center gap-2 flex-grow-1">
+              <span className={`status-dot ${connected ? 'online' : 'offline'}`} />
+              <small className="text-body-secondary">{connected ? 'Connected' : 'Reconnecting...'}</small>
+            </div>
+            <button
+              className="btn btn-sm btn-secondary panel-toggle-btn"
+              onClick={togglePanel}
+              title={panelOpen ? 'Hide context panel' : 'Show context panel'}
+            >
+              {panelOpen ? '\u00BB' : '\u00AB'}
+            </button>
           </div>
-          <button
-            className="btn btn-sm btn-outline-secondary panel-toggle-btn"
-            onClick={togglePanel}
-            title={panelOpen ? 'Hide context panel' : 'Show context panel'}
-          >
-            {panelOpen ? '\u00BB' : '\u00AB'}
-          </button>
         </div>
 
         {/* Messages */}
         <div className="chat-window" ref={scrollRef} onScroll={handleScroll}>
-          {hasMore && (
-            <div className="text-center py-2">
-              {loadingMore ? (
-                <small className="text-body-secondary">Loading...</small>
-              ) : (
-                <Badge bg="secondary" className="cursor-pointer" style={{ cursor: 'pointer' }}
-                  onClick={() => setVisibleStart(Math.max(0, visibleStart - LOAD_MORE_COUNT))}>
-                  Load earlier messages
-                </Badge>
-              )}
-            </div>
-          )}
-          {visibleMessages.map((msg, i) => (
-            <MessageBubble key={visibleStart + i} role={msg.role} content={msg.content} />
-          ))}
-          {typing && (
-            <div className="typing-indicator">
-              <span /><span /><span />
-            </div>
-          )}
+          <div className="chat-content-shell">
+            {hasMore && (
+              <div className="text-center py-2">
+                {loadingMore ? (
+                  <small className="text-body-secondary">Loading...</small>
+                ) : (
+                  <Badge bg="secondary" className="cursor-pointer"
+                    onClick={() => setVisibleStart(Math.max(0, visibleStart - LOAD_MORE_COUNT))}>
+                    Load earlier messages
+                  </Badge>
+                )}
+              </div>
+            )}
+            {visibleMessages.map((msg, i) => (
+              <MessageBubble
+                key={visibleStart + i}
+                role={msg.role}
+                content={msg.content}
+                model={msg.model ?? null}
+                tier={msg.tier ?? null}
+              />
+            ))}
+            {typing && (
+              <div className="typing-indicator">
+                <span /><span /><span />
+              </div>
+            )}
+          </div>
           <div ref={bottomRef} />
         </div>
 

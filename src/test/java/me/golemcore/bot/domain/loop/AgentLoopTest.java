@@ -33,6 +33,7 @@ import me.golemcore.bot.domain.model.RoutingOutcome;
 import me.golemcore.bot.domain.model.SkillTransitionRequest;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.model.TurnOutcome;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.system.AgentSystem;
@@ -92,6 +93,7 @@ class AgentLoopTest {
         ChannelPort channel = mock(ChannelPort.class);
         when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
         when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         AgentSystem verifier = new AgentSystem() {
             @Override
@@ -135,6 +137,7 @@ class AgentLoopTest {
                 props,
                 List.of(verifier),
                 List.of(channel),
+                mockRuntimeConfigService(2),
                 preferencesService,
                 llmPort,
                 clock);
@@ -182,6 +185,7 @@ class AgentLoopTest {
         ChannelPort channel = mock(ChannelPort.class);
         when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
         when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         AgentSystem system = new AgentSystem() {
             @Override
@@ -214,6 +218,7 @@ class AgentLoopTest {
                         new ResponseRoutingSystem(List.of(channel), preferencesService,
                                 mock(VoiceResponseHandler.class))),
                 List.of(channel),
+                mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
                 clock);
@@ -230,7 +235,7 @@ class AgentLoopTest {
         loop.processMessage(inbound);
 
         // Feedback guarantee should route via ResponseRoutingSystem when present.
-        verify(channel, atLeastOnce()).sendMessage(eq("1"), eq("hello"));
+        verify(channel, atLeastOnce()).sendMessage(eq("1"), eq("hello"), any());
         // NOTE: ResponseRoutingSystem is transport-only. It must not write assistant
         // messages
         // into raw history. (Raw history is owned by the domain execution path.)
@@ -266,6 +271,7 @@ class AgentLoopTest {
         ChannelPort channel = mock(ChannelPort.class);
         when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
         when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         // A system that is disabled — its process() should never be called
         AgentSystem disabledSystem = new AgentSystem() {
@@ -302,6 +308,7 @@ class AgentLoopTest {
                 props,
                 List.of(disabledSystem),
                 List.of(channel),
+                mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
                 clock);
@@ -352,6 +359,7 @@ class AgentLoopTest {
         ChannelPort channel = mock(ChannelPort.class);
         when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
         when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         // A system that throws an exception
         AgentSystem throwingSystem = new AgentSystem() {
@@ -407,6 +415,7 @@ class AgentLoopTest {
                 props,
                 List.of(throwingSystem, inspectorSystem),
                 List.of(channel),
+                mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
                 clock);
@@ -451,6 +460,7 @@ class AgentLoopTest {
                 props,
                 List.of(),
                 List.of(channel),
+                mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
                 clock);
@@ -491,6 +501,7 @@ class AgentLoopTest {
         ChannelPort channel = mock(ChannelPort.class);
         when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
         when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         // System that adds a FailureEvent to the context but produces no response
         AgentSystem failureSystem = new AgentSystem() {
@@ -527,6 +538,7 @@ class AgentLoopTest {
                 props,
                 List.of(failureSystem, routingSystem),
                 List.of(channel),
+                mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
                 clock);
@@ -545,7 +557,7 @@ class AgentLoopTest {
 
         // Assert — the LLM was called to interpret errors and a response was sent
         verify(llmPort).chat(any());
-        verify(channel, atLeastOnce()).sendMessage(eq("1"), eq("Error: interpreted"));
+        verify(channel, atLeastOnce()).sendMessage(eq("1"), eq("Error: interpreted"), any());
     }
 
     @Test
@@ -578,6 +590,7 @@ class AgentLoopTest {
         ChannelPort channel = mock(ChannelPort.class);
         when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
         when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         // System that nulls out the messages list to test isAutoModeContext safety
         AgentSystem nullMessagesSystem = new AgentSystem() {
@@ -612,6 +625,7 @@ class AgentLoopTest {
                 props,
                 List.of(nullMessagesSystem, routingSystem),
                 List.of(channel),
+                mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
                 clock);
@@ -660,6 +674,7 @@ class AgentLoopTest {
         ChannelPort channel = mock(ChannelPort.class);
         when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
         when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         AgentLoop loop = new AgentLoop(
                 sessionPort,
@@ -667,6 +682,7 @@ class AgentLoopTest {
                 props,
                 List.of(),
                 List.of(channel),
+                mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
                 clock);
@@ -716,6 +732,7 @@ class AgentLoopTest {
         ChannelPort channel = mock(ChannelPort.class);
         when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
         when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         // System that sets a TurnOutcome with RoutingOutcome sentText=false and no
         // OutgoingResponse
@@ -759,6 +776,7 @@ class AgentLoopTest {
                 props,
                 List.of(turnOutcomeSystem, routingSystem),
                 List.of(channel),
+                mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
                 clock);
@@ -777,6 +795,14 @@ class AgentLoopTest {
 
         // Assert — ensureFeedback should trigger because sentText=false,
         // no unsent LLM response exists, LLM not available, so generic fallback fires
-        verify(channel, atLeastOnce()).sendMessage(eq("1"), eq("generic fallback"));
+        verify(channel, atLeastOnce()).sendMessage(eq("1"), eq("generic fallback"), any());
+    }
+
+    private static RuntimeConfigService mockRuntimeConfigService(int maxLlmCalls) {
+        RuntimeConfigService rcs = mock(RuntimeConfigService.class);
+        when(rcs.getTurnMaxLlmCalls()).thenReturn(maxLlmCalls);
+        when(rcs.getRoutingModel()).thenReturn("test-model");
+        when(rcs.getRoutingModelReasoning()).thenReturn("none");
+        return rcs;
     }
 }

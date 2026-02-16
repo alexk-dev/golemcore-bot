@@ -5,7 +5,17 @@ import { useState } from 'react';
 interface Props {
   role: string;
   content: string;
+  model?: string | null;
+  tier?: string | null;
 }
+
+const TIER_META: Record<string, { label: string; className: string }> = {
+  balanced: { label: 'Balanced', className: 'text-bg-primary' },
+  smart: { label: 'Smart', className: 'text-bg-success' },
+  coding: { label: 'Coding', className: 'text-bg-info' },
+  deep: { label: 'Deep', className: 'text-bg-warning' },
+  routing: { label: 'Routing', className: 'text-bg-dark' },
+};
 
 function ToolCallCard({ tool, result }: { tool: string; result: string }) {
   const [open, setOpen] = useState(false);
@@ -41,8 +51,10 @@ function parseToolCalls(content: string): { text: string; tools: { tool: string;
   return { text, tools };
 }
 
-export default function MessageBubble({ role, content }: Props) {
+export default function MessageBubble({ role, content, model, tier }: Props) {
   const isAssistant = role === 'assistant';
+  const normalizedTier = (tier ?? '').toLowerCase();
+  const tierMeta = TIER_META[normalizedTier] ?? null;
 
   if (isAssistant) {
     const { text, tools } = parseToolCalls(content);
@@ -50,6 +62,16 @@ export default function MessageBubble({ role, content }: Props) {
     return (
       <div className={`d-flex w-100 justify-content-start fade-in`}>
         <div className="message-bubble assistant">
+          {(model || tier) && (
+            <div className="d-flex align-items-center gap-2 mb-2">
+              {tier && (
+                <span className={`badge ${tierMeta?.className ?? 'text-bg-secondary'}`}>
+                  {tierMeta?.label ?? tier}
+                </span>
+              )}
+              {model && <small className="text-body-secondary">{model}</small>}
+            </div>
+          )}
           {tools.map((t, i) => (
             <ToolCallCard key={i} tool={t.tool} result={t.result} />
           ))}

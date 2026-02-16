@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Card, Row, Col, ButtonGroup, Button, Spinner } from 'react-bootstrap';
+import { Card, Row, Col, ButtonGroup, Button, Spinner, Placeholder } from 'react-bootstrap';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { useUsageStats, useUsageByModel } from '../hooks/useUsage';
 import { useThemeStore } from '../store/themeStore';
@@ -24,6 +24,7 @@ export default function AnalyticsPage() {
         axisColor: '#6c757d',
         tooltipBg: '#ffffff',
         tooltipBorder: '#dee2e6',
+        tooltipText: '#212529',
         primary: '#0d6efd',
         fills: ['#0d6efd', '#198754', '#ffc107', '#dc3545', '#0dcaf0', '#6c757d'],
       };
@@ -32,12 +33,13 @@ export default function AnalyticsPage() {
     const css = window.getComputedStyle(document.documentElement);
     const readVar = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
 
-    return {
-      axisColor: readVar('--bs-secondary-color', '#6c757d'),
-      tooltipBg: readVar('--bs-body-bg', '#ffffff'),
-      tooltipBorder: readVar('--bs-border-color', '#dee2e6'),
-      primary: readVar('--bs-primary', '#0d6efd'),
-      fills: [
+      return {
+        axisColor: readVar('--bs-secondary-color', '#6c757d'),
+        tooltipBg: readVar('--bs-body-bg', '#ffffff'),
+        tooltipBorder: readVar('--bs-border-color', '#dee2e6'),
+        tooltipText: readVar('--bs-body-color', '#212529'),
+        primary: readVar('--bs-primary', '#0d6efd'),
+        fills: [
         readVar('--bs-primary', '#0d6efd'),
         readVar('--bs-success', '#198754'),
         readVar('--bs-warning', '#ffc107'),
@@ -62,13 +64,27 @@ export default function AnalyticsPage() {
       </div>
 
       {statsLoading ? (
-        <Spinner />
+        <Row className="g-3 mb-4">
+          {[0, 1, 2, 3].map((idx) => (
+            <Col md={3} key={idx}>
+              <Card className="stat-card">
+                <Card.Body>
+                  <Placeholder as="div" animation="glow" className="mb-2"><Placeholder xs={6} /></Placeholder>
+                  <Placeholder as="div" animation="glow"><Placeholder xs={8} /></Placeholder>
+                </Card.Body>
+              </Card>
+            </Col>
+          ))}
+          <div className="d-flex justify-content-center pt-1">
+            <Spinner size="sm" />
+          </div>
+        </Row>
       ) : (
         <Row className="g-3 mb-4">
           <Col md={3}>
             <Card className="stat-card">
               <Card.Body>
-                <div className="text-muted small">Requests</div>
+                <div className="text-body-secondary small">Requests</div>
                 <h3>{stats?.totalRequests ?? 0}</h3>
               </Card.Body>
             </Card>
@@ -76,7 +92,7 @@ export default function AnalyticsPage() {
           <Col md={3}>
             <Card className="stat-card">
               <Card.Body>
-                <div className="text-muted small">Total Tokens</div>
+                <div className="text-body-secondary small">Total Tokens</div>
                 <h3>{(stats?.totalTokens ?? 0).toLocaleString()}</h3>
               </Card.Body>
             </Card>
@@ -84,7 +100,7 @@ export default function AnalyticsPage() {
           <Col md={3}>
             <Card className="stat-card">
               <Card.Body>
-                <div className="text-muted small">Input / Output</div>
+                <div className="text-body-secondary small">Input / Output</div>
                 <h5>
                   {(stats?.totalInputTokens ?? 0).toLocaleString()} /{' '}
                   {(stats?.totalOutputTokens ?? 0).toLocaleString()}
@@ -95,7 +111,7 @@ export default function AnalyticsPage() {
           <Col md={3}>
             <Card className="stat-card">
               <Card.Body>
-                <div className="text-muted small">Avg Latency</div>
+                <div className="text-body-secondary small">Avg Latency</div>
                 <h3>{stats?.avgLatencyMs ?? 0}ms</h3>
               </Card.Body>
             </Card>
@@ -117,7 +133,10 @@ export default function AnalyticsPage() {
                       contentStyle={{
                         backgroundColor: chartPalette.tooltipBg,
                         borderColor: chartPalette.tooltipBorder,
+                        color: chartPalette.tooltipText,
                       }}
+                      itemStyle={{ color: chartPalette.tooltipText }}
+                      labelStyle={{ color: chartPalette.tooltipText }}
                     />
                     <Area type="monotone" dataKey="tokens" fill={chartPalette.primary} stroke={chartPalette.primary} fillOpacity={0.2} />
                   </AreaChart>
@@ -140,7 +159,10 @@ export default function AnalyticsPage() {
                       contentStyle={{
                         backgroundColor: chartPalette.tooltipBg,
                         borderColor: chartPalette.tooltipBorder,
+                        color: chartPalette.tooltipText,
                       }}
+                      itemStyle={{ color: chartPalette.tooltipText }}
+                      labelStyle={{ color: chartPalette.tooltipText }}
                     />
                   </PieChart>
                 </ResponsiveContainer>

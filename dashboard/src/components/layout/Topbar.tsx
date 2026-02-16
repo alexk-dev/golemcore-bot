@@ -25,17 +25,16 @@ export default function Topbar() {
       <div className="d-flex align-items-center gap-2">
         <Button
           variant="secondary"
-          className="text-decoration-none d-flex align-items-center justify-content-center p-0"
-          style={{ width: 34, height: 34, borderRadius: '8px' }}
+          className="topbar-icon-btn text-decoration-none d-flex align-items-center justify-content-center p-0"
           onClick={toggleTheme}
           title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+          aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
         >
           {theme === 'light' ? <FiMoon size={18} /> : <FiSun size={18} />}
         </Button>
         <Button 
           variant="secondary"
-          className="text-decoration-none d-flex align-items-center px-3"
-          style={{ height: 34, borderRadius: '8px' }}
+          className="topbar-action-btn text-decoration-none d-flex align-items-center px-3"
           onClick={handleLogout}
         >
           <FiLogOut size={16} className="me-2" />

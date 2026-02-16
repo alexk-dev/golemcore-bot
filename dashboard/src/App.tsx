@@ -30,6 +30,7 @@ export default function App() {
                 <Route path="/chat" element={<ChatPage />} />
                 <Route path="/analytics" element={<AnalyticsPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/settings/:section" element={<SettingsPage />} />
                 <Route path="/prompts" element={<PromptsPage />} />
                 <Route path="/skills" element={<SkillsPage />} />
                 <Route path="/sessions" element={<SessionsPage />} />

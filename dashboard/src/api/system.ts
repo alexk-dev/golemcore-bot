@@ -18,7 +18,24 @@ export interface SystemDiagnosticsResponse {
   };
 }
 
+export interface BrowserHealthResponse {
+  enabled: boolean;
+  type: string;
+  provider: string;
+  headless: boolean;
+  timeoutMs: number;
+  availableBefore: boolean;
+  availableAfter: boolean;
+  ok: boolean;
+  message: string;
+}
+
 export async function getSystemDiagnostics(): Promise<SystemDiagnosticsResponse> {
   const { data } = await client.get<SystemDiagnosticsResponse>('/system/diagnostics');
+  return data;
+}
+
+export async function getBrowserHealth(): Promise<BrowserHealthResponse> {
+  const { data } = await client.get<BrowserHealthResponse>('/system/browser/health');
   return data;
 }

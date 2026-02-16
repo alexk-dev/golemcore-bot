@@ -8,6 +8,11 @@ import {
   updateModelRouterConfig,
   updateToolsConfig,
   updateVoiceConfig,
+  updateMemoryConfig,
+  updateSkillsConfig,
+  updateTurnConfig,
+  updateUsageConfig,
+  updateRagConfig,
   updateWebhooksConfig,
   updateAutoConfig,
   updateAdvancedConfig,
@@ -18,6 +23,11 @@ import {
   ModelRouterConfig,
   ToolsConfig,
   VoiceConfig,
+  MemoryConfig,
+  SkillsConfig,
+  TurnConfig,
+  UsageConfig,
+  RagConfig,
   AutoModeConfig,
   RateLimitConfig,
   SecurityConfig,
@@ -75,6 +85,46 @@ export function useUpdateVoice() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: VoiceConfig) => updateVoiceConfig(config),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useUpdateMemory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (config: MemoryConfig) => updateMemoryConfig(config),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useUpdateSkills() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (config: SkillsConfig) => updateSkillsConfig(config),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useUpdateTurn() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (config: TurnConfig) => updateTurnConfig(config),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useUpdateUsage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (config: UsageConfig) => updateUsageConfig(config),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useUpdateRag() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (config: RagConfig) => updateRagConfig(config),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
   });
 }

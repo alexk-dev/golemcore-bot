@@ -27,6 +27,8 @@ export interface MessageInfo {
   timestamp: string | null;
   hasToolCalls: boolean;
   hasVoice: boolean;
+  model: string | null;
+  modelTier: string | null;
 }
 
 export async function listSessions(channel?: string): Promise<SessionSummary[]> {

@@ -23,6 +23,7 @@ import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.RateLimitResult;
 import me.golemcore.bot.domain.model.SkillTransitionRequest;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.system.AgentSystem;
@@ -43,6 +44,7 @@ import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 class AgentLoopRoutingBddTest {
@@ -92,6 +94,7 @@ class AgentLoopRoutingBddTest {
         ChannelPort channel = mock(ChannelPort.class);
         when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
         when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         // System A: requests next iteration, which is impossible due to maxIterations=1
         // -> triggers iteration limit path.
@@ -133,6 +136,7 @@ class AgentLoopRoutingBddTest {
                 props,
                 List.of(requester, routing),
                 List.of(channel),
+                mockRuntimeConfigService(2),
                 preferencesService,
                 llmPort,
                 clock);
@@ -150,10 +154,18 @@ class AgentLoopRoutingBddTest {
         loop.processMessage(inbound);
 
         // Then
-        verify(channel, atLeastOnce()).sendMessage("1", "LIMIT");
+        verify(channel, atLeastOnce()).sendMessage(eq("1"), eq("LIMIT"), any());
         // ADR-0004: orchestration must not mutate raw history.
         // Verify no synthetic assistant message was added to session.
         assertFalse(session.getMessages().stream().anyMatch(m -> "assistant".equals(m.getRole())),
                 "Orchestration must not write synthetic assistant messages to raw history");
+    }
+
+    private static RuntimeConfigService mockRuntimeConfigService(int maxLlmCalls) {
+        RuntimeConfigService rcs = mock(RuntimeConfigService.class);
+        when(rcs.getTurnMaxLlmCalls()).thenReturn(maxLlmCalls);
+        when(rcs.getRoutingModel()).thenReturn("test-model");
+        when(rcs.getRoutingModelReasoning()).thenReturn("none");
+        return rcs;
     }
 }

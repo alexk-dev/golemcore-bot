@@ -10,6 +10,9 @@ import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.Content;
+import dev.langchain4j.data.message.ContentType;
+import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
@@ -409,6 +412,35 @@ class Langchain4jAdapterTest {
         List<Object> messages = (List<Object>) ReflectionTestUtils.invokeMethod(adapter, CONVERT_MESSAGES, request);
         // System prompt + user + system note = 3 messages
         assertEquals(3, messages.size());
+    }
+
+    @Test
+    void shouldConvertUserMessageWithImageAttachmentToMultimodal() {
+        Message userWithImage = Message.builder()
+                .role(ROLE_USER)
+                .content("Describe this")
+                .metadata(Map.of(
+                        "attachments", List.of(Map.of(
+                                TYPE, "image",
+                                "mimeType", "image/png",
+                                "dataBase64", "iVBORw0KGgo="))))
+                .build();
+
+        LlmRequest request = LlmRequest.builder()
+                .messages(List.of(userWithImage))
+                .build();
+
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<ChatMessage> messages = (List<ChatMessage>) ReflectionTestUtils.invokeMethod(adapter, CONVERT_MESSAGES,
+                request);
+        assertEquals(1, messages.size());
+        assertTrue(messages.get(0) instanceof UserMessage);
+
+        UserMessage userMessage = (UserMessage) messages.get(0);
+        List<Content> contents = userMessage.contents();
+        assertEquals(2, contents.size());
+        assertEquals(ContentType.TEXT, contents.get(0).type());
+        assertEquals(ContentType.IMAGE, contents.get(1).type());
     }
 
     // ===== stripProviderPrefix =====
