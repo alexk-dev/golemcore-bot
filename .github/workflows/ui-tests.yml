@@ -34,7 +34,12 @@ jobs:
           cache-dependency-path: dashboard/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        # Security: avoid running dependency lifecycle scripts during install.
+        # We explicitly rebuild only the minimal trusted native dependency needed for Vite builds.
+        run: npm ci --ignore-scripts
+
+      - name: Rebuild native deps (esbuild)
+        run: npm rebuild esbuild
 
       - name: Run lint
         run: npm run lint
