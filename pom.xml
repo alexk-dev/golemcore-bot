@@ -370,12 +370,12 @@
                 <executions>
                     <execution>
                         <id>install-node-npm</id>
-                        <phase>prepare-package</phase>
+                        <phase>generate-resources</phase>
                         <goals><goal>install-node-and-npm</goal></goals>
                     </execution>
                     <execution>
                         <id>npm-install</id>
-                        <phase>prepare-package</phase>
+                        <phase>generate-resources</phase>
                         <goals><goal>npm</goal></goals>
                         <configuration>
                             <arguments>ci</arguments>
@@ -383,7 +383,7 @@
                     </execution>
                     <execution>
                         <id>npm-build</id>
-                        <phase>prepare-package</phase>
+                        <phase>generate-resources</phase>
                         <goals><goal>npm</goal></goals>
                         <configuration>
                             <arguments>run build</arguments>
