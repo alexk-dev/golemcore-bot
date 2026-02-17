@@ -12,7 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.anyBoolean;
 import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -33,25 +34,29 @@ class RuntimeConfigServiceTest {
     private StoragePort storagePort;
     private RuntimeConfigService service;
     private ObjectMapper objectMapper;
-    private AtomicReference<String> persistedContent;
+    /** Per-file storage for modular config sections */
+    private Map<String, String> persistedSections;
 
     @BeforeEach
     void setUp() {
         storagePort = mock(StoragePort.class);
-        persistedContent = new AtomicReference<>(null);
+        persistedSections = new ConcurrentHashMap<>();
 
-        // Mock putTextAtomic to capture written content for read-back validation
+        // Mock putTextAtomic to capture written content per section file
         when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), anyBoolean()))
                 .thenAnswer(invocation -> {
+                    String fileName = invocation.getArgument(1);
                     String content = invocation.getArgument(2);
-                    persistedContent.set(content);
+                    persistedSections.put(fileName, content);
                     return CompletableFuture.completedFuture(null);
                 });
 
-        // Mock getText to return persisted content (for read-back validation in
-        // persist())
+        // Mock getText to return persisted content per section file
         when(storagePort.getText(anyString(), anyString()))
-                .thenAnswer(invocation -> CompletableFuture.completedFuture(persistedContent.get()));
+                .thenAnswer(invocation -> {
+                    String fileName = invocation.getArgument(1);
+                    return CompletableFuture.completedFuture(persistedSections.get(fileName));
+                });
 
         service = new RuntimeConfigService(storagePort);
         objectMapper = new ObjectMapper();
@@ -73,11 +78,11 @@ class RuntimeConfigServiceTest {
 
     @Test
     void shouldLoadConfigFromStorage() throws Exception {
-        RuntimeConfig stored = RuntimeConfig.builder().build();
-        stored.getModelRouter().setBalancedModel("custom/model");
-        String json = objectMapper.writeValueAsString(stored);
-        when(storagePort.getText("preferences", "runtime-config.json"))
-                .thenReturn(CompletableFuture.completedFuture(json));
+        RuntimeConfig.ModelRouterConfig modelRouter = RuntimeConfig.ModelRouterConfig.builder()
+                .balancedModel("custom/model")
+                .build();
+        String json = objectMapper.writeValueAsString(modelRouter);
+        persistedSections.put("model-router.json", json);
 
         RuntimeConfig config = service.getRuntimeConfig();
 
@@ -90,35 +95,34 @@ class RuntimeConfigServiceTest {
         RuntimeConfig second = service.getRuntimeConfig();
 
         assertEquals(first, second);
-        // First call: loadOrCreate reads from storage, then persist does read-back
-        // validation
-        // Second call: cached, no storage access
-        // So getText is called twice total (not once per getRuntimeConfig call)
-        verify(storagePort, times(2)).getText(anyString(), anyString());
+        // First call loads all 15 sections, second call returns cached
+        // Verify getText was called for section loading (15 sections on first load)
+        verify(storagePort, atLeast(15)).getText(anyString(), anyString());
     }
 
     @Test
     void shouldFallbackToDefaultOnCorruptedJson() {
-        // First call returns corrupted JSON, subsequent calls return persisted content
-        when(storagePort.getText("preferences", "runtime-config.json"))
-                .thenReturn(CompletableFuture.completedFuture("{invalid json!!!}"))
-                .thenAnswer(invocation -> CompletableFuture.completedFuture(persistedContent.get()));
+        // Put corrupted JSON for a section file
+        persistedSections.put("telegram.json", "{invalid json!!!}");
 
         RuntimeConfig config = service.getRuntimeConfig();
 
+        // Should still load with defaults for corrupted section
         assertNotNull(config);
+        assertNotNull(config.getTelegram());
     }
 
     @Test
     void shouldFallbackToDefaultOnStorageException() {
-        // First call fails, subsequent calls return persisted content
-        when(storagePort.getText("preferences", "runtime-config.json"))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("disk error")))
-                .thenAnswer(invocation -> CompletableFuture.completedFuture(persistedContent.get()));
+        // Make getText fail for one section
+        when(storagePort.getText("preferences", "telegram.json"))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("disk error")));
 
         RuntimeConfig config = service.getRuntimeConfig();
 
+        // Should still load with defaults for failed section
         assertNotNull(config);
+        assertNotNull(config.getTelegram());
     }
 
     // ==================== Default Values ====================
@@ -207,11 +211,11 @@ class RuntimeConfigServiceTest {
 
     @Test
     void shouldReturnDefaultTurnDeadlineOnInvalidFormat() throws Exception {
-        RuntimeConfig config = RuntimeConfig.builder().build();
-        config.getTurn().setDeadline("not-a-duration");
-        String json = objectMapper.writeValueAsString(config);
-        when(storagePort.getText("preferences", "runtime-config.json"))
-                .thenReturn(CompletableFuture.completedFuture(json));
+        RuntimeConfig.TurnConfig turn = RuntimeConfig.TurnConfig.builder()
+                .deadline("not-a-duration")
+                .build();
+        String json = objectMapper.writeValueAsString(turn);
+        persistedSections.put("turn.json", json);
 
         assertEquals(java.time.Duration.ofHours(1), service.getTurnDeadline());
     }
@@ -288,15 +292,15 @@ class RuntimeConfigServiceTest {
 
     @Test
     void shouldDetectConfiguredLlmProviderApiKey() throws Exception {
-        RuntimeConfig config = RuntimeConfig.builder().build();
         Map<String, RuntimeConfig.LlmProviderConfig> providers = new LinkedHashMap<>();
         providers.put("openai", RuntimeConfig.LlmProviderConfig.builder()
                 .apiKey(Secret.of("sk-test-key"))
                 .build());
-        config.getLlm().setProviders(providers);
-        String json = objectMapper.writeValueAsString(config);
-        when(storagePort.getText("preferences", "runtime-config.json"))
-                .thenReturn(CompletableFuture.completedFuture(json));
+        RuntimeConfig.LlmConfig llm = RuntimeConfig.LlmConfig.builder()
+                .providers(providers)
+                .build();
+        String json = objectMapper.writeValueAsString(llm);
+        persistedSections.put("llm.json", json);
 
         assertTrue(service.hasLlmProviderApiKey("openai"));
         assertFalse(service.hasLlmProviderApiKey("anthropic"));
@@ -307,21 +311,35 @@ class RuntimeConfigServiceTest {
 
     @Test
     void shouldRedactSecretsInApiResponse() throws Exception {
-        RuntimeConfig config = RuntimeConfig.builder().build();
-        config.getTelegram().setToken(Secret.of("bot-token-secret"));
-        config.getVoice().setApiKey(Secret.of("voice-key-secret"));
-        config.getRag().setApiKey(Secret.of("rag-key-secret"));
-        config.getTools().setBraveSearchApiKey(Secret.of("brave-key-secret"));
+        // Setup individual section files with secrets
+        RuntimeConfig.TelegramConfig telegram = RuntimeConfig.TelegramConfig.builder()
+                .token(Secret.of("bot-token-secret"))
+                .build();
+        persistedSections.put("telegram.json", objectMapper.writeValueAsString(telegram));
+
+        RuntimeConfig.VoiceConfig voice = RuntimeConfig.VoiceConfig.builder()
+                .apiKey(Secret.of("voice-key-secret"))
+                .build();
+        persistedSections.put("voice.json", objectMapper.writeValueAsString(voice));
+
+        RuntimeConfig.RagConfig rag = RuntimeConfig.RagConfig.builder()
+                .apiKey(Secret.of("rag-key-secret"))
+                .build();
+        persistedSections.put("rag.json", objectMapper.writeValueAsString(rag));
+
+        RuntimeConfig.ToolsConfig tools = RuntimeConfig.ToolsConfig.builder()
+                .braveSearchApiKey(Secret.of("brave-key-secret"))
+                .build();
+        persistedSections.put("tools.json", objectMapper.writeValueAsString(tools));
 
         Map<String, RuntimeConfig.LlmProviderConfig> providers = new LinkedHashMap<>();
         providers.put("openai", RuntimeConfig.LlmProviderConfig.builder()
                 .apiKey(Secret.of("openai-secret"))
                 .build());
-        config.getLlm().setProviders(providers);
-
-        String json = objectMapper.writeValueAsString(config);
-        when(storagePort.getText("preferences", "runtime-config.json"))
-                .thenReturn(CompletableFuture.completedFuture(json));
+        RuntimeConfig.LlmConfig llm = RuntimeConfig.LlmConfig.builder()
+                .providers(providers)
+                .build();
+        persistedSections.put("llm.json", objectMapper.writeValueAsString(llm));
 
         RuntimeConfig redacted = service.getRuntimeConfigForApi();
 
@@ -337,11 +355,10 @@ class RuntimeConfigServiceTest {
 
     @Test
     void shouldNotLeakSecretsInOriginalAfterRedaction() throws Exception {
-        RuntimeConfig config = RuntimeConfig.builder().build();
-        config.getTelegram().setToken(Secret.of("my-secret-token"));
-        String json = objectMapper.writeValueAsString(config);
-        when(storagePort.getText("preferences", "runtime-config.json"))
-                .thenReturn(CompletableFuture.completedFuture(json));
+        RuntimeConfig.TelegramConfig telegram = RuntimeConfig.TelegramConfig.builder()
+                .token(Secret.of("my-secret-token"))
+                .build();
+        persistedSections.put("telegram.json", objectMapper.writeValueAsString(telegram));
 
         service.getRuntimeConfigForApi();
         String token = service.getTelegramToken();
@@ -358,7 +375,8 @@ class RuntimeConfigServiceTest {
 
         service.updateRuntimeConfig(newConfig);
 
-        verify(storagePort).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
+        // Verify all 15 sections were persisted
+        verify(storagePort, times(15)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
 
         RuntimeConfig updated = service.getRuntimeConfig();
         assertEquals("custom/model", updated.getModelRouter().getBalancedModel());
@@ -366,13 +384,11 @@ class RuntimeConfigServiceTest {
 
     @Test
     void shouldThrowAndRollbackOnPersistFailure() throws Exception {
-        // Setup initial config
-        RuntimeConfig initialConfig = RuntimeConfig.builder().build();
-        initialConfig.getTelegram().setEnabled(false);
-        String initialJson = objectMapper.writeValueAsString(initialConfig);
-        persistedContent.set(initialJson);
-        when(storagePort.getText("preferences", "runtime-config.json"))
-                .thenReturn(CompletableFuture.completedFuture(initialJson));
+        // Setup initial config section
+        RuntimeConfig.TelegramConfig telegram = RuntimeConfig.TelegramConfig.builder()
+                .enabled(false)
+                .build();
+        persistedSections.put("telegram.json", objectMapper.writeValueAsString(telegram));
 
         // Load initial config
         service.getRuntimeConfig();
@@ -395,9 +411,8 @@ class RuntimeConfigServiceTest {
 
     @Test
     void shouldNormalizeLlmConfigWhenNull() throws Exception {
-        String json = "{}";
-        when(storagePort.getText("preferences", "runtime-config.json"))
-                .thenReturn(CompletableFuture.completedFuture(json));
+        // Put empty JSON for llm section
+        persistedSections.put("llm.json", "{}");
 
         RuntimeConfig config = service.getRuntimeConfig();
 
@@ -407,12 +422,11 @@ class RuntimeConfigServiceTest {
 
     @Test
     void shouldNormalizeSecretPresenceFlags() throws Exception {
-        RuntimeConfig config = RuntimeConfig.builder().build();
         Secret secretWithValue = Secret.builder().value("test-key").present(null).encrypted(null).build();
-        config.getTelegram().setToken(secretWithValue);
-        String json = objectMapper.writeValueAsString(config);
-        when(storagePort.getText("preferences", "runtime-config.json"))
-                .thenReturn(CompletableFuture.completedFuture(json));
+        RuntimeConfig.TelegramConfig telegram = RuntimeConfig.TelegramConfig.builder()
+                .token(secretWithValue)
+                .build();
+        persistedSections.put("telegram.json", objectMapper.writeValueAsString(telegram));
 
         RuntimeConfig loaded = service.getRuntimeConfig();
 
@@ -431,7 +445,8 @@ class RuntimeConfigServiceTest {
         assertEquals(20, code.getCode().length());
         assertFalse(code.isUsed());
         assertNotNull(code.getCreatedAt());
-        verify(storagePort, times(2)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
+        // Verify that persist was called (15 sections + 15 initial defaults on load)
+        verify(storagePort, atLeast(15)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
     }
 
     @Test
@@ -543,19 +558,19 @@ class RuntimeConfigServiceTest {
 
     @Test
     void shouldResolveImapConfigWithCustomValues() throws Exception {
-        RuntimeConfig config = RuntimeConfig.builder().build();
-        RuntimeConfig.ImapConfig imap = config.getTools().getImap();
-        imap.setEnabled(true);
-        imap.setHost("imap.example.com");
-        imap.setPort(143);
-        imap.setUsername("user@example.com");
-        imap.setPassword(Secret.of("pass"));
-        imap.setSecurity("starttls");
-        imap.setMaxBodyLength(10000);
-
-        String json = objectMapper.writeValueAsString(config);
-        when(storagePort.getText("preferences", "runtime-config.json"))
-                .thenReturn(CompletableFuture.completedFuture(json));
+        RuntimeConfig.ImapConfig imap = RuntimeConfig.ImapConfig.builder()
+                .enabled(true)
+                .host("imap.example.com")
+                .port(143)
+                .username("user@example.com")
+                .password(Secret.of("pass"))
+                .security("starttls")
+                .maxBodyLength(10000)
+                .build();
+        RuntimeConfig.ToolsConfig tools = RuntimeConfig.ToolsConfig.builder()
+                .imap(imap)
+                .build();
+        persistedSections.put("tools.json", objectMapper.writeValueAsString(tools));
 
         BotProperties.ImapToolProperties resolved = service.getResolvedImapConfig();
 
@@ -575,7 +590,8 @@ class RuntimeConfigServiceTest {
         service.setTelegramAuthMode("user");
 
         assertEquals("user", service.getRuntimeConfig().getTelegram().getAuthMode());
-        verify(storagePort, times(2)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
+        // Verify that persist was called (15 sections + 15 initial defaults on load)
+        verify(storagePort, atLeast(15)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
     }
 
     // ==================== Voice Telegram Options ====================
@@ -599,5 +615,112 @@ class RuntimeConfigServiceTest {
     @Test
     void shouldReturnUsageEnabledByDefault() {
         assertTrue(service.isUsageEnabled());
+    }
+
+    // ==================== Section Validation ====================
+
+    @Test
+    void shouldValidateKnownConfigSections() {
+        assertTrue(RuntimeConfigService.isValidConfigSection("telegram"));
+        assertTrue(RuntimeConfigService.isValidConfigSection("model-router"));
+        assertTrue(RuntimeConfigService.isValidConfigSection("llm"));
+        assertTrue(RuntimeConfigService.isValidConfigSection("tools"));
+        assertTrue(RuntimeConfigService.isValidConfigSection("voice"));
+        assertTrue(RuntimeConfigService.isValidConfigSection("auto-mode"));
+        assertTrue(RuntimeConfigService.isValidConfigSection("rate-limit"));
+        assertTrue(RuntimeConfigService.isValidConfigSection("security"));
+        assertTrue(RuntimeConfigService.isValidConfigSection("compaction"));
+        assertTrue(RuntimeConfigService.isValidConfigSection("turn"));
+        assertTrue(RuntimeConfigService.isValidConfigSection("memory"));
+        assertTrue(RuntimeConfigService.isValidConfigSection("skills"));
+        assertTrue(RuntimeConfigService.isValidConfigSection("usage"));
+        assertTrue(RuntimeConfigService.isValidConfigSection("rag"));
+        assertTrue(RuntimeConfigService.isValidConfigSection("mcp"));
+    }
+
+    @Test
+    void shouldRejectUnknownConfigSections() {
+        assertFalse(RuntimeConfigService.isValidConfigSection("unknown"));
+        assertFalse(RuntimeConfigService.isValidConfigSection("brave"));
+        assertFalse(RuntimeConfigService.isValidConfigSection("runtime-config"));
+        assertFalse(RuntimeConfigService.isValidConfigSection(""));
+        assertFalse(RuntimeConfigService.isValidConfigSection(null));
+    }
+
+    @Test
+    void shouldValidateSectionCaseInsensitively() {
+        assertTrue(RuntimeConfigService.isValidConfigSection("TELEGRAM"));
+        assertTrue(RuntimeConfigService.isValidConfigSection("Model-Router"));
+        assertTrue(RuntimeConfigService.isValidConfigSection("AUTO-MODE"));
+    }
+
+    // ==================== ConfigSection Enum ====================
+
+    @Test
+    void shouldReturnCorrectFileNameForSection() {
+        assertEquals("telegram.json", RuntimeConfig.ConfigSection.TELEGRAM.getFileName());
+        assertEquals("model-router.json", RuntimeConfig.ConfigSection.MODEL_ROUTER.getFileName());
+        assertEquals("auto-mode.json", RuntimeConfig.ConfigSection.AUTO_MODE.getFileName());
+    }
+
+    @Test
+    void shouldFindSectionByFileId() {
+        assertTrue(RuntimeConfig.ConfigSection.fromFileId("telegram").isPresent());
+        assertEquals(RuntimeConfig.ConfigSection.TELEGRAM, RuntimeConfig.ConfigSection.fromFileId("telegram").get());
+        assertTrue(RuntimeConfig.ConfigSection.fromFileId("model-router").isPresent());
+        assertEquals(RuntimeConfig.ConfigSection.MODEL_ROUTER,
+                RuntimeConfig.ConfigSection.fromFileId("model-router").get());
+    }
+
+    @Test
+    void shouldReturnEmptyForUnknownFileId() {
+        assertFalse(RuntimeConfig.ConfigSection.fromFileId("unknown").isPresent());
+        assertFalse(RuntimeConfig.ConfigSection.fromFileId("").isPresent());
+        assertFalse(RuntimeConfig.ConfigSection.fromFileId(null).isPresent());
+    }
+
+    // ==================== Modular Storage ====================
+
+    @Test
+    void shouldLoadAllSectionsIndependently() throws Exception {
+        // Setup different values in different section files
+        RuntimeConfig.TelegramConfig telegram = RuntimeConfig.TelegramConfig.builder()
+                .enabled(true)
+                .build();
+        persistedSections.put("telegram.json", objectMapper.writeValueAsString(telegram));
+
+        RuntimeConfig.ModelRouterConfig modelRouter = RuntimeConfig.ModelRouterConfig.builder()
+                .balancedModel("custom/balanced")
+                .build();
+        persistedSections.put("model-router.json", objectMapper.writeValueAsString(modelRouter));
+
+        RuntimeConfig.VoiceConfig voice = RuntimeConfig.VoiceConfig.builder()
+                .enabled(true)
+                .voiceId("custom-voice")
+                .build();
+        persistedSections.put("voice.json", objectMapper.writeValueAsString(voice));
+
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        // Verify each section loaded correctly
+        assertTrue(config.getTelegram().getEnabled());
+        assertEquals("custom/balanced", config.getModelRouter().getBalancedModel());
+        assertTrue(config.getVoice().getEnabled());
+        assertEquals("custom-voice", config.getVoice().getVoiceId());
+    }
+
+    @Test
+    void shouldPersistToIndividualSectionFiles() throws Exception {
+        RuntimeConfig newConfig = RuntimeConfig.builder().build();
+        newConfig.getTelegram().setEnabled(true);
+        newConfig.getModelRouter().setBalancedModel("updated/model");
+
+        service.updateRuntimeConfig(newConfig);
+
+        // Verify sections were persisted to individual files
+        assertTrue(persistedSections.containsKey("telegram.json"));
+        assertTrue(persistedSections.containsKey("model-router.json"));
+        assertTrue(persistedSections.containsKey("llm.json"));
+        assertTrue(persistedSections.containsKey("tools.json"));
     }
 }

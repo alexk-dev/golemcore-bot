@@ -10,7 +10,9 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Application-level runtime settings that override BotProperties defaults.
@@ -321,5 +323,83 @@ public class RuntimeConfig {
         private Boolean enabled;
         private Integer defaultStartupTimeout;
         private Integer defaultIdleTimeout;
+    }
+
+    /**
+     * Whitelist of valid configuration sections. Each section corresponds to a
+     * separate JSON file in the preferences directory.
+     *
+     * <p>
+     * File naming convention: kebab-case (e.g., model-router.json, auto-mode.json)
+     */
+    public enum ConfigSection {
+        TELEGRAM("telegram", TelegramConfig.class), MODEL_ROUTER("model-router", ModelRouterConfig.class), LLM("llm",
+                LlmConfig.class), TOOLS("tools", ToolsConfig.class), VOICE("voice", VoiceConfig.class), AUTO_MODE(
+                        "auto-mode",
+                        AutoModeConfig.class), RATE_LIMIT("rate-limit", RateLimitConfig.class), SECURITY("security",
+                                SecurityConfig.class), COMPACTION("compaction", CompactionConfig.class), TURN("turn",
+                                        TurnConfig.class), MEMORY("memory", MemoryConfig.class), SKILLS("skills",
+                                                SkillsConfig.class), USAGE("usage", UsageConfig.class), RAG("rag",
+                                                        RagConfig.class), MCP("mcp", McpConfig.class);
+
+        private final String fileId;
+        private final Class<?> configClass;
+
+        ConfigSection(String fileId, Class<?> configClass) {
+            this.fileId = fileId;
+            this.configClass = configClass;
+        }
+
+        /**
+         * Get the file ID (used as filename without extension).
+         */
+        public String getFileId() {
+            return fileId;
+        }
+
+        /**
+         * Get the filename with .json extension.
+         */
+        public String getFileName() {
+            return fileId + ".json";
+        }
+
+        /**
+         * Get the configuration class for this section.
+         */
+        public Class<?> getConfigClass() {
+            return configClass;
+        }
+
+        /**
+         * Find a ConfigSection by its file ID.
+         *
+         * @param fileId
+         *            the file ID to search for (case-insensitive)
+         * @return Optional containing the matching section, or empty if not found
+         */
+        public static Optional<ConfigSection> fromFileId(String fileId) {
+            if (fileId == null || fileId.isBlank()) {
+                return Optional.empty();
+            }
+            String normalized = fileId.toLowerCase(Locale.ROOT).trim();
+            for (ConfigSection section : values()) {
+                if (section.fileId.equals(normalized)) {
+                    return Optional.of(section);
+                }
+            }
+            return Optional.empty();
+        }
+
+        /**
+         * Check if the given file ID corresponds to a valid configuration section.
+         *
+         * @param fileId
+         *            the file ID to validate
+         * @return true if the file ID is in the whitelist
+         */
+        public static boolean isValidSection(String fileId) {
+            return fromFileId(fileId).isPresent();
+        }
     }
 }

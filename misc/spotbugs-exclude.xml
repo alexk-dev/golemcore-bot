@@ -99,4 +99,17 @@
     <Match>
         <Class name="~me\.golemcore\.bot\.proto\.session\.v1\..*" />
     </Match>
+    <!--
+        NM_CONFUSING for ConfigSection.getFileName() vs Attachment.getFilename() is a false positive.
+        These are entirely different classes with different semantics:
+        - ConfigSection.getFileName() returns config file names (e.g., "telegram.json")
+        - Attachment.getFilename() returns uploaded file names from user messages
+    -->
+    <Match>
+        <Bug pattern="NM_CONFUSING" />
+        <Or>
+            <Class name="me.golemcore.bot.domain.model.RuntimeConfig$ConfigSection" />
+            <Class name="me.golemcore.bot.domain.model.Attachment" />
+        </Or>
+    </Match>
 </FindBugsFilter>
