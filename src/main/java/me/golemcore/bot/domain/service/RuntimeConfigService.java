@@ -138,8 +138,15 @@ public class RuntimeConfigService {
      */
     public void updateRuntimeConfig(RuntimeConfig newConfig) {
         normalizeRuntimeConfig(newConfig);
+        RuntimeConfig oldConfig = this.configRef.get();
         this.configRef.set(newConfig);
-        persist(newConfig);
+        try {
+            persist(newConfig);
+        } catch (Exception e) {
+            // Rollback in-memory change on persist failure
+            this.configRef.set(oldConfig);
+            throw e;
+        }
     }
 
     // ==================== Telegram ====================
@@ -794,6 +801,7 @@ public class RuntimeConfigService {
             log.debug("[RuntimeConfig] Persisted runtime config");
         } catch (Exception e) {
             log.error("[RuntimeConfig] Failed to persist runtime config", e);
+            throw new IllegalStateException("Failed to persist runtime config", e);
         }
     }
 

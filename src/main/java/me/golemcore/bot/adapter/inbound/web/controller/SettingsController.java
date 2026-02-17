@@ -1,6 +1,7 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.adapter.inbound.web.dto.PreferencesUpdateRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.SettingsResponse;
 import me.golemcore.bot.domain.model.RuntimeConfig;
@@ -35,6 +36,7 @@ import java.util.Set;
 @RestController
 @RequestMapping("/api/settings")
 @RequiredArgsConstructor
+@Slf4j
 public class SettingsController {
 
     private static final String TELEGRAM_AUTH_MODE_USER = "user";
@@ -152,11 +154,15 @@ public class SettingsController {
     @PutMapping("/runtime/llm")
     public Mono<ResponseEntity<RuntimeConfig>> updateLlmConfig(
             @RequestBody RuntimeConfig.LlmConfig llmConfig) {
+        log.info("[Settings] Updating LLM config with {} providers: {}",
+                llmConfig.getProviders() != null ? llmConfig.getProviders().size() : 0,
+                llmConfig.getProviders() != null ? llmConfig.getProviders().keySet() : "null");
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         mergeLlmSecrets(config.getLlm(), llmConfig);
         validateLlmConfig(llmConfig, config.getModelRouter());
         config.setLlm(llmConfig);
         runtimeConfigService.updateRuntimeConfig(config);
+        log.info("[Settings] LLM config updated successfully");
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
 

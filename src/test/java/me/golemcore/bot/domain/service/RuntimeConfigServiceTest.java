@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.mock;
@@ -342,14 +343,31 @@ class RuntimeConfigServiceTest {
     }
 
     @Test
-    void shouldNotThrowOnPersistFailure() {
+    void shouldThrowAndRollbackOnPersistFailure() throws Exception {
+        // Setup initial config
+        RuntimeConfig initialConfig = RuntimeConfig.builder().build();
+        initialConfig.getTelegram().setEnabled(false);
+        String initialJson = objectMapper.writeValueAsString(initialConfig);
+        when(storagePort.getText("preferences", "runtime-config.json"))
+                .thenReturn(CompletableFuture.completedFuture(initialJson));
+        when(storagePort.putText(anyString(), anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        // Load initial config
+        service.getRuntimeConfig();
+
+        // Setup persist failure for next update
         when(storagePort.putText(anyString(), anyString(), anyString()))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("disk full")));
 
+        // Try to update with different value - should throw and rollback
         RuntimeConfig newConfig = RuntimeConfig.builder().build();
-        service.updateRuntimeConfig(newConfig);
+        newConfig.getTelegram().setEnabled(true);
 
-        assertNotNull(service.getRuntimeConfig());
+        assertThrows(IllegalStateException.class, () -> service.updateRuntimeConfig(newConfig));
+
+        // Verify rollback - should still have original config value
+        assertFalse(service.getRuntimeConfig().getTelegram().getEnabled());
     }
 
     // ==================== Normalization ====================

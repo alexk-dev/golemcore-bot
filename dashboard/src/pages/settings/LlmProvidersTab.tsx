@@ -111,8 +111,12 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
   }, [modelRouter]);
 
   const handleSave = async (): Promise<void> => {
-    await updateLlm.mutateAsync(form);
-    toast.success('LLM provider settings saved');
+    try {
+      await updateLlm.mutateAsync(form);
+      toast.success('LLM provider settings saved');
+    } catch (err) {
+      toast.error(`Failed to save: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
   };
 
   return (
