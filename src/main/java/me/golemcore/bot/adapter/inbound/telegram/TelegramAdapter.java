@@ -121,6 +121,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
     private volatile Consumer<Message> messageHandler;
     private volatile boolean running = false;
     private volatile boolean initialized = false;
+    private volatile String registeredBotToken;
     private final Object lifecycleLock = new Object();
     private final Map<String, InviteAttemptState> inviteAttemptStates = new ConcurrentHashMap<>();
 
@@ -181,6 +182,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
             try {
                 String token = runtimeConfigService.getTelegramToken();
                 botsApplication.registerBot(token, this);
+                registeredBotToken = token;
                 running = true;
                 log.info("Telegram adapter started");
             } catch (TelegramApiException e) {
@@ -201,7 +203,10 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
         synchronized (lifecycleLock) {
             running = false;
             try {
-                botsApplication.close();
+                if (registeredBotToken != null && !registeredBotToken.isBlank()) {
+                    botsApplication.unregisterBot(registeredBotToken);
+                }
+                registeredBotToken = null;
                 log.info("Telegram adapter stopped");
             } catch (Exception e) {
                 log.error("Error stopping Telegram adapter", e);
@@ -211,7 +216,14 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
 
     @PreDestroy
     public void destroy() {
-        stop();
+        synchronized (lifecycleLock) {
+            stop();
+            try {
+                botsApplication.close();
+            } catch (Exception e) {
+                log.error("Error closing Telegram polling application", e);
+            }
+        }
     }
 
     /**
