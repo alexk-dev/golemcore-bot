@@ -136,6 +136,7 @@ public class SettingsController {
         telegramConfig.setToken(mergeSecret(config.getTelegram().getToken(), telegramConfig.getToken()));
         config.setTelegram(telegramConfig);
         runtimeConfigService.updateRuntimeConfig(config);
+        eventPublisher.publishEvent(new TelegramRestartEvent());
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
 
