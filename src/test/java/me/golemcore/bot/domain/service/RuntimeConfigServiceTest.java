@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -19,6 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyBoolean;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -31,14 +34,26 @@ class RuntimeConfigServiceTest {
     private StoragePort storagePort;
     private RuntimeConfigService service;
     private ObjectMapper objectMapper;
+    private AtomicReference<String> persistedContent;
 
     @BeforeEach
     void setUp() {
         storagePort = mock(StoragePort.class);
-        when(storagePort.putText(anyString(), anyString(), anyString()))
-                .thenReturn(CompletableFuture.completedFuture(null));
+        persistedContent = new AtomicReference<>(null);
+
+        // Mock putTextAtomic to capture written content for read-back validation
+        when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), anyBoolean()))
+                .thenAnswer(invocation -> {
+                    String content = invocation.getArgument(2);
+                    persistedContent.set(content);
+                    return CompletableFuture.completedFuture(null);
+                });
+
+        // Mock getText to return persisted content (for read-back validation in
+        // persist())
         when(storagePort.getText(anyString(), anyString()))
-                .thenReturn(CompletableFuture.completedFuture(null));
+                .thenAnswer(invocation -> CompletableFuture.completedFuture(persistedContent.get()));
+
         service = new RuntimeConfigService(storagePort);
         objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
@@ -76,13 +91,19 @@ class RuntimeConfigServiceTest {
         RuntimeConfig second = service.getRuntimeConfig();
 
         assertEquals(first, second);
-        verify(storagePort, times(1)).getText(anyString(), anyString());
+        // First call: loadOrCreate reads from storage, then persist does read-back
+        // validation
+        // Second call: cached, no storage access
+        // So getText is called twice total (not once per getRuntimeConfig call)
+        verify(storagePort, times(2)).getText(anyString(), anyString());
     }
 
     @Test
     void shouldFallbackToDefaultOnCorruptedJson() {
+        // First call returns corrupted JSON, subsequent calls return persisted content
         when(storagePort.getText("preferences", "runtime-config.json"))
-                .thenReturn(CompletableFuture.completedFuture("{invalid json!!!}"));
+                .thenReturn(CompletableFuture.completedFuture("{invalid json!!!}"))
+                .thenAnswer(invocation -> CompletableFuture.completedFuture(persistedContent.get()));
 
         RuntimeConfig config = service.getRuntimeConfig();
 
@@ -91,8 +112,10 @@ class RuntimeConfigServiceTest {
 
     @Test
     void shouldFallbackToDefaultOnStorageException() {
+        // First call fails, subsequent calls return persisted content
         when(storagePort.getText("preferences", "runtime-config.json"))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("disk error")));
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("disk error")))
+                .thenAnswer(invocation -> CompletableFuture.completedFuture(persistedContent.get()));
 
         RuntimeConfig config = service.getRuntimeConfig();
 
@@ -336,7 +359,7 @@ class RuntimeConfigServiceTest {
 
         service.updateRuntimeConfig(newConfig);
 
-        verify(storagePort).putText(anyString(), anyString(), anyString());
+        verify(storagePort).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
 
         RuntimeConfig updated = service.getRuntimeConfig();
         assertEquals("custom/model", updated.getModelRouter().getBalancedModel());
@@ -348,16 +371,15 @@ class RuntimeConfigServiceTest {
         RuntimeConfig initialConfig = RuntimeConfig.builder().build();
         initialConfig.getTelegram().setEnabled(false);
         String initialJson = objectMapper.writeValueAsString(initialConfig);
+        persistedContent.set(initialJson);
         when(storagePort.getText("preferences", "runtime-config.json"))
                 .thenReturn(CompletableFuture.completedFuture(initialJson));
-        when(storagePort.putText(anyString(), anyString(), anyString()))
-                .thenReturn(CompletableFuture.completedFuture(null));
 
         // Load initial config
         service.getRuntimeConfig();
 
         // Setup persist failure for next update
-        when(storagePort.putText(anyString(), anyString(), anyString()))
+        when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), anyBoolean()))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("disk full")));
 
         // Try to update with different value - should throw and rollback
@@ -410,7 +432,7 @@ class RuntimeConfigServiceTest {
         assertEquals(20, code.getCode().length());
         assertFalse(code.isUsed());
         assertNotNull(code.getCreatedAt());
-        verify(storagePort, times(2)).putText(anyString(), anyString(), anyString());
+        verify(storagePort, times(2)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
     }
 
     @Test
@@ -554,7 +576,7 @@ class RuntimeConfigServiceTest {
         service.setTelegramAuthMode("user");
 
         assertEquals("user", service.getRuntimeConfig().getTelegram().getAuthMode());
-        verify(storagePort, times(2)).putText(anyString(), anyString(), anyString());
+        verify(storagePort, times(2)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
     }
 
     // ==================== Voice Telegram Options ====================

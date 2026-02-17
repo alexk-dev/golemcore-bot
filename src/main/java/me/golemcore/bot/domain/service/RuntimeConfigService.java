@@ -797,8 +797,21 @@ public class RuntimeConfigService {
     private void persist(RuntimeConfig cfg) {
         try {
             String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(cfg);
-            storagePort.putText(PREFERENCES_DIR, CONFIG_FILE, json).join();
-            log.debug("[RuntimeConfig] Persisted runtime config");
+
+            // Atomic write with backup
+            storagePort.putTextAtomic(PREFERENCES_DIR, CONFIG_FILE, json, true).join();
+
+            // Read-back validation: ensure persisted data is parseable
+            String persisted = storagePort.getText(PREFERENCES_DIR, CONFIG_FILE).join();
+            if (persisted == null || persisted.isBlank()) {
+                throw new IllegalStateException("Persisted config is empty after write");
+            }
+            RuntimeConfig validated = objectMapper.readValue(persisted, RuntimeConfig.class);
+            if (validated == null) {
+                throw new IllegalStateException("Persisted config failed validation");
+            }
+
+            log.debug("[RuntimeConfig] Persisted and validated runtime config");
         } catch (Exception e) {
             log.error("[RuntimeConfig] Failed to persist runtime config", e);
             throw new IllegalStateException("Failed to persist runtime config", e);
