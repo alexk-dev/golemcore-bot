@@ -8,11 +8,6 @@ import {
 } from '../hooks/useSettings';
 import { useMe } from '../hooks/useAuth';
 import { useQueryClient } from '@tanstack/react-query';
-import {
-  FiSliders, FiSend, FiCpu, FiTool, FiMic,
-  FiGlobe, FiPlayCircle, FiShield, FiSearch, FiHardDrive, FiBarChart2,
-  FiTerminal, FiMail, FiCompass, FiShuffle, FiKey,
-} from 'react-icons/fi';
 import GeneralTab from './settings/GeneralTab';
 import WebhooksTab from './settings/WebhooksTab';
 import { AdvancedTab } from './settings/AdvancedTab';
@@ -28,74 +23,13 @@ import UsageTab from './settings/UsageTab';
 import RagTab from './settings/RagTab';
 import McpTab from './settings/McpTab';
 import AutoModeTab from './settings/AutoModeTab';
+import {
+  SETTINGS_BLOCKS,
+  SETTINGS_SECTIONS,
+  isSettingsSectionKey,
+} from './settings/settingsCatalog';
 
 // ==================== Main ====================
-
-const SETTINGS_SECTIONS = [
-  { key: 'general', title: 'General', description: 'Preferences, account security, and MFA', icon: <FiSliders size={18} /> },
-  { key: 'telegram', title: 'Telegram', description: 'Bot token, auth mode, and invite codes', icon: <FiSend size={18} /> },
-  { key: 'models', title: 'Model Router', description: 'Routing and tier model configuration', icon: <FiCpu size={18} /> },
-  { key: 'llm-providers', title: 'LLM Providers', description: 'Provider API keys and base URLs', icon: <FiKey size={18} /> },
-
-  { key: 'tool-browser', title: 'Browser', description: 'Web browsing tool runtime status and behavior', icon: <FiCompass size={18} /> },
-  { key: 'tool-brave', title: 'Brave Search', description: 'Brave API search tool', icon: <FiSearch size={18} /> },
-  { key: 'tool-filesystem', title: 'Filesystem Tool', description: 'Sandbox file read/write operations', icon: <FiHardDrive size={18} /> },
-  { key: 'tool-shell', title: 'Shell Tool', description: 'Sandbox shell command execution', icon: <FiTerminal size={18} /> },
-  { key: 'tool-email', title: 'Email (IMAP/SMTP)', description: 'Email reading and sending integrations', icon: <FiMail size={18} /> },
-  { key: 'tool-automation', title: 'Automation Tools', description: 'Skill management, transitions, and tier switching', icon: <FiShuffle size={18} /> },
-  { key: 'tool-goals', title: 'Goal Management', description: 'Auto mode goal operations', icon: <FiTool size={18} /> },
-
-  { key: 'voice-elevenlabs', title: 'ElevenLabs', description: 'TTS/STT provider settings', icon: <FiMic size={18} /> },
-  { key: 'memory', title: 'Memory', description: 'Conversation memory persistence and retention', icon: <FiHardDrive size={18} /> },
-  { key: 'skills', title: 'Skills Runtime', description: 'Enable skills and progressive loading behavior', icon: <FiTool size={18} /> },
-  { key: 'turn', title: 'Turn Budget', description: 'Runtime limits for LLM/tool calls and deadline', icon: <FiCpu size={18} /> },
-  { key: 'usage', title: 'Usage Tracking', description: 'Enable/disable analytics usage tracking', icon: <FiBarChart2 size={18} /> },
-  { key: 'rag', title: 'RAG', description: 'LightRAG integration settings', icon: <FiGlobe size={18} /> },
-  { key: 'mcp', title: 'MCP', description: 'Model Context Protocol runtime defaults', icon: <FiTool size={18} /> },
-  { key: 'webhooks', title: 'Webhooks', description: 'Incoming hooks, auth, and delivery actions', icon: <FiGlobe size={18} /> },
-  { key: 'auto', title: 'Auto Mode', description: 'Autonomous run behavior and constraints', icon: <FiPlayCircle size={18} /> },
-  { key: 'advanced-rate-limit', title: 'Rate Limit', description: 'Request throttling configuration', icon: <FiShield size={18} /> },
-  { key: 'advanced-security', title: 'Security', description: 'Input sanitization and injection guards', icon: <FiShield size={18} /> },
-  { key: 'advanced-compaction', title: 'Compaction', description: 'Context compaction behavior', icon: <FiShield size={18} /> },
-] as const;
-
-type SettingsSectionKey = typeof SETTINGS_SECTIONS[number]['key'];
-
-const SETTINGS_BLOCKS: Array<{
-  key: string;
-  title: string;
-  description: string;
-  sections: SettingsSectionKey[];
-}> = [
-  {
-    key: 'core',
-    title: 'Core',
-    description: 'Main runtime settings and access configuration',
-    sections: ['general', 'telegram', 'models', 'llm-providers'],
-  },
-  {
-    key: 'tools',
-    title: 'Tools',
-    description: 'Tool-specific runtime behavior and integrations',
-    sections: ['tool-browser', 'tool-brave', 'tool-filesystem', 'tool-shell', 'tool-email', 'tool-automation', 'tool-goals'],
-  },
-  {
-    key: 'runtime',
-    title: 'Runtime',
-    description: 'Agent execution, memory, usage, and autonomy',
-    sections: ['voice-elevenlabs', 'memory', 'skills', 'turn', 'usage', 'rag', 'mcp', 'auto', 'webhooks'],
-  },
-  {
-    key: 'advanced',
-    title: 'Advanced',
-    description: 'Security and infrastructure guardrails',
-    sections: ['advanced-rate-limit', 'advanced-security', 'advanced-compaction'],
-  },
-];
-
-function isSettingsSectionKey(value: string | undefined): value is SettingsSectionKey {
-  return SETTINGS_SECTIONS.some((s) => s.key === value);
-}
 
 export default function SettingsPage(): ReactElement {
   const navigate = useNavigate();
@@ -157,7 +91,7 @@ export default function SettingsPage(): ReactElement {
                     <Card className="settings-card h-100">
                       <Card.Body className="d-flex flex-column">
                         <div className="d-flex align-items-center gap-2 mb-2">
-                          <span className="text-primary">{item.icon}</span>
+                           <span className="text-primary"><item.icon size={18} /></span>
                           <Card.Title className="h6 mb-0">{item.title}</Card.Title>
                         </div>
                         <Card.Text className="text-body-secondary small mb-3">{item.description}</Card.Text>
