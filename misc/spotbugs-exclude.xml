@@ -23,12 +23,15 @@
     <!--
         Broad catch(Exception) is intentional in pipeline systems to prevent
         one system's failure from crashing the entire agent loop.
+        RuntimeConfigService.persist() catches multiple checked exceptions
+        (JsonProcessingException, CompletionException) from JSON/storage ops.
     -->
     <Match>
         <Bug pattern="REC_CATCH_EXCEPTION" />
         <Or>
             <Class name="~me\.golemcore\.bot\.domain\.system\..*" />
             <Class name="me.golemcore.bot.domain.service.PlanExecutionService" />
+            <Class name="me.golemcore.bot.domain.service.RuntimeConfigService" />
         </Or>
     </Match>
     <!--

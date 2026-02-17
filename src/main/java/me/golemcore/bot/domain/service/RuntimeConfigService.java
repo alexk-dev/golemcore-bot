@@ -14,6 +14,7 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -203,7 +204,7 @@ public class RuntimeConfigService {
      */
     public void addLlmProvider(String name, RuntimeConfig.LlmProviderConfig config) {
         RuntimeConfig cfg = getRuntimeConfig();
-        cfg.getLlm().getProviders().put(name.toLowerCase(), config);
+        cfg.getLlm().getProviders().put(name.toLowerCase(Locale.ROOT), config);
         updateRuntimeConfig(cfg);
         log.info("[RuntimeConfig] Added LLM provider: {}", name);
     }
@@ -214,14 +215,15 @@ public class RuntimeConfigService {
      */
     public void updateLlmProvider(String name, RuntimeConfig.LlmProviderConfig newConfig) {
         RuntimeConfig cfg = getRuntimeConfig();
-        RuntimeConfig.LlmProviderConfig existing = cfg.getLlm().getProviders().get(name.toLowerCase());
+        String normalizedName = name.toLowerCase(Locale.ROOT);
+        RuntimeConfig.LlmProviderConfig existing = cfg.getLlm().getProviders().get(normalizedName);
 
         if (existing != null && !Secret.hasValue(newConfig.getApiKey())) {
             // Preserve existing API key if new one is not provided
             newConfig.setApiKey(existing.getApiKey());
         }
 
-        cfg.getLlm().getProviders().put(name.toLowerCase(), newConfig);
+        cfg.getLlm().getProviders().put(normalizedName, newConfig);
         updateRuntimeConfig(cfg);
         log.info("[RuntimeConfig] Updated LLM provider: {}", name);
     }
@@ -231,7 +233,7 @@ public class RuntimeConfigService {
      */
     public boolean removeLlmProvider(String name) {
         RuntimeConfig cfg = getRuntimeConfig();
-        RuntimeConfig.LlmProviderConfig removed = cfg.getLlm().getProviders().remove(name.toLowerCase());
+        RuntimeConfig.LlmProviderConfig removed = cfg.getLlm().getProviders().remove(name.toLowerCase(Locale.ROOT));
         if (removed != null) {
             updateRuntimeConfig(cfg);
             log.info("[RuntimeConfig] Removed LLM provider: {}", name);

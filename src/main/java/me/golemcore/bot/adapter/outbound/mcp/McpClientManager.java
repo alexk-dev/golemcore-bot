@@ -203,21 +203,28 @@ public class McpClientManager implements McpPort {
     @SuppressWarnings("PMD.CloseResource")
     private void checkIdleClients() {
         long now = System.currentTimeMillis();
+        long idleTimeoutMs = TimeUnit.MINUTES.toMillis(runtimeConfigService.getMcpDefaultIdleTimeout());
+
+        // Collect keys to remove to avoid ConcurrentModificationException
+        List<String> toRemove = new java.util.ArrayList<>();
+
         for (Map.Entry<String, McpClient> entry : clients.entrySet()) {
             McpClient client = entry.getValue();
             if (!client.isRunning()) {
-                clients.remove(entry.getKey());
-                skillToolNames.remove(entry.getKey());
+                toRemove.add(entry.getKey());
                 continue;
             }
 
             long idleMs = now - client.getLastActivityTimestamp();
-            // Use the per-client config from McpConfig (stored during start)
-            long idleTimeoutMs = TimeUnit.MINUTES.toMillis(runtimeConfigService.getMcpDefaultIdleTimeout());
             if (idleMs > idleTimeoutMs) {
                 log.info("[McpManager] Stopping idle client '{}' (idle for {}s)", entry.getKey(), idleMs / 1000);
-                stopClient(entry.getKey());
+                toRemove.add(entry.getKey());
             }
+        }
+
+        // Remove after iteration to avoid modifying collection during iteration
+        for (String skillName : toRemove) {
+            stopClient(skillName);
         }
     }
 

@@ -199,6 +199,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
     }
 
     @Override
+    @SuppressWarnings("PMD.NullAssignment") // null clears the token after unregister
     public void stop() {
         synchronized (lifecycleLock) {
             running = false;
@@ -230,6 +231,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
      * Handle restart request from dashboard settings UI.
      */
     @EventListener
+    @SuppressWarnings("PMD.NullAssignment") // null forces client re-initialization
     public void onTelegramRestart(TelegramRestartEvent event) {
         synchronized (lifecycleLock) {
             log.info("[Telegram] Restart requested from dashboard");
