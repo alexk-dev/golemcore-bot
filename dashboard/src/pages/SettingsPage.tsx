@@ -1,28 +1,19 @@
-import { type ReactElement, useState, useEffect, useMemo } from 'react';
+import { type ReactElement, useState, useEffect } from 'react';
 import {
-  Card, Form, Button, Row, Col, Spinner,
-  OverlayTrigger, Tooltip, Placeholder,
+  Card, Button, Row, Col, Spinner, Placeholder,
 } from 'react-bootstrap';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  useSettings, useUpdatePreferences, useRuntimeConfig,
-  useUpdateAuto,
-  useUpdateMcp,
+  useSettings, useRuntimeConfig,
 } from '../hooks/useSettings';
 import { useMe } from '../hooks/useAuth';
-import { changePassword } from '../api/auth';
-import MfaSetup from '../components/auth/MfaSetup';
-import toast from 'react-hot-toast';
-import { type QueryClient, useQueryClient } from '@tanstack/react-query';
-import type {
-  McpConfig,
-  AutoModeConfig,
-} from '../api/settings';
+import { useQueryClient } from '@tanstack/react-query';
 import {
-  FiHelpCircle, FiSliders, FiSend, FiCpu, FiTool, FiMic,
+  FiSliders, FiSend, FiCpu, FiTool, FiMic,
   FiGlobe, FiPlayCircle, FiShield, FiSearch, FiHardDrive, FiBarChart2,
   FiTerminal, FiMail, FiCompass, FiShuffle, FiKey,
 } from 'react-icons/fi';
+import GeneralTab from './settings/GeneralTab';
 import WebhooksTab from './settings/WebhooksTab';
 import { AdvancedTab } from './settings/AdvancedTab';
 import ToolsTab from './settings/ToolsTab';
@@ -35,36 +26,8 @@ import SkillsTab from './settings/SkillsTab';
 import TurnTab from './settings/TurnTab';
 import UsageTab from './settings/UsageTab';
 import RagTab from './settings/RagTab';
-
-// ==================== Tooltip Helper ====================
-
-function Tip({ text }: { text: string }): ReactElement {
-  return (
-    <OverlayTrigger
-      placement="top"
-      overlay={<Tooltip>{text}</Tooltip>}
-    >
-      <span className="setting-tip"><FiHelpCircle /></span>
-    </OverlayTrigger>
-  );
-}
-
-function hasDiff<T>(current: T, initial: T): boolean {
-  return JSON.stringify(current) !== JSON.stringify(initial);
-}
-
-function SaveStateHint({ isDirty }: { isDirty: boolean }): ReactElement {
-  return (
-    <small className="text-body-secondary">
-      {isDirty ? 'Unsaved changes' : 'All changes saved'}
-    </small>
-  );
-}
-
-function toNullableInt(value: string): number | null {
-  const parsed = parseInt(value, 10);
-  return Number.isNaN(parsed) ? null : parsed;
-}
+import McpTab from './settings/McpTab';
+import AutoModeTab from './settings/AutoModeTab';
 
 // ==================== Main ====================
 
@@ -97,21 +60,6 @@ const SETTINGS_SECTIONS = [
 ] as const;
 
 type SettingsSectionKey = typeof SETTINGS_SECTIONS[number]['key'];
-
-interface GeneralSettingsData {
-  language?: string;
-  timezone?: string;
-}
-
-interface AuthMe {
-  mfaEnabled?: boolean;
-}
-
-interface GeneralTabProps {
-  settings: GeneralSettingsData | undefined;
-  me: AuthMe | undefined;
-  qc: QueryClient;
-}
 
 const SETTINGS_BLOCKS: Array<{
   key: string;
@@ -275,257 +223,5 @@ export default function SettingsPage(): ReactElement {
         <AdvancedTab rateLimit={rc.rateLimit} security={rc.security} compaction={rc.compaction} mode="compaction" />
       )}
     </div>
-  );
-}
-
-// ==================== General Tab ====================
-
-function GeneralTab({ settings, me, qc }: GeneralTabProps): ReactElement {
-  const updatePrefs = useUpdatePreferences();
-  const [language, setLanguage] = useState(settings?.language ?? 'en');
-  const [timezone, setTimezone] = useState(settings?.timezone ?? 'UTC');
-  const [oldPwd, setOldPwd] = useState('');
-  const [newPwd, setNewPwd] = useState('');
-
-  useEffect(() => {
-    setLanguage(settings?.language ?? 'en');
-    setTimezone(settings?.timezone ?? 'UTC');
-  }, [settings]);
-
-  const isPrefsDirty = language !== (settings?.language ?? 'en') || timezone !== (settings?.timezone ?? 'UTC');
-
-  const handleSavePrefs = async (e: React.FormEvent): Promise<void> => {
-    e.preventDefault();
-    await updatePrefs.mutateAsync({ language, timezone });
-    toast.success('Preferences saved');
-  };
-
-  const handleSavePrefsSubmit = (e: React.FormEvent): void => {
-    void handleSavePrefs(e);
-  };
-
-  const handleChangePassword = async (e: React.FormEvent): Promise<void> => {
-    e.preventDefault();
-    const result = await changePassword(oldPwd, newPwd);
-    if (result.success) {
-      toast.success('Password changed');
-      setOldPwd('');
-      setNewPwd('');
-    } else {
-      toast.error('Failed to change password');
-    }
-  };
-
-  const handleChangePasswordSubmit = (e: React.FormEvent): void => {
-    void handleChangePassword(e);
-  };
-
-  return (
-    <Row className="g-3">
-      <Col lg={6}>
-        <Card className="settings-card">
-          <Card.Body>
-            <Card.Title className="h6 mb-3">Preferences</Card.Title>
-            <Form onSubmit={handleSavePrefsSubmit}>
-              <Form.Group className="mb-3">
-                <Form.Label className="small fw-medium">
-                  Language <Tip text="UI and bot response language" />
-                </Form.Label>
-                <Form.Select
-                  size="sm"
-                  value={language}
-                  onChange={(e) => setLanguage(e.target.value)}
-                >
-                  <option value="en">English</option>
-                  <option value="ru">Russian</option>
-                </Form.Select>
-              </Form.Group>
-              <Form.Group className="mb-3">
-                <Form.Label className="small fw-medium">
-                  Timezone <Tip text="Used for scheduling and timestamp display" />
-                </Form.Label>
-                <Form.Control
-                  size="sm"
-                  type="text"
-                  value={timezone}
-                  onChange={(e) => setTimezone(e.target.value)}
-                  placeholder="UTC"
-                />
-              </Form.Group>
-              <div className="d-flex align-items-center gap-2">
-                <Button type="submit" variant="primary" size="sm" disabled={!isPrefsDirty || updatePrefs.isPending}>
-                  {updatePrefs.isPending ? 'Saving...' : 'Save Preferences'}
-                </Button>
-                <SaveStateHint isDirty={isPrefsDirty} />
-              </div>
-            </Form>
-          </Card.Body>
-        </Card>
-      </Col>
-      <Col lg={6}>
-        <MfaSetup
-          mfaEnabled={me?.mfaEnabled ?? false}
-          onUpdate={() => { void qc.invalidateQueries({ queryKey: ['auth', 'me'] }); }}
-        />
-        <Card className="settings-card mt-3">
-          <Card.Body>
-            <Card.Title className="h6 mb-3">Change Password</Card.Title>
-            <Form onSubmit={handleChangePasswordSubmit}>
-              <Form.Group className="mb-3">
-                <Form.Label className="small fw-medium">Current Password</Form.Label>
-                <Form.Control size="sm" type="password" value={oldPwd} onChange={(e) => setOldPwd(e.target.value)} required />
-              </Form.Group>
-              <Form.Group className="mb-3">
-                <Form.Label className="small fw-medium">New Password</Form.Label>
-                <Form.Control size="sm" type="password" value={newPwd} onChange={(e) => setNewPwd(e.target.value)} required />
-              </Form.Group>
-              <Button type="submit" variant="warning" size="sm">Change Password</Button>
-            </Form>
-          </Card.Body>
-        </Card>
-      </Col>
-    </Row>
-  );
-}
-
-function McpTab({ config }: { config: McpConfig }): ReactElement {
-  const updateMcp = useUpdateMcp();
-  const [form, setForm] = useState<McpConfig>({ ...config });
-  const isDirty = useMemo(() => hasDiff(form, config), [form, config]);
-
-  useEffect(() => {
-    setForm({ ...config });
-  }, [config]);
-
-  const handleSave = async (): Promise<void> => {
-    await updateMcp.mutateAsync(form);
-    toast.success('MCP settings saved');
-  };
-
-  return (
-    <Card className="settings-card">
-      <Card.Body>
-        <Card.Title className="h6 mb-3">MCP (Model Context Protocol)</Card.Title>
-        <Form.Check
-          type="switch"
-          label="Enable MCP"
-          checked={form.enabled ?? true}
-          onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
-          className="mb-3"
-        />
-        <Row className="g-3 mb-3">
-          <Col md={6}>
-            <Form.Group>
-              <Form.Label className="small fw-medium">Default Startup Timeout (s)</Form.Label>
-              <Form.Control
-                size="sm"
-                type="number"
-                min={1}
-                max={300}
-                value={form.defaultStartupTimeout ?? 30}
-                onChange={(e) => setForm({ ...form, defaultStartupTimeout: toNullableInt(e.target.value) })}
-              />
-            </Form.Group>
-          </Col>
-          <Col md={6}>
-            <Form.Group>
-              <Form.Label className="small fw-medium">Default Idle Timeout (min)</Form.Label>
-              <Form.Control
-                size="sm"
-                type="number"
-                min={1}
-                max={120}
-                value={form.defaultIdleTimeout ?? 5}
-                onChange={(e) => setForm({ ...form, defaultIdleTimeout: toNullableInt(e.target.value) })}
-              />
-            </Form.Group>
-          </Col>
-        </Row>
-        <div className="d-flex align-items-center gap-2">
-          <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateMcp.isPending}>
-            {updateMcp.isPending ? 'Saving...' : 'Save'}
-          </Button>
-          <SaveStateHint isDirty={isDirty} />
-        </div>
-      </Card.Body>
-    </Card>
-  );
-}
-
-// ==================== Auto Mode Tab ====================
-
-function AutoModeTab({ config }: { config: AutoModeConfig }): ReactElement {
-  const updateAuto = useUpdateAuto();
-  const [form, setForm] = useState<AutoModeConfig>({ ...config });
-  const isAutoDirty = useMemo(() => hasDiff(form, config), [form, config]);
-
-  useEffect(() => { setForm({ ...config }); }, [config]);
-
-  const handleSave = async (): Promise<void> => {
-    await updateAuto.mutateAsync({ ...form, tickIntervalSeconds: 1 });
-    toast.success('Auto mode settings saved');
-  };
-
-  return (
-    <Card className="settings-card">
-      <Card.Body>
-        <Card.Title className="h6 mb-3">
-          Auto Mode <Tip text="Autonomous mode where the bot works on goals independently, checking in periodically" />
-        </Card.Title>
-        <Form.Check type="switch" label="Enable Auto Mode" checked={form.enabled ?? false}
-          onChange={(e) => setForm({ ...form, enabled: e.target.checked })} className="mb-3" />
-
-        <Row className="g-3 mb-3">
-          <Col md={4}>
-            <Form.Group>
-              <Form.Label className="small fw-medium">
-                Task Time Limit (minutes) <Tip text="Maximum time a single autonomous task can run before being stopped" />
-              </Form.Label>
-              <Form.Control size="sm" type="number" value={form.taskTimeLimitMinutes ?? 10}
-                onChange={(e) => setForm({ ...form, taskTimeLimitMinutes: toNullableInt(e.target.value) })} />
-            </Form.Group>
-          </Col>
-          <Col md={4}>
-            <Form.Group>
-              <Form.Label className="small fw-medium">
-                Max Goals <Tip text="Maximum number of concurrent goals the bot can work on" />
-              </Form.Label>
-              <Form.Control size="sm" type="number" value={form.maxGoals ?? 3}
-                onChange={(e) => setForm({ ...form, maxGoals: toNullableInt(e.target.value) })} />
-            </Form.Group>
-          </Col>
-        </Row>
-
-        <Form.Group className="mb-3">
-          <Form.Label className="small fw-medium">
-            Model Tier <Tip text="Which model tier to use for autonomous tasks" />
-          </Form.Label>
-          <Form.Select size="sm" value={form.modelTier ?? 'default'}
-            onChange={(e) => setForm({ ...form, modelTier: e.target.value })}>
-            <option value="default">Default</option>
-            <option value="balanced">Balanced</option>
-            <option value="smart">Smart</option>
-            <option value="coding">Coding</option>
-            <option value="deep">Deep</option>
-          </Form.Select>
-        </Form.Group>
-
-        <Form.Check type="switch"
-          label={<>Auto-start on startup <Tip text="Start autonomous mode automatically when the application boots" /></>}
-          checked={form.autoStart ?? true}
-          onChange={(e) => setForm({ ...form, autoStart: e.target.checked })} className="mb-2" />
-        <Form.Check type="switch"
-          label={<>Notify milestones <Tip text="Send notifications when goals or tasks are completed" /></>}
-          checked={form.notifyMilestones ?? true}
-          onChange={(e) => setForm({ ...form, notifyMilestones: e.target.checked })} className="mb-3" />
-
-        <div className="d-flex align-items-center gap-2">
-          <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isAutoDirty || updateAuto.isPending}>
-            {updateAuto.isPending ? 'Saving...' : 'Save'}
-          </Button>
-          <SaveStateHint isDirty={isAutoDirty} />
-        </div>
-      </Card.Body>
-    </Card>
   );
 }
