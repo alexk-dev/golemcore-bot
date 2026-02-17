@@ -1,4 +1,4 @@
-import { type ReactElement, useState, useEffect } from 'react';
+import type { ReactElement } from 'react';
 import {
   Card, Button, Row, Col, Spinner, Placeholder,
 } from 'react-bootstrap';
