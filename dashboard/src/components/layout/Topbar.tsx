@@ -2,14 +2,16 @@ import { Button } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { useThemeStore } from '../../store/themeStore';
+import { useSidebarStore } from '../../store/sidebarStore';
 import { logout } from '../../api/auth';
-import { FiLogOut, FiSun, FiMoon } from 'react-icons/fi';
+import { FiLogOut, FiSun, FiMoon, FiMenu } from 'react-icons/fi';
 
 export default function Topbar() {
   const nav = useNavigate();
   const doLogout = useAuthStore((s) => s.logout);
   const theme = useThemeStore((s) => s.theme);
   const toggleTheme = useThemeStore((s) => s.toggle);
+  const toggleMobile = useSidebarStore((s) => s.toggleMobile);
 
   const handleLogout = async () => {
     try {
@@ -21,7 +23,16 @@ export default function Topbar() {
   };
 
   return (
-    <div className="topbar d-flex align-items-center justify-content-end px-4 py-2">
+    <div className="topbar d-flex align-items-center justify-content-between px-3 px-md-4 py-2">
+      <Button
+        variant="secondary"
+        className="topbar-icon-btn d-md-none"
+        onClick={toggleMobile}
+        aria-label="Toggle navigation"
+      >
+        <FiMenu size={18} />
+      </Button>
+      <div className="d-none d-md-block" />
       <div className="d-flex align-items-center gap-2">
         <Button
           variant="secondary"

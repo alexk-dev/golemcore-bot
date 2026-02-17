@@ -232,8 +232,12 @@ export default function TelegramTab({ config, voiceConfig }: TelegramTabProps): 
             {updateTelegram.isPending ? 'Saving...' : 'Save'}
           </Button>
           <Button variant="warning" size="sm"
-            onClick={() => restart.mutate(undefined, { onSuccess: () => toast.success('Telegram restarting...') })}>
-            Restart Bot
+            disabled={restart.isPending}
+            onClick={() => restart.mutate(undefined, {
+              onSuccess: () => toast.success('Telegram bot restarted'),
+              onError: (err) => toast.error(`Failed to restart: ${err instanceof Error ? err.message : 'Unknown error'}`),
+            })}>
+            {restart.isPending ? 'Restarting...' : 'Restart Bot'}
           </Button>
           <SaveStateHint isDirty={isTelegramDirty} />
         </div>

@@ -14,6 +14,7 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -171,6 +172,65 @@ public class RuntimeConfigService {
 
     public List<String> getConfiguredLlmProviders() {
         return new ArrayList<>(getRuntimeConfig().getLlm().getProviders().keySet());
+    }
+
+    /**
+     * Get list of configured LLM providers that have a valid API key.
+     */
+    public List<String> getConfiguredLlmProvidersWithApiKey() {
+        RuntimeConfig.LlmConfig llm = getRuntimeConfig().getLlm();
+        if (llm == null || llm.getProviders() == null) {
+            return List.of();
+        }
+        List<String> result = new ArrayList<>();
+        for (Map.Entry<String, RuntimeConfig.LlmProviderConfig> entry : llm.getProviders().entrySet()) {
+            if (entry.getValue() != null && Secret.hasValue(entry.getValue().getApiKey())) {
+                result.add(entry.getKey());
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Add a new LLM provider configuration.
+     */
+    public void addLlmProvider(String name, RuntimeConfig.LlmProviderConfig config) {
+        RuntimeConfig cfg = getRuntimeConfig();
+        cfg.getLlm().getProviders().put(name.toLowerCase(), config);
+        updateRuntimeConfig(cfg);
+        log.info("[RuntimeConfig] Added LLM provider: {}", name);
+    }
+
+    /**
+     * Update an existing LLM provider configuration. If apiKey is not provided
+     * (null or empty), preserves the existing apiKey.
+     */
+    public void updateLlmProvider(String name, RuntimeConfig.LlmProviderConfig newConfig) {
+        RuntimeConfig cfg = getRuntimeConfig();
+        RuntimeConfig.LlmProviderConfig existing = cfg.getLlm().getProviders().get(name.toLowerCase());
+
+        if (existing != null && !Secret.hasValue(newConfig.getApiKey())) {
+            // Preserve existing API key if new one is not provided
+            newConfig.setApiKey(existing.getApiKey());
+        }
+
+        cfg.getLlm().getProviders().put(name.toLowerCase(), newConfig);
+        updateRuntimeConfig(cfg);
+        log.info("[RuntimeConfig] Updated LLM provider: {}", name);
+    }
+
+    /**
+     * Remove an LLM provider configuration.
+     */
+    public boolean removeLlmProvider(String name) {
+        RuntimeConfig cfg = getRuntimeConfig();
+        RuntimeConfig.LlmProviderConfig removed = cfg.getLlm().getProviders().remove(name.toLowerCase());
+        if (removed != null) {
+            updateRuntimeConfig(cfg);
+            log.info("[RuntimeConfig] Removed LLM provider: {}", name);
+            return true;
+        }
+        return false;
     }
 
     private RuntimeConfig.LlmProviderConfig getRuntimeLlmProviderConfig(String providerName) {

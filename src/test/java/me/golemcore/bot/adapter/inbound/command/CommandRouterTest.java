@@ -1422,9 +1422,9 @@ class CommandRouterTest {
     }
 
     @Test
-    void modelSetCommandProviderNotAllowed() throws Exception {
+    void modelSetCommandProviderNotConfigured() throws Exception {
         when(modelSelectionService.validateModel("google/gemini"))
-                .thenReturn(new ModelSelectionService.ValidationResult(false, "provider.not.allowed"));
+                .thenReturn(new ModelSelectionService.ValidationResult(false, "provider.not.configured"));
 
         CommandPort.CommandResult result = router.execute(CMD_MODEL,
                 List.of(TIER_CODING, "google/gemini"), CTX).get();

@@ -233,11 +233,18 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
     public void onTelegramRestart(TelegramRestartEvent event) {
         synchronized (lifecycleLock) {
             log.info("[Telegram] Restart requested from dashboard");
-            if (running) {
-                stop();
+            try {
+                if (running) {
+                    stop();
+                }
+                // Reset client to force re-initialization with potentially new token
+                this.telegramClient = null;
+                this.initialized = false;
+                start();
+                log.info("[Telegram] Restart completed successfully, running={}", running);
+            } catch (Exception e) {
+                log.error("[Telegram] Restart failed", e);
             }
-            initialized = false;
-            start();
         }
     }
 

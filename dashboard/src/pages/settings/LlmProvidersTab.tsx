@@ -144,7 +144,14 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
               <Card className="h-100">
                 <Card.Body>
                   <div className="d-flex align-items-center justify-content-between mb-3">
-                    <Card.Title className="h6 text-capitalize mb-0">{provider}</Card.Title>
+                    <div className="d-flex align-items-center gap-2">
+                      <Card.Title className="h6 text-capitalize mb-0">{provider}</Card.Title>
+                      {form.providers[provider]?.apiKeyPresent === true ? (
+                        <Badge bg="success" className="small">Ready</Badge>
+                      ) : (
+                        <Badge bg="secondary" className="small">Setup needed</Badge>
+                      )}
+                    </div>
                     <Button
                       variant="secondary"
                       size="sm"
@@ -164,11 +171,13 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
                   <Form.Group className="mb-2">
                     <Form.Label className="small fw-medium d-flex align-items-center gap-2">
                       <span>API Key</span>
-                      {form.providers[provider]?.apiKeyPresent === true && (
-                        <Badge bg="success-subtle" text="success">Secret set</Badge>
+                      {form.providers[provider]?.apiKeyPresent === true ? (
+                        <Badge bg="success-subtle" text="success">Configured</Badge>
+                      ) : (
+                        <Badge bg="warning-subtle" text="warning">Required</Badge>
                       )}
                       {(form.providers[provider]?.apiKey?.length ?? 0) > 0 && (
-                        <Badge bg="warning-subtle" text="warning">Will update on save</Badge>
+                        <Badge bg="info-subtle" text="info">Will update on save</Badge>
                       )}
                     </Form.Label>
                     <InputGroup size="sm">

@@ -140,18 +140,23 @@ export default function ModelsTab({ config, llmConfig }: ModelsTabProps): ReactE
     setForm({ ...config });
   }, [config]);
 
-  const configuredProviderNames = useMemo(() => Object.keys(llmConfig.providers ?? {}), [llmConfig]);
+  const readyProviderNames = useMemo(
+    () => Object.entries(llmConfig.providers ?? {})
+      .filter(([, cfg]) => cfg.apiKeyPresent === true)
+      .map(([name]) => name),
+    [llmConfig],
+  );
 
   const providers = useMemo(() => {
     if (available == null) {
       return {} as Record<string, AvailableModel[]>;
     }
     const availableByProvider = available as Record<string, AvailableModel[]>;
-    const configuredSet = new Set(configuredProviderNames);
+    const readySet = new Set(readyProviderNames);
     return Object.fromEntries(
-      Object.entries(availableByProvider).filter(([providerName]) => configuredSet.has(providerName)),
+      Object.entries(availableByProvider).filter(([providerName]) => readySet.has(providerName)),
     );
-  }, [available, configuredProviderNames]);
+  }, [available, readyProviderNames]);
 
   const providerNames = useMemo(() => Object.keys(providers), [providers]);
   const isModelsDirty = useMemo(() => hasDiff(form, config), [form, config]);
@@ -207,7 +212,7 @@ export default function ModelsTab({ config, llmConfig }: ModelsTabProps): ReactE
             <Card className="settings-card">
               <Card.Body className="py-2">
                 <small className="text-body-secondary">
-                  No LLM providers configured. Add at least one provider in `LLM Providers` to select models here.
+                  No LLM providers with API keys configured. Add a provider with an API key in the LLM Providers tab to select models here.
                 </small>
               </Card.Body>
             </Card>

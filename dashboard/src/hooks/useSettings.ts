@@ -3,6 +3,7 @@ import {
   type TelegramConfig,
   type ModelRouterConfig,
   type LlmConfig,
+  type LlmProviderConfig,
   type ToolsConfig,
   type VoiceConfig,
   type MemoryConfig,
@@ -23,6 +24,9 @@ import {
   updateTelegramConfig,
   updateModelRouterConfig,
   updateLlmConfig,
+  addLlmProvider,
+  updateLlmProvider,
+  removeLlmProvider,
   updateToolsConfig,
   updateVoiceConfig,
   updateMemoryConfig,
@@ -81,6 +85,30 @@ export function useUpdateLlm(): UseMutationResult<Awaited<ReturnType<typeof upda
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: LlmConfig) => updateLlmConfig(config),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useAddLlmProvider(): UseMutationResult<Awaited<ReturnType<typeof addLlmProvider>>, unknown, { name: string; config: LlmProviderConfig }> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ name, config }: { name: string; config: LlmProviderConfig }) => addLlmProvider(name, config),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useUpdateLlmProvider(): UseMutationResult<Awaited<ReturnType<typeof updateLlmProvider>>, unknown, { name: string; config: LlmProviderConfig }> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ name, config }: { name: string; config: LlmProviderConfig }) => updateLlmProvider(name, config),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useRemoveLlmProvider(): UseMutationResult<Awaited<ReturnType<typeof removeLlmProvider>>, unknown, string> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => removeLlmProvider(name),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
   });
 }

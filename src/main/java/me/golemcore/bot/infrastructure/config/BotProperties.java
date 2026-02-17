@@ -67,7 +67,6 @@ public class BotProperties {
     private TurnProperties turn = new TurnProperties();
     private ToolLoopProperties toolLoop = new ToolLoopProperties();
     private PlanProperties plan = new PlanProperties();
-    private ModelSelectionProperties modelSelection = new ModelSelectionProperties();
     private DashboardProperties dashboard = new DashboardProperties();
 
     @Data
@@ -264,14 +263,6 @@ public class BotProperties {
         private int maxPlans = 5;
         private int maxStepsPerPlan = 50;
         private boolean stopOnFailure = true;
-    }
-
-    // ==================== MODEL SELECTION (user model overrides)
-    // ====================
-
-    @Data
-    public static class ModelSelectionProperties {
-        private List<String> allowedProviders = List.of("openai", "anthropic");
     }
 
     // ==================== DASHBOARD ====================

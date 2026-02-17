@@ -109,7 +109,7 @@ public class CommandRouter implements CommandPort {
     private static final String SUBCMD_LIST = "list";
     private static final String SUBCMD_RESET = "reset";
     private static final String SUBCMD_REASONING = "reasoning";
-    private static final String ERR_PROVIDER_NOT_ALLOWED = "provider.not.allowed";
+    private static final String ERR_PROVIDER_NOT_CONFIGURED = "provider.not.configured";
     private static final String ERR_NO_REASONING = "no.reasoning";
 
     private final SkillComponent skillComponent;
@@ -534,10 +534,10 @@ public class CommandRouter implements CommandPort {
     private CommandResult handleModelSet(String tier, String modelSpec) {
         ModelSelectionService.ValidationResult validation = modelSelectionService.validateModel(modelSpec);
         if (!validation.valid()) {
-            if (ERR_PROVIDER_NOT_ALLOWED.equals(validation.error())) {
-                String allowedStr = String.join(", ",
-                        properties.getModelSelection().getAllowedProviders());
-                return CommandResult.success(msg("command.model.invalid.provider", modelSpec, allowedStr));
+            if (ERR_PROVIDER_NOT_CONFIGURED.equals(validation.error())) {
+                String configuredStr = String.join(", ",
+                        runtimeConfigService.getConfiguredLlmProviders());
+                return CommandResult.success(msg("command.model.invalid.provider", modelSpec, configuredStr));
             }
             return CommandResult.success(msg("command.model.invalid.model", modelSpec));
         }

@@ -160,6 +160,69 @@ public class SettingsController {
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
 
+    @PostMapping("/runtime/llm/providers/{name}")
+    public Mono<ResponseEntity<RuntimeConfig>> addLlmProvider(
+            @PathVariable String name,
+            @RequestBody RuntimeConfig.LlmProviderConfig providerConfig) {
+        String normalizedName = name.toLowerCase(Locale.ROOT);
+        if (!normalizedName.matches("[a-z0-9][a-z0-9_-]*")) {
+            throw new IllegalArgumentException("Provider name must match [a-z0-9][a-z0-9_-]*");
+        }
+        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        if (config.getLlm().getProviders().containsKey(normalizedName)) {
+            throw new IllegalArgumentException("Provider '" + normalizedName + "' already exists");
+        }
+        validateProviderConfig(normalizedName, providerConfig);
+        runtimeConfigService.addLlmProvider(normalizedName, providerConfig);
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    }
+
+    @PutMapping("/runtime/llm/providers/{name}")
+    public Mono<ResponseEntity<RuntimeConfig>> updateLlmProvider(
+            @PathVariable String name,
+            @RequestBody RuntimeConfig.LlmProviderConfig providerConfig) {
+        String normalizedName = name.toLowerCase(Locale.ROOT);
+        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        if (!config.getLlm().getProviders().containsKey(normalizedName)) {
+            throw new IllegalArgumentException("Provider '" + normalizedName + "' does not exist");
+        }
+        validateProviderConfig(normalizedName, providerConfig);
+        runtimeConfigService.updateLlmProvider(normalizedName, providerConfig);
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    }
+
+    @DeleteMapping("/runtime/llm/providers/{name}")
+    public Mono<ResponseEntity<Void>> removeLlmProvider(@PathVariable String name) {
+        String normalizedName = name.toLowerCase(Locale.ROOT);
+        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        Set<String> usedProviders = getProvidersUsedByModelRouter(config.getModelRouter());
+        if (usedProviders.contains(normalizedName)) {
+            throw new IllegalArgumentException(
+                    "Cannot remove provider '" + normalizedName + "' because it is used by model router tiers");
+        }
+        boolean removed = runtimeConfigService.removeLlmProvider(normalizedName);
+        if (removed) {
+            return Mono.just(ResponseEntity.ok().build());
+        }
+        return Mono.just(ResponseEntity.notFound().build());
+    }
+
+    private void validateProviderConfig(String name, RuntimeConfig.LlmProviderConfig config) {
+        if (config == null) {
+            throw new IllegalArgumentException("Provider config is required");
+        }
+        Integer timeout = config.getRequestTimeoutSeconds();
+        if (timeout != null && (timeout < 1 || timeout > 3600)) {
+            throw new IllegalArgumentException(
+                    "llm.providers." + name + ".requestTimeoutSeconds must be between 1 and 3600");
+        }
+        String baseUrl = config.getBaseUrl();
+        if (baseUrl != null && !baseUrl.isBlank() && !isValidHttpUrl(baseUrl)) {
+            throw new IllegalArgumentException(
+                    "llm.providers." + name + ".baseUrl must be a valid http(s) URL");
+        }
+    }
+
     @PutMapping("/runtime/tools")
     public Mono<ResponseEntity<RuntimeConfig>> updateToolsConfig(
             @RequestBody RuntimeConfig.ToolsConfig toolsConfig) {

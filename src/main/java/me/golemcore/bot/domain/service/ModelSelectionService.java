@@ -21,7 +21,6 @@ package me.golemcore.bot.domain.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.UserPreferences;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import org.springframework.stereotype.Service;
 
@@ -40,7 +39,6 @@ import java.util.Map;
 @Slf4j
 public class ModelSelectionService {
 
-    private final BotProperties properties;
     private final RuntimeConfigService runtimeConfigService;
     private final ModelConfigService modelConfigService;
     private final UserPreferencesService preferencesService;
@@ -93,12 +91,13 @@ public class ModelSelectionService {
     }
 
     /**
-     * Get list of available models filtered by allowed providers.
+     * Get list of available models filtered by configured LLM providers in
+     * RuntimeConfig.
      */
     public List<AvailableModel> getAvailableModels() {
-        List<String> allowedProviders = properties.getModelSelection().getAllowedProviders();
+        List<String> configuredProviders = runtimeConfigService.getConfiguredLlmProviders();
         Map<String, ModelConfigService.ModelSettings> filtered = modelConfigService
-                .getModelsForProviders(allowedProviders);
+                .getModelsForProviders(configuredProviders);
 
         List<AvailableModel> result = new ArrayList<>();
         for (Map.Entry<String, ModelConfigService.ModelSettings> entry : filtered.entrySet()) {
@@ -147,9 +146,9 @@ public class ModelSelectionService {
             }
         }
 
-        List<String> allowedProviders = properties.getModelSelection().getAllowedProviders();
-        if (!allowedProviders.contains(settings.getProvider())) {
-            return new ValidationResult(false, "provider.not.allowed");
+        List<String> configuredProviders = runtimeConfigService.getConfiguredLlmProviders();
+        if (!configuredProviders.contains(settings.getProvider())) {
+            return new ValidationResult(false, "provider.not.configured");
         }
 
         return new ValidationResult(true, null);

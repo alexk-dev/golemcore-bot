@@ -1,7 +1,6 @@
 package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.model.UserPreferences;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -17,18 +16,15 @@ import static org.mockito.Mockito.*;
 @SuppressWarnings("PMD.AvoidDuplicateLiterals")
 class ModelSelectionServiceTest {
 
-    private BotProperties properties;
     private RuntimeConfigService runtimeConfigService;
     private ModelConfigService modelConfigService;
     private UserPreferencesService preferencesService;
     private ModelSelectionService service;
 
-    private BotProperties.ModelSelectionProperties modelSelectionProperties;
     private UserPreferences userPreferences;
 
     @BeforeEach
     void setUp() {
-        properties = new BotProperties();
         runtimeConfigService = mock(RuntimeConfigService.class);
         modelConfigService = mock(ModelConfigService.class);
         preferencesService = mock(UserPreferencesService.class);
@@ -42,16 +38,12 @@ class ModelSelectionServiceTest {
         when(runtimeConfigService.getDeepModel()).thenReturn("openai/gpt-5.2");
         when(runtimeConfigService.getDeepModelReasoning()).thenReturn("xhigh");
         when(runtimeConfigService.getCompactionMaxContextTokens()).thenReturn(50000);
-
-        modelSelectionProperties = new BotProperties.ModelSelectionProperties();
-        modelSelectionProperties.setAllowedProviders(List.of("openai", "anthropic"));
-
-        properties.setModelSelection(modelSelectionProperties);
+        when(runtimeConfigService.getConfiguredLlmProviders()).thenReturn(List.of("openai", "anthropic"));
 
         userPreferences = UserPreferences.builder().build();
         when(preferencesService.getPreferences()).thenReturn(userPreferences);
 
-        service = new ModelSelectionService(properties, runtimeConfigService, modelConfigService, preferencesService);
+        service = new ModelSelectionService(runtimeConfigService, modelConfigService, preferencesService);
     }
 
     // =====================================================
@@ -517,9 +509,9 @@ class ModelSelectionServiceTest {
     }
 
     @Test
-    void shouldReturnProviderNotAllowedWhenProviderIsDisallowed() {
+    void shouldReturnProviderNotConfiguredWhenProviderIsNotInRuntimeConfig() {
         // Arrange
-        modelSelectionProperties.setAllowedProviders(List.of("openai"));
+        when(runtimeConfigService.getConfiguredLlmProviders()).thenReturn(List.of("openai"));
 
         ModelConfigService.ModelSettings settings = new ModelConfigService.ModelSettings();
         settings.setProvider("anthropic");
@@ -534,7 +526,7 @@ class ModelSelectionServiceTest {
 
         // Assert
         assertFalse(result.valid());
-        assertEquals("provider.not.allowed", result.error());
+        assertEquals("provider.not.configured", result.error());
     }
 
     @Test

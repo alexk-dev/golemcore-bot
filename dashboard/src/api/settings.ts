@@ -397,6 +397,30 @@ export async function updateLlmConfig(config: LlmConfig): Promise<RuntimeConfig>
   return toUiRuntimeConfig(data);
 }
 
+export async function addLlmProvider(name: string, config: LlmProviderConfig): Promise<RuntimeConfig> {
+  const payload = {
+    baseUrl: config.baseUrl,
+    requestTimeoutSeconds: config.requestTimeoutSeconds,
+    apiKey: toSecretPayload(config.apiKey ?? null),
+  };
+  const { data } = await client.post<RuntimeConfigUiRecord>(`/settings/runtime/llm/providers/${name}`, payload);
+  return toUiRuntimeConfig(data);
+}
+
+export async function updateLlmProvider(name: string, config: LlmProviderConfig): Promise<RuntimeConfig> {
+  const payload = {
+    baseUrl: config.baseUrl,
+    requestTimeoutSeconds: config.requestTimeoutSeconds,
+    apiKey: toSecretPayload(config.apiKey ?? null),
+  };
+  const { data } = await client.put<RuntimeConfigUiRecord>(`/settings/runtime/llm/providers/${name}`, payload);
+  return toUiRuntimeConfig(data);
+}
+
+export async function removeLlmProvider(name: string): Promise<void> {
+  await client.delete(`/settings/runtime/llm/providers/${name}`);
+}
+
 export async function updateToolsConfig(config: ToolsConfig): Promise<RuntimeConfig> {
   const payload = {
     ...config,
