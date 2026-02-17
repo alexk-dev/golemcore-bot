@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Form } from 'react-bootstrap';
 import { FiMic, FiPaperclip, FiSend, FiSquare, FiX } from 'react-icons/fi';
 import { useAvailableModels } from '../../hooks/useModels';
+import { createUuid } from '../../utils/uuid';
 
 export interface ChatAttachmentPayload {
   type: 'image';
@@ -366,7 +367,7 @@ export default function ChatInput({ onSend, disabled }: Props) {
       const base64Data = dataUrl.slice(base64Index + 1);
       const previewUrl = URL.createObjectURL(file);
       prepared.push({
-        id: crypto.randomUUID(),
+        id: createUuid(),
         type: 'image',
         name: file.name,
         mimeType: file.type.length > 0 ? file.type : 'image/png',

@@ -8,6 +8,7 @@ import { updatePreferences } from '../../api/settings';
 import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
 import ContextPanel from './ContextPanel';
+import { createUuid } from '../../utils/uuid';
 
 const SESSION_KEY = 'golem-chat-session-id';
 const INITIAL_MESSAGES = 50;
@@ -17,7 +18,7 @@ const GOALS_POLL_INTERVAL = 30000;
 function getChatSessionId(): string {
   let id = localStorage.getItem(SESSION_KEY);
   if (id == null || id.length === 0) {
-    id = crypto.randomUUID();
+    id = createUuid();
     localStorage.setItem(SESSION_KEY, id);
   }
   return id;
