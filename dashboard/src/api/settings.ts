@@ -82,6 +82,7 @@ function toBackendRuntimeConfig(config: RuntimeConfig): UnknownRecord {
             baseUrl: provider.baseUrl,
             requestTimeoutSeconds: provider.requestTimeoutSeconds,
             apiKey: toSecretPayload(provider.apiKey ?? null),
+            apiType: provider.apiType,
           },
         ]),
       ),
@@ -175,11 +176,14 @@ export interface LlmConfig {
   providers: Record<string, LlmProviderConfig>;
 }
 
+export type ApiType = 'openai' | 'anthropic' | 'gemini';
+
 export interface LlmProviderConfig {
   apiKey: string | null;
   apiKeyPresent?: boolean;
   baseUrl: string | null;
   requestTimeoutSeconds: number | null;
+  apiType: ApiType | null;
 }
 
 export interface MemoryConfig {
@@ -389,6 +393,7 @@ export async function updateLlmConfig(config: LlmConfig): Promise<RuntimeConfig>
           baseUrl: provider.baseUrl,
           requestTimeoutSeconds: provider.requestTimeoutSeconds,
           apiKey: toSecretPayload(provider.apiKey ?? null),
+          apiType: provider.apiType,
         },
       ]),
     ),
@@ -402,6 +407,7 @@ export async function addLlmProvider(name: string, config: LlmProviderConfig): P
     baseUrl: config.baseUrl,
     requestTimeoutSeconds: config.requestTimeoutSeconds,
     apiKey: toSecretPayload(config.apiKey ?? null),
+    apiType: config.apiType,
   };
   const { data } = await client.post<RuntimeConfigUiRecord>(`/settings/runtime/llm/providers/${name}`, payload);
   return toUiRuntimeConfig(data);
@@ -412,6 +418,7 @@ export async function updateLlmProvider(name: string, config: LlmProviderConfig)
     baseUrl: config.baseUrl,
     requestTimeoutSeconds: config.requestTimeoutSeconds,
     apiKey: toSecretPayload(config.apiKey ?? null),
+    apiType: config.apiType,
   };
   const { data } = await client.put<RuntimeConfigUiRecord>(`/settings/runtime/llm/providers/${name}`, payload);
   return toUiRuntimeConfig(data);

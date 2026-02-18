@@ -935,6 +935,36 @@ class Langchain4jAdapterTest {
         assertEquals("Default response", response.getContent());
     }
 
+    // ===== getApiType =====
+
+    @Test
+    void shouldDefaultToOpenAiApiTypeWhenNull() {
+        RuntimeConfig.LlmProviderConfig config = RuntimeConfig.LlmProviderConfig.builder().build();
+        String result = ReflectionTestUtils.invokeMethod(adapter, "getApiType", config);
+        assertEquals("openai", result);
+    }
+
+    @Test
+    void shouldDefaultToOpenAiApiTypeWhenBlank() {
+        RuntimeConfig.LlmProviderConfig config = RuntimeConfig.LlmProviderConfig.builder().apiType("  ").build();
+        String result = ReflectionTestUtils.invokeMethod(adapter, "getApiType", config);
+        assertEquals("openai", result);
+    }
+
+    @Test
+    void shouldReturnExplicitApiType() {
+        RuntimeConfig.LlmProviderConfig config = RuntimeConfig.LlmProviderConfig.builder().apiType("gemini").build();
+        String result = ReflectionTestUtils.invokeMethod(adapter, "getApiType", config);
+        assertEquals("gemini", result);
+    }
+
+    @Test
+    void shouldNormalizeApiTypeToLowercase() {
+        RuntimeConfig.LlmProviderConfig config = RuntimeConfig.LlmProviderConfig.builder().apiType("ANTHROPIC").build();
+        String result = ReflectionTestUtils.invokeMethod(adapter, "getApiType", config);
+        assertEquals("anthropic", result);
+    }
+
     // ===== Helpers =====
 
     private void injectChatModel(ChatModel model, String modelName) {

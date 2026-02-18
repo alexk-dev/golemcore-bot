@@ -41,6 +41,7 @@ public class SettingsController {
 
     private static final String TELEGRAM_AUTH_MODE_USER = "user";
     private static final String TELEGRAM_AUTH_MODE_INVITE = "invite_only";
+    private static final Set<String> VALID_API_TYPES = Set.of("openai", "anthropic", "gemini");
 
     private final UserPreferencesService preferencesService;
     private final ModelSelectionService modelSelectionService;
@@ -226,6 +227,11 @@ public class SettingsController {
         if (baseUrl != null && !baseUrl.isBlank() && !isValidHttpUrl(baseUrl)) {
             throw new IllegalArgumentException(
                     "llm.providers." + name + ".baseUrl must be a valid http(s) URL");
+        }
+        String apiType = config.getApiType();
+        if (apiType != null && !apiType.isBlank() && !VALID_API_TYPES.contains(apiType.toLowerCase(Locale.ROOT))) {
+            throw new IllegalArgumentException(
+                    "llm.providers." + name + ".apiType must be one of " + VALID_API_TYPES);
         }
     }
 
@@ -460,6 +466,13 @@ public class SettingsController {
                     throw new IllegalArgumentException(
                             "llm.providers." + providerName + ".baseUrl must be a valid http(s) URL");
                 }
+            }
+
+            String apiType = providerConfig.getApiType();
+            if (apiType != null && !apiType.isBlank()
+                    && !VALID_API_TYPES.contains(apiType.toLowerCase(Locale.ROOT))) {
+                throw new IllegalArgumentException(
+                        "llm.providers." + providerName + ".apiType must be one of " + VALID_API_TYPES);
             }
         }
 

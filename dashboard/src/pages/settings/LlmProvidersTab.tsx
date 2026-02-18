@@ -3,7 +3,7 @@ import { Badge, Button, Card, Col, Form, InputGroup, Row, Table } from 'react-bo
 import toast from 'react-hot-toast';
 import ConfirmModal from '../../components/common/ConfirmModal';
 import { useAddLlmProvider, useUpdateLlmProvider, useRemoveLlmProvider } from '../../hooks/useSettings';
-import type { LlmConfig, LlmProviderConfig, ModelRouterConfig } from '../../api/settings';
+import type { ApiType, LlmConfig, LlmProviderConfig, ModelRouterConfig } from '../../api/settings';
 
 const KNOWN_BASE_URLS: Record<string, string> = {
   openai: 'https://api.openai.com/v1',
@@ -25,6 +25,13 @@ const KNOWN_BASE_URLS: Record<string, string> = {
 };
 
 const KNOWN_PROVIDERS: string[] = Object.keys(KNOWN_BASE_URLS);
+
+const KNOWN_API_TYPES: Record<string, ApiType> = {
+  anthropic: 'anthropic',
+  google: 'gemini',
+};
+
+const API_TYPE_OPTIONS: ApiType[] = ['openai', 'anthropic', 'gemini'];
 
 function toNullableString(value: string): string | null {
   return value.length > 0 ? value : null;
@@ -86,7 +93,7 @@ function ProviderEditor({
               </InputGroup>
             </Form.Group>
           </Col>
-          <Col md={8}>
+          <Col md={6}>
             <Form.Group className="mb-2">
               <Form.Label className="small fw-medium">Base URL</Form.Label>
               <Form.Control
@@ -96,7 +103,21 @@ function ProviderEditor({
               />
             </Form.Group>
           </Col>
-          <Col md={4}>
+          <Col md={3}>
+            <Form.Group className="mb-2">
+              <Form.Label className="small fw-medium">API Type</Form.Label>
+              <Form.Select
+                size="sm"
+                value={form.apiType ?? 'openai'}
+                onChange={(e) => onFormChange({ ...form, apiType: e.target.value as ApiType })}
+              >
+                {API_TYPE_OPTIONS.map((type) => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </Form.Select>
+            </Form.Group>
+          </Col>
+          <Col md={3}>
             <Form.Group className="mb-2">
               <Form.Label className="small fw-medium">Timeout (s)</Form.Label>
               <Form.Control
@@ -189,6 +210,7 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
       apiKeyPresent: false,
       baseUrl: KNOWN_BASE_URLS[name] ?? null,
       requestTimeoutSeconds: 300,
+      apiType: KNOWN_API_TYPES[name] ?? 'openai',
     });
     setIsNewProvider(true);
     setShowKey(false);
@@ -201,7 +223,7 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
       return;
     }
     setEditingName(name);
-    setEditForm({ ...provider, apiKey: null });
+    setEditForm({ ...provider, apiKey: null, apiType: provider.apiType ?? 'openai' });
     setIsNewProvider(false);
     setShowKey(false);
   };
@@ -277,6 +299,7 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
             <thead>
               <tr>
                 <th>Provider</th>
+                <th>API Type</th>
                 <th>Base URL</th>
                 <th>Status</th>
                 <th className="text-end">Actions</th>
@@ -289,6 +312,7 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
                 return (
                   <tr key={name}>
                     <td className="text-capitalize fw-medium">{name}</td>
+                    <td className="small">{provider?.apiType ?? 'openai'}</td>
                     <td className="small text-body-secondary text-truncate" style={{ maxWidth: '260px' }}>
                       {provider?.baseUrl ?? <em>default</em>}
                     </td>
