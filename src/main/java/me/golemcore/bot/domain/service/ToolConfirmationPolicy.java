@@ -19,7 +19,6 @@ package me.golemcore.bot.domain.service;
  */
 
 import me.golemcore.bot.domain.model.Message;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -42,18 +41,18 @@ public class ToolConfirmationPolicy {
     private static final String DELETE_SKILL = "delete_skill";
     private static final int COMMAND_LENGTH_THRESHOLD = 80;
 
-    private final boolean enabled;
+    private final RuntimeConfigService runtimeConfigService;
 
-    public ToolConfirmationPolicy(BotProperties properties) {
-        this.enabled = properties.getSecurity().getToolConfirmation().isEnabled();
-        log.info("ToolConfirmationPolicy enabled: {}", enabled);
+    public ToolConfirmationPolicy(RuntimeConfigService runtimeConfigService) {
+        this.runtimeConfigService = runtimeConfigService;
+        log.info("ToolConfirmationPolicy initialized");
     }
 
     /**
      * Check if a tool call requires user confirmation.
      */
     public boolean requiresConfirmation(Message.ToolCall toolCall) {
-        if (!enabled) {
+        if (!runtimeConfigService.isToolConfirmationEnabled()) {
             return false;
         }
         return isNotableAction(toolCall);
@@ -76,7 +75,7 @@ public class ToolConfirmationPolicy {
     }
 
     public boolean isEnabled() {
-        return enabled;
+        return runtimeConfigService.isToolConfirmationEnabled();
     }
 
     /**

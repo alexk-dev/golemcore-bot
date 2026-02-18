@@ -121,6 +121,7 @@ class ToolLoopNoDuplicateHistoryBddTest {
         ChannelPort channel = mock(ChannelPort.class);
         when(channel.getChannelType()).thenReturn("telegram");
         when(channel.sendMessage(anyString(), anyString())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(anyString(), anyString(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         UserPreferencesService preferences = mock(UserPreferencesService.class);
         VoiceResponseHandler voiceHandler = mock(VoiceResponseHandler.class);
@@ -134,7 +135,7 @@ class ToolLoopNoDuplicateHistoryBddTest {
         routing.process(ctx);
 
         // THEN: message is sent to channel
-        verify(channel).sendMessage(eq("chat1"), eq("Done: hello"));
+        verify(channel).sendMessage(eq("chat1"), eq("Done: hello"), any());
 
         // AND: raw history is not mutated by routing
         assertEquals(historySizeAfterToolLoop, session.getMessages().size());

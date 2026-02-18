@@ -3,7 +3,7 @@ package me.golemcore.bot.tools;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.ToolResult;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,17 +29,16 @@ class SkillManagementToolTest {
 
     private StoragePort storagePort;
     private SkillComponent skillComponent;
+    private RuntimeConfigService runtimeConfigService;
     private SkillManagementTool tool;
 
     @BeforeEach
     void setUp() {
         storagePort = mock(StoragePort.class);
         skillComponent = mock(SkillComponent.class);
-
-        BotProperties properties = new BotProperties();
-        properties.getTools().getSkillManagement().setEnabled(true);
-
-        tool = new SkillManagementTool(properties, storagePort, skillComponent);
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isSkillManagementEnabled()).thenReturn(true);
+        tool = new SkillManagementTool(runtimeConfigService, storagePort, skillComponent);
     }
 
     @Test
@@ -210,9 +209,10 @@ class SkillManagementToolTest {
 
     @Test
     void disabledTool() throws Exception {
-        BotProperties props = new BotProperties();
-        props.getTools().getSkillManagement().setEnabled(false);
-        SkillManagementTool disabledTool = new SkillManagementTool(props, storagePort, skillComponent);
+        RuntimeConfigService disabledRuntimeConfigService = mock(RuntimeConfigService.class);
+        when(disabledRuntimeConfigService.isSkillManagementEnabled()).thenReturn(false);
+        SkillManagementTool disabledTool = new SkillManagementTool(disabledRuntimeConfigService, storagePort,
+                skillComponent);
 
         ToolResult result = disabledTool.execute(Map.of(OPERATION, "list_skills")).get();
         assertFalse(result.isSuccess());

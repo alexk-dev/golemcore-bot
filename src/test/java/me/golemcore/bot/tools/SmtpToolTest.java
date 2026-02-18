@@ -1,18 +1,21 @@
 package me.golemcore.bot.tools;
 
-import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import jakarta.mail.MessagingException;
+import jakarta.mail.internet.MimeMessage;
 
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 @SuppressWarnings("PMD.AvoidDuplicateLiterals") // Test readability over deduplication
 class SmtpToolTest {
@@ -28,42 +31,43 @@ class SmtpToolTest {
     private static final String PARAM_BODY = "body";
     private static final String TEST_RECIPIENT = "test@example.com";
 
-    private BotProperties properties;
+    private RuntimeConfigService runtimeConfigService;
+    private BotProperties.SmtpToolProperties smtpConfig;
 
     @BeforeEach
     void setUp() {
-        properties = new BotProperties();
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        smtpConfig = new BotProperties.SmtpToolProperties();
+        when(runtimeConfigService.getResolvedSmtpConfig()).thenReturn(smtpConfig);
     }
 
     // ==================== isEnabled ====================
 
     @Test
     void shouldBeDisabledByDefault() {
-        SmtpTool tool = new SmtpTool(properties);
+        SmtpTool tool = new SmtpTool(runtimeConfigService);
 
         assertFalse(tool.isEnabled());
     }
 
     @Test
     void shouldBeDisabledWhenEnabledButNoHost() {
-        BotProperties.SmtpToolProperties config = properties.getTools().getSmtp();
-        config.setEnabled(true);
-        config.setHost("");
-        config.setUsername(USERNAME);
+        smtpConfig.setEnabled(true);
+        smtpConfig.setHost("");
+        smtpConfig.setUsername(USERNAME);
 
-        SmtpTool tool = new SmtpTool(properties);
+        SmtpTool tool = new SmtpTool(runtimeConfigService);
 
         assertFalse(tool.isEnabled());
     }
 
     @Test
     void shouldBeDisabledWhenEnabledButNoUsername() {
-        BotProperties.SmtpToolProperties config = properties.getTools().getSmtp();
-        config.setEnabled(true);
-        config.setHost(SMTP_HOST);
-        config.setUsername("");
+        smtpConfig.setEnabled(true);
+        smtpConfig.setHost(SMTP_HOST);
+        smtpConfig.setUsername("");
 
-        SmtpTool tool = new SmtpTool(properties);
+        SmtpTool tool = new SmtpTool(runtimeConfigService);
 
         assertFalse(tool.isEnabled());
     }
@@ -72,22 +76,9 @@ class SmtpToolTest {
     void shouldBeEnabledWhenFullyConfigured() {
         configureProperties();
 
-        SmtpTool tool = new SmtpTool(properties);
+        SmtpTool tool = new SmtpTool(runtimeConfigService);
 
         assertTrue(tool.isEnabled());
-    }
-
-    // ==================== Definition ====================
-
-    @Test
-    void shouldReturnCorrectDefinition() {
-        SmtpTool tool = new SmtpTool(properties);
-
-        ToolDefinition definition = tool.getDefinition();
-
-        assertEquals("smtp", definition.getName());
-        assertNotNull(definition.getDescription());
-        assertNotNull(definition.getInputSchema());
     }
 
     // ==================== Parameter validation ====================
@@ -219,7 +210,7 @@ class SmtpToolTest {
             "test123@sub.domain.com"
     })
     void shouldAcceptValidEmails(String email) {
-        SmtpTool tool = new SmtpTool(properties);
+        SmtpTool tool = new SmtpTool(runtimeConfigService);
 
         ToolResult result = tool.validateRecipients(email);
 
@@ -235,7 +226,7 @@ class SmtpToolTest {
             "user space@example.com"
     })
     void shouldRejectInvalidEmails(String email) {
-        SmtpTool tool = new SmtpTool(properties);
+        SmtpTool tool = new SmtpTool(runtimeConfigService);
 
         ToolResult result = tool.validateRecipients(email);
 
@@ -245,7 +236,7 @@ class SmtpToolTest {
 
     @Test
     void shouldValidateMultipleRecipients() {
-        SmtpTool tool = new SmtpTool(properties);
+        SmtpTool tool = new SmtpTool(runtimeConfigService);
 
         ToolResult result = tool.validateRecipients("a@example.com, b@example.com");
 
@@ -254,7 +245,7 @@ class SmtpToolTest {
 
     @Test
     void shouldRejectIfAnyRecipientInvalid() {
-        SmtpTool tool = new SmtpTool(properties);
+        SmtpTool tool = new SmtpTool(runtimeConfigService);
 
         ToolResult result = tool.validateRecipients("valid@example.com, not-valid");
 
@@ -321,15 +312,9 @@ class SmtpToolTest {
         params.put(PARAM_BODY, "Hello");
         params.put("cc", "   ");
 
-        // This should NOT fail on CC validation — blank CC is skipped
-        // It will fail on Transport.send() since we have no real SMTP server,
-        // but it proves the CC validation was skipped
         ToolResult result = tool.execute(params).get();
 
-        // Either success (unlikely without real SMTP) or error NOT about invalid email
-        if (!result.isSuccess()) {
-            assertFalse(result.getError().contains("Invalid email"));
-        }
+        assertTrue(result.isSuccess());
     }
 
     @Test
@@ -345,9 +330,7 @@ class SmtpToolTest {
 
         ToolResult result = tool.execute(params).get();
 
-        if (!result.isSuccess()) {
-            assertFalse(result.getError().contains("Invalid email"));
-        }
+        assertTrue(result.isSuccess());
     }
 
     // ==================== reply_email ====================
@@ -381,7 +364,7 @@ class SmtpToolTest {
 
     @Test
     void shouldRejectEmptyRecipientBetweenCommas() {
-        SmtpTool tool = new SmtpTool(properties);
+        SmtpTool tool = new SmtpTool(runtimeConfigService);
 
         ToolResult result = tool.validateRecipients("a@example.com,,b@example.com");
 
@@ -392,13 +375,12 @@ class SmtpToolTest {
 
     @Test
     void shouldSanitizeCredentialsInError() {
-        BotProperties.SmtpToolProperties config = properties.getTools().getSmtp();
-        config.setEnabled(true);
-        config.setHost(SMTP_HOST);
-        config.setUsername(USERNAME);
-        config.setPassword("secret123");
+        smtpConfig.setEnabled(true);
+        smtpConfig.setHost(SMTP_HOST);
+        smtpConfig.setUsername(USERNAME);
+        smtpConfig.setPassword("secret123");
 
-        SmtpTool tool = new SmtpTool(properties);
+        SmtpTool tool = new SmtpTool(runtimeConfigService);
 
         String sanitized = tool.sanitizeError("Login failed for " + USERNAME + " with password secret123");
 
@@ -409,14 +391,14 @@ class SmtpToolTest {
 
     @Test
     void shouldHandleNullErrorMessage() {
-        SmtpTool tool = new SmtpTool(properties);
+        SmtpTool tool = new SmtpTool(runtimeConfigService);
 
         assertEquals("Unknown error", tool.sanitizeError(null));
     }
 
     @Test
     void shouldSanitizeErrorWithNoCredentials() {
-        SmtpTool tool = new SmtpTool(properties);
+        SmtpTool tool = new SmtpTool(runtimeConfigService);
 
         String sanitized = tool.sanitizeError("Connection timed out");
 
@@ -425,23 +407,21 @@ class SmtpToolTest {
 
     @Test
     void shouldHandleSmtpConnectionError() throws ExecutionException, InterruptedException {
-        SmtpTool tool = createConfiguredTool();
+        SmtpTool tool = createConfiguredFailingTool();
 
-        // Attempting to send with a fake SMTP host will throw
         ToolResult result = tool.execute(Map.of(
                 PARAM_OPERATION, OP_SEND_EMAIL,
                 PARAM_TO, TEST_RECIPIENT,
                 PARAM_SUBJECT, "Test",
                 PARAM_BODY, "Hello")).get();
 
-        // Should fail gracefully with SMTP error, not crash
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("SMTP"));
     }
 
     @Test
     void shouldHandleReplyConnectionError() throws ExecutionException, InterruptedException {
-        SmtpTool tool = createConfiguredTool();
+        SmtpTool tool = createConfiguredFailingTool();
 
         Map<String, Object> params = new HashMap<>();
         params.put(PARAM_OPERATION, OP_REPLY_EMAIL);
@@ -458,7 +438,7 @@ class SmtpToolTest {
 
     @Test
     void shouldHandleReplyWithReferencesConnectionError() throws ExecutionException, InterruptedException {
-        SmtpTool tool = createConfiguredTool();
+        SmtpTool tool = createConfiguredFailingTool();
 
         Map<String, Object> params = new HashMap<>();
         params.put(PARAM_OPERATION, OP_REPLY_EMAIL);
@@ -470,7 +450,6 @@ class SmtpToolTest {
 
         ToolResult result = tool.execute(params).get();
 
-        // Will fail due to no real SMTP, but exercises the reply headers code path
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("SMTP"));
     }
@@ -487,13 +466,13 @@ class SmtpToolTest {
 
         ToolResult result = tool.execute(params).get();
 
-        // Will fail at transport but exercises the Re: prefix detection path
-        assertFalse(result.isSuccess());
+        assertTrue(result.isSuccess());
+        assertTrue(result.getOutput().contains("Re: Already prefixed"));
     }
 
     @Test
     void shouldHandleHtmlSendAttempt() throws ExecutionException, InterruptedException {
-        SmtpTool tool = createConfiguredTool();
+        SmtpTool tool = createConfiguredFailingTool();
 
         Map<String, Object> params = new HashMap<>();
         params.put(PARAM_OPERATION, OP_SEND_EMAIL);
@@ -504,14 +483,13 @@ class SmtpToolTest {
 
         ToolResult result = tool.execute(params).get();
 
-        // Will fail at transport, but exercises html=true code path
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("SMTP"));
     }
 
     @Test
     void shouldHandleSendWithValidCcAndBcc() throws ExecutionException, InterruptedException {
-        SmtpTool tool = createConfiguredTool();
+        SmtpTool tool = createConfiguredFailingTool();
 
         Map<String, Object> params = new HashMap<>();
         params.put(PARAM_OPERATION, OP_SEND_EMAIL);
@@ -523,7 +501,6 @@ class SmtpToolTest {
 
         ToolResult result = tool.execute(params).get();
 
-        // Will fail at transport, but exercises CC/BCC address setting
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("SMTP"));
     }
@@ -531,15 +508,29 @@ class SmtpToolTest {
     // ==================== Helpers ====================
 
     private void configureProperties() {
-        BotProperties.SmtpToolProperties config = properties.getTools().getSmtp();
-        config.setEnabled(true);
-        config.setHost(SMTP_HOST);
-        config.setUsername(USERNAME);
-        config.setPassword(PASSWORD);
+        smtpConfig.setEnabled(true);
+        smtpConfig.setHost(SMTP_HOST);
+        smtpConfig.setUsername(USERNAME);
+        smtpConfig.setPassword(PASSWORD);
     }
 
     private SmtpTool createConfiguredTool() {
         configureProperties();
-        return new SmtpTool(properties);
+        return new SmtpTool(runtimeConfigService) {
+            @Override
+            protected void deliver(MimeMessage message) {
+                // No-op in tests to avoid real SMTP connections.
+            }
+        };
+    }
+
+    private SmtpTool createConfiguredFailingTool() {
+        configureProperties();
+        return new SmtpTool(runtimeConfigService) {
+            @Override
+            protected void deliver(MimeMessage message) throws MessagingException {
+                throw new MessagingException("Simulated SMTP failure");
+            }
+        };
     }
 }

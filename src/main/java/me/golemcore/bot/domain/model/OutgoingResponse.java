@@ -22,7 +22,9 @@ import lombok.Builder;
 import lombok.Singular;
 import lombok.Value;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * A transport-oriented response produced by domain systems and consumed by
@@ -55,6 +57,10 @@ public class OutgoingResponse {
     /** Attachments to send after the main response (photos/documents). */
     @Singular
     List<Attachment> attachments;
+
+    /** Protocol-level metadata hints (model, tier, token usage, latency). */
+    @Builder.Default
+    Map<String, Object> hints = new LinkedHashMap<>();
 
     /**
      * If true, response routing should not append a synthetic assistant message to

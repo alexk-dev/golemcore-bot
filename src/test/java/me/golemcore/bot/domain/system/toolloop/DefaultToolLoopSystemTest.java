@@ -358,54 +358,6 @@ class DefaultToolLoopSystemTest {
         assertTrue(result.finalAnswerReady());
     }
 
-    // ==================== Plan mode ====================
-
-    @Test
-    void shouldWriteSyntheticResultsInPlanMode() {
-        when(planService.isPlanModeActive()).thenReturn(true);
-        when(planService.getActivePlanId()).thenReturn("plan-1");
-
-        AgentContext context = buildContext();
-        Message.ToolCall tc = toolCall(TOOL_CALL_ID, TOOL_NAME);
-
-        LlmResponse withTools = toolCallResponse(List.of(tc));
-        LlmResponse finalResp = finalResponse("Plan complete");
-
-        when(llmPort.chat(any()))
-                .thenReturn(CompletableFuture.completedFuture(withTools))
-                .thenReturn(CompletableFuture.completedFuture(finalResp));
-
-        ToolLoopTurnResult result = system.processTurn(context);
-
-        assertTrue(result.finalAnswerReady());
-        verify(planService).addStep(any(), any(), any(), any());
-        verify(toolExecutor, never()).execute(any(), any());
-    }
-
-    @Test
-    void shouldHandleNullArgumentsInPlanMode() {
-        when(planService.isPlanModeActive()).thenReturn(true);
-        when(planService.getActivePlanId()).thenReturn("plan-1");
-
-        AgentContext context = buildContext();
-        Message.ToolCall tc = Message.ToolCall.builder()
-                .id(TOOL_CALL_ID)
-                .name(TOOL_NAME)
-                .arguments(null)
-                .build();
-
-        LlmResponse withTools = toolCallResponse(List.of(tc));
-        LlmResponse finalResp = finalResponse(CONTENT_DONE);
-
-        when(llmPort.chat(any()))
-                .thenReturn(CompletableFuture.completedFuture(withTools))
-                .thenReturn(CompletableFuture.completedFuture(finalResp));
-
-        ToolLoopTurnResult result = system.processTurn(context);
-
-        assertTrue(result.finalAnswerReady());
-    }
-
     // ==================== Null settings ====================
 
     @Test
@@ -686,6 +638,44 @@ class DefaultToolLoopSystemTest {
         Boolean limitReached = context.getAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REACHED);
         assertTrue(Boolean.TRUE.equals(limitReached),
                 "TOOL_LOOP_LIMIT_REACHED should be set when LLM call limit exhausted");
+    }
+
+    @Test
+    void shouldSetLimitReasonWhenMaxLlmCallsExhausted() {
+        turnSettings.setMaxLlmCalls(1);
+        AgentContext context = buildContext();
+        Message.ToolCall tc = toolCall(TOOL_CALL_ID, TOOL_NAME);
+
+        LlmResponse withTools = toolCallResponse(List.of(tc));
+        when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(withTools));
+
+        ToolExecutionOutcome outcome = new ToolExecutionOutcome(
+                TOOL_CALL_ID, TOOL_NAME, ToolResult.success("ok"), "ok", false, null);
+        when(toolExecutor.execute(any(), any())).thenReturn(outcome);
+
+        system.processTurn(context);
+
+        assertEquals(me.golemcore.bot.domain.model.TurnLimitReason.MAX_LLM_CALLS,
+                context.getAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REASON));
+    }
+
+    @Test
+    void shouldSetLimitReasonWhenMaxToolExecutionsExhausted() {
+        turnSettings.setMaxToolExecutions(1);
+        AgentContext context = buildContext();
+        Message.ToolCall tc = toolCall(TOOL_CALL_ID, TOOL_NAME);
+
+        LlmResponse withTools = toolCallResponse(List.of(tc));
+        when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(withTools));
+
+        ToolExecutionOutcome outcome = new ToolExecutionOutcome(
+                TOOL_CALL_ID, TOOL_NAME, ToolResult.success("ok"), "ok", false, null);
+        when(toolExecutor.execute(any(), any())).thenReturn(outcome);
+
+        system.processTurn(context);
+
+        assertEquals(me.golemcore.bot.domain.model.TurnLimitReason.MAX_TOOL_EXECUTIONS,
+                context.getAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REASON));
     }
 
     @Test

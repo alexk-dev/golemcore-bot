@@ -241,6 +241,24 @@ class MessageFlattenTest {
     }
 
     @Test
+    void shouldFlattenOrphanedToolMessageWithNullToolCallId() {
+        List<Message> messages = new ArrayList<>(List.of(
+                Message.builder().id("m1").role(ROLE_USER).content("Hi").timestamp(NOW).build(),
+                Message.builder().id("m2").role(ROLE_TOOL)
+                        .toolCallId(null).toolName(TOOL_SHELL)
+                        .content("orphaned null-id result")
+                        .timestamp(NOW).build()));
+
+        List<Message> result = Message.flattenToolMessages(messages);
+
+        assertEquals(2, result.size());
+        assertEquals(ROLE_USER, result.get(0).getRole());
+        assertEquals(ROLE_ASSISTANT, result.get(1).getRole());
+        assertTrue(result.get(1).getContent().contains("[Tool: shell]"));
+        assertTrue(result.get(1).getContent().contains("orphaned null-id result"));
+    }
+
+    @Test
     void shouldBeIdempotent() {
         List<Message> messages = new ArrayList<>(List.of(
                 Message.builder().id("m1").role(ROLE_USER).content("Hello").timestamp(NOW).build(),

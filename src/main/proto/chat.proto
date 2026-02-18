@@ -1,48 +1,66 @@
+// ============================================================
+//  chat.proto — the WebSocket wire format
+//
+//  this is what flies between the dashboard and the bot
+//  at the speed of thought (well, at the speed of TCP)
+//
+//  currently using JSON over WS, but this proto is ready
+//  for when we decide to go full binary and shave 3ms.
+//  that day will come. probably.
+// ============================================================
+
 syntax = "proto3";
 package golemcore.chat;
 option java_package = "me.golemcore.bot.adapter.inbound.web.proto";
 option java_multiple_files = true;
 
+// the one envelope to rule them all
+// every WebSocket frame is one of these bad boys
 message ChatEnvelope {
-  string request_id = 1;
+  string request_id = 1;                           // trace id — follow the breadcrumbs when things go sideways
   oneof payload {
-    UserMessage user_message = 2;
-    AssistantChunk assistant_chunk = 3;
-    AssistantDone assistant_done = 4;
-    SystemEvent system_event = 5;
-    ErrorEvent error = 6;
+    UserMessage user_message = 2;                  // human speaks
+    AssistantChunk assistant_chunk = 3;             // bot is typing... (streamed piece by piece)
+    AssistantDone assistant_done = 4;               // bot has spoken. final answer, no takebacks
+    SystemEvent system_event = 5;                   // system whispers — typing indicators, connection stuff
+    ErrorEvent error = 6;                           // something broke. it happens. we're honest about it
   }
-  // Reserved JSON-encoded extension fields
-  string hint = 10;
-  string ads = 11;
-  string status = 12;
+  // extension slots — JSON-encoded because proto evolution is pain
+  string hint = 10;                                // model, tier, tokens, latency — the metadata buffet
+  string ads = 11;                                 // reserved. if you see ads here, something went very wrong
+  string status = 12;                              // reserved for future status payloads
 }
 
+// what the human typed (or dictated, or pasted, we don't judge)
 message UserMessage {
-  string text = 1;
-  string session_id = 2;
+  string text = 1;                                 // the actual message
+  string session_id = 2;                           // which conversation this belongs to
 }
 
+// a streaming chunk — the bot thinking out loud, one piece at a time
 message AssistantChunk {
-  string text = 1;
-  string session_id = 2;
-  string model = 3;
+  string text = 1;                                 // partial response — append to what you already have
+  string session_id = 2;                           // conversation context
+  string model = 3;                                // which brain is doing the thinking
 }
 
+// the final answer — all chunks assembled, stats included
 message AssistantDone {
-  string full_text = 1;
-  string session_id = 2;
-  string model = 3;
-  int32 input_tokens = 4;
-  int32 output_tokens = 5;
+  string full_text = 1;                            // the complete response — one clean string
+  string session_id = 2;                           // conversation context
+  string model = 3;                                // the model that did the work
+  int32 input_tokens = 4;                          // how many tokens went in (the bill)
+  int32 output_tokens = 5;                         // how many came out (the receipt)
 }
 
+// system-level events — not user-visible content, just plumbing
 message SystemEvent {
-  string event_type = 1;
-  string data = 2;
+  string event_type = 1;                           // "typing", "connected", etc.
+  string data = 2;                                 // optional payload — keep it light
 }
 
+// when things go wrong — at least we're transparent about it
 message ErrorEvent {
-  string code = 1;
-  string message = 2;
+  string code = 1;                                 // machine-readable error code
+  string message = 2;                              // human-readable "what happened"
 }

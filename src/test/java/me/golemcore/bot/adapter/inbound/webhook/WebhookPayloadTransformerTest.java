@@ -96,4 +96,122 @@ class WebhookPayloadTransformerTest {
 
         assertEquals("Static message with no placeholders", result);
     }
+
+    // ==================== Special characters in values ====================
+
+    @Test
+    void shouldHandleDollarSignInValue() {
+        String template = "Price: {price}";
+        byte[] body = "{\"price\":\"$100\"}".getBytes(StandardCharsets.UTF_8);
+
+        String result = transformer.transform(template, body);
+
+        assertEquals("Price: $100", result);
+    }
+
+    @Test
+    void shouldHandleBackslashInValue() {
+        String template = "Path: {path}";
+        byte[] body = "{\"path\":\"C:\\\\Users\\\\test\"}".getBytes(StandardCharsets.UTF_8);
+
+        String result = transformer.transform(template, body);
+
+        assertEquals("Path: C:\\Users\\test", result);
+    }
+
+    @Test
+    void shouldHandleRegexMetacharactersInValue() {
+        String template = "Pattern: {pattern}";
+        byte[] body = "{\"pattern\":\"$1 and \\\\1 replacement\"}".getBytes(StandardCharsets.UTF_8);
+
+        String result = transformer.transform(template, body);
+
+        assertEquals("Pattern: $1 and \\1 replacement", result);
+    }
+
+    @Test
+    void shouldHandleMultiplePlaceholdersWithSpecialChars() {
+        String template = "Commit {ref} by {user}: {message}";
+        byte[] body = "{\"ref\":\"$HEAD\",\"user\":\"dev\\\\team\",\"message\":\"Fix $100 bug\"}"
+                .getBytes(StandardCharsets.UTF_8);
+
+        String result = transformer.transform(template, body);
+
+        assertEquals("Commit $HEAD by dev\\team: Fix $100 bug", result);
+    }
+
+    // ==================== Array and object values ====================
+
+    @Test
+    void shouldHandleArrayValue() {
+        String template = "Tags: {tags}";
+        byte[] body = "{\"tags\":[\"v1.0\",\"release\"]}".getBytes(StandardCharsets.UTF_8);
+
+        String result = transformer.transform(template, body);
+
+        assertEquals("Tags: [\"v1.0\",\"release\"]", result);
+    }
+
+    @Test
+    void shouldHandleObjectValue() {
+        String template = "Config: {config}";
+        byte[] body = "{\"config\":{\"key\":\"value\"}}".getBytes(StandardCharsets.UTF_8);
+
+        String result = transformer.transform(template, body);
+
+        assertEquals("Config: {\"key\":\"value\"}", result);
+    }
+
+    @Test
+    void shouldHandleBooleanValue() {
+        String template = "Active: {active}";
+        byte[] body = "{\"active\":true}".getBytes(StandardCharsets.UTF_8);
+
+        String result = transformer.transform(template, body);
+
+        assertEquals("Active: true", result);
+    }
+
+    @Test
+    void shouldHandleNullValue() {
+        String template = "Value: {value}";
+        byte[] body = "{\"value\":null}".getBytes(StandardCharsets.UTF_8);
+
+        String result = transformer.transform(template, body);
+
+        assertEquals("Value: null", result);
+    }
+
+    // ==================== Edge cases ====================
+
+    @Test
+    void shouldHandleEmptyStringValue() {
+        String template = "Name: {name}";
+        byte[] body = "{\"name\":\"\"}".getBytes(StandardCharsets.UTF_8);
+
+        String result = transformer.transform(template, body);
+
+        assertEquals("Name: ", result);
+    }
+
+    @Test
+    void shouldHandleDeeplyNestedPath() {
+        String template = "Value: {a.b.c.d}";
+        byte[] body = "{\"a\":{\"b\":{\"c\":{\"d\":\"deep\"}}}}".getBytes(StandardCharsets.UTF_8);
+
+        String result = transformer.transform(template, body);
+
+        assertEquals("Value: deep", result);
+    }
+
+    @Test
+    void shouldHandleArrayIndexInPath() {
+        // Arrays accessed via numeric index are not supported - should return <missing>
+        String template = "First: {items.0}";
+        byte[] body = "{\"items\":[\"one\",\"two\"]}".getBytes(StandardCharsets.UTF_8);
+
+        String result = transformer.transform(template, body);
+
+        assertEquals("First: <missing>", result);
+    }
 }

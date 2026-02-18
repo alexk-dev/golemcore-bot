@@ -2,7 +2,7 @@
 
 How the bot works autonomously on long-term goals without user input.
 
-> **See also:** [Configuration Guide](CONFIGURATION.md#auto-mode) for environment variables, [Quick Start](QUICKSTART.md#auto-mode-autonomous-goals) for basic setup, [Model Routing](MODEL_ROUTING.md) for how model tiers interact with auto mode.
+> **See also:** [Configuration Guide](CONFIGURATION.md#auto-mode) for runtime config fields, [Quick Start](QUICKSTART.md) for setup, [Model Routing](MODEL_ROUTING.md) for how model tiers interact with auto mode.
 
 ---
 
@@ -81,7 +81,7 @@ A goal represents a high-level objective the bot should work towards autonomousl
 | `updatedAt` | Instant | Last modification timestamp |
 
 **Limits:**
-- Maximum concurrent active goals: 3 (configurable via `BOT_AUTO_MAX_GOALS`)
+- Maximum concurrent active goals: 3 (configurable via runtime config `autoMode.maxGoals`)
 - Goals are stored in `auto/goals.json` as a JSON array
 
 > **Source:** `Goal.java`
@@ -103,7 +103,7 @@ Tasks are concrete work items within a goal. The LLM creates them via `plan_task
 | `updatedAt` | Instant | Last modification timestamp |
 
 **Limits:**
-- Maximum tasks per goal: 20 (configurable via `BOT_AUTO_MAX_TASKS_PER_GOAL`)
+- Maximum tasks per goal: 20 (currently fixed)
 - Tasks are stored inside the parent goal in `auto/goals.json`
 
 **Task selection:** `getNextPendingTask()` returns the first `PENDING` task across all active goals, sorted by goal creation time (oldest first), then by task order within the goal.
@@ -191,7 +191,7 @@ Auto-mode messages are marked with `metadata["auto.mode"] = true`. This marker i
 1. **`SkillRoutingSystem`** (order=15) — skips skill routing entirely for auto messages. This prevents repeated skill re-selection and uses the default model tier instead.
 
 2. **`ContextBuildingSystem`** (order=20) — when auto mode is detected:
-   - Sets `modelTier` to `bot.auto.model-tier` (default: `"default"`) if no tier was assigned
+   - Sets `modelTier` to runtime config `autoMode.modelTier` (default: `"default"`) if no tier was assigned
    - Injects auto mode context (goals, tasks, diary) into the system prompt
 
 > **Source:** `SkillRoutingSystem.java:70-82`, `ContextBuildingSystem.java:153-156, 248-254`
@@ -231,7 +231,7 @@ You are in autonomous work mode.
 5. Be concise and focused — record key findings in diary
 ```
 
-The number of diary entries included is capped by `bot.auto.max-diary-entries-in-context` (default 10).
+The number of diary entries included in context is currently capped at 10.
 
 > **Source:** `AutoModeService.java:269-329`
 
@@ -273,7 +273,7 @@ When a task or goal is completed, the tool triggers a **milestone callback** tha
 🤖 Goal completed: Deploy bot to production with monitoring
 ```
 
-Notifications are sent via `AutoModeScheduler.sendMilestoneNotification()` using the channel registered when the user ran `/auto on`. Disabled by setting `BOT_AUTO_NOTIFY_MILESTONES=false`.
+Notifications are sent via `AutoModeScheduler.sendMilestoneNotification()` using the channel registered when the user ran `/auto on`. Disable via runtime config `autoMode.notifyMilestones=false`.
 
 > **Source:** `GoalManagementTool.java`, `AutoModeScheduler.java:144-167`
 
@@ -398,28 +398,23 @@ One JSON object per line, one file per UTC date:
 
 ## Configuration
 
-```bash
-# Feature flag (master switch)
-AUTO_MODE_ENABLED=false                        # default: false
+Edit `preferences/runtime-config.json`:
 
-# Scheduler interval
-AUTO_MODE_INTERVAL=15                          # minutes between ticks (default: 15)
-
-# Limits
-BOT_AUTO_MAX_GOALS=3                           # max concurrent ACTIVE goals (default: 3)
-BOT_AUTO_MAX_TASKS_PER_GOAL=20                 # max tasks per goal (default: 20)
-
-# Model tier for auto-mode messages
-BOT_AUTO_MODEL_TIER=default                    # balanced/smart/coding/deep (default: default)
-
-# Notifications
-BOT_AUTO_NOTIFY_MILESTONES=true                # send task/goal completion notifications (default: true)
-
-# Context
-BOT_AUTO_MAX_DIARY_ENTRIES_IN_CONTEXT=10       # diary entries in system prompt (default: 10)
-
-# Goal management tool
-GOAL_MANAGEMENT_TOOL_ENABLED=true              # enable goal_management tool (default: true)
+```json
+{
+  "autoMode": {
+    "enabled": false,
+    "tickIntervalSeconds": 30,
+    "taskTimeLimitMinutes": 10,
+    "autoStart": true,
+    "maxGoals": 3,
+    "modelTier": "default",
+    "notifyMilestones": true
+  },
+  "tools": {
+    "goalManagementEnabled": true
+  }
+}
 ```
 
 > **See:** [Configuration Guide — Auto Mode](CONFIGURATION.md#auto-mode) for a concise reference.
@@ -435,7 +430,7 @@ Auto mode integrates with the agent loop pipeline at specific points:
 | 10 | `InputSanitizationSystem` | Processes normally |
 | 15 | `SkillRoutingSystem` | **Skips** — detects `metadata["auto.mode"]`, returns without routing |
 | 18 | `AutoCompactionSystem` | Processes normally (compacts if context too large) |
-| 20 | `ContextBuildingSystem` | **Sets model tier** from `bot.auto.model-tier`; **injects** goals, tasks, diary into system prompt |
+| 20 | `ContextBuildingSystem` | **Sets model tier** from runtime config (`autoMode.modelTier`); **injects** goals, tasks, diary into system prompt |
 | 25 | `DynamicTierSystem` | Can upgrade to `coding` if auto work triggers code activity |
 | 30 | `ToolLoopExecutionSystem` | LLM calls and tool execution; uses the tier set by ContextBuildingSystem (or upgraded by DynamicTierSystem) |
 | 50 | `MemoryPersistSystem` | Persists conversation |
@@ -450,7 +445,7 @@ Auto mode integrates with the agent loop pipeline at specific points:
 ```
 @PostConstruct AutoModeScheduler.init()
     |
-    +-- Feature enabled? (bot.auto.enabled)
+    +-- Feature enabled? (autoMode.enabled)
     |     |
     |     +-- No: log "disabled", return
     |     |

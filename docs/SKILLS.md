@@ -94,7 +94,6 @@ Declare what the skill needs to function. If any requirement is unmet, the skill
 ```yaml
 requires:
   env:                       # Required environment variables
-    - OPENAI_API_KEY
     - GITHUB_TOKEN
   binary:                    # Required binaries on PATH
     - node
@@ -102,6 +101,8 @@ requires:
   skills:                    # Dependencies on other skills
     - base-assistant
 ```
+
+Note: LLM provider API keys are configured in `preferences/runtime-config.json` (dashboard). The `requires.env` list is intended for skill-specific external credentials (e.g., MCP tokens).
 
 ### Variables
 

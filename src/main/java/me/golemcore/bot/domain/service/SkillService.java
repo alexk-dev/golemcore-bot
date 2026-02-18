@@ -54,8 +54,9 @@ public class SkillService implements SkillComponent {
     private final StoragePort storagePort;
     private final BotProperties properties;
     private final SkillVariableResolver variableResolver;
+    private final RuntimeConfigService runtimeConfigService;
 
-    private static final String SKILLS_DIR = "skills";
+    private static final String DEFAULT_SKILLS_DIR = "skills";
     private static final String SUPPRESS_UNCHECKED = "unchecked";
     private static final String UNKNOWN = "unknown";
     private static final int MIN_PATH_PARTS_FOR_SKILL_NAME = 2;
@@ -82,6 +83,9 @@ public class SkillService implements SkillComponent {
 
     @Override
     public List<Skill> getAvailableSkills() {
+        if (!runtimeConfigService.isSkillsEnabled()) {
+            return List.of();
+        }
         return skillRegistry.values().stream()
                 .filter(Skill::isAvailable)
                 .toList();
@@ -89,11 +93,17 @@ public class SkillService implements SkillComponent {
 
     @Override
     public Optional<Skill> findByName(String name) {
+        if (!runtimeConfigService.isSkillsEnabled()) {
+            return Optional.empty();
+        }
         return Optional.ofNullable(skillRegistry.get(name));
     }
 
     @Override
     public String getSkillsSummary() {
+        if (!runtimeConfigService.isSkillsEnabled() || !runtimeConfigService.isSkillsProgressiveLoadingEnabled()) {
+            return "";
+        }
         List<Skill> available = getAvailableSkills();
         if (available.isEmpty()) {
             return "";
@@ -109,17 +119,25 @@ public class SkillService implements SkillComponent {
 
     @Override
     public String getSkillContent(String name) {
+        if (!runtimeConfigService.isSkillsEnabled()) {
+            return null;
+        }
         Skill skill = skillRegistry.get(name);
         return skill != null ? skill.getContent() : null;
     }
 
     @Override
     public void reload() {
+        if (!runtimeConfigService.isSkillsEnabled()) {
+            skillRegistry.clear();
+            log.info("Skills are disabled at runtime, registry cleared");
+            return;
+        }
         // Copy-on-write: load into temp map, then swap atomically
         Map<String, Skill> newRegistry = new ConcurrentHashMap<>();
 
         try {
-            List<String> keys = storagePort.listObjects(SKILLS_DIR, "").join();
+            List<String> keys = storagePort.listObjects(getSkillsDirectory(), "").join();
             for (String key : keys) {
                 if (key.endsWith("/SKILL.md") || "SKILL.md".equals(key)) {
                     loadSkillInto(key, newRegistry);
@@ -137,7 +155,7 @@ public class SkillService implements SkillComponent {
 
     private void loadSkillInto(String key, Map<String, Skill> target) {
         try {
-            String content = storagePort.getText(SKILLS_DIR, key).join();
+            String content = storagePort.getText(getSkillsDirectory(), key).join();
             if (content == null || content.isBlank()) {
                 return;
             }
@@ -347,5 +365,13 @@ public class SkillService implements SkillComponent {
         }
 
         return true;
+    }
+
+    private String getSkillsDirectory() {
+        String configured = properties.getSkills().getDirectory();
+        if (configured == null || configured.isBlank()) {
+            return DEFAULT_SKILLS_DIR;
+        }
+        return configured;
     }
 }

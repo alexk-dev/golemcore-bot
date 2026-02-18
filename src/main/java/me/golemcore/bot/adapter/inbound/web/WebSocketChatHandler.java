@@ -5,6 +5,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.adapter.inbound.web.security.JwtTokenProvider;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.port.inbound.CommandPort;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.socket.WebSocketHandler;
 import org.springframework.web.reactive.socket.WebSocketMessage;
@@ -12,7 +14,13 @@ import org.springframework.web.reactive.socket.WebSocketSession;
 import org.springframework.web.util.UriComponentsBuilder;
 import reactor.core.publisher.Mono;
 
+import java.io.IOException;
 import java.net.URI;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Base64;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
@@ -27,9 +35,14 @@ import java.util.UUID;
 @Slf4j
 public class WebSocketChatHandler implements WebSocketHandler {
 
+    private static final int MAX_IMAGE_ATTACHMENTS = 6;
+    private static final int MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+    private static final String CHANNEL_TYPE = "web";
+
     private final JwtTokenProvider jwtTokenProvider;
     private final WebChannelAdapter webChannelAdapter;
     private final ObjectMapper objectMapper;
+    private final ObjectProvider<CommandPort> commandRouter;
 
     @Override
     public Mono<Void> handle(WebSocketSession session) {
@@ -62,25 +75,70 @@ public class WebSocketChatHandler implements WebSocketHandler {
 
             String text = (String) json.get("text");
             String sessionId = (String) json.getOrDefault("sessionId", connectionId);
+            List<Map<String, Object>> attachments = extractImageAttachments(json.get("attachments"));
 
-            if (text == null || text.isBlank()) {
+            if ((text == null || text.isBlank()) && attachments.isEmpty()) {
                 return;
+            }
+
+            // Intercept slash commands before routing to agent loop
+            if (text != null && text.startsWith("/") && attachments.isEmpty()
+                    && tryExecuteCommand(text.trim(), sessionId, connectionId)) {
+                return;
+            }
+
+            Map<String, Object> metadata = null;
+            if (!attachments.isEmpty()) {
+                metadata = Map.of("attachments", attachments);
             }
 
             Message message = Message.builder()
                     .id(UUID.randomUUID().toString())
                     .role("user")
-                    .content(text)
-                    .channelType("web")
+                    .content(text != null ? text : "")
+                    .channelType(CHANNEL_TYPE)
                     .chatId(sessionId)
                     .senderId(username)
+                    .metadata(metadata)
                     .timestamp(Instant.now())
                     .build();
 
-            webChannelAdapter.handleIncomingMessage(message);
-        } catch (Exception e) { // NOSONAR
+            webChannelAdapter.handleIncomingMessage(message, connectionId);
+        } catch (IOException | RuntimeException e) { // NOSONAR
             log.warn("[WebSocket] Failed to process incoming message: {}", e.getMessage());
         }
+    }
+
+    private boolean tryExecuteCommand(String text, String sessionId, String connectionId) {
+        String[] parts = text.split("\\s+", 2);
+        String cmd = parts[0].substring(1);
+        if (cmd.isBlank()) {
+            return false;
+        }
+
+        CommandPort router = commandRouter.getIfAvailable();
+        if (router == null || !router.hasCommand(cmd)) {
+            return false;
+        }
+
+        List<String> args = parts.length > 1
+                ? Arrays.asList(parts[1].split("\\s+"))
+                : List.of();
+        String fullSessionId = CHANNEL_TYPE + ":" + sessionId;
+        Map<String, Object> ctx = Map.of(
+                "sessionId", fullSessionId,
+                "chatId", sessionId,
+                "channelType", CHANNEL_TYPE);
+
+        try {
+            CommandPort.CommandResult result = router.execute(cmd, args, ctx).join();
+            webChannelAdapter.sendMessage(sessionId, result.output());
+            log.debug("[WebSocket] Executed command: /{} -> {}", cmd, result.success() ? "ok" : "fail");
+        } catch (Exception e) { // NOSONAR
+            log.error("[WebSocket] Command execution failed: /{}", cmd, e);
+            webChannelAdapter.sendMessage(sessionId, "Command failed: " + e.getMessage());
+        }
+        return true;
     }
 
     private String extractToken(WebSocketSession session) {
@@ -92,6 +150,59 @@ public class WebSocketChatHandler implements WebSocketHandler {
                     .build()
                     .getQueryParams()
                     .getFirst("token");
+        }
+        return null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> extractImageAttachments(Object rawAttachments) {
+        List<Map<String, Object>> result = new ArrayList<>();
+
+        if (!(rawAttachments instanceof List<?> attachments)) {
+            return result;
+        }
+
+        for (Object attachmentObj : attachments) {
+            if (result.size() >= MAX_IMAGE_ATTACHMENTS) {
+                break;
+            }
+            if (!(attachmentObj instanceof Map<?, ?> attachmentMap)) {
+                continue;
+            }
+
+            String type = asString(attachmentMap.get("type"));
+            String mimeType = asString(attachmentMap.get("mimeType"));
+            String dataBase64 = asString(attachmentMap.get("dataBase64"));
+            String name = asString(attachmentMap.get("name"));
+
+            if (!"image".equals(type) || mimeType == null || !mimeType.startsWith("image/")
+                    || dataBase64 == null || dataBase64.isBlank()) {
+                continue;
+            }
+
+            try {
+                byte[] decoded = Base64.getDecoder().decode(dataBase64);
+                if (decoded.length == 0 || decoded.length > MAX_IMAGE_BYTES) {
+                    continue;
+                }
+            } catch (IllegalArgumentException ex) {
+                continue;
+            }
+
+            Map<String, Object> normalized = new LinkedHashMap<>();
+            normalized.put("type", "image");
+            normalized.put("mimeType", mimeType);
+            normalized.put("dataBase64", dataBase64);
+            normalized.put("name", name != null ? name : "image");
+            result.add(normalized);
+        }
+
+        return result;
+    }
+
+    private String asString(Object value) {
+        if (value instanceof String stringValue) {
+            return stringValue;
         }
         return null;
     }

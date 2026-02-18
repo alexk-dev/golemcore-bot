@@ -676,7 +676,6 @@ class McpClientTest {
         McpConfig config = McpConfig.builder().command(CMD_TEST).build();
         try (McpClient client = new McpClient("activity", config, objectMapper)) {
             long before = client.getLastActivityTimestamp();
-            Thread.sleep(10);
 
             StringWriter sw = new StringWriter();
             BufferedWriter bw = new BufferedWriter(sw);

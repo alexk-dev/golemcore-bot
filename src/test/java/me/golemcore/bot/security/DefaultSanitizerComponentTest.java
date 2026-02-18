@@ -1,6 +1,7 @@
 package me.golemcore.bot.security;
 
 import me.golemcore.bot.domain.component.SanitizerComponent.SanitizationResult;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
@@ -22,12 +23,17 @@ class DefaultSanitizerComponentTest {
     @Mock
     private InjectionGuard injectionGuard;
 
+    @Mock
+    private RuntimeConfigService runtimeConfigService;
+
     private DefaultSanitizerComponent sanitizerComponent;
 
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        sanitizerComponent = new DefaultSanitizerComponent(inputSanitizer, injectionGuard);
+        when(runtimeConfigService.isSanitizeInputEnabled()).thenReturn(true);
+        when(runtimeConfigService.getMaxInputLength()).thenReturn(10000);
+        sanitizerComponent = new DefaultSanitizerComponent(inputSanitizer, injectionGuard, runtimeConfigService);
     }
 
     // ==================== sanitize() ====================

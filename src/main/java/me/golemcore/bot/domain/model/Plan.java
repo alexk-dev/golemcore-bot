@@ -29,9 +29,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Represents an execution plan containing ordered steps of tool calls proposed
- * by the LLM. Plans go through a lifecycle: collecting steps, user review,
- * approval, execution, and completion.
+ * Represents an execution plan containing a canonical markdown document and
+ * optional structured steps for execution tracking.
  */
 @Data
 @Builder
@@ -43,9 +42,15 @@ public class Plan {
     private String title;
     private String description;
 
+    /** Canonical plan draft (SSOT). */
+    private String markdown;
+
     @Builder.Default
     private PlanStatus status = PlanStatus.COLLECTING;
 
+    /**
+     * Optional structured steps (execution tracking). Not the SSOT for drafting.
+     */
     @Builder.Default
     private List<PlanStep> steps = new ArrayList<>();
 
@@ -54,9 +59,6 @@ public class Plan {
     private Instant createdAt;
     private Instant updatedAt;
 
-    /**
-     * Calculates the number of completed steps (not serialized to JSON).
-     */
     @JsonIgnore
     public long getCompletedStepCount() {
         return steps.stream()
@@ -64,9 +66,6 @@ public class Plan {
                 .count();
     }
 
-    /**
-     * Calculates the number of failed steps (not serialized to JSON).
-     */
     @JsonIgnore
     public long getFailedStepCount() {
         return steps.stream()
@@ -74,9 +73,6 @@ public class Plan {
                 .count();
     }
 
-    /**
-     * Plan lifecycle states.
-     */
     public enum PlanStatus {
         COLLECTING, READY, APPROVED, EXECUTING, COMPLETED, PARTIALLY_COMPLETED, CANCELLED
     }
