@@ -91,6 +91,11 @@ public final class ContextAttributes {
      */
     public static final String TOOL_LOOP_LIMIT_REACHED = "toolloop.limit.reached";
 
+    /**
+     * TurnLimitReason ? machine-readable reason why tool loop limit was reached.
+     */
+    public static final String TOOL_LOOP_LIMIT_REASON = "toolloop.limit.reason";
+
     /** WebSocketSession — reference to WebSocket session for streaming. */
     public static final String WEB_STREAM_SINK = "web.stream.sink";
 

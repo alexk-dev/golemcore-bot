@@ -24,6 +24,7 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.LlmUsage;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
+import me.golemcore.bot.domain.model.TurnLimitReason;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -104,10 +105,11 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
         }
         String text = response.getContent();
 
-        // Tool loop limit: replace technical stop message with user-friendly i18n text.
+        // Tool loop limit: provide specific, user-friendly reason by limit type.
         Boolean toolLoopLimitReached = context.getAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REACHED);
         if (Boolean.TRUE.equals(toolLoopLimitReached)) {
-            text = preferencesService.getMessage("system.toolloop.limit");
+            TurnLimitReason reason = context.getAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REASON);
+            text = buildToolLoopLimitMessage(reason);
         }
 
         // Voice intent is typed (backward-incompatible: no ContextAttributes.* for
@@ -228,6 +230,22 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
             return trimmed.substring(VOICE_PREFIX.length()).trim();
         }
         return trimmed;
+    }
+
+    private String buildToolLoopLimitMessage(TurnLimitReason reason) {
+        if (reason == null) {
+            return preferencesService.getMessage("system.toolloop.limit.unknown");
+        }
+
+        return switch (reason) {
+        case MAX_LLM_CALLS -> preferencesService.getMessage("system.toolloop.limit.maxLlmCalls",
+                runtimeConfigService.getTurnMaxLlmCalls());
+        case MAX_TOOL_EXECUTIONS -> preferencesService.getMessage("system.toolloop.limit.maxToolExecutions",
+                runtimeConfigService.getTurnMaxToolExecutions());
+        case DEADLINE -> preferencesService.getMessage("system.toolloop.limit.deadline",
+                runtimeConfigService.getTurnDeadline().toMinutes());
+        case UNKNOWN -> preferencesService.getMessage("system.toolloop.limit.unknown");
+        };
     }
 
     private boolean shouldAutoVoiceRespond(AgentContext context) {

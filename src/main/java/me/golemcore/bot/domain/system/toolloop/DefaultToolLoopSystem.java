@@ -8,6 +8,7 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.ToolFailureKind;
+import me.golemcore.bot.domain.model.TurnLimitReason;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -218,13 +219,16 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             }
         }
 
-        String stopReason = buildStopReason(llmCalls, maxLlmCalls, toolExecutions, maxToolExecutions, deadline);
+        TurnLimitReason stopReason = buildStopReason(llmCalls, maxLlmCalls, toolExecutions, maxToolExecutions,
+                deadline);
 
         LlmResponse last = context.getAttribute(ContextAttributes.LLM_RESPONSE);
         List<Message.ToolCall> pending = last != null ? last.getToolCalls() : null;
         applyAttachments(context, accumulatedAttachments);
         context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REACHED, true);
-        return stopTurn(context, last, pending, stopReason, llmCalls, toolExecutions);
+        context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REASON, stopReason);
+        return stopTurn(context, last, pending,
+                buildStopReasonMessage(stopReason, maxLlmCalls, maxToolExecutions), llmCalls, toolExecutions);
 
     }
 
@@ -326,18 +330,27 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         }
     }
 
-    private String buildStopReason(int llmCalls, int maxLlmCalls, int toolExecutions, int maxToolExecutions,
+    private TurnLimitReason buildStopReason(int llmCalls, int maxLlmCalls, int toolExecutions, int maxToolExecutions,
             Instant deadline) {
         if (llmCalls >= maxLlmCalls) {
-            return "reached max internal LLM calls (" + maxLlmCalls + ")";
+            return TurnLimitReason.MAX_LLM_CALLS;
         }
         if (toolExecutions >= maxToolExecutions) {
-            return "reached max tool executions (" + maxToolExecutions + ")";
+            return TurnLimitReason.MAX_TOOL_EXECUTIONS;
         }
         if (!clock.instant().isBefore(deadline)) {
-            return "deadline exceeded";
+            return TurnLimitReason.DEADLINE;
         }
-        return "stopped by guard";
+        return TurnLimitReason.UNKNOWN;
+    }
+
+    private String buildStopReasonMessage(TurnLimitReason reason, int maxLlmCalls, int maxToolExecutions) {
+        return switch (reason) {
+        case MAX_LLM_CALLS -> "reached max internal LLM calls (" + maxLlmCalls + ")";
+        case MAX_TOOL_EXECUTIONS -> "reached max tool executions (" + maxToolExecutions + ")";
+        case DEADLINE -> "deadline exceeded";
+        case UNKNOWN -> "stopped by guard";
+        };
     }
 
     private LlmRequest buildRequest(AgentContext context) {
