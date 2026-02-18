@@ -2,7 +2,7 @@
 
 How the bot uses LightRAG for long-term semantic memory via knowledge graphs.
 
-> **See also:** [Configuration Guide](CONFIGURATION.md#rag-long-term-memory) for environment variables, [Memory Guide](MEMORY.md) for short-term memory (daily notes + MEMORY.md), [Deployment Guide](DEPLOYMENT.md) for production setup.
+> **See also:** [Configuration Guide](CONFIGURATION.md#rag) for runtime config fields, [Memory Guide](MEMORY.md) for short-term memory (daily notes + MEMORY.md), [Deployment Guide](DEPLOYMENT.md) for production setup.
 
 ---
 
@@ -188,7 +188,7 @@ If the RAG query fails (timeout, connection refused, 5xx), the error is logged a
 
 ## Query Modes
 
-LightRAG supports four query modes, configurable via `BOT_RAG_QUERY_MODE`:
+LightRAG supports four query modes, configurable in `preferences/runtime-config.json` via `rag.queryMode`:
 
 | Mode | Description | Best For |
 |------|-------------|----------|
@@ -229,8 +229,7 @@ Start it:
 
 ```bash
 cd lightrag
-cp .env.example .env
-# Edit .env: set OPENAI_API_KEY (or other LLM/embedding provider)
+# Create/edit .env (set your LightRAG LLM + embedding provider keys)
 docker compose up -d
 ```
 
@@ -296,26 +295,24 @@ Optional authentication via `Authorization: Bearer <api-key>` header when `RAG_A
 
 ## Configuration
 
-```bash
-# Feature flag
-RAG_ENABLED=false                              # default: false
+Edit `preferences/runtime-config.json`:
 
-# LightRAG server
-RAG_URL=http://localhost:9621                  # default: http://localhost:9621
-RAG_API_KEY=                                   # optional, default: empty
-
-# Query behavior
-BOT_RAG_QUERY_MODE=hybrid                      # local/global/hybrid/naive (default: hybrid)
-BOT_RAG_MAX_CONTEXT_TOKENS=2000                # max tokens from RAG in system prompt (default: 2000)
-BOT_RAG_TIMEOUT_SECONDS=10                     # HTTP timeout for queries (default: 10)
-
-# Indexing behavior
-BOT_RAG_INDEX_MIN_LENGTH=50                    # min combined chars to index (default: 50)
+```json
+{
+  "rag": {
+    "enabled": false,
+    "url": "http://localhost:9621",
+    "apiKey": "",
+    "queryMode": "hybrid",
+    "timeoutSeconds": 10,
+    "indexMinLength": 50
+  }
+}
 ```
 
 The `LightRagAdapter` creates a dedicated `OkHttpClient` with the configured timeout, derived from the shared base client.
 
-> **See:** [Configuration Guide — RAG](CONFIGURATION.md#rag-long-term-memory) for a concise reference.
+> **See:** [Configuration Guide — RAG](CONFIGURATION.md#rag) for a concise reference.
 
 ---
 
@@ -382,7 +379,7 @@ On errors:
 ### Verifying RAG Works
 
 1. Start LightRAG: `cd lightrag && docker compose up -d`
-2. Enable in bot: `RAG_ENABLED=true RAG_URL=http://localhost:9621`
+2. Enable in bot: set `rag.enabled=true` and `rag.url=http://localhost:9621` in `preferences/runtime-config.json`
 3. Have a conversation about a specific topic
 4. Start a new session (`/new`)
 5. Ask about the previous topic — the answer should reference past context under `# Relevant Memory`

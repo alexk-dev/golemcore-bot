@@ -76,6 +76,29 @@ public interface StoragePort {
     CompletableFuture<Void> appendText(String directory, String path, String content);
 
     /**
+     * Atomically write text content to file with optional backup.
+     *
+     * <p>
+     * Guarantees crash-safe writes via:
+     * <ol>
+     * <li>Write to temporary file (.tmp suffix)</li>
+     * <li>fsync to ensure data is on disk</li>
+     * <li>If backup enabled: rename existing file to .bak</li>
+     * <li>Atomic rename of .tmp to target</li>
+     * </ol>
+     *
+     * @param directory
+     *            subdirectory
+     * @param path
+     *            relative path within directory
+     * @param content
+     *            text content to write
+     * @param backup
+     *            if true, preserve previous version as .bak
+     */
+    CompletableFuture<Void> putTextAtomic(String directory, String path, String content, boolean backup);
+
+    /**
      * Ensure directory exists.
      */
     CompletableFuture<Void> ensureDirectory(String directory);

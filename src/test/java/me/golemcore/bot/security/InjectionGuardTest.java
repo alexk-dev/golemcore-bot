@@ -1,5 +1,6 @@
 package me.golemcore.bot.security;
 
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -8,6 +9,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class InjectionGuardTest {
 
@@ -17,7 +20,10 @@ class InjectionGuardTest {
 
     @BeforeEach
     void setUp() {
-        guard = new InjectionGuard();
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isPromptInjectionDetectionEnabled()).thenReturn(true);
+        when(runtimeConfigService.isCommandInjectionDetectionEnabled()).thenReturn(true);
+        guard = new InjectionGuard(runtimeConfigService);
     }
 
     @ParameterizedTest

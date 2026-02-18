@@ -33,11 +33,11 @@ import me.golemcore.bot.domain.model.RoutingOutcome;
 import me.golemcore.bot.domain.model.SkillTransitionRequest;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.model.TurnOutcome;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.system.AgentSystem;
 import me.golemcore.bot.domain.system.ResponseRoutingSystem;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.RateLimitPort;
@@ -67,8 +67,6 @@ class AgentLoopTest {
     void shouldResetTypedControlFlagsAndToolResultsBetweenIterations() {
         SessionPort sessionPort = mock(SessionPort.class);
         RateLimitPort rateLimitPort = mock(RateLimitPort.class);
-        BotProperties props = new BotProperties();
-        props.getAgent().setMaxIterations(2);
 
         UserPreferencesService preferencesService = mock(UserPreferencesService.class);
         when(preferencesService.getMessage(any(), any())).thenReturn("x");
@@ -92,6 +90,7 @@ class AgentLoopTest {
         ChannelPort channel = mock(ChannelPort.class);
         when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
         when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         AgentSystem verifier = new AgentSystem() {
             @Override
@@ -132,9 +131,9 @@ class AgentLoopTest {
         AgentLoop loop = new AgentLoop(
                 sessionPort,
                 rateLimitPort,
-                props,
                 List.of(verifier),
                 List.of(channel),
+                mockRuntimeConfigService(2),
                 preferencesService,
                 llmPort,
                 clock);
@@ -157,8 +156,6 @@ class AgentLoopTest {
     void shouldSendUnsentLlmResponseAsFeedbackGuarantee() {
         SessionPort sessionPort = mock(SessionPort.class);
         RateLimitPort rateLimitPort = mock(RateLimitPort.class);
-        BotProperties props = new BotProperties();
-        props.getAgent().setMaxIterations(1);
 
         UserPreferencesService preferencesService = mock(UserPreferencesService.class);
         when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
@@ -182,6 +179,7 @@ class AgentLoopTest {
         ChannelPort channel = mock(ChannelPort.class);
         when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
         when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         AgentSystem system = new AgentSystem() {
             @Override
@@ -209,11 +207,11 @@ class AgentLoopTest {
         AgentLoop loop = new AgentLoop(
                 sessionPort,
                 rateLimitPort,
-                props,
                 List.of(system,
                         new ResponseRoutingSystem(List.of(channel), preferencesService,
                                 mock(VoiceResponseHandler.class))),
                 List.of(channel),
+                mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
                 clock);
@@ -230,7 +228,7 @@ class AgentLoopTest {
         loop.processMessage(inbound);
 
         // Feedback guarantee should route via ResponseRoutingSystem when present.
-        verify(channel, atLeastOnce()).sendMessage(eq("1"), eq("hello"));
+        verify(channel, atLeastOnce()).sendMessage(eq("1"), eq("hello"), any());
         // NOTE: ResponseRoutingSystem is transport-only. It must not write assistant
         // messages
         // into raw history. (Raw history is owned by the domain execution path.)
@@ -241,8 +239,6 @@ class AgentLoopTest {
         // Arrange
         SessionPort sessionPort = mock(SessionPort.class);
         RateLimitPort rateLimitPort = mock(RateLimitPort.class);
-        BotProperties props = new BotProperties();
-        props.getAgent().setMaxIterations(1);
 
         UserPreferencesService preferencesService = mock(UserPreferencesService.class);
         when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
@@ -266,6 +262,7 @@ class AgentLoopTest {
         ChannelPort channel = mock(ChannelPort.class);
         when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
         when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         // A system that is disabled — its process() should never be called
         AgentSystem disabledSystem = new AgentSystem() {
@@ -299,9 +296,9 @@ class AgentLoopTest {
         AgentLoop loop = new AgentLoop(
                 sessionPort,
                 rateLimitPort,
-                props,
                 List.of(disabledSystem),
                 List.of(channel),
+                mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
                 clock);
@@ -327,8 +324,6 @@ class AgentLoopTest {
         // Arrange
         SessionPort sessionPort = mock(SessionPort.class);
         RateLimitPort rateLimitPort = mock(RateLimitPort.class);
-        BotProperties props = new BotProperties();
-        props.getAgent().setMaxIterations(1);
 
         UserPreferencesService preferencesService = mock(UserPreferencesService.class);
         when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
@@ -352,6 +347,7 @@ class AgentLoopTest {
         ChannelPort channel = mock(ChannelPort.class);
         when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
         when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         // A system that throws an exception
         AgentSystem throwingSystem = new AgentSystem() {
@@ -404,9 +400,9 @@ class AgentLoopTest {
         AgentLoop loop = new AgentLoop(
                 sessionPort,
                 rateLimitPort,
-                props,
                 List.of(throwingSystem, inspectorSystem),
                 List.of(channel),
+                mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
                 clock);
@@ -437,7 +433,6 @@ class AgentLoopTest {
         // Arrange
         SessionPort sessionPort = mock(SessionPort.class);
         RateLimitPort rateLimitPort = mock(RateLimitPort.class);
-        BotProperties props = new BotProperties();
         UserPreferencesService preferencesService = mock(UserPreferencesService.class);
         LlmPort llmPort = mock(LlmPort.class);
         Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
@@ -448,9 +443,9 @@ class AgentLoopTest {
         AgentLoop loop = new AgentLoop(
                 sessionPort,
                 rateLimitPort,
-                props,
                 List.of(),
                 List.of(channel),
+                mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
                 clock);
@@ -464,8 +459,6 @@ class AgentLoopTest {
         // Arrange
         SessionPort sessionPort = mock(SessionPort.class);
         RateLimitPort rateLimitPort = mock(RateLimitPort.class);
-        BotProperties props = new BotProperties();
-        props.getAgent().setMaxIterations(1);
 
         UserPreferencesService preferencesService = mock(UserPreferencesService.class);
         when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
@@ -491,6 +484,7 @@ class AgentLoopTest {
         ChannelPort channel = mock(ChannelPort.class);
         when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
         when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         // System that adds a FailureEvent to the context but produces no response
         AgentSystem failureSystem = new AgentSystem() {
@@ -524,9 +518,9 @@ class AgentLoopTest {
         AgentLoop loop = new AgentLoop(
                 sessionPort,
                 rateLimitPort,
-                props,
                 List.of(failureSystem, routingSystem),
                 List.of(channel),
+                mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
                 clock);
@@ -545,7 +539,7 @@ class AgentLoopTest {
 
         // Assert — the LLM was called to interpret errors and a response was sent
         verify(llmPort).chat(any());
-        verify(channel, atLeastOnce()).sendMessage(eq("1"), eq("Error: interpreted"));
+        verify(channel, atLeastOnce()).sendMessage(eq("1"), eq("Error: interpreted"), any());
     }
 
     @Test
@@ -553,8 +547,6 @@ class AgentLoopTest {
         // Arrange
         SessionPort sessionPort = mock(SessionPort.class);
         RateLimitPort rateLimitPort = mock(RateLimitPort.class);
-        BotProperties props = new BotProperties();
-        props.getAgent().setMaxIterations(1);
 
         UserPreferencesService preferencesService = mock(UserPreferencesService.class);
         when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
@@ -578,6 +570,7 @@ class AgentLoopTest {
         ChannelPort channel = mock(ChannelPort.class);
         when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
         when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         // System that nulls out the messages list to test isAutoModeContext safety
         AgentSystem nullMessagesSystem = new AgentSystem() {
@@ -609,9 +602,9 @@ class AgentLoopTest {
         AgentLoop loop = new AgentLoop(
                 sessionPort,
                 rateLimitPort,
-                props,
                 List.of(nullMessagesSystem, routingSystem),
                 List.of(channel),
+                mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
                 clock);
@@ -635,8 +628,6 @@ class AgentLoopTest {
         // Arrange — build a message with null content and verify the loop handles it
         SessionPort sessionPort = mock(SessionPort.class);
         RateLimitPort rateLimitPort = mock(RateLimitPort.class);
-        BotProperties props = new BotProperties();
-        props.getAgent().setMaxIterations(1);
 
         UserPreferencesService preferencesService = mock(UserPreferencesService.class);
         when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
@@ -660,13 +651,14 @@ class AgentLoopTest {
         ChannelPort channel = mock(ChannelPort.class);
         when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
         when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         AgentLoop loop = new AgentLoop(
                 sessionPort,
                 rateLimitPort,
-                props,
                 List.of(),
                 List.of(channel),
+                mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
                 clock);
@@ -691,8 +683,6 @@ class AgentLoopTest {
         // Arrange
         SessionPort sessionPort = mock(SessionPort.class);
         RateLimitPort rateLimitPort = mock(RateLimitPort.class);
-        BotProperties props = new BotProperties();
-        props.getAgent().setMaxIterations(1);
 
         UserPreferencesService preferencesService = mock(UserPreferencesService.class);
         when(preferencesService.getMessage(any())).thenReturn("generic fallback");
@@ -716,6 +706,7 @@ class AgentLoopTest {
         ChannelPort channel = mock(ChannelPort.class);
         when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
         when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         // System that sets a TurnOutcome with RoutingOutcome sentText=false and no
         // OutgoingResponse
@@ -756,9 +747,9 @@ class AgentLoopTest {
         AgentLoop loop = new AgentLoop(
                 sessionPort,
                 rateLimitPort,
-                props,
                 List.of(turnOutcomeSystem, routingSystem),
                 List.of(channel),
+                mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
                 clock);
@@ -777,6 +768,257 @@ class AgentLoopTest {
 
         // Assert — ensureFeedback should trigger because sentText=false,
         // no unsent LLM response exists, LLM not available, so generic fallback fires
-        verify(channel, atLeastOnce()).sendMessage(eq("1"), eq("generic fallback"));
+        verify(channel, atLeastOnce()).sendMessage(eq("1"), eq("generic fallback"), any());
+    }
+
+    @Test
+    void shouldDropMessageWhenRateLimited() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.denied(5000, "rate limited"));
+
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        LlmPort llmPort = mock(LlmPort.class);
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+
+        AgentLoop loop = new AgentLoop(
+                sessionPort, rateLimitPort, List.of(), List.of(channel),
+                mockRuntimeConfigService(1), preferencesService, llmPort, clock);
+
+        Message inbound = Message.builder()
+                .role(ROLE_USER).content("hi")
+                .channelType(CHANNEL_TYPE).chatId("1").senderId("u1")
+                .timestamp(clock.instant()).build();
+
+        loop.processMessage(inbound);
+
+        verify(sessionPort, never()).getOrCreate(any(), any());
+        verify(sessionPort, never()).save(any());
+    }
+
+    @Test
+    void shouldBypassRateLimitForAutoMode() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+
+        AgentSession session = AgentSession.builder()
+                .id("s1").channelType(CHANNEL_TYPE).chatId("1")
+                .messages(new ArrayList<>()).build();
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "1")).thenReturn(session);
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+        when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        AgentLoop loop = new AgentLoop(
+                sessionPort, rateLimitPort, List.of(), List.of(channel),
+                mockRuntimeConfigService(1), preferencesService, llmPort, clock);
+
+        java.util.Map<String, Object> meta = new java.util.HashMap<>();
+        meta.put("auto.mode", true);
+        Message autoMsg = Message.builder()
+                .role(ROLE_USER).content("auto task")
+                .channelType(CHANNEL_TYPE).chatId("1").senderId("auto")
+                .metadata(meta).timestamp(clock.instant()).build();
+
+        loop.processMessage(autoMsg);
+
+        verify(rateLimitPort, never()).tryConsume();
+        verify(sessionPort).save(session);
+    }
+
+    @Test
+    void shouldSkipFeedbackGuaranteeForAutoMode() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+
+        AgentSession session = AgentSession.builder()
+                .id("s1").channelType(CHANNEL_TYPE).chatId("1")
+                .messages(new ArrayList<>()).build();
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "1")).thenReturn(session);
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+        when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        ResponseRoutingSystem routing = new ResponseRoutingSystem(
+                List.of(channel), preferencesService, mock(VoiceResponseHandler.class));
+
+        AgentLoop loop = new AgentLoop(
+                sessionPort, rateLimitPort, List.of(routing), List.of(channel),
+                mockRuntimeConfigService(1), preferencesService, llmPort, clock);
+
+        java.util.Map<String, Object> meta = new java.util.HashMap<>();
+        meta.put("auto.mode", true);
+        Message autoMsg = Message.builder()
+                .role(ROLE_USER).content("auto task")
+                .channelType(CHANNEL_TYPE).chatId("1").senderId("auto")
+                .metadata(meta).timestamp(clock.instant()).build();
+
+        loop.processMessage(autoMsg);
+
+        verify(channel, never()).sendMessage(eq("1"), eq(MSG_GENERIC), any());
+    }
+
+    @Test
+    void shouldSendIterationLimitMessage() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
+        when(preferencesService.getMessage(eq("system.iteration.limit"), any())).thenReturn("Limit reached (1)");
+
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+
+        AgentSession session = AgentSession.builder()
+                .id("s1").channelType(CHANNEL_TYPE).chatId("1")
+                .messages(new ArrayList<>()).build();
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "1")).thenReturn(session);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+        when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        // System that always requests a skill transition → loop never stops naturally
+        AgentSystem alwaysTransition = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "alwaysTransition";
+            }
+
+            @Override
+            public int getOrder() {
+                return 1;
+            }
+
+            @Override
+            public boolean shouldProcess(AgentContext context) {
+                return true;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                context.setSkillTransitionRequest(SkillTransitionRequest.pipeline("next"));
+                return context;
+            }
+        };
+
+        ResponseRoutingSystem routing = new ResponseRoutingSystem(
+                List.of(channel), preferencesService, mock(VoiceResponseHandler.class));
+
+        AgentLoop loop = new AgentLoop(
+                sessionPort, rateLimitPort, List.of(alwaysTransition, routing), List.of(channel),
+                mockRuntimeConfigService(1), preferencesService, llmPort, clock);
+
+        Message inbound = Message.builder()
+                .role(ROLE_USER).content("hi")
+                .channelType(CHANNEL_TYPE).chatId("1").senderId("u1")
+                .timestamp(clock.instant()).build();
+
+        loop.processMessage(inbound);
+
+        verify(channel, atLeastOnce()).sendMessage(eq("1"), eq("Limit reached (1)"), any());
+    }
+
+    @Test
+    void shouldFallbackToGenericFeedbackWhenLlmInterpretationTimesOut() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(eq("system.error.generic.feedback"))).thenReturn("Something went wrong");
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(true);
+        when(llmPort.chat(any())).thenReturn(CompletableFuture.failedFuture(new RuntimeException("timeout")));
+
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+
+        AgentSession session = AgentSession.builder()
+                .id("s1").channelType(CHANNEL_TYPE).chatId("1")
+                .messages(new ArrayList<>()).build();
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "1")).thenReturn(session);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+        when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        // System that sets an LLM error but no response
+        AgentSystem errorSystem = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "errorSetter";
+            }
+
+            @Override
+            public int getOrder() {
+                return 1;
+            }
+
+            @Override
+            public boolean shouldProcess(AgentContext context) {
+                return true;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                context.setAttribute(ContextAttributes.LLM_ERROR, "Connection refused");
+                return context;
+            }
+        };
+
+        ResponseRoutingSystem routing = new ResponseRoutingSystem(
+                List.of(channel), preferencesService, mock(VoiceResponseHandler.class));
+
+        AgentLoop loop = new AgentLoop(
+                sessionPort, rateLimitPort, List.of(errorSystem, routing), List.of(channel),
+                mockRuntimeConfigService(1), preferencesService, llmPort, clock);
+
+        Message inbound = Message.builder()
+                .role(ROLE_USER).content("hi")
+                .channelType(CHANNEL_TYPE).chatId("1").senderId("u1")
+                .timestamp(clock.instant()).build();
+
+        loop.processMessage(inbound);
+
+        // LLM interpretation fails, falls through to generic feedback
+        verify(channel, atLeastOnce()).sendMessage(eq("1"), eq("Something went wrong"), any());
+    }
+
+    private static RuntimeConfigService mockRuntimeConfigService(int maxLlmCalls) {
+        RuntimeConfigService rcs = mock(RuntimeConfigService.class);
+        when(rcs.getTurnMaxLlmCalls()).thenReturn(maxLlmCalls);
+        when(rcs.getRoutingModel()).thenReturn("test-model");
+        when(rcs.getRoutingModelReasoning()).thenReturn("none");
+        return rcs;
     }
 }

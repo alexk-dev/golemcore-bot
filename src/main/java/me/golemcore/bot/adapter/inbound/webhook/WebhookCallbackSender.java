@@ -22,7 +22,9 @@ import me.golemcore.bot.adapter.inbound.webhook.dto.CallbackPayload;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
 import reactor.util.retry.Retry;
+import reactor.util.retry.RetryBackoffSpec;
 
 import java.time.Duration;
 
@@ -56,13 +58,17 @@ public class WebhookCallbackSender {
      *            the agent run result
      */
     public void send(String callbackUrl, CallbackPayload payload) {
-        webClient.post()
+        buildSendMono(callbackUrl, payload).subscribe();
+    }
+
+    protected Mono<Void> buildSendMono(String callbackUrl, CallbackPayload payload) {
+        return webClient.post()
                 .uri(callbackUrl)
                 .bodyValue(payload)
                 .retrieve()
                 .toBodilessEntity()
-                .timeout(REQUEST_TIMEOUT)
-                .retryWhen(Retry.backoff(MAX_RETRIES, FIRST_BACKOFF)
+                .timeout(getRequestTimeout())
+                .retryWhen(buildRetry(callbackUrl)
                         .doBeforeRetry(signal -> log.debug(
                                 "[Webhook] Retrying callback to {} (attempt {})",
                                 callbackUrl, signal.totalRetries() + 1)))
@@ -72,6 +78,14 @@ public class WebhookCallbackSender {
                 .doOnError(error -> log.error(
                         "[Webhook] Callback to {} failed after retries: {}",
                         callbackUrl, error.getMessage()))
-                .subscribe();
+                .then();
+    }
+
+    protected Duration getRequestTimeout() {
+        return REQUEST_TIMEOUT;
+    }
+
+    protected RetryBackoffSpec buildRetry(String callbackUrl) {
+        return Retry.backoff(MAX_RETRIES, FIRST_BACKOFF);
     }
 }

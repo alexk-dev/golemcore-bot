@@ -23,12 +23,15 @@
     <!--
         Broad catch(Exception) is intentional in pipeline systems to prevent
         one system's failure from crashing the entire agent loop.
+        RuntimeConfigService.persist() catches multiple checked exceptions
+        (JsonProcessingException, CompletionException) from JSON/storage ops.
     -->
     <Match>
         <Bug pattern="REC_CATCH_EXCEPTION" />
         <Or>
             <Class name="~me\.golemcore\.bot\.domain\.system\..*" />
             <Class name="me.golemcore.bot.domain.service.PlanExecutionService" />
+            <Class name="me.golemcore.bot.domain.service.RuntimeConfigService" />
         </Or>
     </Match>
     <!--
@@ -83,6 +86,30 @@
             <Class name="~me\.golemcore\.bot\.adapter\..*" />
             <Class name="~me\.golemcore\.bot\.domain\.system\..*" />
             <Class name="~me\.golemcore\.bot\.tools\..*" />
+        </Or>
+    </Match>
+
+    <!--
+        Protobuf Java classes are generated code. SpotBugs findings in generated
+        messages/builders are not actionable in this repository.
+    -->
+    <Match>
+        <Class name="~me\.golemcore\.bot\.adapter\.inbound\.web\.proto\..*" />
+    </Match>
+    <Match>
+        <Class name="~me\.golemcore\.bot\.proto\.session\.v1\..*" />
+    </Match>
+    <!--
+        NM_CONFUSING for ConfigSection.getFileName() vs Attachment.getFilename() is a false positive.
+        These are entirely different classes with different semantics:
+        - ConfigSection.getFileName() returns config file names (e.g., "telegram.json")
+        - Attachment.getFilename() returns uploaded file names from user messages
+    -->
+    <Match>
+        <Bug pattern="NM_CONFUSING" />
+        <Or>
+            <Class name="me.golemcore.bot.domain.model.RuntimeConfig$ConfigSection" />
+            <Class name="me.golemcore.bot.domain.model.Attachment" />
         </Or>
     </Match>
 </FindBugsFilter>

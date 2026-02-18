@@ -1,13 +1,14 @@
 package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.model.Message;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class ToolConfirmationPolicyTest {
 
@@ -21,12 +22,13 @@ class ToolConfirmationPolicyTest {
     private static final String TEST_FILE = "test.txt";
 
     private ToolConfirmationPolicy policy;
+    private RuntimeConfigService runtimeConfigService;
 
     @BeforeEach
     void setUp() {
-        BotProperties properties = new BotProperties();
-        properties.getSecurity().getToolConfirmation().setEnabled(true);
-        policy = new ToolConfirmationPolicy(properties);
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isToolConfirmationEnabled()).thenReturn(true);
+        policy = new ToolConfirmationPolicy(runtimeConfigService);
     }
 
     @Test
@@ -101,9 +103,9 @@ class ToolConfirmationPolicyTest {
 
     @Test
     void disabledPolicyNeverRequiresConfirmation() {
-        BotProperties props = new BotProperties();
-        props.getSecurity().getToolConfirmation().setEnabled(false);
-        ToolConfirmationPolicy disabledPolicy = new ToolConfirmationPolicy(props);
+        RuntimeConfigService disabledConfig = mock(RuntimeConfigService.class);
+        when(disabledConfig.isToolConfirmationEnabled()).thenReturn(false);
+        ToolConfirmationPolicy disabledPolicy = new ToolConfirmationPolicy(disabledConfig);
 
         Message.ToolCall toolCall = Message.ToolCall.builder()
                 .id(TOOL_CALL_ID)
@@ -164,9 +166,9 @@ class ToolConfirmationPolicyTest {
 
     @Test
     void isNotableActionReturnsTrueForShellEvenWhenDisabled() {
-        BotProperties props = new BotProperties();
-        props.getSecurity().getToolConfirmation().setEnabled(false);
-        ToolConfirmationPolicy disabledPolicy = new ToolConfirmationPolicy(props);
+        RuntimeConfigService disabledConfig = mock(RuntimeConfigService.class);
+        when(disabledConfig.isToolConfirmationEnabled()).thenReturn(false);
+        ToolConfirmationPolicy disabledPolicy = new ToolConfirmationPolicy(disabledConfig);
 
         Message.ToolCall toolCall = Message.ToolCall.builder()
                 .id(TOOL_CALL_ID)
@@ -192,9 +194,9 @@ class ToolConfirmationPolicyTest {
     void isEnabledReflectsConfig() {
         assertTrue(policy.isEnabled());
 
-        BotProperties props = new BotProperties();
-        props.getSecurity().getToolConfirmation().setEnabled(false);
-        ToolConfirmationPolicy disabledPolicy = new ToolConfirmationPolicy(props);
+        RuntimeConfigService disabledConfig = mock(RuntimeConfigService.class);
+        when(disabledConfig.isToolConfirmationEnabled()).thenReturn(false);
+        ToolConfirmationPolicy disabledPolicy = new ToolConfirmationPolicy(disabledConfig);
         assertFalse(disabledPolicy.isEnabled());
     }
 

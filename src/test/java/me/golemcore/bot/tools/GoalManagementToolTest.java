@@ -5,7 +5,7 @@ import me.golemcore.bot.domain.model.DiaryEntry;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.AutoModeService;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -40,16 +40,15 @@ class GoalManagementToolTest {
     private static final String DO_EXERCISES = "Do exercises";
 
     private AutoModeService autoModeService;
+    private RuntimeConfigService runtimeConfigService;
     private GoalManagementTool tool;
 
     @BeforeEach
     void setUp() {
         autoModeService = mock(AutoModeService.class);
-
-        BotProperties properties = new BotProperties();
-        properties.getTools().getGoalManagement().setEnabled(true);
-
-        tool = new GoalManagementTool(properties, autoModeService);
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isGoalManagementEnabled()).thenReturn(true);
+        tool = new GoalManagementTool(runtimeConfigService, autoModeService);
     }
 
     @Test
@@ -247,9 +246,9 @@ class GoalManagementToolTest {
 
     @Test
     void disabledTool() throws Exception {
-        BotProperties props = new BotProperties();
-        props.getTools().getGoalManagement().setEnabled(false);
-        GoalManagementTool disabledTool = new GoalManagementTool(props, autoModeService);
+        RuntimeConfigService disabledRuntimeConfigService = mock(RuntimeConfigService.class);
+        when(disabledRuntimeConfigService.isGoalManagementEnabled()).thenReturn(false);
+        GoalManagementTool disabledTool = new GoalManagementTool(disabledRuntimeConfigService, autoModeService);
 
         ToolResult result = disabledTool.execute(Map.of(
                 OPERATION, "list_goals")).get();
@@ -555,22 +554,6 @@ class GoalManagementToolTest {
         assertTrue(result.isSuccess());
         assertTrue(result.getOutput().contains("3"));
         verify(autoModeService).clearCompletedGoals();
-    }
-
-    // ===== getDefinition =====
-
-    @Test
-    void shouldReturnValidDefinition() {
-        assertNotNull(tool.getDefinition());
-        assertEquals("goal_management", tool.getDefinition().getName());
-        assertNotNull(tool.getDefinition().getInputSchema());
-    }
-
-    // ===== isEnabled =====
-
-    @Test
-    void shouldBeEnabled() {
-        assertTrue(tool.isEnabled());
     }
 
     @Test

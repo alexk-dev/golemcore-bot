@@ -2,9 +2,12 @@ package me.golemcore.bot.ratelimit;
 
 import me.golemcore.bot.domain.model.BucketState;
 import me.golemcore.bot.domain.model.RateLimitResult;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -13,26 +16,26 @@ class TokenBucketRateLimiterTest {
     private static final String CHANNEL_TELEGRAM = "telegram";
     private static final String PROVIDER_OPENAI = "openai";
 
-    private BotProperties properties;
+    private RuntimeConfigService runtimeConfigService;
     private TokenBucketRateLimiter rateLimiter;
 
     @BeforeEach
     void setUp() {
-        properties = new BotProperties();
-        properties.getRateLimit().setEnabled(true);
-        properties.getRateLimit().getUser().setRequestsPerMinute(5);
-        properties.getRateLimit().getChannel().setMessagesPerSecond(10);
-        properties.getRateLimit().getLlm().setRequestsPerMinute(20);
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isRateLimitEnabled()).thenReturn(true);
+        when(runtimeConfigService.getUserRequestsPerMinute()).thenReturn(5);
+        when(runtimeConfigService.getChannelMessagesPerSecond()).thenReturn(10);
+        when(runtimeConfigService.getLlmRequestsPerMinute()).thenReturn(20);
 
-        rateLimiter = new TokenBucketRateLimiter(properties);
+        rateLimiter = new TokenBucketRateLimiter(runtimeConfigService);
     }
 
     // ===== Disabled =====
 
     @Test
     void shouldAlwaysAllowWhenDisabled() {
-        properties.getRateLimit().setEnabled(false);
-        rateLimiter = new TokenBucketRateLimiter(properties);
+        when(runtimeConfigService.isRateLimitEnabled()).thenReturn(false);
+        rateLimiter = new TokenBucketRateLimiter(runtimeConfigService);
 
         for (int i = 0; i < 100; i++) {
             RateLimitResult result = rateLimiter.tryConsume();
@@ -43,8 +46,8 @@ class TokenBucketRateLimiterTest {
 
     @Test
     void shouldAlwaysAllowChannelWhenDisabled() {
-        properties.getRateLimit().setEnabled(false);
-        rateLimiter = new TokenBucketRateLimiter(properties);
+        when(runtimeConfigService.isRateLimitEnabled()).thenReturn(false);
+        rateLimiter = new TokenBucketRateLimiter(runtimeConfigService);
 
         RateLimitResult result = rateLimiter.tryConsumeChannel(CHANNEL_TELEGRAM);
         assertTrue(result.isAllowed());
@@ -53,8 +56,8 @@ class TokenBucketRateLimiterTest {
 
     @Test
     void shouldAlwaysAllowLlmWhenDisabled() {
-        properties.getRateLimit().setEnabled(false);
-        rateLimiter = new TokenBucketRateLimiter(properties);
+        when(runtimeConfigService.isRateLimitEnabled()).thenReturn(false);
+        rateLimiter = new TokenBucketRateLimiter(runtimeConfigService);
 
         RateLimitResult result = rateLimiter.tryConsumeLlm(PROVIDER_OPENAI);
         assertTrue(result.isAllowed());

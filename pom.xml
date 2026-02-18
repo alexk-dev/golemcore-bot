@@ -32,13 +32,15 @@
         <playwright.version>1.49.0</playwright.version>
         <jjwt.version>0.12.6</jjwt.version>
         <totp.version>1.7.1</totp.version>
+        <protobuf.version>4.32.1</protobuf.version>
+        <protobuf.maven.plugin.version>0.6.1</protobuf.maven.plugin.version>
 
         <spotbugs.version>4.9.8.2</spotbugs.version>
         <pmd.version>3.28.0</pmd.version>
         <jacoco.version>0.8.14</jacoco.version>
         <jib.version>3.5.1</jib.version>
         <jib.target.image>ghcr.io/${env.GITHUB_REPOSITORY}</jib.target.image>
-        <jib.from.image>ghcr.io/alexk-dev/java-ai-bot-base:latest</jib.from.image>
+        <jib.from.image>ghcr.io/alexk-dev/golemcore-bot-base:latest</jib.from.image>
         <jib.platform.arch>amd64</jib.platform.arch>
 
         <!-- SonarCloud -->
@@ -177,6 +179,13 @@
             <artifactId>jackson-datatype-jsr310</artifactId>
         </dependency>
 
+        <!-- Protocol Buffers -->
+        <dependency>
+            <groupId>com.google.protobuf</groupId>
+            <artifactId>protobuf-java</artifactId>
+            <version>${protobuf.version}</version>
+        </dependency>
+
         <!-- Playwright (Headless Browser) -->
         <dependency>
             <groupId>com.microsoft.playwright</groupId>
@@ -216,7 +225,32 @@
     </dependencies>
 
     <build>
+        <extensions>
+            <extension>
+                <groupId>kr.motd.maven</groupId>
+                <artifactId>os-maven-plugin</artifactId>
+                <version>1.7.1</version>
+            </extension>
+        </extensions>
         <plugins>
+            <plugin>
+                <groupId>org.xolstice.maven.plugins</groupId>
+                <artifactId>protobuf-maven-plugin</artifactId>
+                <version>${protobuf.maven.plugin.version}</version>
+                <configuration>
+                    <protocArtifact>
+                        com.google.protobuf:protoc:${protobuf.version}:exe:${os.detected.classifier}
+                    </protocArtifact>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>compile</goal>
+                            <goal>test-compile</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -233,6 +267,15 @@
                             <version>${project.parent.version}</version>
                         </path>
                     </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.4</version>
+                <configuration>
+                    <forkCount>2</forkCount>
+                    <reuseForks>true</reuseForks>
                 </configuration>
             </plugin>
             <plugin>
@@ -280,6 +323,10 @@
                     <rulesets>
                         <ruleset>misc/pmd-ruleset.xml</ruleset>
                     </rulesets>
+                    <excludes>
+                        <exclude>**/proto/session/v1/*.java</exclude>
+                        <exclude>**/web/proto/*.java</exclude>
+                    </excludes>
                 </configuration>
             </plugin>
 
@@ -288,6 +335,13 @@
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
                 <version>${jacoco.version}</version>
+                <configuration>
+                    <excludes>
+                        <!-- Generated protobuf classes -->
+                        <exclude>me/golemcore/bot/proto/**</exclude>
+                        <exclude>me/golemcore/bot/adapter/inbound/web/proto/**</exclude>
+                    </excludes>
+                </configuration>
                 <executions>
                     <execution>
                         <goals>
@@ -316,10 +370,12 @@
                 <executions>
                     <execution>
                         <id>install-node-npm</id>
+                        <phase>generate-resources</phase>
                         <goals><goal>install-node-and-npm</goal></goals>
                     </execution>
                     <execution>
                         <id>npm-install</id>
+                        <phase>generate-resources</phase>
                         <goals><goal>npm</goal></goals>
                         <configuration>
                             <arguments>ci</arguments>
@@ -327,6 +383,7 @@
                     </execution>
                     <execution>
                         <id>npm-build</id>
+                        <phase>generate-resources</phase>
                         <goals><goal>npm</goal></goals>
                         <configuration>
                             <arguments>run build</arguments>
@@ -429,6 +486,10 @@
                             <rulesets>
                                 <ruleset>misc/pmd-ruleset.xml</ruleset>
                             </rulesets>
+                            <excludes>
+                                <exclude>**/proto/session/v1/*.java</exclude>
+                                <exclude>**/web/proto/*.java</exclude>
+                            </excludes>
                         </configuration>
                         <executions>
                             <execution>

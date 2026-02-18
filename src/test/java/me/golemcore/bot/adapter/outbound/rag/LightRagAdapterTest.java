@@ -1,6 +1,6 @@
 package me.golemcore.bot.adapter.outbound.rag;
 
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import okhttp3.*;
 import mockwebserver3.MockResponse;
@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 class LightRagAdapterTest {
 
@@ -23,20 +24,23 @@ class LightRagAdapterTest {
 
     private MockWebServer mockServer;
     private LightRagAdapter adapter;
-    private BotProperties properties;
+    private RuntimeConfigService runtimeConfigService;
 
     @BeforeEach
     void setUp() throws IOException {
         mockServer = new MockWebServer();
         mockServer.start();
 
-        properties = new BotProperties();
-        properties.getRag().setEnabled(true);
-        properties.getRag().setUrl(mockServer.url("").toString().replaceAll("/$", ""));
-        properties.getRag().setTimeoutSeconds(5);
+        String baseUrl = mockServer.url("").toString().replaceAll("/$", "");
+
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isRagEnabled()).thenReturn(true);
+        when(runtimeConfigService.getRagUrl()).thenReturn(baseUrl);
+        when(runtimeConfigService.getRagTimeoutSeconds()).thenReturn(5);
+        when(runtimeConfigService.getRagApiKey()).thenReturn(null);
 
         OkHttpClient client = new OkHttpClient();
-        adapter = new LightRagAdapter(properties, client, new ObjectMapper());
+        adapter = new LightRagAdapter(runtimeConfigService, client, new ObjectMapper());
     }
 
     @AfterEach
@@ -71,7 +75,7 @@ class LightRagAdapterTest {
 
     @Test
     void queryReturnsEmptyWhenDisabled() throws Exception {
-        properties.getRag().setEnabled(false);
+        when(runtimeConfigService.isRagEnabled()).thenReturn(false);
         String result = adapter.query(TEST_QUERY, QUERY_MODE_HYBRID).get();
         assertEquals("", result);
     }
@@ -102,7 +106,7 @@ class LightRagAdapterTest {
 
     @Test
     void indexDoesNothingWhenDisabled() throws Exception {
-        properties.getRag().setEnabled(false);
+        when(runtimeConfigService.isRagEnabled()).thenReturn(false);
         // Should complete without making any request
         adapter.index(TEST_QUERY).get();
         assertEquals(0, mockServer.getRequestCount());
@@ -110,10 +114,10 @@ class LightRagAdapterTest {
 
     @Test
     void isAvailableReflectsEnabledFlag() {
-        properties.getRag().setEnabled(true);
+        when(runtimeConfigService.isRagEnabled()).thenReturn(true);
         assertTrue(adapter.isAvailable());
 
-        properties.getRag().setEnabled(false);
+        when(runtimeConfigService.isRagEnabled()).thenReturn(false);
         assertFalse(adapter.isAvailable());
     }
 
@@ -131,16 +135,16 @@ class LightRagAdapterTest {
 
     @Test
     void isHealthyReturnsFalseWhenDisabled() {
-        properties.getRag().setEnabled(false);
+        when(runtimeConfigService.isRagEnabled()).thenReturn(false);
         assertFalse(adapter.isHealthy());
     }
 
     @Test
     void apiKeyHeaderSentWhenConfigured() throws Exception {
-        properties.getRag().setApiKey("test-api-key");
+        when(runtimeConfigService.getRagApiKey()).thenReturn("test-api-key");
         // Recreate adapter to pick up API key
         OkHttpClient client = new OkHttpClient();
-        adapter = new LightRagAdapter(properties, client, new ObjectMapper());
+        adapter = new LightRagAdapter(runtimeConfigService, client, new ObjectMapper());
 
         mockServer.enqueue(new MockResponse.Builder()
                 .body("{\"response\": \"ok\"}")
@@ -154,7 +158,7 @@ class LightRagAdapterTest {
 
     @Test
     void noAuthHeaderWhenApiKeyEmpty() throws Exception {
-        properties.getRag().setApiKey("");
+        when(runtimeConfigService.getRagApiKey()).thenReturn("");
 
         mockServer.enqueue(new MockResponse.Builder()
                 .body("{\"response\": \"ok\"}")

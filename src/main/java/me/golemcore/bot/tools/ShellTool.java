@@ -21,6 +21,7 @@ package me.golemcore.bot.tools;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.security.InjectionGuard;
 import jakarta.annotation.PreDestroy;
@@ -73,7 +74,7 @@ import java.util.stream.Collectors;
  * <p>
  * Configuration:
  * <ul>
- * <li>{@code bot.tools.shell.enabled} - Enable/disable
+ * <li>Enable/disable is controlled via RuntimeConfig (tools.shellEnabled)
  * <li>{@code bot.tools.shell.workspace} - Working directory
  * <li>{@code bot.tools.shell.default-timeout} - Default timeout (seconds)
  * <li>{@code bot.tools.shell.max-timeout} - Max timeout (seconds)
@@ -122,15 +123,16 @@ public class ShellTool implements ToolComponent {
 
     private final Path workspaceRoot;
     private final InjectionGuard injectionGuard;
-    private final boolean enabled;
+    private final RuntimeConfigService runtimeConfigService;
     private final int defaultTimeout;
     private final int maxTimeout;
     private final Set<String> allowedEnvVars;
     private final ExecutorService executor;
 
-    public ShellTool(BotProperties properties, InjectionGuard injectionGuard) {
+    public ShellTool(BotProperties properties, RuntimeConfigService runtimeConfigService,
+            InjectionGuard injectionGuard) {
         BotProperties.ShellToolProperties config = properties.getTools().getShell();
-        this.enabled = config.isEnabled();
+        this.runtimeConfigService = runtimeConfigService;
         this.defaultTimeout = config.getDefaultTimeout();
         this.maxTimeout = config.getMaxTimeout();
         this.workspaceRoot = Paths.get(config.getWorkspace()).toAbsolutePath().normalize();
@@ -141,7 +143,7 @@ public class ShellTool implements ToolComponent {
         // Ensure workspace exists
         try {
             Files.createDirectories(workspaceRoot);
-            log.info("ShellTool workspace: {}, enabled: {}", workspaceRoot, enabled);
+            log.info("ShellTool workspace: {}", workspaceRoot);
         } catch (IOException e) {
             log.error("Failed to create workspace directory: {}", workspaceRoot, e);
         }
@@ -189,11 +191,16 @@ public class ShellTool implements ToolComponent {
     }
 
     @Override
+    public boolean isEnabled() {
+        return runtimeConfigService.isShellEnabled();
+    }
+
+    @Override
     public CompletableFuture<ToolResult> execute(Map<String, Object> parameters) {
         return CompletableFuture.supplyAsync(() -> {
             log.info("[Shell] Execute called with parameters: {}", parameters);
 
-            if (!enabled) {
+            if (!isEnabled()) {
                 log.warn("[Shell] Tool is DISABLED");
                 return ToolResult.failure("Shell tool is disabled");
             }
@@ -357,7 +364,7 @@ public class ShellTool implements ToolComponent {
                 return output.toString();
             });
 
-            boolean completed = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
+            boolean completed = waitForProcess(process, timeoutSeconds);
             long duration = System.currentTimeMillis() - startTime;
 
             if (!completed) {
@@ -405,5 +412,9 @@ public class ShellTool implements ToolComponent {
         } catch (ExecutionException e) {
             return ToolResult.failure("Error reading output: " + e.getMessage());
         }
+    }
+
+    protected boolean waitForProcess(Process process, int timeoutSeconds) throws InterruptedException {
+        return process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
     }
 }

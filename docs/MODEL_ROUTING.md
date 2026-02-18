@@ -2,7 +2,7 @@
 
 How the bot selects the right LLM model for each request through tier-based routing.
 
-> **See also:** [Configuration Guide](CONFIGURATION.md#model-configuration) for environment variables, [Quick Start](QUICKSTART.md#enable-advanced-features) for basic setup, [Deployment Guide](DEPLOYMENT.md) for production configuration.
+> **See also:** [Configuration Guide](CONFIGURATION.md#model-configuration) for runtime config fields, [Quick Start](QUICKSTART.md) for setup, [Deployment Guide](DEPLOYMENT.md) for production configuration.
 
 ---
 
@@ -51,28 +51,26 @@ Each tier is independently configurable — you can assign any model from any su
 
 ### Configuration
 
-```bash
-# Balanced tier (default/fallback)
-BOT_ROUTER_BALANCED_MODEL=openai/gpt-5.1
-BOT_ROUTER_BALANCED_MODEL_REASONING=medium
+Configure tier models in `preferences/runtime-config.json` under `modelRouter`:
 
-# Smart tier
-BOT_ROUTER_SMART_MODEL=openai/gpt-5.1
-BOT_ROUTER_SMART_MODEL_REASONING=high
-
-# Coding tier
-BOT_ROUTER_CODING_MODEL=openai/gpt-5.2
-BOT_ROUTER_CODING_MODEL_REASONING=medium
-
-# Deep tier (PhD-level reasoning)
-BOT_ROUTER_DEEP_MODEL=openai/gpt-5.2
-BOT_ROUTER_DEEP_MODEL_REASONING=xhigh
-
-# Temperature (used only by models that support it — see models.json)
-BOT_ROUTER_TEMPERATURE=0.7
+```json
+{
+  "modelRouter": {
+    "balancedModel": "openai/gpt-5.1",
+    "balancedModelReasoning": "medium",
+    "smartModel": "openai/gpt-5.1",
+    "smartModelReasoning": "high",
+    "codingModel": "openai/gpt-5.2",
+    "codingModelReasoning": "medium",
+    "deepModel": "openai/gpt-5.2",
+    "deepModelReasoning": "xhigh",
+    "dynamicTierEnabled": true,
+    "temperature": 0.7
+  }
+}
 ```
 
-> **Note:** Reasoning models (e.g., `gpt-5.1`, `o3`) ignore the temperature parameter. The presence of a `reasoning` object and the `supportsTemperature` flag in `models.json` control this behavior. See [models.json Reference](#modelsjson-reference).
+> **Note:** Reasoning models may ignore the temperature parameter. The presence of a `reasoning` object and the `supportsTemperature` flag in `models/models.json` (workspace) control this behavior. See [models.json Reference](#modelsjson-reference).
 
 ---
 
@@ -199,8 +197,8 @@ When a skill with `model_tier` is active:
 ModelSelectionService.resolveForTier(tier)
   1. Check UserPreferences.tierOverrides for the tier
   2. If override exists → use override model + reasoning
-  3. Otherwise → use router config (BOT_ROUTER_*_MODEL)
-  4. For reasoning models → auto-fill default reasoning from models.json
+  3. Otherwise → use runtime config defaults (`modelRouter.*Model`)
+  4. For reasoning models → auto-fill default reasoning from `models/models.json`
 ```
 
 The selected model and reasoning effort are passed to the LLM adapter via `LlmRequest`.
@@ -211,36 +209,40 @@ The selected model and reasoning effort are passed to the LLM adapter via `LlmRe
 
 You can mix different LLM providers across tiers for cost optimization or capability access:
 
-```bash
-# Use balanced tier for standard tasks (default/fallback)
-BOT_ROUTER_BALANCED_MODEL=openai/gpt-5.1
-BOT_ROUTER_BALANCED_MODEL_REASONING=medium
+Configure provider API keys in `preferences/runtime-config.json`:
 
-# Use Anthropic for complex reasoning
-BOT_ROUTER_SMART_MODEL=anthropic/claude-opus-4-6
-BOT_ROUTER_SMART_MODEL_REASONING=high
-
-# Use dedicated coding model
-BOT_ROUTER_CODING_MODEL=openai/gpt-5.2
-BOT_ROUTER_CODING_MODEL_REASONING=medium
-```
-
-Requires API keys for all providers used:
-
-```bash
-OPENAI_API_KEY=sk-proj-...
-ANTHROPIC_API_KEY=sk-ant-...
+```json
+{
+  "llm": {
+    "providers": {
+      "openai": { "apiKey": "sk-proj-..." },
+      "anthropic": { "apiKey": "sk-ant-..." }
+    }
+  },
+  "modelRouter": {
+    "balancedModel": "openai/gpt-5.1",
+    "balancedModelReasoning": "medium",
+    "smartModel": "anthropic/claude-opus-4-6",
+    "smartModelReasoning": "high",
+    "codingModel": "openai/gpt-5.2",
+    "codingModelReasoning": "medium"
+  }
+}
 ```
 
 The `Langchain4jAdapter` creates per-request model instances when the requested model differs from the default. Provider detection is based on the model name prefix (e.g., `anthropic/claude-opus-4-6` routes to the Anthropic adapter).
 
-> **See:** [Configuration Guide — Multi-Provider Setup](CONFIGURATION.md#multi-provider-setup) for Docker Compose examples.
+> **See:** [Configuration Guide](CONFIGURATION.md) for runtime config details.
 
 ---
 
 ## models.json Reference
 
-Model capabilities are defined in `models.json` at the project root. Each entry specifies:
+Model capabilities are defined in the workspace at `models/models.json`.
+
+On first run, the bot copies a bundled `models.json` into the workspace so edits can persist (dashboard: Models).
+
+Each entry specifies:
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -305,7 +307,7 @@ The `maxInputTokens` value is used by:
 - `ToolLoopExecutionSystem` — emergency truncation limits each message to 25% of context window (minimum 10K characters)
 - `ModelSelectionService` — resolves max tokens per tier for compaction threshold
 
-> **See:** [Configuration Guide — Advanced: models.json](CONFIGURATION.md#advanced-modelsjson) for adding custom models.
+> **See:** [Configuration Guide](CONFIGURATION.md) for workspace paths and model config notes.
 
 ---
 
@@ -313,15 +315,18 @@ The `maxInputTokens` value is used by:
 
 Model routing is primarily configured by choosing models for each tier and enabling optional dynamic upgrades.
 
-```bash
-# Tier models
-BOT_ROUTER_BALANCED_MODEL=openai/gpt-5.1
-BOT_ROUTER_SMART_MODEL=openai/gpt-5.1
-BOT_ROUTER_CODING_MODEL=openai/gpt-5.2
-BOT_ROUTER_DEEP_MODEL=openai/gpt-5.2
+Edit `preferences/runtime-config.json`:
 
-# Optional: upgrade to coding tier when coding activity is detected mid-run
-BOT_ROUTER_DYNAMIC_TIER_ENABLED=true
+```json
+{
+  "modelRouter": {
+    "balancedModel": "openai/gpt-5.1",
+    "smartModel": "openai/gpt-5.1",
+    "codingModel": "openai/gpt-5.2",
+    "deepModel": "openai/gpt-5.2",
+    "dynamicTierEnabled": true
+  }
+}
 ```
 
 ---
@@ -409,10 +414,10 @@ estimatedTokens = sum(message.content.length) / charsPerToken + systemPromptOver
 Where `charsPerToken` defaults to 3.5 and `systemPromptOverheadTokens` defaults to 8000.
 
 **Threshold resolution:**
-1. Look up the current model's `maxInputTokens` from `models.json` (via `ModelConfigService`)
+1. Look up the current model's `maxInputTokens` from `models/models.json` (via `ModelConfigService`)
 2. Apply 80% safety margin: `modelMax * 0.8`
-3. Cap by config: `min(modelThreshold, bot.auto-compact.max-context-tokens)`
-4. If model lookup fails, fall back to `bot.auto-compact.max-context-tokens` (default 128K)
+3. Cap by runtime config: `min(modelThreshold, compaction.maxContextTokens)`
+4. If model lookup fails, fall back to `compaction.maxContextTokens`
 
 **Compaction strategy:**
 - Summarize old messages via LLM (balanced model, low reasoning) using `CompactionService`
@@ -420,15 +425,19 @@ Where `charsPerToken` defaults to 3.5 and `systemPromptOverheadTokens` defaults 
 - If LLM unavailable, fall back to simple truncation (drop oldest, keep last N)
 
 **Configuration:**
-```bash
-BOT_AUTO_COMPACT_ENABLED=true
-BOT_AUTO_COMPACT_MAX_CONTEXT_TOKENS=128000
-BOT_AUTO_COMPACT_KEEP_LAST_MESSAGES=10
-BOT_AUTO_COMPACT_SYSTEM_PROMPT_OVERHEAD_TOKENS=8000
-BOT_AUTO_COMPACT_CHARS_PER_TOKEN=3.5
+Edit `preferences/runtime-config.json`:
+
+```json
+{
+  "compaction": {
+    "enabled": true,
+    "maxContextTokens": 50000,
+    "keepLastMessages": 20
+  }
+}
 ```
 
-> **See:** [Configuration Guide — Auto-Compaction](CONFIGURATION.md#auto-compaction)
+> **See:** [Configuration Guide — Compaction](CONFIGURATION.md#compaction)
 
 ### Layer 2: Tool Result Truncation (Per-Result)
 
@@ -450,9 +459,9 @@ or process the data in smaller chunks.]
 The suffix length is subtracted from the cut point so the final output stays within the limit. This hint enables the LLM to self-correct by retrying with a more specific query.
 
 **Configuration:**
-```bash
-BOT_AUTO_COMPACT_MAX_TOOL_RESULT_CHARS=100000  # default: 100K chars
-```
+Tool result truncation is controlled by the Spring property `bot.auto-compact.max-tool-result-chars`.
+
+Default: `100000`.
 
 ### Layer 3: Emergency Truncation (Error Recovery)
 
@@ -573,7 +582,7 @@ User-initiated tier changes:
 
 ### The `/status` command
 
-Use `/status` in Telegram to check active configuration, including current model tier. See [Configuration Guide — Configuration Validation](CONFIGURATION.md#configuration-validation).
+Use `/status` in Telegram to check active configuration, including current model tier. For server-side flags and health, see [Configuration Guide — Diagnostics](CONFIGURATION.md#diagnostics).
 
 ### The `/tier` command
 

@@ -20,7 +20,7 @@ package me.golemcore.bot.adapter.outbound.browser;
 
 import me.golemcore.bot.domain.component.BrowserComponent;
 import me.golemcore.bot.domain.model.BrowserPage;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.BrowserPort;
 import com.microsoft.playwright.*;
 import com.microsoft.playwright.options.LoadState;
@@ -51,10 +51,10 @@ import java.util.concurrent.CompletableFuture;
  * <p>
  * Configuration:
  * <ul>
- * <li>{@code bot.browser.enabled} - Enable/disable browser
- * <li>{@code bot.browser.headless} - Run in headless mode
- * <li>{@code bot.browser.timeout} - Page load timeout (ms)
- * <li>{@code bot.browser.user-agent} - Custom user agent
+ * <li>RuntimeConfig.tools.browserEnabled - Enable/disable browser
+ * <li>RuntimeConfig.tools.browserHeadless - Run in headless mode
+ * <li>RuntimeConfig.tools.browserTimeout - Page load timeout (ms)
+ * <li>RuntimeConfig.tools.browserUserAgent - Custom user agent
  * </ul>
  *
  * <p>
@@ -68,7 +68,7 @@ import java.util.concurrent.CompletableFuture;
 @Slf4j
 public class PlaywrightAdapter implements BrowserPort, BrowserComponent {
 
-    private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
 
     private Playwright playwright;
     private Browser browser;
@@ -77,7 +77,7 @@ public class PlaywrightAdapter implements BrowserPort, BrowserComponent {
 
     @SuppressWarnings("PMD.CloseResource")
     private synchronized void ensureInitialized() {
-        if (initialized || !properties.getBrowser().isEnabled()) {
+        if (initialized || !runtimeConfigService.isBrowserEnabled()) {
             return;
         }
 
@@ -86,12 +86,12 @@ public class PlaywrightAdapter implements BrowserPort, BrowserComponent {
         try {
             pw = Playwright.create();
             BrowserType.LaunchOptions launchOptions = new BrowserType.LaunchOptions()
-                    .setHeadless(properties.getBrowser().isHeadless());
+                    .setHeadless(runtimeConfigService.isBrowserHeadless());
             br = pw.chromium().launch(launchOptions);
 
             Browser.NewContextOptions contextOptions = new Browser.NewContextOptions();
-            String userAgent = properties.getBrowser().getUserAgent();
-            if (userAgent != null && !userAgent.isBlank()) {
+            String userAgent = runtimeConfigService.getBrowserUserAgent();
+            if (!userAgent.isBlank()) {
                 contextOptions.setUserAgent(userAgent);
             }
 
@@ -100,7 +100,7 @@ public class PlaywrightAdapter implements BrowserPort, BrowserComponent {
             this.playwright = pw;
             initialized = true;
 
-            log.info("Playwright browser initialized (headless: {})", properties.getBrowser().isHeadless());
+            log.info("Playwright browser initialized (headless: {})", runtimeConfigService.isBrowserHeadless());
         } catch (Exception e) {
             log.warn("Failed to initialize Playwright: {}", e.getMessage());
             // Clean up partially created resources to prevent process leaks
@@ -137,7 +137,7 @@ public class PlaywrightAdapter implements BrowserPort, BrowserComponent {
 
             Page page = context.newPage();
             try {
-                int timeout = properties.getBrowser().getTimeout();
+                int timeout = runtimeConfigService.getBrowserTimeoutMs();
                 page.setDefaultTimeout(timeout);
 
                 page.navigate(url);
@@ -176,7 +176,7 @@ public class PlaywrightAdapter implements BrowserPort, BrowserComponent {
 
             Page page = context.newPage();
             try {
-                int timeout = properties.getBrowser().getTimeout();
+                int timeout = runtimeConfigService.getBrowserTimeoutMs();
                 page.setDefaultTimeout(timeout);
 
                 page.navigate(url);
@@ -200,7 +200,7 @@ public class PlaywrightAdapter implements BrowserPort, BrowserComponent {
 
             Page page = context.newPage();
             try {
-                int timeout = properties.getBrowser().getTimeout();
+                int timeout = runtimeConfigService.getBrowserTimeoutMs();
                 page.setDefaultTimeout(timeout);
 
                 page.navigate(url);
@@ -234,7 +234,7 @@ public class PlaywrightAdapter implements BrowserPort, BrowserComponent {
 
     @Override
     public boolean isAvailable() {
-        return properties.getBrowser().isEnabled() && browser != null && browser.isConnected();
+        return runtimeConfigService.isBrowserEnabled() && browser != null && browser.isConnected();
     }
 
     @Override

@@ -74,11 +74,11 @@ export default function MfaSetup({ mfaEnabled, onUpdate }: Props) {
       <Card className="mb-3">
         <Card.Body>
           <Card.Title>Setup MFA</Card.Title>
-          <p className="text-muted small">
+          <p className="text-body-secondary small">
             Scan this URI in your authenticator app:
           </p>
           <Alert variant="info" className="text-break small">{qrUri}</Alert>
-          <p className="text-muted small">Secret: <code>{secret}</code></p>
+          <p className="text-body-secondary small">Secret: <code>{secret}</code></p>
           <Form onSubmit={handleEnable}>
             <Form.Group className="mb-3">
               <Form.Label>Verification Code</Form.Label>
@@ -104,8 +104,8 @@ export default function MfaSetup({ mfaEnabled, onUpdate }: Props) {
     <Card className="mb-3">
       <Card.Body>
         <Card.Title>Multi-Factor Authentication</Card.Title>
-        <p className="text-muted">MFA is not enabled.</p>
-        <Button variant="outline-primary" size="sm" onClick={handleSetup}>
+        <p className="text-body-secondary">MFA is not enabled.</p>
+        <Button variant="primary" size="sm" onClick={handleSetup}>
           Setup MFA
         </Button>
       </Card.Body>
