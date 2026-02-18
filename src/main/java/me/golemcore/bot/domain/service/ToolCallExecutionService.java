@@ -6,8 +6,8 @@ import me.golemcore.bot.domain.loop.AgentContextHolder;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Attachment;
 import me.golemcore.bot.domain.model.Message;
-import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.model.ToolFailureKind;
+import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.ConfirmationPort;
@@ -20,8 +20,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Pure tool-call execution service: executes tools + confirmation gating +
@@ -142,8 +142,25 @@ public class ToolCallExecutionService {
             return future.get(TOOL_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         } catch (Exception e) {
             log.error("Tool execution failed: {}", toolCall.getName(), e);
-            return ToolResult.failure(ToolFailureKind.EXECUTION_FAILED, "Tool execution failed: " + e.getMessage());
+            return ToolResult.failure(ToolFailureKind.EXECUTION_FAILED, "Tool execution failed: " + safeCauseMessage(e));
         }
+    }
+
+    private static String safeCauseMessage(Throwable error) {
+        if (error == null) {
+            return "unknown";
+        }
+
+        Throwable cursor = error;
+        while (cursor.getCause() != null && cursor.getCause() != cursor) {
+            cursor = cursor.getCause();
+        }
+
+        String message = cursor.getMessage();
+        if (message == null || message.isBlank()) {
+            message = cursor.getClass().getSimpleName();
+        }
+        return message;
     }
 
     /**
@@ -172,6 +189,43 @@ public class ToolCallExecutionService {
             return result.getOutput();
         }
         return "Error: " + result.getError();
+    }
+
+    private void notifyToolExecution(AgentContext context, Message.ToolCall toolCall) {
+        String description = confirmationPolicy.describeAction(toolCall);
+        String content = "Executing tool: " + toolCall.getName() + "\n" + description;
+
+        try {
+            String chatId = context.getSession().getChatId();
+            ChannelPort channel = getChannelPort(context.getSession().getChannelType());
+            if (channel != null) {
+                channel.sendMessage(chatId, content);
+            }
+        } catch (Exception e) {
+            log.warn("[Tools] Notification failed", e);
+        }
+    }
+
+    private ChannelPort getChannelPort(String channelType) {
+        if (channelType == null) {
+            return null;
+        }
+
+        Map<String, ChannelPort> existing = channelRegistry.get();
+        if (existing != null) {
+            return existing.get(channelType);
+        }
+
+        Map<String, ChannelPort> resolved = new ConcurrentHashMap<>();
+        List<ChannelPort> ports = channelPortsProvider.getIfAvailable();
+        if (ports != null) {
+            for (ChannelPort port : ports) {
+                resolved.put(port.getChannelType(), port);
+            }
+        }
+
+        channelRegistry.compareAndSet(null, resolved);
+        return resolved.get(channelType);
     }
 
     /**
@@ -245,44 +299,6 @@ public class ToolCallExecutionService {
             }
         }
 
-        if (attachment != null) {
-            log.debug("[Tools] Attachment extracted from '{}' ({} bytes)", toolName, attachment.getData().length);
-        }
         return attachment;
-    }
-
-    private Map<String, ChannelPort> getChannelRegistry() {
-        Map<String, ChannelPort> existing = channelRegistry.get();
-        if (existing != null) {
-            return existing;
-        }
-
-        Map<String, ChannelPort> registry = new ConcurrentHashMap<>();
-        List<ChannelPort> ports = channelPortsProvider.getIfAvailable(List::of);
-        for (ChannelPort port : ports) {
-            registry.put(port.getChannelType(), port);
-        }
-
-        Map<String, ChannelPort> immutable = Map.copyOf(registry);
-        channelRegistry.compareAndSet(null, immutable);
-        return channelRegistry.get();
-    }
-
-    private void notifyToolExecution(AgentContext context, Message.ToolCall toolCall) {
-        try {
-            String channelType = context.getSession().getChannelType();
-            String chatId = context.getSession().getChatId();
-            ChannelPort channel = getChannelRegistry().get(channelType);
-            if (channel == null) {
-                return;
-            }
-
-            String description = confirmationPolicy.describeAction(toolCall);
-            String notification = "\u2699\ufe0f " + description;
-            channel.sendMessage(chatId, notification);
-            log.debug("[Tools] Notified user about '{}': {}", toolCall.getName(), description);
-        } catch (Exception e) {
-            log.debug("[Tools] Failed to send tool notification: {}", e.getMessage());
-        }
     }
 }

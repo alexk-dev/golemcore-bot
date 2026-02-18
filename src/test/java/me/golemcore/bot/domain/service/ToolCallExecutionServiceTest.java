@@ -69,7 +69,7 @@ class ToolCallExecutionServiceTest {
 
         @SuppressWarnings("unchecked")
         ObjectProvider<List<ChannelPort>> channelPortsProvider = mock(ObjectProvider.class);
-        when(channelPortsProvider.getIfAvailable(any())).thenReturn(List.of(channelPort));
+        when(channelPortsProvider.getIfAvailable()).thenReturn(List.of(channelPort));
 
         service = new ToolCallExecutionService(
                 List.of(toolComponent),
