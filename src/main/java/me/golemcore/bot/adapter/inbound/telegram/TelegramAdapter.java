@@ -65,6 +65,8 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Telegram channel adapter using long polling.
@@ -106,6 +108,11 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
     private static final String TELEGRAM_AUTH_MODE_INVITE_ONLY = "invite_only";
     private static final int INVITE_MAX_FAILED_ATTEMPTS = 3;
     private static final int INVITE_COOLDOWN_SECONDS = 30;
+    private static final int MAX_RETRY_ATTEMPTS = 3;
+    private static final int RETRY_AFTER_CAP_SECONDS = 30;
+    private static final int RETRY_AFTER_DEFAULT_SECONDS = 5;
+    private static final int HTTP_TOO_MANY_REQUESTS = 429;
+    private static final Pattern RETRY_AFTER_PATTERN = Pattern.compile("retry after (\\d+)");
 
     private final RuntimeConfigService runtimeConfigService;
     private final AllowlistValidator allowlistValidator;
@@ -494,7 +501,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
 
     private byte[] downloadVoice(String fileId) throws TelegramApiException, java.io.IOException {
         GetFile getFile = new GetFile(fileId);
-        org.telegram.telegrambots.meta.api.objects.File file = telegramClient.execute(getFile);
+        org.telegram.telegrambots.meta.api.objects.File file = executeWithRetry(() -> telegramClient.execute(getFile));
 
         String filePath = file.getFilePath();
         String token = runtimeConfigService.getTelegramToken();
@@ -528,7 +535,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
                             .build();
 
                     try {
-                        telegramClient.execute(sendMessage);
+                        executeWithRetry(() -> telegramClient.execute(sendMessage));
                     } catch (Exception htmlEx) {
                         // Fallback: retry without formatting if HTML parsing fails
                         log.debug("HTML parse failed, retrying as plain text: {}", htmlEx.getMessage());
@@ -536,7 +543,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
                                 .chatId(chatId)
                                 .text(chunk)
                                 .build();
-                        telegramClient.execute(plain);
+                        executeWithRetry(() -> telegramClient.execute(plain));
                     }
                 }
             } catch (Exception e) {
@@ -605,7 +612,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
                         .voice(new InputFile(new ByteArrayInputStream(voiceData), "voice.ogg"))
                         .build();
 
-                telegramClient.execute(sendVoice);
+                executeWithRetry(() -> telegramClient.execute(sendVoice));
             } catch (Exception e) {
                 if (isVoiceForbidden(e)) {
                     log.info("Voice messages forbidden in chat {}, falling back to audio", chatId);
@@ -624,7 +631,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
                     .chatId(chatId)
                     .audio(new InputFile(new ByteArrayInputStream(audioData), "voice.mp3"))
                     .build();
-            telegramClient.execute(sendAudio);
+            executeWithRetry(() -> telegramClient.execute(sendAudio));
         } catch (Exception e) {
             log.error("Failed to send audio fallback to chat: {}", chatId, e);
             throw new RuntimeException("Failed to send audio", e);
@@ -656,7 +663,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
                     builder.caption(truncateCaption(caption));
                 }
 
-                telegramClient.execute(builder.build());
+                executeWithRetry(() -> telegramClient.execute(builder.build()));
                 log.debug("Sent photo '{}' ({} bytes) to chat: {}", filename, imageData.length, chatId);
             } catch (Exception e) {
                 log.error("Failed to send photo '{}' to chat: {}", filename, chatId, e);
@@ -678,7 +685,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
                     builder.caption(truncateCaption(caption));
                 }
 
-                telegramClient.execute(builder.build());
+                executeWithRetry(() -> telegramClient.execute(builder.build()));
                 log.debug("Sent document '{}' ({} bytes) to chat: {}", filename, fileData.length, chatId);
             } catch (Exception e) {
                 log.error("Failed to send document '{}' to chat: {}", filename, chatId, e);
@@ -717,9 +724,62 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
                     .chatId(chatId)
                     .action(ActionType.TYPING.toString())
                     .build();
-            telegramClient.execute(action);
+            executeWithRetry(() -> telegramClient.execute(action));
         } catch (Exception e) {
             log.debug("Failed to send typing indicator", e);
+        }
+    }
+
+    // ===== Rate-limit retry logic =====
+
+    @FunctionalInterface
+    interface TelegramApiCall<T> {
+        T execute() throws TelegramApiException;
+    }
+
+    <T> T executeWithRetry(TelegramApiCall<T> call) throws TelegramApiException {
+        for (int attempt = 0;; attempt++) {
+            try {
+                return call.execute();
+            } catch (TelegramApiRequestException e) {
+                if (!isRateLimited(e) || attempt >= MAX_RETRY_ATTEMPTS) {
+                    throw e;
+                }
+                int retryAfter = extractRetryAfterSeconds(e);
+                log.warn("[Telegram] Rate limited (429), waiting {}s before retry (attempt {}/{})",
+                        retryAfter, attempt + 1, MAX_RETRY_ATTEMPTS);
+                sleepForRetry(retryAfter);
+            }
+        }
+    }
+
+    private boolean isRateLimited(TelegramApiRequestException e) {
+        Integer errorCode = e.getErrorCode();
+        return errorCode != null && errorCode == HTTP_TOO_MANY_REQUESTS;
+    }
+
+    int extractRetryAfterSeconds(TelegramApiRequestException e) {
+        if (e.getParameters() != null && e.getParameters().getRetryAfter() != null) {
+            return Math.min(e.getParameters().getRetryAfter(), RETRY_AFTER_CAP_SECONDS);
+        }
+        String message = e.getMessage();
+        if (message != null) {
+            Matcher matcher = RETRY_AFTER_PATTERN.matcher(message);
+            if (matcher.find()) {
+                return Math.min(Integer.parseInt(matcher.group(1)), RETRY_AFTER_CAP_SECONDS);
+            }
+        }
+        return RETRY_AFTER_DEFAULT_SECONDS;
+    }
+
+    /**
+     * Package-private for testing — allows tests to override sleep behavior.
+     */
+    void sleepForRetry(int seconds) {
+        try {
+            Thread.sleep(seconds * 1000L);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 
