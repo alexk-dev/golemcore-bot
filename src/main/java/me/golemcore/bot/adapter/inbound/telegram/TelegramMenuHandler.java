@@ -23,6 +23,7 @@ import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.i18n.MessageService;
@@ -78,6 +79,7 @@ public class TelegramMenuHandler {
     private static final Set<String> VALID_TIERS = Set.of(TIER_BALANCED, TIER_SMART, TIER_CODING, TIER_DEEP);
 
     private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
     private final UserPreferencesService preferencesService;
     private final ModelSelectionService modelSelectionService;
     private final AutoModeService autoModeService;
@@ -89,6 +91,7 @@ public class TelegramMenuHandler {
 
     public TelegramMenuHandler(
             BotProperties properties,
+            RuntimeConfigService runtimeConfigService,
             UserPreferencesService preferencesService,
             ModelSelectionService modelSelectionService,
             AutoModeService autoModeService,
@@ -96,6 +99,7 @@ public class TelegramMenuHandler {
             MessageService messageService,
             ObjectProvider<CommandPort> commandRouter) {
         this.properties = properties;
+        this.runtimeConfigService = runtimeConfigService;
         this.preferencesService = preferencesService;
         this.modelSelectionService = modelSelectionService;
         this.autoModeService = autoModeService;
@@ -116,11 +120,10 @@ public class TelegramMenuHandler {
         if (client != null) {
             return client;
         }
-        BotProperties.ChannelProperties channelProps = properties.getChannels().get(CHANNEL_TYPE);
-        if (channelProps == null || !channelProps.isEnabled()) {
+        if (!runtimeConfigService.isTelegramEnabled()) {
             return null;
         }
-        String token = channelProps.getToken();
+        String token = runtimeConfigService.getTelegramToken();
         if (token == null || token.isBlank()) {
             return null;
         }

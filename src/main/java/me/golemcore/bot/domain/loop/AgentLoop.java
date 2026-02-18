@@ -28,11 +28,11 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.RoutingOutcome;
 import me.golemcore.bot.domain.model.TurnOutcome;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.domain.system.AgentSystem;
 import me.golemcore.bot.domain.system.ResponseRoutingSystem;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.RateLimitPort;
@@ -71,8 +71,8 @@ public class AgentLoop {
 
     private final SessionPort sessionService;
     private final RateLimitPort rateLimiter;
-    private final BotProperties properties;
     private final List<AgentSystem> systems;
+    private final RuntimeConfigService runtimeConfigService;
     private final UserPreferencesService preferencesService;
     private final LlmPort llmPort;
     private final Clock clock;
@@ -99,13 +99,14 @@ public class AgentLoop {
     }
 
     public AgentLoop(SessionPort sessionService, RateLimitPort rateLimiter,
-            BotProperties properties, List<AgentSystem> systems,
-            List<ChannelPort> channelPorts, UserPreferencesService preferencesService,
+            List<AgentSystem> systems,
+            List<ChannelPort> channelPorts, RuntimeConfigService runtimeConfigService,
+            UserPreferencesService preferencesService,
             LlmPort llmPort, Clock clock) {
         this.sessionService = sessionService;
         this.rateLimiter = rateLimiter;
-        this.properties = properties;
         this.systems = systems;
+        this.runtimeConfigService = runtimeConfigService;
         this.preferencesService = preferencesService;
         this.llmPort = llmPort;
         this.clock = clock;
@@ -139,7 +140,7 @@ public class AgentLoop {
         AgentContext context = AgentContext.builder()
                 .session(session)
                 .messages(new ArrayList<>(session.getMessages()))
-                .maxIterations(properties.getAgent().getMaxIterations())
+                .maxIterations(runtimeConfigService.getTurnMaxLlmCalls())
                 .currentIteration(0)
                 .build();
 
@@ -362,7 +363,8 @@ public class AgentLoop {
         try {
             String errorSummary = String.join("\n", errors);
             LlmRequest request = LlmRequest.builder()
-                    .model(properties.getRouter().getBalancedModel())
+                    .model(runtimeConfigService.getRoutingModel())
+                    .reasoningEffort(runtimeConfigService.getRoutingModelReasoning())
                     .systemPrompt(
                             "You are a helpful assistant. Explain the following error in 1-2 sentences for the user.")
                     .messages(List.of(Message.builder()

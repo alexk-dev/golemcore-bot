@@ -15,6 +15,7 @@ import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.SkillTemplateEngine;
 import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -56,6 +57,7 @@ class ContextBuildingSystemPromptTest {
     private AutoModeService autoModeService;
     private PlanService planService;
     private PromptSectionService promptSectionService;
+    private RuntimeConfigService runtimeConfigService;
     private UserPreferencesService userPreferencesService;
     private ContextBuildingSystem system;
 
@@ -71,7 +73,9 @@ class ContextBuildingSystemPromptTest {
         autoModeService = mock(AutoModeService.class);
         planService = mock(PlanService.class);
         promptSectionService = mock(PromptSectionService.class);
+        runtimeConfigService = mock(RuntimeConfigService.class);
         userPreferencesService = mock(UserPreferencesService.class);
+        when(runtimeConfigService.getAutoModelTier()).thenReturn(TIER_SMART);
 
         when(memoryComponent.getMemoryContext()).thenReturn("");
         when(skillComponent.getSkillsSummary()).thenReturn("");
@@ -91,6 +95,7 @@ class ContextBuildingSystemPromptTest {
                 autoModeService,
                 planService,
                 promptSectionService,
+                runtimeConfigService,
                 userPreferencesService);
     }
 
@@ -211,6 +216,7 @@ class ContextBuildingSystemPromptTest {
                 autoModeService,
                 planService,
                 promptSectionService,
+                runtimeConfigService,
                 userPreferencesService);
 
         AgentContext ctx = createContext();
@@ -291,6 +297,7 @@ class ContextBuildingSystemPromptTest {
     void injectsRagContextWhenAvailable() {
         when(promptSectionService.isEnabled()).thenReturn(false);
         when(ragPort.isAvailable()).thenReturn(true);
+        when(runtimeConfigService.getRagQueryMode()).thenReturn("hybrid");
         when(ragPort.query(anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture("User discussed Java projects last week."));
 
@@ -375,8 +382,6 @@ class ContextBuildingSystemPromptTest {
     @Test
     void setsAutoModeTierForAutoMessages() {
         when(promptSectionService.isEnabled()).thenReturn(false);
-        properties.getAuto().setModelTier(TIER_SMART);
-
         Map<String, Object> meta = new HashMap<>();
         meta.put("auto.mode", true);
         List<Message> messages = new ArrayList<>(List.of(
@@ -622,5 +627,88 @@ class ContextBuildingSystemPromptTest {
         system.process(ctx);
 
         assertFalse(ctx.getSystemPrompt().contains("# Model Tier"));
+    }
+
+    // ===== RAG error paths =====
+
+    @Test
+    void ragQueryExceptionDoesNotBreakPipeline() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(ragPort.isAvailable()).thenReturn(true);
+        when(runtimeConfigService.getRagQueryMode()).thenReturn("hybrid");
+        when(ragPort.query(anyString(), anyString()))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("RAG timeout")));
+
+        AgentContext ctx = createContext();
+        system.process(ctx);
+
+        assertNotNull(ctx.getSystemPrompt());
+        assertFalse(ctx.getSystemPrompt().contains("# Relevant Memory"));
+    }
+
+    @Test
+    void ragSkippedWhenBlankResult() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(ragPort.isAvailable()).thenReturn(true);
+        when(runtimeConfigService.getRagQueryMode()).thenReturn("hybrid");
+        when(ragPort.query(anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture("   "));
+
+        AgentContext ctx = createContext();
+        system.process(ctx);
+
+        assertFalse(ctx.getSystemPrompt().contains("# Relevant Memory"));
+    }
+
+    @Test
+    void ragSkippedWhenNoUserMessages() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(ragPort.isAvailable()).thenReturn(true);
+
+        AgentContext ctx = AgentContext.builder()
+                .session(AgentSession.builder().chatId("ch1").build())
+                .messages(new ArrayList<>(List.of(
+                        Message.builder().role("system").content("System init").timestamp(Instant.now()).build())))
+                .build();
+        system.process(ctx);
+
+        verify(ragPort, never()).query(anyString(), anyString());
+    }
+
+    @Test
+    void ragSkippedWhenEmptyMessages() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(ragPort.isAvailable()).thenReturn(true);
+
+        AgentContext ctx = AgentContext.builder()
+                .session(AgentSession.builder().chatId("ch1").build())
+                .messages(new ArrayList<>())
+                .build();
+        system.process(ctx);
+
+        verify(ragPort, never()).query(anyString(), anyString());
+    }
+
+    // ===== Skill template variable rendering =====
+
+    @Test
+    void rendersSkillContentWithTemplateVariables() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+
+        Skill skill = Skill.builder()
+                .name("greeter")
+                .description("Greet user")
+                .content("Hello {{USER_NAME}}, welcome to {{PRODUCT}}!")
+                .resolvedVariables(Map.of("USER_NAME", "Alice", "PRODUCT", "GolemCore"))
+                .available(true)
+                .build();
+
+        AgentContext ctx = createContext();
+        ctx.setActiveSkill(skill);
+        system.process(ctx);
+
+        String prompt = ctx.getSystemPrompt();
+        assertTrue(prompt.contains("Hello Alice, welcome to GolemCore!"));
+        assertFalse(prompt.contains("{{USER_NAME}}"));
     }
 }

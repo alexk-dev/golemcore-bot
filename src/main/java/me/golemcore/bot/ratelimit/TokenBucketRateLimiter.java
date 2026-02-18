@@ -20,7 +20,7 @@ package me.golemcore.bot.ratelimit;
 
 import me.golemcore.bot.domain.model.BucketState;
 import me.golemcore.bot.domain.model.RateLimitResult;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.RateLimitPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -58,19 +58,19 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 public class TokenBucketRateLimiter implements RateLimitPort {
 
-    private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
 
     private final Map<String, TokenBucket> buckets = new ConcurrentHashMap<>();
 
     @Override
     public RateLimitResult tryConsume() {
-        if (!properties.getRateLimit().isEnabled()) {
+        if (!runtimeConfigService.isRateLimitEnabled()) {
             return RateLimitResult.allowed(Long.MAX_VALUE);
         }
 
         String key = "user:global";
         TokenBucket bucket = buckets.computeIfAbsent(key, k -> {
-            int requestsPerMinute = properties.getRateLimit().getUser().getRequestsPerMinute();
+            int requestsPerMinute = runtimeConfigService.getUserRequestsPerMinute();
             return new TokenBucket(requestsPerMinute, Duration.ofMinutes(1));
         });
 
@@ -83,13 +83,13 @@ public class TokenBucketRateLimiter implements RateLimitPort {
 
     @Override
     public RateLimitResult tryConsumeChannel(String channelType) {
-        if (!properties.getRateLimit().isEnabled()) {
+        if (!runtimeConfigService.isRateLimitEnabled()) {
             return RateLimitResult.allowed(Long.MAX_VALUE);
         }
 
         String key = "channel:" + channelType;
         TokenBucket bucket = buckets.computeIfAbsent(key, k -> {
-            int messagesPerSecond = properties.getRateLimit().getChannel().getMessagesPerSecond();
+            int messagesPerSecond = runtimeConfigService.getChannelMessagesPerSecond();
             return new TokenBucket(messagesPerSecond, Duration.ofSeconds(1));
         });
 
@@ -98,13 +98,13 @@ public class TokenBucketRateLimiter implements RateLimitPort {
 
     @Override
     public RateLimitResult tryConsumeLlm(String providerId) {
-        if (!properties.getRateLimit().isEnabled()) {
+        if (!runtimeConfigService.isRateLimitEnabled()) {
             return RateLimitResult.allowed(Long.MAX_VALUE);
         }
 
         String key = "llm:" + providerId;
         TokenBucket bucket = buckets.computeIfAbsent(key, k -> {
-            int requestsPerMinute = properties.getRateLimit().getLlm().getRequestsPerMinute();
+            int requestsPerMinute = runtimeConfigService.getLlmRequestsPerMinute();
             return new TokenBucket(requestsPerMinute, Duration.ofMinutes(1));
         });
 

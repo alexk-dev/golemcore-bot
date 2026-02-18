@@ -18,6 +18,7 @@
 
 package me.golemcore.bot.adapter.inbound.webhook;
 
+import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import lombok.RequiredArgsConstructor;
@@ -65,12 +66,11 @@ public class WebhookAuthenticator {
      */
     public boolean authenticateBearer(HttpHeaders headers) {
         UserPreferences.WebhookConfig config = preferencesService.getPreferences().getWebhooks();
-        if (config == null || config.getToken() == null || config.getToken().isBlank()) {
+        String expected = Secret.valueOrEmpty(config != null ? config.getToken() : null);
+        if (expected.isBlank()) {
             log.warn("[Webhook] No token configured, rejecting request");
             return false;
         }
-
-        String expected = config.getToken();
 
         // Try Authorization: Bearer <token>
         String authHeader = headers.getFirst(HttpHeaders.AUTHORIZATION);
@@ -101,7 +101,8 @@ public class WebhookAuthenticator {
      * @return {@code true} if the signature is valid
      */
     public boolean authenticateHmac(UserPreferences.HookMapping mapping, HttpHeaders headers, byte[] body) {
-        if (mapping.getHmacSecret() == null || mapping.getHmacSecret().isBlank()) {
+        String hmacSecret = Secret.valueOrEmpty(mapping.getHmacSecret());
+        if (hmacSecret.isBlank()) {
             log.warn("[Webhook] HMAC secret not configured for mapping: {}", mapping.getName());
             return false;
         }
@@ -126,7 +127,7 @@ public class WebhookAuthenticator {
             signature = signatureHeader.substring(mapping.getHmacPrefix().length());
         }
 
-        String expectedSignature = computeHmacSha256(mapping.getHmacSecret(), body);
+        String expectedSignature = computeHmacSha256(hmacSecret, body);
         if (expectedSignature == null) {
             return false;
         }

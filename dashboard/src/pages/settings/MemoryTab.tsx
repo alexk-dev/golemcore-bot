@@ -1,0 +1,80 @@
+import { type ReactElement, useEffect, useMemo, useState } from 'react';
+import { Button, Card, Form, OverlayTrigger, Tooltip } from 'react-bootstrap';
+import { FiHelpCircle } from 'react-icons/fi';
+import toast from 'react-hot-toast';
+import { useUpdateMemory } from '../../hooks/useSettings';
+import type { MemoryConfig } from '../../api/settings';
+
+function Tip({ text }: { text: string }): ReactElement {
+  return (
+    <OverlayTrigger placement="top" overlay={<Tooltip>{text}</Tooltip>}>
+      <span className="setting-tip"><FiHelpCircle /></span>
+    </OverlayTrigger>
+  );
+}
+
+function SaveStateHint({ isDirty }: { isDirty: boolean }): ReactElement {
+  return <small className="text-body-secondary">{isDirty ? 'Unsaved changes' : 'All changes saved'}</small>;
+}
+
+function hasDiff<T>(current: T, initial: T): boolean {
+  return JSON.stringify(current) !== JSON.stringify(initial);
+}
+
+function toNullableInt(value: string): number | null {
+  const parsed = parseInt(value, 10);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+interface MemoryTabProps {
+  config: MemoryConfig;
+}
+
+export default function MemoryTab({ config }: MemoryTabProps): ReactElement {
+  const updateMemory = useUpdateMemory();
+  const [form, setForm] = useState<MemoryConfig>({ ...config });
+  const isDirty = useMemo(() => hasDiff(form, config), [form, config]);
+
+  useEffect(() => {
+    setForm({ ...config });
+  }, [config]);
+
+  const handleSave = async (): Promise<void> => {
+    await updateMemory.mutateAsync(form);
+    toast.success('Memory settings saved');
+  };
+
+  return (
+    <Card className="settings-card">
+      <Card.Body>
+        <Card.Title className="h6 mb-3">Memory</Card.Title>
+        <Form.Check
+          type="switch"
+          label={<>Enable Memory <Tip text="Persist user/assistant exchanges into long-term notes and include memory context in prompts." /></>}
+          checked={form.enabled ?? true}
+          onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
+          className="mb-3"
+        />
+        <Form.Group className="mb-3">
+          <Form.Label className="small fw-medium">
+            Recent Days <Tip text="How many previous daily memory files to include in context." />
+          </Form.Label>
+          <Form.Control
+            size="sm"
+            type="number"
+            min={1}
+            max={90}
+            value={form.recentDays ?? 7}
+            onChange={(e) => setForm({ ...form, recentDays: toNullableInt(e.target.value) })}
+          />
+        </Form.Group>
+        <div className="d-flex align-items-center gap-2">
+          <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateMemory.isPending}>
+            {updateMemory.isPending ? 'Saving...' : 'Save'}
+          </Button>
+          <SaveStateHint isDirty={isDirty} />
+        </div>
+      </Card.Body>
+    </Card>
+  );
+}

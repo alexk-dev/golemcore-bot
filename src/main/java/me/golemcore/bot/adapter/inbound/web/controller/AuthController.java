@@ -36,6 +36,7 @@ import java.util.Map;
 public class AuthController {
 
     private static final String REFRESH_COOKIE = "refresh_token";
+    private static final String KEY_SUCCESS = "success";
 
     private final DashboardAuthService authService;
 
@@ -119,27 +120,27 @@ public class AuthController {
     public Mono<ResponseEntity<Map<String, Boolean>>> mfaEnable(@RequestBody MfaEnableRequest request) {
         boolean success = authService.enableMfa(request.getSecret(), request.getVerificationCode());
         if (!success) {
-            return Mono.just(ResponseEntity.badRequest().body(Map.of("success", false)));
+            return Mono.just(ResponseEntity.badRequest().body(Map.of(KEY_SUCCESS, false)));
         }
-        return Mono.just(ResponseEntity.ok(Map.of("success", true)));
+        return Mono.just(ResponseEntity.ok(Map.of(KEY_SUCCESS, true)));
     }
 
     @PostMapping("/mfa/disable")
     public Mono<ResponseEntity<Map<String, Boolean>>> mfaDisable(@RequestBody MfaDisableRequest request) {
         boolean success = authService.disableMfa(request.getPassword());
         if (!success) {
-            return Mono.just(ResponseEntity.badRequest().body(Map.of("success", false)));
+            return Mono.just(ResponseEntity.badRequest().body(Map.of(KEY_SUCCESS, false)));
         }
-        return Mono.just(ResponseEntity.ok(Map.of("success", true)));
+        return Mono.just(ResponseEntity.ok(Map.of(KEY_SUCCESS, true)));
     }
 
     @PostMapping("/password")
     public Mono<ResponseEntity<Map<String, Boolean>>> changePassword(@RequestBody ChangePasswordRequest request) {
         boolean success = authService.changePassword(request.getOldPassword(), request.getNewPassword());
         if (!success) {
-            return Mono.just(ResponseEntity.badRequest().body(Map.of("success", false)));
+            return Mono.just(ResponseEntity.badRequest().body(Map.of(KEY_SUCCESS, false)));
         }
-        return Mono.just(ResponseEntity.ok(Map.of("success", true)));
+        return Mono.just(ResponseEntity.ok(Map.of(KEY_SUCCESS, true)));
     }
 
     private ResponseCookie buildRefreshCookie(String refreshToken) {

@@ -21,7 +21,6 @@ package me.golemcore.bot.domain.service;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.LlmPort;
 
 import java.time.Clock;
@@ -49,7 +48,7 @@ import java.util.stream.Collectors;
 public class CompactionService {
 
     private final LlmPort llmPort;
-    private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
     private final Clock clock;
 
     private static final long SUMMARY_TIMEOUT_MS = 15_000;
@@ -95,8 +94,8 @@ public class CompactionService {
         String conversation = formatConversation(messages);
 
         LlmRequest request = LlmRequest.builder()
-                .model(properties.getRouter().getBalancedModel())
-                .reasoningEffort(properties.getRouter().getBalancedModelReasoning())
+                .model(runtimeConfigService.getBalancedModel())
+                .reasoningEffort(runtimeConfigService.getBalancedModelReasoning())
                 .systemPrompt(SYSTEM_PROMPT)
                 .messages(List.of(Message.builder()
                         .role("user")

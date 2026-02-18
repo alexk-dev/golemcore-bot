@@ -24,8 +24,10 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
+import me.golemcore.bot.domain.model.TurnLimitReason;
+import me.golemcore.bot.domain.service.ModelSelectionService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -45,14 +47,18 @@ class OutgoingResponsePreparationSystemTest {
     private static final String ROLE_USER = "user";
 
     private UserPreferencesService preferencesService;
-    private BotProperties properties;
+    private ModelSelectionService modelSelectionService;
+    private RuntimeConfigService runtimeConfigService;
     private OutgoingResponsePreparationSystem system;
 
     @BeforeEach
     void setUp() {
         preferencesService = mock(UserPreferencesService.class);
-        properties = new BotProperties();
-        system = new OutgoingResponsePreparationSystem(preferencesService, properties);
+        modelSelectionService = mock(ModelSelectionService.class);
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        when(modelSelectionService.resolveMaxInputTokens(anyString())).thenReturn(128000);
+        system = new OutgoingResponsePreparationSystem(preferencesService, modelSelectionService,
+                runtimeConfigService);
     }
 
     // ── identity ──
@@ -374,7 +380,7 @@ class OutgoingResponsePreparationSystemTest {
 
     @Test
     void shouldAutoVoiceRespondWhenIncomingVoice() {
-        properties.getVoice().getTelegram().setRespondWithVoice(true);
+        when(runtimeConfigService.isTelegramRespondWithVoiceEnabled()).thenReturn(true);
 
         AgentContext context = buildContextWithMessages(List.of(
                 Message.builder()
@@ -397,7 +403,7 @@ class OutgoingResponsePreparationSystemTest {
 
     @Test
     void shouldNotAutoVoiceWhenConfigDisabled() {
-        properties.getVoice().getTelegram().setRespondWithVoice(false);
+        when(runtimeConfigService.isTelegramRespondWithVoiceEnabled()).thenReturn(false);
 
         AgentContext context = buildContextWithMessages(List.of(
                 Message.builder()
@@ -420,7 +426,7 @@ class OutgoingResponsePreparationSystemTest {
 
     @Test
     void shouldNotAutoVoiceWhenLastUserMessageHasNoVoiceData() {
-        properties.getVoice().getTelegram().setRespondWithVoice(true);
+        when(runtimeConfigService.isTelegramRespondWithVoiceEnabled()).thenReturn(true);
 
         AgentContext context = buildContextWithMessages(List.of(
                 Message.builder()
@@ -441,7 +447,7 @@ class OutgoingResponsePreparationSystemTest {
 
     @Test
     void shouldNotAutoVoiceWhenOnlyAssistantMessagesPresent() {
-        properties.getVoice().getTelegram().setRespondWithVoice(true);
+        when(runtimeConfigService.isTelegramRespondWithVoiceEnabled()).thenReturn(true);
 
         AgentContext context = buildContextWithMessages(List.of(
                 Message.builder()
@@ -462,7 +468,7 @@ class OutgoingResponsePreparationSystemTest {
 
     @Test
     void shouldNotAutoVoiceWhenMessagesListIsEmpty() {
-        properties.getVoice().getTelegram().setRespondWithVoice(true);
+        when(runtimeConfigService.isTelegramRespondWithVoiceEnabled()).thenReturn(true);
 
         AgentContext context = buildContext();
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
@@ -477,7 +483,7 @@ class OutgoingResponsePreparationSystemTest {
 
     @Test
     void shouldNotAutoVoiceWhenMessagesListIsNull() {
-        properties.getVoice().getTelegram().setRespondWithVoice(true);
+        when(runtimeConfigService.isTelegramRespondWithVoiceEnabled()).thenReturn(true);
 
         AgentContext context = AgentContext.builder()
                 .session(buildSession())
@@ -497,7 +503,7 @@ class OutgoingResponsePreparationSystemTest {
 
     @Test
     void shouldSkipAutoVoiceWhenVoiceAlreadyDetected() {
-        properties.getVoice().getTelegram().setRespondWithVoice(true);
+        when(runtimeConfigService.isTelegramRespondWithVoiceEnabled()).thenReturn(true);
 
         AgentContext context = buildContextWithMessages(List.of(
                 Message.builder()
@@ -520,7 +526,7 @@ class OutgoingResponsePreparationSystemTest {
 
     @Test
     void shouldFindLastUserMessageAmongMixedMessages() {
-        properties.getVoice().getTelegram().setRespondWithVoice(true);
+        when(runtimeConfigService.isTelegramRespondWithVoiceEnabled()).thenReturn(true);
 
         AgentContext context = buildContextWithMessages(List.of(
                 Message.builder()
@@ -574,7 +580,71 @@ class OutgoingResponsePreparationSystemTest {
     // ── process: tool loop limit i18n override ──
 
     @Test
-    void shouldOverrideTextWithI18nWhenToolLoopLimitReached() {
+    void shouldUseSpecificMessageWhenToolLoopStopsByMaxLlmCalls() {
+        AgentContext context = buildContext();
+        LlmResponse response = LlmResponse.builder()
+                .content("Tool loop stopped: reached max internal LLM calls (200).")
+                .build();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+        context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REACHED, true);
+        context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REASON, TurnLimitReason.MAX_LLM_CALLS);
+
+        when(runtimeConfigService.getTurnMaxLlmCalls()).thenReturn(200);
+        String i18nMessage = "Reached max internal calls (200)";
+        when(preferencesService.getMessage("system.toolloop.limit.maxLlmCalls", 200)).thenReturn(i18nMessage);
+
+        AgentContext result = system.process(context);
+
+        OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        assertNotNull(outgoing);
+        assertEquals(i18nMessage, outgoing.getText());
+    }
+
+    @Test
+    void shouldUseSpecificMessageWhenToolLoopStopsByMaxToolExecutions() {
+        AgentContext context = buildContext();
+        LlmResponse response = LlmResponse.builder()
+                .content("Tool loop stopped: reached max tool executions (500).")
+                .build();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+        context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REACHED, true);
+        context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REASON, TurnLimitReason.MAX_TOOL_EXECUTIONS);
+
+        when(runtimeConfigService.getTurnMaxToolExecutions()).thenReturn(500);
+        String i18nMessage = "Reached max tool executions (500)";
+        when(preferencesService.getMessage("system.toolloop.limit.maxToolExecutions", 500))
+                .thenReturn(i18nMessage);
+
+        AgentContext result = system.process(context);
+
+        OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        assertNotNull(outgoing);
+        assertEquals(i18nMessage, outgoing.getText());
+    }
+
+    @Test
+    void shouldUseSpecificMessageWhenToolLoopStopsByDeadline() {
+        AgentContext context = buildContext();
+        LlmResponse response = LlmResponse.builder()
+                .content("Tool loop stopped: deadline exceeded.")
+                .build();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+        context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REACHED, true);
+        context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REASON, TurnLimitReason.DEADLINE);
+
+        when(runtimeConfigService.getTurnDeadline()).thenReturn(java.time.Duration.ofMinutes(60));
+        String i18nMessage = "Reached turn deadline (60 min)";
+        when(preferencesService.getMessage("system.toolloop.limit.deadline", 60L)).thenReturn(i18nMessage);
+
+        AgentContext result = system.process(context);
+
+        OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        assertNotNull(outgoing);
+        assertEquals(i18nMessage, outgoing.getText());
+    }
+
+    @Test
+    void shouldUseUnknownMessageWhenToolLoopReasonMissing() {
         AgentContext context = buildContext();
         LlmResponse response = LlmResponse.builder()
                 .content("Tool loop stopped: reached max internal LLM calls (200).")
@@ -582,15 +652,14 @@ class OutgoingResponsePreparationSystemTest {
         context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
         context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REACHED, true);
 
-        String i18nMessage = "Autonomous work limit reached. Send \"continue\" to resume.";
-        when(preferencesService.getMessage("system.toolloop.limit")).thenReturn(i18nMessage);
+        String i18nMessage = "Autonomous work paused by turn guard";
+        when(preferencesService.getMessage("system.toolloop.limit.unknown")).thenReturn(i18nMessage);
 
         AgentContext result = system.process(context);
 
         OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
         assertNotNull(outgoing);
-        assertEquals(i18nMessage, outgoing.getText(),
-                "User-facing text should be the i18n message, not the technical stop reason");
+        assertEquals(i18nMessage, outgoing.getText());
     }
 
     @Test

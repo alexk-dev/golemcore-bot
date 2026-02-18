@@ -19,6 +19,7 @@ package me.golemcore.bot.security;
  */
 
 import me.golemcore.bot.domain.component.SanitizerComponent;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -46,21 +47,30 @@ public class DefaultSanitizerComponent implements SanitizerComponent {
 
     private final InputSanitizer inputSanitizer;
     private final InjectionGuard injectionGuard;
+    private final RuntimeConfigService runtimeConfigService;
 
     @Override
     public String sanitize(String input) {
+        if (!runtimeConfigService.isSanitizeInputEnabled()) {
+            return input;
+        }
         return inputSanitizer.sanitize(input);
     }
 
     @Override
     public SanitizationResult check(String input) {
+        if (input != null && input.length() > runtimeConfigService.getMaxInputLength()) {
+            String truncated = input.substring(0, runtimeConfigService.getMaxInputLength());
+            return SanitizationResult.unsafe(truncated, List.of("input_too_long"));
+        }
+
         List<String> threats = injectionGuard.detectAllThreats(input);
 
         if (threats.isEmpty()) {
             return SanitizationResult.safe(input);
         }
 
-        String sanitized = inputSanitizer.sanitize(input);
+        String sanitized = runtimeConfigService.isSanitizeInputEnabled() ? inputSanitizer.sanitize(input) : input;
         return SanitizationResult.unsafe(sanitized, threats);
     }
 }

@@ -24,7 +24,10 @@ class SkillServiceVariableTest {
         mockStorage = mock(StoragePort.class);
         BotProperties properties = new BotProperties();
         SkillVariableResolver variableResolver = new SkillVariableResolver(mockStorage);
-        skillService = new SkillService(mockStorage, properties, variableResolver);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isSkillsEnabled()).thenReturn(true);
+        when(runtimeConfigService.isSkillsProgressiveLoadingEnabled()).thenReturn(true);
+        skillService = new SkillService(mockStorage, properties, variableResolver, runtimeConfigService);
 
         // Default: no files
         when(mockStorage.getText(anyString(), anyString()))

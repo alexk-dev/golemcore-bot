@@ -46,22 +46,25 @@ cd golemcore-bot
 # Build image with Jib (no Docker daemon needed)
 ./mvnw compile jib:dockerBuild
 
-# Configure an LLM provider (choose one)
-export OPENAI_API_KEY=sk-proj-...
-# or: export ANTHROPIC_API_KEY=sk-ant-...
-
-# Run
+# Run (persist workspace + sandbox)
 docker run -d \
   --name golemcore-bot \
   --shm-size=256m \
   --cap-add=SYS_ADMIN \
-  -e OPENAI_API_KEY \
+  -e STORAGE_PATH=/app/workspace \
+  -e TOOLS_WORKSPACE=/app/sandbox \
   -v golemcore-bot-data:/app/workspace \
+  -v golemcore-bot-sandbox:/app/sandbox \
   -p 8080:8080 \
   --restart unless-stopped \
   golemcore-bot:latest
 
 docker logs -f golemcore-bot
+
+# Open dashboard
+# http://localhost:8080/dashboard
+# On first start, check logs for the temporary admin password.
+# Configure LLM provider API keys in Settings (stored in preferences/runtime-config.json).
 ```
 
 Why the extra Docker flags?
@@ -70,20 +73,7 @@ Why the extra Docker flags?
 
 ### Telegram (optional)
 
-```bash
-docker run -d \
-  --name golemcore-bot \
-  --shm-size=256m \
-  --cap-add=SYS_ADMIN \
-  -e OPENAI_API_KEY=sk-proj-... \
-  -e TELEGRAM_ENABLED=true \
-  -e TELEGRAM_BOT_TOKEN=123456:ABC-DEF... \
-  -e TELEGRAM_ALLOWED_USERS=123456789 \
-  -v golemcore-bot-data:/app/workspace \
-  -p 8080:8080 \
-  --restart unless-stopped \
-  golemcore-bot:latest
-```
+Enable Telegram from the dashboard (Settings → Telegram). The token and allowlist are stored in `preferences/runtime-config.json`.
 
 More options (Compose, production, systemd): **[Deployment](docs/DEPLOYMENT.md)**.
 
@@ -91,30 +81,12 @@ More options (Compose, production, systemd): **[Deployment](docs/DEPLOYMENT.md)*
 
 ## Minimal configuration (README keeps only the essentials)
 
-### Required: LLM provider (choose at least one)
+### Required
 
-| Variable | Purpose |
-|---|---|
-| `OPENAI_API_KEY` | OpenAI API key |
-| `ANTHROPIC_API_KEY` | Anthropic API key |
+- Configure at least one LLM provider API key in `preferences/runtime-config.json` (recommended: use the dashboard).
+- In Docker, set `STORAGE_PATH` to a mounted volume so configuration and sessions persist.
 
-### Telegram (if enabled)
-
-| Variable | Purpose |
-|---|---|
-| `TELEGRAM_ENABLED` | Enable Telegram channel (`true/false`) |
-| `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather |
-| `TELEGRAM_ALLOWED_USERS` | Comma-separated Telegram user IDs allowlist |
-
-### Common feature toggles
-
-| Variable | Purpose |
-|---|---|
-| `MCP_ENABLED` | Enable MCP client (per-skill MCP servers) |
-| `AUTO_MODE_ENABLED` | Enable autonomous goals/ticks |
-| `RAG_ENABLED` | Enable LightRAG integration |
-
-Full reference (90+ variables, examples, mail/voice/rate limits/security): **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)**.
+Full reference (runtime config fields, storage layout, browser/sandbox notes): **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)**.
 
 ---
 
@@ -127,6 +99,7 @@ Full reference (90+ variables, examples, mail/voice/rate limits/security): **[do
 5. **[Memory](docs/MEMORY.md)** + **[RAG](docs/RAG.md)**
 6. **[Webhooks](docs/WEBHOOKS.md)** (HTTP triggers, custom mappings, callbacks)
 7. **[Deployment](docs/DEPLOYMENT.md)**
+8. **[Dashboard](docs/DASHBOARD.md)**
 
 ---
 

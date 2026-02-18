@@ -37,6 +37,9 @@ public class LlmResponse {
     private String model;
     private String finishReason;
 
+    @Builder.Default
+    private boolean compatibilityFlatteningApplied = false;
+
     /**
      * Checks if the response contains tool calls from the LLM.
      */

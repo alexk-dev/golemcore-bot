@@ -25,7 +25,7 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -61,7 +61,7 @@ import java.util.concurrent.CompletableFuture;
 public class SkillTransitionTool implements ToolComponent {
 
     private final SkillComponent skillComponent;
-    private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -124,6 +124,6 @@ public class SkillTransitionTool implements ToolComponent {
 
     @Override
     public boolean isEnabled() {
-        return properties.getTools().getSkillTransition().isEnabled();
+        return runtimeConfigService.isSkillTransitionEnabled();
     }
 }

@@ -23,7 +23,7 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.TurnOutcome;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.RagPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -47,7 +47,7 @@ import java.util.Set;
 public class RagIndexingSystem implements AgentSystem {
 
     private final RagPort ragPort;
-    private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
             .withZone(ZoneId.systemDefault());
@@ -123,7 +123,7 @@ public class RagIndexingSystem implements AgentSystem {
     }
 
     private boolean isTrivial(String userText, String assistantText) {
-        int minLength = properties.getRag().getIndexMinLength();
+        int minLength = runtimeConfigService.getRagIndexMinLength();
         int combinedLength = userText.length() + assistantText.length();
         if (combinedLength < minLength) {
             return true;

@@ -6,7 +6,7 @@ import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -17,19 +17,21 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class VoiceResponseToolTest {
 
     private static final String TEXT = "text";
 
     private VoiceResponseTool tool;
-    private BotProperties properties;
+    private RuntimeConfigService runtimeConfigService;
 
     @BeforeEach
     void setUp() {
-        properties = new BotProperties();
-        properties.getVoice().setEnabled(true);
-        tool = new VoiceResponseTool(properties);
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isVoiceEnabled()).thenReturn(true);
+        tool = new VoiceResponseTool(runtimeConfigService);
     }
 
     @AfterEach
@@ -120,13 +122,13 @@ class VoiceResponseToolTest {
 
     @Test
     void isEnabledWhenVoiceEnabled() {
-        properties.getVoice().setEnabled(true);
+        when(runtimeConfigService.isVoiceEnabled()).thenReturn(true);
         assertTrue(tool.isEnabled());
     }
 
     @Test
     void isDisabledWhenVoiceDisabled() {
-        properties.getVoice().setEnabled(false);
+        when(runtimeConfigService.isVoiceEnabled()).thenReturn(false);
         assertFalse(tool.isEnabled());
     }
 

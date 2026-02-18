@@ -29,6 +29,7 @@ class PromptSectionServiceTest {
 
     private StoragePort storagePort;
     private BotProperties properties;
+    private RuntimeConfigService runtimeConfigService;
     private SkillTemplateEngine templateEngine;
     private PromptSectionService service;
 
@@ -36,13 +37,15 @@ class PromptSectionServiceTest {
     void setUp() {
         storagePort = mock(StoragePort.class);
         properties = new BotProperties();
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isVoiceEnabled()).thenReturn(false);
         templateEngine = new SkillTemplateEngine();
 
         // Default: both files exist (skip ensureDefaults writes)
         when(storagePort.exists(eq(PROMPTS_DIR), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(true));
 
-        service = new PromptSectionService(storagePort, properties, templateEngine);
+        service = new PromptSectionService(storagePort, properties, runtimeConfigService, templateEngine);
     }
 
     @Test
@@ -305,7 +308,7 @@ class PromptSectionServiceTest {
         when(storagePort.getText(PROMPTS_DIR, VOICE_FILE))
                 .thenReturn(CompletableFuture.completedFuture(voiceSection));
 
-        properties.getVoice().setEnabled(false);
+        when(runtimeConfigService.isVoiceEnabled()).thenReturn(false);
         service.reload();
 
         List<PromptSection> sections = service.getEnabledSections();
@@ -325,7 +328,7 @@ class PromptSectionServiceTest {
         when(storagePort.getText(PROMPTS_DIR, VOICE_FILE))
                 .thenReturn(CompletableFuture.completedFuture(voiceSection));
 
-        properties.getVoice().setEnabled(true);
+        when(runtimeConfigService.isVoiceEnabled()).thenReturn(true);
         service.reload();
 
         List<PromptSection> sections = service.getEnabledSections();
@@ -336,7 +339,7 @@ class PromptSectionServiceTest {
 
     @Test
     void ensureDefaults_createsVoiceMdWhenVoiceEnabled() {
-        properties.getVoice().setEnabled(true);
+        when(runtimeConfigService.isVoiceEnabled()).thenReturn(true);
         when(storagePort.exists(PROMPTS_DIR, IDENTITY_FILE))
                 .thenReturn(CompletableFuture.completedFuture(true));
         when(storagePort.exists(PROMPTS_DIR, RULES_FILE))
@@ -353,7 +356,7 @@ class PromptSectionServiceTest {
 
     @Test
     void ensureDefaults_skipsVoiceMdWhenVoiceDisabled() {
-        properties.getVoice().setEnabled(false);
+        when(runtimeConfigService.isVoiceEnabled()).thenReturn(false);
         when(storagePort.exists(PROMPTS_DIR, IDENTITY_FILE))
                 .thenReturn(CompletableFuture.completedFuture(true));
         when(storagePort.exists(PROMPTS_DIR, RULES_FILE))
