@@ -77,10 +77,17 @@ function TierModelCard({
     setProvider(selectedProvider);
   }, [selectedProvider]);
 
-  const modelsForProvider = providers[provider] ?? [];
+  const modelsForProvider = useMemo(() => providers[provider] ?? [], [providers, provider]);
   const selectedModel = modelsForProvider.find((model) => model.id === modelValue);
   const reasoningLevels = selectedModel?.reasoningLevels ?? [];
   const hasProviders = providerNames.length > 0;
+
+  // Auto-select minimum (last) model when no explicit model is configured
+  useEffect(() => {
+    if (modelValue.length === 0 && modelsForProvider.length > 0) {
+      onModelChange(modelsForProvider[modelsForProvider.length - 1].id);
+    }
+  }, [modelValue, modelsForProvider, onModelChange]);
 
   return (
     <Card className="tier-card h-100">
@@ -108,7 +115,6 @@ function TierModelCard({
         <Form.Group className="mb-2">
           <Form.Label className="small fw-medium mb-1">Model</Form.Label>
           <Form.Select size="sm" value={modelValue} disabled={!hasProviders} onChange={(e) => onModelChange(e.target.value)}>
-            <option value="">Default</option>
             {modelsForProvider.map((model) => (
               <option key={model.id} value={model.id}>{model.displayName ?? model.id}</option>
             ))}
