@@ -641,6 +641,44 @@ class DefaultToolLoopSystemTest {
     }
 
     @Test
+    void shouldSetLimitReasonWhenMaxLlmCallsExhausted() {
+        turnSettings.setMaxLlmCalls(1);
+        AgentContext context = buildContext();
+        Message.ToolCall tc = toolCall(TOOL_CALL_ID, TOOL_NAME);
+
+        LlmResponse withTools = toolCallResponse(List.of(tc));
+        when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(withTools));
+
+        ToolExecutionOutcome outcome = new ToolExecutionOutcome(
+                TOOL_CALL_ID, TOOL_NAME, ToolResult.success("ok"), "ok", false, null);
+        when(toolExecutor.execute(any(), any())).thenReturn(outcome);
+
+        system.processTurn(context);
+
+        assertEquals(me.golemcore.bot.domain.model.TurnLimitReason.MAX_LLM_CALLS,
+                context.getAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REASON));
+    }
+
+    @Test
+    void shouldSetLimitReasonWhenMaxToolExecutionsExhausted() {
+        turnSettings.setMaxToolExecutions(1);
+        AgentContext context = buildContext();
+        Message.ToolCall tc = toolCall(TOOL_CALL_ID, TOOL_NAME);
+
+        LlmResponse withTools = toolCallResponse(List.of(tc));
+        when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(withTools));
+
+        ToolExecutionOutcome outcome = new ToolExecutionOutcome(
+                TOOL_CALL_ID, TOOL_NAME, ToolResult.success("ok"), "ok", false, null);
+        when(toolExecutor.execute(any(), any())).thenReturn(outcome);
+
+        system.processTurn(context);
+
+        assertEquals(me.golemcore.bot.domain.model.TurnLimitReason.MAX_TOOL_EXECUTIONS,
+                context.getAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REASON));
+    }
+
+    @Test
     void shouldNotSetToolLoopLimitReachedOnConfirmationDenied() {
         settings.setStopOnConfirmationDenied(true);
         AgentContext context = buildContext();
