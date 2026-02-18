@@ -1,11 +1,14 @@
 package me.golemcore.bot.domain.system.toolloop;
 
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -28,6 +31,7 @@ public class DefaultHistoryWriter implements HistoryWriter {
                 .role("assistant")
                 .content(llmResponse != null ? llmResponse.getContent() : null)
                 .toolCalls(toolCalls)
+                .metadata(buildAssistantMetadata(context))
                 .timestamp(now())
                 .build();
 
@@ -61,6 +65,7 @@ public class DefaultHistoryWriter implements HistoryWriter {
                 .role("assistant")
                 .content(finalText)
                 .toolCalls(llmResponse != null ? llmResponse.getToolCalls() : null)
+                .metadata(buildAssistantMetadata(context))
                 .timestamp(now())
                 .build();
 
@@ -72,5 +77,30 @@ public class DefaultHistoryWriter implements HistoryWriter {
 
     private Instant now() {
         return clock != null ? clock.instant() : Instant.now();
+    }
+
+    private Map<String, Object> buildAssistantMetadata(AgentContext context) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        if (context == null) {
+            return metadata;
+        }
+
+        String tier = context.getModelTier();
+        if (tier != null && !tier.isBlank()) {
+            metadata.put("modelTier", tier);
+        }
+
+        String model = null;
+        if (context.getSession() != null && context.getSession().getMetadata() != null) {
+            Object value = context.getSession().getMetadata().get(ContextAttributes.LLM_MODEL);
+            if (value instanceof String) {
+                model = (String) value;
+            }
+        }
+        if (model != null && !model.isBlank()) {
+            metadata.put("model", model);
+        }
+
+        return metadata;
     }
 }

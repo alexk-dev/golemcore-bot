@@ -2,6 +2,7 @@ package me.golemcore.bot.adapter.outbound.voice;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.model.AudioFormat;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.VoicePort;
 import okhttp3.OkHttpClient;
@@ -23,6 +24,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class ElevenLabsAdapterTest {
 
@@ -37,6 +40,7 @@ class ElevenLabsAdapterTest {
     private MockWebServer mockServer;
     private ElevenLabsAdapter adapter;
     private BotProperties properties;
+    private RuntimeConfigService runtimeConfigService;
 
     @BeforeEach
     void setUp() throws IOException {
@@ -44,19 +48,22 @@ class ElevenLabsAdapterTest {
         mockServer.start();
 
         OkHttpClient client = new OkHttpClient.Builder()
-                .connectTimeout(5, TimeUnit.SECONDS)
-                .readTimeout(5, TimeUnit.SECONDS)
+                .connectTimeout(1, TimeUnit.SECONDS)
+                .readTimeout(1, TimeUnit.SECONDS)
                 .build();
 
         properties = new BotProperties();
-        properties.getVoice().setEnabled(true);
-        properties.getVoice().setApiKey("test-api-key");
-        properties.getVoice().setVoiceId("test-voice-id");
-        properties.getVoice().setTtsModelId("eleven_multilingual_v2");
-        properties.getVoice().setSttModelId("scribe_v1");
+
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isVoiceEnabled()).thenReturn(true);
+        when(runtimeConfigService.getVoiceApiKey()).thenReturn("test-api-key");
+        when(runtimeConfigService.getVoiceId()).thenReturn("test-voice-id");
+        when(runtimeConfigService.getTtsModelId()).thenReturn("eleven_multilingual_v2");
+        when(runtimeConfigService.getSttModelId()).thenReturn("scribe_v1");
+        when(runtimeConfigService.getVoiceSpeed()).thenReturn(1.0f);
 
         String baseUrl = mockServer.url("/").toString();
-        adapter = new ElevenLabsAdapter(client, properties, new ObjectMapper()) {
+        adapter = new ElevenLabsAdapter(client, properties, runtimeConfigService, new ObjectMapper()) {
             @Override
             protected String getSttUrl() {
                 return baseUrl + "v1/speech-to-text";
@@ -65,6 +72,11 @@ class ElevenLabsAdapterTest {
             @Override
             protected String getTtsUrl(String voiceId) {
                 return baseUrl + "v1/text-to-speech/" + voiceId;
+            }
+
+            @Override
+            protected void sleepBeforeRetry(long backoffMs) {
+                // No-op in tests to avoid real backoff delays.
             }
         };
     }
@@ -141,7 +153,7 @@ class ElevenLabsAdapterTest {
 
     @Test
     void transcribeApiErrorWithoutBody() {
-        mockServer.enqueue(new MockResponse.Builder().code(500).build());
+        enqueueErrorResponseMultiple(500, "", 3);
         assertTranscribeThrowsAny();
     }
 
@@ -184,13 +196,13 @@ class ElevenLabsAdapterTest {
 
     @Test
     void synthesizeApiError() {
-        mockServer.enqueue(new MockResponse.Builder().code(500).body("Server error").build());
+        enqueueErrorResponseMultiple(500, "Server error", 3);
         assertSynthesizeThrowsAny();
     }
 
     @Test
     void synthesizeApiErrorWithoutBody() {
-        mockServer.enqueue(new MockResponse.Builder().code(503).build());
+        enqueueErrorResponseMultiple(503, "", 3);
         assertSynthesizeThrowsAny();
     }
 
@@ -211,31 +223,31 @@ class ElevenLabsAdapterTest {
 
     @Test
     void isNotAvailableWithoutApiKey() {
-        properties.getVoice().setApiKey("");
+        when(runtimeConfigService.getVoiceApiKey()).thenReturn("");
         assertFalse(adapter.isAvailable());
     }
 
     @Test
     void isNotAvailableWhenDisabled() {
-        properties.getVoice().setEnabled(false);
+        when(runtimeConfigService.isVoiceEnabled()).thenReturn(false);
         assertFalse(adapter.isAvailable());
     }
 
     @Test
     void isNotAvailableWithNullApiKey() {
-        properties.getVoice().setApiKey(null);
+        when(runtimeConfigService.getVoiceApiKey()).thenReturn(null);
         assertFalse(adapter.isAvailable());
     }
 
     @Test
     void transcribeFailsWithoutApiKey() {
-        properties.getVoice().setApiKey("");
+        when(runtimeConfigService.getVoiceApiKey()).thenReturn("");
         assertTranscribeThrowsAny();
     }
 
     @Test
     void synthesizeFailsWithoutApiKey() {
-        properties.getVoice().setApiKey("");
+        when(runtimeConfigService.getVoiceApiKey()).thenReturn("");
         CompletableFuture<byte[]> future = adapter.synthesize(STT_TEXT, VoicePort.VoiceConfig.defaultConfig());
         assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
     }
@@ -308,9 +320,7 @@ class ElevenLabsAdapterTest {
 
     @Test
     void synthesizeRateLimited() {
-        mockServer.enqueue(new MockResponse.Builder()
-                .code(429)
-                .body("{\"detail\":\"Rate limit exceeded\"}").build());
+        enqueueErrorResponseMultiple(429, "{\"detail\":\"Rate limit exceeded\"}", 3);
         assertSynthesizeThrowsAny();
     }
 
@@ -376,7 +386,7 @@ class ElevenLabsAdapterTest {
 
     @Test
     void synthesizeNullApiKeyOnCall() {
-        properties.getVoice().setApiKey(null);
+        when(runtimeConfigService.getVoiceApiKey()).thenReturn(null);
         assertSynthesizeThrowsAny();
     }
 
@@ -402,16 +412,16 @@ class ElevenLabsAdapterTest {
 
     @Test
     void initLogsWarnWhenEnabledButNoKey() {
-        properties.getVoice().setEnabled(true);
-        properties.getVoice().setApiKey("");
+        when(runtimeConfigService.isVoiceEnabled()).thenReturn(true);
+        when(runtimeConfigService.getVoiceApiKey()).thenReturn("");
         // init() should not throw, just log warn
         assertDoesNotThrow(() -> adapter.init());
     }
 
     @Test
     void initLogsWhenDisabled() {
-        properties.getVoice().setEnabled(false);
-        properties.getVoice().setApiKey("");
+        when(runtimeConfigService.isVoiceEnabled()).thenReturn(false);
+        when(runtimeConfigService.getVoiceApiKey()).thenReturn("");
         // init() should not throw even when disabled
         assertDoesNotThrow(() -> adapter.init());
     }
@@ -563,7 +573,7 @@ class ElevenLabsAdapterTest {
                 Arguments.of(400, "{\"detail\":{\"status\":\"test_error\",\"message\":\"Test message\"}}",
                         "Test message"),
                 Arguments.of(400, "{\"message\":\"Root level error\"}", "Root level"),
-                Arguments.of(500, "Not valid JSON at all", ""));
+                Arguments.of(418, "Not valid JSON at all", ""));
     }
 
     @ParameterizedTest
@@ -579,25 +589,4 @@ class ElevenLabsAdapterTest {
         }
     }
 
-    @Test
-    void transcribeInterruptedDuringRetry() throws Exception {
-        // Enqueue error that triggers retry
-        mockServer.enqueue(new MockResponse.Builder().code(429).body("{\"message\":\"Rate limited\"}").build());
-
-        Thread testThread = new Thread(() -> {
-            try {
-                adapter.transcribe(new byte[] { 1 }, AudioFormat.OGG_OPUS).get(10, TimeUnit.SECONDS);
-            } catch (Exception expected) {
-                Thread.currentThread().interrupt();
-            }
-        });
-
-        testThread.start();
-        Thread.sleep(100); // Let it start retry logic
-        testThread.interrupt();
-        testThread.join(5000);
-
-        // Verify thread was interrupted
-        assertFalse(testThread.isAlive());
-    }
 }

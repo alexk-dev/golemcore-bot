@@ -36,6 +36,7 @@ import me.golemcore.bot.domain.service.CompactionService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanExecutionService;
 import me.golemcore.bot.domain.service.PlanService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.domain.service.SessionRunCoordinator;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -108,7 +109,7 @@ public class CommandRouter implements CommandPort {
     private static final String SUBCMD_LIST = "list";
     private static final String SUBCMD_RESET = "reset";
     private static final String SUBCMD_REASONING = "reasoning";
-    private static final String ERR_PROVIDER_NOT_ALLOWED = "provider.not.allowed";
+    private static final String ERR_PROVIDER_NOT_CONFIGURED = "provider.not.configured";
     private static final String ERR_NO_REASONING = "no.reasoning";
 
     private final SkillComponent skillComponent;
@@ -125,6 +126,7 @@ public class CommandRouter implements CommandPort {
     private final SessionRunCoordinator runCoordinator;
     private final ApplicationEventPublisher eventPublisher;
     private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
 
     private static final List<String> KNOWN_COMMANDS = List.of(
             "skills", "tools", CMD_STATUS, "new", SUBCMD_RESET, "compact", CMD_HELP,
@@ -148,7 +150,8 @@ public class CommandRouter implements CommandPort {
             ScheduleService scheduleService,
             SessionRunCoordinator runCoordinator,
             ApplicationEventPublisher eventPublisher,
-            BotProperties properties) {
+            BotProperties properties,
+            RuntimeConfigService runtimeConfigService) {
         this.skillComponent = skillComponent;
         this.toolComponents = toolComponents;
         this.sessionService = sessionService;
@@ -163,6 +166,7 @@ public class CommandRouter implements CommandPort {
         this.runCoordinator = runCoordinator;
         this.eventPublisher = eventPublisher;
         this.properties = properties;
+        this.runtimeConfigService = runtimeConfigService;
         log.info("CommandRouter initialized with commands: {}", KNOWN_COMMANDS);
     }
 
@@ -540,10 +544,10 @@ public class CommandRouter implements CommandPort {
     private CommandResult handleModelSet(String tier, String modelSpec) {
         ModelSelectionService.ValidationResult validation = modelSelectionService.validateModel(modelSpec);
         if (!validation.valid()) {
-            if (ERR_PROVIDER_NOT_ALLOWED.equals(validation.error())) {
-                String allowedStr = String.join(", ",
-                        properties.getModelSelection().getAllowedProviders());
-                return CommandResult.success(msg("command.model.invalid.provider", modelSpec, allowedStr));
+            if (ERR_PROVIDER_NOT_CONFIGURED.equals(validation.error())) {
+                String configuredStr = String.join(", ",
+                        runtimeConfigService.getConfiguredLlmProviders());
+                return CommandResult.success(msg("command.model.invalid.provider", modelSpec, configuredStr));
             }
             return CommandResult.success(msg("command.model.invalid.model", modelSpec));
         }
@@ -687,7 +691,7 @@ public class CommandRouter implements CommandPort {
             return CommandResult.success(msg("command.goal.created", goal.getTitle()));
         } catch (IllegalStateException e) {
             return CommandResult.failure(msg("command.goal.limit",
-                    properties.getAuto().getMaxGoals()));
+                    runtimeConfigService.getAutoMaxGoals()));
         }
     }
 

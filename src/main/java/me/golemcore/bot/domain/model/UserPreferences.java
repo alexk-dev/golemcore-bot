@@ -95,7 +95,7 @@ public class UserPreferences {
         private boolean enabled = false;
 
         /** Shared secret for Bearer token authentication. */
-        private String token;
+        private Secret token;
 
         /** Maximum payload size in bytes. */
         @Builder.Default
@@ -134,7 +134,7 @@ public class UserPreferences {
         private String hmacHeader;
 
         /** HMAC shared secret for signature verification. */
-        private String hmacSecret;
+        private Secret hmacSecret;
 
         /** Prefix stripped from HMAC header value (e.g. {@code sha256=}). */
         private String hmacPrefix;

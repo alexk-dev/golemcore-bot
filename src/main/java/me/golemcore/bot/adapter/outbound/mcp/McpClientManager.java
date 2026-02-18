@@ -22,7 +22,7 @@ import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.McpConfig;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.ToolDefinition;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.McpPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PreDestroy;
@@ -64,10 +64,10 @@ import java.util.concurrent.TimeUnit;
  * <p>
  * Configuration:
  * <ul>
- * <li>{@code bot.mcp.enabled} - Enable/disable MCP feature
- * <li>{@code bot.mcp.default-startup-timeout} - Default startup timeout
+ * <li>RuntimeConfig.mcp.enabled - Enable/disable MCP feature
+ * <li>RuntimeConfig.mcp.defaultStartupTimeout - Default startup timeout
  * (seconds)
- * <li>{@code bot.mcp.default-idle-timeout} - Default idle timeout (minutes)
+ * <li>RuntimeConfig.mcp.defaultIdleTimeout - Default idle timeout (minutes)
  * </ul>
  *
  * @see McpClient
@@ -78,7 +78,7 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 public class McpClientManager implements McpPort {
 
-    private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
     private final ObjectMapper objectMapper;
 
     private final Map<String, McpClient> clients = new ConcurrentHashMap<>();
@@ -89,8 +89,8 @@ public class McpClientManager implements McpPort {
         return t;
     });
 
-    public McpClientManager(BotProperties properties, ObjectMapper objectMapper) {
-        this.properties = properties;
+    public McpClientManager(RuntimeConfigService runtimeConfigService, ObjectMapper objectMapper) {
+        this.runtimeConfigService = runtimeConfigService;
         this.objectMapper = objectMapper;
 
         // Schedule idle check every 60 seconds
@@ -100,7 +100,7 @@ public class McpClientManager implements McpPort {
     @Override
     @SuppressWarnings("PMD.CloseResource")
     public List<ToolDefinition> getOrStartClient(Skill skill) {
-        if (!properties.getMcp().isEnabled()) {
+        if (!runtimeConfigService.isMcpEnabled()) {
             return List.of();
         }
 
@@ -203,35 +203,41 @@ public class McpClientManager implements McpPort {
     @SuppressWarnings("PMD.CloseResource")
     private void checkIdleClients() {
         long now = System.currentTimeMillis();
+        long idleTimeoutMs = TimeUnit.MINUTES.toMillis(runtimeConfigService.getMcpDefaultIdleTimeout());
+
+        // Collect keys to remove to avoid ConcurrentModificationException
+        List<String> toRemove = new java.util.ArrayList<>();
+
         for (Map.Entry<String, McpClient> entry : clients.entrySet()) {
             McpClient client = entry.getValue();
             if (!client.isRunning()) {
-                clients.remove(entry.getKey());
-                skillToolNames.remove(entry.getKey());
+                toRemove.add(entry.getKey());
                 continue;
             }
 
             long idleMs = now - client.getLastActivityTimestamp();
-            // Use the per-client config from McpConfig (stored during start)
-            long idleTimeoutMs = TimeUnit.MINUTES.toMillis(properties.getMcp().getDefaultIdleTimeout());
             if (idleMs > idleTimeoutMs) {
                 log.info("[McpManager] Stopping idle client '{}' (idle for {}s)", entry.getKey(), idleMs / 1000);
-                stopClient(entry.getKey());
+                toRemove.add(entry.getKey());
             }
+        }
+
+        // Remove after iteration to avoid modifying collection during iteration
+        for (String skillName : toRemove) {
+            stopClient(skillName);
         }
     }
 
     private McpConfig applyDefaults(McpConfig config) {
-        BotProperties.McpClientProperties defaults = properties.getMcp();
         return McpConfig.builder()
                 .command(config.getCommand())
                 .env(config.getEnv())
                 .startupTimeoutSeconds(config.getStartupTimeoutSeconds() > 0
                         ? config.getStartupTimeoutSeconds()
-                        : defaults.getDefaultStartupTimeout())
+                        : runtimeConfigService.getMcpDefaultStartupTimeout())
                 .idleTimeoutMinutes(config.getIdleTimeoutMinutes() > 0
                         ? config.getIdleTimeoutMinutes()
-                        : defaults.getDefaultIdleTimeout())
+                        : runtimeConfigService.getMcpDefaultIdleTimeout())
                 .build();
     }
 }

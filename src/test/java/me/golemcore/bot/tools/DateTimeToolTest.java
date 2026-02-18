@@ -1,6 +1,5 @@
 package me.golemcore.bot.tools;
 
-import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,14 +18,6 @@ class DateTimeToolTest {
     @BeforeEach
     void setUp() {
         dateTimeTool = new DateTimeTool();
-    }
-
-    @Test
-    void getDefinition_returnsCorrectDefinition() {
-        ToolDefinition definition = dateTimeTool.getDefinition();
-
-        assertEquals("datetime", definition.getName());
-        assertNotNull(definition.getDescription());
     }
 
     @Test

@@ -18,6 +18,7 @@
 
 package me.golemcore.bot.adapter.inbound.webhook;
 
+import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import org.junit.jupiter.api.BeforeEach;
@@ -279,7 +280,7 @@ class WebhookAuthenticatorTest {
 
     private void configureToken(String token) {
         UserPreferences.WebhookConfig config = UserPreferences.WebhookConfig.builder()
-                .token(token)
+                .token(Secret.of(token))
                 .build();
         UserPreferences prefs = UserPreferences.builder().webhooks(config).build();
         when(preferencesService.getPreferences()).thenReturn(prefs);
@@ -289,7 +290,7 @@ class WebhookAuthenticatorTest {
         return UserPreferences.HookMapping.builder()
                 .name("github")
                 .authMode("hmac")
-                .hmacSecret(secret)
+                .hmacSecret(Secret.of(secret))
                 .hmacHeader(header)
                 .hmacPrefix(prefix)
                 .build();

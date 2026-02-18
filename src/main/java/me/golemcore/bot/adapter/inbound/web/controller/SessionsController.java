@@ -103,6 +103,19 @@ public class SessionsController {
     }
 
     private SessionDetailDto.MessageDto toMessageDto(Message msg) {
+        String model = null;
+        String modelTier = null;
+        if (msg.getMetadata() != null) {
+            Object modelValue = msg.getMetadata().get("model");
+            if (modelValue instanceof String) {
+                model = (String) modelValue;
+            }
+            Object tierValue = msg.getMetadata().get("modelTier");
+            if (tierValue instanceof String) {
+                modelTier = (String) tierValue;
+            }
+        }
+
         return SessionDetailDto.MessageDto.builder()
                 .id(msg.getId())
                 .role(msg.getRole())
@@ -110,6 +123,8 @@ public class SessionsController {
                 .timestamp(msg.getTimestamp() != null ? msg.getTimestamp().toString() : null)
                 .hasToolCalls(msg.hasToolCalls())
                 .hasVoice(msg.hasVoice())
+                .model(model)
+                .modelTier(modelTier)
                 .build();
     }
 }

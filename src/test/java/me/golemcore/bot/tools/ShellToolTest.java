@@ -1,6 +1,7 @@
 package me.golemcore.bot.tools;
 
 import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.security.InjectionGuard;
 import org.junit.jupiter.api.BeforeEach;
@@ -14,6 +15,8 @@ import java.nio.file.Path;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class ShellToolTest {
 
@@ -25,16 +28,20 @@ class ShellToolTest {
     Path tempDir;
 
     private ShellTool tool;
+    private RuntimeConfigService runtimeConfigService;
 
     @BeforeEach
     void setUp() {
         BotProperties properties = createTestProperties(tempDir.toString(), true);
-        tool = new ShellTool(properties, new InjectionGuard());
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isShellEnabled()).thenReturn(true);
+        when(runtimeConfigService.isPromptInjectionDetectionEnabled()).thenReturn(true);
+        when(runtimeConfigService.isCommandInjectionDetectionEnabled()).thenReturn(true);
+        tool = new ShellTool(properties, runtimeConfigService, new InjectionGuard(runtimeConfigService));
     }
 
     private static BotProperties createTestProperties(String workspace, boolean enabled) {
         BotProperties properties = new BotProperties();
-        properties.getTools().getShell().setEnabled(enabled);
         properties.getTools().getShell().setWorkspace(workspace);
         properties.getTools().getShell().setDefaultTimeout(30);
         properties.getTools().getShell().setMaxTimeout(300);
@@ -72,11 +79,20 @@ class ShellToolTest {
     @Test
     @DisabledOnOs(OS.WINDOWS)
     void executeWithTimeout() throws Exception {
+        ShellTool timeoutTool = new ShellTool(createTestProperties(tempDir.toString(), true), runtimeConfigService,
+                new InjectionGuard(runtimeConfigService)) {
+            @Override
+            protected boolean waitForProcess(Process process, int timeoutSeconds) {
+                return false;
+            }
+        };
+
         Map<String, Object> params = Map.of(
-                COMMAND, "sleep 10",
+                COMMAND, "echo fast",
                 TIMEOUT, 1);
 
-        ToolResult result = tool.execute(params).get();
+        ToolResult result = timeoutTool.execute(params).get();
+        timeoutTool.shutdown();
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("timed out"));
     }
@@ -146,7 +162,14 @@ class ShellToolTest {
     @Test
     void disabledTool() throws Exception {
         BotProperties disabledProps = createTestProperties(tempDir.toString(), false);
-        ShellTool disabledTool = new ShellTool(disabledProps, new InjectionGuard());
+        RuntimeConfigService disabledRuntimeConfigService = mock(RuntimeConfigService.class);
+        when(disabledRuntimeConfigService.isShellEnabled()).thenReturn(false);
+        when(disabledRuntimeConfigService.isPromptInjectionDetectionEnabled()).thenReturn(true);
+        when(disabledRuntimeConfigService.isCommandInjectionDetectionEnabled()).thenReturn(true);
+        ShellTool disabledTool = new ShellTool(
+                disabledProps,
+                disabledRuntimeConfigService,
+                new InjectionGuard(disabledRuntimeConfigService));
 
         Map<String, Object> params = Map.of(COMMAND, "echo test");
 
@@ -338,7 +361,7 @@ class ShellToolTest {
     void shouldPreserveDefaultEnvVarsWithEmptyConfig() throws Exception {
         BotProperties props = createTestProperties(tempDir.toString(), true);
         props.getTools().getShell().setAllowedEnvVars("");
-        ShellTool defaultTool = new ShellTool(props, new InjectionGuard());
+        ShellTool defaultTool = new ShellTool(props, runtimeConfigService, new InjectionGuard(runtimeConfigService));
 
         // PATH should still be available with empty custom config
         ToolResult result = defaultTool.execute(Map.of(COMMAND, "env")).get();
@@ -351,7 +374,7 @@ class ShellToolTest {
     void shouldHandleWhitespaceInAllowedEnvVars() throws Exception {
         BotProperties props = createTestProperties(tempDir.toString(), true);
         props.getTools().getShell().setAllowedEnvVars(" MY_CUSTOM_VAR , JAVA_HOME , ");
-        ShellTool customTool = new ShellTool(props, new InjectionGuard());
+        ShellTool customTool = new ShellTool(props, runtimeConfigService, new InjectionGuard(runtimeConfigService));
 
         // Tool should initialize and work correctly with whitespace-padded config
         ToolResult result = customTool.execute(Map.of(COMMAND, "echo ok")).get();

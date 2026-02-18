@@ -3,8 +3,10 @@ package me.golemcore.bot.ratelimit;
 import me.golemcore.bot.domain.model.BucketState;
 import me.golemcore.bot.domain.model.RateLimitResult;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Duration;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -38,7 +40,7 @@ class TokenBucketTest {
     }
 
     @Test
-    void tryConsume_refillsOverTime() throws InterruptedException {
+    void tryConsume_refillsOverTime() {
         // 10 tokens per second
         TokenBucket bucket = new TokenBucket(10, Duration.ofSeconds(1));
 
@@ -50,8 +52,10 @@ class TokenBucketTest {
         // Should be denied immediately
         assertFalse(bucket.tryConsume().isAllowed());
 
-        // Wait for refill (at least 100ms for 1 token)
-        Thread.sleep(150);
+        AtomicLong lastRefillNanos = (AtomicLong) ReflectionTestUtils.getField(bucket, "lastRefillNanos");
+        assertNotNull(lastRefillNanos);
+        long elapsedNanos = Duration.ofMillis(150).toNanos();
+        lastRefillNanos.addAndGet(-elapsedNanos);
 
         // Should be allowed now
         assertTrue(bucket.tryConsume().isAllowed());

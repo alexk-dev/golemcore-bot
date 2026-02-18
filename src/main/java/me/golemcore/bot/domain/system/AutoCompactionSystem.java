@@ -22,7 +22,7 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.CompactionService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.SessionPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -46,7 +46,7 @@ public class AutoCompactionSystem implements AgentSystem {
 
     private final SessionPort sessionService;
     private final CompactionService compactionService;
-    private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
     private final ModelSelectionService modelSelectionService;
 
     @Override
@@ -61,7 +61,7 @@ public class AutoCompactionSystem implements AgentSystem {
 
     @Override
     public boolean isEnabled() {
-        return properties.getAutoCompact().isEnabled();
+        return runtimeConfigService.isCompactionEnabled();
     }
 
     @Override
@@ -71,18 +71,17 @@ public class AutoCompactionSystem implements AgentSystem {
 
     @Override
     public AgentContext process(AgentContext context) {
-        BotProperties.AutoCompactProperties config = properties.getAutoCompact();
         List<Message> messages = context.getMessages();
 
         long totalChars = messages.stream()
                 .mapToLong(m -> m.getContent() != null ? m.getContent().length() : 0)
                 .sum();
-        int estimatedTokens = (int) (totalChars / config.getCharsPerToken()) + config.getSystemPromptOverheadTokens();
+        int estimatedTokens = (int) (totalChars / 3.5) + 8000;
 
         // Use model's maxInputTokens from models.json if available, with 80% safety
         // margin.
         // Fall back to config's maxContextTokens.
-        int threshold = resolveMaxTokens(context, config);
+        int threshold = resolveMaxTokens(context);
 
         if (estimatedTokens <= threshold) {
             return context;
@@ -92,7 +91,7 @@ public class AutoCompactionSystem implements AgentSystem {
                 estimatedTokens, threshold, messages.size());
 
         String sessionId = context.getSession().getId();
-        int keepLast = config.getKeepLastMessages();
+        int keepLast = runtimeConfigService.getCompactionKeepLastMessages();
 
         List<Message> messagesToCompact = sessionService.getMessagesToCompact(sessionId, keepLast);
         if (messagesToCompact.isEmpty()) {
@@ -125,14 +124,14 @@ public class AutoCompactionSystem implements AgentSystem {
      * ModelSelectionService (with 80% safety margin), capped by config's
      * maxContextTokens as upper bound.
      */
-    private int resolveMaxTokens(AgentContext context, BotProperties.AutoCompactProperties config) {
+    private int resolveMaxTokens(AgentContext context) {
         try {
             int modelMax = modelSelectionService.resolveMaxInputTokens(context.getModelTier());
             int modelThreshold = (int) (modelMax * 0.8);
-            return Math.min(modelThreshold, config.getMaxContextTokens());
+            return Math.min(modelThreshold, runtimeConfigService.getCompactionMaxContextTokens());
         } catch (Exception e) {
             log.debug("[AutoCompact] Failed to resolve model max tokens, using config default", e);
         }
-        return config.getMaxContextTokens();
+        return runtimeConfigService.getCompactionMaxContextTokens();
     }
 }

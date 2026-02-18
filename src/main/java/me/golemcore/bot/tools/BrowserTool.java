@@ -24,7 +24,7 @@ import me.golemcore.bot.domain.model.Attachment;
 import me.golemcore.bot.domain.model.BrowserPage;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -74,7 +74,7 @@ public class BrowserTool implements ToolComponent {
     private static final String TYPE_OBJECT = "object";
 
     private final BrowserComponent browserComponent;
-    private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
 
     private static final int MAX_TEXT_LENGTH = 10000;
     private static final long TIMEOUT_SECONDS = 30;
@@ -179,6 +179,6 @@ public class BrowserTool implements ToolComponent {
 
     @Override
     public boolean isEnabled() {
-        return properties.getBrowser().isEnabled();
+        return runtimeConfigService.isBrowserEnabled();
     }
 }

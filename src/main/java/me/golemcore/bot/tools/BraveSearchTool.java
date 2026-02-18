@@ -21,6 +21,7 @@ package me.golemcore.bot.tools;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.http.FeignClientFactory;
@@ -50,8 +51,8 @@ import java.util.stream.Collectors;
  * <p>
  * Configuration:
  * <ul>
- * <li>{@code bot.tools.brave-search.enabled} - Enable/disable
- * <li>{@code bot.tools.brave-search.api-key} - Brave API key (required)
+ * <li>Enable/disable is controlled via RuntimeConfig (tools.braveSearchEnabled)
+ * <li>API key is controlled via RuntimeConfig (tools.braveSearchApiKey)
  * <li>{@code bot.tools.brave-search.default-count} - Number of results (default
  * 5)
  * </ul>
@@ -79,34 +80,27 @@ public class BraveSearchTool implements ToolComponent {
 
     private final FeignClientFactory feignClientFactory;
     private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
     private final UserPreferencesService userPreferencesService;
 
     private BraveSearchApi searchApi;
-    private boolean enabled;
-    private String apiKey;
     private int defaultCount;
 
     @PostConstruct
     public void init() {
-        var config = properties.getTools().getBraveSearch();
-        this.enabled = config.isEnabled();
-        this.apiKey = config.getApiKey();
-        this.defaultCount = config.getDefaultCount();
+        this.defaultCount = properties.getTools().getBraveSearch().getDefaultCount();
 
-        if (enabled && (apiKey == null || apiKey.isBlank())) {
-            log.warn("Brave Search tool is enabled but API key is not configured. Disabling.");
-            this.enabled = false;
-        }
-
-        if (enabled) {
-            this.searchApi = feignClientFactory.create(BraveSearchApi.class, "https://api.search.brave.com");
-            log.info("Brave Search tool initialized (default results: {})", defaultCount);
-        }
+        this.searchApi = feignClientFactory.create(BraveSearchApi.class, "https://api.search.brave.com");
+        log.info("Brave Search tool initialized (default results: {})", defaultCount);
     }
 
     @Override
     public boolean isEnabled() {
-        return enabled;
+        if (!runtimeConfigService.isBraveSearchEnabled()) {
+            return false;
+        }
+        String apiKey = runtimeConfigService.getBraveSearchApiKey();
+        return apiKey != null && !apiKey.isBlank();
     }
 
     @Override
@@ -135,6 +129,9 @@ public class BraveSearchTool implements ToolComponent {
             if (query == null || query.isBlank()) {
                 return ToolResult.failure("Search query is required");
             }
+            if (!isEnabled()) {
+                return ToolResult.failure("Brave Search tool is disabled or API key is missing");
+            }
 
             int count = defaultCount;
             if (parameters.containsKey(PARAM_COUNT)) {
@@ -153,6 +150,7 @@ public class BraveSearchTool implements ToolComponent {
             try {
                 log.debug("Brave Search: query='{}', count={}, attempt={}", query, count, attempt);
 
+                String apiKey = runtimeConfigService.getBraveSearchApiKey();
                 BraveSearchResponse response = searchApi.search(apiKey, query, count);
                 return buildSuccessResult(query, response);
 
@@ -161,7 +159,7 @@ public class BraveSearchTool implements ToolComponent {
                     long backoffMs = (long) (INITIAL_BACKOFF_MS * Math.pow(BACKOFF_MULTIPLIER, attempt));
                     log.warn("[BraveSearch] Rate limit hit (attempt {}/{}), retrying in {}ms",
                             attempt + 1, MAX_RETRIES, backoffMs);
-                    sleep(backoffMs);
+                    sleepBeforeRetry(backoffMs);
                 } else if (e.status() == HTTP_TOO_MANY_REQUESTS) {
                     log.error("[BraveSearch] Rate limit exceeded after {} retries for query: {}", MAX_RETRIES, query);
                     return ToolResult.failure(userPreferencesService.getMessage("tool.brave.rate_limit"));
@@ -205,7 +203,7 @@ public class BraveSearchTool implements ToolComponent {
                         .toList()));
     }
 
-    private void sleep(long millis) {
+    protected void sleepBeforeRetry(long millis) {
         try {
             Thread.sleep(millis);
         } catch (InterruptedException e) {

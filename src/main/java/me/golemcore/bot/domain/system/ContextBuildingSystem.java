@@ -31,6 +31,7 @@ import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.SkillTemplateEngine;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
@@ -71,6 +72,7 @@ public class ContextBuildingSystem implements AgentSystem {
     private final AutoModeService autoModeService;
     private final PlanService planService;
     private final PromptSectionService promptSectionService;
+    private final RuntimeConfigService runtimeConfigService;
     private final UserPreferencesService userPreferencesService;
 
     @Override
@@ -153,7 +155,7 @@ public class ContextBuildingSystem implements AgentSystem {
             String userQuery = getLastUserMessageText(context);
             if (userQuery != null && !userQuery.isBlank()) {
                 try {
-                    String ragContext = ragPort.query(userQuery, properties.getRag().getQueryMode()).join();
+                    String ragContext = ragPort.query(userQuery, runtimeConfigService.getRagQueryMode()).join();
                     if (ragContext != null && !ragContext.isBlank()) {
                         context.setAttribute(ContextAttributes.RAG_CONTEXT, ragContext);
                         log.debug("[Context] RAG context: {} chars", ragContext.length());
@@ -166,7 +168,7 @@ public class ContextBuildingSystem implements AgentSystem {
 
         // Set model tier for auto-mode messages
         if (isAutoModeMessage(context) && context.getModelTier() == null) {
-            context.setModelTier(properties.getAuto().getModelTier());
+            context.setModelTier(runtimeConfigService.getAutoModelTier());
         }
 
         // Build system prompt

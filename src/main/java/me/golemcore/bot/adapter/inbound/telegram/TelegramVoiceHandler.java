@@ -20,7 +20,7 @@ package me.golemcore.bot.adapter.inbound.telegram;
 
 import me.golemcore.bot.domain.model.AudioFormat;
 import me.golemcore.bot.domain.model.Message;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.VoicePort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -42,13 +42,13 @@ import java.util.concurrent.CompletableFuture;
 public class TelegramVoiceHandler {
 
     private final VoicePort voicePort;
-    private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
 
     /**
      * Transcribe incoming OGG Opus voice message to text.
      */
     public CompletableFuture<String> handleIncomingVoice(byte[] voiceData) {
-        if (!properties.getVoice().isEnabled()) {
+        if (!runtimeConfigService.isVoiceEnabled()) {
             log.debug("[Voice] Incoming voice skipped: voice feature disabled");
             return CompletableFuture.completedFuture("[Voice messages disabled]");
         }

@@ -14,6 +14,7 @@ import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.UsageStats;
 import me.golemcore.bot.domain.model.UserPreferences;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.CompactionService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
@@ -159,7 +160,8 @@ class CommandRouterTest {
                 scheduleService,
                 runCoordinator,
                 eventPublisher,
-                properties);
+                properties,
+                mock(RuntimeConfigService.class));
     }
 
     private ToolComponent mockTool(String name, String description, boolean enabled) {
@@ -1424,9 +1426,9 @@ class CommandRouterTest {
     }
 
     @Test
-    void modelSetCommandProviderNotAllowed() throws Exception {
+    void modelSetCommandProviderNotConfigured() throws Exception {
         when(modelSelectionService.validateModel("google/gemini"))
-                .thenReturn(new ModelSelectionService.ValidationResult(false, "provider.not.allowed"));
+                .thenReturn(new ModelSelectionService.ValidationResult(false, "provider.not.configured"));
 
         CommandPort.CommandResult result = router.execute(CMD_MODEL,
                 List.of(TIER_CODING, "google/gemini"), CTX).get();

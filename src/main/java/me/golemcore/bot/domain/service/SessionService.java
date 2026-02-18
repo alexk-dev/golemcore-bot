@@ -22,13 +22,17 @@ import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.port.outbound.StoragePort;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.time.Clock;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -49,10 +53,39 @@ public class SessionService implements SessionPort {
     private final StoragePort storagePort;
     private final ObjectMapper objectMapper;
     private final Clock clock;
+    private final SessionProtoMapper sessionProtoMapper = new SessionProtoMapper();
 
     private static final String SESSIONS_DIR = "sessions";
+    private static final String PROTO_EXTENSION = ".pb";
+    private static final String JSON_EXTENSION = ".json";
+    private static final String PATH_SEPARATOR = "/";
+    private static final String LEGACY_PATH_SEPARATOR = "\\\\";
+    private static final String SESSION_ID_SEPARATOR = ":";
 
     private final Map<String, AgentSession> sessionCache = new ConcurrentHashMap<>();
+
+    @PostConstruct
+    public void migrateLegacySessionsAtStartup() {
+        try {
+            List<String> files = storagePort.listObjects(SESSIONS_DIR, "").join();
+            int migratedCount = 0;
+            for (String file : files) {
+                if (!file.endsWith(JSON_EXTENSION)) {
+                    continue;
+                }
+                Optional<AgentSession> legacySession = loadLegacyJsonFile(file);
+                if (legacySession.isPresent()) {
+                    migrateLegacySessionFile(file, legacySession.get());
+                    migratedCount++;
+                }
+            }
+            if (migratedCount > 0) {
+                log.info("Migrated {} legacy session files from JSON to protobuf", migratedCount);
+            }
+        } catch (Exception e) { // NOSONAR
+            log.warn("Failed to run startup session migration: {}", e.getMessage());
+        }
+    }
 
     public AgentSession getOrCreate(String channelType, String chatId) {
         String sessionId = buildSessionId(channelType, chatId);
@@ -90,8 +123,8 @@ public class SessionService implements SessionPort {
         sessionCache.put(session.getId(), session);
 
         try {
-            String json = objectMapper.writeValueAsString(session);
-            storagePort.putText(SESSIONS_DIR, session.getId() + ".json", json).join();
+            byte[] proto = sessionProtoMapper.toProto(session).toByteArray();
+            storagePort.putObject(SESSIONS_DIR, session.getId() + PROTO_EXTENSION, proto).join();
             log.debug("Saved session: {}", session.getId());
         } catch (Exception e) {
             log.error("Failed to save session: {}", session.getId(), e);
@@ -101,7 +134,8 @@ public class SessionService implements SessionPort {
     public void delete(String sessionId) {
         sessionCache.remove(sessionId);
         try {
-            storagePort.deleteObject(SESSIONS_DIR, sessionId + ".json").join();
+            storagePort.deleteObject(SESSIONS_DIR, sessionId + PROTO_EXTENSION).join();
+            storagePort.deleteObject(SESSIONS_DIR, sessionId + JSON_EXTENSION).join();
             log.info("Deleted session: {}", sessionId);
         } catch (Exception e) {
             log.error("Failed to delete session: {}", sessionId, e);
@@ -125,7 +159,7 @@ public class SessionService implements SessionPort {
             return -1;
         }
 
-        var messages = session.getMessages();
+        List<Message> messages = session.getMessages();
         int total = messages.size();
         if (total <= keepLast) {
             return 0;
@@ -147,7 +181,7 @@ public class SessionService implements SessionPort {
             return -1;
         }
 
-        var messages = session.getMessages();
+        List<Message> messages = session.getMessages();
         int total = messages.size();
         if (total <= keepLast) {
             return 0;
@@ -171,7 +205,7 @@ public class SessionService implements SessionPort {
             return List.of();
         }
 
-        var messages = session.getMessages();
+        List<Message> messages = session.getMessages();
         int total = messages.size();
         if (total <= keepLast) {
             return List.of();
@@ -192,9 +226,12 @@ public class SessionService implements SessionPort {
         try {
             List<String> files = storagePort.listObjects(SESSIONS_DIR, "").join();
             for (String file : files) {
-                if (file.endsWith(".json")) {
-                    String sessionId = file.substring(0, file.length() - 5);
-                    sessionCache.computeIfAbsent(sessionId, id -> load(id).orElse(null));
+                Optional<AgentSession> loaded = loadFromStoredFile(file);
+                if (loaded.isPresent()) {
+                    AgentSession session = loaded.get();
+                    if (session.getId() != null && !session.getId().isBlank()) {
+                        sessionCache.putIfAbsent(session.getId(), session);
+                    }
                 }
             }
         } catch (Exception e) { // NOSONAR
@@ -207,18 +244,218 @@ public class SessionService implements SessionPort {
 
     private Optional<AgentSession> load(String sessionId) {
         try {
-            String json = storagePort.getText(SESSIONS_DIR, sessionId + ".json").join();
-            if (json != null && !json.isBlank()) {
-                AgentSession session = objectMapper.readValue(json, AgentSession.class);
-                return Optional.of(session);
+            byte[] bytes = storagePort.getObject(SESSIONS_DIR, sessionId + PROTO_EXTENSION).join();
+            if (bytes != null && bytes.length > 0) {
+                AgentSession loaded = sessionProtoMapper.fromProto(
+                        me.golemcore.bot.proto.session.v1.AgentSessionRecord.parseFrom(bytes));
+                enrichSessionFields(loaded, sessionId + PROTO_EXTENSION);
+                return Optional.of(loaded);
             }
         } catch (IOException | RuntimeException e) { // NOSONAR - intentionally catch all for fallback
-            log.debug("Session not found or failed to load: {} - {}", sessionId, e.getMessage());
+            log.debug("Failed protobuf load for session {}: {}", sessionId, e.getMessage());
+        }
+
+        Optional<AgentSession> legacySession = loadLegacyJsonFile(sessionId + JSON_EXTENSION);
+        if (legacySession.isPresent()) {
+            migrateLegacySessionFile(sessionId + JSON_EXTENSION, legacySession.get());
+            return legacySession;
+        }
+
+        return Optional.empty();
+    }
+
+    private Optional<AgentSession> loadFromStoredFile(String filePath) {
+        if (filePath.endsWith(PROTO_EXTENSION)) {
+            return loadProtoFile(filePath);
+        }
+        if (filePath.endsWith(JSON_EXTENSION)) {
+            Optional<AgentSession> legacySession = loadLegacyJsonFile(filePath);
+            legacySession.ifPresent(session -> migrateLegacySessionFile(filePath, session));
+            return legacySession;
         }
         return Optional.empty();
     }
 
+    private Optional<AgentSession> loadProtoFile(String filePath) {
+        try {
+            byte[] bytes = storagePort.getObject(SESSIONS_DIR, filePath).join();
+            if (bytes == null || bytes.length == 0) {
+                return Optional.empty();
+            }
+            AgentSession session = sessionProtoMapper.fromProto(
+                    me.golemcore.bot.proto.session.v1.AgentSessionRecord.parseFrom(bytes));
+            enrichSessionFields(session, filePath);
+            return Optional.of(session);
+        } catch (IOException | RuntimeException e) { // NOSONAR - intentionally catch all for fallback
+            log.debug("Failed to parse protobuf session file {}: {}", filePath, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private Optional<AgentSession> loadLegacyJsonFile(String filePath) {
+        try {
+            String json = storagePort.getText(SESSIONS_DIR, filePath).join();
+            if (json == null || json.isBlank()) {
+                return Optional.empty();
+            }
+            AgentSession session;
+            try {
+                session = objectMapper.readValue(json, AgentSession.class);
+            } catch (IOException e) {
+                session = parseSessionFromJsonTree(json);
+            }
+            enrichSessionFields(session, filePath);
+            return Optional.of(session);
+        } catch (IOException | RuntimeException e) { // NOSONAR - intentionally catch all for fallback
+            log.debug("Failed to parse legacy session file {}: {}", filePath, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private void migrateLegacySessionFile(String legacyJsonFile, AgentSession session) {
+        try {
+            String targetFile = deriveSessionStorageName(session, legacyJsonFile, PROTO_EXTENSION);
+            byte[] proto = sessionProtoMapper.toProto(session).toByteArray();
+            storagePort.putObject(SESSIONS_DIR, targetFile, proto).join();
+            storagePort.deleteObject(SESSIONS_DIR, legacyJsonFile).join();
+            log.info("Migrated session file {} -> {}", legacyJsonFile, targetFile);
+        } catch (Exception e) {
+            log.warn("Failed to migrate legacy session file {}: {}", legacyJsonFile, e.getMessage());
+        }
+    }
+
+    private String deriveSessionStorageName(AgentSession session, String filePath, String extension) {
+        if (session.getId() != null && !session.getId().isBlank()) {
+            return session.getId() + extension;
+        }
+        String normalized = filePath.replace(LEGACY_PATH_SEPARATOR, PATH_SEPARATOR);
+        int index = normalized.lastIndexOf('.');
+        String withoutExtension = index > 0 ? normalized.substring(0, index) : normalized;
+        String derivedId = withoutExtension.replace(PATH_SEPARATOR, SESSION_ID_SEPARATOR);
+        return derivedId + extension;
+    }
+
+    private void enrichSessionFields(AgentSession session, String filePath) {
+        if (session.getId() == null || session.getId().isBlank()) {
+            String normalized = filePath.replace(LEGACY_PATH_SEPARATOR, PATH_SEPARATOR);
+            String withoutExtension = stripKnownExtension(normalized);
+            String derivedId = withoutExtension.replace(PATH_SEPARATOR, SESSION_ID_SEPARATOR);
+            session.setId(derivedId);
+        }
+
+        String sessionId = session.getId();
+        if (sessionId == null || sessionId.isBlank()) {
+            return;
+        }
+
+        int separatorIndex = sessionId.indexOf(SESSION_ID_SEPARATOR);
+        if ((session.getChannelType() == null || session.getChannelType().isBlank()) && separatorIndex > 0) {
+            session.setChannelType(sessionId.substring(0, separatorIndex));
+        }
+        if ((session.getChatId() == null || session.getChatId().isBlank())
+                && separatorIndex >= 0 && separatorIndex + 1 < sessionId.length()) {
+            session.setChatId(sessionId.substring(separatorIndex + 1));
+        }
+    }
+
+    private String stripKnownExtension(String filePath) {
+        if (filePath.endsWith(PROTO_EXTENSION)) {
+            return filePath.substring(0, filePath.length() - PROTO_EXTENSION.length());
+        }
+        if (filePath.endsWith(JSON_EXTENSION)) {
+            return filePath.substring(0, filePath.length() - JSON_EXTENSION.length());
+        }
+        return filePath;
+    }
+
     private String buildSessionId(String channelType, String chatId) {
         return channelType + ":" + chatId;
+    }
+
+    private AgentSession parseSessionFromJsonTree(String json) throws IOException {
+        JsonNode root = objectMapper.readTree(json);
+
+        List<Message> messages = new ArrayList<>();
+        JsonNode messagesNode = root.path("messages");
+        if (messagesNode.isArray()) {
+            for (JsonNode messageNode : messagesNode) {
+                Message.MessageBuilder msgBuilder = Message.builder()
+                        .id(readText(messageNode, "id"))
+                        .role(readText(messageNode, "role"))
+                        .content(readText(messageNode, "content"))
+                        .toolCallId(readText(messageNode, "toolCallId"))
+                        .toolName(readText(messageNode, "toolName"))
+                        .timestamp(parseInstant(readText(messageNode, "timestamp")));
+
+                JsonNode toolCallsNode = messageNode.path("toolCalls");
+                if (toolCallsNode.isArray() && !toolCallsNode.isEmpty()) {
+                    List<Message.ToolCall> toolCalls = new ArrayList<>();
+                    for (JsonNode tcNode : toolCallsNode) {
+                        toolCalls.add(Message.ToolCall.builder()
+                                .id(readText(tcNode, "id"))
+                                .name(readText(tcNode, "name"))
+                                .arguments(parseArguments(tcNode.path("arguments")))
+                                .build());
+                    }
+                    msgBuilder.toolCalls(toolCalls);
+                }
+
+                messages.add(msgBuilder.build());
+            }
+        }
+
+        AgentSession.AgentSessionBuilder builder = AgentSession.builder()
+                .id(readText(root, "id"))
+                .channelType(readText(root, "channelType"))
+                .chatId(readText(root, "chatId"))
+                .messages(messages)
+                .createdAt(parseInstant(readText(root, "createdAt")))
+                .updatedAt(parseInstant(readText(root, "updatedAt")));
+
+        String state = readText(root, "state");
+        if (state != null && !state.isBlank()) {
+            try {
+                builder.state(AgentSession.SessionState.valueOf(state));
+            } catch (IllegalArgumentException e) { // NOSONAR — keep default state for unknown values
+                log.debug("Unknown session state '{}', using default", state);
+            }
+        }
+        return builder.build();
+    }
+
+    private String readText(JsonNode node, String fieldName) {
+        JsonNode value = node.path(fieldName);
+        if (value.isMissingNode() || value.isNull()) {
+            return null;
+        }
+        String text = value.asText(null);
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        return text;
+    }
+
+    private Instant parseInstant(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Instant.parse(value);
+        } catch (DateTimeParseException e) {
+            return null;
+        }
+    }
+
+    @SuppressWarnings({ "unchecked", "PMD.ReturnEmptyCollectionRatherThanNull" })
+    private Map<String, Object> parseArguments(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull() || !node.isObject()) {
+            return null;
+        }
+        try {
+            return objectMapper.convertValue(node, Map.class);
+        } catch (IllegalArgumentException e) {
+            log.debug("Failed to parse tool call arguments: {}", e.getMessage());
+            return null;
+        }
     }
 }

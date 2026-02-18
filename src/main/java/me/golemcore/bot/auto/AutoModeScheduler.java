@@ -25,8 +25,8 @@ import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.service.AutoModeService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.tools.GoalManagementTool;
 import jakarta.annotation.PostConstruct;
@@ -75,10 +75,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Slf4j
 public class AutoModeScheduler {
 
+    private static final int FIXED_TICK_INTERVAL_SECONDS = 1;
+
     private final AutoModeService autoModeService;
     private final ScheduleService scheduleService;
     private final AgentLoop agentLoop;
-    private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
     private final GoalManagementTool goalManagementTool;
     private final Map<String, ChannelPort> channelRegistry = new ConcurrentHashMap<>();
     private final AtomicBoolean executing = new AtomicBoolean(false);
@@ -90,12 +92,12 @@ public class AutoModeScheduler {
     private ScheduledFuture<?> tickTask;
 
     public AutoModeScheduler(AutoModeService autoModeService, ScheduleService scheduleService,
-            AgentLoop agentLoop, BotProperties properties,
+            AgentLoop agentLoop, RuntimeConfigService runtimeConfigService,
             GoalManagementTool goalManagementTool, List<ChannelPort> channelPorts) {
         this.autoModeService = autoModeService;
         this.scheduleService = scheduleService;
         this.agentLoop = agentLoop;
-        this.properties = properties;
+        this.runtimeConfigService = runtimeConfigService;
         this.goalManagementTool = goalManagementTool;
         for (ChannelPort port : channelPorts) {
             channelRegistry.put(port.getChannelType(), port);
@@ -104,7 +106,7 @@ public class AutoModeScheduler {
 
     @PostConstruct
     public void init() {
-        if (!properties.getAuto().isEnabled()) {
+        if (!runtimeConfigService.isAutoModeEnabled()) {
             log.info("[AutoScheduler] Auto mode disabled");
             return;
         }
@@ -113,7 +115,7 @@ public class AutoModeScheduler {
 
         autoModeService.loadState();
 
-        if (properties.getAuto().isAutoStart() && !autoModeService.isAutoModeEnabled()) {
+        if (runtimeConfigService.isAutoStartEnabled() && !autoModeService.isAutoModeEnabled()) {
             autoModeService.enableAutoMode();
             log.info("[AutoScheduler] Auto-started auto mode");
         }
@@ -124,7 +126,7 @@ public class AutoModeScheduler {
             return t;
         });
 
-        int tickIntervalSeconds = properties.getAuto().getTickIntervalSeconds();
+        int tickIntervalSeconds = FIXED_TICK_INTERVAL_SECONDS;
         tickTask = scheduler.scheduleAtFixedRate(
                 this::tick,
                 tickIntervalSeconds,
@@ -170,7 +172,7 @@ public class AutoModeScheduler {
      * Send a milestone notification to the registered channel.
      */
     public void sendMilestoneNotification(String text) {
-        if (!properties.getAuto().isNotifyMilestones()) {
+        if (!runtimeConfigService.isAutoNotifyMilestonesEnabled()) {
             return;
         }
 
@@ -216,9 +218,9 @@ public class AutoModeScheduler {
 
                 log.info("[AutoScheduler] Tick: {} due schedules", dueSchedules.size());
 
-                int taskTimeoutMinutes = properties.getAuto().getTaskTimeoutMinutes();
+                int taskTimeLimitMinutes = runtimeConfigService.getAutoTaskTimeLimitMinutes();
                 for (ScheduleEntry schedule : dueSchedules) {
-                    processSchedule(schedule, taskTimeoutMinutes);
+                    processSchedule(schedule, taskTimeLimitMinutes);
                     scheduleService.recordExecution(schedule.getId());
                 }
             } finally {

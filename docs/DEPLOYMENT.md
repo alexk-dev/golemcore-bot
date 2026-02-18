@@ -28,25 +28,18 @@ Production deployment guide for GolemCore Bot.
 ```bash
 docker run -d \
   --name golemcore-bot \
-  -e OPENAI_API_KEY=sk-proj-... \
-  -e TELEGRAM_ENABLED=true \
-  -e TELEGRAM_BOT_TOKEN=... \
-  -e TELEGRAM_ALLOWED_USERS=... \
+  --shm-size=256m \
+  --cap-add=SYS_ADMIN \
+  -e STORAGE_PATH=/app/workspace \
+  -e TOOLS_WORKSPACE=/app/sandbox \
   -v golemcore-bot-data:/app/workspace \
+  -v golemcore-bot-sandbox:/app/sandbox \
   -p 8080:8080 \
   --restart unless-stopped \
   golemcore-bot:latest
 
-# Or with Anthropic
-docker run -d \
-  --name golemcore-bot \
-  -e ANTHROPIC_API_KEY=sk-ant-... \
-  -e TELEGRAM_ENABLED=true \
-  -e TELEGRAM_BOT_TOKEN=... \
-  -v golemcore-bot-data:/app/workspace \
-  -p 8080:8080 \
-  --restart unless-stopped \
-  golemcore-bot:latest
+# Configure LLM providers and Telegram in the dashboard:
+# http://localhost:8080/dashboard
 ```
 
 ### Docker Compose
@@ -65,28 +58,9 @@ services:
     container_name: golemcore-bot
     restart: unless-stopped
     environment:
-      # LLM Provider (set at least one)
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-
-      # Telegram
-      TELEGRAM_ENABLED: ${TELEGRAM_ENABLED:-false}
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      TELEGRAM_ALLOWED_USERS: ${TELEGRAM_ALLOWED_USERS:-}
-
-      # Model routing (configure based on your provider)
-      BOT_ROUTER_BALANCED_MODEL: ${BOT_ROUTER_BALANCED_MODEL:-openai/gpt-5.1}
-      BOT_ROUTER_SMART_MODEL: ${BOT_ROUTER_SMART_MODEL:-openai/gpt-5.1}
-      BOT_ROUTER_CODING_MODEL: ${BOT_ROUTER_CODING_MODEL:-openai/gpt-5.2}
-      BOT_ROUTER_DEEP_MODEL: ${BOT_ROUTER_DEEP_MODEL:-openai/gpt-5.2}
-      BOT_ROUTER_DYNAMIC_TIER_ENABLED: ${BOT_ROUTER_DYNAMIC_TIER_ENABLED:-true}
-
-      # Features
-      RAG_ENABLED: ${RAG_ENABLED:-false}
-      AUTO_MODE_ENABLED: ${AUTO_MODE_ENABLED:-false}
-
-      # Security
-      TOOL_CONFIRMATION_ENABLED: ${TOOL_CONFIRMATION_ENABLED:-true}
+      # Persist workspace + sandbox
+      STORAGE_PATH: /app/workspace
+      TOOLS_WORKSPACE: /app/sandbox
 
       # Logging
       LOGGING_LEVEL_ME_GOLEMCORE_BOT: INFO
@@ -98,7 +72,7 @@ services:
     ports:
       - "8080:8080"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/system/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -157,9 +131,8 @@ StandardError=journal
 SyslogIdentifier=golemcore-bot
 
 # Environment
-Environment="OPENAI_API_KEY=sk-proj-..."
-Environment="TELEGRAM_ENABLED=true"
-Environment="TELEGRAM_BOT_TOKEN=..."
+Environment="STORAGE_PATH=/opt/golemcore-bot/workspace"
+Environment="TOOLS_WORKSPACE=/opt/golemcore-bot/sandbox"
 EnvironmentFile=/opt/golemcore-bot/.env
 
 [Install]
@@ -200,56 +173,19 @@ sudo journalctl -u golemcore-bot -f
 `.env` file:
 
 ```bash
-# === LLM PROVIDER (Required: Set At Least One) ===
-OPENAI_API_KEY=sk-proj-...          # OpenAI (GPT-5.x, o1, o3)
-ANTHROPIC_API_KEY=sk-ant-...        # Anthropic (Claude)
-
-# === TELEGRAM ===
-TELEGRAM_ENABLED=true
-TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
-TELEGRAM_ALLOWED_USERS=123456789,987654321
-
-# === SECURITY (STRICT) ===
-BOT_SECURITY_SANITIZE_INPUT=true
-BOT_SECURITY_DETECT_PROMPT_INJECTION=true
-BOT_SECURITY_DETECT_COMMAND_INJECTION=true
-TOOL_CONFIRMATION_ENABLED=true
-TOOL_CONFIRMATION_TIMEOUT=60
-
-# === RATE LIMITING ===
-BOT_RATE_LIMIT_ENABLED=true
-BOT_RATE_LIMIT_USER_REQUESTS_PER_MINUTE=10
-BOT_RATE_LIMIT_USER_REQUESTS_PER_HOUR=50
-BOT_RATE_LIMIT_USER_REQUESTS_PER_DAY=200
-
-# === MODEL ROUTING (see docs/MODEL_ROUTING.md for details) ===
-BOT_ROUTER_BALANCED_MODEL=openai/gpt-5.1
-BOT_ROUTER_BALANCED_MODEL_REASONING=medium
-BOT_ROUTER_SMART_MODEL=openai/gpt-5.1
-BOT_ROUTER_SMART_MODEL_REASONING=high
-BOT_ROUTER_CODING_MODEL=openai/gpt-5.2
-BOT_ROUTER_CODING_MODEL_REASONING=medium
-BOT_ROUTER_DEEP_MODEL=openai/gpt-5.2
-BOT_ROUTER_DEEP_MODEL_REASONING=xhigh
-BOT_ROUTER_DYNAMIC_TIER_ENABLED=true
-
-# === FEATURES ===
-RAG_ENABLED=false            # Enable if LightRAG running
-AUTO_MODE_ENABLED=false      # Enable for autonomous mode
-MCP_ENABLED=true             # Enable for MCP integrations
-
 # === STORAGE ===
 STORAGE_PATH=/app/workspace
 TOOLS_WORKSPACE=/app/sandbox
 
+# === DASHBOARD ===
+# You will configure API keys and most feature flags in:
+#   workspace/preferences/runtime-config.json
+# (recommended: use the dashboard UI)
+DASHBOARD_ENABLED=true
+
 # === LOGGING ===
 LOGGING_LEVEL_ME_GOLEMCORE_BOT=INFO
 LOGGING_LEVEL_DEV_LANGCHAIN4J=WARN
-
-# === PERFORMANCE ===
-BOT_AGENT_MAX_ITERATIONS=20
-BOT_AUTO_COMPACT_ENABLED=true
-BOT_AUTO_COMPACT_MAX_CONTEXT_TOKENS=50000
 ```
 
 ---
@@ -259,7 +195,7 @@ BOT_AUTO_COMPACT_MAX_CONTEXT_TOKENS=50000
 ### Health Check Endpoint
 
 ```bash
-curl http://localhost:8080/actuator/health
+curl http://localhost:8080/api/system/health
 ```
 
 Response:
@@ -392,9 +328,8 @@ docker stats golemcore-bot
 ```
 
 **Fix:**
-- Lower `BOT_AUTO_COMPACT_MAX_CONTEXT_TOKENS`
-- Increase compaction frequency
-- Lower `BOT_AGENT_MAX_ITERATIONS`
+- Lower `compaction.maxContextTokens` in `preferences/runtime-config.json`
+- Lower `turn.maxLlmCalls` / `turn.maxToolExecutions` in `preferences/runtime-config.json`
 
 ### Slow Response Times
 
@@ -423,7 +358,7 @@ docker run --memory=4g golemcore-bot:latest
 ## Production Checklist
 
 - [ ] Set `LOGGING_LEVEL_ME_GOLEMCORE_BOT=INFO` (not DEBUG)
-- [ ] Set `TELEGRAM_ALLOWED_USERS` to restrict access
+- [ ] Restrict Telegram access (`telegram.allowedUsers` in runtime config)
 - [ ] Set conservative rate limits
 - [ ] Enable tool confirmations
 - [ ] Rotate API keys regularly

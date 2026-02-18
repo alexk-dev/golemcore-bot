@@ -215,4 +215,84 @@ class LocalStorageAdapterTest {
         boolean result = storageAdapter.exists("check-dir", "no-file").get();
         assertFalse(result);
     }
+
+    // ==================== Atomic write ====================
+
+    @Test
+    void putTextAtomic_writesContentSuccessfully() throws ExecutionException, InterruptedException {
+        String directory = TEST_DIR;
+        String path = "atomic-test.json";
+        String content = "{\"key\": \"value\"}";
+
+        storageAdapter.putTextAtomic(directory, path, content, false).get();
+
+        String retrieved = storageAdapter.getText(directory, path).get();
+        assertEquals(content, retrieved);
+    }
+
+    @Test
+    void putTextAtomic_createsBackupWhenRequested() throws ExecutionException, InterruptedException {
+        String directory = TEST_DIR;
+        String path = "config.json";
+        String originalContent = "{\"version\": 1}";
+        String updatedContent = "{\"version\": 2}";
+
+        // Write original
+        storageAdapter.putTextAtomic(directory, path, originalContent, false).get();
+
+        // Update with backup
+        storageAdapter.putTextAtomic(directory, path, updatedContent, true).get();
+
+        // Verify current content
+        String current = storageAdapter.getText(directory, path).get();
+        assertEquals(updatedContent, current);
+
+        // Verify backup exists with original content
+        String backup = storageAdapter.getText(directory, path + ".bak").get();
+        assertEquals(originalContent, backup);
+    }
+
+    @Test
+    void putTextAtomic_noBackupLeftWithoutFlag() throws ExecutionException, InterruptedException {
+        String directory = TEST_DIR;
+        String path = "no-backup.json";
+
+        storageAdapter.putTextAtomic(directory, path, "first", false).get();
+        storageAdapter.putTextAtomic(directory, path, "second", false).get();
+
+        assertFalse(storageAdapter.exists(directory, path + ".bak").get());
+    }
+
+    @Test
+    void putTextAtomic_noTempFileLeftAfterSuccess() throws ExecutionException, InterruptedException {
+        String directory = TEST_DIR;
+        String path = "clean.json";
+
+        storageAdapter.putTextAtomic(directory, path, "content", false).get();
+
+        assertFalse(storageAdapter.exists(directory, path + ".tmp").get());
+    }
+
+    @Test
+    void putTextAtomic_createsParentDirectories() throws ExecutionException, InterruptedException {
+        String directory = TEST_DIR;
+        String path = "deep/nested/atomic.json";
+        String content = "{\"nested\": true}";
+
+        storageAdapter.putTextAtomic(directory, path, content, false).get();
+
+        String retrieved = storageAdapter.getText(directory, path).get();
+        assertEquals(content, retrieved);
+    }
+
+    @Test
+    void putTextAtomic_overwritesExistingContent() throws ExecutionException, InterruptedException {
+        String directory = TEST_DIR;
+        String path = "overwrite.json";
+
+        storageAdapter.putTextAtomic(directory, path, "old", false).get();
+        storageAdapter.putTextAtomic(directory, path, "new", false).get();
+
+        assertEquals("new", storageAdapter.getText(directory, path).get());
+    }
 }

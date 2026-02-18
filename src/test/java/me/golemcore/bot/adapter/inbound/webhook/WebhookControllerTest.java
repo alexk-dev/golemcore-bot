@@ -4,6 +4,7 @@ import me.golemcore.bot.adapter.inbound.webhook.dto.AgentRequest;
 import me.golemcore.bot.adapter.inbound.webhook.dto.WakeRequest;
 import me.golemcore.bot.adapter.inbound.webhook.dto.WebhookResponse;
 import me.golemcore.bot.domain.loop.AgentLoop;
+import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.security.InputSanitizer;
@@ -218,7 +219,7 @@ class WebhookControllerTest {
                 .name("auth-fail")
                 .authMode("hmac")
                 .hmacHeader("x-sig")
-                .hmacSecret("hmac-key")
+                .hmacSecret(Secret.of("hmac-key"))
                 .build();
         when(preferencesService.getPreferences()).thenReturn(buildPrefsWithMapping(mapping));
         when(authenticator.authenticate(any(), any(), any())).thenReturn(false);
@@ -240,7 +241,7 @@ class WebhookControllerTest {
         UserPreferences prefs = UserPreferences.builder()
                 .webhooks(UserPreferences.WebhookConfig.builder()
                         .enabled(true)
-                        .token(TOKEN)
+                        .token(Secret.of(TOKEN))
                         .maxPayloadSize(10)
                         .mappings(List.of(mapping))
                         .build())
@@ -280,7 +281,7 @@ class WebhookControllerTest {
         return UserPreferences.builder()
                 .webhooks(UserPreferences.WebhookConfig.builder()
                         .enabled(true)
-                        .token(TOKEN)
+                        .token(Secret.of(TOKEN))
                         .build())
                 .build();
     }
@@ -289,7 +290,7 @@ class WebhookControllerTest {
         return UserPreferences.builder()
                 .webhooks(UserPreferences.WebhookConfig.builder()
                         .enabled(true)
-                        .token(TOKEN)
+                        .token(Secret.of(TOKEN))
                         .mappings(List.of(mapping))
                         .build())
                 .build();

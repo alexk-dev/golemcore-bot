@@ -7,9 +7,7 @@ import me.golemcore.bot.domain.model.PromptSection;
 import me.golemcore.bot.domain.service.PromptSectionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.port.outbound.StoragePort;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -19,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
+import java.util.Locale;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -56,7 +55,7 @@ public class PromptsController {
     @PutMapping("/{name}")
     public Mono<ResponseEntity<PromptSectionDto>> updateSection(
             @PathVariable String name, @RequestBody PromptCreateRequest request) {
-        String filename = name.toUpperCase() + ".md";
+        String filename = name.toUpperCase(Locale.ROOT) + ".md";
         String fileContent = buildFileContent(request);
         return Mono.fromFuture(storagePort.putText(PROMPTS_DIR, filename, fileContent))
                 .then(Mono.fromRunnable(promptSectionService::reload))
@@ -66,29 +65,6 @@ public class PromptsController {
                             .map(s -> Mono.just(ResponseEntity.ok(toDto(s))))
                             .orElse(Mono.just(ResponseEntity.notFound().build()));
                 }));
-    }
-
-    @PostMapping
-    public Mono<ResponseEntity<PromptSectionDto>> createSection(@RequestBody PromptCreateRequest request) {
-        String filename = request.getName().toUpperCase() + ".md";
-        String fileContent = buildFileContent(request);
-        return Mono.fromFuture(storagePort.putText(PROMPTS_DIR, filename, fileContent))
-                .then(Mono.fromRunnable(promptSectionService::reload))
-                .then(Mono.defer(() -> {
-                    Optional<PromptSection> created = promptSectionService.getSection(
-                            request.getName().toLowerCase());
-                    return created
-                            .map(s -> Mono.just(ResponseEntity.status(HttpStatus.CREATED).body(toDto(s))))
-                            .orElse(Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build()));
-                }));
-    }
-
-    @DeleteMapping("/{name}")
-    public Mono<ResponseEntity<Void>> deleteSection(@PathVariable String name) {
-        String filename = name.toUpperCase() + ".md";
-        return Mono.fromFuture(storagePort.deleteObject(PROMPTS_DIR, filename))
-                .then(Mono.fromRunnable(promptSectionService::reload))
-                .then(Mono.just(ResponseEntity.noContent().<Void>build()));
     }
 
     @PostMapping("/{name}/preview")

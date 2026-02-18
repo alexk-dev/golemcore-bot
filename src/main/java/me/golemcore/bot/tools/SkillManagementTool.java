@@ -23,7 +23,7 @@ import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.StoragePort;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -94,18 +94,19 @@ public class SkillManagementTool implements ToolComponent {
 
     private final StoragePort storagePort;
     private final SkillComponent skillComponent;
-    private final boolean enabled;
+    private final RuntimeConfigService runtimeConfigService;
 
-    public SkillManagementTool(BotProperties properties, StoragePort storagePort, SkillComponent skillComponent) {
-        this.enabled = properties.getTools().getSkillManagement().isEnabled();
+    public SkillManagementTool(RuntimeConfigService runtimeConfigService, StoragePort storagePort,
+            SkillComponent skillComponent) {
+        this.runtimeConfigService = runtimeConfigService;
         this.storagePort = storagePort;
         this.skillComponent = skillComponent;
-        log.info("SkillManagementTool enabled: {}", enabled);
+        log.info("SkillManagementTool initialized");
     }
 
     @Override
     public boolean isEnabled() {
-        return enabled;
+        return runtimeConfigService.isSkillManagementEnabled();
     }
 
     @Override
@@ -145,7 +146,7 @@ public class SkillManagementTool implements ToolComponent {
         return CompletableFuture.supplyAsync(() -> {
             log.info("[SkillManagement] Execute: {}", parameters);
 
-            if (!enabled) {
+            if (!isEnabled()) {
                 return ToolResult.failure("Skill management tool is disabled");
             }
 
