@@ -43,6 +43,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
     private final BotProperties.TurnProperties turnSettings;
     private final BotProperties.ToolLoopProperties settings;
     private final ModelSelectionService modelSelectionService;
+    @SuppressWarnings("PMD.UnusedPrivateField")
     private final PlanService planService;
     private final RuntimeConfigService runtimeConfigService;
     private final Clock clock;

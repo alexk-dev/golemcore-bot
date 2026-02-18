@@ -128,7 +128,7 @@ class PlanFinalizationSystemTest {
         system.process(context);
 
         verify(planService).finalizePlan(eq(PLAN_ID), eq("# Plan"), any());
-        verify(eventPublisher).publishEvent(org.mockito.ArgumentMatchers.any(PlanReadyEvent.class));
+        verify(eventPublisher).publishEvent(any(PlanReadyEvent.class));
     }
 
     @Test
@@ -159,7 +159,7 @@ class PlanFinalizationSystemTest {
         system.process(context);
 
         verify(planService).finalizePlan(any(), any(), any());
-        verify(eventPublisher).publishEvent(org.mockito.ArgumentMatchers.any(PlanReadyEvent.class));
+        verify(eventPublisher).publishEvent(any(PlanReadyEvent.class));
 
         // Check that plan approval attribute was set
         String approvalNeeded = context.getAttribute(ContextAttributes.PLAN_APPROVAL_NEEDED);

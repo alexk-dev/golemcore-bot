@@ -653,9 +653,7 @@ class PlanServiceTest {
     void shouldBuildPlanContext() throws Exception {
         // Arrange — activate plan mode with steps
         service.activatePlanMode(TEST_CHAT_ID, TEST_MODEL_TIER);
-        String activePlanId = service.getActivePlanId();
-
-        // Add steps to the active plan
+        service.getActivePlanId();
 
         // Act
         String context = service.buildPlanContext();
@@ -1345,30 +1343,25 @@ class PlanServiceTest {
     }
 
     @Test
-    void shouldCreateRevisionWhenFinalizingExecutingPlan() throws Exception {
-        Plan plan = Plan.builder()
-                .id("plan-executing-revision")
-                .title("Old title")
-                .chatId(TEST_CHAT_ID)
-                .modelTier(TEST_MODEL_TIER)
-                .status(Plan.PlanStatus.EXECUTING)
-                .steps(new ArrayList<>())
-                .createdAt(FIXED_INSTANT)
-                .updatedAt(FIXED_INSTANT)
-                .build();
+    void shouldCreateRevisionWhenFinalizingExecutingPlan() {
+        // Arrange: create an in-memory active plan and move it to EXECUTING in the same
+        // runtime
+        // (without restart recovery path that intentionally marks stale EXECUTING plans
+        // as PARTIALLY_COMPLETED)
+        Plan created = service.createPlan("Old title", null, TEST_CHAT_ID, TEST_MODEL_TIER);
+        String executingPlanId = created.getId();
+        service.markPlanExecuting(executingPlanId);
 
-        String plansJson = objectMapper.writeValueAsString(List.of(plan));
-        when(storagePort.getText(AUTO_DIR, PLANS_FILE))
-                .thenReturn(CompletableFuture.completedFuture(plansJson));
+        // Act
+        service.finalizePlan(executingPlanId, "# Revised", "Revised title");
 
-        service.finalizePlan("plan-executing-revision", "# Revised", "Revised title");
-
-        Plan oldPlan = service.getPlan("plan-executing-revision").orElseThrow();
+        // Assert: old EXECUTING plan is superseded by a READY revision
+        Plan oldPlan = service.getPlan(executingPlanId).orElseThrow();
         assertEquals(Plan.PlanStatus.CANCELLED, oldPlan.getStatus());
 
         String newPlanId = service.getActivePlanId();
         assertNotNull(newPlanId);
-        assertNotSame("plan-executing-revision", newPlanId);
+        assertNotSame(executingPlanId, newPlanId);
 
         Plan revision = service.getPlan(newPlanId).orElseThrow();
         assertEquals(Plan.PlanStatus.READY, revision.getStatus());

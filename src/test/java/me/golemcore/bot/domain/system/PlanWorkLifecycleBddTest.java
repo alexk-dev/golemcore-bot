@@ -10,11 +10,11 @@ import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.Plan;
-import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.SkillTemplateEngine;
 import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -197,6 +197,7 @@ class PlanWorkLifecycleBddTest {
         McpPort mcpPort = mock(McpPort.class);
         RagPort ragPort = mock(RagPort.class);
         AutoModeService autoModeService = mock(AutoModeService.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
 
         return new ContextBuildingSystem(
                 memoryComponent,
@@ -210,6 +211,7 @@ class PlanWorkLifecycleBddTest {
                 autoModeService,
                 planService,
                 promptSectionService,
+                runtimeConfigService,
                 userPreferencesService);
     }
 }

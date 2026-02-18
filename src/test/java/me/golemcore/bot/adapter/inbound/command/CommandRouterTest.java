@@ -277,7 +277,7 @@ class CommandRouterTest {
     void resetCommand() throws Exception {
         when(planService.isFeatureEnabled()).thenReturn(true);
         when(planService.isPlanModeActive()).thenReturn(true);
-        when(planService.getActivePlanIdOptional()).thenReturn(java.util.Optional.of("plan-1"));
+        when(planService.getActivePlanIdOptional()).thenReturn(Optional.of("plan-1"));
 
         CommandPort.CommandResult result = router.execute("reset", List.of(), CTX).get();
 
@@ -716,6 +716,7 @@ class CommandRouterTest {
         verify(planService).deactivatePlanMode();
     }
 
+    @Test
     void planOffWhenNotActive() throws Exception {
         when(planService.isFeatureEnabled()).thenReturn(true);
         when(planService.isPlanModeActive()).thenReturn(false);
@@ -778,7 +779,7 @@ class CommandRouterTest {
                 List.of(SUB_CANCEL, PLAN_ID_FULL), CTX_WITH_CHANNEL).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.plan.cancelled"));
-        verify(planService, org.mockito.Mockito.never()).deactivatePlanMode();
+        verify(planService, never()).deactivatePlanMode();
     }
 
     @Test
@@ -789,7 +790,7 @@ class CommandRouterTest {
 
         CommandPort.CommandResult result = router.execute(CMD_PLAN, List.of(SUB_CANCEL), CTX_WITH_CHANNEL).get();
         assertTrue(result.success());
-        verify(planService, org.mockito.Mockito.never()).deactivatePlanMode();
+        verify(planService, never()).deactivatePlanMode();
     }
 
     @Test
