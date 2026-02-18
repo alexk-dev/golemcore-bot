@@ -67,8 +67,14 @@ public class UserPreferencesService {
 
     /**
      * Save global preferences.
+     *
+     * @throws IllegalStateException
+     *             if persistence fails (in-memory state is rolled back)
      */
     public void savePreferences(UserPreferences prefs) {
+        UserPreferences previousPrefs = this.preferences;
+        String previousLanguage = previousPrefs != null ? previousPrefs.getLanguage() : null;
+
         this.preferences = prefs;
         messageService.setLanguage(prefs.getLanguage());
 
@@ -77,7 +83,13 @@ public class UserPreferencesService {
             storagePort.putText(PREFERENCES_DIR, SETTINGS_FILE, json).join();
             log.debug("Saved global preferences");
         } catch (Exception e) {
-            log.error("Failed to save preferences", e);
+            // Rollback in-memory state on persist failure
+            this.preferences = previousPrefs;
+            if (previousLanguage != null) {
+                messageService.setLanguage(previousLanguage);
+            }
+            log.error("Failed to save preferences, rolled back to previous state", e);
+            throw new IllegalStateException("Failed to persist preferences", e);
         }
     }
 

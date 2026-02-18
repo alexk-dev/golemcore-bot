@@ -20,6 +20,7 @@ package me.golemcore.bot.port.inbound;
 
 import me.golemcore.bot.domain.model.Message;
 
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
@@ -55,6 +56,14 @@ public interface ChannelPort {
      * Sends a text message to the specified chat.
      */
     CompletableFuture<Void> sendMessage(String chatId, String content);
+
+    /**
+     * Sends a text message with protocol-level metadata hints. Default
+     * implementation ignores hints — channels override to include metadata.
+     */
+    default CompletableFuture<Void> sendMessage(String chatId, String content, Map<String, Object> hints) {
+        return sendMessage(chatId, content);
+    }
 
     /**
      * Sends a complete message object to the channel.

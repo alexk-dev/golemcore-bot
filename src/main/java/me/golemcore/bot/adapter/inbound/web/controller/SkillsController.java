@@ -7,6 +7,8 @@ import me.golemcore.bot.domain.service.SkillService;
 import me.golemcore.bot.port.outbound.McpPort;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -19,6 +21,7 @@ import reactor.core.publisher.Mono;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 /**
  * Skills management endpoints.
@@ -29,6 +32,7 @@ import java.util.Optional;
 public class SkillsController {
 
     private static final String SKILLS_DIR = "skills";
+    private static final Pattern VALID_NAME = Pattern.compile("^[a-zA-Z0-9][a-zA-Z0-9-]*$");
 
     private final SkillService skillService;
     private final McpPort mcpPort;
@@ -48,6 +52,30 @@ public class SkillsController {
         return skill
                 .map(s -> Mono.just(ResponseEntity.ok(toDetailDto(s))))
                 .orElse(Mono.just(ResponseEntity.notFound().build()));
+    }
+
+    @PostMapping
+    public Mono<ResponseEntity<SkillDto>> createSkill(@RequestBody Map<String, String> body) {
+        String name = body.get("name");
+        String content = body.get("content");
+        if (name == null || name.isBlank() || !VALID_NAME.matcher(name).matches()) {
+            return Mono.just(ResponseEntity.badRequest().build());
+        }
+        if (content == null) {
+            return Mono.just(ResponseEntity.badRequest().build());
+        }
+        if (skillService.findByName(name).isPresent()) {
+            return Mono.just(ResponseEntity.status(HttpStatus.CONFLICT).build());
+        }
+        String path = name + "/SKILL.md";
+        return Mono.fromFuture(storagePort.putText(SKILLS_DIR, path, content))
+                .then(Mono.fromRunnable(skillService::reload))
+                .then(Mono.defer(() -> {
+                    Optional<Skill> created = skillService.findByName(name);
+                    return created
+                            .map(s -> Mono.just(ResponseEntity.status(HttpStatus.CREATED).body(toDetailDto(s))))
+                            .orElse(Mono.just(ResponseEntity.notFound().build()));
+                }));
     }
 
     @PutMapping("/{name}")
@@ -72,6 +100,17 @@ public class SkillsController {
     public Mono<ResponseEntity<Map<String, String>>> reloadSkill(@PathVariable String name) {
         skillService.reload();
         return Mono.just(ResponseEntity.ok(Map.of("status", "reloaded")));
+    }
+
+    @DeleteMapping("/{name}")
+    public Mono<ResponseEntity<Void>> deleteSkill(@PathVariable String name) {
+        if (skillService.findByName(name).isEmpty()) {
+            return Mono.just(ResponseEntity.notFound().build());
+        }
+        String path = name + "/SKILL.md";
+        return Mono.fromFuture(storagePort.deleteObject(SKILLS_DIR, path))
+                .then(Mono.fromRunnable(skillService::reload))
+                .then(Mono.just(ResponseEntity.noContent().<Void>build()));
     }
 
     @GetMapping("/{name}/mcp-status")

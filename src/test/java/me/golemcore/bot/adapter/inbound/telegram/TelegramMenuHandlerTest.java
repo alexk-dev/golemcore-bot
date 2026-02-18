@@ -4,6 +4,7 @@ import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.i18n.MessageService;
@@ -57,6 +58,10 @@ class TelegramMenuHandlerTest {
         telegramProps.setToken("test-token");
         when(properties.getChannels()).thenReturn(Map.of("telegram", telegramProps));
 
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isTelegramEnabled()).thenReturn(true);
+        when(runtimeConfigService.getTelegramToken()).thenReturn("test-token");
+
         preferencesService = mock(UserPreferencesService.class);
         modelSelectionService = mock(ModelSelectionService.class);
         autoModeService = mock(AutoModeService.class);
@@ -67,6 +72,7 @@ class TelegramMenuHandlerTest {
 
         handler = new TelegramMenuHandler(
                 properties,
+                runtimeConfigService,
                 preferencesService,
                 modelSelectionService,
                 autoModeService,

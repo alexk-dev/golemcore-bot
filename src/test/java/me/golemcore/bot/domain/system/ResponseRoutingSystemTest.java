@@ -52,6 +52,8 @@ class ResponseRoutingSystemTest {
         channelPort = mock(ChannelPort.class);
         when(channelPort.getChannelType()).thenReturn(CHANNEL_TELEGRAM);
         when(channelPort.sendMessage(anyString(), anyString())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channelPort.sendMessage(anyString(), anyString(), any()))
+                .thenReturn(CompletableFuture.completedFuture(null));
         when(channelPort.sendPhoto(anyString(), any(byte[].class), anyString(), any()))
                 .thenReturn(CompletableFuture.completedFuture(null));
         when(channelPort.sendDocument(anyString(), any(byte[].class), anyString(), any()))
@@ -91,7 +93,7 @@ class ResponseRoutingSystemTest {
 
         system.process(context);
 
-        verify(channelPort).sendMessage(eq(CHAT_ID), eq(CONTENT_RESPONSE));
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq(CONTENT_RESPONSE), any());
         RoutingOutcome outcome = context.getAttribute(ATTR_ROUTING_OUTCOME);
         assertNotNull(outcome);
         assertTrue(outcome.isSentText());
@@ -148,6 +150,7 @@ class ResponseRoutingSystemTest {
         system.process(context);
 
         verify(channelPort, never()).sendMessage(anyString(), anyString());
+        verify(channelPort, never()).sendMessage(anyString(), anyString(), any());
     }
 
     // ===== Auto mode =====
@@ -168,6 +171,7 @@ class ResponseRoutingSystemTest {
         system.process(context);
 
         verify(channelPort, never()).sendMessage(anyString(), anyString());
+        verify(channelPort, never()).sendMessage(anyString(), anyString(), any());
     }
 
     // ===== shouldProcess =====
@@ -216,7 +220,7 @@ class ResponseRoutingSystemTest {
 
         system.process(context);
 
-        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Error occurred"));
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Error occurred"), any());
         RoutingOutcome errorOutcome = context.getAttribute(ATTR_ROUTING_OUTCOME);
         assertNotNull(errorOutcome);
         assertTrue(errorOutcome.isSentText());
@@ -244,6 +248,7 @@ class ResponseRoutingSystemTest {
 
         assertDoesNotThrow(() -> system.process(context));
         verify(channelPort, never()).sendMessage(anyString(), anyString());
+        verify(channelPort, never()).sendMessage(anyString(), anyString(), any());
     }
 
     // ===== Send failure =====
@@ -251,6 +256,8 @@ class ResponseRoutingSystemTest {
     @Test
     void channelSendFailureRecordsRoutingOutcomeWithError() {
         when(channelPort.sendMessage(anyString(), anyString()))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("send failed")));
+        when(channelPort.sendMessage(anyString(), anyString(), any()))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("send failed")));
 
         AgentContext context = createContext();
@@ -280,7 +287,7 @@ class ResponseRoutingSystemTest {
 
         system.process(context);
 
-        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Hello there"));
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Hello there"), any());
         verify(voiceHandler).trySendVoice(eq(channelPort), eq(CHAT_ID), eq("Hello there"));
     }
 
@@ -312,6 +319,7 @@ class ResponseRoutingSystemTest {
 
         verify(voiceHandler).trySendVoice(eq(channelPort), eq(CHAT_ID), eq("Hello from OutgoingResponse"));
         verify(channelPort, never()).sendMessage(anyString(), anyString());
+        verify(channelPort, never()).sendMessage(anyString(), anyString(), any());
     }
 
     @Test
@@ -337,7 +345,7 @@ class ResponseRoutingSystemTest {
         system.process(context);
 
         // Text sent
-        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Text with voice and attachment"));
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Text with voice and attachment"), any());
         // Voice sent after text
         verify(voiceHandler).trySendVoice(eq(channelPort), eq(CHAT_ID),
                 eq("Text with voice and attachment"));
@@ -387,7 +395,7 @@ class ResponseRoutingSystemTest {
         system.process(context);
 
         // Text sent
-        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Hello voice"));
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Hello voice"), any());
         // Quota notification sent
         verify(channelPort).sendMessage(eq(CHAT_ID), eq(MSG_VOICE_QUOTA));
     }
@@ -425,6 +433,8 @@ class ResponseRoutingSystemTest {
     void shouldRecordSentTextFalseOnSendFailure() {
         when(channelPort.sendMessage(anyString(), anyString()))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("send failed")));
+        when(channelPort.sendMessage(anyString(), anyString(), any()))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("send failed")));
 
         AgentContext context = createContext();
         context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly(CONTENT_RESPONSE));
@@ -444,6 +454,8 @@ class ResponseRoutingSystemTest {
         when(newChannel.getChannelType()).thenReturn("slack");
         when(newChannel.sendMessage(anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
+        when(newChannel.sendMessage(anyString(), anyString(), any()))
+                .thenReturn(CompletableFuture.completedFuture(null));
 
         system.registerChannel(newChannel);
 
@@ -454,7 +466,7 @@ class ResponseRoutingSystemTest {
 
         system.process(context);
 
-        verify(newChannel).sendMessage(eq("slack-chat"), eq("hello slack"));
+        verify(newChannel).sendMessage(eq("slack-chat"), eq("hello slack"), any());
     }
 
     // ===== Edge cases =====
@@ -484,6 +496,7 @@ class ResponseRoutingSystemTest {
 
         assertDoesNotThrow(() -> system.process(context));
         verify(channelPort, never()).sendMessage(anyString(), anyString());
+        verify(channelPort, never()).sendMessage(anyString(), anyString(), any());
     }
 
     @Test
@@ -492,6 +505,7 @@ class ResponseRoutingSystemTest {
         // No OUTGOING_RESPONSE set
         system.process(context);
         verify(channelPort, never()).sendMessage(anyString(), anyString());
+        verify(channelPort, never()).sendMessage(anyString(), anyString(), any());
     }
 
     // ===== ADR-0002 Phase 3: regression guard =====
@@ -515,7 +529,7 @@ class ResponseRoutingSystemTest {
         system.process(context);
 
         // Only the OutgoingResponse text is sent
-        verify(channelPort).sendMessage(eq(CHAT_ID), eq("ACTUAL_RESPONSE"));
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq("ACTUAL_RESPONSE"), any());
         // No voice sent (OutgoingResponse.voiceRequested is false)
         verify(voiceHandler, never()).trySendVoice(any(), anyString(), anyString());
         // No attachments sent
@@ -544,6 +558,8 @@ class ResponseRoutingSystemTest {
     @Test
     void shouldRecordRoutingOutcomeOnTextSendFailure() {
         when(channelPort.sendMessage(anyString(), anyString()))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("network error")));
+        when(channelPort.sendMessage(anyString(), anyString(), any()))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("network error")));
 
         AgentContext context = createContext();

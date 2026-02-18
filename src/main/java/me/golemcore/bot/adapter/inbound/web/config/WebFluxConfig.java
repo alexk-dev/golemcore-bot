@@ -1,5 +1,7 @@
 package me.golemcore.bot.adapter.inbound.web.config;
 
+import java.net.URI;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ClassPathResource;
@@ -23,6 +25,8 @@ public class WebFluxConfig {
     @Bean
     public RouterFunction<ServerResponse> dashboardSpaFallback() {
         return RouterFunctions.route()
+                .GET("/", request -> ServerResponse.temporaryRedirect(
+                        URI.create("/dashboard")).build())
                 .GET("/dashboard", request -> ServerResponse.ok()
                         .bodyValue(new ClassPathResource("static/dashboard/index.html")))
                 .GET("/dashboard/", request -> ServerResponse.ok()

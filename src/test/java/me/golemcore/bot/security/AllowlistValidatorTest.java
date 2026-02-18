@@ -1,18 +1,20 @@
 package me.golemcore.bot.security;
 
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class AllowlistValidatorTest {
@@ -21,28 +23,30 @@ class AllowlistValidatorTest {
     private static final String USER_1 = "user1";
     private static final String USER_ANY = "any_user";
 
-    @Mock
     private BotProperties properties;
+
+    private StubRuntimeConfigService runtimeConfigService;
 
     private AllowlistValidator validator;
 
     @BeforeEach
     void setUp() {
-        MockitoAnnotations.openMocks(this);
-        validator = new AllowlistValidator(properties);
+        properties = mock(BotProperties.class);
+        runtimeConfigService = new StubRuntimeConfigService();
+        runtimeConfigService.allowlistEnabled = true;
+        // Telegram defaults: empty RuntimeConfig allowlist (deny all)
+        runtimeConfigService.telegramAllowedUsers = Collections.emptyList();
+        validator = new AllowlistValidator(properties, runtimeConfigService);
     }
 
     // ==================== isAllowed() ====================
 
-    @Test
-    void shouldAllowUserWhenUserIsInAllowlist() {
-        // Arrange
-        BotProperties.ChannelProperties channelProps = new BotProperties.ChannelProperties();
-        channelProps.setAllowFrom(List.of(USER_1, "user2", "user3"));
+    // ===== Telegram: RuntimeConfig-only allowlist =====
 
-        Map<String, BotProperties.ChannelProperties> channels = new HashMap<>();
-        channels.put(CHANNEL_TELEGRAM, channelProps);
-        when(properties.getChannels()).thenReturn(channels);
+    @Test
+    void shouldAllowTelegramUserWhenInRuntimeConfigAllowlist() {
+        // Arrange
+        runtimeConfigService.telegramAllowedUsers = List.of(USER_1, "user2", "user3");
 
         // Act
         boolean result = validator.isAllowed(CHANNEL_TELEGRAM, "user2");
@@ -52,14 +56,9 @@ class AllowlistValidatorTest {
     }
 
     @Test
-    void shouldDenyUserWhenUserIsNotInAllowlist() {
+    void shouldDenyTelegramUserWhenNotInRuntimeConfigAllowlist() {
         // Arrange
-        BotProperties.ChannelProperties channelProps = new BotProperties.ChannelProperties();
-        channelProps.setAllowFrom(List.of(USER_1, "user2"));
-
-        Map<String, BotProperties.ChannelProperties> channels = new HashMap<>();
-        channels.put(CHANNEL_TELEGRAM, channelProps);
-        when(properties.getChannels()).thenReturn(channels);
+        runtimeConfigService.telegramAllowedUsers = List.of(USER_1, "user2");
 
         // Act
         boolean result = validator.isAllowed(CHANNEL_TELEGRAM, "unknown_user");
@@ -69,34 +68,95 @@ class AllowlistValidatorTest {
     }
 
     @Test
-    void shouldAllowAllUsersWhenAllowlistIsEmpty() {
-        // Arrange
-        BotProperties.ChannelProperties channelProps = new BotProperties.ChannelProperties();
-        channelProps.setAllowFrom(new ArrayList<>());
-
-        Map<String, BotProperties.ChannelProperties> channels = new HashMap<>();
-        channels.put(CHANNEL_TELEGRAM, channelProps);
-        when(properties.getChannels()).thenReturn(channels);
+    void shouldDenyTelegramUserWhenRuntimeConfigAllowlistIsEmpty() {
+        // Arrange — empty list means no one is allowed
+        runtimeConfigService.telegramAllowedUsers = Collections.emptyList();
 
         // Act
         boolean result = validator.isAllowed(CHANNEL_TELEGRAM, USER_ANY);
+
+        // Assert
+        assertFalse(result);
+    }
+
+    @Test
+    @SuppressWarnings("PMD.NullAssignment")
+    void shouldDenyTelegramUserWhenRuntimeConfigAllowlistIsNull() {
+        // Arrange — null means no one is allowed
+        runtimeConfigService.telegramAllowedUsers = null;
+
+        // Act
+        boolean result = validator.isAllowed(CHANNEL_TELEGRAM, USER_ANY);
+
+        // Assert
+        assertFalse(result);
+    }
+
+    // ===== Non-telegram channels: BotProperties allowlist =====
+
+    @Test
+    void shouldAllowUserWhenUserIsInChannelAllowlist() {
+        // Arrange
+        BotProperties.ChannelProperties channelProps = new BotProperties.ChannelProperties();
+        channelProps.setAllowFrom(List.of(USER_1, "user2", "user3"));
+
+        Map<String, BotProperties.ChannelProperties> channels = new HashMap<>();
+        channels.put("web", channelProps);
+        when(properties.getChannels()).thenReturn(channels);
+
+        // Act
+        boolean result = validator.isAllowed("web", "user2");
 
         // Assert
         assertTrue(result);
     }
 
     @Test
-    void shouldAllowAllUsersWhenAllowlistIsNull() {
+    void shouldDenyUserWhenUserIsNotInChannelAllowlist() {
+        // Arrange
+        BotProperties.ChannelProperties channelProps = new BotProperties.ChannelProperties();
+        channelProps.setAllowFrom(List.of(USER_1, "user2"));
+
+        Map<String, BotProperties.ChannelProperties> channels = new HashMap<>();
+        channels.put("web", channelProps);
+        when(properties.getChannels()).thenReturn(channels);
+
+        // Act
+        boolean result = validator.isAllowed("web", "unknown_user");
+
+        // Assert
+        assertFalse(result);
+    }
+
+    @Test
+    void shouldAllowAllUsersWhenChannelAllowlistIsEmpty() {
+        // Arrange
+        BotProperties.ChannelProperties channelProps = new BotProperties.ChannelProperties();
+        channelProps.setAllowFrom(new ArrayList<>());
+
+        Map<String, BotProperties.ChannelProperties> channels = new HashMap<>();
+        channels.put("web", channelProps);
+        when(properties.getChannels()).thenReturn(channels);
+
+        // Act
+        boolean result = validator.isAllowed("web", USER_ANY);
+
+        // Assert
+        assertTrue(result);
+    }
+
+    @Test
+    void shouldAllowAllUsersWhenChannelAllowlistIsNull() {
         // Arrange
         BotProperties.ChannelProperties channelProps = new BotProperties.ChannelProperties();
         channelProps.setAllowFrom(null);
 
         Map<String, BotProperties.ChannelProperties> channels = new HashMap<>();
-        channels.put(CHANNEL_TELEGRAM, channelProps);
+        channels.put("web", channelProps);
         when(properties.getChannels()).thenReturn(channels);
 
         // Act
-        boolean result = validator.isAllowed(CHANNEL_TELEGRAM, USER_ANY);
+        boolean result = validator.isAllowed("web", USER_ANY);
 
         // Assert
         assertTrue(result);
@@ -119,11 +179,11 @@ class AllowlistValidatorTest {
     void shouldDenyUserWhenChannelPropertiesIsNull() {
         // Arrange
         Map<String, BotProperties.ChannelProperties> channels = new HashMap<>();
-        channels.put(CHANNEL_TELEGRAM, null);
+        channels.put("web", null);
         when(properties.getChannels()).thenReturn(channels);
 
         // Act
-        boolean result = validator.isAllowed(CHANNEL_TELEGRAM, USER_1);
+        boolean result = validator.isAllowed("web", USER_1);
 
         // Assert
         assertFalse(result);
@@ -193,5 +253,24 @@ class AllowlistValidatorTest {
 
         // Assert
         assertFalse(result);
+    }
+
+    private static class StubRuntimeConfigService extends RuntimeConfigService {
+        private boolean allowlistEnabled;
+        private List<String> telegramAllowedUsers;
+
+        StubRuntimeConfigService() {
+            super(mock(StoragePort.class));
+        }
+
+        @Override
+        public boolean isAllowlistEnabled() {
+            return allowlistEnabled;
+        }
+
+        @Override
+        public List<String> getTelegramAllowedUsers() {
+            return telegramAllowedUsers;
+        }
     }
 }

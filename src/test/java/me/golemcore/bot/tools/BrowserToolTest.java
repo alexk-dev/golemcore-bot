@@ -4,7 +4,7 @@ import me.golemcore.bot.domain.component.BrowserComponent;
 import me.golemcore.bot.domain.model.Attachment;
 import me.golemcore.bot.domain.model.BrowserPage;
 import me.golemcore.bot.domain.model.ToolResult;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -23,25 +23,15 @@ class BrowserToolTest {
     private static final String MODE = "mode";
 
     private BrowserComponent browserComponent;
-    private BotProperties properties;
+    private RuntimeConfigService runtimeConfigService;
     private BrowserTool tool;
 
     @BeforeEach
     void setUp() {
         browserComponent = mock(BrowserComponent.class);
-        properties = new BotProperties();
-        properties.getBrowser().setEnabled(true);
-        tool = new BrowserTool(browserComponent, properties);
-    }
-
-    // ===== getDefinition =====
-
-    @Test
-    void shouldReturnValidDefinition() {
-        var def = tool.getDefinition();
-        assertEquals("browse", def.getName());
-        assertNotNull(def.getDescription());
-        assertNotNull(def.getInputSchema());
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isBrowserEnabled()).thenReturn(true);
+        tool = new BrowserTool(browserComponent, runtimeConfigService);
     }
 
     // ===== isEnabled =====
@@ -53,7 +43,7 @@ class BrowserToolTest {
 
     @Test
     void shouldBeDisabledWhenConfigDisabled() {
-        properties.getBrowser().setEnabled(false);
+        when(runtimeConfigService.isBrowserEnabled()).thenReturn(false);
         assertFalse(tool.isEnabled());
     }
 

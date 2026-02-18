@@ -19,7 +19,6 @@ package me.golemcore.bot.domain.service;
  */
 
 import me.golemcore.bot.domain.model.AudioFormat;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.VoicePort;
 import lombok.RequiredArgsConstructor;
@@ -43,7 +42,7 @@ import java.util.concurrent.TimeUnit;
 public class VoiceResponseHandler {
 
     private final VoicePort voicePort;
-    private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
 
     /**
      * Result of a voice send attempt.
@@ -69,11 +68,10 @@ public class VoiceResponseHandler {
             return VoiceSendResult.FAILED;
         }
         try {
-            BotProperties.VoiceProperties voice = properties.getVoice();
             VoicePort.VoiceConfig config = new VoicePort.VoiceConfig(
-                    voice.getVoiceId(),
-                    voice.getTtsModelId(),
-                    voice.getSpeed(),
+                    runtimeConfigService.getVoiceId(),
+                    runtimeConfigService.getTtsModelId(),
+                    runtimeConfigService.getVoiceSpeed(),
                     AudioFormat.MP3);
             byte[] audioData = voicePort.synthesize(text, config).get(60, TimeUnit.SECONDS);
             channel.sendVoice(chatId, audioData).get(30, TimeUnit.SECONDS);

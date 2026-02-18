@@ -24,6 +24,7 @@ class SkillServiceTest {
     private StoragePort storagePort;
     private BotProperties properties;
     private SkillVariableResolver variableResolver;
+    private RuntimeConfigService runtimeConfigService;
     private SkillService service;
 
     @BeforeEach
@@ -31,6 +32,7 @@ class SkillServiceTest {
         storagePort = mock(StoragePort.class);
         properties = new BotProperties();
         variableResolver = mock(SkillVariableResolver.class);
+        runtimeConfigService = mock(RuntimeConfigService.class);
 
         when(variableResolver.parseVariableDefinitions(any())).thenReturn(List.of());
         when(variableResolver.resolveVariables(any(), any())).thenReturn(Map.of());
@@ -39,7 +41,10 @@ class SkillServiceTest {
         when(storagePort.listObjects(eq(SKILLS_DIR), eq("")))
                 .thenReturn(CompletableFuture.completedFuture(List.of()));
 
-        service = new SkillService(storagePort, properties, variableResolver);
+        when(runtimeConfigService.isSkillsEnabled()).thenReturn(true);
+        when(runtimeConfigService.isSkillsProgressiveLoadingEnabled()).thenReturn(true);
+
+        service = new SkillService(storagePort, properties, variableResolver, runtimeConfigService);
     }
 
     private void loadSkills(String... keys) {

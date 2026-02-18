@@ -27,8 +27,15 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -207,6 +214,68 @@ public class LocalStorageAdapter implements StoragePort {
                 Files.createDirectories(dirPath);
             } catch (IOException e) {
                 throw new RuntimeException("Failed to create directory: " + directory, e);
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Void> putTextAtomic(String directory, String path, String content, boolean backup) {
+        return CompletableFuture.runAsync(() -> {
+            Path targetPath = resolvePath(directory, path);
+            Path tempPath = targetPath.resolveSibling(targetPath.getFileName() + ".tmp");
+            Path backupPath = targetPath.resolveSibling(targetPath.getFileName() + ".bak");
+
+            try {
+                Path parent = targetPath.getParent();
+                if (parent != null) {
+                    Files.createDirectories(parent);
+                }
+
+                // 1. Write to temp file with fsync
+                byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
+                try (OutputStream os = Files.newOutputStream(tempPath,
+                        StandardOpenOption.CREATE,
+                        StandardOpenOption.TRUNCATE_EXISTING,
+                        StandardOpenOption.SYNC);
+                        FileChannel channel = FileChannel.open(tempPath, StandardOpenOption.WRITE)) {
+                    os.write(bytes);
+                    os.flush();
+                    channel.force(true); // fsync: metadata + data
+                }
+
+                // 2. Verify written content is readable
+                byte[] verification = Files.readAllBytes(tempPath);
+                if (verification.length != bytes.length) {
+                    throw new IOException("Verification failed: size mismatch");
+                }
+
+                // 3. Backup existing file if requested
+                if (backup && Files.exists(targetPath)) {
+                    Files.copy(targetPath, backupPath, StandardCopyOption.REPLACE_EXISTING);
+                    log.debug("[Storage] Created backup: {}", backupPath);
+                }
+
+                // 4. Atomic rename
+                try {
+                    Files.move(tempPath, targetPath,
+                            StandardCopyOption.REPLACE_EXISTING,
+                            StandardCopyOption.ATOMIC_MOVE);
+                } catch (AtomicMoveNotSupportedException e) {
+                    // Fallback for filesystems without atomic move support
+                    log.warn("[Storage] Atomic move not supported, using regular move");
+                    Files.move(tempPath, targetPath, StandardCopyOption.REPLACE_EXISTING);
+                }
+
+                log.debug("[Storage] Atomic write completed: {}/{}", directory, path);
+
+            } catch (IOException e) {
+                // Cleanup temp file on failure
+                try {
+                    Files.deleteIfExists(tempPath);
+                } catch (IOException cleanupEx) {
+                    log.warn("[Storage] Failed to cleanup temp file: {}", tempPath);
+                }
+                throw new RuntimeException("Atomic write failed: " + directory + "/" + path, e);
             }
         });
     }

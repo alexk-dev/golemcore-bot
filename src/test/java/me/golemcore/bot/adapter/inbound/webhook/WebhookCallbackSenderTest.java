@@ -7,8 +7,11 @@ import mockwebserver3.RecordedRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import reactor.util.retry.Retry;
+import reactor.util.retry.RetryBackoffSpec;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -29,7 +32,22 @@ class WebhookCallbackSenderTest {
     void setUp() throws IOException {
         mockServer = new MockWebServer();
         mockServer.start();
-        sender = new WebhookCallbackSender();
+        sender = new WebhookCallbackSender() {
+            @Override
+            protected Duration getRequestTimeout() {
+                return Duration.ofSeconds(2);
+            }
+
+            @Override
+            protected RetryBackoffSpec buildRetry(String callbackUrl) {
+                return Retry.fixedDelay(3, Duration.ofMillis(10));
+            }
+
+            @Override
+            public void send(String callbackUrl, CallbackPayload payload) {
+                buildSendMono(callbackUrl, payload).block(Duration.ofSeconds(3));
+            }
+        };
     }
 
     @AfterEach
@@ -108,7 +126,6 @@ class WebhookCallbackSenderTest {
         RecordedRequest first = mockServer.takeRequest(3, TimeUnit.SECONDS);
         assertNotNull(first);
 
-        // Retry (succeeds with 200) — backoff starts at 1s + jitter
         RecordedRequest second = mockServer.takeRequest(10, TimeUnit.SECONDS);
         assertNotNull(second);
 

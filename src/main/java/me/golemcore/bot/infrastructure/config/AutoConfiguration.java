@@ -18,6 +18,7 @@ package me.golemcore.bot.infrastructure.config;
  * Contact: alex@kuleshov.tech
  */
 
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -58,6 +59,7 @@ public class AutoConfiguration {
 
     private final BotProperties properties;
     private final List<ChannelPort> channelPorts;
+    private final RuntimeConfigService runtimeConfigService;
 
     @Bean
     public static Clock clock() {
@@ -76,21 +78,29 @@ public class AutoConfiguration {
     @PostConstruct
     public void init() {
         log.info("Java AI Bot starting...");
-        log.info("Balanced Model: {}", properties.getRouter().getBalancedModel());
+        log.info("Balanced Model: {}", runtimeConfigService.getBalancedModel());
         log.info("LLM Provider: {}", properties.getLlm().getProvider());
         log.info("Storage Path: {}", properties.getStorage().getLocal().getBasePath());
 
         // Auto-start enabled channels
         for (ChannelPort channel : channelPorts) {
             String channelType = channel.getChannelType();
-            BotProperties.ChannelProperties channelProps = properties.getChannels().get(channelType);
 
-            if (channelProps != null && channelProps.isEnabled()) {
+            boolean enabled = "telegram".equals(channelType)
+                    ? runtimeConfigService.isTelegramEnabled()
+                    : isChannelEnabled(channelType);
+
+            if (enabled) {
                 log.info("Starting channel: {}", channelType);
                 channel.start();
             }
         }
 
         log.info("Java AI Bot started successfully");
+    }
+
+    private boolean isChannelEnabled(String channelType) {
+        BotProperties.ChannelProperties channelProps = properties.getChannels().get(channelType);
+        return channelProps != null && channelProps.isEnabled();
     }
 }

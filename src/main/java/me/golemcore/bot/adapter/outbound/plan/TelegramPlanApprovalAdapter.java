@@ -26,6 +26,7 @@ import me.golemcore.bot.domain.model.PlanReadyEvent;
 import me.golemcore.bot.domain.model.PlanStep;
 import me.golemcore.bot.domain.service.PlanExecutionService;
 import me.golemcore.bot.domain.service.PlanService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 
 import java.util.concurrent.atomic.AtomicReference;
@@ -55,15 +56,18 @@ public class TelegramPlanApprovalAdapter {
     private final PlanService planService;
     private final PlanExecutionService planExecutionService;
     private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
 
     private final AtomicReference<TelegramClient> telegramClient = new AtomicReference<>();
 
     public TelegramPlanApprovalAdapter(PlanService planService,
             PlanExecutionService planExecutionService,
-            BotProperties properties) {
+            BotProperties properties,
+            RuntimeConfigService runtimeConfigService) {
         this.planService = planService;
         this.planExecutionService = planExecutionService;
         this.properties = properties;
+        this.runtimeConfigService = runtimeConfigService;
     }
 
     /**
@@ -218,11 +222,10 @@ public class TelegramPlanApprovalAdapter {
         if (client != null) {
             return client;
         }
-        BotProperties.ChannelProperties channelProps = properties.getChannels().get("telegram");
-        if (channelProps == null || !channelProps.isEnabled()) {
+        if (!runtimeConfigService.isTelegramEnabled()) {
             return null;
         }
-        String token = channelProps.getToken();
+        String token = runtimeConfigService.getTelegramToken();
         if (token == null || token.isBlank()) {
             return null;
         }
