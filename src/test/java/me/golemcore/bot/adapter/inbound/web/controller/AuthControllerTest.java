@@ -5,11 +5,13 @@ import me.golemcore.bot.domain.service.DashboardAuthService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import reactor.test.StepVerifier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -87,9 +89,10 @@ class AuthControllerTest {
 
         LoginRequest request = LoginRequest.builder().password("wrong").build();
 
-        StepVerifier.create(controller.login(request))
-                .assertNext(response -> assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode()))
-                .verifyComplete();
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.login(request));
+        assertEquals(HttpStatus.UNAUTHORIZED, ex.getStatusCode());
+        assertEquals("Invalid credentials", ex.getReason());
     }
 
     @Test
@@ -125,9 +128,10 @@ class AuthControllerTest {
     void shouldReturn401MeWhenNoCredentials() {
         when(authService.getCredentials()).thenReturn(null);
 
-        StepVerifier.create(controller.me())
-                .assertNext(response -> assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode()))
-                .verifyComplete();
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.me());
+        assertEquals(HttpStatus.UNAUTHORIZED, ex.getStatusCode());
+        assertEquals("Not authenticated", ex.getReason());
     }
 
     @Test

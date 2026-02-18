@@ -2,6 +2,7 @@ import { type ReactElement, useEffect, useMemo, useState } from 'react';
 import { Badge, Button, Card, Form, InputGroup, OverlayTrigger, Table, Tooltip } from 'react-bootstrap';
 import { FiHelpCircle } from 'react-icons/fi';
 import toast from 'react-hot-toast';
+import { extractErrorMessage } from '../../utils/extractErrorMessage';
 import ConfirmModal from '../../components/common/ConfirmModal';
 import {
   useDeleteInviteCode,
@@ -235,7 +236,7 @@ export default function TelegramTab({ config, voiceConfig }: TelegramTabProps): 
             disabled={restart.isPending}
             onClick={() => restart.mutate(undefined, {
               onSuccess: () => toast.success('Telegram bot restarted'),
-              onError: (err) => toast.error(`Failed to restart: ${err instanceof Error ? err.message : 'Unknown error'}`),
+              onError: (err: unknown) => toast.error(`Failed to restart: ${extractErrorMessage(err)}`),
             })}>
             {restart.isPending ? 'Restarting...' : 'Restart Bot'}
           </Button>

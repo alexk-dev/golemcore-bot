@@ -2,6 +2,7 @@ import { type ReactElement, useState } from 'react';
 import { Badge, Card, ListGroup, Row, Col, Button, Form, Spinner, Modal, Placeholder } from 'react-bootstrap';
 import { useSkills, useSkill, useCreateSkill, useUpdateSkill, useDeleteSkill } from '../hooks/useSkills';
 import toast from 'react-hot-toast';
+import { extractErrorMessage } from '../utils/extractErrorMessage';
 import ConfirmModal from '../components/common/ConfirmModal';
 
 const SKILL_TEMPLATE = `---
@@ -84,8 +85,8 @@ export default function SkillsPage(): ReactElement {
     try {
       await updateMutation.mutateAsync({ name: selected, content: editContent.length > 0 ? editContent : currentContent });
       toast.success('Skill saved');
-    } catch {
-      toast.error('Failed to save skill');
+    } catch (err: unknown) {
+      toast.error(`Failed to save skill: ${extractErrorMessage(err)}`);
     }
   };
 
@@ -99,8 +100,8 @@ export default function SkillsPage(): ReactElement {
       setEditContent('');
       setShowDeleteConfirm(false);
       toast.success('Skill deleted');
-    } catch {
-      toast.error('Failed to delete skill');
+    } catch (err: unknown) {
+      toast.error(`Failed to delete skill: ${extractErrorMessage(err)}`);
     }
   };
 
@@ -117,12 +118,7 @@ export default function SkillsPage(): ReactElement {
       setEditContent('');
       toast.success('Skill created');
     } catch (err: unknown) {
-      const status = (err as { response?: { status?: number } })?.response?.status;
-      if (status === 409) {
-        toast.error('Skill already exists');
-      } else {
-        toast.error('Failed to create skill');
-      }
+      toast.error(`Failed to create skill: ${extractErrorMessage(err)}`);
     }
   };
 

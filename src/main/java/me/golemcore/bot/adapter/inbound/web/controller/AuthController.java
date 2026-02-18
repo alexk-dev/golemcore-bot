@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
@@ -53,7 +54,7 @@ public class AuthController {
         DashboardAuthService.TokenPair tokens = authService.authenticate(
                 request.getPassword(), request.getMfaCode());
         if (tokens == null) {
-            return Mono.just(ResponseEntity.status(HttpStatus.UNAUTHORIZED).build());
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid credentials");
         }
         LoginResponse response = LoginResponse.builder()
                 .accessToken(tokens.getAccessToken())
@@ -67,11 +68,11 @@ public class AuthController {
     public Mono<ResponseEntity<LoginResponse>> refresh(ServerWebExchange exchange) {
         HttpCookie cookie = exchange.getRequest().getCookies().getFirst(REFRESH_COOKIE);
         if (cookie == null) {
-            return Mono.just(ResponseEntity.status(HttpStatus.UNAUTHORIZED).build());
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "No refresh token");
         }
         DashboardAuthService.TokenPair tokens = authService.refreshAccessToken(cookie.getValue());
         if (tokens == null) {
-            return Mono.just(ResponseEntity.status(HttpStatus.UNAUTHORIZED).build());
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid or expired refresh token");
         }
         LoginResponse response = LoginResponse.builder()
                 .accessToken(tokens.getAccessToken())
@@ -98,7 +99,7 @@ public class AuthController {
     public Mono<ResponseEntity<Map<String, Object>>> me() {
         AdminCredentials creds = authService.getCredentials();
         if (creds == null) {
-            return Mono.just(ResponseEntity.status(HttpStatus.UNAUTHORIZED).build());
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Not authenticated");
         }
         Map<String, Object> user = Map.of(
                 "username", creds.getUsername(),

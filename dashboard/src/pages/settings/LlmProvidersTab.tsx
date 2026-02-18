@@ -1,6 +1,7 @@
 import { type ReactElement, useMemo, useState } from 'react';
 import { Badge, Button, Card, Col, Form, InputGroup, Row, Table } from 'react-bootstrap';
 import toast from 'react-hot-toast';
+import { extractErrorMessage } from '../../utils/extractErrorMessage';
 import ConfirmModal from '../../components/common/ConfirmModal';
 import { useAddLlmProvider, useUpdateLlmProvider, useRemoveLlmProvider } from '../../hooks/useSettings';
 import type { LlmConfig, LlmProviderConfig, ModelRouterConfig } from '../../api/settings';
@@ -227,7 +228,7 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
       }
       handleCancelEdit();
     } catch (err) {
-      toast.error(`Failed to save: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      toast.error(`Failed to save: ${extractErrorMessage(err)}`);
     }
   };
 
@@ -242,7 +243,7 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
         handleCancelEdit();
       }
     } catch (err) {
-      toast.error(`Failed to remove: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      toast.error(`Failed to remove: ${extractErrorMessage(err)}`);
     } finally {
       setDeleteProvider(null);
     }
