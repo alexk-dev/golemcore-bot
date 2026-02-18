@@ -446,7 +446,7 @@
                         <ports>
                             <port>8080</port>
                         </ports>
-                        <user>botuser</user>
+                        <user>ubuntu</user>
                         <creationTime>USE_CURRENT_TIMESTAMP</creationTime>
                     </container>
                 </configuration>
