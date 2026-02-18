@@ -141,7 +141,7 @@ jobs:
           if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
             echo "jib-tags=${SHORT_SHA}-${ARCH},latest-${ARCH}" >> $GITHUB_OUTPUT
           else
-            echo "jib-tags=${SHORT_SHA}-${ARCH}" >> $GITHUB_OUTPUT
+            echo "jib-tags=${SHORT_SHA}-${ARCH},dev-latest-${ARCH}" >> $GITHUB_OUTPUT
           fi
 
       - name: Build and push app image (${{ matrix.arch }})
@@ -192,6 +192,11 @@ jobs:
               "${IMAGE}:latest-amd64" \
               "${IMAGE}:latest-arm64"
             docker manifest push "${IMAGE}:latest"
+          else
+            docker manifest create "${IMAGE}:dev-latest" \
+              "${IMAGE}:dev-latest-amd64" \
+              "${IMAGE}:dev-latest-arm64"
+            docker manifest push "${IMAGE}:dev-latest"
           fi
 
       - name: Job Summary
