@@ -1,15 +1,16 @@
 package me.golemcore.bot.adapter.inbound.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.Message;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.web.reactive.socket.WebSocketSession;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -17,17 +18,20 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class WebChannelAdapterTest {
 
     private WebChannelAdapter adapter;
     private ObjectMapper objectMapper;
+    private ApplicationEventPublisher eventPublisher;
 
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper();
-        adapter = new WebChannelAdapter(objectMapper);
+        eventPublisher = mock(ApplicationEventPublisher.class);
+        adapter = new WebChannelAdapter(objectMapper, eventPublisher);
     }
 
     @Test
@@ -60,10 +64,7 @@ class WebChannelAdapterTest {
     }
 
     @Test
-    void shouldSetMessageHandler() {
-        AtomicReference<Message> received = new AtomicReference<>();
-        adapter.onMessage(received::set);
-
+    void shouldPublishEventOnIncomingMessage() {
         Message message = Message.builder()
                 .id("msg-1")
                 .role("user")
@@ -74,17 +75,14 @@ class WebChannelAdapterTest {
                 .timestamp(Instant.now())
                 .build();
 
-        // Register a mock session for the chat
         WebSocketSession session = mock(WebSocketSession.class);
         when(session.isOpen()).thenReturn(true);
         when(session.send(any())).thenReturn(Mono.empty());
         adapter.registerSession("conn-1", session);
 
-        adapter.handleIncomingMessage(message);
+        adapter.handleIncomingMessage(message, "conn-1");
 
-        assertNotNull(received.get());
-        assertEquals("hello", received.get().getContent());
-        assertEquals("chat-1", received.get().getChatId());
+        verify(eventPublisher).publishEvent(any(AgentLoop.InboundMessageEvent.class));
     }
 
     @Test

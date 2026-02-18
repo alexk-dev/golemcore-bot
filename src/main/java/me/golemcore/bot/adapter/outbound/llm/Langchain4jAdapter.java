@@ -24,15 +24,25 @@ import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.LlmUsage;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.ToolDefinition;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import me.golemcore.bot.port.outbound.LlmPort;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
-import dev.langchain4j.data.message.*;
+import dev.langchain4j.data.image.Image;
+import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.Content;
+import dev.langchain4j.data.message.ImageContent;
+import dev.langchain4j.data.message.SystemMessage;
+import dev.langchain4j.data.message.TextContent;
+import dev.langchain4j.data.message.ToolExecutionResultMessage;
+import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.anthropic.AnthropicChatModel;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
@@ -51,10 +61,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Deque;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
@@ -102,11 +116,12 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     private static final long INITIAL_BACKOFF_MS = 5_000;
     private static final double BACKOFF_MULTIPLIER = 2.0;
     private static final String PROVIDER_ANTHROPIC = "anthropic";
+    private static final String SYNTH_ID_PREFIX = "synth_call_";
     private static final String SCHEMA_KEY_PROPERTIES = "properties";
     private static final java.util.regex.Pattern RESET_SECONDS_PATTERN = java.util.regex.Pattern
             .compile("\"reset_seconds\"\\s*:\\s*(\\d+)");
 
-    private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
     private final ModelConfigService modelConfig;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -120,8 +135,8 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             return;
 
         // Use balanced model from router config
-        String model = properties.getRouter().getBalancedModel();
-        String reasoning = properties.getRouter().getBalancedModelReasoning();
+        String model = runtimeConfigService.getBalancedModel();
+        String reasoning = runtimeConfigService.getBalancedModelReasoning();
         this.currentModel = model;
 
         try {
@@ -151,11 +166,10 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         }
     }
 
-    private BotProperties.ProviderProperties getProviderConfig(String providerName) {
-        var config = properties.getLlm().getLangchain4j().getProviders().get(providerName);
+    private RuntimeConfig.LlmProviderConfig getProviderConfig(String providerName) {
+        RuntimeConfig.LlmProviderConfig config = runtimeConfigService.getLlmProviderConfig(providerName);
         if (config == null) {
-            throw new IllegalStateException("Provider not configured: " + providerName
-                    + ". Add bot.llm.langchain4j.providers." + providerName + ".api-key");
+            throw new IllegalStateException("Provider not configured in runtime config: " + providerName);
         }
         return config;
     }
@@ -169,7 +183,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
      */
     private ChatModel createModel(String model, String reasoningEffort) {
         String provider = getProvider(model);
-        BotProperties.ProviderProperties config = getProviderConfig(provider);
+        RuntimeConfig.LlmProviderConfig config = getProviderConfig(provider);
         String modelName = stripProviderPrefix(model);
 
         if (PROVIDER_ANTHROPIC.equals(provider)) {
@@ -180,39 +194,49 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         }
     }
 
-    private ChatModel createAnthropicModel(String modelName, BotProperties.ProviderProperties config) {
+    private ChatModel createAnthropicModel(String modelName, RuntimeConfig.LlmProviderConfig config) {
+        String apiKey = Secret.valueOrEmpty(config.getApiKey());
+        if (apiKey.isBlank()) {
+            throw new IllegalStateException("Missing apiKey for provider anthropic in runtime config");
+        }
         var builder = AnthropicChatModel.builder()
-                .apiKey(config.getApiKey())
+                .apiKey(apiKey)
                 .modelName(modelName)
                 .maxRetries(0) // Retry handled by our backoff logic
                 .maxTokens(4096)
-                .timeout(properties.getLlm().getRequestTimeout());
+                .timeout(java.time.Duration.ofSeconds(
+                        config.getRequestTimeoutSeconds() != null ? config.getRequestTimeoutSeconds() : 300));
 
         if (config.getBaseUrl() != null) {
             builder.baseUrl(config.getBaseUrl());
         }
 
         if (supportsTemperature(modelName)) {
-            builder.temperature(properties.getRouter().getTemperature());
+            builder.temperature(runtimeConfigService.getTemperature());
         }
 
         return builder.build();
     }
 
     private ChatModel createOpenAiModel(String modelName, String fullModel,
-            String reasoningEffort, BotProperties.ProviderProperties config) {
+            String reasoningEffort, RuntimeConfig.LlmProviderConfig config) {
+        String apiKey = Secret.valueOrEmpty(config.getApiKey());
+        if (apiKey.isBlank()) {
+            throw new IllegalStateException("Missing apiKey for provider in runtime config");
+        }
         var builder = OpenAiChatModel.builder()
-                .apiKey(config.getApiKey())
+                .apiKey(apiKey)
                 .modelName(modelName)
                 .maxRetries(0) // Retry handled by our backoff logic
-                .timeout(properties.getLlm().getRequestTimeout());
+                .timeout(java.time.Duration.ofSeconds(
+                        config.getRequestTimeoutSeconds() != null ? config.getRequestTimeoutSeconds() : 300));
 
         if (config.getBaseUrl() != null) {
             builder.baseUrl(config.getBaseUrl());
         }
 
         if (supportsTemperature(fullModel)) {
-            builder.temperature(properties.getRouter().getTemperature());
+            builder.temperature(runtimeConfigService.getTemperature());
         } else {
             log.debug("Using reasoning model: {}, effort: {}", modelName,
                     reasoningEffort != null ? reasoningEffort : "default");
@@ -242,6 +266,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             ChatModel modelToUse = getModelForRequest(request);
             List<ChatMessage> messages = convertMessages(request);
             List<ToolSpecification> tools = convertTools(request);
+            boolean compatibilityFlatteningApplied = false;
 
             for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
                 try {
@@ -257,7 +282,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                         response = modelToUse.chat(messages);
                     }
 
-                    return convertResponse(response);
+                    return convertResponse(response, compatibilityFlatteningApplied);
                 } catch (Exception e) {
                     if (isRateLimitError(e) && attempt < MAX_RETRIES) {
                         long exponentialBackoffMs = (long) (INITIAL_BACKOFF_MS * Math.pow(BACKOFF_MULTIPLIER, attempt));
@@ -269,11 +294,16 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                                 attempt + 1, MAX_RETRIES, backoffMs,
                                 resetSeconds > 0 ? " (server requested " + resetSeconds + "s)" : "");
                         try {
-                            Thread.sleep(backoffMs);
+                            sleepBeforeRetry(backoffMs);
                         } catch (InterruptedException ie) {
                             Thread.currentThread().interrupt();
                             throw new RuntimeException("LLM chat interrupted during retry backoff", ie);
                         }
+                    } else if (!compatibilityFlatteningApplied && isUnsupportedFunctionRoleError(e)) {
+                        compatibilityFlatteningApplied = true;
+                        messages = convertMessagesWithFlattenedToolHistory(request);
+                        log.warn(
+                                "[LLM] Retrying request with flattened tool history due to unsupported function/tool role");
                     } else {
                         log.error("LLM chat failed", e);
                         throw new RuntimeException("LLM chat failed: " + e.getMessage(), e);
@@ -375,14 +405,15 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     public List<String> getSupportedModels() {
         // Build from models.json — provider/modelName for each configured provider
         List<String> models = new ArrayList<>();
-        var providers = properties.getLlm().getLangchain4j().getProviders();
-        var modelsConfig = modelConfig.getAllModels();
+        Map<String, ModelConfigService.ModelSettings> modelsConfig = modelConfig
+                .getAllModels();
 
         if (modelsConfig != null) {
-            for (var entry : modelsConfig.entrySet()) {
+            for (Map.Entry<String, ModelConfigService.ModelSettings> entry : modelsConfig
+                    .entrySet()) {
                 String modelName = entry.getKey();
                 String provider = entry.getValue().getProvider();
-                if (providers.containsKey(provider)) {
+                if (runtimeConfigService.hasLlmProviderApiKey(provider)) {
                     models.add(provider + "/" + modelName);
                 }
             }
@@ -397,8 +428,8 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
 
     @Override
     public boolean isAvailable() {
-        return properties.getLlm().getLangchain4j().getProviders().values().stream()
-                .anyMatch(p -> p.getApiKey() != null && !p.getApiKey().isBlank());
+        return runtimeConfigService.getConfiguredLlmProviders().stream()
+                .anyMatch(runtimeConfigService::hasLlmProviderApiKey);
     }
 
     @Override
@@ -410,46 +441,160 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     };
 
     private List<ChatMessage> convertMessages(LlmRequest request) {
+        return convertMessages(request.getSystemPrompt(), request.getMessages());
+    }
+
+    private List<ChatMessage> convertMessagesWithFlattenedToolHistory(LlmRequest request) {
+        List<Message> flattenedMessages = Message.flattenToolMessages(request.getMessages());
+        return convertMessages(request.getSystemPrompt(), flattenedMessages);
+    }
+
+    private List<ChatMessage> convertMessages(String systemPrompt, List<Message> requestMessages) {
         List<ChatMessage> messages = new ArrayList<>();
 
         // Add system message
-        if (request.getSystemPrompt() != null && !request.getSystemPrompt().isBlank()) {
-            messages.add(SystemMessage.from(request.getSystemPrompt()));
+        if (systemPrompt != null && !systemPrompt.isBlank()) {
+            messages.add(SystemMessage.from(systemPrompt));
         }
 
-        // Convert conversation messages — tool call IDs and names are passed through
-        // as-is. Model switches are handled upstream by ToolLoop/request-time
-        // conversation view building which
-        // flattens tool messages to plain text before they reach the adapter.
-        for (Message msg : request.getMessages()) {
+        if (requestMessages == null) {
+            return messages;
+        }
+
+        // Synthetic ID generation: langchain4j serializes null-ID tool calls as
+        // legacy "function_call" and null-ID tool results as "role: function",
+        // both rejected by GPT-5.2+. Assign synthetic IDs where missing.
+        // Also track emitted tool call IDs to detect orphaned tool messages
+        // whose preceding assistant message was removed (e.g. by compaction).
+        int synthCounter = 0;
+        Deque<String> pendingSynthIds = new ArrayDeque<>();
+        Set<String> emittedToolCallIds = new HashSet<>();
+
+        for (Message msg : requestMessages) {
             switch (msg.getRole()) {
-            case "user" -> messages.add(UserMessage.from(msg.getContent()));
+            case "user" -> messages.add(toUserMessage(msg));
             case "assistant" -> {
                 if (msg.hasToolCalls()) {
-                    List<ToolExecutionRequest> toolRequests = msg.getToolCalls().stream()
-                            .map(tc -> ToolExecutionRequest.builder()
-                                    .id(tc.getId())
-                                    .name(tc.getName())
-                                    .arguments(convertArgsToJson(tc.getArguments()))
-                                    .build())
-                            .toList();
+                    List<ToolExecutionRequest> toolRequests = new ArrayList<>();
+                    for (Message.ToolCall tc : msg.getToolCalls()) {
+                        String id = tc.getId();
+                        if (id == null || id.isBlank()) {
+                            synthCounter++;
+                            id = SYNTH_ID_PREFIX + synthCounter;
+                            pendingSynthIds.addLast(id);
+                        }
+                        emittedToolCallIds.add(id);
+                        toolRequests.add(ToolExecutionRequest.builder()
+                                .id(id)
+                                .name(tc.getName())
+                                .arguments(convertArgsToJson(tc.getArguments()))
+                                .build());
+                    }
                     messages.add(AiMessage.from(toolRequests));
                 } else {
-                    messages.add(AiMessage.from(msg.getContent()));
+                    messages.add(AiMessage.from(nonNullText(msg.getContent())));
                 }
             }
             case "tool" -> {
-                messages.add(ToolExecutionResultMessage.from(
-                        msg.getToolCallId(),
-                        msg.getToolName(),
-                        msg.getContent()));
+                String toolCallId = msg.getToolCallId();
+                if (toolCallId == null || toolCallId.isBlank()) {
+                    if (pendingSynthIds.isEmpty()) {
+                        synthCounter++;
+                        toolCallId = SYNTH_ID_PREFIX + synthCounter;
+                    } else {
+                        toolCallId = pendingSynthIds.pollFirst();
+                    }
+                }
+                if (emittedToolCallIds.contains(toolCallId)) {
+                    messages.add(ToolExecutionResultMessage.from(
+                            toolCallId,
+                            msg.getToolName(),
+                            nonNullText(msg.getContent())));
+                } else {
+                    log.debug("[LLM] Converting orphaned tool message to text: tool={}",
+                            msg.getToolName());
+                    String toolText = "[Tool: " + nonNullText(msg.getToolName())
+                            + "]\n[Result: " + nonNullText(msg.getContent()) + "]";
+                    messages.add(UserMessage.from(toolText));
+                }
             }
-            case "system" -> messages.add(SystemMessage.from(msg.getContent()));
+            case "system" -> messages.add(SystemMessage.from(nonNullText(msg.getContent())));
             default -> log.warn("Unknown message role: {}, treating as user message", msg.getRole());
             }
         }
 
         return messages;
+    }
+
+    private String nonNullText(String text) {
+        return text != null ? text : "";
+    }
+
+    private boolean isUnsupportedFunctionRoleError(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null) {
+                // Legacy function role rejected by newer models
+                if (message.contains("unsupported_value")
+                        && message.contains("does not support 'function'")) {
+                    return true;
+                }
+                // Orphaned tool message without preceding tool_calls
+                if (message.contains("role 'tool' must be a response to")
+                        && message.contains("tool_calls")) {
+                    return true;
+                }
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    @SuppressWarnings("unchecked")
+    private UserMessage toUserMessage(Message msg) {
+        List<Content> contents = new ArrayList<>();
+
+        if (msg.getContent() != null && !msg.getContent().isBlank()) {
+            contents.add(TextContent.from(msg.getContent()));
+        }
+
+        Map<String, Object> metadata = msg.getMetadata();
+        if (metadata != null) {
+            Object attachmentsRaw = metadata.get("attachments");
+            if (attachmentsRaw instanceof List<?> attachments) {
+                for (Object attachmentObj : attachments) {
+                    if (!(attachmentObj instanceof Map<?, ?> attachmentMap)) {
+                        continue;
+                    }
+
+                    Object typeObj = attachmentMap.get("type");
+                    Object mimeObj = attachmentMap.get("mimeType");
+                    Object dataObj = attachmentMap.get("dataBase64");
+
+                    if (!(typeObj instanceof String type)
+                            || !(mimeObj instanceof String mimeType)
+                            || !(dataObj instanceof String base64Data)) {
+                        continue;
+                    }
+                    if (!"image".equals(type) || !mimeType.startsWith("image/") || base64Data.isBlank()) {
+                        continue;
+                    }
+
+                    Image image = Image.builder()
+                            .base64Data(base64Data)
+                            .mimeType(mimeType)
+                            .build();
+                    contents.add(ImageContent.from(image));
+                }
+            }
+        }
+
+        if (contents.isEmpty()) {
+            return UserMessage.from(msg.getContent() != null ? msg.getContent() : "");
+        }
+
+        return UserMessage.from(contents);
     }
 
     private List<ToolSpecification> convertTools(LlmRequest request) {
@@ -574,7 +719,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         }
     }
 
-    private LlmResponse convertResponse(ChatResponse response) {
+    private LlmResponse convertResponse(ChatResponse response, boolean compatibilityFlatteningApplied) {
         AiMessage aiMessage = response.aiMessage();
 
         // Convert tool calls if present
@@ -605,6 +750,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 .usage(usage)
                 .model(currentModel)
                 .finishReason(response.finishReason() != null ? response.finishReason().name() : "stop")
+                .compatibilityFlatteningApplied(compatibilityFlatteningApplied)
                 .build();
     }
 
@@ -630,5 +776,9 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             log.warn("Failed to parse tool arguments: {}", e.getMessage());
             return Collections.emptyMap();
         }
+    }
+
+    protected void sleepBeforeRetry(long backoffMs) throws InterruptedException {
+        Thread.sleep(backoffMs);
     }
 }

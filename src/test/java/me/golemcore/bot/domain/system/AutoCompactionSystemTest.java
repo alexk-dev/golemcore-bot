@@ -5,7 +5,7 @@ import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.CompactionService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.SessionPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,7 +34,7 @@ class AutoCompactionSystemTest {
 
     private SessionPort sessionService;
     private CompactionService compactionService;
-    private BotProperties properties;
+    private RuntimeConfigService runtimeConfigService;
     private ModelSelectionService modelSelectionService;
     private AutoCompactionSystem system;
 
@@ -43,16 +43,14 @@ class AutoCompactionSystemTest {
         sessionService = mock(SessionPort.class);
         compactionService = mock(CompactionService.class);
         modelSelectionService = mock(ModelSelectionService.class);
+        runtimeConfigService = mock(RuntimeConfigService.class);
         when(modelSelectionService.resolveMaxInputTokens(any())).thenReturn(128000);
+        when(runtimeConfigService.isCompactionEnabled()).thenReturn(true);
+        when(runtimeConfigService.getCompactionMaxContextTokens()).thenReturn(1000);
+        when(runtimeConfigService.getCompactionKeepLastMessages()).thenReturn(5);
 
-        properties = new BotProperties();
-        properties.getAutoCompact().setEnabled(true);
-        properties.getAutoCompact().setMaxContextTokens(1000);
-        properties.getAutoCompact().setKeepLastMessages(5);
-        properties.getAutoCompact().setSystemPromptOverheadTokens(100);
-        properties.getAutoCompact().setCharsPerToken(1.0); // 1:1 for easy test math
-
-        system = new AutoCompactionSystem(sessionService, compactionService, properties, modelSelectionService);
+        system = new AutoCompactionSystem(sessionService, compactionService, runtimeConfigService,
+                modelSelectionService);
     }
 
     @Test
@@ -65,7 +63,7 @@ class AutoCompactionSystemTest {
     void isEnabledReflectsConfig() {
         assertTrue(system.isEnabled());
 
-        properties.getAutoCompact().setEnabled(false);
+        when(runtimeConfigService.isCompactionEnabled()).thenReturn(false);
         assertFalse(system.isEnabled());
     }
 
@@ -86,6 +84,7 @@ class AutoCompactionSystemTest {
 
     @Test
     void belowThresholdNoCompaction() {
+        when(runtimeConfigService.getCompactionMaxContextTokens()).thenReturn(20000);
         // 11 chars + 100 overhead = 111 tokens, well below 1000 threshold
         List<Message> messages = List.of(
                 Message.builder().role(ROLE_USER).content("Hello world").timestamp(Instant.now()).build());
@@ -199,6 +198,7 @@ class AutoCompactionSystemTest {
 
     @Test
     void nullContentMessagesHandledGracefully() {
+        when(runtimeConfigService.getCompactionMaxContextTokens()).thenReturn(20000);
         List<Message> messages = new ArrayList<>();
         messages.add(Message.builder().role(ROLE_USER).content(null).timestamp(Instant.now()).build());
         messages.add(Message.builder().role("assistant").content(null).timestamp(Instant.now()).build());
@@ -270,6 +270,7 @@ class AutoCompactionSystemTest {
 
     @Test
     void singleMessageBelowThresholdNotCompacted() {
+        when(runtimeConfigService.getCompactionMaxContextTokens()).thenReturn(20000);
         // 500 chars + 100 overhead = 600, below 1000
         List<Message> messages = List.of(
                 Message.builder().role(ROLE_USER).content("x".repeat(500)).timestamp(Instant.now()).build());

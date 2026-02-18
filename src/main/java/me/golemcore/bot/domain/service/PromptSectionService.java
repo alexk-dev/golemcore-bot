@@ -114,6 +114,7 @@ public class PromptSectionService {
 
     private final StoragePort storagePort;
     private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
     private final SkillTemplateEngine templateEngine;
 
     private final Map<String, PromptSection> sectionRegistry = new ConcurrentHashMap<>();
@@ -157,7 +158,7 @@ public class PromptSectionService {
      * @return ordered list of enabled prompt sections
      */
     public List<PromptSection> getEnabledSections() {
-        boolean voiceEnabled = properties.getVoice().isEnabled();
+        boolean voiceEnabled = runtimeConfigService.isVoiceEnabled();
         return sectionRegistry.values().stream()
                 .filter(PromptSection::isEnabled)
                 .filter(s -> voiceEnabled || !"voice".equals(s.getName()))
@@ -230,7 +231,7 @@ public class PromptSectionService {
     void ensureDefaults() {
         ensureDefault("IDENTITY.md", DEFAULT_IDENTITY_CONTENT);
         ensureDefault("RULES.md", DEFAULT_RULES_CONTENT);
-        if (properties.getVoice().isEnabled()) {
+        if (runtimeConfigService.isVoiceEnabled()) {
             ensureDefault("VOICE.md", DEFAULT_VOICE_CONTENT);
         }
     }

@@ -45,6 +45,9 @@ public final class ContextAttributes {
     /** Duration ? latency of the last LLM call (best-effort). */
     public static final String LLM_LATENCY = "llm.latency";
 
+    /** Boolean ? compatibility fallback flattened tool history for this turn. */
+    public static final String LLM_COMPAT_FLATTEN_FALLBACK_USED = "llm.compat.flatten.fallback.used";
+
     /** Boolean — tools were executed in this iteration. */
 
     /**
@@ -52,6 +55,12 @@ public final class ContextAttributes {
      * (persisted in session metadata).
      */
     public static final String LLM_MODEL = "llm.model";
+
+    /**
+     * String — reasoning effort used for the current LLM call (e.g. "low",
+     * "medium", "high").
+     */
+    public static final String LLM_REASONING = "llm.reasoning";
 
     /** Boolean — plan mode is active for the current session. */
     public static final String PLAN_MODE_ACTIVE = "plan.mode.active";

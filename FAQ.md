@@ -62,19 +62,32 @@ All providers have similar capabilities. Choose based on your preferences:
 - **Availability** — Check API access in your location
 
 You can mix providers across tiers:
-```bash
-export OPENAI_API_KEY=sk-...                    # For fast/default tiers
-export ANTHROPIC_API_KEY=sk-ant-...             # For smart tier
-export BOT_ROUTER_SMART_MODEL=anthropic/claude-opus-4-6
+```json
+{
+  "llm": {
+    "providers": {
+      "openai": { "apiKey": "sk-..." },
+      "anthropic": { "apiKey": "sk-ant-..." }
+    }
+  },
+  "modelRouter": {
+    "smartModel": "anthropic/claude-opus-4-6",
+    "smartModelReasoning": "high"
+  }
+}
 ```
 
 ### Can I run this without Telegram?
 
-**Yes** — CLI mode is default.
+**Yes** — the web dashboard is enabled by default.
 
 **Docker:**
 ```bash
-docker run -e OPENAI_API_KEY=sk-... golemcore-bot:latest
+docker run -d \
+  -e STORAGE_PATH=/app/workspace \
+  -v golemcore-bot-data:/app/workspace \
+  -p 8080:8080 \
+  golemcore-bot:latest
 ```
 
 **JAR:**
@@ -278,8 +291,14 @@ See: [docs/WEBHOOKS.md](docs/WEBHOOKS.md)
 
 **Yes** — via `BrowserTool`:
 
-```bash
-export BROWSER_ENABLED=true
+Enable it in `preferences/runtime-config.json`:
+
+```json
+{
+  "tools": {
+    "browserEnabled": true
+  }
+}
 ```
 
 **Features:**
@@ -491,33 +510,24 @@ Edit `ToolConfirmationPolicy` in code.
    ```
 
 4. **Increase startup timeout:**
-   ```bash
-   export BOT_MCP_DEFAULT_STARTUP_TIMEOUT=60  # 60 seconds
-   ```
+   - In `preferences/runtime-config.json`: set `mcp.defaultStartupTimeout`
+   - Or per skill frontmatter: `mcp.startup_timeout`
 
-### Docker: Environment variables not working
+### Docker: Settings not persisting
 
-**Fix:** Pass via `-e` flag:
-
-```bash
-docker run -e OPENAI_API_KEY=sk-... \
-           -e TELEGRAM_ENABLED=true \
-           -e TELEGRAM_BOT_TOKEN=... \
-           golemcore-bot:latest
-```
-
-Or use `.env` file:
+If settings keep resetting, make sure the workspace is mounted and `STORAGE_PATH` points to it.
 
 ```bash
-# .env
-OPENAI_API_KEY=sk-...
-TELEGRAM_ENABLED=true
-TELEGRAM_BOT_TOKEN=...
+docker run -d \
+  -e STORAGE_PATH=/app/workspace \
+  -e TOOLS_WORKSPACE=/app/sandbox \
+  -v golemcore-bot-data:/app/workspace \
+  -v golemcore-bot-sandbox:/app/sandbox \
+  -p 8080:8080 \
+  golemcore-bot:latest
 ```
 
-```bash
-docker run --env-file .env golemcore-bot:latest
-```
+Then configure API keys and feature flags in the dashboard (stored in `preferences/runtime-config.json`).
 
 ---
 

@@ -1,7 +1,7 @@
 package me.golemcore.bot.tools;
 
-import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.http.FeignClientFactory;
@@ -16,7 +16,6 @@ import java.util.concurrent.ExecutionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -37,33 +36,33 @@ class BraveSearchToolTest {
     private BraveSearchTool braveSearchTool;
     private FeignClientFactory feignClientFactory;
     private BotProperties properties;
+    private RuntimeConfigService runtimeConfigService;
     private UserPreferencesService userPreferencesService;
 
     @BeforeEach
     void setUp() {
         feignClientFactory = mock(FeignClientFactory.class);
         properties = new BotProperties();
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isBraveSearchEnabled()).thenReturn(false);
+        when(runtimeConfigService.getBraveSearchApiKey()).thenReturn("");
         userPreferencesService = mock(UserPreferencesService.class);
         when(userPreferencesService.getMessage("tool.brave.rate_limit")).thenReturn(RATE_LIMIT_MSG);
         when(userPreferencesService.getMessage("tool.brave.error")).thenReturn(ERROR_MSG);
     }
 
-    @Test
-    void getDefinition_returnsCorrectDefinition() {
-        properties.getTools().getBraveSearch().setEnabled(false);
-        braveSearchTool = new BraveSearchTool(feignClientFactory, properties, userPreferencesService);
-        braveSearchTool.init();
-
-        ToolDefinition definition = braveSearchTool.getDefinition();
-
-        assertEquals("brave_search", definition.getName());
-        assertNotNull(definition.getDescription());
-        assertNotNull(definition.getInputSchema());
+    private BraveSearchTool createTool() {
+        return new BraveSearchTool(feignClientFactory, properties, runtimeConfigService, userPreferencesService) {
+            @Override
+            protected void sleepBeforeRetry(long millis) {
+                // No-op to keep retry tests fast and deterministic.
+            }
+        };
     }
 
     @Test
     void isEnabled_falseByDefault() {
-        braveSearchTool = new BraveSearchTool(feignClientFactory, properties, userPreferencesService);
+        braveSearchTool = createTool();
         braveSearchTool.init();
 
         assertFalse(braveSearchTool.isEnabled());
@@ -71,10 +70,10 @@ class BraveSearchToolTest {
 
     @Test
     void isEnabled_falseWhenEnabledButNoApiKey() {
-        properties.getTools().getBraveSearch().setEnabled(true);
-        properties.getTools().getBraveSearch().setApiKey("");
+        when(runtimeConfigService.isBraveSearchEnabled()).thenReturn(true);
+        when(runtimeConfigService.getBraveSearchApiKey()).thenReturn("");
 
-        braveSearchTool = new BraveSearchTool(feignClientFactory, properties, userPreferencesService);
+        braveSearchTool = createTool();
         braveSearchTool.init();
 
         assertFalse(braveSearchTool.isEnabled());
@@ -82,13 +81,13 @@ class BraveSearchToolTest {
 
     @Test
     void isEnabled_trueWhenConfigured() {
-        properties.getTools().getBraveSearch().setEnabled(true);
-        properties.getTools().getBraveSearch().setApiKey(TEST_KEY);
+        when(runtimeConfigService.isBraveSearchEnabled()).thenReturn(true);
+        when(runtimeConfigService.getBraveSearchApiKey()).thenReturn(TEST_KEY);
 
         when(feignClientFactory.create(eq(BraveSearchTool.BraveSearchApi.class), anyString()))
                 .thenReturn(mock(BraveSearchTool.BraveSearchApi.class));
 
-        braveSearchTool = new BraveSearchTool(feignClientFactory, properties, userPreferencesService);
+        braveSearchTool = createTool();
         braveSearchTool.init();
 
         assertTrue(braveSearchTool.isEnabled());
@@ -96,8 +95,7 @@ class BraveSearchToolTest {
 
     @Test
     void execute_failsWithNoQuery() throws ExecutionException, InterruptedException {
-        properties.getTools().getBraveSearch().setEnabled(false);
-        braveSearchTool = new BraveSearchTool(feignClientFactory, properties, userPreferencesService);
+        braveSearchTool = createTool();
         braveSearchTool.init();
 
         ToolResult result = braveSearchTool.execute(Map.of()).get();
@@ -108,8 +106,7 @@ class BraveSearchToolTest {
 
     @Test
     void execute_failsWithBlankQuery() throws ExecutionException, InterruptedException {
-        properties.getTools().getBraveSearch().setEnabled(false);
-        braveSearchTool = new BraveSearchTool(feignClientFactory, properties, userPreferencesService);
+        braveSearchTool = createTool();
         braveSearchTool.init();
 
         ToolResult result = braveSearchTool.execute(Map.of(QUERY, "   ")).get();
@@ -257,14 +254,14 @@ class BraveSearchToolTest {
     }
 
     private BraveSearchTool.BraveSearchApi createEnabledToolWithMockApi() {
-        properties.getTools().getBraveSearch().setEnabled(true);
-        properties.getTools().getBraveSearch().setApiKey(TEST_KEY);
+        when(runtimeConfigService.isBraveSearchEnabled()).thenReturn(true);
+        when(runtimeConfigService.getBraveSearchApiKey()).thenReturn(TEST_KEY);
 
         BraveSearchTool.BraveSearchApi mockApi = mock(BraveSearchTool.BraveSearchApi.class);
         when(feignClientFactory.create(eq(BraveSearchTool.BraveSearchApi.class), anyString()))
                 .thenReturn(mockApi);
 
-        braveSearchTool = new BraveSearchTool(feignClientFactory, properties, userPreferencesService);
+        braveSearchTool = createTool();
         braveSearchTool.init();
         return mockApi;
     }

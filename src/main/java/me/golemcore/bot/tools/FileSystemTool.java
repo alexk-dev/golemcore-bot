@@ -22,6 +22,7 @@ import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.Attachment;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.security.InjectionGuard;
 import lombok.extern.slf4j.Slf4j;
@@ -139,18 +140,19 @@ public class FileSystemTool implements ToolComponent {
 
     private final Path workspaceRoot;
     private final InjectionGuard injectionGuard;
-    private final boolean enabled;
+    private final RuntimeConfigService runtimeConfigService;
 
-    public FileSystemTool(BotProperties properties, InjectionGuard injectionGuard) {
+    public FileSystemTool(BotProperties properties, RuntimeConfigService runtimeConfigService,
+            InjectionGuard injectionGuard) {
         var config = properties.getTools().getFilesystem();
-        this.enabled = config.isEnabled();
+        this.runtimeConfigService = runtimeConfigService;
         this.workspaceRoot = Paths.get(config.getWorkspace()).toAbsolutePath().normalize();
         this.injectionGuard = injectionGuard;
 
         // Ensure workspace exists
         try {
             Files.createDirectories(workspaceRoot);
-            log.info("FileSystemTool workspace: {}, enabled: {}", workspaceRoot, enabled);
+            log.info("FileSystemTool workspace: {}", workspaceRoot);
         } catch (IOException e) {
             log.error("Failed to create workspace directory: {}", workspaceRoot, e);
         }
@@ -191,11 +193,16 @@ public class FileSystemTool implements ToolComponent {
     }
 
     @Override
+    public boolean isEnabled() {
+        return runtimeConfigService.isFilesystemEnabled();
+    }
+
+    @Override
     public CompletableFuture<ToolResult> execute(Map<String, Object> parameters) {
         return CompletableFuture.supplyAsync(() -> {
             log.info("[FileSystem] Execute called with parameters: {}", parameters);
 
-            if (!enabled) {
+            if (!isEnabled()) {
                 log.warn("[FileSystem] Tool is DISABLED");
                 return ToolResult.failure("FileSystem tool is disabled");
             }

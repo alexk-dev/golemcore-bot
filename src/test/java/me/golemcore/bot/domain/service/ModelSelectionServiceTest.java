@@ -1,7 +1,6 @@
 package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.model.UserPreferences;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -17,46 +16,34 @@ import static org.mockito.Mockito.*;
 @SuppressWarnings("PMD.AvoidDuplicateLiterals")
 class ModelSelectionServiceTest {
 
-    private BotProperties properties;
+    private RuntimeConfigService runtimeConfigService;
     private ModelConfigService modelConfigService;
     private UserPreferencesService preferencesService;
     private ModelSelectionService service;
 
-    private BotProperties.ModelRouterProperties routerProperties;
-    private BotProperties.ModelSelectionProperties modelSelectionProperties;
-    private BotProperties.AutoCompactProperties autoCompactProperties;
     private UserPreferences userPreferences;
 
     @BeforeEach
     void setUp() {
-        properties = mock(BotProperties.class);
+        runtimeConfigService = mock(RuntimeConfigService.class);
         modelConfigService = mock(ModelConfigService.class);
         preferencesService = mock(UserPreferencesService.class);
 
-        routerProperties = new BotProperties.ModelRouterProperties();
-        routerProperties.setBalancedModel("openai/gpt-5.1");
-        routerProperties.setBalancedModelReasoning("medium");
-        routerProperties.setSmartModel("openai/gpt-5.1");
-        routerProperties.setSmartModelReasoning("high");
-        routerProperties.setCodingModel("openai/gpt-5.2");
-        routerProperties.setCodingModelReasoning("medium");
-        routerProperties.setDeepModel("openai/gpt-5.2");
-        routerProperties.setDeepModelReasoning("xhigh");
-
-        modelSelectionProperties = new BotProperties.ModelSelectionProperties();
-        modelSelectionProperties.setAllowedProviders(List.of("openai", "anthropic"));
-
-        autoCompactProperties = new BotProperties.AutoCompactProperties();
-        autoCompactProperties.setMaxContextTokens(50000);
-
-        when(properties.getRouter()).thenReturn(routerProperties);
-        when(properties.getModelSelection()).thenReturn(modelSelectionProperties);
-        when(properties.getAutoCompact()).thenReturn(autoCompactProperties);
+        when(runtimeConfigService.getBalancedModel()).thenReturn("openai/gpt-5.1");
+        when(runtimeConfigService.getBalancedModelReasoning()).thenReturn("medium");
+        when(runtimeConfigService.getSmartModel()).thenReturn("openai/gpt-5.1");
+        when(runtimeConfigService.getSmartModelReasoning()).thenReturn("high");
+        when(runtimeConfigService.getCodingModel()).thenReturn("openai/gpt-5.2");
+        when(runtimeConfigService.getCodingModelReasoning()).thenReturn("medium");
+        when(runtimeConfigService.getDeepModel()).thenReturn("openai/gpt-5.2");
+        when(runtimeConfigService.getDeepModelReasoning()).thenReturn("xhigh");
+        when(runtimeConfigService.getCompactionMaxContextTokens()).thenReturn(50000);
+        when(runtimeConfigService.getConfiguredLlmProviders()).thenReturn(List.of("openai", "anthropic"));
 
         userPreferences = UserPreferences.builder().build();
         when(preferencesService.getPreferences()).thenReturn(userPreferences);
 
-        service = new ModelSelectionService(properties, modelConfigService, preferencesService);
+        service = new ModelSelectionService(runtimeConfigService, modelConfigService, preferencesService);
     }
 
     // =====================================================
@@ -86,14 +73,14 @@ class ModelSelectionServiceTest {
         userPreferences.setTierOverrides(overrides);
 
         when(modelConfigService.isReasoningRequired("openai/gpt-5.1")).thenReturn(true);
-        when(modelConfigService.getDefaultReasoningLevel("openai/gpt-5.1")).thenReturn("medium");
+        when(modelConfigService.getLowestReasoningLevel("openai/gpt-5.1")).thenReturn("none");
 
         // Act
         ModelSelectionService.ModelSelection result = service.resolveForTier("smart");
 
         // Assert
         assertEquals("openai/gpt-5.1", result.model());
-        assertEquals("medium", result.reasoning());
+        assertEquals("none", result.reasoning());
     }
 
     @Test
@@ -259,8 +246,8 @@ class ModelSelectionServiceTest {
     @Test
     void shouldReturnAutoCompactFallbackWhenModelIsNull() {
         // Arrange
-        routerProperties.setBalancedModel(null);
-        routerProperties.setBalancedModelReasoning(null);
+        when(runtimeConfigService.getBalancedModel()).thenReturn(null);
+        when(runtimeConfigService.getBalancedModelReasoning()).thenReturn(null);
 
         // Act
         int result = service.resolveMaxInputTokens("balanced");
@@ -522,9 +509,9 @@ class ModelSelectionServiceTest {
     }
 
     @Test
-    void shouldReturnProviderNotAllowedWhenProviderIsDisallowed() {
+    void shouldReturnProviderNotConfiguredWhenProviderIsNotInRuntimeConfig() {
         // Arrange
-        modelSelectionProperties.setAllowedProviders(List.of("openai"));
+        when(runtimeConfigService.getConfiguredLlmProviders()).thenReturn(List.of("openai"));
 
         ModelConfigService.ModelSettings settings = new ModelConfigService.ModelSettings();
         settings.setProvider("anthropic");
@@ -539,7 +526,7 @@ class ModelSelectionServiceTest {
 
         // Assert
         assertFalse(result.valid());
-        assertEquals("provider.not.allowed", result.error());
+        assertEquals("provider.not.configured", result.error());
     }
 
     @Test

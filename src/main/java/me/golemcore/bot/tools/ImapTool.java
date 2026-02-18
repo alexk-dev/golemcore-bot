@@ -21,6 +21,7 @@ package me.golemcore.bot.tools;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.tools.mail.HtmlSanitizer;
 import me.golemcore.bot.tools.mail.MailSecurity;
@@ -109,8 +110,8 @@ public class ImapTool implements ToolComponent {
     private final BotProperties.ImapToolProperties config;
     private final MailSecurity security;
 
-    public ImapTool(BotProperties properties) {
-        this.config = properties.getTools().getImap();
+    public ImapTool(RuntimeConfigService runtimeConfigService) {
+        this.config = runtimeConfigService.getResolvedImapConfig();
         this.security = MailSecurity.fromString(config.getSecurity());
     }
 

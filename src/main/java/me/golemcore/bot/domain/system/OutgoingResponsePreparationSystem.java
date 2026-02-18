@@ -21,13 +21,18 @@ package me.golemcore.bot.domain.system;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
+import me.golemcore.bot.domain.model.LlmUsage;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
+import me.golemcore.bot.domain.service.ModelSelectionService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * Prepares {@link OutgoingResponse} from LLM results before transport routing.
@@ -48,7 +53,8 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
     static final String VOICE_PREFIX = "\uD83D\uDD0A";
 
     private final UserPreferencesService preferencesService;
-    private final BotProperties properties;
+    private final ModelSelectionService modelSelectionService;
+    private final RuntimeConfigService runtimeConfigService;
 
     @Override
     public String getName() {
@@ -159,10 +165,54 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
     }
 
     private void setOutgoingResponse(AgentContext context, OutgoingResponse outgoing) {
+        // Attach turn metadata hints for web channel context panel.
+        Map<String, Object> hints = buildHints(context);
+        OutgoingResponse withHints = OutgoingResponse.builder()
+                .text(outgoing.getText())
+                .voiceRequested(outgoing.isVoiceRequested())
+                .voiceText(outgoing.getVoiceText())
+                .attachments(outgoing.getAttachments())
+                .skipAssistantHistory(outgoing.isSkipAssistantHistory())
+                .hints(hints)
+                .build();
         // Canonical contract.
-        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, outgoing);
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, withHints);
         // Typed mirror (ergonomics) - keep consistent.
-        context.setOutgoingResponse(outgoing);
+        context.setOutgoingResponse(withHints);
+    }
+
+    private Map<String, Object> buildHints(AgentContext context) {
+        Map<String, Object> hints = new LinkedHashMap<>();
+
+        String model = context.getAttribute(ContextAttributes.LLM_MODEL);
+        if (model != null) {
+            hints.put("model", model);
+        }
+
+        String reasoning = context.getAttribute(ContextAttributes.LLM_REASONING);
+        if (reasoning != null && !"none".equals(reasoning)) {
+            hints.put("reasoning", reasoning);
+        }
+
+        String tier = context.getModelTier();
+        hints.put("tier", tier != null ? tier : "balanced");
+
+        LlmResponse llmResponse = context.getAttribute(ContextAttributes.LLM_RESPONSE);
+        if (llmResponse != null && llmResponse.getUsage() != null) {
+            LlmUsage usage = llmResponse.getUsage();
+            hints.put("inputTokens", usage.getInputTokens());
+            hints.put("outputTokens", usage.getOutputTokens());
+            hints.put("totalTokens", usage.getTotalTokens());
+            if (usage.getLatency() != null) {
+                hints.put("latencyMs", usage.getLatency().toMillis());
+            }
+        }
+
+        String effectiveTier = tier != null ? tier : "balanced";
+        int maxContextTokens = modelSelectionService.resolveMaxInputTokens(effectiveTier);
+        hints.put("maxContextTokens", maxContextTokens);
+
+        return hints;
     }
 
     private boolean hasVoicePrefix(String content) {
@@ -181,8 +231,7 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
     }
 
     private boolean shouldAutoVoiceRespond(AgentContext context) {
-        BotProperties.VoiceProperties voice = properties.getVoice();
-        if (!voice.getTelegram().isRespondWithVoice()) {
+        if (!runtimeConfigService.isTelegramRespondWithVoiceEnabled()) {
             return false;
         }
         return hasIncomingVoice(context);

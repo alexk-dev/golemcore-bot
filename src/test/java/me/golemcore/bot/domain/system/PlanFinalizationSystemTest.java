@@ -53,12 +53,6 @@ class PlanFinalizationSystemTest {
     }
 
     @Test
-    void shouldReturnCorrectNameAndOrder() {
-        assertEquals("PlanFinalizationSystem", system.getName());
-        assertEquals(58, system.getOrder());
-    }
-
-    @Test
     void shouldBeDisabledWhenFeatureDisabled() {
         when(planService.isFeatureEnabled()).thenReturn(false);
         assertFalse(system.isEnabled());

@@ -18,7 +18,7 @@ package me.golemcore.bot.adapter.outbound.rag;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.RagPort;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -62,11 +62,11 @@ import java.util.concurrent.TimeUnit;
  * <p>
  * Configuration:
  * <ul>
- * <li>{@code bot.rag.enabled} - Enable/disable RAG feature
- * <li>{@code bot.rag.url} - LightRAG API base URL
- * <li>{@code bot.rag.api-key} - Optional API key
- * <li>{@code bot.rag.query-mode} - Query mode (local/global/hybrid/naive)
- * <li>{@code bot.rag.timeout-seconds} - HTTP timeout
+ * <li>RuntimeConfig.rag.enabled - Enable/disable RAG feature
+ * <li>RuntimeConfig.rag.url - LightRAG API base URL
+ * <li>RuntimeConfig.rag.apiKey - Optional API key
+ * <li>RuntimeConfig.rag.queryMode - Query mode (local/global/hybrid/naive)
+ * <li>RuntimeConfig.rag.timeoutSeconds - HTTP timeout
  * </ul>
  *
  * @see me.golemcore.bot.port.outbound.RagPort
@@ -78,16 +78,17 @@ public class LightRagAdapter implements RagPort {
 
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
-    private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
 
-    public LightRagAdapter(BotProperties properties, OkHttpClient baseHttpClient, ObjectMapper objectMapper) {
-        this.properties = properties;
+    public LightRagAdapter(RuntimeConfigService runtimeConfigService,
+            OkHttpClient baseHttpClient, ObjectMapper objectMapper) {
+        this.runtimeConfigService = runtimeConfigService;
         this.objectMapper = objectMapper;
 
         // Build a dedicated client with RAG-specific timeout
-        int timeoutSeconds = properties.getRag().getTimeoutSeconds();
+        int timeoutSeconds = runtimeConfigService.getRagTimeoutSeconds();
         this.httpClient = baseHttpClient.newBuilder()
                 .callTimeout(timeoutSeconds, TimeUnit.SECONDS)
                 .readTimeout(timeoutSeconds, TimeUnit.SECONDS)
@@ -102,7 +103,7 @@ public class LightRagAdapter implements RagPort {
 
         return CompletableFuture.supplyAsync(() -> {
             try {
-                String url = properties.getRag().getUrl() + "/query";
+                String url = runtimeConfigService.getRagUrl() + "/query";
                 String body = objectMapper.writeValueAsString(new QueryRequest(query, mode));
 
                 Request.Builder requestBuilder = new Request.Builder()
@@ -135,7 +136,7 @@ public class LightRagAdapter implements RagPort {
 
         return CompletableFuture.runAsync(() -> {
             try {
-                String url = properties.getRag().getUrl() + "/documents/text";
+                String url = runtimeConfigService.getRagUrl() + "/documents/text";
                 String timestamp = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")
                         .withZone(ZoneOffset.UTC).format(Instant.now());
                 String fileSource = "conv_" + timestamp + ".txt";
@@ -165,7 +166,7 @@ public class LightRagAdapter implements RagPort {
 
     @Override
     public boolean isAvailable() {
-        return properties.getRag().isEnabled();
+        return runtimeConfigService.isRagEnabled();
     }
 
     /**
@@ -173,11 +174,11 @@ public class LightRagAdapter implements RagPort {
      * request).
      */
     public boolean isHealthy() {
-        if (!properties.getRag().isEnabled()) {
+        if (!runtimeConfigService.isRagEnabled()) {
             return false;
         }
         try {
-            String url = properties.getRag().getUrl() + "/health";
+            String url = runtimeConfigService.getRagUrl() + "/health";
             Request request = new Request.Builder().url(url).get().build();
             try (Response response = httpClient.newCall(request).execute()) {
                 return response.isSuccessful();
@@ -189,7 +190,7 @@ public class LightRagAdapter implements RagPort {
     }
 
     private void addApiKeyHeader(Request.Builder builder) {
-        String apiKey = properties.getRag().getApiKey();
+        String apiKey = runtimeConfigService.getRagApiKey();
         if (apiKey != null && !apiKey.isBlank()) {
             builder.header("Authorization", "Bearer " + apiKey);
         }

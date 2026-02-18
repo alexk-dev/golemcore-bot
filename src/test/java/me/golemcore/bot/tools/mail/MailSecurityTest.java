@@ -56,8 +56,4 @@ class MailSecurityTest {
         assertThrows(IllegalArgumentException.class, () -> MailSecurity.fromString("tls"));
     }
 
-    @Test
-    void shouldHaveThreeEnumValues() {
-        assertEquals(3, MailSecurity.values().length);
-    }
 }

@@ -40,8 +40,6 @@ class PromptsControllerTest {
 
         when(storagePort.putText(anyString(), anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
-        when(storagePort.deleteObject(anyString(), anyString()))
-                .thenReturn(CompletableFuture.completedFuture(null));
     }
 
     @Test
@@ -130,4 +128,5 @@ class PromptsControllerTest {
                 })
                 .verifyComplete();
     }
+
 }

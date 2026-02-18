@@ -21,7 +21,6 @@ package me.golemcore.bot.domain.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.UserPreferences;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import org.springframework.stereotype.Service;
 
@@ -40,7 +39,7 @@ import java.util.Map;
 @Slf4j
 public class ModelSelectionService {
 
-    private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
     private final ModelConfigService modelConfigService;
     private final UserPreferencesService preferencesService;
 
@@ -58,9 +57,9 @@ public class ModelSelectionService {
             UserPreferences.TierOverride override = prefs.getTierOverrides().get(effectiveTier);
             if (override != null && override.getModel() != null) {
                 String reasoning = override.getReasoning();
-                // Auto-fill reasoning default for reasoning-required models if not set
+                // Auto-fill lowest reasoning level for reasoning-required models if not set
                 if (reasoning == null && modelConfigService.isReasoningRequired(override.getModel())) {
-                    reasoning = modelConfigService.getDefaultReasoningLevel(override.getModel());
+                    reasoning = modelConfigService.getLowestReasoningLevel(override.getModel());
                 }
                 log.debug("[ModelSelection] Using user override for tier {}: model={}, reasoning={}",
                         effectiveTier, override.getModel(), reasoning);
@@ -86,18 +85,19 @@ public class ModelSelectionService {
     public int resolveMaxInputTokens(String tier) {
         ModelSelection selection = resolveForTier(tier);
         if (selection.model() == null) {
-            return properties.getAutoCompact().getMaxContextTokens();
+            return runtimeConfigService.getCompactionMaxContextTokens();
         }
         return modelConfigService.getMaxInputTokens(selection.model(), selection.reasoning());
     }
 
     /**
-     * Get list of available models filtered by allowed providers.
+     * Get list of available models filtered by configured LLM providers in
+     * RuntimeConfig.
      */
     public List<AvailableModel> getAvailableModels() {
-        List<String> allowedProviders = properties.getModelSelection().getAllowedProviders();
+        List<String> configuredProviders = runtimeConfigService.getConfiguredLlmProviders();
         Map<String, ModelConfigService.ModelSettings> filtered = modelConfigService
-                .getModelsForProviders(allowedProviders);
+                .getModelsForProviders(configuredProviders);
 
         List<AvailableModel> result = new ArrayList<>();
         for (Map.Entry<String, ModelConfigService.ModelSettings> entry : filtered.entrySet()) {
@@ -146,9 +146,9 @@ public class ModelSelectionService {
             }
         }
 
-        List<String> allowedProviders = properties.getModelSelection().getAllowedProviders();
-        if (!allowedProviders.contains(settings.getProvider())) {
-            return new ValidationResult(false, "provider.not.allowed");
+        List<String> configuredProviders = runtimeConfigService.getConfiguredLlmProviders();
+        if (!configuredProviders.contains(settings.getProvider())) {
+            return new ValidationResult(false, "provider.not.configured");
         }
 
         return new ValidationResult(true, null);
@@ -169,13 +169,24 @@ public class ModelSelectionService {
     }
 
     private ModelSelection resolveFromRouter(String tier) {
-        BotProperties.ModelRouterProperties router = properties.getRouter();
-        return switch (tier) {
-        case "deep" -> new ModelSelection(router.getDeepModel(), router.getDeepModelReasoning());
-        case "coding" -> new ModelSelection(router.getCodingModel(), router.getCodingModelReasoning());
-        case "smart" -> new ModelSelection(router.getSmartModel(), router.getSmartModelReasoning());
-        default -> new ModelSelection(router.getBalancedModel(), router.getBalancedModelReasoning());
+        ModelSelection selected = switch (tier) {
+        case "routing" ->
+            new ModelSelection(runtimeConfigService.getRoutingModel(), runtimeConfigService.getRoutingModelReasoning());
+        case "deep" ->
+            new ModelSelection(runtimeConfigService.getDeepModel(), runtimeConfigService.getDeepModelReasoning());
+        case "coding" ->
+            new ModelSelection(runtimeConfigService.getCodingModel(), runtimeConfigService.getCodingModelReasoning());
+        case "smart" ->
+            new ModelSelection(runtimeConfigService.getSmartModel(), runtimeConfigService.getSmartModelReasoning());
+        default -> new ModelSelection(runtimeConfigService.getBalancedModel(),
+                runtimeConfigService.getBalancedModelReasoning());
         };
+
+        String reasoning = selected.reasoning();
+        if (reasoning == null && selected.model() != null && modelConfigService.isReasoningRequired(selected.model())) {
+            reasoning = modelConfigService.getLowestReasoningLevel(selected.model());
+        }
+        return new ModelSelection(selected.model(), reasoning);
     }
 
     /** Resolved model + reasoning for a tier. */

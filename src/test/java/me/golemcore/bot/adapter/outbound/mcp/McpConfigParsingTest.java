@@ -2,6 +2,7 @@ package me.golemcore.bot.adapter.outbound.mcp;
 
 import me.golemcore.bot.domain.model.McpConfig;
 import me.golemcore.bot.domain.model.Skill;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.SkillService;
 import me.golemcore.bot.domain.service.SkillVariableResolver;
 import me.golemcore.bot.infrastructure.config.BotProperties;
@@ -30,7 +31,10 @@ class McpConfigParsingTest {
         storagePort = mock(StoragePort.class);
         BotProperties properties = new BotProperties();
         SkillVariableResolver variableResolver = new SkillVariableResolver(storagePort);
-        skillService = new SkillService(storagePort, properties, variableResolver);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isSkillsEnabled()).thenReturn(true);
+        when(runtimeConfigService.isSkillsProgressiveLoadingEnabled()).thenReturn(true);
+        skillService = new SkillService(storagePort, properties, variableResolver, runtimeConfigService);
 
         // Mock empty listings for reload
         when(storagePort.listObjects(anyString(), anyString()))

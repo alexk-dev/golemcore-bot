@@ -2,7 +2,7 @@ package me.golemcore.bot.adapter.inbound.telegram;
 
 import me.golemcore.bot.domain.model.AudioFormat;
 import me.golemcore.bot.domain.model.Message;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.VoicePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,17 +18,16 @@ import static org.mockito.Mockito.*;
 class TelegramVoiceHandlerTest {
 
     private VoicePort voicePort;
-    private BotProperties properties;
+    private RuntimeConfigService runtimeConfigService;
     private TelegramVoiceHandler handler;
 
     @BeforeEach
     void setUp() {
         voicePort = mock(VoicePort.class);
-        properties = new BotProperties();
-        properties.getVoice().setEnabled(true);
-        properties.getVoice().setApiKey("test-key");
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isVoiceEnabled()).thenReturn(true);
 
-        handler = new TelegramVoiceHandler(voicePort, properties);
+        handler = new TelegramVoiceHandler(voicePort, runtimeConfigService);
     }
 
     // ===== handleIncomingVoice =====
@@ -49,7 +48,7 @@ class TelegramVoiceHandlerTest {
 
     @Test
     void handleIncomingVoice_voiceDisabled() throws Exception {
-        properties.getVoice().setEnabled(false);
+        when(runtimeConfigService.isVoiceEnabled()).thenReturn(false);
 
         String result = handler.handleIncomingVoice(new byte[] { 1 }).join();
 
@@ -129,7 +128,7 @@ class TelegramVoiceHandlerTest {
 
     @Test
     void processVoiceMessage_disabledVoiceStillBuildsMessage() throws Exception {
-        properties.getVoice().setEnabled(false);
+        when(runtimeConfigService.isVoiceEnabled()).thenReturn(false);
 
         Message msg = handler.processVoiceMessage("chat1", new byte[] { 1 }).join();
 

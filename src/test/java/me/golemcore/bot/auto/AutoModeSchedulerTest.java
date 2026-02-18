@@ -7,8 +7,8 @@ import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.service.AutoModeService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.tools.GoalManagementTool;
 import org.junit.jupiter.api.BeforeEach;
@@ -46,7 +46,7 @@ class AutoModeSchedulerTest {
     private AgentLoop agentLoop;
     private GoalManagementTool goalManagementTool;
     private ChannelPort channelPort;
-    private BotProperties properties;
+    private RuntimeConfigService runtimeConfigService;
     private AutoModeScheduler scheduler;
 
     @BeforeEach
@@ -62,14 +62,14 @@ class AutoModeSchedulerTest {
                 .thenReturn(CompletableFuture.completedFuture(null));
         when(scheduleService.getDueSchedules()).thenReturn(List.of());
 
-        properties = new BotProperties();
-        properties.getAuto().setEnabled(true);
-        properties.getAuto().setTickIntervalSeconds(30);
-        properties.getAuto().setTaskTimeoutMinutes(10);
-        properties.getAuto().setNotifyMilestones(true);
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isAutoModeEnabled()).thenReturn(true);
+        when(runtimeConfigService.getAutoTaskTimeLimitMinutes()).thenReturn(10);
+        when(runtimeConfigService.isAutoNotifyMilestonesEnabled()).thenReturn(true);
+        when(runtimeConfigService.isAutoStartEnabled()).thenReturn(false);
 
         scheduler = new AutoModeScheduler(
-                autoModeService, scheduleService, agentLoop, properties,
+                autoModeService, scheduleService, agentLoop, runtimeConfigService,
                 goalManagementTool, List.of(channelPort));
     }
 
@@ -379,7 +379,7 @@ class AutoModeSchedulerTest {
 
     @Test
     void sendMilestoneNotificationDoesNothingWhenNotifyMilestonesDisabled() {
-        properties.getAuto().setNotifyMilestones(false);
+        when(runtimeConfigService.isAutoNotifyMilestonesEnabled()).thenReturn(false);
 
         scheduler.registerChannel(CHANNEL_TYPE_TELEGRAM, "chat-789");
 
@@ -492,7 +492,7 @@ class AutoModeSchedulerTest {
     @Test
     void shutdownDoesNotThrowWhenNotInitialized() {
         AutoModeScheduler freshScheduler = new AutoModeScheduler(
-                autoModeService, scheduleService, agentLoop, properties,
+                autoModeService, scheduleService, agentLoop, runtimeConfigService,
                 goalManagementTool, List.of(channelPort));
 
         assertDoesNotThrow(freshScheduler::shutdown);
@@ -502,11 +502,11 @@ class AutoModeSchedulerTest {
 
     @Test
     void shouldAutoStartWhenEnabledInConfig() {
-        properties.getAuto().setAutoStart(true);
+        when(runtimeConfigService.isAutoStartEnabled()).thenReturn(true);
         when(autoModeService.isAutoModeEnabled()).thenReturn(false);
 
         AutoModeScheduler newScheduler = new AutoModeScheduler(
-                autoModeService, scheduleService, agentLoop, properties,
+                autoModeService, scheduleService, agentLoop, runtimeConfigService,
                 goalManagementTool, List.of(channelPort));
 
         newScheduler.init();
@@ -518,10 +518,10 @@ class AutoModeSchedulerTest {
 
     @Test
     void shouldNotAutoStartWhenAutoStartDisabled() {
-        properties.getAuto().setAutoStart(false);
+        when(runtimeConfigService.isAutoStartEnabled()).thenReturn(false);
 
         AutoModeScheduler newScheduler = new AutoModeScheduler(
-                autoModeService, scheduleService, agentLoop, properties,
+                autoModeService, scheduleService, agentLoop, runtimeConfigService,
                 goalManagementTool, List.of(channelPort));
 
         newScheduler.init();
@@ -533,11 +533,11 @@ class AutoModeSchedulerTest {
 
     @Test
     void shouldNotAutoStartWhenAlreadyEnabled() {
-        properties.getAuto().setAutoStart(true);
+        when(runtimeConfigService.isAutoStartEnabled()).thenReturn(true);
         when(autoModeService.isAutoModeEnabled()).thenReturn(true);
 
         AutoModeScheduler newScheduler = new AutoModeScheduler(
-                autoModeService, scheduleService, agentLoop, properties,
+                autoModeService, scheduleService, agentLoop, runtimeConfigService,
                 goalManagementTool, List.of(channelPort));
 
         newScheduler.init();
