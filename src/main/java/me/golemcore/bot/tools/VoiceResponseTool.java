@@ -24,7 +24,7 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -50,7 +50,7 @@ import java.util.concurrent.CompletableFuture;
 @Slf4j
 public class VoiceResponseTool implements ToolComponent {
 
-    private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
 
     @Override
     public String getToolName() {
@@ -109,6 +109,6 @@ public class VoiceResponseTool implements ToolComponent {
 
     @Override
     public boolean isEnabled() {
-        return properties.getVoice().isEnabled();
+        return runtimeConfigService.isVoiceEnabled();
     }
 }

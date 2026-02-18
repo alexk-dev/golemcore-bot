@@ -136,13 +136,39 @@ class UserPreferencesServiceTest {
     }
 
     @Test
-    void savePreferencesHandlesStorageFailure() {
+    void savePreferencesThrowsOnStorageFailure() {
         when(storagePort.putText(anyString(), anyString(), anyString()))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("error")));
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("disk error")));
 
         UserPreferences prefs = UserPreferences.builder().language(LANG_EN).build();
 
-        assertDoesNotThrow(() -> service.savePreferences(prefs));
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> service.savePreferences(prefs));
+        assertTrue(ex.getMessage().contains("Failed to persist"));
+    }
+
+    @Test
+    void savePreferencesRollsBackOnStorageFailure() {
+        // First load creates default preferences with "en"
+        when(storagePort.getText(PREFS_DIR, SETTINGS_FILE))
+                .thenReturn(CompletableFuture.completedFuture("{\"language\":\"en\"}"));
+
+        UserPreferences original = service.getPreferences();
+        assertEquals(LANG_EN, original.getLanguage());
+
+        // Now make storage fail for the next save
+        when(storagePort.putText(anyString(), anyString(), anyString()))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("disk full")));
+
+        UserPreferences newPrefs = UserPreferences.builder().language(LANG_RU).build();
+
+        // Attempt to save should throw
+        assertThrows(IllegalStateException.class, () -> service.savePreferences(newPrefs));
+
+        // After failure, preferences should be rolled back to original
+        assertEquals(LANG_EN, service.getPreferences().getLanguage());
+        // MessageService should also be rolled back
+        verify(messageService, atLeastOnce()).setLanguage(LANG_EN);
     }
 
     @Test

@@ -23,14 +23,18 @@ class MemoryServiceTest {
 
     private StoragePort storagePort;
     private BotProperties properties;
+    private RuntimeConfigService runtimeConfigService;
     private MemoryService memoryService;
 
     @BeforeEach
     void setUp() {
         storagePort = mock(StoragePort.class);
         properties = new BotProperties();
-        properties.getMemory().setRecentDays(3);
-        memoryService = new MemoryService(storagePort, properties);
+        properties.getMemory().setDirectory(MEMORY_DIR);
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isMemoryEnabled()).thenReturn(true);
+        when(runtimeConfigService.getMemoryRecentDays()).thenReturn(3);
+        memoryService = new MemoryService(storagePort, properties, runtimeConfigService);
     }
 
     // ===== getComponentType =====

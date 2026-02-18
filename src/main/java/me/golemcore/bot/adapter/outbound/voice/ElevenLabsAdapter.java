@@ -19,6 +19,7 @@ package me.golemcore.bot.adapter.outbound.voice;
  */
 
 import me.golemcore.bot.domain.model.AudioFormat;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.VoicePort;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -73,20 +74,22 @@ public class ElevenLabsAdapter implements VoicePort {
 
     private final OkHttpClient okHttpClient;
     private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
     private final ObjectMapper objectMapper;
 
     @PostConstruct
     void init() {
-        BotProperties.VoiceProperties voice = properties.getVoice();
-        boolean hasApiKey = voice.getApiKey() != null && !voice.getApiKey().isBlank();
-        if (voice.isEnabled() && !hasApiKey) {
+        boolean voiceEnabled = runtimeConfigService.isVoiceEnabled();
+        String apiKey = runtimeConfigService.getVoiceApiKey();
+        boolean hasApiKey = apiKey != null && !apiKey.isBlank();
+        if (voiceEnabled && !hasApiKey) {
             log.warn("[ElevenLabs] Voice is ENABLED but API key is NOT configured — "
                     + "STT/TTS will not work. Set ELEVENLABS_API_KEY env var.");
         }
         log.info("[ElevenLabs] Adapter initialized: enabled={}, apiKeyConfigured={}, voiceId={}, "
                 + "sttModel={}, ttsModel={}",
-                voice.isEnabled(), hasApiKey, voice.getVoiceId(),
-                voice.getSttModelId(), voice.getTtsModelId());
+                voiceEnabled, hasApiKey, runtimeConfigService.getVoiceId(),
+                runtimeConfigService.getSttModelId(), runtimeConfigService.getTtsModelId());
     }
 
     @Override
@@ -134,7 +137,7 @@ public class ElevenLabsAdapter implements VoicePort {
                         long backoffMs = (long) Math.pow(2, attempt) * 1000;
                         log.info("[ElevenLabs] {} retrying after {} (attempt {}/{}), backoff={}ms",
                                 operationName, response.code(), attempt, maxRetries, backoffMs);
-                        Thread.sleep(backoffMs);
+                        sleepBeforeRetry(backoffMs);
                         continue;
                     }
                     handleErrorResponse(response, body, elapsed, operationName);
@@ -154,21 +157,21 @@ public class ElevenLabsAdapter implements VoicePort {
     @SuppressWarnings("PMD.CloseResource") // ResponseBody is closed when Response is closed in try-with-resources
     private TranscriptionResult doTranscribe(byte[] audioData, AudioFormat format) {
         try {
-            BotProperties.VoiceProperties voice = properties.getVoice();
-            String apiKey = requireApiKey(voice);
+            String apiKey = requireApiKey();
+            String sttModelId = runtimeConfigService.getSttModelId();
 
             String mimeType = format != null ? format.getMimeType() : "audio/ogg";
             String extension = format != null ? format.getExtension() : "ogg";
 
             log.info("[ElevenLabs] STT request: {} bytes, format={}, model={}",
-                    audioData.length, mimeType, voice.getSttModelId());
+                    audioData.length, mimeType, sttModelId);
 
             RequestBody fileBody = RequestBody.create(audioData, MediaType.parse(mimeType));
 
             MultipartBody requestBody = new MultipartBody.Builder()
                     .setType(MultipartBody.FORM)
                     .addFormDataPart("file", "audio." + extension, fileBody)
-                    .addFormDataPart("model_id", voice.getSttModelId())
+                    .addFormDataPart("model_id", sttModelId)
                     .build();
 
             Request request = new Request.Builder()
@@ -223,12 +226,11 @@ public class ElevenLabsAdapter implements VoicePort {
     @SuppressWarnings("PMD.CloseResource") // ResponseBody is closed when Response is closed in try-with-resources
     private byte[] doSynthesize(String text, VoiceConfig config) {
         try {
-            BotProperties.VoiceProperties voice = properties.getVoice();
-            String apiKey = requireApiKey(voice);
+            String apiKey = requireApiKey();
 
-            String voiceId = config.voiceId() != null ? config.voiceId() : voice.getVoiceId();
-            String modelId = config.modelId() != null ? config.modelId() : voice.getTtsModelId();
-            float speed = config.speed() > 0 ? config.speed() : voice.getSpeed();
+            String voiceId = config.voiceId() != null ? config.voiceId() : runtimeConfigService.getVoiceId();
+            String modelId = config.modelId() != null ? config.modelId() : runtimeConfigService.getTtsModelId();
+            float speed = config.speed() > 0 ? config.speed() : runtimeConfigService.getVoiceSpeed();
 
             log.info("[ElevenLabs] TTS request: {} chars, voice={}, model={}, speed={}",
                     text.length(), voiceId, modelId, speed);
@@ -269,8 +271,8 @@ public class ElevenLabsAdapter implements VoicePort {
         }
     }
 
-    private String requireApiKey(BotProperties.VoiceProperties voice) {
-        String apiKey = voice.getApiKey();
+    private String requireApiKey() {
+        String apiKey = runtimeConfigService.getVoiceApiKey();
         if (apiKey == null || apiKey.isBlank()) {
             log.warn("[ElevenLabs] Request rejected: API key not configured");
             throw new IllegalStateException("ElevenLabs API key not configured");
@@ -280,9 +282,8 @@ public class ElevenLabsAdapter implements VoicePort {
 
     @Override
     public boolean isAvailable() {
-        BotProperties.VoiceProperties voice = properties.getVoice();
-        String apiKey = voice.getApiKey();
-        return voice.isEnabled() && apiKey != null && !apiKey.isBlank();
+        String apiKey = runtimeConfigService.getVoiceApiKey();
+        return runtimeConfigService.isVoiceEnabled() && apiKey != null && !apiKey.isBlank();
     }
 
     protected String getSttUrl() {
@@ -291,6 +292,10 @@ public class ElevenLabsAdapter implements VoicePort {
 
     protected String getTtsUrl(String voiceId) {
         return String.format(DEFAULT_TTS_URL_TEMPLATE, voiceId);
+    }
+
+    protected void sleepBeforeRetry(long backoffMs) throws InterruptedException {
+        Thread.sleep(backoffMs);
     }
 
     @Data

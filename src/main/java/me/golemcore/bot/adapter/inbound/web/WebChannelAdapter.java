@@ -3,16 +3,18 @@ package me.golemcore.bot.adapter.inbound.web;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.port.inbound.ChannelPort;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.socket.WebSocketSession;
 import reactor.core.publisher.Mono;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 /**
@@ -24,12 +26,19 @@ import java.util.function.Consumer;
 @Slf4j
 public class WebChannelAdapter implements ChannelPort {
 
+    private static final String KEY_TYPE = "type";
+    private static final String KEY_SESSION_ID = "sessionId";
+    private static final String KEY_TEXT = "text";
+    private static final String VALUE_ASSISTANT_CHUNK = "assistant_chunk";
+    private static final String VALUE_ASSISTANT_DONE = "assistant_done";
+    private static final String VALUE_SYSTEM_EVENT = "system_event";
+
     private final ObjectMapper objectMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
     /** Maps connectionId -> chatId for reverse lookup */
     private final Map<String, String> connectionToChatId = new ConcurrentHashMap<>();
-    private final AtomicReference<Consumer<Message>> messageHandler = new AtomicReference<>();
     private volatile boolean running = false;
 
     @Override
@@ -60,18 +69,30 @@ public class WebChannelAdapter implements ChannelPort {
     @Override
     public CompletableFuture<Void> sendMessage(String chatId, String content) {
         return sendJsonToChat(chatId, Map.of(
-                "type", "assistant_chunk",
-                "text", content,
-                "sessionId", chatId));
+                KEY_TYPE, VALUE_ASSISTANT_CHUNK,
+                KEY_TEXT, content,
+                KEY_SESSION_ID, chatId));
+    }
+
+    @Override
+    public CompletableFuture<Void> sendMessage(String chatId, String content, Map<String, Object> hints) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put(KEY_TYPE, VALUE_ASSISTANT_CHUNK);
+        payload.put(KEY_TEXT, content);
+        payload.put(KEY_SESSION_ID, chatId);
+        if (hints != null && !hints.isEmpty()) {
+            payload.put("hint", hints);
+        }
+        return sendJsonToChat(chatId, payload);
     }
 
     @Override
     public CompletableFuture<Void> sendMessage(Message message) {
         String chatId = message.getChatId();
         return sendJsonToChat(chatId, Map.of(
-                "type", "assistant_done",
-                "text", message.getContent() != null ? message.getContent() : "",
-                "sessionId", chatId != null ? chatId : ""));
+                KEY_TYPE, VALUE_ASSISTANT_DONE,
+                KEY_TEXT, message.getContent() != null ? message.getContent() : "",
+                KEY_SESSION_ID, chatId != null ? chatId : ""));
     }
 
     @Override
@@ -88,15 +109,15 @@ public class WebChannelAdapter implements ChannelPort {
 
     @Override
     public void onMessage(Consumer<Message> handler) {
-        this.messageHandler.set(handler);
+        // Not used — messages are published via ApplicationEventPublisher
     }
 
     @Override
     public void showTyping(String chatId) {
         sendJsonToChat(chatId, Map.of(
-                "type", "system_event",
+                KEY_TYPE, VALUE_SYSTEM_EVENT,
                 "eventType", "typing",
-                "sessionId", chatId));
+                KEY_SESSION_ID, chatId));
     }
 
     public void registerSession(String connectionId, WebSocketSession session) {
@@ -112,24 +133,14 @@ public class WebChannelAdapter implements ChannelPort {
         }
     }
 
-    public void handleIncomingMessage(Message message) {
-        // Map the connectionId to chatId for future outbound messages
+    public void handleIncomingMessage(Message message, String connectionId) {
         String chatId = message.getChatId();
-        // Find the WebSocket session by scanning connections
-        // The chatId IS the connectionId initially, or a user-specified sessionId
-        for (Map.Entry<String, WebSocketSession> entry : sessions.entrySet()) {
-            if (!connectionToChatId.containsKey(entry.getKey())) {
-                // This is a connection not yet mapped — assume it's the sender
-                connectionToChatId.put(entry.getKey(), chatId);
-                sessions.put(chatId, entry.getValue());
-                break;
-            }
+        connectionToChatId.put(connectionId, chatId);
+        WebSocketSession wsSession = sessions.get(connectionId);
+        if (wsSession != null) {
+            sessions.put(chatId, wsSession);
         }
-
-        Consumer<Message> handler = messageHandler.get();
-        if (handler != null) {
-            handler.accept(message);
-        }
+        eventPublisher.publishEvent(new AgentLoop.InboundMessageEvent(message));
     }
 
     private CompletableFuture<Void> sendJsonToChat(String chatId, Map<String, Object> payload) {

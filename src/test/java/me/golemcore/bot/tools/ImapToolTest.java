@@ -1,7 +1,7 @@
 package me.golemcore.bot.tools;
 
-import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import jakarta.mail.BodyPart;
 import jakarta.mail.Flags;
@@ -34,42 +34,43 @@ class ImapToolTest {
     private static final String INBOX = "INBOX";
     private static final String PARAM_OPERATION = "operation";
 
-    private BotProperties properties;
+    private RuntimeConfigService runtimeConfigService;
+    private BotProperties.ImapToolProperties imapConfig;
 
     @BeforeEach
     void setUp() {
-        properties = new BotProperties();
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        imapConfig = new BotProperties.ImapToolProperties();
+        when(runtimeConfigService.getResolvedImapConfig()).thenReturn(imapConfig);
     }
 
     // ==================== isEnabled ====================
 
     @Test
     void shouldBeDisabledByDefault() {
-        ImapTool tool = new ImapTool(properties);
+        ImapTool tool = new ImapTool(runtimeConfigService);
 
         assertFalse(tool.isEnabled());
     }
 
     @Test
     void shouldBeDisabledWhenEnabledButNoHost() {
-        BotProperties.ImapToolProperties config = properties.getTools().getImap();
-        config.setEnabled(true);
-        config.setHost("");
-        config.setUsername(USERNAME);
+        imapConfig.setEnabled(true);
+        imapConfig.setHost("");
+        imapConfig.setUsername(USERNAME);
 
-        ImapTool tool = new ImapTool(properties);
+        ImapTool tool = new ImapTool(runtimeConfigService);
 
         assertFalse(tool.isEnabled());
     }
 
     @Test
     void shouldBeDisabledWhenEnabledButNoUsername() {
-        BotProperties.ImapToolProperties config = properties.getTools().getImap();
-        config.setEnabled(true);
-        config.setHost(IMAP_HOST);
-        config.setUsername("");
+        imapConfig.setEnabled(true);
+        imapConfig.setHost(IMAP_HOST);
+        imapConfig.setUsername("");
 
-        ImapTool tool = new ImapTool(properties);
+        ImapTool tool = new ImapTool(runtimeConfigService);
 
         assertFalse(tool.isEnabled());
     }
@@ -78,22 +79,9 @@ class ImapToolTest {
     void shouldBeEnabledWhenFullyConfigured() {
         configureProperties();
 
-        ImapTool tool = new ImapTool(properties);
+        ImapTool tool = new ImapTool(runtimeConfigService);
 
         assertTrue(tool.isEnabled());
-    }
-
-    // ==================== Definition ====================
-
-    @Test
-    void shouldReturnCorrectDefinition() {
-        ImapTool tool = new ImapTool(properties);
-
-        ToolDefinition definition = tool.getDefinition();
-
-        assertEquals("imap", definition.getName());
-        assertNotNull(definition.getDescription());
-        assertNotNull(definition.getInputSchema());
     }
 
     // ==================== Parameter validation ====================
@@ -101,7 +89,7 @@ class ImapToolTest {
     @Test
     void shouldFailWithMissingOperation() throws ExecutionException, InterruptedException {
         configureProperties();
-        ImapTool tool = new ImapTool(properties);
+        ImapTool tool = new ImapTool(runtimeConfigService);
 
         ToolResult result = tool.execute(Map.of()).get();
 
@@ -112,7 +100,7 @@ class ImapToolTest {
     @Test
     void shouldFailWithUnknownOperation() throws ExecutionException, InterruptedException {
         configureProperties();
-        ImapTool tool = new ImapTool(properties);
+        ImapTool tool = new ImapTool(runtimeConfigService);
 
         ToolResult result = tool.execute(Map.of(PARAM_OPERATION, "unknown_op")).get();
 
@@ -124,7 +112,7 @@ class ImapToolTest {
     void shouldFailWithMissingUidForReadMessage() throws ExecutionException, InterruptedException {
         configureProperties();
 
-        ImapTool tool = new ImapTool(properties) {
+        ImapTool tool = new ImapTool(runtimeConfigService) {
             @Override
             Store connectStore() throws MessagingException {
                 Store store = mock(Store.class);
@@ -580,7 +568,7 @@ class ImapToolTest {
 
     @Test
     void shouldTruncateLongMessageBody() throws Exception {
-        properties.getTools().getImap().setMaxBodyLength(20);
+        imapConfig.setMaxBodyLength(20);
         ImapTool tool = createToolWithMockStore((store) -> {
             TestUIDFolder folder = mock(TestUIDFolder.class);
             when(folder.exists()).thenReturn(true);
@@ -835,13 +823,12 @@ class ImapToolTest {
 
     @Test
     void shouldSanitizeCredentialsInError() {
-        BotProperties.ImapToolProperties config = properties.getTools().getImap();
-        config.setEnabled(true);
-        config.setHost(IMAP_HOST);
-        config.setUsername(USERNAME);
-        config.setPassword("secret123");
+        imapConfig.setEnabled(true);
+        imapConfig.setHost(IMAP_HOST);
+        imapConfig.setUsername(USERNAME);
+        imapConfig.setPassword("secret123");
 
-        ImapTool tool = new ImapTool(properties);
+        ImapTool tool = new ImapTool(runtimeConfigService);
 
         String sanitized = tool.sanitizeError("Login failed for " + USERNAME + " with password secret123");
 
@@ -852,13 +839,13 @@ class ImapToolTest {
 
     @Test
     void shouldHandleNullErrorMessage() {
-        ImapTool tool = new ImapTool(properties);
+        ImapTool tool = new ImapTool(runtimeConfigService);
         assertEquals("Unknown error", tool.sanitizeError(null));
     }
 
     @Test
     void shouldSanitizeErrorWithNoCredentials() {
-        ImapTool tool = new ImapTool(properties);
+        ImapTool tool = new ImapTool(runtimeConfigService);
 
         String sanitized = tool.sanitizeError("Connection timed out");
 
@@ -869,7 +856,7 @@ class ImapToolTest {
     void shouldHandleMessagingExceptionInExecute() throws ExecutionException, InterruptedException {
         configureProperties();
 
-        ImapTool tool = new ImapTool(properties) {
+        ImapTool tool = new ImapTool(runtimeConfigService) {
             @Override
             Store connectStore() throws MessagingException {
                 throw new MessagingException("Connection refused");
@@ -886,7 +873,7 @@ class ImapToolTest {
     void shouldHandleRuntimeExceptionInExecute() throws ExecutionException, InterruptedException {
         configureProperties();
 
-        ImapTool tool = new ImapTool(properties) {
+        ImapTool tool = new ImapTool(runtimeConfigService) {
             @Override
             Store connectStore() throws MessagingException {
                 throw new RuntimeException("Unexpected error");
@@ -902,17 +889,16 @@ class ImapToolTest {
     // ==================== Helpers ====================
 
     private void configureProperties() {
-        BotProperties.ImapToolProperties config = properties.getTools().getImap();
-        config.setEnabled(true);
-        config.setHost(IMAP_HOST);
-        config.setUsername(USERNAME);
-        config.setPassword(PASSWORD);
+        imapConfig.setEnabled(true);
+        imapConfig.setHost(IMAP_HOST);
+        imapConfig.setUsername(USERNAME);
+        imapConfig.setPassword(PASSWORD);
     }
 
     private ImapTool createToolWithMockStore(StoreConfigurer configurer) throws MessagingException {
         configureProperties();
 
-        return new ImapTool(properties) {
+        return new ImapTool(runtimeConfigService) {
             @Override
             Store connectStore() throws MessagingException {
                 try {

@@ -1,0 +1,319 @@
+{
+  "models": {
+    "gpt-5.2": {
+      "provider": "openai",
+      "displayName": "GPT-5.2",
+      "supportsTemperature": false,
+      "maxInputTokens": 400000,
+      "reasoning": {
+        "default": "none",
+        "levels": {
+          "none":   { "maxInputTokens": 400000 },
+          "low":    { "maxInputTokens": 400000 },
+          "medium": { "maxInputTokens": 400000 },
+          "high":   { "maxInputTokens": 400000 },
+          "xhigh":  { "maxInputTokens": 400000 }
+        }
+      }
+    },
+    "gpt-5.1": {
+      "provider": "openai",
+      "displayName": "GPT-5.1",
+      "supportsTemperature": false,
+      "maxInputTokens": 400000,
+      "reasoning": {
+        "default": "none",
+        "levels": {
+          "none":   { "maxInputTokens": 400000 },
+          "low":    { "maxInputTokens": 400000 },
+          "medium": { "maxInputTokens": 400000 },
+          "high":   { "maxInputTokens": 400000 }
+        }
+      }
+    },
+    "gpt-5": {
+      "provider": "openai",
+      "displayName": "GPT-5",
+      "supportsTemperature": false,
+      "maxInputTokens": 400000,
+      "reasoning": {
+        "default": "medium",
+        "levels": {
+          "minimal": { "maxInputTokens": 400000 },
+          "low":     { "maxInputTokens": 400000 },
+          "medium":  { "maxInputTokens": 400000 },
+          "high":    { "maxInputTokens": 400000 }
+        }
+      }
+    },
+    "gpt-5-mini": {
+      "provider": "openai",
+      "displayName": "GPT-5 Mini",
+      "supportsTemperature": false,
+      "maxInputTokens": 400000,
+      "reasoning": {
+        "default": "medium",
+        "levels": {
+          "low":    { "maxInputTokens": 400000 },
+          "medium": { "maxInputTokens": 400000 },
+          "high":   { "maxInputTokens": 400000 }
+        }
+      }
+    },
+    "gpt-5-nano": {
+      "provider": "openai",
+      "displayName": "GPT-5 Nano",
+      "supportsTemperature": false,
+      "maxInputTokens": 400000,
+      "reasoning": {
+        "default": "medium",
+        "levels": {
+          "low":    { "maxInputTokens": 400000 },
+          "medium": { "maxInputTokens": 400000 },
+          "high":   { "maxInputTokens": 400000 }
+        }
+      }
+    },
+    "gpt-5-chat-latest": {
+      "provider": "openai",
+      "displayName": "GPT-5 Chat Latest",
+      "supportsTemperature": true,
+      "maxInputTokens": 128000
+    },
+    "gpt-5.2-codex": {
+      "provider": "openai",
+      "displayName": "GPT-5.2 Codex",
+      "supportsTemperature": false,
+      "maxInputTokens": 400000,
+      "reasoning": {
+        "default": "medium",
+        "levels": {
+          "low":    { "maxInputTokens": 400000 },
+          "medium": { "maxInputTokens": 400000 },
+          "high":   { "maxInputTokens": 400000 },
+          "xhigh":  { "maxInputTokens": 400000 }
+        }
+      }
+    },
+    "gpt-5.3-codex": {
+      "provider": "openai",
+      "displayName": "GPT-5.3 Codex",
+      "supportsTemperature": false,
+      "maxInputTokens": 400000,
+      "reasoning": {
+        "default": "medium",
+        "levels": {
+          "low":    { "maxInputTokens": 400000 },
+          "medium": { "maxInputTokens": 400000 },
+          "high":   { "maxInputTokens": 400000 },
+          "xhigh":  { "maxInputTokens": 400000 }
+        }
+      }
+    },
+    "gpt-5.3-codex-spark": {
+      "provider": "openai",
+      "displayName": "GPT-5.3 Codex Spark",
+      "supportsTemperature": false,
+      "maxInputTokens": 128000,
+      "reasoning": {
+        "default": "low",
+        "levels": {
+          "low":    { "maxInputTokens": 128000 },
+          "medium": { "maxInputTokens": 128000 },
+          "high":   { "maxInputTokens": 128000 }
+        }
+      }
+    },
+    
+    
+    
+    "claude-sonnet-4-5": {
+      "provider": "anthropic",
+      "displayName": "Claude Sonnet 4.5",
+      "supportsTemperature": true,
+      "maxInputTokens": 200000
+    },
+    "claude-sonnet-4-20250514": {
+      "provider": "anthropic",
+      "displayName": "Claude Sonnet 4",
+      "supportsTemperature": true,
+      "maxInputTokens": 200000
+    },
+    "claude-opus-4-1": {
+      "provider": "anthropic",
+      "displayName": "Claude Opus 4.1",
+      "supportsTemperature": true,
+      "maxInputTokens": 200000
+    },
+    "claude-opus-4-20250514": {
+      "provider": "anthropic",
+      "displayName": "Claude Opus 4",
+      "supportsTemperature": true,
+      "maxInputTokens": 200000
+    },
+    "claude-3-7-sonnet": {
+      "provider": "anthropic",
+      "displayName": "Claude 3.7 Sonnet",
+      "supportsTemperature": true,
+      "maxInputTokens": 200000
+    },
+    "claude-3-5-haiku": {
+      "provider": "anthropic",
+      "displayName": "Claude 3.5 Haiku",
+      "supportsTemperature": true,
+      "maxInputTokens": 200000
+    },
+    "gemini-2.5-pro": {
+      "provider": "google",
+      "displayName": "Gemini 2.5 Pro",
+      "supportsTemperature": true,
+      "maxInputTokens": 1048576
+    },
+    "gemini-2.5-flash": {
+      "provider": "google",
+      "displayName": "Gemini 2.5 Flash",
+      "supportsTemperature": true,
+      "maxInputTokens": 1048576
+    },
+    "gemini-2.5-flash-lite": {
+      "provider": "google",
+      "displayName": "Gemini 2.5 Flash Lite",
+      "supportsTemperature": true,
+      "maxInputTokens": 1048576
+    },
+    "glm-4-plus": {
+      "provider": "zhipu",
+      "displayName": "GLM-4 Plus",
+      "supportsTemperature": true,
+      "maxInputTokens": 128000
+    },
+    "glm-4": {
+      "provider": "zhipu",
+      "displayName": "GLM-4",
+      "supportsTemperature": true,
+      "maxInputTokens": 128000
+    },
+    "glm-4-air": {
+      "provider": "zhipu",
+      "displayName": "GLM-4 Air",
+      "supportsTemperature": true,
+      "maxInputTokens": 128000
+    },
+    "glm-4-flash": {
+      "provider": "zhipu",
+      "displayName": "GLM-4 Flash",
+      "supportsTemperature": true,
+      "maxInputTokens": 128000
+    },
+    "glm-4-long": {
+      "provider": "zhipu",
+      "displayName": "GLM-4 Long",
+      "supportsTemperature": true,
+      "maxInputTokens": 1000000
+    },
+
+    "qwen-max": {
+      "provider": "qwen",
+      "displayName": "Qwen Max",
+      "supportsTemperature": true,
+      "maxInputTokens": 32768
+    },
+    "qwen-plus": {
+      "provider": "qwen",
+      "displayName": "Qwen Plus",
+      "supportsTemperature": true,
+      "maxInputTokens": 1000000
+    },
+    "qwen-turbo": {
+      "provider": "qwen",
+      "displayName": "Qwen Turbo",
+      "supportsTemperature": true,
+      "maxInputTokens": 1000000
+    },
+    "qwen2.5-72b-instruct": {
+      "provider": "qwen",
+      "displayName": "Qwen 2.5 72B",
+      "supportsTemperature": true,
+      "maxInputTokens": 131072
+    },
+    "qwen2.5-32b-instruct": {
+      "provider": "qwen",
+      "displayName": "Qwen 2.5 32B",
+      "supportsTemperature": true,
+      "maxInputTokens": 131072
+    },
+    "qwen-3-32b": {
+      "provider": "qwen",
+      "displayName": "Qwen 3 32B",
+      "supportsTemperature": true,
+      "maxInputTokens": 131072
+    },
+    "qwen2.5-14b-instruct": {
+      "provider": "qwen",
+      "displayName": "Qwen 2.5 14B",
+      "supportsTemperature": true,
+      "maxInputTokens": 131072
+    },
+    "qwen2.5-7b-instruct": {
+      "provider": "qwen",
+      "displayName": "Qwen 2.5 7B",
+      "supportsTemperature": true,
+      "maxInputTokens": 131072
+    },
+    "qwq-32b": {
+      "provider": "qwen",
+      "displayName": "QwQ 32B",
+      "supportsTemperature": true,
+      "reasoning": {
+        "default": "medium",
+        "levels": {
+          "low":    { "maxInputTokens": 131072 },
+          "medium": { "maxInputTokens": 131072 },
+          "high":   { "maxInputTokens": 131072 }
+        }
+      }
+    },
+
+    "gpt-oss-120b": {
+      "provider": "cerebras",
+      "displayName": "GPT-OSS 120B",
+      "supportsTemperature": true,
+      "maxInputTokens": 131072
+    },
+    "zai-glm-4.7": {
+      "provider": "cerebras",
+      "displayName": "ZAI GLM-4.7",
+      "supportsTemperature": true,
+      "maxInputTokens": 131072
+    },
+    "llama-3.3-70b": {
+      "provider": "cerebras",
+      "displayName": "Llama 3.3 70B",
+      "supportsTemperature": true,
+      "maxInputTokens": 131072
+    },
+
+    "deepinfra/openai/gpt-oss-120b": {
+      "provider": "deepinfra",
+      "displayName": "GPT-OSS 120B (DeepInfra)",
+      "supportsTemperature": true,
+      "maxInputTokens": 131072
+    },
+    "deepinfra/deepseek-ai/DeepSeek-V3.2": {
+      "provider": "deepinfra",
+      "displayName": "DeepSeek V3.2 (DeepInfra)",
+      "supportsTemperature": true,
+      "maxInputTokens": 163840
+    },
+    "deepinfra/moonshotai/Kimi-K2.5": {
+      "provider": "deepinfra",
+      "displayName": "Kimi K2.5 (DeepInfra)",
+      "supportsTemperature": true,
+      "maxInputTokens": 262144
+    }
+  },
+  "defaults": {
+    "supportsTemperature": true,
+    "maxInputTokens": 128000
+  }
+}

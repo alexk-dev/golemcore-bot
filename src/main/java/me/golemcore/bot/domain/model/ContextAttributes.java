@@ -45,6 +45,9 @@ public final class ContextAttributes {
     /** Duration ? latency of the last LLM call (best-effort). */
     public static final String LLM_LATENCY = "llm.latency";
 
+    /** Boolean ? compatibility fallback flattened tool history for this turn. */
+    public static final String LLM_COMPAT_FLATTEN_FALLBACK_USED = "llm.compat.flatten.fallback.used";
+
     /** Boolean — tools were executed in this iteration. */
 
     /**
@@ -53,11 +56,22 @@ public final class ContextAttributes {
      */
     public static final String LLM_MODEL = "llm.model";
 
+    /**
+     * String — reasoning effort used for the current LLM call (e.g. "low",
+     * "medium", "high").
+     */
+    public static final String LLM_REASONING = "llm.reasoning";
+
     /** Boolean — plan mode is active for the current session. */
     public static final String PLAN_MODE_ACTIVE = "plan.mode.active";
 
     /** String — plan ID that needs user approval before execution. */
     public static final String PLAN_APPROVAL_NEEDED = "plan.approval.needed";
+
+    /**
+     * Boolean ? set when plan_set_content tool call was observed in LLM response.
+     */
+    public static final String PLAN_SET_CONTENT_REQUESTED = "plan.set_content.requested";
 
     /** String ? prompt suffix/extra context produced by RAG/context building. */
     public static final String RAG_CONTEXT = "rag.context";
@@ -81,6 +95,11 @@ public final class ContextAttributes {
      * executions / deadline).
      */
     public static final String TOOL_LOOP_LIMIT_REACHED = "toolloop.limit.reached";
+
+    /**
+     * TurnLimitReason ? machine-readable reason why tool loop limit was reached.
+     */
+    public static final String TOOL_LOOP_LIMIT_REASON = "toolloop.limit.reason";
 
     /** WebSocketSession — reference to WebSocket session for streaming. */
     public static final String WEB_STREAM_SINK = "web.stream.sink";

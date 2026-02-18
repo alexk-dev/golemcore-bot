@@ -19,6 +19,8 @@ package me.golemcore.bot.security;
  */
 
 import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -44,7 +46,10 @@ import java.util.regex.Pattern;
  */
 @Component
 @Slf4j
+@RequiredArgsConstructor
 public class InjectionGuard {
+
+    private final RuntimeConfigService runtimeConfigService;
 
     // Prompt injection patterns
     private static final List<Pattern> PROMPT_INJECTION_PATTERNS = List.of(
@@ -95,6 +100,9 @@ public class InjectionGuard {
      * Detect potential prompt injection attempts.
      */
     public boolean detectPromptInjection(String input) {
+        if (!runtimeConfigService.isPromptInjectionDetectionEnabled()) {
+            return false;
+        }
         if (input == null || input.isBlank()) {
             return false;
         }
@@ -112,6 +120,9 @@ public class InjectionGuard {
      * Detect potential command injection attempts.
      */
     public boolean detectCommandInjection(String input) {
+        if (!runtimeConfigService.isCommandInjectionDetectionEnabled()) {
+            return false;
+        }
         if (input == null || input.isBlank()) {
             return false;
         }

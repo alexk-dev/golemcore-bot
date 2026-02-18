@@ -221,20 +221,23 @@ If all sections are empty, `toContext()` returns an empty string and the `# Memo
 
 ## Configuration
 
-```bash
-# Memory
-BOT_MEMORY_ENABLED=true                        # enable/disable memory (default: true)
-BOT_MEMORY_DIRECTORY=memory                    # storage subdirectory (default: memory)
-BOT_MEMORY_RECENT_DAYS=7                       # days of notes in context (default: 7)
+Runtime config (stored in `preferences/runtime-config.json`):
 
-# Session storage
-BOT_STORAGE_DIRECTORIES_SESSIONS=sessions      # sessions subdirectory (default: sessions)
-
-# Compaction
-BOT_AUTO_COMPACT_ENABLED=true                  # enable auto-compaction (default: true)
-BOT_AUTO_COMPACT_MAX_CONTEXT_TOKENS=128000     # token threshold (default: 128000)
-BOT_AUTO_COMPACT_KEEP_LAST_MESSAGES=10         # messages to keep after compaction (default: 10)
+```json
+{
+  "memory": {
+    "enabled": true,
+    "recentDays": 7
+  },
+  "compaction": {
+    "enabled": true,
+    "maxContextTokens": 50000,
+    "keepLastMessages": 20
+  }
+}
 ```
+
+Storage paths/directories are Spring properties (see [Configuration Guide](CONFIGURATION.md)).
 
 ---
 

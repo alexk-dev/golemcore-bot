@@ -7,6 +7,7 @@ import me.golemcore.bot.domain.model.PlanReadyEvent;
 import me.golemcore.bot.domain.model.PlanStep;
 import me.golemcore.bot.domain.service.PlanExecutionService;
 import me.golemcore.bot.domain.service.PlanService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -46,6 +47,7 @@ class TelegramPlanApprovalAdapterTest {
     private PlanService planService;
     private PlanExecutionService planExecutionService;
     private BotProperties properties;
+    private RuntimeConfigService runtimeConfigService;
     private TelegramClient telegramClient;
     private TelegramPlanApprovalAdapter adapter;
 
@@ -55,8 +57,11 @@ class TelegramPlanApprovalAdapterTest {
         planExecutionService = mock(PlanExecutionService.class);
         properties = new BotProperties();
         properties.getPlan().setEnabled(true);
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isTelegramEnabled()).thenReturn(true);
+        when(runtimeConfigService.getTelegramToken()).thenReturn("test-token");
 
-        adapter = new TelegramPlanApprovalAdapter(planService, planExecutionService, properties);
+        adapter = new TelegramPlanApprovalAdapter(planService, planExecutionService, properties, runtimeConfigService);
 
         telegramClient = mock(TelegramClient.class);
         adapter.setTelegramClient(telegramClient);
@@ -107,8 +112,10 @@ class TelegramPlanApprovalAdapterTest {
 
     @Test
     void shouldHandleNullClientOnPlanReady() {
+        RuntimeConfigService disabledRuntimeConfig = mock(RuntimeConfigService.class);
+        when(disabledRuntimeConfig.isTelegramEnabled()).thenReturn(false);
         TelegramPlanApprovalAdapter noClientAdapter = new TelegramPlanApprovalAdapter(
-                planService, planExecutionService, properties);
+                planService, planExecutionService, properties, disabledRuntimeConfig);
         when(planService.isFeatureEnabled()).thenReturn(true);
         Plan plan = buildPlanWithSteps("Test Plan");
         when(planService.getPlan(PLAN_ID)).thenReturn(Optional.of(plan));
@@ -223,8 +230,10 @@ class TelegramPlanApprovalAdapterTest {
 
     @Test
     void shouldHandleNullClientOnExecutionCompleted() {
+        RuntimeConfigService disabledRuntimeConfig = mock(RuntimeConfigService.class);
+        when(disabledRuntimeConfig.isTelegramEnabled()).thenReturn(false);
         TelegramPlanApprovalAdapter noClientAdapter = new TelegramPlanApprovalAdapter(
-                planService, planExecutionService, properties);
+                planService, planExecutionService, properties, disabledRuntimeConfig);
 
         noClientAdapter.onPlanExecutionCompleted(
                 new PlanExecutionCompletedEvent(PLAN_ID, CHAT_ID, SUMMARY));
@@ -405,8 +414,10 @@ class TelegramPlanApprovalAdapterTest {
 
     @Test
     void shouldHandleNullClientOnUpdateMessage() {
+        RuntimeConfigService disabledRuntimeConfig = mock(RuntimeConfigService.class);
+        when(disabledRuntimeConfig.isTelegramEnabled()).thenReturn(false);
         TelegramPlanApprovalAdapter noClientAdapter = new TelegramPlanApprovalAdapter(
-                planService, planExecutionService, properties);
+                planService, planExecutionService, properties, disabledRuntimeConfig);
         when(planService.isFeatureEnabled()).thenReturn(true);
 
         noClientAdapter.onPlanApproval(
@@ -445,26 +456,11 @@ class TelegramPlanApprovalAdapterTest {
     }
 
     @Test
-    void shouldReturnNullWhenNoTelegramChannelConfig() {
-        TelegramPlanApprovalAdapter noConfigAdapter = new TelegramPlanApprovalAdapter(
-                planService, planExecutionService, properties);
-        // No telegram channel in properties.channels → getOrCreateClient returns null
-
-        noConfigAdapter.onPlanExecutionCompleted(
-                new PlanExecutionCompletedEvent(PLAN_ID, CHAT_ID, SUMMARY));
-        // Should not throw
-    }
-
-    @Test
-    void shouldReturnNullWhenTelegramChannelDisabled() {
-        BotProperties props = new BotProperties();
-        props.getPlan().setEnabled(true);
-        BotProperties.ChannelProperties channelProps = new BotProperties.ChannelProperties();
-        channelProps.setEnabled(false);
-        props.getChannels().put("telegram", channelProps);
-
+    void shouldReturnNullWhenTelegramDisabled() {
+        RuntimeConfigService disabledRuntimeConfig = mock(RuntimeConfigService.class);
+        when(disabledRuntimeConfig.isTelegramEnabled()).thenReturn(false);
         TelegramPlanApprovalAdapter disabledAdapter = new TelegramPlanApprovalAdapter(
-                planService, planExecutionService, props);
+                planService, planExecutionService, properties, disabledRuntimeConfig);
 
         disabledAdapter.onPlanExecutionCompleted(
                 new PlanExecutionCompletedEvent(PLAN_ID, CHAT_ID, SUMMARY));
@@ -473,15 +469,12 @@ class TelegramPlanApprovalAdapterTest {
 
     @Test
     void shouldReturnNullWhenTokenIsNull() {
-        BotProperties props = new BotProperties();
-        props.getPlan().setEnabled(true);
-        BotProperties.ChannelProperties channelProps = new BotProperties.ChannelProperties();
-        channelProps.setEnabled(true);
-        channelProps.setToken(null);
-        props.getChannels().put("telegram", channelProps);
+        RuntimeConfigService nullTokenConfig = mock(RuntimeConfigService.class);
+        when(nullTokenConfig.isTelegramEnabled()).thenReturn(true);
+        when(nullTokenConfig.getTelegramToken()).thenReturn(null);
 
         TelegramPlanApprovalAdapter nullTokenAdapter = new TelegramPlanApprovalAdapter(
-                planService, planExecutionService, props);
+                planService, planExecutionService, properties, nullTokenConfig);
 
         nullTokenAdapter.onPlanExecutionCompleted(
                 new PlanExecutionCompletedEvent(PLAN_ID, CHAT_ID, SUMMARY));
@@ -490,15 +483,12 @@ class TelegramPlanApprovalAdapterTest {
 
     @Test
     void shouldReturnNullWhenTokenIsBlank() {
-        BotProperties props = new BotProperties();
-        props.getPlan().setEnabled(true);
-        BotProperties.ChannelProperties channelProps = new BotProperties.ChannelProperties();
-        channelProps.setEnabled(true);
-        channelProps.setToken("   ");
-        props.getChannels().put("telegram", channelProps);
+        RuntimeConfigService blankTokenConfig = mock(RuntimeConfigService.class);
+        when(blankTokenConfig.isTelegramEnabled()).thenReturn(true);
+        when(blankTokenConfig.getTelegramToken()).thenReturn("   ");
 
         TelegramPlanApprovalAdapter blankTokenAdapter = new TelegramPlanApprovalAdapter(
-                planService, planExecutionService, props);
+                planService, planExecutionService, properties, blankTokenConfig);
 
         blankTokenAdapter.onPlanExecutionCompleted(
                 new PlanExecutionCompletedEvent(PLAN_ID, CHAT_ID, SUMMARY));

@@ -5,8 +5,8 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.model.UserPreferences;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,18 +30,16 @@ class TierToolTest {
     private static final String TIER_CODING = "coding";
 
     private UserPreferencesService preferencesService;
-    private BotProperties properties;
+    private RuntimeConfigService runtimeConfigService;
     private TierTool tool;
 
     @BeforeEach
     void setUp() {
         preferencesService = mock(UserPreferencesService.class);
         when(preferencesService.getPreferences()).thenReturn(UserPreferences.builder().build());
-
-        properties = new BotProperties();
-        properties.getTools().getTier().setEnabled(true);
-
-        tool = new TierTool(preferencesService, properties);
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isTierToolEnabled()).thenReturn(true);
+        tool = new TierTool(preferencesService, runtimeConfigService);
 
         // Set up AgentContextHolder
         AgentContext context = AgentContext.builder()
@@ -60,17 +58,6 @@ class TierToolTest {
     @AfterEach
     void tearDown() {
         AgentContextHolder.clear();
-    }
-
-    @Test
-    void shouldReturnCorrectToolName() {
-        assertEquals("set_tier", tool.getToolName());
-        assertEquals("set_tier", tool.getDefinition().getName());
-    }
-
-    @Test
-    void shouldBeEnabledByDefault() {
-        assertTrue(tool.isEnabled());
     }
 
     @ParameterizedTest

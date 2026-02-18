@@ -3,7 +3,6 @@ package me.golemcore.bot.domain.service;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.DiaryEntry;
 import me.golemcore.bot.domain.model.Goal;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.StoragePort;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -30,7 +29,7 @@ class AutoModeServiceTest {
 
     private StoragePort storagePort;
     private ObjectMapper objectMapper;
-    private BotProperties properties;
+    private RuntimeConfigService runtimeConfigService;
     private AutoModeService service;
 
     @BeforeEach
@@ -39,11 +38,9 @@ class AutoModeServiceTest {
         objectMapper = new ObjectMapper();
         objectMapper.findAndRegisterModules(); // for java.time Instant serialization
 
-        properties = new BotProperties();
-        properties.getAuto().setEnabled(true);
-        properties.getAuto().setMaxGoals(3);
-        properties.getAuto().setMaxTasksPerGoal(20);
-        properties.getAuto().setMaxDiaryEntriesInContext(10);
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isAutoModeEnabled()).thenReturn(true);
+        when(runtimeConfigService.getAutoMaxGoals()).thenReturn(3);
 
         when(storagePort.putText(anyString(), anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
@@ -52,7 +49,7 @@ class AutoModeServiceTest {
         when(storagePort.getText(anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
-        service = new AutoModeService(storagePort, objectMapper, properties);
+        service = new AutoModeService(storagePort, objectMapper, runtimeConfigService);
     }
 
     @Test
@@ -347,10 +344,10 @@ class AutoModeServiceTest {
 
     @Test
     void isFeatureEnabled_returnsPropertiesSetting() {
-        properties.getAuto().setEnabled(true);
+        when(runtimeConfigService.isAutoModeEnabled()).thenReturn(true);
         assertTrue(service.isFeatureEnabled());
 
-        properties.getAuto().setEnabled(false);
+        when(runtimeConfigService.isAutoModeEnabled()).thenReturn(false);
         assertFalse(service.isFeatureEnabled());
     }
 

@@ -35,16 +35,11 @@ import java.util.Map;
  * All bot configuration is organized under the {@code bot.*} prefix. This class
  * contains nested property classes for different subsystems:
  * <ul>
- * <li>{@link AgentProperties} - agent loop configuration</li>
  * <li>{@link LlmProperties} - LLM provider settings</li>
  * <li>{@link ChannelProperties} - input channels (Telegram, etc.)</li>
  * <li>{@link StorageProperties} - persistence configuration</li>
  * <li>{@link SecurityProperties} - security and access control</li>
- * <li>{@link ModelRouterProperties} - model tier selection</li>
  * <li>{@link ToolsProperties} - tool enablement and configuration</li>
- * <li>{@link McpClientProperties} - MCP client settings</li>
- * <li>{@link RagProperties} - RAG integration</li>
- * <li>{@link AutoModeProperties} - autonomous mode settings</li>
  * <li>And many more subsystems...</li>
  * </ul>
  *
@@ -59,64 +54,24 @@ import java.util.Map;
 @Data
 public class BotProperties {
 
-    private AgentProperties agent = new AgentProperties();
     private LlmProperties llm = new LlmProperties();
     private Map<String, ChannelProperties> channels = new HashMap<>();
     private StorageProperties storage = new StorageProperties();
     private MemoryProperties memory = new MemoryProperties();
     private SkillsProperties skills = new SkillsProperties();
     private SecurityProperties security = new SecurityProperties();
-    private BrowserProperties browser = new BrowserProperties();
     private HttpProperties http = new HttpProperties();
-    private StreamingProperties streaming = new StreamingProperties();
-    private RateLimitProperties rateLimit = new RateLimitProperties();
-    private UsageProperties usage = new UsageProperties();
-    private VoiceProperties voice = new VoiceProperties();
-    private ModelRouterProperties router = new ModelRouterProperties();
     private ToolsProperties tools = new ToolsProperties();
-    private McpClientProperties mcp = new McpClientProperties();
-    private RagProperties rag = new RagProperties();
-    private AutoModeProperties auto = new AutoModeProperties();
     private PromptsProperties prompts = new PromptsProperties();
     private AutoCompactProperties autoCompact = new AutoCompactProperties();
     private TurnProperties turn = new TurnProperties();
     private ToolLoopProperties toolLoop = new ToolLoopProperties();
     private PlanProperties plan = new PlanProperties();
-    private ModelSelectionProperties modelSelection = new ModelSelectionProperties();
     private DashboardProperties dashboard = new DashboardProperties();
-
-    @Data
-    public static class AgentProperties {
-        private int maxIterations = 20;
-    }
 
     @Data
     public static class LlmProperties {
         private String provider = "langchain4j";
-        /** Canonical per-request timeout for any LLM provider adapter. */
-        private java.time.Duration requestTimeout = java.time.Duration.ofSeconds(300);
-        private Langchain4jProperties langchain4j = new Langchain4jProperties();
-        private Map<String, ModelConfig> models = new HashMap<>(); // Model configurations
-    }
-
-    @Data
-    public static class ModelConfig {
-        private String provider; // openai, anthropic, etc.
-        private boolean reasoningSupported; // Can use reasoning
-        private boolean reasoningRequired; // Must specify reasoning (gpt-5.1)
-        private boolean supportsTemperature = true;
-        private Integer maxTokens;
-    }
-
-    @Data
-    public static class Langchain4jProperties {
-        private Map<String, ProviderProperties> providers = new HashMap<>();
-    }
-
-    @Data
-    public static class ProviderProperties {
-        private String apiKey;
-        private String baseUrl;
     }
 
     @Data
@@ -142,54 +97,29 @@ public class BotProperties {
         private String sessions = "sessions";
         private String memory = "memory";
         private String skills = "skills";
-        private String preferences = "preferences";
     }
 
     @Data
     public static class MemoryProperties {
-        private boolean enabled = true;
         private String directory = "memory";
         private int recentDays = 7;
     }
 
     @Data
     public static class SkillsProperties {
-        private boolean enabled = true;
         private String directory = "skills";
         private String workspacePath = "workspace/skills";
         private String builtinPath = "classpath:skills/";
-        private boolean progressiveLoading = true;
     }
 
     @Data
     public static class SecurityProperties {
-        private boolean sanitizeInput = true;
-        private boolean detectPromptInjection = true;
-        private boolean detectCommandInjection = true;
-        private int maxInputLength = 10000;
         private AllowlistProperties allowlist = new AllowlistProperties();
-        private ToolConfirmationProperties toolConfirmation = new ToolConfirmationProperties();
-    }
-
-    @Data
-    public static class ToolConfirmationProperties {
-        private boolean enabled = true;
-        private int timeoutSeconds = 60;
     }
 
     @Data
     public static class AllowlistProperties {
-        private boolean enabled = true;
         private List<String> blockedUsers = new ArrayList<>();
-    }
-
-    @Data
-    public static class BrowserProperties {
-        private boolean enabled = true;
-        private String type = "playwright";
-        private boolean headless = true;
-        private int timeout = 30000;
-        private String userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
     }
 
     @Data
@@ -201,115 +131,6 @@ public class BotProperties {
         private long keepAliveDuration = 300000;
     }
 
-    @Data
-    public static class StreamingProperties {
-        private boolean enabled = true;
-        private long chunkDelayMs = 50;
-        private boolean typingIndicator = true;
-    }
-
-    @Data
-    public static class RateLimitProperties {
-        private boolean enabled = true;
-        private UserRateLimitProperties user = new UserRateLimitProperties();
-        private ChannelRateLimitProperties channel = new ChannelRateLimitProperties();
-        private LlmRateLimitProperties llm = new LlmRateLimitProperties();
-    }
-
-    @Data
-    public static class UserRateLimitProperties {
-        private int requestsPerMinute = 20;
-        private int requestsPerHour = 100;
-        private int requestsPerDay = 500;
-    }
-
-    @Data
-    public static class ChannelRateLimitProperties {
-        private int messagesPerSecond = 30;
-    }
-
-    @Data
-    public static class LlmRateLimitProperties {
-        private int requestsPerMinute = 60;
-    }
-
-    @Data
-    public static class UsageProperties {
-        private boolean enabled = true;
-        private String directory = "usage";
-        private String exportInterval = "PT1H";
-    }
-
-    @Data
-    public static class VoiceProperties {
-        private boolean enabled = false;
-        private String apiKey = "";
-        private String voiceId = "21m00Tcm4TlvDq8ikWAM";
-        private String ttsModelId = "eleven_multilingual_v2";
-        private String sttModelId = "scribe_v1";
-        private float speed = 1.0f;
-        private TelegramVoiceProperties telegram = new TelegramVoiceProperties();
-    }
-
-    @Data
-    public static class TelegramVoiceProperties {
-        private boolean respondWithVoice = true;
-        private boolean transcribeIncoming = true;
-    }
-
-    // ==================== MODEL ROUTING ====================
-
-    /**
-     * Model router configuration for model tier selection.
-     * <p>
-     * Model tiers:
-     * <ul>
-     * <li><b>balanced</b> - Standard tasks: general questions, greetings,
-     * summarization, basic coding (default/fallback)</li>
-     * <li><b>smart</b> - Complex tasks: architecture decisions, analysis,
-     * multi-step reasoning</li>
-     * <li><b>coding</b> - Programming tasks: code generation, debugging,
-     * refactoring</li>
-     * <li><b>deep</b> - PhD-level reasoning: mathematical proofs, scientific
-     * analysis, architectural planning before coding</li>
-     * </ul>
-     * <p>
-     * Reasoning effort (low/medium/high) - required for gpt-5.1, controls thinking
-     * depth.
-     */
-    @Data
-    public static class ModelRouterProperties {
-        private static final String DEFAULT_GPT_5_1_MODEL = "openai/gpt-5.1";
-
-        /** Temperature for models that support it (0.0-2.0) */
-        private double temperature = 0.7;
-
-        /**
-         * Standard tasks: general questions, summarization, basic coding (used as
-         * fallback)
-         */
-        private String balancedModel = DEFAULT_GPT_5_1_MODEL;
-        private String balancedModelReasoning = "medium";
-
-        /** Complex tasks: architecture, deep analysis, multi-step reasoning */
-        private String smartModel = DEFAULT_GPT_5_1_MODEL;
-        private String smartModelReasoning = "high";
-
-        /** Coding tasks: code generation, debugging, refactoring, code review */
-        private String codingModel = "openai/gpt-5.2";
-        private String codingModelReasoning = "medium";
-
-        /** PhD-level reasoning: proofs, scientific analysis, deep calculations */
-        private String deepModel = "openai/gpt-5.2";
-        private String deepModelReasoning = "xhigh";
-
-        /**
-         * Dynamically upgrade model tier to "coding" when coding activity is detected
-         * mid-conversation
-         */
-        private boolean dynamicTierEnabled = true;
-    }
-
     // ==================== TOOLS ====================
 
     @Data
@@ -318,7 +139,6 @@ public class BotProperties {
         private ShellToolProperties shell = new ShellToolProperties();
         private SkillManagementToolProperties skillManagement = new SkillManagementToolProperties();
         private BraveSearchToolProperties braveSearch = new BraveSearchToolProperties();
-        private GoalManagementToolProperties goalManagement = new GoalManagementToolProperties();
         private SkillTransitionToolProperties skillTransition = new SkillTransitionToolProperties();
         private TierToolProperties tier = new TierToolProperties();
         private ImapToolProperties imap = new ImapToolProperties();
@@ -326,19 +146,12 @@ public class BotProperties {
     }
 
     @Data
-    public static class GoalManagementToolProperties {
-        private boolean enabled = true;
-    }
-
-    @Data
     public static class FileSystemToolProperties {
-        private boolean enabled = true;
         private String workspace = "${user.home}/.golemcore/sandbox";
     }
 
     @Data
     public static class ShellToolProperties {
-        private boolean enabled = true;
         private String workspace = "${user.home}/.golemcore/sandbox";
         private int defaultTimeout = 30;
         private int maxTimeout = 300;
@@ -347,24 +160,19 @@ public class BotProperties {
 
     @Data
     public static class SkillManagementToolProperties {
-        private boolean enabled = true;
     }
 
     @Data
     public static class BraveSearchToolProperties {
-        private boolean enabled = false;
-        private String apiKey = "";
         private int defaultCount = 5;
     }
 
     @Data
     public static class SkillTransitionToolProperties {
-        private boolean enabled = true;
     }
 
     @Data
     public static class TierToolProperties {
-        private boolean enabled = true;
     }
 
     @Data
@@ -395,52 +203,12 @@ public class BotProperties {
         private int readTimeout = 30000;
     }
 
-    // ==================== MCP CLIENT ====================
-
-    @Data
-    public static class McpClientProperties {
-        private boolean enabled = true;
-        private int defaultStartupTimeout = 30;
-        private int defaultIdleTimeout = 5;
-    }
-
     // ==================== RAG (LightRAG) ====================
-
-    @Data
-    public static class RagProperties {
-        private boolean enabled = false;
-        private String url = "http://localhost:9621";
-        private String apiKey = "";
-        private String queryMode = "hybrid";
-        private int maxContextTokens = 2000;
-        private int timeoutSeconds = 10;
-        private int indexMinLength = 50;
-    }
-
-    // ==================== AUTO MODE ====================
-
-    @Data
-    public static class AutoModeProperties {
-        private boolean enabled = false;
-        private int tickIntervalSeconds = 30;
-        private int taskTimeoutMinutes = 10;
-        private boolean autoStart = true;
-        private int maxGoals = 3;
-        private String modelTier = "default";
-        private boolean notifyMilestones = true;
-        private int maxDiaryEntriesInContext = 10;
-        private int maxTasksPerGoal = 20;
-    }
 
     // ==================== AUTO COMPACT ====================
 
     @Data
     public static class AutoCompactProperties {
-        private boolean enabled = true;
-        private int maxContextTokens = 50000;
-        private int keepLastMessages = 20;
-        private int systemPromptOverheadTokens = 8000;
-        private double charsPerToken = 3.5;
         /**
          * Max characters allowed in a single tool result message. Longer results are
          * truncated.
@@ -495,15 +263,6 @@ public class BotProperties {
         private int maxPlans = 5;
         private int maxStepsPerPlan = 50;
         private boolean stopOnFailure = true;
-        private String defaultModelTier = "smart";
-    }
-
-    // ==================== MODEL SELECTION (user model overrides)
-    // ====================
-
-    @Data
-    public static class ModelSelectionProperties {
-        private List<String> allowedProviders = List.of("openai", "anthropic");
     }
 
     // ==================== DASHBOARD ====================
