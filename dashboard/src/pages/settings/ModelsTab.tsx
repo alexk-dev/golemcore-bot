@@ -225,7 +225,7 @@ export default function ModelsTab({ config, llmConfig }: ModelsTabProps): ReactE
           </Col>
         )}
 
-        <Col md={6} lg={3}>
+        <Col sm={6} lg={3}>
           <TierModelCard
             label="Routing"
             color="dark"
@@ -238,7 +238,7 @@ export default function ModelsTab({ config, llmConfig }: ModelsTabProps): ReactE
           />
         </Col>
         {tierCards.map(({ key, label, color, modelField, reasoningField }) => (
-          <Col md={6} lg={3} key={key}>
+          <Col sm={6} lg={3} key={key}>
             <TierModelCard
               label={label}
               color={color}

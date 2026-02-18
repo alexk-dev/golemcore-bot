@@ -173,7 +173,7 @@ export default function TelegramTab({ config, voiceConfig }: TelegramTabProps): 
               </Button>
             </div>
             {(config.inviteCodes ?? []).length > 0 ? (
-              <Table size="sm" hover className="mb-0">
+              <Table size="sm" hover responsive className="mb-0">
                 <thead><tr><th>Code</th><th>Status</th><th>Created</th><th></th></tr></thead>
                 <tbody>
                   {(config.inviteCodes ?? []).map((ic) => (

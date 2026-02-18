@@ -77,8 +77,8 @@ export default function SessionsPage(): ReactElement {
           {sessions?.map((s) => (
             <tr key={s.id}>
               <td>
-                <Button variant="secondary" size="sm" className="py-0 px-2" onClick={() => setViewId(s.id)}>
-                  {s.id}
+                <Button variant="secondary" size="sm" className="py-0 px-2" onClick={() => setViewId(s.id)} title={s.id}>
+                  {s.id.length > 8 ? `${s.id.slice(0, 8)}...` : s.id}
                 </Button>
               </td>
               <td><Badge bg="secondary">{s.channelType}</Badge></td>
@@ -86,7 +86,7 @@ export default function SessionsPage(): ReactElement {
               <td><Badge bg={s.state === 'ACTIVE' ? 'success' : 'warning'}>{s.state}</Badge></td>
                <td className="small">{s.updatedAt != null && s.updatedAt.length > 0 ? new Date(s.updatedAt).toLocaleString() : '-'}</td>
               <td>
-                <div className="d-flex gap-1">
+                <div className="d-flex flex-wrap gap-1">
                   <Button
                     size="sm"
                     variant="primary"

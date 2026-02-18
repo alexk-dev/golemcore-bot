@@ -77,7 +77,7 @@ export default function AnalyticsPage(): ReactElement {
       {statsLoading ? (
         <Row className="g-3 mb-4">
           {[0, 1, 2, 3].map((idx) => (
-            <Col md={3} key={idx}>
+            <Col sm={6} md={3} key={idx}>
               <Card className="stat-card">
                 <Card.Body>
                   <Placeholder as="div" animation="glow" className="mb-2"><Placeholder xs={6} /></Placeholder>
@@ -92,7 +92,7 @@ export default function AnalyticsPage(): ReactElement {
         </Row>
       ) : (
         <Row className="g-3 mb-4">
-          <Col md={3}>
+          <Col sm={6} md={3}>
             <Card className="stat-card">
               <Card.Body>
                 <div className="text-body-secondary small">Requests</div>
@@ -100,7 +100,7 @@ export default function AnalyticsPage(): ReactElement {
               </Card.Body>
             </Card>
           </Col>
-          <Col md={3}>
+          <Col sm={6} md={3}>
             <Card className="stat-card">
               <Card.Body>
                 <div className="text-body-secondary small">Total Tokens</div>
@@ -108,7 +108,7 @@ export default function AnalyticsPage(): ReactElement {
               </Card.Body>
             </Card>
           </Col>
-          <Col md={3}>
+          <Col sm={6} md={3}>
             <Card className="stat-card">
               <Card.Body>
                 <div className="text-body-secondary small">Input / Output</div>
@@ -119,7 +119,7 @@ export default function AnalyticsPage(): ReactElement {
               </Card.Body>
             </Card>
           </Col>
-          <Col md={3}>
+          <Col sm={6} md={3}>
             <Card className="stat-card">
               <Card.Body>
                 <div className="text-body-secondary small">Avg Latency</div>
@@ -132,13 +132,13 @@ export default function AnalyticsPage(): ReactElement {
 
       {!modelLoading && modelData.length > 0 && (
         <Row className="g-3">
-          <Col md={8}>
+          <Col lg={8}>
             <Card>
               <Card.Body>
                 <Card.Title>Tokens by Model</Card.Title>
                 <ResponsiveContainer width="100%" height={300}>
                   <AreaChart data={modelData}>
-                    <XAxis dataKey="name" tick={{ fill: chartPalette.axisColor }} />
+                    <XAxis dataKey="name" tick={{ fill: chartPalette.axisColor }} angle={-30} textAnchor="end" height={60} />
                     <YAxis tick={{ fill: chartPalette.axisColor }} />
                     <Tooltip
                       contentStyle={{
@@ -155,13 +155,13 @@ export default function AnalyticsPage(): ReactElement {
               </Card.Body>
             </Card>
           </Col>
-          <Col md={4}>
+          <Col lg={4}>
             <Card>
               <Card.Body>
                 <Card.Title>Distribution</Card.Title>
                 <ResponsiveContainer width="100%" height={300}>
                   <PieChart>
-                    <Pie data={modelData} dataKey="tokens" nameKey="name" cx="50%" cy="50%" outerRadius={100}>
+                    <Pie data={modelData} dataKey="tokens" nameKey="name" cx="50%" cy="50%" outerRadius={80}>
                       {modelData.map((_, i) => (
                         <Cell key={i} fill={chartPalette.fills[i % chartPalette.fills.length]} />
                       ))}

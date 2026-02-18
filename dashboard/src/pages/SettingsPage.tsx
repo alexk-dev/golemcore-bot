@@ -87,7 +87,7 @@ export default function SettingsPage(): ReactElement {
                 }
 
                 return (
-                  <Col md={6} lg={4} xl={3} key={item.key}>
+                  <Col sm={6} lg={4} xl={3} key={item.key}>
                     <Card className="settings-card h-100">
                       <Card.Body className="d-flex flex-column">
                         <div className="d-flex align-items-center gap-2 mb-2">

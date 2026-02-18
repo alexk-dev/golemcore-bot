@@ -18,12 +18,13 @@ interface Props {
   tierForce: boolean;
   onTierChange: (tier: string) => void;
   onForceChange: (force: boolean) => void;
+  forceOpen?: boolean;
 }
 
-export default function ContextPanel({ tier, tierForce, onTierChange, onForceChange }: Props) {
+export default function ContextPanel({ tier, tierForce, onTierChange, onForceChange, forceOpen }: Props) {
   const { panelOpen, turnMetadata, goals, goalsFeatureEnabled } = useContextPanelStore();
 
-  if (!panelOpen) {return null;}
+  if (forceOpen !== true && !panelOpen) {return null;}
 
   const contextPercent =
     turnMetadata.inputTokens != null && turnMetadata.maxContextTokens != null

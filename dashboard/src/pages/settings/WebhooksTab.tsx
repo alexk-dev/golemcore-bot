@@ -240,7 +240,7 @@ export default function WebhooksTab(): ReactElement {
         </div>
 
         {form.mappings.length > 0 ? (
-          <Table size="sm" hover className="mb-3">
+          <Table size="sm" hover responsive className="mb-3">
             <thead><tr><th>Name</th><th>Action</th><th>Auth</th><th></th></tr></thead>
             <tbody>
               {form.mappings.map((mapping, idx) => (

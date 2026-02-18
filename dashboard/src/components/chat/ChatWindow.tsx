@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Badge } from 'react-bootstrap';
+import { Badge, Offcanvas } from 'react-bootstrap';
 import { useAuthStore } from '../../store/authStore';
 import { useContextPanelStore } from '../../store/contextPanelStore';
 import { listSessions, getSession } from '../../api/sessions';
@@ -77,7 +77,7 @@ export default function ChatWindow() {
   const token = useAuthStore((s) => s.accessToken);
   const chatSessionId = useRef(getChatSessionId()).current;
   const shouldAutoScroll = useRef(true);
-  const { panelOpen, togglePanel, setTurnMetadata, setGoals } = useContextPanelStore();
+  const { panelOpen, togglePanel, mobileDrawerOpen, openMobileDrawer, closeMobileDrawer, setTurnMetadata, setGoals } = useContextPanelStore();
 
   // Load history from backend on mount
   useEffect(() => {
@@ -273,7 +273,13 @@ export default function ChatWindow() {
             </div>
             <button
               className="btn btn-sm btn-secondary panel-toggle-btn"
-              onClick={togglePanel}
+              onClick={() => {
+                if (window.innerWidth > 992) {
+                  togglePanel();
+                } else {
+                  openMobileDrawer();
+                }
+              }}
               title={panelOpen ? 'Hide context panel' : 'Show context panel'}
             >
               {panelOpen ? '\u00BB' : '\u00AB'}
@@ -316,7 +322,16 @@ export default function ChatWindow() {
         </div>
 
         {/* Input */}
-        <ChatInput onSend={handleSend} disabled={!connected} />
+        <ChatInput
+          onSend={handleSend}
+          disabled={!connected}
+          running={typing}
+          onStop={() => {
+            if (wsRef.current?.readyState === WebSocket.OPEN) {
+              wsRef.current.send(JSON.stringify({ text: '/stop', sessionId: chatSessionId }));
+            }
+          }}
+        />
       </div>
 
       <ContextPanel
@@ -325,6 +340,26 @@ export default function ChatWindow() {
         onTierChange={handleTierChange}
         onForceChange={handleForceChange}
       />
+
+      <Offcanvas
+        show={mobileDrawerOpen}
+        onHide={closeMobileDrawer}
+        placement="end"
+        className="context-panel-offcanvas"
+      >
+        <Offcanvas.Header closeButton>
+          <Offcanvas.Title>Context</Offcanvas.Title>
+        </Offcanvas.Header>
+        <Offcanvas.Body className="p-0">
+          <ContextPanel
+            tier={tier}
+            tierForce={tierForce}
+            onTierChange={handleTierChange}
+            onForceChange={handleForceChange}
+            forceOpen
+          />
+        </Offcanvas.Body>
+      </Offcanvas>
     </div>
   );
 }

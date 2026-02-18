@@ -125,7 +125,6 @@ export default tseslint.config(
   {
     files: [
       'src/api/settings.ts',
-      'src/components/chat/ChatInput.tsx',
       'src/components/chat/ChatWindow.tsx',
       'src/components/chat/ContextPanel.tsx',
       'src/pages/SettingsPage.tsx',
