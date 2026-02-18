@@ -337,6 +337,7 @@ export default function ChatWindow() {
       <ContextPanel
         tier={tier}
         tierForce={tierForce}
+        chatSessionId={chatSessionId}
         onTierChange={handleTierChange}
         onForceChange={handleForceChange}
       />
@@ -354,6 +355,7 @@ export default function ChatWindow() {
           <ContextPanel
             tier={tier}
             tierForce={tierForce}
+            chatSessionId={chatSessionId}
             onTierChange={handleTierChange}
             onForceChange={handleForceChange}
             forceOpen

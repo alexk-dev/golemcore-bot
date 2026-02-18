@@ -1,5 +1,6 @@
 import { Badge, Form, ProgressBar } from 'react-bootstrap';
 import { useContextPanelStore } from '../../store/contextPanelStore';
+import PlanControlPanel from './PlanControlPanel';
 
 const TIER_COLORS: Record<string, string> = {
   balanced: 'secondary',
@@ -16,12 +17,13 @@ function formatNumber(n: number | null): string {
 interface Props {
   tier: string;
   tierForce: boolean;
+  chatSessionId: string;
   onTierChange: (tier: string) => void;
   onForceChange: (force: boolean) => void;
   forceOpen?: boolean;
 }
 
-export default function ContextPanel({ tier, tierForce, onTierChange, onForceChange, forceOpen }: Props) {
+export default function ContextPanel({ tier, tierForce, chatSessionId, onTierChange, onForceChange, forceOpen }: Props) {
   const { panelOpen, turnMetadata, goals, goalsFeatureEnabled } = useContextPanelStore();
 
   if (forceOpen !== true && !panelOpen) {return null;}
@@ -115,6 +117,8 @@ export default function ContextPanel({ tier, tierForce, onTierChange, onForceCha
           className="mt-2"
         />
       </div>
+
+      <PlanControlPanel chatSessionId={chatSessionId} />
 
       {/* GOALS */}
       {goalsFeatureEnabled && activeGoals.length > 0 && (

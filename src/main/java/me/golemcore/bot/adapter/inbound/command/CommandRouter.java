@@ -182,7 +182,8 @@ public class CommandRouter implements CommandPort {
             case "skills" -> handleSkills();
             case "tools" -> handleTools();
             case CMD_STATUS -> handleStatus(sessionId);
-            case "new", SUBCMD_RESET -> handleNew(sessionId);
+            case "new" -> handleNew(sessionId);
+            case "reset" -> handleReset(sessionId, chatId);
             case "compact" -> handleCompact(sessionId, args);
             case CMD_HELP -> handleHelp();
             case "tier" -> handleTier(args);
@@ -229,8 +230,8 @@ public class CommandRouter implements CommandPort {
             commands.add(new CommandDefinition("schedule", "Manage schedules", "/schedule [help]"));
         }
         if (planService.isFeatureEnabled()) {
-            commands.add(new CommandDefinition(CMD_PLAN, "Plan mode control",
-                    "/plan [on|off|status|approve|cancel|resume]"));
+            commands.add(new CommandDefinition(CMD_PLAN, "Plan work control",
+                    "/plan [on|off|done|status|approve|cancel|resume]"));
             commands.add(new CommandDefinition(CMD_PLANS, "List plans", "/plans"));
         }
         return commands;
@@ -378,6 +379,15 @@ public class CommandRouter implements CommandPort {
     private CommandResult handleNew(String sessionId) {
         sessionService.clearMessages(sessionId);
         return CommandResult.success(msg("command.new.done"));
+    }
+
+    private CommandResult handleReset(String sessionId, String chatId) {
+        sessionService.clearMessages(sessionId);
+        if (planService.isFeatureEnabled() && planService.isPlanModeActive()) {
+            planService.getActivePlanIdOptional().ifPresent(planService::cancelPlan);
+            planService.deactivatePlanMode();
+        }
+        return CommandResult.success(msg("command.reset.done"));
     }
 
     private CommandResult handleCompact(String sessionId, List<String> args) {
@@ -776,6 +786,7 @@ public class CommandRouter implements CommandPort {
         return switch (subcommand) {
         case "on" -> handlePlanOn(args, chatId);
         case "off" -> handlePlanOff();
+        case "done" -> handlePlanDone();
         case "approve" -> handlePlanApprove(args);
         case "cancel" -> handlePlanCancel(args);
         case "resume" -> handlePlanResume(args);
@@ -804,15 +815,19 @@ public class CommandRouter implements CommandPort {
             return CommandResult.success(msg("command.plan.not-active"));
         }
 
-        planService.getActivePlan().ifPresent(plan -> {
-            if (plan.getSteps().isEmpty()) {
-                planService.cancelPlan(plan.getId());
-            } else {
-                planService.finalizePlan(plan.getId());
-            }
-        });
-
+        planService.deactivatePlanMode();
         return CommandResult.success(msg("command.plan.disabled"));
+    }
+
+    private CommandResult handlePlanDone() {
+        if (!planService.isPlanModeActive()) {
+            return CommandResult.success(msg("command.plan.not-active"));
+        }
+
+        // "Done" means: stop plan drafting mode.
+        // The plan itself is finalized via the plan_set_content tool.
+        planService.deactivatePlanMode();
+        return CommandResult.success(msg("command.plan.done"));
     }
 
     private CommandResult handlePlanApprove(List<String> args) {

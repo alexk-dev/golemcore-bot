@@ -1003,3 +1003,35 @@ body {
 }
 
 // Keep Bootstrap/Bootswatch defaults for button and tab colors.
+
+// ==================== Plan Control Panel ====================
+
+.plan-control-section .btn {
+  --bs-btn-padding-y: 0.2rem;
+  --bs-btn-padding-x: 0.55rem;
+  --bs-btn-font-size: 0.75rem;
+}
+
+.plan-control-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.plan-control-item {
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.5rem;
+  padding: 0.55rem;
+  background-color: var(--bs-body-bg);
+}
+
+.plan-control-item--active {
+  border-color: rgba(var(--bs-primary-rgb), 0.55);
+  box-shadow: 0 0 0 1px rgba(var(--bs-primary-rgb), 0.2) inset;
+}
+
+.plan-control-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--bs-emphasis-color);
+}

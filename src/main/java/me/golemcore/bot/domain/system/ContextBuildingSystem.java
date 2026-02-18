@@ -119,6 +119,7 @@ public class ContextBuildingSystem implements AgentSystem {
         // Collect tool definitions (native + MCP)
         List<ToolDefinition> tools = new ArrayList<>(toolComponents.stream()
                 .filter(ToolComponent::isEnabled)
+                .filter(tool -> isToolAdvertised(tool, planService.isPlanModeActive()))
                 .map(ToolComponent::getDefinition)
                 .toList());
 
@@ -291,6 +292,15 @@ public class ContextBuildingSystem implements AgentSystem {
         }
 
         return sb.toString().trim();
+    }
+
+    private boolean isToolAdvertised(ToolComponent tool, boolean planModeActive) {
+        String toolName = tool.getToolName();
+        if (me.golemcore.bot.tools.PlanSetContentTool.TOOL_NAME.equals(toolName)
+                || me.golemcore.bot.tools.PlanGetTool.TOOL_NAME.equals(toolName)) {
+            return planModeActive;
+        }
+        return true;
     }
 
     private void resolveTier(AgentContext context, UserPreferences prefs) {

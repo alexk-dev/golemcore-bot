@@ -43,6 +43,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
     private final BotProperties.TurnProperties turnSettings;
     private final BotProperties.ToolLoopProperties settings;
     private final ModelSelectionService modelSelectionService;
+    @SuppressWarnings("PMD.UnusedPrivateField")
     private final PlanService planService;
     private final RuntimeConfigService runtimeConfigService;
     private final Clock clock;
@@ -156,26 +157,30 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             // 3) Append assistant message with tool calls
             historyWriter.appendAssistantToolCalls(context, response, response.getToolCalls());
 
-            // 3.5) Plan mode: record tool calls as plan steps, write synthetic results
-            if (planService != null && planService.isPlanModeActive()) {
-                String planId = planService.getActivePlanId();
-                for (Message.ToolCall tc : response.getToolCalls()) {
-                    Map<String, Object> args = tc.getArguments() != null ? tc.getArguments() : Map.of();
-                    String description = tc.getName() + "(" + args + ")";
-                    planService.addStep(planId, tc.getName(), args, description);
+            // 4) Execute tools and append results
+            for (Message.ToolCall tc : response.getToolCalls()) {
+                if (me.golemcore.bot.tools.PlanSetContentTool.TOOL_NAME.equals(tc.getName())) {
+                    // Control tool: do not execute; let PlanFinalizationSystem handle it.
+                    context.setAttribute(ContextAttributes.PLAN_SET_CONTENT_REQUESTED, true);
+
+                    String md = null;
+                    if (tc.getArguments() != null && tc.getArguments().get("plan_markdown") instanceof String) {
+                        md = (String) tc.getArguments().get("plan_markdown");
+                    }
+                    if (md == null || md.isBlank()) {
+                        md = "[Plan draft received]";
+                    }
 
                     ToolExecutionOutcome synthetic = new ToolExecutionOutcome(
                             tc.getId(), tc.getName(),
-                            me.golemcore.bot.domain.model.ToolResult.success("[Planned]"),
-                            "[Planned]", true, null);
+                            me.golemcore.bot.domain.model.ToolResult.success(md),
+                            md, true, null);
                     historyWriter.appendToolResult(context, synthetic);
+                    context.addToolResult(tc.getId(), me.golemcore.bot.domain.model.ToolResult.success(md));
                     toolExecutions++;
+                    continue;
                 }
-                continue;
-            }
 
-            // 4) Execute tools and append results
-            for (Message.ToolCall tc : response.getToolCalls()) {
                 ToolExecutionOutcome outcome;
                 try {
                     outcome = toolExecutor.execute(context, tc);
