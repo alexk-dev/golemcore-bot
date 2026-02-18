@@ -18,116 +18,132 @@ import {
   type PlanControlState,
 } from '../api/plans';
 
+const PLAN_CONTROL_QUERY_KEY = ['plan-control-state'] as const;
+
+export interface EnablePlanModePayload {
+  chatId: string;
+  modelTier?: string | null;
+}
+
+interface PlanMutationConfig<TVariables> {
+  mutationFn: (variables: TVariables) => Promise<PlanControlState>;
+  successMessage: string;
+  errorPrefix: string;
+}
+
+interface NoArgPlanMutationResult
+  extends Omit<UseMutationResult<PlanControlState, unknown, undefined>, 'mutate' | 'mutateAsync'> {
+  mutate: () => void;
+  mutateAsync: () => Promise<PlanControlState>;
+}
+
 export function usePlanControlState(enabled = true): UseQueryResult<PlanControlState, unknown> {
   return useQuery({
-    queryKey: ['plan-control-state'],
+    queryKey: PLAN_CONTROL_QUERY_KEY,
     queryFn: getPlanControlState,
     enabled,
     refetchInterval: enabled ? 15000 : false,
   });
 }
 
-export function useEnablePlanMode(): UseMutationResult<PlanControlState, unknown, { chatId: string; modelTier?: string | null }> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: { chatId: string; modelTier?: string | null }) => enablePlanMode(payload),
-    onSuccess: () => {
-      toast.success('Plan mode enabled');
-      qc.invalidateQueries({ queryKey: ['plan-control-state'] });
-    },
-    onError: (err) => {
-      toast.error(`Failed to enable plan mode: ${extractErrorMessage(err)}`);
-    },
+export function useEnablePlanMode(): UseMutationResult<PlanControlState, unknown, EnablePlanModePayload> {
+  return usePlanMutation<EnablePlanModePayload>({
+    mutationFn: enablePlanMode,
+    successMessage: 'Plan mode enabled',
+    errorPrefix: 'Failed to enable plan mode',
   });
 }
 
-export function useDisablePlanMode(): UseMutationResult<PlanControlState, unknown, void> {
-  const qc = useQueryClient();
-  return useMutation({
+export function useDisablePlanMode(): NoArgPlanMutationResult {
+  const mutation = usePlanMutation<undefined>({
     mutationFn: () => disablePlanMode(),
-    onSuccess: () => {
-      toast.success('Plan mode disabled');
-      qc.invalidateQueries({ queryKey: ['plan-control-state'] });
-    },
-    onError: (err) => {
-      toast.error(`Failed to disable plan mode: ${extractErrorMessage(err)}`);
-    },
+    successMessage: 'Plan mode disabled',
+    errorPrefix: 'Failed to disable plan mode',
   });
+  return toNoArgMutationResult(mutation);
 }
 
-export function useDonePlanMode(): UseMutationResult<PlanControlState, unknown, void> {
-  const qc = useQueryClient();
-  return useMutation({
+export function useDonePlanMode(): NoArgPlanMutationResult {
+  const mutation = usePlanMutation<undefined>({
     mutationFn: () => donePlanMode(),
-    onSuccess: () => {
-      toast.success('Plan mode done');
-      qc.invalidateQueries({ queryKey: ['plan-control-state'] });
-    },
-    onError: (err) => {
-      toast.error(`Failed to finish plan mode: ${extractErrorMessage(err)}`);
-    },
+    successMessage: 'Plan mode done',
+    errorPrefix: 'Failed to finish plan mode',
   });
+  return toNoArgMutationResult(mutation);
 }
 
 export function useApprovePlan(): UseMutationResult<PlanControlState, unknown, string> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (planId: string) => approvePlan(planId),
-    onSuccess: () => {
-      toast.success('Plan approved and execution started');
-      qc.invalidateQueries({ queryKey: ['plan-control-state'] });
-    },
-    onError: (err) => {
-      toast.error(`Failed to approve plan: ${extractErrorMessage(err)}`);
-    },
+  return usePlanMutation<string>({
+    mutationFn: approvePlan,
+    successMessage: 'Plan approved and execution started',
+    errorPrefix: 'Failed to approve plan',
   });
 }
 
 export function useCancelPlan(): UseMutationResult<PlanControlState, unknown, string> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (planId: string) => cancelPlan(planId),
-    onSuccess: () => {
-      toast.success('Plan cancelled');
-      qc.invalidateQueries({ queryKey: ['plan-control-state'] });
-    },
-    onError: (err) => {
-      toast.error(`Failed to cancel plan: ${extractErrorMessage(err)}`);
-    },
+  return usePlanMutation<string>({
+    mutationFn: cancelPlan,
+    successMessage: 'Plan cancelled',
+    errorPrefix: 'Failed to cancel plan',
   });
 }
 
 export function useResumePlan(): UseMutationResult<PlanControlState, unknown, string> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (planId: string) => resumePlan(planId),
-    onSuccess: () => {
-      toast.success('Plan resume requested');
-      qc.invalidateQueries({ queryKey: ['plan-control-state'] });
-    },
-    onError: (err) => {
-      toast.error(`Failed to resume plan: ${extractErrorMessage(err)}`);
-    },
+  return usePlanMutation<string>({
+    mutationFn: resumePlan,
+    successMessage: 'Plan resume requested',
+    errorPrefix: 'Failed to resume plan',
   });
 }
 
 export function usePlanActionsPending(actions: Array<{ isPending?: boolean }>): boolean {
-  return useMemo(() => actions.some((a) => a.isPending === true), [actions]);
+  return useMemo(() => actions.some((action) => action.isPending === true), [actions]);
 }
 
-function extractErrorMessage(err: unknown): string {
-  if (typeof err === 'object' && err !== null && 'response' in err) {
-    const maybeResponse = (err as { response?: { data?: unknown } }).response;
+function usePlanMutation<TVariables>(
+  config: PlanMutationConfig<TVariables>,
+): UseMutationResult<PlanControlState, unknown, TVariables> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: config.mutationFn,
+    onSuccess: async () => {
+      toast.success(config.successMessage);
+      await queryClient.invalidateQueries({ queryKey: PLAN_CONTROL_QUERY_KEY });
+    },
+    onError: (error) => {
+      toast.error(`${config.errorPrefix}: ${extractErrorMessage(error)}`);
+    },
+  });
+}
+
+function toNoArgMutationResult(
+  mutation: UseMutationResult<PlanControlState, unknown, undefined>,
+): NoArgPlanMutationResult {
+  return {
+    ...mutation,
+    mutate: () => {
+      mutation.mutate(undefined);
+    },
+    mutateAsync: async () => mutation.mutateAsync(undefined),
+  };
+}
+
+function extractErrorMessage(error: unknown): string {
+  if (typeof error === 'object' && error !== null && 'response' in error) {
+    const maybeResponse = (error as { response?: { data?: unknown } }).response;
     const data = maybeResponse?.data;
     if (typeof data === 'object' && data !== null && 'message' in data) {
-      const msg = (data as { message?: unknown }).message;
-      if (typeof msg === 'string' && msg.trim().length > 0) {
-        return msg;
+      const message = (data as { message?: unknown }).message;
+      if (typeof message === 'string' && message.trim().length > 0) {
+        return message;
       }
     }
   }
-  if (err instanceof Error && err.message.trim().length > 0) {
-    return err.message;
+
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message;
   }
+
   return 'Unknown error';
 }
