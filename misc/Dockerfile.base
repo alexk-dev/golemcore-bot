@@ -4,22 +4,22 @@
 #     -t ghcr.io/alexk-dev/java-ai-bot-base:latest --push -f misc/Dockerfile.base misc/
 FROM ubuntu:24.04
 
-LABEL org.opencontainers.image.description="GolemCore Bot base image with JDK 17, Node.js 22, Python 3, Chromium, CLI tools"
+LABEL org.opencontainers.image.description="GolemCore Bot base image with JDK 25, Node.js 22, Python 3, Chromium, CLI tools"
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-# ── 1. Core packages + Adoptium JDK 17 ──────────────────────────────────────
+# ── 1. Core packages + Adoptium JDK 25 ──────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl wget gnupg apt-transport-https software-properties-common \
         git jq tree zip unzip procps make tini \
     && install -m 0755 -d /etc/apt/keyrings \
-    # Adoptium (Eclipse Temurin JDK 17)
+    # Adoptium (Eclipse Temurin JDK 25)
     && curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public \
        | gpg --dearmor -o /etc/apt/keyrings/adoptium.gpg \
     && echo "deb [signed-by=/etc/apt/keyrings/adoptium.gpg] \
        https://packages.adoptium.net/artifactory/deb $(. /etc/os-release && echo $VERSION_CODENAME) main" \
        > /etc/apt/sources.list.d/adoptium.list \
-    && apt-get update && apt-get install -y --no-install-recommends temurin-17-jdk \
+    && apt-get update && apt-get install -y --no-install-recommends temurin-25-jdk \
     && rm -rf /var/lib/apt/lists/*
 
 # ── 2. Node.js 22 LTS ───────────────────────────────────────────────────────
