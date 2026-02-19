@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Badge, Offcanvas } from 'react-bootstrap';
+import { Offcanvas } from 'react-bootstrap';
 import { useAuthStore } from '../../store/authStore';
 import { useContextPanelStore } from '../../store/contextPanelStore';
 import { listSessions, getSession } from '../../api/sessions';
@@ -267,11 +267,12 @@ export default function ChatWindow() {
         {/* Toolbar */}
         <div className="chat-toolbar">
           <div className="chat-toolbar-inner d-flex align-items-center">
-            <div className="d-flex align-items-center gap-2 flex-grow-1">
-              <span className={`status-dot ${connected ? 'online' : 'offline'}`} />
+            <div className="d-flex align-items-center gap-2 flex-grow-1" aria-live="polite">
+              <span className={`status-dot ${connected ? 'online' : 'offline'}`} aria-hidden="true" />
               <small className="text-body-secondary">{connected ? 'Connected' : 'Reconnecting...'}</small>
             </div>
             <button
+              type="button"
               className="btn btn-sm btn-secondary panel-toggle-btn"
               onClick={() => {
                 if (window.innerWidth > 992) {
@@ -281,6 +282,7 @@ export default function ChatWindow() {
                 }
               }}
               title={panelOpen ? 'Hide context panel' : 'Show context panel'}
+              aria-label={panelOpen ? 'Hide context panel' : 'Show context panel'}
             >
               {panelOpen ? '\u00BB' : '\u00AB'}
             </button>
@@ -288,17 +290,28 @@ export default function ChatWindow() {
         </div>
 
         {/* Messages */}
-        <div className="chat-window" ref={scrollRef} onScroll={handleScroll}>
+        <div
+          className="chat-window"
+          ref={scrollRef}
+          onScroll={handleScroll}
+          role="log"
+          aria-live="polite"
+          aria-relevant="additions text"
+          aria-busy={typing}
+        >
           <div className="chat-content-shell">
             {hasMore && (
               <div className="text-center py-2">
                 {loadingMore ? (
                   <small className="text-body-secondary">Loading...</small>
                 ) : (
-                  <Badge bg="secondary" className="cursor-pointer"
-                    onClick={() => setVisibleStart(Math.max(0, visibleStart - LOAD_MORE_COUNT))}>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-secondary"
+                    onClick={() => setVisibleStart(Math.max(0, visibleStart - LOAD_MORE_COUNT))}
+                  >
                     Load earlier messages
-                  </Badge>
+                  </button>
                 )}
               </div>
             )}
@@ -313,8 +326,8 @@ export default function ChatWindow() {
               />
             ))}
             {typing && (
-              <div className="typing-indicator">
-                <span /><span /><span />
+              <div className="typing-indicator" role="status" aria-live="polite" aria-label="Assistant is typing">
+                <span aria-hidden="true" /><span aria-hidden="true" /><span aria-hidden="true" />
               </div>
             )}
           </div>

@@ -1,6 +1,6 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 
 interface Props {
   role: string;
@@ -20,14 +20,22 @@ const TIER_META: Record<string, { label: string; className: string }> = {
 
 function ToolCallCard({ tool, result }: { tool: string; result: string }) {
   const [open, setOpen] = useState(false);
+  const contentId = useId();
+
   return (
     <div className="tool-call-card">
-      <div className="tool-call-header" onClick={() => setOpen(!open)}>
+      <button
+        type="button"
+        className="tool-call-header"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        aria-controls={contentId}
+      >
         <span className="tool-call-icon">{open ? '\u25BC' : '\u25B6'}</span>
         <span className="tool-call-name">{tool}</span>
-      </div>
+      </button>
       {open && (
-        <div className="tool-call-body">
+        <div id={contentId} className="tool-call-body">
           <pre>{result}</pre>
         </div>
       )}

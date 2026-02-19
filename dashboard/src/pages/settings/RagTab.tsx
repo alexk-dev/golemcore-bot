@@ -3,10 +3,7 @@ import { Button, Card, Col, Form, InputGroup, Row } from 'react-bootstrap';
 import toast from 'react-hot-toast';
 import { useUpdateRag } from '../../hooks/useSettings';
 import type { RagConfig } from '../../api/settings';
-
-function SaveStateHint({ isDirty }: { isDirty: boolean }): ReactElement {
-  return <small className="text-body-secondary">{isDirty ? 'Unsaved changes' : 'All changes saved'}</small>;
-}
+import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 
 function hasDiff<T>(current: T, initial: T): boolean {
   return JSON.stringify(current) !== JSON.stringify(initial);
@@ -111,12 +108,12 @@ export default function RagTab({ config }: RagTabProps): ReactElement {
           </Col>
         </Row>
 
-        <div className="d-flex align-items-center gap-2 mt-3">
+        <SettingsSaveBar className="mt-3">
           <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateRag.isPending}>
             {updateRag.isPending ? 'Saving...' : 'Save'}
           </Button>
           <SaveStateHint isDirty={isDirty} />
-        </div>
+        </SettingsSaveBar>
       </Card.Body>
     </Card>
   );

@@ -1,21 +1,10 @@
 import { type ReactElement, useEffect, useMemo, useState } from 'react';
-import { Button, Card, Form, OverlayTrigger, Tooltip } from 'react-bootstrap';
-import { FiHelpCircle } from 'react-icons/fi';
+import { Button, Card, Form } from 'react-bootstrap';
 import toast from 'react-hot-toast';
+import HelpTip from '../../components/common/HelpTip';
 import { useUpdateMemory } from '../../hooks/useSettings';
 import type { MemoryConfig } from '../../api/settings';
-
-function Tip({ text }: { text: string }): ReactElement {
-  return (
-    <OverlayTrigger placement="top" overlay={<Tooltip>{text}</Tooltip>}>
-      <span className="setting-tip"><FiHelpCircle /></span>
-    </OverlayTrigger>
-  );
-}
-
-function SaveStateHint({ isDirty }: { isDirty: boolean }): ReactElement {
-  return <small className="text-body-secondary">{isDirty ? 'Unsaved changes' : 'All changes saved'}</small>;
-}
+import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 
 function hasDiff<T>(current: T, initial: T): boolean {
   return JSON.stringify(current) !== JSON.stringify(initial);
@@ -50,14 +39,14 @@ export default function MemoryTab({ config }: MemoryTabProps): ReactElement {
         <Card.Title className="h6 mb-3">Memory</Card.Title>
         <Form.Check
           type="switch"
-          label={<>Enable Memory <Tip text="Persist user/assistant exchanges into long-term notes and include memory context in prompts." /></>}
+          label={<>Enable Memory <HelpTip text="Persist user/assistant exchanges into long-term notes and include memory context in prompts." /></>}
           checked={form.enabled ?? true}
           onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
           className="mb-3"
         />
         <Form.Group className="mb-3">
           <Form.Label className="small fw-medium">
-            Recent Days <Tip text="How many previous daily memory files to include in context." />
+            Recent Days <HelpTip text="How many previous daily memory files to include in context." />
           </Form.Label>
           <Form.Control
             size="sm"
@@ -68,12 +57,12 @@ export default function MemoryTab({ config }: MemoryTabProps): ReactElement {
             onChange={(e) => setForm({ ...form, recentDays: toNullableInt(e.target.value) })}
           />
         </Form.Group>
-        <div className="d-flex align-items-center gap-2">
+        <SettingsSaveBar>
           <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateMemory.isPending}>
             {updateMemory.isPending ? 'Saving...' : 'Save'}
           </Button>
           <SaveStateHint isDirty={isDirty} />
-        </div>
+        </SettingsSaveBar>
       </Card.Body>
     </Card>
   );

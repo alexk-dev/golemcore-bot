@@ -65,25 +65,25 @@ export default function DiagnosticsPage(): ReactElement {
       <Card>
         <Card.Body>
           <Card.Title className="h6">Environment</Card.Title>
-          <Table size="sm" responsive className="mb-0">
+          <Table size="sm" responsive className="mb-0 dashboard-table responsive-table diagnostics-table">
             <thead>
               <tr>
-                <th>Variable</th>
-                <th>Value</th>
+                <th scope="col">Variable</th>
+                <th scope="col">Value</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td><code>STORAGE_PATH</code></td>
-                <td><ValueCell value={data.environment.STORAGE_PATH} /></td>
+                <td data-label="Variable"><code>STORAGE_PATH</code></td>
+                <td data-label="Value"><ValueCell value={data.environment.STORAGE_PATH} /></td>
               </tr>
               <tr>
-                <td><code>TOOLS_WORKSPACE</code></td>
-                <td><ValueCell value={data.environment.TOOLS_WORKSPACE} /></td>
+                <td data-label="Variable"><code>TOOLS_WORKSPACE</code></td>
+                <td data-label="Value"><ValueCell value={data.environment.TOOLS_WORKSPACE} /></td>
               </tr>
               <tr>
-                <td><code>SPRING_PROFILES_ACTIVE</code></td>
-                <td><ValueCell value={data.environment.SPRING_PROFILES_ACTIVE} /></td>
+                <td data-label="Variable"><code>SPRING_PROFILES_ACTIVE</code></td>
+                <td data-label="Value"><ValueCell value={data.environment.SPRING_PROFILES_ACTIVE} /></td>
               </tr>
             </tbody>
           </Table>

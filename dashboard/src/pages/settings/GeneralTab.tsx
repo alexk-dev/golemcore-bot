@@ -1,11 +1,12 @@
 import { type ReactElement, useEffect, useState } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
-import { Button, Card, Col, Form, OverlayTrigger, Row, Tooltip } from 'react-bootstrap';
-import { FiHelpCircle } from 'react-icons/fi';
+import { Button, Card, Col, Form, Row } from 'react-bootstrap';
 import toast from 'react-hot-toast';
+import HelpTip from '../../components/common/HelpTip';
 import { useUpdatePreferences } from '../../hooks/useSettings';
 import { changePassword } from '../../api/auth';
 import MfaSetup from '../../components/auth/MfaSetup';
+import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 
 export interface GeneralSettingsData {
   language?: string;
@@ -20,26 +21,6 @@ export interface GeneralTabProps {
   settings: GeneralSettingsData | undefined;
   me: AuthMe | undefined;
   qc: QueryClient;
-}
-
-export interface TipProps {
-  text: string;
-}
-
-function Tip({ text }: TipProps): ReactElement {
-  return (
-    <OverlayTrigger placement="top" overlay={<Tooltip>{text}</Tooltip>}>
-      <span className="setting-tip"><FiHelpCircle /></span>
-    </OverlayTrigger>
-  );
-}
-
-export interface SaveStateHintProps {
-  isDirty: boolean;
-}
-
-function SaveStateHint({ isDirty }: SaveStateHintProps): ReactElement {
-  return <small className="text-body-secondary">{isDirty ? 'Unsaved changes' : 'All changes saved'}</small>;
 }
 
 export default function GeneralTab({ settings, me, qc }: GeneralTabProps): ReactElement {
@@ -92,7 +73,7 @@ export default function GeneralTab({ settings, me, qc }: GeneralTabProps): React
             <Form onSubmit={handleSavePrefsSubmit}>
               <Form.Group className="mb-3">
                 <Form.Label className="small fw-medium">
-                  Language <Tip text="UI and bot response language" />
+                  Language <HelpTip text="UI and bot response language" />
                 </Form.Label>
                 <Form.Select size="sm" value={language} onChange={(e) => setLanguage(e.target.value)}>
                   <option value="en">English</option>
@@ -101,7 +82,7 @@ export default function GeneralTab({ settings, me, qc }: GeneralTabProps): React
               </Form.Group>
               <Form.Group className="mb-3">
                 <Form.Label className="small fw-medium">
-                  Timezone <Tip text="Used for scheduling and timestamp display" />
+                  Timezone <HelpTip text="Used for scheduling and timestamp display" />
                 </Form.Label>
                 <Form.Control
                   size="sm"
@@ -111,12 +92,12 @@ export default function GeneralTab({ settings, me, qc }: GeneralTabProps): React
                   placeholder="UTC"
                 />
               </Form.Group>
-              <div className="d-flex align-items-center gap-2">
+              <SettingsSaveBar>
                 <Button type="submit" variant="primary" size="sm" disabled={!isPrefsDirty || updatePrefs.isPending}>
                   {updatePrefs.isPending ? 'Saving...' : 'Save Preferences'}
                 </Button>
                 <SaveStateHint isDirty={isPrefsDirty} />
-              </div>
+        </SettingsSaveBar>
             </Form>
           </Card.Body>
         </Card>

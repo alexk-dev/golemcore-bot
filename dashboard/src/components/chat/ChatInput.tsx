@@ -20,6 +20,8 @@ interface Props {
 }
 
 export default function ChatInput({ onSend, disabled, running, onStop }: Props) {
+  const commandMenuId = 'chat-command-menu';
+  const getCommandOptionId = (index: number) => `${commandMenuId}-option-${index}`;
   const [text, setText] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -141,6 +143,7 @@ export default function ChatInput({ onSend, disabled, running, onStop }: Props) 
   const isSubmitDisabled = disabled === true || (text.trim().length === 0 && attachments.length === 0);
   const btnClass = 'chat-send-btn rounded-circle d-flex align-items-center justify-content-center';
   const iconBtnClass = 'chat-inline-icon-btn d-flex align-items-center justify-content-center';
+  const activeSuggestion = suggestions[activeIndex];
 
   return (
     <div className="chat-input-area">
@@ -157,9 +160,21 @@ export default function ChatInput({ onSend, disabled, running, onStop }: Props) 
             onChange={handleChange} onKeyDown={handleKeyDown} onPaste={handlePaste}
             onFocus={() => setIsFocused(true)} onBlur={() => setIsFocused(false)}
             placeholder="Type a message or drop images..." disabled={disabled} className="chat-textarea"
+            aria-expanded={isMenuOpen}
+            aria-controls={commandMenuId}
+            aria-haspopup="listbox"
+            aria-label="Message input"
+            aria-autocomplete="list"
+            aria-activedescendant={isMenuOpen && activeSuggestion != null ? getCommandOptionId(activeIndex) : undefined}
           />
           {isMenuOpen && (
-            <ChatCommandMenu suggestions={suggestions} activeIndex={activeIndex} onSelect={handleCommandSelect} />
+            <ChatCommandMenu
+              menuId={commandMenuId}
+              suggestions={suggestions}
+              activeIndex={activeIndex}
+              getOptionId={getCommandOptionId}
+              onSelect={handleCommandSelect}
+            />
           )}
           <div className="chat-input-actions">
             <div className="chat-inline-actions">
@@ -182,7 +197,7 @@ export default function ChatInput({ onSend, disabled, running, onStop }: Props) 
                 <FiStopCircle size={20} />
               </Button>
             ) : (
-              <Button type="submit" variant="primary" disabled={isSubmitDisabled} className={btnClass}>
+              <Button type="submit" variant="primary" disabled={isSubmitDisabled} className={btnClass} aria-label="Send message" title="Send message">
                 <FiSend size={18} />
               </Button>
             )}

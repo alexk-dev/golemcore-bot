@@ -65,7 +65,7 @@ export default function AnalyticsPage(): ReactElement {
     <div>
       <div className="section-header d-flex align-items-center justify-content-between">
         <h4 className="mb-0">Analytics</h4>
-        <ButtonGroup size="sm">
+        <ButtonGroup size="sm" className="period-toggle-group">
           {['24h', '7d', '30d'].map((p) => (
             <Button key={p} variant={period === p ? 'primary' : 'secondary'} onClick={() => setPeriod(p)}>
               {p}

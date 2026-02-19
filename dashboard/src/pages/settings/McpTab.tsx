@@ -3,10 +3,7 @@ import { Button, Card, Col, Form, Row } from 'react-bootstrap';
 import toast from 'react-hot-toast';
 import { useUpdateMcp } from '../../hooks/useSettings';
 import type { McpConfig } from '../../api/settings';
-
-function SaveStateHint({ isDirty }: { isDirty: boolean }): ReactElement {
-  return <small className="text-body-secondary">{isDirty ? 'Unsaved changes' : 'All changes saved'}</small>;
-}
+import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 
 function hasDiff<T>(current: T, initial: T): boolean {
   return JSON.stringify(current) !== JSON.stringify(initial);
@@ -74,12 +71,12 @@ export default function McpTab({ config }: McpTabProps): ReactElement {
             </Form.Group>
           </Col>
         </Row>
-        <div className="d-flex align-items-center gap-2">
+        <SettingsSaveBar>
           <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateMcp.isPending}>
             {updateMcp.isPending ? 'Saving...' : 'Save'}
           </Button>
           <SaveStateHint isDirty={isDirty} />
-        </div>
+        </SettingsSaveBar>
       </Card.Body>
     </Card>
   );

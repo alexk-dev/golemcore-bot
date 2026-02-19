@@ -1,7 +1,7 @@
 import { type ReactElement, useEffect, useMemo, useState } from 'react';
-import { Badge, Button, Card, Form, InputGroup, OverlayTrigger, Table, Tooltip } from 'react-bootstrap';
-import { FiHelpCircle } from 'react-icons/fi';
+import { Badge, Button, Card, Form, InputGroup, Table } from 'react-bootstrap';
 import toast from 'react-hot-toast';
+import HelpTip from '../../components/common/HelpTip';
 import ConfirmModal from '../../components/common/ConfirmModal';
 import {
   useDeleteInviteCode,
@@ -11,18 +11,7 @@ import {
   useUpdateVoice,
 } from '../../hooks/useSettings';
 import type { TelegramConfig, VoiceConfig } from '../../api/settings';
-
-function Tip({ text }: { text: string }): ReactElement {
-  return (
-    <OverlayTrigger placement="top" overlay={<Tooltip>{text}</Tooltip>}>
-      <span className="setting-tip"><FiHelpCircle /></span>
-    </OverlayTrigger>
-  );
-}
-
-function SaveStateHint({ isDirty }: { isDirty: boolean }): ReactElement {
-  return <small className="text-body-secondary">{isDirty ? 'Unsaved changes' : 'All changes saved'}</small>;
-}
+import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 
 function hasDiff<T>(current: T, initial: T): boolean {
   return JSON.stringify(current) !== JSON.stringify(initial);
@@ -118,7 +107,7 @@ export default function TelegramTab({ config, voiceConfig }: TelegramTabProps): 
 
         <Form.Group className="mb-3">
           <Form.Label className="small fw-medium">
-            Bot Token <Tip text="Telegram Bot API token from @BotFather" />
+            Bot Token <HelpTip text="Telegram Bot API token from @BotFather" />
           </Form.Label>
           <InputGroup size="sm">
             <Form.Control
@@ -135,7 +124,7 @@ export default function TelegramTab({ config, voiceConfig }: TelegramTabProps): 
 
         <Form.Group className="mb-3">
           <Form.Label className="small fw-medium">
-            Auth Mode <Tip text="Controls how users authenticate: user (single explicit ID) or invite codes (shareable codes)" />
+            Auth Mode <HelpTip text="Controls how users authenticate: user (single explicit ID) or invite codes (shareable codes)" />
           </Form.Label>
           <Form.Select
             size="sm"
@@ -150,7 +139,7 @@ export default function TelegramTab({ config, voiceConfig }: TelegramTabProps): 
         {authMode === 'user' && (
           <Form.Group className="mb-3">
             <Form.Label className="small fw-medium">
-              Allowed User ID <Tip text="Single Telegram numeric user ID" />
+              Allowed User ID <HelpTip text="Single Telegram numeric user ID" />
             </Form.Label>
             <Form.Control
               size="sm"
@@ -166,29 +155,50 @@ export default function TelegramTab({ config, voiceConfig }: TelegramTabProps): 
         {authMode === 'invite_only' && (
           <div className="mb-3">
             <div className="d-flex align-items-center justify-content-between mb-2">
-              <span className="small fw-medium">Invite Codes <Tip text="Single-use codes that grant Telegram access when redeemed" /></span>
+              <span className="small fw-medium">Invite Codes <HelpTip text="Single-use codes that grant Telegram access when redeemed" /></span>
               <Button variant="primary" size="sm"
                 onClick={() => genInvite.mutate(undefined, { onSuccess: () => toast.success('Invite code generated') })}>
                 Generate Code
               </Button>
             </div>
             {(config.inviteCodes ?? []).length > 0 ? (
-              <Table size="sm" hover responsive className="mb-0">
-                <thead><tr><th>Code</th><th>Status</th><th>Created</th><th></th></tr></thead>
+              <Table size="sm" hover responsive className="mb-0 dashboard-table responsive-table invites-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Code</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Created</th>
+                    <th scope="col">Actions</th>
+                  </tr>
+                </thead>
                 <tbody>
                   {(config.inviteCodes ?? []).map((ic) => (
                     <tr key={ic.code}>
-                      <td><code className="small">{ic.code}</code></td>
-                      <td><Badge bg={ic.used ? 'secondary' : 'success'}>{ic.used ? 'Used' : 'Active'}</Badge></td>
-                      <td className="small text-body-secondary">{new Date(ic.createdAt).toLocaleDateString()}</td>
-                      <td className="text-end">
-                        <Button size="sm" variant="secondary" className="me-2"
-                          onClick={() => {
-                            void navigator.clipboard.writeText(ic.code);
-                            toast.success('Copied!');
-                          }}>Copy</Button>
-                        <Button size="sm" variant="danger"
-                          onClick={() => setRevokeCode(ic.code)}>Revoke</Button>
+                      <td data-label="Code"><code className="small">{ic.code}</code></td>
+                      <td data-label="Status"><Badge bg={ic.used ? 'secondary' : 'success'}>{ic.used ? 'Used' : 'Active'}</Badge></td>
+                      <td data-label="Created" className="small text-body-secondary">{new Date(ic.createdAt).toLocaleDateString()}</td>
+                      <td data-label="Actions" className="text-end">
+                        <div className="d-flex flex-wrap gap-1 invite-actions">
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            className="invite-action-btn"
+                            onClick={() => {
+                              void navigator.clipboard.writeText(ic.code);
+                              toast.success('Copied!');
+                            }}
+                          >
+                            Copy
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="danger"
+                            className="invite-action-btn"
+                            onClick={() => setRevokeCode(ic.code)}
+                          >
+                            Revoke
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -214,20 +224,20 @@ export default function TelegramTab({ config, voiceConfig }: TelegramTabProps): 
           <Card.Body>
             <Card.Title className="h6 mb-2">Telegram Voice</Card.Title>
             <Form.Check type="switch"
-              label={<>Respond with Voice <Tip text="If incoming message is voice, bot can answer with synthesized voice." /></>}
+              label={<>Respond with Voice <HelpTip text="If incoming message is voice, bot can answer with synthesized voice." /></>}
               checked={telegramRespondWithVoice}
               onChange={(e) => setTelegramRespondWithVoice(e.target.checked)}
               className="mb-2"
             />
             <Form.Check type="switch"
-              label={<>Transcribe Incoming Voice <Tip text="Enable transcription of incoming voice messages before processing." /></>}
+              label={<>Transcribe Incoming Voice <HelpTip text="Enable transcription of incoming voice messages before processing." /></>}
               checked={telegramTranscribeIncoming}
               onChange={(e) => setTelegramTranscribeIncoming(e.target.checked)}
             />
           </Card.Body>
         </Card>
 
-        <div className="d-flex flex-wrap align-items-center gap-2 pt-2 border-top">
+        <SettingsSaveBar className="flex-wrap">
           <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isTelegramDirty || updateTelegram.isPending}>
             {updateTelegram.isPending ? 'Saving...' : 'Save'}
           </Button>
@@ -240,7 +250,7 @@ export default function TelegramTab({ config, voiceConfig }: TelegramTabProps): 
             {restart.isPending ? 'Restarting...' : 'Restart Bot'}
           </Button>
           <SaveStateHint isDirty={isTelegramDirty} />
-        </div>
+        </SettingsSaveBar>
       </Card.Body>
 
       <ConfirmModal

@@ -1,10 +1,11 @@
 import { type ReactElement, useEffect, useMemo, useState } from 'react';
-import { Badge, Button, Card, Col, Form, OverlayTrigger, Row, Tooltip } from 'react-bootstrap';
-import { FiHelpCircle } from 'react-icons/fi';
+import { Badge, Button, Card, Col, Form, Row } from 'react-bootstrap';
 import toast from 'react-hot-toast';
+import HelpTip from '../../components/common/HelpTip';
 import { useUpdateModelRouter } from '../../hooks/useSettings';
 import { useAvailableModels } from '../../hooks/useModels';
 import type { LlmConfig, ModelRouterConfig } from '../../api/settings';
+import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 
 interface AvailableModel {
   id: string;
@@ -27,18 +28,6 @@ interface TierModelCardProps {
   reasoningValue: string;
   onModelChange: (value: string) => void;
   onReasoningChange: (value: string) => void;
-}
-
-function Tip({ text }: { text: string }): ReactElement {
-  return (
-    <OverlayTrigger placement="top" overlay={<Tooltip>{text}</Tooltip>}>
-      <span className="setting-tip"><FiHelpCircle /></span>
-    </OverlayTrigger>
-  );
-}
-
-function SaveStateHint({ isDirty }: { isDirty: boolean }): ReactElement {
-  return <small className="text-body-secondary">{isDirty ? 'Unsaved changes' : 'All changes saved'}</small>;
 }
 
 function hasDiff<T>(current: T, initial: T): boolean {
@@ -189,7 +178,7 @@ export default function ModelsTab({ config, llmConfig }: ModelsTabProps): ReactE
               <Form.Group>
                 <Form.Label className="small fw-medium">
                   Temperature: {form.temperature?.toFixed(1) ?? '0.7'}
-                  <Tip text="Controls randomness of LLM responses. Higher = more creative, lower = more deterministic. Ignored by reasoning models." />
+                  <HelpTip text="Controls randomness of LLM responses. Higher = more creative, lower = more deterministic. Ignored by reasoning models." />
                 </Form.Label>
                 <Form.Range
                   min={0}
@@ -203,7 +192,7 @@ export default function ModelsTab({ config, llmConfig }: ModelsTabProps): ReactE
             <Col md={6} className="d-flex align-items-end">
               <Form.Check
                 type="switch"
-                label={<>Dynamic tier upgrade <Tip text="Automatically upgrade to coding tier when code-related activity is detected mid-conversation" /></>}
+                label={<>Dynamic tier upgrade <HelpTip text="Automatically upgrade to coding tier when code-related activity is detected mid-conversation" /></>}
                 checked={form.dynamicTierEnabled ?? true}
                 onChange={(e) => setForm({ ...form, dynamicTierEnabled: e.target.checked })}
               />
@@ -253,12 +242,12 @@ export default function ModelsTab({ config, llmConfig }: ModelsTabProps): ReactE
         ))}
       </Row>
 
-      <div className="d-flex align-items-center gap-2">
+      <SettingsSaveBar>
         <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isModelsDirty || updateRouter.isPending}>
           {updateRouter.isPending ? 'Saving...' : 'Save Model Configuration'}
         </Button>
         <SaveStateHint isDirty={isModelsDirty} />
-      </div>
+        </SettingsSaveBar>
     </>
   );
 }

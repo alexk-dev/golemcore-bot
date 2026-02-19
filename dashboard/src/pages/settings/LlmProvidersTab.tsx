@@ -273,13 +273,13 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
         </datalist>
 
         {providerNames.length > 0 ? (
-          <Table size="sm" hover responsive className="mb-3">
+          <Table size="sm" hover responsive className="mb-3 dashboard-table responsive-table providers-table">
             <thead>
               <tr>
-                <th>Provider</th>
-                <th>Base URL</th>
-                <th>Status</th>
-                <th className="text-end">Actions</th>
+                <th scope="col">Provider</th>
+                <th scope="col">Base URL</th>
+                <th scope="col">Status</th>
+                <th scope="col" className="text-end">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -288,41 +288,44 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
                 const isReady = provider?.apiKeyPresent === true;
                 return (
                   <tr key={name}>
-                    <td className="text-capitalize fw-medium">{name}</td>
-                    <td className="small text-body-secondary text-truncate" style={{ maxWidth: '260px' }}>
+                    <td data-label="Provider" className="text-capitalize fw-medium">{name}</td>
+                    <td data-label="Base URL" className="small text-body-secondary provider-url-cell">
                       {provider?.baseUrl ?? <em>default</em>}
                     </td>
-                    <td>
+                    <td data-label="Status">
                       {isReady ? (
                         <Badge bg="success">Ready</Badge>
                       ) : (
                         <Badge bg="secondary">Setup needed</Badge>
                       )}
                     </td>
-                    <td className="text-end text-nowrap">
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        className="me-2"
-                        onClick={() => {
-                          if (editingName === name && !isNewProvider) {
-                            handleCancelEdit();
-                          } else {
-                            handleStartEdit(name);
-                          }
-                        }}
-                      >
-                        {editingName === name && !isNewProvider ? 'Close' : 'Edit'}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="danger"
-                        disabled={usedProviders.has(name) || removeProvider.isPending}
-                        title={usedProviders.has(name) ? 'In use by model router' : 'Remove provider'}
-                        onClick={() => setDeleteProvider(name)}
-                      >
-                        Delete
-                      </Button>
+                    <td data-label="Actions" className="text-end text-nowrap">
+                      <div className="d-flex flex-wrap gap-1 providers-actions">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="provider-action-btn"
+                          onClick={() => {
+                            if (editingName === name && !isNewProvider) {
+                              handleCancelEdit();
+                            } else {
+                              handleStartEdit(name);
+                            }
+                          }}
+                        >
+                          {editingName === name && !isNewProvider ? 'Close' : 'Edit'}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          className="provider-action-btn"
+                          disabled={usedProviders.has(name) || removeProvider.isPending}
+                          title={usedProviders.has(name) ? 'In use by model router' : 'Remove provider'}
+                          onClick={() => setDeleteProvider(name)}
+                        >
+                          Delete
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 );
