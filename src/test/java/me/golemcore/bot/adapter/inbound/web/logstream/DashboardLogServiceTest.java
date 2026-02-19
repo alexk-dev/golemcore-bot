@@ -6,12 +6,14 @@ import ch.qos.logback.classic.spi.ThrowableProxy;
 import me.golemcore.bot.adapter.inbound.web.dto.LogEntryDto;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import org.junit.jupiter.api.Test;
+import reactor.test.StepVerifier;
 
 import java.time.Instant;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -80,6 +82,100 @@ class DashboardLogServiceTest {
         assertEquals(List.of(3L, 4L, 5L), slice.items().stream().map(LogEntryDto::getSeq).toList());
         assertEquals(3L, slice.oldestSeq());
         assertEquals(5L, slice.newestSeq());
+    }
+
+    @Test
+    void shouldReturnEmptyDataWhenLogsDisabled() {
+        BotProperties props = baseProperties();
+        props.getDashboard().getLogs().setEnabled(false);
+        DashboardLogService service = new DashboardLogService(props);
+
+        service.append(loggingEvent("me.golemcore.bot.Test", "message", null));
+
+        DashboardLogService.LogsSlice slice = service.getLogsPage(null, 10);
+        assertTrue(slice.items().isEmpty());
+        assertNull(slice.oldestSeq());
+        assertNull(slice.newestSeq());
+        assertFalse(slice.hasMore());
+
+        StepVerifier.create(service.streamAfter(0))
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldIgnoreInternalLogstreamLoggerEntries() {
+        BotProperties props = baseProperties();
+        DashboardLogService service = new DashboardLogService(props);
+
+        service.append(loggingEvent(
+                "me.golemcore.bot.adapter.inbound.web.logstream.DashboardLogService",
+                "internal",
+                null));
+        service.append(loggingEvent("me.golemcore.bot.Test", "external", null));
+
+        DashboardLogService.LogsSlice slice = service.getLogsPage(null, 10);
+        assertEquals(1, slice.items().size());
+        assertEquals("external", slice.items().get(0).getMessage());
+    }
+
+    @Test
+    void shouldApplyPageSizeBounds() {
+        BotProperties props = baseProperties();
+        props.getDashboard().getLogs().setDefaultPageSize(2);
+        props.getDashboard().getLogs().setMaxPageSize(3);
+        DashboardLogService service = new DashboardLogService(props);
+
+        for (int i = 1; i <= 5; i++) {
+            service.append(loggingEvent("me.golemcore.bot.Test", "message-" + i, null));
+        }
+
+        DashboardLogService.LogsSlice withNegativeLimit = service.getLogsPage(null, -10);
+        assertEquals(1, withNegativeLimit.items().size());
+        assertEquals(5L, withNegativeLimit.items().get(0).getSeq());
+
+        DashboardLogService.LogsSlice withTooLargeLimit = service.getLogsPage(null, 50);
+        assertEquals(3, withTooLargeLimit.items().size());
+        assertEquals(List.of(3L, 4L, 5L), withTooLargeLimit.items().stream().map(LogEntryDto::getSeq).toList());
+    }
+
+    @Test
+    void shouldTruncateLongMessageAndException() {
+        BotProperties props = baseProperties();
+        props.getDashboard().getLogs().setMaxMessageChars(20);
+        props.getDashboard().getLogs().setMaxExceptionChars(30);
+        DashboardLogService service = new DashboardLogService(props);
+
+        RuntimeException exception = new RuntimeException("this exception message is very long for truncation checks");
+        service.append(loggingEvent(
+                "me.golemcore.bot.Test",
+                "this is a very long log line that must be truncated",
+                exception));
+
+        DashboardLogService.LogsSlice slice = service.getLogsPage(null, 10);
+        LogEntryDto entry = slice.items().get(0);
+        assertNotNull(entry.getMessage());
+        assertTrue(entry.getMessage().endsWith("... [truncated]"));
+        assertTrue(entry.getMessage().length() <= 20);
+        assertNotNull(entry.getException());
+        assertTrue(entry.getException().endsWith("... [truncated]"));
+        assertTrue(entry.getException().length() <= 30);
+    }
+
+    @Test
+    void shouldStreamOnlyEventsAfterRequestedSequence() {
+        BotProperties props = baseProperties();
+        DashboardLogService service = new DashboardLogService(props);
+
+        service.append(loggingEvent("me.golemcore.bot.Test", "message-1", null));
+        service.append(loggingEvent("me.golemcore.bot.Test", "message-2", null));
+        service.append(loggingEvent("me.golemcore.bot.Test", "message-3", null));
+
+        StepVerifier.create(service.streamAfter(2).take(1))
+                .assertNext(entry -> {
+                    assertEquals(3L, entry.getSeq());
+                    assertEquals("message-3", entry.getMessage());
+                })
+                .verifyComplete();
     }
 
     private BotProperties baseProperties() {
