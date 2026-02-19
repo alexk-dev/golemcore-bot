@@ -3,6 +3,7 @@ name: CI & Docker Publish
 on:
   push:
     branches: ['**']
+    tags: ['v*']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -146,7 +147,11 @@ jobs:
           echo "app-image=${APP_IMAGE}" >> $GITHUB_OUTPUT
           echo "sha-arch-tag=${SHORT_SHA}-${ARCH}" >> $GITHUB_OUTPUT
 
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${{ github.ref_name }}"
+            VERSION="${VERSION#v}"
+            echo "jib-tags=${SHORT_SHA}-${ARCH},latest-${ARCH},${VERSION}-${ARCH}" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
             echo "jib-tags=${SHORT_SHA}-${ARCH},latest-${ARCH}" >> $GITHUB_OUTPUT
           else
             echo "jib-tags=${SHORT_SHA}-${ARCH},dev-latest-${ARCH}" >> $GITHUB_OUTPUT
@@ -194,8 +199,20 @@ jobs:
             "${IMAGE}:${SHORT_SHA}-arm64"
           docker manifest push "${IMAGE}:${SHORT_SHA}"
 
-          # Latest manifest (main branch only)
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          # Version manifest (tag push)
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${{ github.ref_name }}"
+            VERSION="${VERSION#v}"
+            docker manifest create "${IMAGE}:${VERSION}" \
+              "${IMAGE}:${VERSION}-amd64" \
+              "${IMAGE}:${VERSION}-arm64"
+            docker manifest push "${IMAGE}:${VERSION}"
+
+            docker manifest create "${IMAGE}:latest" \
+              "${IMAGE}:latest-amd64" \
+              "${IMAGE}:latest-arm64"
+            docker manifest push "${IMAGE}:latest"
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
             docker manifest create "${IMAGE}:latest" \
               "${IMAGE}:latest-amd64" \
               "${IMAGE}:latest-arm64"

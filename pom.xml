@@ -10,7 +10,7 @@
     </parent>
     <groupId>me.golemcore</groupId>
     <artifactId>bot</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.0.0-SNAPSHOT</version>
     <name>golemcore-bot</name>
     <description>Extensible AI assistant with multi-LLM support, skill routing, and tool execution</description>
 
@@ -294,6 +294,31 @@
                             <artifactId>lombok</artifactId>
                         </exclude>
                     </excludes>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>build-info</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Git Commit ID (generates git.properties → Spring GitProperties bean) -->
+            <plugin>
+                <groupId>io.github.git-commit-id</groupId>
+                <artifactId>git-commit-id-maven-plugin</artifactId>
+                <version>9.0.1</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>revision</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <failOnNoGitDirectory>false</failOnNoGitDirectory>
+                    <generateGitPropertiesFile>true</generateGitPropertiesFile>
                 </configuration>
             </plugin>
 

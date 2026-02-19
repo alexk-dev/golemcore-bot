@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom';
 import { Nav } from 'react-bootstrap';
 import { FiMessageSquare, FiBarChart2, FiSettings, FiFileText, FiZap, FiList, FiActivity, FiX } from 'react-icons/fi';
 import { useSidebarStore } from '../../store/sidebarStore';
+import { useSystemHealth } from '../../hooks/useSystem';
 
 const links = [
   { to: '/', icon: <FiMessageSquare size={20} />, label: 'Chat' },
@@ -16,6 +17,8 @@ const links = [
 export default function Sidebar() {
   const mobileOpen = useSidebarStore((s) => s.mobileOpen);
   const closeMobile = useSidebarStore((s) => s.closeMobile);
+  const { data: health } = useSystemHealth();
+  const version = health?.version ? `v${health.version}` : 'v...';
 
   const handleNavClick = () => {
     // Close sidebar on mobile when navigation item is clicked
@@ -66,7 +69,7 @@ export default function Sidebar() {
           ))}
         </Nav>
         <div className="px-4 py-3 sidebar-footer-text small text-body-secondary">
-          v0.1.0
+          {version}
         </div>
       </aside>
     </>

@@ -23,6 +23,9 @@ import me.golemcore.bot.port.inbound.ChannelPort;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.info.BuildProperties;
+import org.springframework.boot.info.GitProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -60,6 +63,8 @@ public class AutoConfiguration {
     private final BotProperties properties;
     private final List<ChannelPort> channelPorts;
     private final RuntimeConfigService runtimeConfigService;
+    private final ObjectProvider<BuildProperties> buildPropertiesProvider;
+    private final ObjectProvider<GitProperties> gitPropertiesProvider;
 
     @Bean
     public static Clock clock() {
@@ -77,7 +82,11 @@ public class AutoConfiguration {
 
     @PostConstruct
     public void init() {
-        log.info("Java AI Bot starting...");
+        BuildProperties buildProps = buildPropertiesProvider.getIfAvailable();
+        GitProperties gitProps = gitPropertiesProvider.getIfAvailable();
+        String version = buildProps != null ? buildProps.getVersion() : "dev";
+        String commitAbbrev = gitProps != null ? gitProps.getShortCommitId() : "unknown";
+        log.info("GolemCore Bot v{} ({}) starting...", version, commitAbbrev);
         log.info("Balanced Model: {}", runtimeConfigService.getBalancedModel());
         log.info("LLM Provider: {}", properties.getLlm().getProvider());
         log.info("Storage Path: {}", properties.getStorage().getLocal().getBasePath());
