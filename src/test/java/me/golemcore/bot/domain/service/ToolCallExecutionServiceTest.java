@@ -607,6 +607,23 @@ class ToolCallExecutionServiceTest {
         assertTrue(toolResult.getError().contains("Tool execution failed"));
     }
 
+    @Test
+    void shouldFallbackToExceptionClassWhenRootCauseMessageIsBlank() {
+        AgentContext context = buildContext();
+        Message.ToolCall toolCall = buildToolCall(TOOL_NAME, Map.of());
+        RuntimeException failure = new RuntimeException(new IllegalStateException());
+        when(toolComponent.execute(any())).thenReturn(CompletableFuture.failedFuture(failure));
+
+        ToolCallExecutionResult result = service.execute(context, toolCall);
+
+        assertNotNull(result);
+        ToolResult toolResult = result.toolResult();
+        assertTrue(!toolResult.isSuccess());
+        assertEquals(ToolFailureKind.EXECUTION_FAILED, toolResult.getFailureKind());
+        assertTrue(toolResult.getError().contains("IllegalStateException"));
+        assertTrue(!toolResult.getError().contains("null"));
+    }
+
     // ==================== AgentContextHolder lifecycle ====================
 
     @Test
