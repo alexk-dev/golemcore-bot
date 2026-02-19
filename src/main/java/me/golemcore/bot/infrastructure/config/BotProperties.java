@@ -275,6 +275,17 @@ public class BotProperties {
         private int jwtExpirationMinutes = 30;
         private int refreshExpirationDays = 7;
         private String corsAllowedOrigins = "";
+        private LogsProperties logs = new LogsProperties();
+    }
+
+    @Data
+    public static class LogsProperties {
+        private boolean enabled = true;
+        private int maxEntries = 10000;
+        private int defaultPageSize = 200;
+        private int maxPageSize = 1000;
+        private int maxMessageChars = 8000;
+        private int maxExceptionChars = 16000;
     }
 
     // ==================== PROMPTS (system prompt sections) ====================

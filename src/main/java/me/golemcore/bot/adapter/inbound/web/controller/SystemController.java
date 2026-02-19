@@ -1,7 +1,9 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
 import lombok.RequiredArgsConstructor;
+import me.golemcore.bot.adapter.inbound.web.dto.LogsPageResponse;
 import me.golemcore.bot.adapter.inbound.web.dto.SystemHealthResponse;
+import me.golemcore.bot.adapter.inbound.web.logstream.DashboardLogService;
 import me.golemcore.bot.domain.component.BrowserComponent;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
@@ -13,6 +15,7 @@ import org.springframework.boot.info.GitProperties;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
@@ -39,6 +42,7 @@ public class SystemController {
     private final BrowserComponent browserComponent;
     private final ObjectProvider<BuildProperties> buildPropertiesProvider;
     private final ObjectProvider<GitProperties> gitPropertiesProvider;
+    private final DashboardLogService dashboardLogService;
 
     @GetMapping("/health")
     public Mono<ResponseEntity<SystemHealthResponse>> health() {
@@ -148,6 +152,20 @@ public class SystemController {
 
         result.put("availableAfter", browserComponent.isAvailable());
         return Mono.just(ResponseEntity.ok(result));
+    }
+
+    @GetMapping("/logs")
+    public Mono<ResponseEntity<LogsPageResponse>> getLogs(
+            @RequestParam(required = false) Long beforeSeq,
+            @RequestParam(required = false) Integer limit) {
+        DashboardLogService.LogsSlice slice = dashboardLogService.getLogsPage(beforeSeq, limit);
+        LogsPageResponse response = LogsPageResponse.builder()
+                .items(slice.items())
+                .oldestSeq(slice.oldestSeq())
+                .newestSeq(slice.newestSeq())
+                .hasMore(slice.hasMore())
+                .build();
+        return Mono.just(ResponseEntity.ok(response));
     }
 
     private int countFiles(String directory) {
