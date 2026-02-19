@@ -7,6 +7,9 @@ import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.StoragePort;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.info.BuildProperties;
+import org.springframework.boot.info.GitProperties;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -34,6 +37,8 @@ public class SystemController {
     private final RuntimeConfigService runtimeConfigService;
     private final StoragePort storagePort;
     private final BrowserComponent browserComponent;
+    private final ObjectProvider<BuildProperties> buildPropertiesProvider;
+    private final ObjectProvider<GitProperties> gitPropertiesProvider;
 
     @GetMapping("/health")
     public Mono<ResponseEntity<SystemHealthResponse>> health() {
@@ -48,8 +53,14 @@ public class SystemController {
                     .build());
         }
 
+        BuildProperties buildProps = buildPropertiesProvider.getIfAvailable();
+        GitProperties gitProps = gitPropertiesProvider.getIfAvailable();
+
         SystemHealthResponse response = SystemHealthResponse.builder()
                 .status("UP")
+                .version(buildProps != null ? buildProps.getVersion() : "dev")
+                .gitCommit(gitProps != null ? gitProps.getShortCommitId() : null)
+                .buildTime(buildProps != null && buildProps.getTime() != null ? buildProps.getTime().toString() : null)
                 .uptimeMs(uptimeMs)
                 .channels(channels)
                 .build();

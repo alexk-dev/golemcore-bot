@@ -1,5 +1,14 @@
 import client from './client';
 
+export interface SystemHealthResponse {
+  status: string;
+  version: string;
+  gitCommit: string | null;
+  buildTime: string | null;
+  uptimeMs: number;
+  channels: Record<string, { type: string; running: boolean; enabled: boolean }>;
+}
+
 export interface SystemDiagnosticsResponse {
   storage: {
     configuredBasePath: string;
@@ -28,6 +37,11 @@ export interface BrowserHealthResponse {
   availableAfter: boolean;
   ok: boolean;
   message: string;
+}
+
+export async function getSystemHealth(): Promise<SystemHealthResponse> {
+  const { data } = await client.get<SystemHealthResponse>('/system/health');
+  return data;
 }
 
 export async function getSystemDiagnostics(): Promise<SystemDiagnosticsResponse> {

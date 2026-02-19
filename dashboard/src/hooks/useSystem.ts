@@ -1,5 +1,9 @@
 import { type UseMutationResult, type UseQueryResult, useMutation, useQuery } from '@tanstack/react-query';
-import { getBrowserHealth, getSystemDiagnostics } from '../api/system';
+import { type SystemHealthResponse, getBrowserHealth, getSystemDiagnostics, getSystemHealth } from '../api/system';
+
+export function useSystemHealth(): UseQueryResult<SystemHealthResponse, unknown> {
+  return useQuery({ queryKey: ['system', 'health'], queryFn: getSystemHealth, refetchInterval: 30000 });
+}
 
 export function useSystemDiagnostics(): UseQueryResult<Awaited<ReturnType<typeof getSystemDiagnostics>>, unknown> {
   return useQuery({ queryKey: ['system', 'diagnostics'], queryFn: getSystemDiagnostics, refetchInterval: 10000 });

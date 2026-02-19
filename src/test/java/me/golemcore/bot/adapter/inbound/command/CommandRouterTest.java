@@ -29,7 +29,11 @@ import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.info.BuildProperties;
 import org.springframework.context.ApplicationEventPublisher;
+
+import java.util.Properties;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -54,7 +58,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.RETURNS_DEFAULTS;
 
-@SuppressWarnings("PMD.AvoidDuplicateLiterals")
+@SuppressWarnings({ "PMD.AvoidDuplicateLiterals", "unchecked" })
 class CommandRouterTest {
 
     private static final String SESSION_ID = "telegram:12345";
@@ -96,6 +100,7 @@ class CommandRouterTest {
     private ScheduleService scheduleService;
     private SessionRunCoordinator runCoordinator;
     private ApplicationEventPublisher eventPublisher;
+    private ObjectProvider<BuildProperties> buildPropertiesProvider;
     private CommandRouter router;
 
     private static final Map<String, Object> CTX = Map.of(
@@ -146,6 +151,8 @@ class CommandRouterTest {
 
         BotProperties properties = new BotProperties();
 
+        buildPropertiesProvider = mock(ObjectProvider.class);
+
         router = new CommandRouter(
                 skillComponent,
                 List.of(tool1, tool2, tool3),
@@ -161,7 +168,8 @@ class CommandRouterTest {
                 runCoordinator,
                 eventPublisher,
                 properties,
-                mock(RuntimeConfigService.class));
+                mock(RuntimeConfigService.class),
+                buildPropertiesProvider);
     }
 
     private ToolComponent mockTool(String name, String description, boolean enabled) {
@@ -264,6 +272,30 @@ class CommandRouterTest {
         assertTrue(result.success());
         assertTrue(result.output().contains("3"));
         assertTrue(result.output().contains("command.status.usage.empty"));
+    }
+
+    @Test
+    void statusCommandShowsVersionWhenBuildPropertiesAvailable() throws Exception {
+        Properties props = new Properties();
+        props.setProperty("version", "1.2.3");
+        when(buildPropertiesProvider.getIfAvailable()).thenReturn(new BuildProperties(props));
+        when(sessionService.getMessageCount(SESSION_ID)).thenReturn(0);
+        when(usageTracker.getStatsByModel(any(Duration.class))).thenReturn(Collections.emptyMap());
+
+        CommandPort.CommandResult result = router.execute(SUB_STATUS, List.of(), CTX).get();
+        assertTrue(result.success());
+        assertTrue(result.output().contains("command.status.version"));
+        assertTrue(result.output().contains("1.2.3"));
+    }
+
+    @Test
+    void statusCommandOmitsVersionWhenBuildPropertiesAbsent() throws Exception {
+        when(sessionService.getMessageCount(SESSION_ID)).thenReturn(0);
+        when(usageTracker.getStatsByModel(any(Duration.class))).thenReturn(Collections.emptyMap());
+
+        CommandPort.CommandResult result = router.execute(SUB_STATUS, List.of(), CTX).get();
+        assertTrue(result.success());
+        assertFalse(result.output().contains("command.status.version"));
     }
 
     @Test

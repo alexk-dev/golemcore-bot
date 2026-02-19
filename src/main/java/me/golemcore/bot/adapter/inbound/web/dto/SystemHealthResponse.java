@@ -13,6 +13,9 @@ import java.util.Map;
 @AllArgsConstructor
 public class SystemHealthResponse {
     private String status;
+    private String version;
+    private String gitCommit;
+    private String buildTime;
     private long uptimeMs;
     private Map<String, ChannelStatus> channels;
 
