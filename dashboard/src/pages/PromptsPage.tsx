@@ -134,8 +134,8 @@ export default function PromptsPage(): ReactElement {
                   />
                 </Form.Group>
                 <div className="d-flex gap-2">
-                  <Button size="sm" onClick={() => { void handleSave(); }}>Save</Button>
-                  <Button size="sm" variant="secondary" onClick={() => { void handlePreview(); }}>Preview</Button>
+                  <Button type="button" size="sm" onClick={() => { void handleSave(); }}>Save</Button>
+                  <Button type="button" size="sm" variant="secondary" onClick={() => { void handlePreview(); }}>Preview</Button>
                 </div>
                 <small className="text-body-secondary d-block mt-2">
                   System prompts are built-in and cannot be deleted.

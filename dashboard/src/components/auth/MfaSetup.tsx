@@ -105,7 +105,7 @@ export default function MfaSetup({ mfaEnabled, onUpdate }: Props) {
       <Card.Body>
         <Card.Title>Multi-Factor Authentication</Card.Title>
         <p className="text-body-secondary">MFA is not enabled.</p>
-        <Button variant="primary" size="sm" onClick={handleSetup}>
+        <Button type="button" variant="primary" size="sm" onClick={handleSetup}>
           Setup MFA
         </Button>
       </Card.Body>

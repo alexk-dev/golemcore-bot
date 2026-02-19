@@ -173,7 +173,7 @@ function PlanModeActions({
   if (!planModeActive) {
     return (
       <div className="d-flex flex-wrap gap-2 mb-3">
-        <Button size="sm" variant="primary" disabled={actionPending} onClick={onEnable}>
+        <Button type="button" size="sm" variant="primary" disabled={actionPending} onClick={onEnable}>
           Plan ON
         </Button>
       </div>
@@ -182,10 +182,10 @@ function PlanModeActions({
 
   return (
     <div className="d-flex flex-wrap gap-2 mb-3">
-      <Button size="sm" variant="success" disabled={actionPending} onClick={onDone}>
+      <Button type="button" size="sm" variant="success" disabled={actionPending} onClick={onDone}>
         Plan done
       </Button>
-      <Button size="sm" variant="outline-secondary" disabled={actionPending} onClick={onDisable}>
+      <Button type="button" size="sm" variant="outline-secondary" disabled={actionPending} onClick={onDisable}>
         Plan OFF
       </Button>
     </div>
@@ -251,19 +251,19 @@ function PlanItemActions({
   return (
     <div className="d-flex flex-wrap gap-2 mt-2">
       {canApprove && (
-        <Button size="sm" variant="primary" disabled={actionPending} onClick={() => onApprove(plan.id)}>
+        <Button type="button" size="sm" variant="primary" disabled={actionPending} onClick={() => onApprove(plan.id)}>
           Approve
         </Button>
       )}
 
       {canResume && (
-        <Button size="sm" variant="warning" disabled={actionPending} onClick={() => onResume(plan.id)}>
+        <Button type="button" size="sm" variant="warning" disabled={actionPending} onClick={() => onResume(plan.id)}>
           Resume
         </Button>
       )}
 
       {canCancel && (
-        <Button size="sm" variant="outline-danger" disabled={actionPending} onClick={() => onCancel(plan.id)}>
+        <Button type="button" size="sm" variant="outline-danger" disabled={actionPending} onClick={() => onCancel(plan.id)}>
           Cancel
         </Button>
       )}

@@ -70,7 +70,7 @@ function SessionRow({
   return (
     <tr>
       <td data-label="ID">
-        <Button
+        <Button type="button"
           variant="secondary"
           size="sm"
           className="py-0 px-2 session-id-btn"
@@ -86,7 +86,7 @@ function SessionRow({
       <td data-label="Updated" className="small">{formatUpdatedAt(session.updatedAt)}</td>
       <td data-label="Actions">
         <div className="d-flex flex-wrap gap-1 sessions-actions">
-          <Button
+          <Button type="button"
             size="sm"
             variant="primary"
             className="sessions-action-btn"
@@ -94,7 +94,7 @@ function SessionRow({
           >
             Compact
           </Button>
-          <Button
+          <Button type="button"
             size="sm"
             variant="warning"
             className="sessions-action-btn"
@@ -103,7 +103,7 @@ function SessionRow({
           >
             Clear
           </Button>
-          <Button
+          <Button type="button"
             size="sm"
             variant="danger"
             className="sessions-action-btn"

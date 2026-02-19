@@ -24,7 +24,7 @@ export default function DiagnosticsPage(): ReactElement {
     <div>
       <div className="section-header d-flex align-items-center justify-content-between">
         <h4 className="mb-0">Diagnostics</h4>
-        <Button size="sm" variant="secondary" onClick={() => { void refetch(); }} disabled={isFetching}>
+        <Button type="button" size="sm" variant="secondary" onClick={() => { void refetch(); }} disabled={isFetching}>
           {isFetching ? 'Refreshing...' : 'Refresh'}
         </Button>
       </div>
