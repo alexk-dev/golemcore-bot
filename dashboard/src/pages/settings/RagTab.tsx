@@ -99,8 +99,15 @@ export default function RagTab({ config }: RagTabProps): ReactElement {
             <Form.Group>
               <Form.Label className="small fw-medium">API Key (optional)</Form.Label>
               <InputGroup size="sm">
-                <Form.Control type={showApiKey ? 'text' : 'password'} value={form.apiKey ?? ''}
-                  onChange={(e) => setForm({ ...form, apiKey: toNullableString(e.target.value) })} />
+                <Form.Control
+                  type={showApiKey ? 'text' : 'password'}
+                  value={form.apiKey ?? ''}
+                  onChange={(e) => setForm({ ...form, apiKey: toNullableString(e.target.value) })}
+                  autoComplete="new-password"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                />
                 <Button type="button" variant="secondary" onClick={() => setShowApiKey(!showApiKey)}>
                   {showApiKey ? 'Hide' : 'Show'}
                 </Button>

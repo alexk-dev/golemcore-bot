@@ -116,6 +116,10 @@ export default function TelegramTab({ config, voiceConfig }: TelegramTabProps): 
               value={token}
               onChange={(e) => setToken(e.target.value)}
               placeholder="123456:ABC-DEF..."
+              autoComplete="new-password"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
             />
             <Button type="button" variant="secondary" onClick={() => setShowToken(!showToken)}>
               {showToken ? 'Hide' : 'Show'}

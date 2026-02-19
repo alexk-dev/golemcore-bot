@@ -45,8 +45,15 @@ export default function VoiceTab({ config }: VoiceTabProps): ReactElement {
             API Key <HelpTip text="Your ElevenLabs API key from elevenlabs.io/app/settings/api-keys" />
           </Form.Label>
           <InputGroup size="sm">
-            <Form.Control type={showKey ? 'text' : 'password'} value={form.apiKey ?? ''}
-              onChange={(e) => setForm({ ...form, apiKey: toNullableString(e.target.value) })} />
+            <Form.Control
+              type={showKey ? 'text' : 'password'}
+              value={form.apiKey ?? ''}
+              onChange={(e) => setForm({ ...form, apiKey: toNullableString(e.target.value) })}
+              autoComplete="new-password"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+            />
             <Button type="button" variant="secondary" onClick={() => setShowKey(!showKey)}>
               {showKey ? 'Hide' : 'Show'}
             </Button>

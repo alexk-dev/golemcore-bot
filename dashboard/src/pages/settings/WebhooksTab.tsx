@@ -189,8 +189,15 @@ export default function WebhooksTab(): ReactElement {
                 Bearer Token <HelpTip text="Secret token for authenticating incoming webhook requests" />
               </Form.Label>
               <InputGroup size="sm">
-                <Form.Control type="password" value={form.token ?? ''}
-                  onChange={(e) => setForm({ ...form, token: toNullableString(e.target.value) })} />
+                <Form.Control
+                  type="password"
+                  value={form.token ?? ''}
+                  onChange={(e) => setForm({ ...form, token: toNullableString(e.target.value) })}
+                  autoComplete="new-password"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                />
                 <Button type="button" variant="secondary" onClick={handleGenerateToken} title="Generate random token">
                   Generate
                 </Button>
