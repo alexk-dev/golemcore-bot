@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { Nav } from 'react-bootstrap';
-import { FiMessageSquare, FiBarChart2, FiSettings, FiFileText, FiZap, FiList, FiActivity, FiX } from 'react-icons/fi';
+import { FiMessageSquare, FiBarChart2, FiSettings, FiFileText, FiZap, FiList, FiActivity, FiTerminal, FiX } from 'react-icons/fi';
 import { useSidebarStore } from '../../store/sidebarStore';
 import { useSystemHealth } from '../../hooks/useSystem';
 
@@ -11,6 +11,7 @@ const links = [
   { to: '/prompts', icon: <FiFileText size={20} />, label: 'Prompts' },
   { to: '/skills', icon: <FiZap size={20} />, label: 'Skills' },
   { to: '/diagnostics', icon: <FiActivity size={20} />, label: 'Diagnostics' },
+  { to: '/logs', icon: <FiTerminal size={20} />, label: 'Logs' },
   { to: '/settings', icon: <FiSettings size={20} />, label: 'Settings' },
 ];
 

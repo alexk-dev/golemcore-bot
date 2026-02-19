@@ -39,6 +39,23 @@ export interface BrowserHealthResponse {
   message: string;
 }
 
+export interface LogEntryResponse {
+  seq: number;
+  timestamp: string;
+  level: string;
+  logger: string | null;
+  thread: string | null;
+  message: string | null;
+  exception: string | null;
+}
+
+export interface LogsPageResponse {
+  items: LogEntryResponse[];
+  oldestSeq: number | null;
+  newestSeq: number | null;
+  hasMore: boolean;
+}
+
 export async function getSystemHealth(): Promise<SystemHealthResponse> {
   const { data } = await client.get<SystemHealthResponse>('/system/health');
   return data;
@@ -51,5 +68,10 @@ export async function getSystemDiagnostics(): Promise<SystemDiagnosticsResponse>
 
 export async function getBrowserHealth(): Promise<BrowserHealthResponse> {
   const { data } = await client.get<BrowserHealthResponse>('/system/browser/health');
+  return data;
+}
+
+export async function getSystemLogs(params?: { beforeSeq?: number; limit?: number }): Promise<LogsPageResponse> {
+  const { data } = await client.get<LogsPageResponse>('/system/logs', { params });
   return data;
 }
