@@ -76,6 +76,7 @@ public class ElevenLabsAdapter implements VoicePort {
     private final BotProperties properties;
     private final RuntimeConfigService runtimeConfigService;
     private final ObjectMapper objectMapper;
+    private final WhisperCompatibleSttAdapter whisperSttAdapter;
 
     @PostConstruct
     void init() {
@@ -90,10 +91,17 @@ public class ElevenLabsAdapter implements VoicePort {
                 + "sttModel={}, ttsModel={}",
                 voiceEnabled, hasApiKey, runtimeConfigService.getVoiceId(),
                 runtimeConfigService.getSttModelId(), runtimeConfigService.getTtsModelId());
+        if (runtimeConfigService.isWhisperSttConfigured()) {
+            log.info("[Voice] STT provider: WHISPER ({})", runtimeConfigService.getWhisperSttUrl());
+        }
     }
 
     @Override
     public CompletableFuture<TranscriptionResult> transcribe(byte[] audioData, AudioFormat format) {
+        if (runtimeConfigService.isWhisperSttConfigured()) {
+            return CompletableFuture.supplyAsync(
+                    () -> whisperSttAdapter.transcribe(audioData, format), VOICE_EXECUTOR);
+        }
         return CompletableFuture.supplyAsync(() -> doTranscribe(audioData, format), VOICE_EXECUTOR);
     }
 
@@ -282,8 +290,14 @@ public class ElevenLabsAdapter implements VoicePort {
 
     @Override
     public boolean isAvailable() {
+        if (!runtimeConfigService.isVoiceEnabled()) {
+            return false;
+        }
+        if (runtimeConfigService.isWhisperSttConfigured()) {
+            return true;
+        }
         String apiKey = runtimeConfigService.getVoiceApiKey();
-        return runtimeConfigService.isVoiceEnabled() && apiKey != null && !apiKey.isBlank();
+        return apiKey != null && !apiKey.isBlank();
     }
 
     protected String getSttUrl() {

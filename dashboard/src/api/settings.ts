@@ -107,6 +107,8 @@ function toUiRuntimeConfig(data: RuntimeConfigUiRecord): RuntimeConfig {
       ...cfg.voice,
       apiKey: scrubSecret(),
       apiKeyPresent: hasSecretValue(cfg.voice.apiKey),
+      whisperSttApiKey: scrubSecret(),
+      whisperSttApiKeyPresent: hasSecretValue(cfg.voice.whisperSttApiKey),
     };
   }
   if (cfg.rag) {
@@ -137,7 +139,7 @@ function stripSmtpPasswordPresence(config: SmtpConfig | null | undefined): Omit<
 
 function toBackendRuntimeConfig(config: RuntimeConfig): UnknownRecord {
   const { tokenPresent: _telegramTokenPresent, ...telegram } = config.telegram;
-  const { apiKeyPresent: _voiceApiKeyPresent, ...voice } = config.voice;
+  const { apiKeyPresent: _voiceApiKeyPresent, whisperSttApiKeyPresent: _whisperSttApiKeyPresent, ...voice } = config.voice;
   const { apiKeyPresent: _ragApiKeyPresent, ...rag } = config.rag;
   const {
     braveSearchApiKeyPresent: _braveSearchApiKeyPresent,
@@ -371,6 +373,10 @@ export interface VoiceConfig {
   speed: number | null;
   telegramRespondWithVoice: boolean | null;
   telegramTranscribeIncoming: boolean | null;
+  sttProvider: string | null;
+  whisperSttUrl: string | null;
+  whisperSttApiKey: string | null;
+  whisperSttApiKeyPresent?: boolean;
 }
 
 export interface UsageConfig {
@@ -546,8 +552,12 @@ export async function updateToolsConfig(config: ToolsConfig): Promise<RuntimeCon
 }
 
 export async function updateVoiceConfig(config: VoiceConfig): Promise<RuntimeConfig> {
-  const { apiKeyPresent: _apiKeyPresent, ...voice } = config;
-  const payload = { ...voice, apiKey: toSecretPayload(voice.apiKey ?? null) };
+  const { apiKeyPresent: _apiKeyPresent, whisperSttApiKeyPresent: _whisperSttApiKeyPresent, ...voice } = config;
+  const payload = {
+    ...voice,
+    apiKey: toSecretPayload(voice.apiKey ?? null),
+    whisperSttApiKey: toSecretPayload(voice.whisperSttApiKey ?? null),
+  };
   const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/voice', payload);
   return toUiRuntimeConfig(data);
 }
