@@ -1,6 +1,8 @@
 import { type ReactElement, useEffect, useMemo, useState } from 'react';
 import { Button, Card, Col, Form, InputGroup, Row } from 'react-bootstrap';
 import toast from 'react-hot-toast';
+import { SecretStatusBadges } from '../../components/common/SecretStatusBadges';
+import { getSecretInputType, getSecretPlaceholder, getSecretToggleLabel } from '../../components/common/secretInputUtils';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useUpdateRag } from '../../hooks/useSettings';
 import type { RagConfig } from '../../api/settings';
@@ -14,6 +16,10 @@ function toNullableString(value: string): string | null {
   return value.length > 0 ? value : null;
 }
 
+function getSaveButtonLabel(isPending: boolean): string {
+  return isPending ? 'Saving...' : 'Save';
+}
+
 interface RagTabProps {
   config: RagConfig;
 }
@@ -23,7 +29,13 @@ export default function RagTab({ config }: RagTabProps): ReactElement {
   const [form, setForm] = useState<RagConfig>({ ...config });
   const [showApiKey, setShowApiKey] = useState(false);
   const isDirty = useMemo(() => hasDiff(form, config), [form, config]);
+  const hasStoredApiKey = config.apiKeyPresent === true;
+  const willUpdateApiKey = (form.apiKey?.length ?? 0) > 0;
+  const apiKeyInputType = getSecretInputType(showApiKey);
+  const apiKeyToggleLabel = getSecretToggleLabel(showApiKey);
+  const saveLabel = getSaveButtonLabel(updateRag.isPending);
 
+  // Reset local draft when backend config changes (e.g. after successful save/refetch).
   useEffect(() => {
     setForm({ ...config });
   }, [config]);
@@ -97,19 +109,23 @@ export default function RagTab({ config }: RagTabProps): ReactElement {
           </Col>
           <Col md={12}>
             <Form.Group>
-              <Form.Label className="small fw-medium">API Key (optional)</Form.Label>
+              <Form.Label className="small fw-medium d-flex align-items-center gap-2">
+                API Key (optional)
+                <SecretStatusBadges hasStoredSecret={hasStoredApiKey} willUpdateSecret={willUpdateApiKey} />
+              </Form.Label>
               <InputGroup size="sm">
                 <Form.Control
-                  type={showApiKey ? 'text' : 'password'}
+                  type={apiKeyInputType}
                   value={form.apiKey ?? ''}
                   onChange={(e) => setForm({ ...form, apiKey: toNullableString(e.target.value) })}
+                  placeholder={getSecretPlaceholder(hasStoredApiKey, 'Enter API key')}
                   autoComplete="new-password"
                   autoCapitalize="off"
                   autoCorrect="off"
                   spellCheck={false}
                 />
                 <Button type="button" variant="secondary" onClick={() => setShowApiKey(!showApiKey)}>
-                  {showApiKey ? 'Hide' : 'Show'}
+                  {apiKeyToggleLabel}
                 </Button>
               </InputGroup>
             </Form.Group>
@@ -118,7 +134,7 @@ export default function RagTab({ config }: RagTabProps): ReactElement {
 
         <SettingsSaveBar className="mt-3">
           <Button type="button" variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateRag.isPending}>
-            {updateRag.isPending ? 'Saving...' : 'Save'}
+            {saveLabel}
           </Button>
           <SaveStateHint isDirty={isDirty} />
         </SettingsSaveBar>
