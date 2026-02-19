@@ -132,6 +132,7 @@ public class RuntimeConfig {
         private Secret apiKey;
         private String baseUrl;
         private Integer requestTimeoutSeconds;
+        private String apiType;
     }
 
     @Data

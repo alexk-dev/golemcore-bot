@@ -45,7 +45,7 @@ Most settings are stored in the workspace runtime config file and are editable f
 
 Typical first setup:
 
-1. Set LLM provider API keys in runtime config (`llm.providers.*.apiKey`).
+1. Set LLM provider API keys and API type in runtime config (`llm.providers.*.apiKey`, `llm.providers.*.apiType`).
 2. Choose tier models in runtime config (`modelRouter.*Model`).
 3. (Optional) Enable Telegram and paste bot token (`telegram.enabled`, `telegram.token`).
 

@@ -215,8 +215,9 @@ Configure provider API keys in `preferences/runtime-config.json`:
 {
   "llm": {
     "providers": {
-      "openai": { "apiKey": "sk-proj-..." },
-      "anthropic": { "apiKey": "sk-ant-..." }
+      "openai": { "apiKey": "sk-proj-...", "apiType": "openai" },
+      "anthropic": { "apiKey": "sk-ant-...", "apiType": "anthropic" },
+      "google": { "apiKey": "AIza...", "apiType": "gemini" }
     }
   },
   "modelRouter": {
@@ -230,7 +231,12 @@ Configure provider API keys in `preferences/runtime-config.json`:
 }
 ```
 
-The `Langchain4jAdapter` creates per-request model instances when the requested model differs from the default. Provider detection is based on the model name prefix (e.g., `anthropic/claude-opus-4-6` routes to the Anthropic adapter).
+The `Langchain4jAdapter` creates per-request model instances when the requested model differs from the default.
+
+- Provider config lookup is still based on the model prefix (`provider/model`).
+- Protocol dispatch is controlled by `llm.providers.<provider>.apiType` (`openai`, `anthropic`, `gemini`).
+
+This decouples provider naming from wire protocol, so custom provider keys can still use the correct adapter.
 
 > **See:** [Configuration Guide](CONFIGURATION.md) for runtime config details.
 
@@ -548,7 +554,7 @@ Layer 1: AutoCompactionSystem (order=18)
 | `AutoCompactionSystem` | `domain.system` | 18 | Preventive context compaction before LLM call |
 | `TierTool` | `tools` | — | LLM tool for switching tier mid-conversation |
 | `CommandRouter` | `adapter.inbound.command` | — | `/tier` command handler || `LlmAdapterFactory` | `adapter.outbound.llm` | — | Provider adapter selection |
-| `Langchain4jAdapter` | `adapter.outbound.llm` | — | OpenAI/Anthropic integration, ID remapping, name sanitization |
+| `Langchain4jAdapter` | `adapter.outbound.llm` | — | OpenAI/Anthropic/Gemini protocol dispatch, ID remapping, name sanitization |
 | `ModelConfigService` | `infrastructure.config` | — | Model capability lookups from models.json |
 | `ModelSelectionService` | `domain.service` | — | Per-user model override resolution, provider filtering |
 | `AgentContext` | `domain.model` | — | Runtime state: holds `modelTier`, `activeSkill` |

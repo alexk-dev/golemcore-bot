@@ -46,7 +46,11 @@ Secrets (API keys) can be provided as plain strings in JSON; they are wrapped as
 
 ### LLM Providers
 
-Configure provider API keys under `llm.providers`. Provider keys must match the `provider` field in `models/models.json`.
+Configure provider credentials under `llm.providers`.
+
+- Provider key is the model prefix in `provider/model` (and should match `provider` in `models/models.json`).
+- `apiType` selects the wire protocol used by the adapter.
+- Supported `apiType` values: `openai` (default), `anthropic`, `gemini`.
 
 ```json
 {
@@ -54,16 +58,27 @@ Configure provider API keys under `llm.providers`. Provider keys must match the 
     "providers": {
       "openai": {
         "apiKey": "sk-proj-...",
+        "apiType": "openai",
         "baseUrl": null,
         "requestTimeoutSeconds": 300
       },
       "anthropic": {
-        "apiKey": "sk-ant-..."
+        "apiKey": "sk-ant-...",
+        "apiType": "anthropic"
+      },
+      "google": {
+        "apiKey": "AIza...",
+        "apiType": "gemini"
       }
     }
   }
 }
 ```
+
+Notes:
+
+- Use lowercase `apiType` values.
+- `baseUrl` is optional; for `gemini` it is typically left empty.
 
 ### Model Configuration
 

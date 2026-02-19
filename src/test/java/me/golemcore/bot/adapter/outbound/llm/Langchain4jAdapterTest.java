@@ -5,6 +5,7 @@ import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
@@ -17,7 +18,10 @@ import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.model.anthropic.AnthropicChatModel;
+import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
 import dev.langchain4j.model.output.FinishReason;
+import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.output.TokenUsage;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import org.junit.jupiter.api.BeforeEach;
@@ -933,6 +937,94 @@ class Langchain4jAdapterTest {
 
         LlmResponse response = adapter.chat(request).get();
         assertEquals("Default response", response.getContent());
+    }
+
+    // ===== getApiType =====
+
+    @Test
+    void shouldDefaultToOpenAiApiTypeWhenNull() {
+        RuntimeConfig.LlmProviderConfig config = RuntimeConfig.LlmProviderConfig.builder().build();
+        String result = ReflectionTestUtils.invokeMethod(adapter, "getApiType", config);
+        assertEquals("openai", result);
+    }
+
+    @Test
+    void shouldDefaultToOpenAiApiTypeWhenBlank() {
+        RuntimeConfig.LlmProviderConfig config = RuntimeConfig.LlmProviderConfig.builder().apiType("  ").build();
+        String result = ReflectionTestUtils.invokeMethod(adapter, "getApiType", config);
+        assertEquals("openai", result);
+    }
+
+    @Test
+    void shouldReturnExplicitApiType() {
+        RuntimeConfig.LlmProviderConfig config = RuntimeConfig.LlmProviderConfig.builder().apiType("gemini").build();
+        String result = ReflectionTestUtils.invokeMethod(adapter, "getApiType", config);
+        assertEquals("gemini", result);
+    }
+
+    @Test
+    void shouldNormalizeApiTypeToLowercase() {
+        RuntimeConfig.LlmProviderConfig config = RuntimeConfig.LlmProviderConfig.builder().apiType("ANTHROPIC").build();
+        String result = ReflectionTestUtils.invokeMethod(adapter, "getApiType", config);
+        assertEquals("anthropic", result);
+    }
+
+    // ===== createModel dispatch by apiType =====
+
+    @Test
+    void shouldDispatchToAnthropicModelUsingApiTypeNotProviderName() {
+        String requestModel = "custom-provider/claude-opus-4-1";
+        when(modelConfig.getProvider(requestModel)).thenReturn("custom-provider");
+        when(runtimeConfigService.getLlmProviderConfig("custom-provider"))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiKey(Secret.of("ant-key"))
+                        .apiType("anthropic")
+                        .build());
+
+        ChatModel result = ReflectionTestUtils.invokeMethod(adapter, "createModel", requestModel, null);
+        assertTrue(result instanceof AnthropicChatModel);
+    }
+
+    @Test
+    void shouldDispatchToGeminiModelUsingApiTypeNotProviderName() {
+        String requestModel = "custom-provider/gemini-2.5-pro";
+        when(modelConfig.getProvider(requestModel)).thenReturn("custom-provider");
+        when(runtimeConfigService.getLlmProviderConfig("custom-provider"))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiKey(Secret.of("gemini-key"))
+                        .apiType("gemini")
+                        .build());
+
+        ChatModel result = ReflectionTestUtils.invokeMethod(adapter, "createModel", requestModel, null);
+        assertTrue(result instanceof GoogleAiGeminiChatModel);
+    }
+
+    @Test
+    void shouldFallbackToOpenAiWhenApiTypeIsUnknown() {
+        String requestModel = "custom-provider/gpt-5.1";
+        when(modelConfig.getProvider(requestModel)).thenReturn("custom-provider");
+        when(runtimeConfigService.getLlmProviderConfig("custom-provider"))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiKey(Secret.of("openai-key"))
+                        .apiType("unknown")
+                        .build());
+
+        ChatModel result = ReflectionTestUtils.invokeMethod(adapter, "createModel", requestModel, "medium");
+        assertTrue(result instanceof OpenAiChatModel);
+    }
+
+    @Test
+    void shouldFailGeminiModelCreationWhenApiKeyMissing() {
+        String requestModel = "google/gemini-2.5-pro";
+        when(modelConfig.getProvider(requestModel)).thenReturn("google");
+        when(runtimeConfigService.getLlmProviderConfig("google"))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiType("gemini")
+                        .build());
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> ReflectionTestUtils.invokeMethod(adapter, "createModel", requestModel, null));
+        assertTrue(error.getMessage().contains("Missing apiKey for Gemini provider"));
     }
 
     // ===== Helpers =====
