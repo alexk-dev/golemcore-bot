@@ -13,7 +13,8 @@ interface SaveStateHintProps {
 }
 
 function buildClassName(baseClass: string, extraClass?: string): string {
-  return extraClass != null && extraClass.length > 0 ? `${baseClass} d-flex align-items-center gap-2 ${extraClass}` : `${baseClass} d-flex align-items-center gap-2`;
+  const sharedClass = `${baseClass} d-flex align-items-center gap-2 flex-wrap`;
+  return extraClass != null && extraClass.length > 0 ? `${sharedClass} ${extraClass}` : sharedClass;
 }
 
 export function SettingsSaveBar({ children, className, variant = 'default' }: SettingsSaveBarProps): ReactElement {
