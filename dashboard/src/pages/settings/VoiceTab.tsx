@@ -1,6 +1,7 @@
 import { type ReactElement, useEffect, useMemo, useState } from 'react';
 import { Badge, Button, Card, Col, Form, InputGroup, Row } from 'react-bootstrap';
 import toast from 'react-hot-toast';
+import { useNavigate } from 'react-router-dom';
 import HelpTip from '../../components/common/HelpTip';
 import { SecretStatusBadges } from '../../components/common/SecretStatusBadges';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
@@ -31,6 +32,7 @@ function formatVoiceSpeed(speed: number | null): string {
 }
 
 export default function VoiceTab({ config }: VoiceTabProps): ReactElement {
+  const navigate = useNavigate();
   const updateVoice = useUpdateVoice();
   const [form, setForm] = useState<VoiceConfig>({ ...config });
   const [showKey, setShowKey] = useState(false);
@@ -44,6 +46,7 @@ export default function VoiceTab({ config }: VoiceTabProps): ReactElement {
   const isWhisperStt = sttProvider === STT_PROVIDER_WHISPER;
   const isElevenLabsStt = !isWhisperStt;
   const isElevenLabsTts = ttsProvider === TTS_PROVIDER_ELEVENLABS;
+  const sttModelHintId = isWhisperStt ? 'voice-elevenlabs-stt-hint' : undefined;
 
   // Keep local draft in sync after server-side updates/refetch.
   useEffect(() => {
@@ -147,6 +150,7 @@ export default function VoiceTab({ config }: VoiceTabProps): ReactElement {
                 size="sm"
                 value={form.sttModelId ?? ''}
                 disabled={isWhisperStt}
+                aria-describedby={sttModelHintId}
                 onChange={(event) => setForm((prev) => ({ ...prev, sttModelId: toNullableString(event.target.value) }))}
                 placeholder="scribe_v1"
               />
@@ -155,9 +159,20 @@ export default function VoiceTab({ config }: VoiceTabProps): ReactElement {
         </Row>
 
         {isWhisperStt && (
-          <Form.Text className="text-muted d-block mt-2">
-            STT provider is set to Whisper in Voice Routing, so ElevenLabs STT model is currently ignored.
-          </Form.Text>
+          <div className="d-flex flex-column flex-sm-row align-items-start gap-2 mt-2 voice-inline-actions">
+            <Form.Text id="voice-elevenlabs-stt-hint" className="text-muted mb-0">
+              STT provider is set to Whisper in Voice Routing, so ElevenLabs STT model is currently ignored.
+            </Form.Text>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="voice-route-shortcut"
+              onClick={() => navigate('/settings/tool-voice')}
+            >
+              Open Voice Routing
+            </Button>
+          </div>
         )}
 
         <SettingsSaveBar className="mt-3">

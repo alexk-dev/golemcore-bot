@@ -1,6 +1,7 @@
 import { type ReactElement, useEffect, useMemo, useState } from 'react';
 import { Badge, Button, Card, Form, InputGroup } from 'react-bootstrap';
 import toast from 'react-hot-toast';
+import { useNavigate } from 'react-router-dom';
 import HelpTip from '../../components/common/HelpTip';
 import { SecretStatusBadges } from '../../components/common/SecretStatusBadges';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
@@ -55,6 +56,7 @@ function getWhisperStatusLabel(isWhisperStt: boolean): string {
 }
 
 export default function WhisperTab({ config }: WhisperTabProps): ReactElement {
+  const navigate = useNavigate();
   const updateVoice = useUpdateVoice();
   const [form, setForm] = useState<VoiceConfig>({ ...config });
   const [showKey, setShowKey] = useState(false);
@@ -66,6 +68,8 @@ export default function WhisperTab({ config }: WhisperTabProps): ReactElement {
   const whisperStatus = getWhisperStatusLabel(isWhisperStt);
   const whisperStatusVariant = getWhisperStatusVariant(isWhisperStt);
   const saveDisabled = !isDirty || updateVoice.isPending || whisperUrlValidation.hasError;
+  const whisperUrlValidationId = 'voice-whisper-url-validation';
+  const whisperUrlHintId = 'voice-whisper-url-hint';
 
   // Keep local draft in sync after server-side updates/refetch.
   useEffect(() => {
@@ -92,37 +96,56 @@ export default function WhisperTab({ config }: WhisperTabProps): ReactElement {
         </div>
 
         {!isWhisperStt && (
-          <Form.Text className="text-muted d-block mb-3">
-            Whisper is configured but not active. Enable it in Voice Routing -&gt; STT Provider.
-          </Form.Text>
+          <div className="d-flex flex-column align-items-start gap-2 mb-3">
+            <Form.Text className="text-muted d-block mb-0" role="status" aria-live="polite">
+              Whisper is configured but not active. Enable it in Voice Routing -&gt; STT Provider.
+            </Form.Text>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="voice-route-shortcut"
+              onClick={() => navigate('/settings/tool-voice')}
+            >
+              Open Voice Routing
+            </Button>
+          </div>
         )}
 
         <Form.Group className="mb-3">
-          <Form.Label className="small fw-medium">
+          <Form.Label htmlFor="voice-whisper-url" className="small fw-medium">
             Whisper STT URL <HelpTip text="Base URL of your Whisper-compatible server (e.g. http://localhost:5092, https://api.openai.com)" />
           </Form.Label>
           <Form.Control
+            id="voice-whisper-url"
+            type="url"
+            inputMode="url"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
             size="sm"
             value={form.whisperSttUrl ?? ''}
             isInvalid={whisperUrlValidation.hasError}
+            aria-describedby={`${whisperUrlHintId} ${whisperUrlValidation.hasError ? whisperUrlValidationId : ''}`.trim()}
             onChange={(event) => setForm((prev) => ({ ...prev, whisperSttUrl: toNullableString(event.target.value) }))}
             placeholder="http://localhost:5092"
           />
-          <Form.Control.Feedback type="invalid">
+          <Form.Control.Feedback id={whisperUrlValidationId} type="invalid" role="alert">
             {whisperUrlValidation.message}
           </Form.Control.Feedback>
-          <Form.Text className="text-muted">
+          <Form.Text id={whisperUrlHintId} className="text-muted">
             Endpoint must support OpenAI-compatible transcriptions (`/v1/audio/transcriptions`).
           </Form.Text>
         </Form.Group>
 
         <Form.Group>
-          <Form.Label className="small fw-medium d-flex align-items-center gap-2">
+          <Form.Label htmlFor="voice-whisper-api-key" className="small fw-medium d-flex align-items-center gap-2">
             Whisper API Key (optional) <HelpTip text="Use for providers that require auth, such as OpenAI-compatible endpoints" />
             <SecretStatusBadges hasStoredSecret={hasStoredApiKey} willUpdateSecret={willUpdateApiKey} />
           </Form.Label>
           <InputGroup size="sm">
             <Form.Control
+              id="voice-whisper-api-key"
               type={getSecretInputType(showKey)}
               autoComplete="new-password"
               value={form.whisperSttApiKey ?? ''}

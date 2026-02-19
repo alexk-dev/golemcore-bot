@@ -75,6 +75,9 @@ export default function VoiceRoutingTab({ config }: VoiceRoutingTabProps): React
   const isWhisperStt = sttProvider === STT_PROVIDER_WHISPER;
   const whisperValidation = buildWhisperRoutingValidation(isWhisperStt, form.whisperSttUrl);
   const saveDisabled = !isDirty || updateVoice.isPending || whisperValidation.hasError;
+  const whisperValidationId = 'voice-routing-whisper-validation';
+  const sttHintId = 'voice-routing-stt-hint';
+  const ttsHintId = 'voice-routing-tts-hint';
 
   // Keep local draft in sync after server-side updates/refetch.
   useEffect(() => {
@@ -97,7 +100,7 @@ export default function VoiceRoutingTab({ config }: VoiceRoutingTabProps): React
         <Form.Text className="text-muted d-block mb-3">
           Step 1: choose routing for STT/TTS. Step 2: open provider cards to configure credentials and endpoint details.
         </Form.Text>
-        <div className="d-flex align-items-center gap-2 mb-3">
+        <div className="d-flex align-items-center gap-2 mb-3 voice-status-badges">
           <Badge bg={getSttStatusVariant(isWhisperStt)}>
             STT: {getSttStatusLabel(isWhisperStt)}
           </Badge>
@@ -118,8 +121,11 @@ export default function VoiceRoutingTab({ config }: VoiceRoutingTabProps): React
                 STT Provider <HelpTip text="Provider used for speech-to-text transcription" />
               </Form.Label>
               <Form.Select
+                id="voice-routing-stt-provider"
                 size="sm"
                 value={sttProvider}
+                aria-invalid={whisperValidation.hasError || undefined}
+                aria-describedby={whisperValidation.hasError ? whisperValidationId : sttHintId}
                 onChange={(event) => setForm((prev) => ({ ...prev, sttProvider: event.target.value }))}
               >
                 <option value={STT_PROVIDER_ELEVENLABS}>ElevenLabs</option>
@@ -133,45 +139,54 @@ export default function VoiceRoutingTab({ config }: VoiceRoutingTabProps): React
                 TTS Provider <HelpTip text="Provider used for text-to-speech synthesis" />
               </Form.Label>
               <Form.Select
+                id="voice-routing-tts-provider"
                 size="sm"
                 value={ttsProvider}
+                aria-disabled="true"
+                aria-describedby={ttsHintId}
                 onChange={(event) => setForm((prev) => ({ ...prev, ttsProvider: event.target.value }))}
                 disabled
               >
                 <option value={TTS_PROVIDER_ELEVENLABS}>ElevenLabs</option>
               </Form.Select>
-              <Form.Text className="text-muted">Whisper TTS is not supported yet.</Form.Text>
+              <Form.Text id={ttsHintId} className="text-muted">Whisper TTS is not supported yet.</Form.Text>
             </Form.Group>
           </Col>
         </Row>
 
-        <Form.Text className="text-muted d-block mt-3">
+        <Form.Text id={sttHintId} className="text-muted d-block mt-3">
           {getSttHintText(isWhisperStt)}
         </Form.Text>
         {whisperValidation.hasError && (
-          <Form.Text className="text-danger d-block mt-2">
+          <Form.Text id={whisperValidationId} className="text-danger d-block mt-2" role="alert" aria-live="assertive">
             {whisperValidation.message}
           </Form.Text>
         )}
 
-        <div className="d-flex flex-wrap gap-2 mt-3">
-          <Button
-            type="button"
-            size="sm"
-            variant={isWhisperStt ? 'primary' : 'secondary'}
-            onClick={() => navigate('/settings/voice-whisper')}
-          >
-            Open Voice: Whisper STT
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={!isWhisperStt ? 'primary' : 'secondary'}
-            onClick={() => navigate('/settings/voice-elevenlabs')}
-          >
-            Open Voice: ElevenLabs
-          </Button>
-        </div>
+        <Row className="g-2 mt-1 voice-provider-links">
+          <Col xs={12} sm="auto">
+            <Button
+              type="button"
+              size="sm"
+              className="voice-route-shortcut"
+              variant={isWhisperStt ? 'primary' : 'secondary'}
+              onClick={() => navigate('/settings/voice-whisper')}
+            >
+              Open Voice: Whisper STT
+            </Button>
+          </Col>
+          <Col xs={12} sm="auto">
+            <Button
+              type="button"
+              size="sm"
+              className="voice-route-shortcut"
+              variant={!isWhisperStt ? 'primary' : 'secondary'}
+              onClick={() => navigate('/settings/voice-elevenlabs')}
+            >
+              Open Voice: ElevenLabs
+            </Button>
+          </Col>
+        </Row>
 
         <SettingsSaveBar className="mt-3">
           <Button
