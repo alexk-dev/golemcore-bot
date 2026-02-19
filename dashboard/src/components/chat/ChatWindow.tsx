@@ -14,6 +14,19 @@ const SESSION_KEY = 'golem-chat-session-id';
 const INITIAL_MESSAGES = 50;
 const LOAD_MORE_COUNT = 50;
 const GOALS_POLL_INTERVAL = 30000;
+const RECONNECT_DELAY_MS = 3000;
+const TYPING_RESET_MS = 3000;
+
+const EMPTY_TURN_METADATA = {
+  model: null,
+  tier: null,
+  reasoning: null,
+  inputTokens: null,
+  outputTokens: null,
+  totalTokens: null,
+  latencyMs: null,
+  maxContextTokens: null,
+};
 
 function getChatSessionId(): string {
   let id = localStorage.getItem(SESSION_KEY);
@@ -24,12 +37,26 @@ function getChatSessionId(): string {
   return id;
 }
 
+function getLocalCommand(text: string): 'new' | 'reset' | null {
+  const command = (text.split(/\s+/)[0] ?? '').toLowerCase();
+  if (command === '/new') {
+    return 'new';
+  }
+  if (command === '/reset') {
+    return 'reset';
+  }
+  return null;
+}
+
 interface ChatMessage {
-  role: string;
+  id: string;
+  role: 'user' | 'assistant';
   content: string;
   model?: string | null;
   tier?: string | null;
   reasoning?: string | null;
+  status?: 'pending' | 'failed';
+  outbound?: OutboundChatPayload;
 }
 
 interface ChatAttachmentPayload {
@@ -59,60 +86,203 @@ interface SocketMessage {
   type?: string;
   eventType?: string;
   text?: string;
+  sessionId?: string;
   hint?: AssistantHint;
 }
 
 export default function ChatWindow() {
+  const [chatSessionId, setChatSessionId] = useState(() => getChatSessionId());
   const [allMessages, setAllMessages] = useState<ChatMessage[]>([]);
   const [visibleStart, setVisibleStart] = useState(0);
   const [connected, setConnected] = useState(false);
   const [typing, setTyping] = useState(false);
-  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyReloadTick, setHistoryReloadTick] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [tier, setTier] = useState('balanced');
   const [tierForce, setTierForce] = useState(false);
+
   const wsRef = useRef<WebSocket | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const token = useAuthStore((s) => s.accessToken);
-  const chatSessionId = useRef(getChatSessionId()).current;
+  const chatSessionIdRef = useRef(chatSessionId);
   const shouldAutoScroll = useRef(true);
-  const { panelOpen, togglePanel, mobileDrawerOpen, openMobileDrawer, closeMobileDrawer, setTurnMetadata, setGoals } = useContextPanelStore();
+  const lastUpdateWasChunkRef = useRef(false);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Load history from backend on mount
+  const token = useAuthStore((s) => s.accessToken);
+  const {
+    panelOpen,
+    togglePanel,
+    mobileDrawerOpen,
+    openMobileDrawer,
+    closeMobileDrawer,
+    setTurnMetadata,
+    setGoals,
+  } = useContextPanelStore();
+
   useEffect(() => {
-    if (historyLoaded) {return;}
+    chatSessionIdRef.current = chatSessionId;
+  }, [chatSessionId]);
+
+  const clearReconnectTimer = useCallback(() => {
+    if (reconnectTimerRef.current != null) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+  }, []);
+
+  const clearTypingTimer = useCallback(() => {
+    if (typingTimerRef.current != null) {
+      clearTimeout(typingTimerRef.current);
+      typingTimerRef.current = null;
+    }
+  }, []);
+
+  const resetTurnMetadata = useCallback(() => {
+    setTurnMetadata(EMPTY_TURN_METADATA);
+  }, [setTurnMetadata]);
+
+  const resetConversationState = useCallback(() => {
+    setAllMessages([]);
+    setVisibleStart(0);
+    resetTurnMetadata();
+  }, [resetTurnMetadata]);
+
+  const startNewConversation = useCallback(() => {
+    const newSessionId = createUuid();
+    localStorage.setItem(SESSION_KEY, newSessionId);
+    setChatSessionId(newSessionId);
+    resetConversationState();
+  }, [resetConversationState]);
+
+  const setUserMessageStatus = useCallback((id: string, status: 'pending' | 'failed' | null): void => {
+    setAllMessages((prev) => {
+      const index = prev.findIndex((message) => message.id === id && message.role === 'user');
+      if (index < 0) {
+        return prev;
+      }
+
+      const next = [...prev];
+      const current = next[index];
+      if (status == null) {
+        next[index] = { ...current, status: undefined, outbound: undefined };
+      } else {
+        next[index] = { ...current, status };
+      }
+      return next;
+    });
+  }, []);
+
+  const markFirstPendingAsSent = useCallback(() => {
+    setAllMessages((prev) => {
+      const index = prev.findIndex((message) => message.role === 'user' && message.status === 'pending');
+      if (index < 0) {
+        return prev;
+      }
+
+      const next = [...prev];
+      const target = next[index];
+      next[index] = { ...target, status: undefined, outbound: undefined };
+      return next;
+    });
+  }, []);
+
+  const markPendingAsFailed = useCallback(() => {
+    setAllMessages((prev) => {
+      let changed = false;
+      const next = prev.map((message) => {
+        if (message.role === 'user' && message.status === 'pending') {
+          changed = true;
+          return { ...message, status: 'failed' as const };
+        }
+        return message;
+      });
+      return changed ? next : prev;
+    });
+  }, []);
+
+  const sendPayload = useCallback((id: string, payload: OutboundChatPayload): boolean => {
+    const socket = wsRef.current;
+    if (socket?.readyState !== WebSocket.OPEN) {
+      setUserMessageStatus(id, 'failed');
+      return false;
+    }
+
+    try {
+      socket.send(JSON.stringify({
+        text: payload.text,
+        attachments: payload.attachments,
+        sessionId: chatSessionId,
+      }));
+      return true;
+    } catch {
+      setUserMessageStatus(id, 'failed');
+      return false;
+    }
+  }, [chatSessionId, setUserMessageStatus]);
+
+  useEffect(() => {
+    resetTurnMetadata();
+  }, [chatSessionId, resetTurnMetadata]);
+
+  // Load current session history
+  useEffect(() => {
+    let cancelled = false;
+    setHistoryLoading(true);
+    setHistoryError(null);
+
     listSessions('web')
       .then((sessions) => {
-        const sorted = sessions.sort((a, b) =>
-          (b.updatedAt ?? b.createdAt ?? '').localeCompare(a.updatedAt ?? a.createdAt ?? '')
-        );
-        const match = sorted.find((s) => s.chatId === chatSessionId) ?? sorted[0];
-        if (match != null) {
-          if (match.chatId !== chatSessionId) {
-            localStorage.setItem(SESSION_KEY, match.chatId);
-          }
-          return getSession(match.id);
+        const match = sessions.find((session) => session.chatId === chatSessionId);
+        if (match == null) {
+          return null;
         }
-        return null;
+        return getSession(match.id);
       })
       .then((detail) => {
-        if (detail != null && detail.messages.length > 0) {
-          const history: ChatMessage[] = detail.messages
-            .filter((m) => m.role === 'user' || m.role === 'assistant')
-            .map((m) => ({
-              role: m.role,
-              content: m.content ?? '',
-              model: m.model,
-              tier: m.modelTier,
-            }));
-          setAllMessages(history);
-          setVisibleStart(Math.max(0, history.length - INITIAL_MESSAGES));
+        if (cancelled) {
+          return;
         }
-        setHistoryLoaded(true);
+
+        if (detail == null) {
+          setAllMessages([]);
+          setVisibleStart(0);
+          return;
+        }
+
+        const history: ChatMessage[] = detail.messages
+          .filter((message) => message.role === 'user' || message.role === 'assistant')
+          .map((message) => ({
+            id: message.id,
+            role: message.role as 'user' | 'assistant',
+            content: message.content ?? '',
+            model: message.model,
+            tier: message.modelTier,
+          }));
+
+        setAllMessages(history);
+        setVisibleStart(Math.max(0, history.length - INITIAL_MESSAGES));
       })
-      .catch(() => setHistoryLoaded(true));
-  }, [chatSessionId, historyLoaded]);
+      .catch(() => {
+        if (!cancelled) {
+          setHistoryError('Failed to load chat history.');
+          setAllMessages([]);
+          setVisibleStart(0);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setHistoryLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [chatSessionId, historyReloadTick]);
 
   // Poll goals every 30s
   useEffect(() => {
@@ -121,6 +291,7 @@ export default function ChatWindow() {
         .then((res) => setGoals(res.goals, res.featureEnabled, res.autoModeEnabled))
         .catch(() => { /* ignore */ });
     };
+
     fetchGoals();
     const interval = setInterval(fetchGoals, GOALS_POLL_INTERVAL);
     return () => clearInterval(interval);
@@ -148,101 +319,207 @@ export default function ChatWindow() {
     }
   }, [visibleStart, loadingMore]);
 
-  const connect = useCallback(() => {
-    if (token == null || token.length === 0) {return;}
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/chat?token=${token}`);
+  // WebSocket lifecycle with safe reconnect
+  useEffect(() => {
+    clearReconnectTimer();
+    clearTypingTimer();
 
-    ws.onopen = () => setConnected(true);
-    ws.onclose = () => {
+    if (token == null || token.length === 0) {
       setConnected(false);
-      setTimeout(() => connect(), 3000);
-    };
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data) as SocketMessage;
-        if (data.type === 'system_event' && data.eventType === 'typing') {
-          setTyping(true);
-          setTimeout(() => setTyping(false), 3000);
+      setTyping(false);
+      wsRef.current?.close();
+      wsRef.current = null;
+      return;
+    }
+
+    let disposed = false;
+
+    const openSocket = () => {
+      if (disposed) {
+        return;
+      }
+
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const ws = new WebSocket(`${protocol}//${window.location.host}/ws/chat?token=${token}`);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        if (disposed) {
+          ws.close();
           return;
         }
-        if (data.type === 'assistant_chunk' || data.type === 'assistant_done') {
-          setTyping(false);
+        clearReconnectTimer();
+        setConnected(true);
+      };
 
-          // Extract hints for context panel
-          if (data.hint != null) {
-            setTurnMetadata({
-              model: data.hint.model ?? null,
-              tier: data.hint.tier ?? null,
-              reasoning: data.hint.reasoning ?? null,
-              inputTokens: data.hint.inputTokens ?? null,
-              outputTokens: data.hint.outputTokens ?? null,
-              totalTokens: data.hint.totalTokens ?? null,
-              latencyMs: data.hint.latencyMs ?? null,
-              maxContextTokens: data.hint.maxContextTokens ?? null,
-            });
+      ws.onclose = () => {
+        if (disposed) {
+          return;
+        }
+        setConnected(false);
+        setTyping(false);
+        clearTypingTimer();
+        markPendingAsFailed();
+        clearReconnectTimer();
+        reconnectTimerRef.current = setTimeout(() => {
+          openSocket();
+        }, RECONNECT_DELAY_MS);
+      };
+
+      ws.onmessage = (event) => {
+        if (disposed) {
+          return;
+        }
+
+        try {
+          const data = JSON.parse(event.data) as SocketMessage;
+
+          if (data.sessionId != null && data.sessionId.length > 0 && data.sessionId !== chatSessionIdRef.current) {
+            return;
           }
 
-          setAllMessages((prev) => {
-            const last = prev.length > 0 ? prev[prev.length - 1] : undefined;
-            const chunkModel = data.hint?.model ?? null;
-            const chunkTier = data.hint?.tier ?? null;
-            const chunkReasoning = data.hint?.reasoning ?? null;
-            if (last?.role === 'assistant' && data.type === 'assistant_chunk') {
-              return [...prev.slice(0, -1), {
-                role: 'assistant',
-                content: `${last.content}${data.text ?? ''}`,
-                model: chunkModel ?? last.model ?? null,
-                tier: chunkTier ?? last.tier ?? null,
-                reasoning: chunkReasoning ?? last.reasoning ?? null,
-              }];
+          if (data.type === 'system_event' && data.eventType === 'typing') {
+            setTyping(true);
+            markFirstPendingAsSent();
+            clearTypingTimer();
+            typingTimerRef.current = setTimeout(() => {
+              if (!disposed) {
+                setTyping(false);
+              }
+            }, TYPING_RESET_MS);
+            return;
+          }
+
+          if (data.type === 'assistant_chunk' || data.type === 'assistant_done') {
+            setTyping(false);
+            clearTypingTimer();
+            markFirstPendingAsSent();
+            lastUpdateWasChunkRef.current = data.type === 'assistant_chunk';
+
+            if (data.hint != null) {
+              setTurnMetadata({
+                model: data.hint.model ?? null,
+                tier: data.hint.tier ?? null,
+                reasoning: data.hint.reasoning ?? null,
+                inputTokens: data.hint.inputTokens ?? null,
+                outputTokens: data.hint.outputTokens ?? null,
+                totalTokens: data.hint.totalTokens ?? null,
+                latencyMs: data.hint.latencyMs ?? null,
+                maxContextTokens: data.hint.maxContextTokens ?? null,
+              });
             }
-            return [...prev, {
-              role: 'assistant',
-              content: data.text ?? '',
-              model: chunkModel,
-              tier: chunkTier,
-              reasoning: chunkReasoning,
-            }];
-          });
+
+            setAllMessages((prev) => {
+              const last = prev.length > 0 ? prev[prev.length - 1] : undefined;
+              const chunkModel = data.hint?.model ?? null;
+              const chunkTier = data.hint?.tier ?? null;
+              const chunkReasoning = data.hint?.reasoning ?? null;
+
+              if (last?.role === 'assistant' && data.type === 'assistant_chunk') {
+                return [...prev.slice(0, -1), {
+                  ...last,
+                  content: `${last.content}${data.text ?? ''}`,
+                  model: chunkModel ?? last.model ?? null,
+                  tier: chunkTier ?? last.tier ?? null,
+                  reasoning: chunkReasoning ?? last.reasoning ?? null,
+                }];
+              }
+
+              return [...prev, {
+                id: createUuid(),
+                role: 'assistant',
+                content: data.text ?? '',
+                model: chunkModel,
+                tier: chunkTier,
+                reasoning: chunkReasoning,
+              }];
+            });
+          }
+        } catch {
+          // ignore parse errors
         }
-      } catch {
-        // ignore parse errors
-      }
+      };
     };
 
-    wsRef.current = ws;
-    return () => ws.close();
-  }, [token, setTurnMetadata]);
+    openSocket();
 
-  useEffect(() => {
-    const cleanup = connect();
-    return cleanup;
-  }, [connect]);
+    return () => {
+      disposed = true;
+      clearReconnectTimer();
+      clearTypingTimer();
+      setConnected(false);
+      setTyping(false);
+      const socket = wsRef.current;
+      wsRef.current = null;
+      socket?.close();
+    };
+  }, [token, clearReconnectTimer, clearTypingTimer, markPendingAsFailed, markFirstPendingAsSent, setTurnMetadata]);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
-    if (shouldAutoScroll.current) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (!shouldAutoScroll.current) {
+      return;
     }
+
+    const behavior: ScrollBehavior = lastUpdateWasChunkRef.current ? 'auto' : 'smooth';
+    bottomRef.current?.scrollIntoView({ behavior });
   }, [allMessages, typing]);
 
-  const handleSend = ({ text, attachments }: OutboundChatPayload) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      const trimmed = text.trim();
-      const fallback = attachments.length > 0
-        ? `[${attachments.length} image attachment${attachments.length > 1 ? 's' : ''}]`
-        : '';
-      const newMsg = { role: 'user', content: trimmed.length > 0 ? trimmed : fallback };
-      setAllMessages((prev) => [...prev, newMsg]);
-      shouldAutoScroll.current = true;
-      wsRef.current.send(JSON.stringify({
-        text,
-        attachments,
-        sessionId: chatSessionId,
-      }));
+  const handleRetry = useCallback((messageId: string) => {
+    let payloadToRetry: OutboundChatPayload | null = null;
+
+    setAllMessages((prev) => prev.map((message) => {
+      if (message.id !== messageId || message.role !== 'user' || message.outbound == null) {
+        return message;
+      }
+      payloadToRetry = message.outbound;
+      return { ...message, status: 'pending' as const };
+    }));
+
+    if (payloadToRetry == null) {
+      return;
     }
-  };
+
+    shouldAutoScroll.current = true;
+    lastUpdateWasChunkRef.current = false;
+    sendPayload(messageId, payloadToRetry);
+  }, [sendPayload]);
+
+  const handleSend = useCallback(({ text, attachments }: OutboundChatPayload) => {
+    const trimmed = text.trim();
+    const fallback = attachments.length > 0
+      ? `[${attachments.length} image attachment${attachments.length > 1 ? 's' : ''}]`
+      : '';
+
+    const messageId = createUuid();
+    const outboundPayload: OutboundChatPayload = {
+      text: trimmed,
+      attachments,
+    };
+
+    setAllMessages((prev) => [...prev, {
+      id: messageId,
+      role: 'user',
+      content: trimmed.length > 0 ? trimmed : fallback,
+      status: 'pending',
+      outbound: outboundPayload,
+    }]);
+
+    shouldAutoScroll.current = true;
+    lastUpdateWasChunkRef.current = false;
+
+    const sent = sendPayload(messageId, outboundPayload);
+    const localCommand = getLocalCommand(trimmed);
+
+    if (localCommand === 'new') {
+      startNewConversation();
+      return;
+    }
+
+    if (localCommand === 'reset' && sent) {
+      resetConversationState();
+    }
+  }, [resetConversationState, sendPayload, startNewConversation]);
 
   const handleTierChange = async (newTier: string) => {
     setTier(newTier);
@@ -264,7 +541,6 @@ export default function ChatWindow() {
   return (
     <div className="chat-page-layout">
       <div className="chat-container">
-        {/* Toolbar */}
         <div className="chat-toolbar">
           <div className="chat-toolbar-inner d-flex align-items-center">
             <div className="d-flex align-items-center gap-2 flex-grow-1" aria-live="polite">
@@ -289,18 +565,36 @@ export default function ChatWindow() {
           </div>
         </div>
 
-        {/* Messages */}
         <div
           className="chat-window"
           ref={scrollRef}
           onScroll={handleScroll}
           role="log"
-          aria-live="polite"
           aria-relevant="additions text"
           aria-busy={typing}
         >
           <div className="chat-content-shell">
-            {hasMore && (
+            {historyLoading && (
+              <div className="chat-history-state" role="status" aria-live="polite">
+                <span className="spinner-border spinner-border-sm" aria-hidden="true" />
+                <small className="text-body-secondary">Loading history...</small>
+              </div>
+            )}
+
+            {!historyLoading && historyError != null && (
+              <div className="chat-history-state" role="status" aria-live="polite">
+                <small className="text-danger">{historyError}</small>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary"
+                  onClick={() => setHistoryReloadTick((v) => v + 1)}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+
+            {!historyLoading && hasMore && (
               <div className="text-center py-2">
                 {loadingMore ? (
                   <small className="text-body-secondary">Loading...</small>
@@ -315,16 +609,22 @@ export default function ChatWindow() {
                 )}
               </div>
             )}
-            {visibleMessages.map((msg, i) => (
+
+            {visibleMessages.map((msg) => (
               <MessageBubble
-                key={visibleStart + i}
+                key={msg.id}
                 role={msg.role}
                 content={msg.content}
                 model={msg.model ?? null}
                 tier={msg.tier ?? null}
                 reasoning={msg.reasoning ?? null}
+                clientStatus={msg.role === 'user' ? msg.status : undefined}
+                onRetry={msg.role === 'user' && msg.status === 'failed' && msg.outbound != null
+                  ? () => handleRetry(msg.id)
+                  : undefined}
               />
             ))}
+
             {typing && (
               <div className="typing-indicator" role="status" aria-live="polite" aria-label="Assistant is typing">
                 <span aria-hidden="true" /><span aria-hidden="true" /><span aria-hidden="true" />
@@ -334,10 +634,8 @@ export default function ChatWindow() {
           <div ref={bottomRef} />
         </div>
 
-        {/* Input */}
         <ChatInput
           onSend={handleSend}
-          disabled={!connected}
           running={typing}
           onStop={() => {
             if (wsRef.current?.readyState === WebSocket.OPEN) {

@@ -309,6 +309,29 @@ textarea:focus-visible,
   }
 }
 
+.message-bubble--pending {
+  border: 1px dashed rgba(var(--bs-primary-rgb), 0.45);
+}
+
+.message-bubble--failed {
+  border: 1px solid rgba(var(--bs-danger-rgb), 0.45);
+  background-color: rgba(var(--bs-danger-rgb), 0.08) !important;
+}
+
+.message-bubble-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  font-size: 0.78rem;
+  line-height: 1.2;
+}
+
+.message-retry-btn {
+  font-size: 0.78rem;
+  line-height: 1.2;
+}
+
 .user-command-token {
   display: inline-block;
   padding: 0.08rem 0.45rem;
@@ -541,6 +564,18 @@ textarea:focus-visible,
 .chat-toolbar-inner {
   width: min(920px, 100%);
   margin: 0 auto;
+}
+
+.chat-history-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 1px dashed var(--bs-border-color);
+  border-radius: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.75rem;
+  background-color: var(--bs-tertiary-bg);
 }
 
 .panel-toggle-btn {
