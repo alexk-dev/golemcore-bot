@@ -47,7 +47,7 @@ export default function SkillsTab({ config }: SkillsTabProps): ReactElement {
           className="mb-3"
         />
         <SettingsSaveBar>
-          <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateSkills.isPending}>
+          <Button type="button" variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateSkills.isPending}>
             {updateSkills.isPending ? 'Saving...' : 'Save'}
           </Button>
           <SaveStateHint isDirty={isDirty} />

@@ -80,7 +80,7 @@ function ProviderEditor({
                   value={form.apiKey ?? ''}
                   onChange={(e) => onFormChange({ ...form, apiKey: toNullableString(e.target.value) })}
                 />
-                <Button variant="secondary" onClick={onToggleShowKey}>
+                <Button type="button" variant="secondary" onClick={onToggleShowKey}>
                   {showKey ? 'Hide' : 'Show'}
                 </Button>
               </InputGroup>
@@ -114,10 +114,10 @@ function ProviderEditor({
           </Col>
         </Row>
         <div className="d-flex gap-2 mt-2">
-          <Button variant="primary" size="sm" onClick={onSave} disabled={isSaving}>
+          <Button type="button" variant="primary" size="sm" onClick={onSave} disabled={isSaving}>
             {isSaving ? 'Saving...' : 'Save'}
           </Button>
-          <Button variant="secondary" size="sm" onClick={onCancel} disabled={isSaving}>
+          <Button type="button" variant="secondary" size="sm" onClick={onCancel} disabled={isSaving}>
             Cancel
           </Button>
         </div>
@@ -264,7 +264,7 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
             onChange={(e) => setNewProviderName(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') { handleStartAdd(); } }}
           />
-          <Button variant="primary" onClick={handleStartAdd}>Add Provider</Button>
+          <Button type="button" variant="primary" onClick={handleStartAdd}>Add Provider</Button>
         </InputGroup>
         <datalist id="known-llm-providers">
           {knownSuggestions.map((name) => (
@@ -301,7 +301,7 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
                     </td>
                     <td data-label="Actions" className="text-end text-nowrap">
                       <div className="d-flex flex-wrap gap-1 providers-actions">
-                        <Button
+                        <Button type="button"
                           size="sm"
                           variant="secondary"
                           className="provider-action-btn"
@@ -315,7 +315,7 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
                         >
                           {editingName === name && !isNewProvider ? 'Close' : 'Edit'}
                         </Button>
-                        <Button
+                        <Button type="button"
                           size="sm"
                           variant="danger"
                           className="provider-action-btn"

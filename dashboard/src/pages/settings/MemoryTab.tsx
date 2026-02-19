@@ -58,7 +58,7 @@ export default function MemoryTab({ config }: MemoryTabProps): ReactElement {
           />
         </Form.Group>
         <SettingsSaveBar>
-          <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateMemory.isPending}>
+          <Button type="button" variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateMemory.isPending}>
             {updateMemory.isPending ? 'Saving...' : 'Save'}
           </Button>
           <SaveStateHint isDirty={isDirty} />

@@ -243,7 +243,7 @@ export default function ModelsTab({ config, llmConfig }: ModelsTabProps): ReactE
       </Row>
 
       <SettingsSaveBar>
-        <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isModelsDirty || updateRouter.isPending}>
+        <Button type="button" variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isModelsDirty || updateRouter.isPending}>
           {updateRouter.isPending ? 'Saving...' : 'Save Model Configuration'}
         </Button>
         <SaveStateHint isDirty={isModelsDirty} />

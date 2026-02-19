@@ -46,7 +46,7 @@ export default function VoiceTab({ config }: VoiceTabProps): ReactElement {
           <InputGroup size="sm">
             <Form.Control type={showKey ? 'text' : 'password'} value={form.apiKey ?? ''}
               onChange={(e) => setForm({ ...form, apiKey: toNullableString(e.target.value) })} />
-            <Button variant="secondary" onClick={() => setShowKey(!showKey)}>
+            <Button type="button" variant="secondary" onClick={() => setShowKey(!showKey)}>
               {showKey ? 'Hide' : 'Show'}
             </Button>
           </InputGroup>
@@ -98,7 +98,7 @@ export default function VoiceTab({ config }: VoiceTabProps): ReactElement {
         </Row>
 
         <SettingsSaveBar className="mt-3">
-          <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isVoiceDirty || updateVoice.isPending}>
+          <Button type="button" variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isVoiceDirty || updateVoice.isPending}>
             {updateVoice.isPending ? 'Saving...' : 'Save'}
           </Button>
           <SaveStateHint isDirty={isVoiceDirty} />

@@ -96,7 +96,7 @@ export default function SettingsPage(): ReactElement {
                         </div>
                         <Card.Text className="text-body-secondary small mb-3">{item.description}</Card.Text>
                         <div className="mt-auto">
-                          <Button size="sm" variant="primary" onClick={() => navigate(`/settings/${item.key}`)}>
+                          <Button type="button" size="sm" variant="primary" onClick={() => navigate(`/settings/${item.key}`)}>
                             Open
                           </Button>
                         </div>
@@ -119,7 +119,7 @@ export default function SettingsPage(): ReactElement {
         <p className="text-body-secondary mb-0">{sectionMeta?.description ?? 'Configure your GolemCore instance'}</p>
       </div>
       <div className="mb-3">
-        <Button variant="secondary" size="sm" onClick={() => navigate('/settings')}>
+        <Button type="button" variant="secondary" size="sm" onClick={() => navigate('/settings')}>
           Back to catalog
         </Button>
       </div>

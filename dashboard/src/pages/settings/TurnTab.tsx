@@ -85,7 +85,7 @@ export default function TurnTab({ config }: TurnTabProps): ReactElement {
           </Col>
         </Row>
         <SettingsSaveBar>
-          <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateTurn.isPending}>
+          <Button type="button" variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateTurn.isPending}>
             {updateTurn.isPending ? 'Saving...' : 'Save'}
           </Button>
           <SaveStateHint isDirty={isDirty} />

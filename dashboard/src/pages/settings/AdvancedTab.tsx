@@ -194,7 +194,7 @@ export function AdvancedTab({ rateLimit, security, compaction, mode = 'all' }: A
       </Row>
 
       <SettingsSaveBar>
-        <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isAdvancedDirty || updateAdvanced.isPending}>
+        <Button type="button" variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isAdvancedDirty || updateAdvanced.isPending}>
           {updateAdvanced.isPending ? 'Saving...' : 'Save All'}
         </Button>
         <SaveStateHint isDirty={isAdvancedDirty} />

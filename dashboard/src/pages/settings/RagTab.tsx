@@ -100,7 +100,7 @@ export default function RagTab({ config }: RagTabProps): ReactElement {
               <InputGroup size="sm">
                 <Form.Control type={showApiKey ? 'text' : 'password'} value={form.apiKey ?? ''}
                   onChange={(e) => setForm({ ...form, apiKey: toNullableString(e.target.value) })} />
-                <Button variant="secondary" onClick={() => setShowApiKey(!showApiKey)}>
+                <Button type="button" variant="secondary" onClick={() => setShowApiKey(!showApiKey)}>
                   {showApiKey ? 'Hide' : 'Show'}
                 </Button>
               </InputGroup>
@@ -109,7 +109,7 @@ export default function RagTab({ config }: RagTabProps): ReactElement {
         </Row>
 
         <SettingsSaveBar className="mt-3">
-          <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateRag.isPending}>
+          <Button type="button" variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateRag.isPending}>
             {updateRag.isPending ? 'Saving...' : 'Save'}
           </Button>
           <SaveStateHint isDirty={isDirty} />

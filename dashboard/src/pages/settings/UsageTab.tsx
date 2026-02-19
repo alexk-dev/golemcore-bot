@@ -40,7 +40,7 @@ export default function UsageTab({ config }: UsageTabProps): ReactElement {
           className="mb-3"
         />
         <SettingsSaveBar>
-          <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateUsage.isPending}>
+          <Button type="button" variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateUsage.isPending}>
             {updateUsage.isPending ? 'Saving...' : 'Save'}
           </Button>
           <SaveStateHint isDirty={isDirty} />

@@ -28,10 +28,10 @@ export default function ConfirmModal({
       </Modal.Header>
       <Modal.Body className="text-body-secondary">{message}</Modal.Body>
       <Modal.Footer>
-        <Button variant="secondary" onClick={onCancel} disabled={isProcessing}>
+        <Button type="button" variant="secondary" onClick={onCancel} disabled={isProcessing}>
           Cancel
         </Button>
-        <Button variant={confirmVariant} onClick={onConfirm} disabled={isProcessing}>
+        <Button type="button" variant={confirmVariant} onClick={onConfirm} disabled={isProcessing}>
           {isProcessing ? 'Processing...' : confirmLabel}
         </Button>
       </Modal.Footer>

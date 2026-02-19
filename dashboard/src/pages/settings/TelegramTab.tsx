@@ -116,7 +116,7 @@ export default function TelegramTab({ config, voiceConfig }: TelegramTabProps): 
               onChange={(e) => setToken(e.target.value)}
               placeholder="123456:ABC-DEF..."
             />
-            <Button variant="secondary" onClick={() => setShowToken(!showToken)}>
+            <Button type="button" variant="secondary" onClick={() => setShowToken(!showToken)}>
               {showToken ? 'Hide' : 'Show'}
             </Button>
           </InputGroup>
@@ -156,7 +156,7 @@ export default function TelegramTab({ config, voiceConfig }: TelegramTabProps): 
           <div className="mb-3">
             <div className="d-flex align-items-center justify-content-between mb-2">
               <span className="small fw-medium">Invite Codes <HelpTip text="Single-use codes that grant Telegram access when redeemed" /></span>
-              <Button variant="primary" size="sm"
+              <Button type="button" variant="primary" size="sm"
                 onClick={() => genInvite.mutate(undefined, { onSuccess: () => toast.success('Invite code generated') })}>
                 Generate Code
               </Button>
@@ -179,7 +179,7 @@ export default function TelegramTab({ config, voiceConfig }: TelegramTabProps): 
                       <td data-label="Created" className="small text-body-secondary">{new Date(ic.createdAt).toLocaleDateString()}</td>
                       <td data-label="Actions" className="text-end">
                         <div className="d-flex flex-wrap gap-1 invite-actions">
-                          <Button
+                          <Button type="button"
                             size="sm"
                             variant="secondary"
                             className="invite-action-btn"
@@ -190,7 +190,7 @@ export default function TelegramTab({ config, voiceConfig }: TelegramTabProps): 
                           >
                             Copy
                           </Button>
-                          <Button
+                          <Button type="button"
                             size="sm"
                             variant="danger"
                             className="invite-action-btn"
@@ -238,10 +238,10 @@ export default function TelegramTab({ config, voiceConfig }: TelegramTabProps): 
         </Card>
 
         <SettingsSaveBar className="flex-wrap">
-          <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isTelegramDirty || updateTelegram.isPending}>
+          <Button type="button" variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isTelegramDirty || updateTelegram.isPending}>
             {updateTelegram.isPending ? 'Saving...' : 'Save'}
           </Button>
-          <Button variant="warning" size="sm"
+          <Button type="button" variant="warning" size="sm"
             disabled={restart.isPending}
             onClick={() => restart.mutate(undefined, {
               onSuccess: () => toast.success('Telegram bot restarted'),

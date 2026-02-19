@@ -189,7 +189,7 @@ export default function WebhooksTab(): ReactElement {
               <InputGroup size="sm">
                 <Form.Control type="password" value={form.token ?? ''}
                   onChange={(e) => setForm({ ...form, token: toNullableString(e.target.value) })} />
-                <Button variant="secondary" onClick={handleGenerateToken} title="Generate random token">
+                <Button type="button" variant="secondary" onClick={handleGenerateToken} title="Generate random token">
                   Generate
                 </Button>
               </InputGroup>
@@ -217,7 +217,7 @@ export default function WebhooksTab(): ReactElement {
 
         <div className="d-flex align-items-center justify-content-between mb-2">
           <span className="small fw-medium">Hook Mappings <HelpTip text="Named endpoints (/api/hooks/{name}) that map incoming webhooks to bot actions" /></span>
-          <Button variant="primary" size="sm" onClick={addMapping}>Add Webhook</Button>
+          <Button type="button" variant="primary" size="sm" onClick={addMapping}>Add Webhook</Button>
         </div>
 
         {form.mappings.length > 0 ? (
@@ -238,7 +238,7 @@ export default function WebhooksTab(): ReactElement {
                   <td data-label="Auth" className="small">{mapping.authMode}</td>
                   <td data-label="Actions" className="text-end">
                     <div className="d-flex flex-wrap gap-1 webhook-actions">
-                      <Button
+                      <Button type="button"
                         size="sm"
                         variant="secondary"
                         className="webhook-action-btn"
@@ -246,7 +246,7 @@ export default function WebhooksTab(): ReactElement {
                       >
                         {editIdx === idx ? 'Close' : 'Edit'}
                       </Button>
-                      <Button
+                      <Button type="button"
                         size="sm"
                         variant="danger"
                         className="webhook-action-btn"
@@ -269,7 +269,7 @@ export default function WebhooksTab(): ReactElement {
         )}
 
         <SettingsSaveBar>
-          <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isWebhooksDirty || updateWebhooks.isPending}>
+          <Button type="button" variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isWebhooksDirty || updateWebhooks.isPending}>
             {updateWebhooks.isPending ? 'Saving...' : 'Save'}
           </Button>
           <SaveStateHint isDirty={isWebhooksDirty} />

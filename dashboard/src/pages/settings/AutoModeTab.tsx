@@ -86,7 +86,7 @@ export default function AutoModeTab({ config }: AutoModeTabProps): ReactElement 
           onChange={(e) => setForm({ ...form, notifyMilestones: e.target.checked })} className="mb-3" />
 
         <SettingsSaveBar>
-          <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isAutoDirty || updateAuto.isPending}>
+          <Button type="button" variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isAutoDirty || updateAuto.isPending}>
             {updateAuto.isPending ? 'Saving...' : 'Save'}
           </Button>
           <SaveStateHint isDirty={isAutoDirty} />

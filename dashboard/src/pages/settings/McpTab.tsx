@@ -72,7 +72,7 @@ export default function McpTab({ config }: McpTabProps): ReactElement {
           </Col>
         </Row>
         <SettingsSaveBar>
-          <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateMcp.isPending}>
+          <Button type="button" variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateMcp.isPending}>
             {updateMcp.isPending ? 'Saving...' : 'Save'}
           </Button>
           <SaveStateHint isDirty={isDirty} />
