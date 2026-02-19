@@ -223,6 +223,22 @@ class SettingsControllerTest {
         assertDoesNotThrow(() -> controller.addLlmProvider("test", providerConfig));
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = { "OPENAI", "Anthropic", "GEMINI" })
+    void shouldAcceptCaseInsensitiveApiTypes(String apiType) {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder().providers(new LinkedHashMap<>()).build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
+                .apiKey(Secret.of("x"))
+                .apiType(apiType)
+                .build();
+
+        assertDoesNotThrow(() -> controller.addLlmProvider("test", providerConfig));
+    }
+
     @Test
     void shouldAcceptNullApiType() {
         RuntimeConfig runtimeConfig = RuntimeConfig.builder()
@@ -233,6 +249,21 @@ class SettingsControllerTest {
         RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
                 .apiKey(Secret.of("x"))
                 .apiType(null)
+                .build();
+
+        assertDoesNotThrow(() -> controller.addLlmProvider("test", providerConfig));
+    }
+
+    @Test
+    void shouldAcceptBlankApiType() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder().providers(new LinkedHashMap<>()).build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
+                .apiKey(Secret.of("x"))
+                .apiType("   ")
                 .build();
 
         assertDoesNotThrow(() -> controller.addLlmProvider("test", providerConfig));
@@ -257,6 +288,26 @@ class SettingsControllerTest {
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> controller.updateLlmConfig(update));
         assertTrue(error.getMessage().contains("apiType must be one of"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "OPENAI", "Anthropic", "GEMINI", "   " })
+    void shouldAcceptCaseInsensitiveAndBlankApiTypeInLlmConfigUpdate(String apiType) {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .modelRouter(RuntimeConfig.ModelRouterConfig.builder().build())
+                .llm(RuntimeConfig.LlmConfig.builder().providers(new LinkedHashMap<>()).build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.LlmConfig update = RuntimeConfig.LlmConfig.builder()
+                .providers(new LinkedHashMap<>(Map.of(
+                        "openai", RuntimeConfig.LlmProviderConfig.builder()
+                                .apiKey(Secret.of("x"))
+                                .apiType(apiType)
+                                .build())))
+                .build();
+
+        assertDoesNotThrow(() -> controller.updateLlmConfig(update));
     }
 
     @Test
