@@ -236,4 +236,68 @@ class WhisperCompatibleSttAdapterTest {
         assertTrue(ex.getMessage().contains("400"));
         assertEquals(1, mockServer.getRequestCount());
     }
+
+    @Test
+    void shouldRetryOn504Timeout() {
+        mockServer.enqueue(new MockResponse.Builder().code(504).body("Gateway timeout").build());
+        mockServer.enqueue(new MockResponse.Builder()
+                .body("{\"text\":\"ok\",\"language\":\"en\"}")
+                .addHeader(CONTENT_TYPE, APPLICATION_JSON).build());
+
+        VoicePort.TranscriptionResult result = adapter.transcribe(new byte[] { 1 }, AudioFormat.OGG_OPUS);
+
+        assertEquals("ok", result.text());
+        assertEquals(2, mockServer.getRequestCount());
+    }
+
+    @Test
+    void shouldNotRetryOnUnauthorized() {
+        mockServer.enqueue(new MockResponse.Builder().code(401).body("Unauthorized").build());
+
+        Exception ex = assertThrows(Exception.class,
+                () -> adapter.transcribe(new byte[] { 1 }, AudioFormat.OGG_OPUS));
+        assertTrue(ex.getMessage().contains("401"));
+        assertEquals(1, mockServer.getRequestCount());
+    }
+
+    @Test
+    void shouldNormalizeBaseUrlWithTrailingSlash() throws InterruptedException {
+        when(runtimeConfigService.getWhisperSttUrl()).thenReturn(mockServer.url("/").toString());
+        mockServer.enqueue(new MockResponse.Builder()
+                .body("{\"text\":\"ok\",\"language\":\"en\"}")
+                .addHeader(CONTENT_TYPE, APPLICATION_JSON).build());
+
+        adapter.transcribe(new byte[] { 1 }, AudioFormat.OGG_OPUS);
+
+        RecordedRequest request = mockServer.takeRequest(1, TimeUnit.SECONDS);
+        assertNotNull(request);
+        assertTrue(request.getTarget() != null && request.getTarget().startsWith("/v1/audio/transcriptions"));
+        assertFalse(request.getTarget() != null && request.getTarget().contains("//v1"));
+    }
+
+    @Test
+    void shouldFailWhenSuccessfulResponseHasEmptyBody() {
+        mockServer.enqueue(new MockResponse.Builder()
+                .addHeader(CONTENT_TYPE, APPLICATION_JSON)
+                .body("")
+                .build());
+
+        Exception ex = assertThrows(Exception.class,
+                () -> adapter.transcribe(new byte[] { 1 }, AudioFormat.OGG_OPUS));
+        assertTrue(ex.getMessage().contains("Whisper transcription failed"));
+    }
+
+    @Test
+    void shouldNotSendAuthHeaderWhenApiKeyBlank() throws InterruptedException {
+        when(runtimeConfigService.getWhisperSttApiKey()).thenReturn("   ");
+        mockServer.enqueue(new MockResponse.Builder()
+                .body("{\"text\":\"test\",\"language\":\"en\"}")
+                .addHeader(CONTENT_TYPE, APPLICATION_JSON).build());
+
+        adapter.transcribe(new byte[] { 1 }, AudioFormat.OGG_OPUS);
+
+        RecordedRequest request = mockServer.takeRequest(1, TimeUnit.SECONDS);
+        assertNotNull(request);
+        assertNull(request.getHeaders().get("Authorization"));
+    }
 }

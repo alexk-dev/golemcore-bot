@@ -196,6 +196,15 @@ class RuntimeConfigServiceTest {
     }
 
     @Test
+    void shouldReturnDefaultVoiceProvidersWhenNotConfigured() {
+        assertEquals("elevenlabs", service.getSttProvider());
+        assertEquals("elevenlabs", service.getTtsProvider());
+        assertEquals("", service.getWhisperSttUrl());
+        assertEquals("", service.getWhisperSttApiKey());
+        assertFalse(service.isWhisperSttConfigured());
+    }
+
+    @Test
     void shouldReturnDefaultMcpSettings() {
         assertTrue(service.isMcpEnabled());
         assertEquals(30, service.getMcpDefaultStartupTimeout());
@@ -319,6 +328,7 @@ class RuntimeConfigServiceTest {
 
         RuntimeConfig.VoiceConfig voice = RuntimeConfig.VoiceConfig.builder()
                 .apiKey(Secret.of("voice-key-secret"))
+                .whisperSttApiKey(Secret.of("whisper-key-secret"))
                 .build();
         persistedSections.put("voice.json", objectMapper.writeValueAsString(voice));
 
@@ -347,6 +357,8 @@ class RuntimeConfigServiceTest {
         assertTrue(redacted.getTelegram().getToken().getPresent());
         assertNull(redacted.getVoice().getApiKey().getValue());
         assertTrue(redacted.getVoice().getApiKey().getPresent());
+        assertNull(redacted.getVoice().getWhisperSttApiKey().getValue());
+        assertTrue(redacted.getVoice().getWhisperSttApiKey().getPresent());
         assertNull(redacted.getRag().getApiKey().getValue());
         assertNull(redacted.getTools().getBraveSearchApiKey().getValue());
         assertNull(redacted.getLlm().getProviders().get("openai").getApiKey().getValue());
@@ -600,6 +612,34 @@ class RuntimeConfigServiceTest {
     void shouldReturnFalseForVoiceTelegramOptions() {
         assertFalse(service.isTelegramRespondWithVoiceEnabled());
         assertFalse(service.isTelegramTranscribeIncomingEnabled());
+    }
+
+    @Test
+    void shouldDetectWhisperProviderWhenConfigured() throws Exception {
+        RuntimeConfig.VoiceConfig voice = RuntimeConfig.VoiceConfig.builder()
+                .sttProvider("whisper")
+                .ttsProvider("elevenlabs")
+                .whisperSttUrl("http://localhost:5092")
+                .whisperSttApiKey(Secret.of("whisper-secret"))
+                .build();
+        persistedSections.put("voice.json", objectMapper.writeValueAsString(voice));
+
+        assertEquals("whisper", service.getSttProvider());
+        assertEquals("elevenlabs", service.getTtsProvider());
+        assertEquals("http://localhost:5092", service.getWhisperSttUrl());
+        assertEquals("whisper-secret", service.getWhisperSttApiKey());
+        assertTrue(service.isWhisperSttConfigured());
+    }
+
+    @Test
+    void shouldNotConsiderWhisperConfiguredWhenUrlBlank() throws Exception {
+        RuntimeConfig.VoiceConfig voice = RuntimeConfig.VoiceConfig.builder()
+                .sttProvider("whisper")
+                .whisperSttUrl("")
+                .build();
+        persistedSections.put("voice.json", objectMapper.writeValueAsString(voice));
+
+        assertFalse(service.isWhisperSttConfigured());
     }
 
     // ==================== Brave Search ====================
