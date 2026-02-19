@@ -3,6 +3,8 @@ import { Badge, Button, Card, Form, InputGroup, Table } from 'react-bootstrap';
 import toast from 'react-hot-toast';
 import { extractErrorMessage } from '../../utils/extractErrorMessage';
 import HelpTip from '../../components/common/HelpTip';
+import { SecretStatusBadges } from '../../components/common/SecretStatusBadges';
+import { getSecretPlaceholder } from '../../components/common/secretInputUtils';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import ConfirmModal from '../../components/common/ConfirmModal';
 import {
@@ -133,19 +135,14 @@ export default function TelegramTab({ config, voiceConfig }: TelegramTabProps): 
         <Form.Group className="mb-3">
           <Form.Label className="small fw-medium d-flex align-items-center gap-2">
             Bot Token <HelpTip text="Telegram Bot API token from @BotFather" />
-            {hasStoredToken && (
-              <Badge bg="success-subtle" text="success">Configured</Badge>
-            )}
-            {willUpdateToken && (
-              <Badge bg="info-subtle" text="info">Will update on save</Badge>
-            )}
+            <SecretStatusBadges hasStoredSecret={hasStoredToken} willUpdateSecret={willUpdateToken} />
           </Form.Label>
           <InputGroup size="sm">
             <Form.Control
               type={showToken ? 'text' : 'password'}
               value={token}
               onChange={(e) => setToken(e.target.value)}
-              placeholder={hasStoredToken ? 'Secret is configured (hidden)' : '123456:ABC-DEF...'}
+              placeholder={getSecretPlaceholder(hasStoredToken, '123456:ABC-DEF...')}
               autoComplete="new-password"
               autoCapitalize="off"
               autoCorrect="off"

@@ -2,6 +2,8 @@ import { type ReactElement, useEffect, useMemo, useState } from 'react';
 import { Badge, Button, Card, Col, Form, Row } from 'react-bootstrap';
 import toast from 'react-hot-toast';
 import HelpTip from '../../components/common/HelpTip';
+import { SecretStatusBadges } from '../../components/common/SecretStatusBadges';
+import { getSecretPlaceholder } from '../../components/common/secretInputUtils';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useBrowserHealthPing } from '../../hooks/useSystem';
 import { useUpdateTools } from '../../hooks/useSettings';
@@ -256,12 +258,10 @@ export default function ToolsTab({ config, mode = 'all' }: ToolsTabProps): React
             <Form.Group>
               <Form.Label className="small fw-medium d-flex align-items-center gap-2">
                 Brave Search API Key <HelpTip text="Get your free API key at brave.com/search/api" />
-                {hasStoredBraveApiKey && (
-                  <Badge bg="success-subtle" text="success">Configured</Badge>
-                )}
-                {willUpdateBraveApiKey && (
-                  <Badge bg="info-subtle" text="info">Will update on save</Badge>
-                )}
+                <SecretStatusBadges
+                  hasStoredSecret={hasStoredBraveApiKey}
+                  willUpdateSecret={willUpdateBraveApiKey}
+                />
               </Form.Label>
               <Form.Control
                 size="sm"
@@ -269,7 +269,7 @@ export default function ToolsTab({ config, mode = 'all' }: ToolsTabProps): React
                 autoComplete="new-password"
                 value={form.braveSearchApiKey ?? ''}
                 onChange={(event) => setForm({ ...form, braveSearchApiKey: toNullableString(event.target.value) })}
-                placeholder={hasStoredBraveApiKey ? 'Secret is configured (hidden)' : 'BSA-...'}
+                placeholder={getSecretPlaceholder(hasStoredBraveApiKey, 'BSA-...')}
               />
             </Form.Group>
           </Card.Body>
@@ -472,12 +472,10 @@ export default function ToolsTab({ config, mode = 'all' }: ToolsTabProps): React
             <Form.Group>
               <Form.Label className="small fw-medium d-flex align-items-center gap-2">
                 Brave Search API Key <HelpTip text="Get your free API key at brave.com/search/api" />
-                {hasStoredBraveApiKey && (
-                  <Badge bg="success-subtle" text="success">Configured</Badge>
-                )}
-                {willUpdateBraveApiKey && (
-                  <Badge bg="info-subtle" text="info">Will update on save</Badge>
-                )}
+                <SecretStatusBadges
+                  hasStoredSecret={hasStoredBraveApiKey}
+                  willUpdateSecret={willUpdateBraveApiKey}
+                />
               </Form.Label>
               <Form.Control
                 size="sm"
@@ -485,7 +483,7 @@ export default function ToolsTab({ config, mode = 'all' }: ToolsTabProps): React
                 autoComplete="new-password"
                 value={form.braveSearchApiKey ?? ''}
                 onChange={(event) => setForm({ ...form, braveSearchApiKey: toNullableString(event.target.value) })}
-                placeholder={hasStoredBraveApiKey ? 'Secret is configured (hidden)' : 'BSA-...'}
+                placeholder={getSecretPlaceholder(hasStoredBraveApiKey, 'BSA-...')}
               />
             </Form.Group>
           </Card.Body>
@@ -571,12 +569,10 @@ export default function ToolsTab({ config, mode = 'all' }: ToolsTabProps): React
                     <Form.Group>
                       <Form.Label className="small fw-medium d-flex align-items-center gap-2">
                         Password <HelpTip text="For Gmail, use an App Password (not your regular password)" />
-                        {hasStoredImapPassword && (
-                          <Badge bg="success-subtle" text="success">Configured</Badge>
-                        )}
-                        {willUpdateImapPassword && (
-                          <Badge bg="info-subtle" text="info">Will update on save</Badge>
-                        )}
+                        <SecretStatusBadges
+                          hasStoredSecret={hasStoredImapPassword}
+                          willUpdateSecret={willUpdateImapPassword}
+                        />
                       </Form.Label>
                       <Form.Control
                         size="sm"
@@ -584,7 +580,7 @@ export default function ToolsTab({ config, mode = 'all' }: ToolsTabProps): React
                         autoComplete="new-password"
                         value={form.imap?.password ?? ''}
                         onChange={(event) => updateImap({ password: toNullableString(event.target.value) })}
-                        placeholder={hasStoredImapPassword ? 'Secret is configured (hidden)' : ''}
+                        placeholder={getSecretPlaceholder(hasStoredImapPassword, '')}
                       />
                     </Form.Group>
                   </Col>
@@ -716,12 +712,10 @@ export default function ToolsTab({ config, mode = 'all' }: ToolsTabProps): React
                     <Form.Group>
                       <Form.Label className="small fw-medium d-flex align-items-center gap-2">
                         Password <HelpTip text="For Gmail, use an App Password (not your regular password)" />
-                        {hasStoredSmtpPassword && (
-                          <Badge bg="success-subtle" text="success">Configured</Badge>
-                        )}
-                        {willUpdateSmtpPassword && (
-                          <Badge bg="info-subtle" text="info">Will update on save</Badge>
-                        )}
+                        <SecretStatusBadges
+                          hasStoredSecret={hasStoredSmtpPassword}
+                          willUpdateSecret={willUpdateSmtpPassword}
+                        />
                       </Form.Label>
                       <Form.Control
                         size="sm"
@@ -729,7 +723,7 @@ export default function ToolsTab({ config, mode = 'all' }: ToolsTabProps): React
                         autoComplete="new-password"
                         value={form.smtp?.password ?? ''}
                         onChange={(event) => updateSmtp({ password: toNullableString(event.target.value) })}
-                        placeholder={hasStoredSmtpPassword ? 'Secret is configured (hidden)' : ''}
+                        placeholder={getSecretPlaceholder(hasStoredSmtpPassword, '')}
                       />
                     </Form.Group>
                   </Col>

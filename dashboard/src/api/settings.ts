@@ -119,6 +119,22 @@ function toUiRuntimeConfig(data: RuntimeConfigUiRecord): RuntimeConfig {
   return cfg as unknown as RuntimeConfig;
 }
 
+function stripImapPasswordPresence(config: ImapConfig | null | undefined): Omit<ImapConfig, 'passwordPresent'> | null | undefined {
+  if (config == null) {
+    return config;
+  }
+  const { passwordPresent: _passwordPresent, ...rest } = config;
+  return rest;
+}
+
+function stripSmtpPasswordPresence(config: SmtpConfig | null | undefined): Omit<SmtpConfig, 'passwordPresent'> | null | undefined {
+  if (config == null) {
+    return config;
+  }
+  const { passwordPresent: _passwordPresent, ...rest } = config;
+  return rest;
+}
+
 function toBackendRuntimeConfig(config: RuntimeConfig): UnknownRecord {
   const { tokenPresent: _telegramTokenPresent, ...telegram } = config.telegram;
   const { apiKeyPresent: _voiceApiKeyPresent, ...voice } = config.voice;
@@ -129,8 +145,8 @@ function toBackendRuntimeConfig(config: RuntimeConfig): UnknownRecord {
     smtp: toolsSmtp,
     ...tools
   } = config.tools;
-  const { passwordPresent: _imapPasswordPresent, ...imap } = toolsImap;
-  const { passwordPresent: _smtpPasswordPresent, ...smtp } = toolsSmtp;
+  const imap = stripImapPasswordPresence(toolsImap);
+  const smtp = stripSmtpPasswordPresence(toolsSmtp);
 
   const payload: UnknownRecord = {
     ...config,
@@ -155,18 +171,18 @@ function toBackendRuntimeConfig(config: RuntimeConfig): UnknownRecord {
     tools: {
       ...tools,
       braveSearchApiKey: toSecretPayload(config.tools.braveSearchApiKey ?? null),
-      imap: toolsImap
+      imap: imap != null
         ? {
           ...imap,
           password: toSecretPayload(imap.password ?? null),
         }
-        : toolsImap,
-      smtp: toolsSmtp
+        : imap,
+      smtp: smtp != null
         ? {
           ...smtp,
           password: toSecretPayload(smtp.password ?? null),
         }
-        : toolsSmtp,
+        : smtp,
     },
     voice: {
       ...voice,
@@ -506,24 +522,24 @@ export async function updateToolsConfig(config: ToolsConfig): Promise<RuntimeCon
     smtp,
     ...tools
   } = config;
-  const { passwordPresent: _imapPasswordPresent, ...cleanImap } = imap;
-  const { passwordPresent: _smtpPasswordPresent, ...cleanSmtp } = smtp;
+  const cleanImap = stripImapPasswordPresence(imap);
+  const cleanSmtp = stripSmtpPasswordPresence(smtp);
 
   const payload = {
     ...tools,
     braveSearchApiKey: toSecretPayload(config.braveSearchApiKey ?? null),
-    imap: imap
+    imap: cleanImap != null
       ? {
         ...cleanImap,
         password: toSecretPayload(cleanImap.password ?? null),
       }
-      : imap,
-    smtp: smtp
+      : cleanImap,
+    smtp: cleanSmtp != null
       ? {
         ...cleanSmtp,
         password: toSecretPayload(cleanSmtp.password ?? null),
       }
-      : smtp,
+      : cleanSmtp,
   };
   const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/tools', payload);
   return toUiRuntimeConfig(data);

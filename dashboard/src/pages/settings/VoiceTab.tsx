@@ -1,7 +1,9 @@
 import { type ReactElement, useEffect, useMemo, useState } from 'react';
-import { Badge, Button, Card, Col, Form, InputGroup, Row } from 'react-bootstrap';
+import { Button, Card, Col, Form, InputGroup, Row } from 'react-bootstrap';
 import toast from 'react-hot-toast';
 import HelpTip from '../../components/common/HelpTip';
+import { SecretStatusBadges } from '../../components/common/SecretStatusBadges';
+import { getSecretInputType, getSecretPlaceholder, getSecretToggleLabel } from '../../components/common/secretInputUtils';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useUpdateVoice } from '../../hooks/useSettings';
 import type { VoiceConfig } from '../../api/settings';
@@ -15,6 +17,18 @@ function toNullableString(value: string): string | null {
   return value.length > 0 ? value : null;
 }
 
+function getSaveButtonLabel(isPending: boolean): string {
+  return isPending ? 'Saving...' : 'Save';
+}
+
+function normalizeVoiceSpeed(speed: number | null): number {
+  return speed ?? 1.0;
+}
+
+function formatVoiceSpeed(speed: number | null): string {
+  return normalizeVoiceSpeed(speed).toFixed(1);
+}
+
 interface VoiceTabProps {
   config: VoiceConfig;
 }
@@ -26,7 +40,13 @@ export default function VoiceTab({ config }: VoiceTabProps): ReactElement {
   const isVoiceDirty = useMemo(() => hasDiff(form, config), [form, config]);
   const hasStoredApiKey = config.apiKeyPresent === true;
   const willUpdateApiKey = (form.apiKey?.length ?? 0) > 0;
+  const apiKeyInputType = getSecretInputType(showKey);
+  const keyToggleLabel = getSecretToggleLabel(showKey);
+  const saveLabel = getSaveButtonLabel(updateVoice.isPending);
+  const speedLabel = formatVoiceSpeed(form.speed);
+  const speedValue = normalizeVoiceSpeed(form.speed);
 
+  // Reset local draft when backend config changes (e.g. after successful save/refetch).
   useEffect(() => { setForm({ ...config }); }, [config]);
 
   const handleSave = async (): Promise<void> => {
@@ -45,26 +65,21 @@ export default function VoiceTab({ config }: VoiceTabProps): ReactElement {
         <Form.Group className="mb-3">
           <Form.Label className="small fw-medium d-flex align-items-center gap-2">
             API Key <HelpTip text="Your ElevenLabs API key from elevenlabs.io/app/settings/api-keys" />
-            {hasStoredApiKey && (
-              <Badge bg="success-subtle" text="success">Configured</Badge>
-            )}
-            {willUpdateApiKey && (
-              <Badge bg="info-subtle" text="info">Will update on save</Badge>
-            )}
+            <SecretStatusBadges hasStoredSecret={hasStoredApiKey} willUpdateSecret={willUpdateApiKey} />
           </Form.Label>
           <InputGroup size="sm">
             <Form.Control
-              type={showKey ? 'text' : 'password'}
+              type={apiKeyInputType}
               value={form.apiKey ?? ''}
               onChange={(e) => setForm({ ...form, apiKey: toNullableString(e.target.value) })}
-              placeholder={hasStoredApiKey ? 'Secret is configured (hidden)' : 'Enter API key'}
+              placeholder={getSecretPlaceholder(hasStoredApiKey, 'Enter API key')}
               autoComplete="new-password"
               autoCapitalize="off"
               autoCorrect="off"
               spellCheck={false}
             />
             <Button type="button" variant="secondary" onClick={() => setShowKey(!showKey)}>
-              {showKey ? 'Hide' : 'Show'}
+              {keyToggleLabel}
             </Button>
           </InputGroup>
         </Form.Group>
@@ -82,10 +97,10 @@ export default function VoiceTab({ config }: VoiceTabProps): ReactElement {
           <Col md={6}>
             <Form.Group>
               <Form.Label className="small fw-medium">
-                Speed: {form.speed?.toFixed(1) ?? '1.0'}
+                Speed: {speedLabel}
                 <HelpTip text="Voice playback speed multiplier (0.5 = half speed, 2.0 = double speed)" />
               </Form.Label>
-              <Form.Range min={0.5} max={2.0} step={0.1} value={form.speed ?? 1.0}
+              <Form.Range min={0.5} max={2.0} step={0.1} value={speedValue}
                 onChange={(e) => setForm({ ...form, speed: parseFloat(e.target.value) })} />
             </Form.Group>
           </Col>
@@ -116,7 +131,7 @@ export default function VoiceTab({ config }: VoiceTabProps): ReactElement {
 
         <SettingsSaveBar className="mt-3">
           <Button type="button" variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isVoiceDirty || updateVoice.isPending}>
-            {updateVoice.isPending ? 'Saving...' : 'Save'}
+            {saveLabel}
           </Button>
           <SaveStateHint isDirty={isVoiceDirty} />
         </SettingsSaveBar>
