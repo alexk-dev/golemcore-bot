@@ -1,5 +1,5 @@
 import { type ReactElement, useEffect, useMemo, useState } from 'react';
-import { Button, Card, Col, Form, InputGroup, Row } from 'react-bootstrap';
+import { Badge, Button, Card, Col, Form, InputGroup, Row } from 'react-bootstrap';
 import toast from 'react-hot-toast';
 import HelpTip from '../../components/common/HelpTip';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
@@ -24,6 +24,8 @@ export default function VoiceTab({ config }: VoiceTabProps): ReactElement {
   const [form, setForm] = useState<VoiceConfig>({ ...config });
   const [showKey, setShowKey] = useState(false);
   const isVoiceDirty = useMemo(() => hasDiff(form, config), [form, config]);
+  const hasStoredApiKey = config.apiKeyPresent === true;
+  const willUpdateApiKey = (form.apiKey?.length ?? 0) > 0;
 
   useEffect(() => { setForm({ ...config }); }, [config]);
 
@@ -41,14 +43,21 @@ export default function VoiceTab({ config }: VoiceTabProps): ReactElement {
           onChange={(e) => setForm({ ...form, enabled: e.target.checked })} className="mb-3" />
 
         <Form.Group className="mb-3">
-          <Form.Label className="small fw-medium">
+          <Form.Label className="small fw-medium d-flex align-items-center gap-2">
             API Key <HelpTip text="Your ElevenLabs API key from elevenlabs.io/app/settings/api-keys" />
+            {hasStoredApiKey && (
+              <Badge bg="success-subtle" text="success">Configured</Badge>
+            )}
+            {willUpdateApiKey && (
+              <Badge bg="info-subtle" text="info">Will update on save</Badge>
+            )}
           </Form.Label>
           <InputGroup size="sm">
             <Form.Control
               type={showKey ? 'text' : 'password'}
               value={form.apiKey ?? ''}
               onChange={(e) => setForm({ ...form, apiKey: toNullableString(e.target.value) })}
+              placeholder={hasStoredApiKey ? 'Secret is configured (hidden)' : 'Enter API key'}
               autoComplete="new-password"
               autoCapitalize="off"
               autoCorrect="off"

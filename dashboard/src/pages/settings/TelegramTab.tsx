@@ -98,6 +98,8 @@ export default function TelegramTab({ config, voiceConfig }: TelegramTabProps): 
   const isVoiceDirty = hasDiff(currentVoiceConfig, initialVoiceConfig);
   const isSavePending = updateTelegram.isPending || updateVoice.isPending;
   const isSaveDirty = isTelegramDirty || isVoiceDirty;
+  const hasStoredToken = config.tokenPresent === true;
+  const willUpdateToken = token.length > 0;
 
   const handleSave = async (): Promise<void> => {
     try {
@@ -129,15 +131,21 @@ export default function TelegramTab({ config, voiceConfig }: TelegramTabProps): 
           onChange={(e) => setEnabled(e.target.checked)} className="mb-3" />
 
         <Form.Group className="mb-3">
-          <Form.Label className="small fw-medium">
+          <Form.Label className="small fw-medium d-flex align-items-center gap-2">
             Bot Token <HelpTip text="Telegram Bot API token from @BotFather" />
+            {hasStoredToken && (
+              <Badge bg="success-subtle" text="success">Configured</Badge>
+            )}
+            {willUpdateToken && (
+              <Badge bg="info-subtle" text="info">Will update on save</Badge>
+            )}
           </Form.Label>
           <InputGroup size="sm">
             <Form.Control
               type={showToken ? 'text' : 'password'}
               value={token}
               onChange={(e) => setToken(e.target.value)}
-              placeholder="123456:ABC-DEF..."
+              placeholder={hasStoredToken ? 'Secret is configured (hidden)' : '123456:ABC-DEF...'}
               autoComplete="new-password"
               autoCapitalize="off"
               autoCorrect="off"

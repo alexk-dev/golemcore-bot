@@ -167,6 +167,12 @@ export default function ToolsTab({ config, mode = 'all' }: ToolsTabProps): React
   const showBrowserInfo = mode === 'browser';
   const showAutomationGroup = mode === 'automation';
   const isBrowserEnabled = form.browserEnabled ?? true;
+  const hasStoredBraveApiKey = config.braveSearchApiKeyPresent === true;
+  const willUpdateBraveApiKey = (form.braveSearchApiKey?.length ?? 0) > 0;
+  const hasStoredImapPassword = config.imap?.passwordPresent === true;
+  const willUpdateImapPassword = (form.imap?.password?.length ?? 0) > 0;
+  const hasStoredSmtpPassword = config.smtp?.passwordPresent === true;
+  const willUpdateSmtpPassword = (form.smtp?.password?.length ?? 0) > 0;
 
   const automationTools = TOOL_ITEMS.filter((tool) => (
     tool.key === 'skillManagementEnabled' || tool.key === 'skillTransitionEnabled' || tool.key === 'tierEnabled'
@@ -248,8 +254,14 @@ export default function ToolsTab({ config, mode = 'all' }: ToolsTabProps): React
               className="mb-3"
             />
             <Form.Group>
-              <Form.Label className="small fw-medium">
+              <Form.Label className="small fw-medium d-flex align-items-center gap-2">
                 Brave Search API Key <HelpTip text="Get your free API key at brave.com/search/api" />
+                {hasStoredBraveApiKey && (
+                  <Badge bg="success-subtle" text="success">Configured</Badge>
+                )}
+                {willUpdateBraveApiKey && (
+                  <Badge bg="info-subtle" text="info">Will update on save</Badge>
+                )}
               </Form.Label>
               <Form.Control
                 size="sm"
@@ -257,7 +269,7 @@ export default function ToolsTab({ config, mode = 'all' }: ToolsTabProps): React
                 autoComplete="new-password"
                 value={form.braveSearchApiKey ?? ''}
                 onChange={(event) => setForm({ ...form, braveSearchApiKey: toNullableString(event.target.value) })}
-                placeholder="BSA-..."
+                placeholder={hasStoredBraveApiKey ? 'Secret is configured (hidden)' : 'BSA-...'}
               />
             </Form.Group>
           </Card.Body>
@@ -458,8 +470,14 @@ export default function ToolsTab({ config, mode = 'all' }: ToolsTabProps): React
           <Card.Body>
             <SettingsCardTitle title="Brave Search Credentials" className="tools-card-title" />
             <Form.Group>
-              <Form.Label className="small fw-medium">
+              <Form.Label className="small fw-medium d-flex align-items-center gap-2">
                 Brave Search API Key <HelpTip text="Get your free API key at brave.com/search/api" />
+                {hasStoredBraveApiKey && (
+                  <Badge bg="success-subtle" text="success">Configured</Badge>
+                )}
+                {willUpdateBraveApiKey && (
+                  <Badge bg="info-subtle" text="info">Will update on save</Badge>
+                )}
               </Form.Label>
               <Form.Control
                 size="sm"
@@ -467,7 +485,7 @@ export default function ToolsTab({ config, mode = 'all' }: ToolsTabProps): React
                 autoComplete="new-password"
                 value={form.braveSearchApiKey ?? ''}
                 onChange={(event) => setForm({ ...form, braveSearchApiKey: toNullableString(event.target.value) })}
-                placeholder="BSA-..."
+                placeholder={hasStoredBraveApiKey ? 'Secret is configured (hidden)' : 'BSA-...'}
               />
             </Form.Group>
           </Card.Body>
@@ -551,8 +569,14 @@ export default function ToolsTab({ config, mode = 'all' }: ToolsTabProps): React
                   </Col>
                   <Col md={6}>
                     <Form.Group>
-                      <Form.Label className="small fw-medium">
+                      <Form.Label className="small fw-medium d-flex align-items-center gap-2">
                         Password <HelpTip text="For Gmail, use an App Password (not your regular password)" />
+                        {hasStoredImapPassword && (
+                          <Badge bg="success-subtle" text="success">Configured</Badge>
+                        )}
+                        {willUpdateImapPassword && (
+                          <Badge bg="info-subtle" text="info">Will update on save</Badge>
+                        )}
                       </Form.Label>
                       <Form.Control
                         size="sm"
@@ -560,6 +584,7 @@ export default function ToolsTab({ config, mode = 'all' }: ToolsTabProps): React
                         autoComplete="new-password"
                         value={form.imap?.password ?? ''}
                         onChange={(event) => updateImap({ password: toNullableString(event.target.value) })}
+                        placeholder={hasStoredImapPassword ? 'Secret is configured (hidden)' : ''}
                       />
                     </Form.Group>
                   </Col>
@@ -689,8 +714,14 @@ export default function ToolsTab({ config, mode = 'all' }: ToolsTabProps): React
                   </Col>
                   <Col md={6}>
                     <Form.Group>
-                      <Form.Label className="small fw-medium">
+                      <Form.Label className="small fw-medium d-flex align-items-center gap-2">
                         Password <HelpTip text="For Gmail, use an App Password (not your regular password)" />
+                        {hasStoredSmtpPassword && (
+                          <Badge bg="success-subtle" text="success">Configured</Badge>
+                        )}
+                        {willUpdateSmtpPassword && (
+                          <Badge bg="info-subtle" text="info">Will update on save</Badge>
+                        )}
                       </Form.Label>
                       <Form.Control
                         size="sm"
@@ -698,6 +729,7 @@ export default function ToolsTab({ config, mode = 'all' }: ToolsTabProps): React
                         autoComplete="new-password"
                         value={form.smtp?.password ?? ''}
                         onChange={(event) => updateSmtp({ password: toNullableString(event.target.value) })}
+                        placeholder={hasStoredSmtpPassword ? 'Secret is configured (hidden)' : ''}
                       />
                     </Form.Group>
                   </Col>

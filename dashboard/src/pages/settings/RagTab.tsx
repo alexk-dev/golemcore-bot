@@ -1,5 +1,5 @@
 import { type ReactElement, useEffect, useMemo, useState } from 'react';
-import { Button, Card, Col, Form, InputGroup, Row } from 'react-bootstrap';
+import { Badge, Button, Card, Col, Form, InputGroup, Row } from 'react-bootstrap';
 import toast from 'react-hot-toast';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useUpdateRag } from '../../hooks/useSettings';
@@ -23,6 +23,8 @@ export default function RagTab({ config }: RagTabProps): ReactElement {
   const [form, setForm] = useState<RagConfig>({ ...config });
   const [showApiKey, setShowApiKey] = useState(false);
   const isDirty = useMemo(() => hasDiff(form, config), [form, config]);
+  const hasStoredApiKey = config.apiKeyPresent === true;
+  const willUpdateApiKey = (form.apiKey?.length ?? 0) > 0;
 
   useEffect(() => {
     setForm({ ...config });
@@ -97,12 +99,21 @@ export default function RagTab({ config }: RagTabProps): ReactElement {
           </Col>
           <Col md={12}>
             <Form.Group>
-              <Form.Label className="small fw-medium">API Key (optional)</Form.Label>
+              <Form.Label className="small fw-medium d-flex align-items-center gap-2">
+                API Key (optional)
+                {hasStoredApiKey && (
+                  <Badge bg="success-subtle" text="success">Configured</Badge>
+                )}
+                {willUpdateApiKey && (
+                  <Badge bg="info-subtle" text="info">Will update on save</Badge>
+                )}
+              </Form.Label>
               <InputGroup size="sm">
                 <Form.Control
                   type={showApiKey ? 'text' : 'password'}
                   value={form.apiKey ?? ''}
                   onChange={(e) => setForm({ ...form, apiKey: toNullableString(e.target.value) })}
+                  placeholder={hasStoredApiKey ? 'Secret is configured (hidden)' : 'Enter API key'}
                   autoComplete="new-password"
                   autoCapitalize="off"
                   autoCorrect="off"
