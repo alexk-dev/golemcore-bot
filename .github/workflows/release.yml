@@ -23,12 +23,17 @@ jobs:
         uses: cocogitto/cocogitto-action@c7a74f5406bab86da17da0f0e460a69f8219a68c # v3
         with:
           release: true
+          check-latest-tag-only: true
           git-user: 'github-actions[bot]'
           git-user-email: 'github-actions[bot]@users.noreply.github.com'
+
+      - name: Push tag
+        if: steps.release.outputs.version != ''
+        run: git push origin "${{ steps.release.outputs.version }}"
 
       - name: Summary
         if: steps.release.outputs.version != ''
         run: |
           echo "## Release v${{ steps.release.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Tag \`v${{ steps.release.outputs.version }}\` created." >> $GITHUB_STEP_SUMMARY
+          echo "Tag \`v${{ steps.release.outputs.version }}\` created and pushed." >> $GITHUB_STEP_SUMMARY
