@@ -229,11 +229,25 @@ jobs:
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
 
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${{ github.ref_name }}"
+            VERSION="${VERSION#v}"
+            PRIMARY_TAG="${VERSION}"
+            TAGS="\`${VERSION}\`, \`latest\`, \`${SHORT_SHA}\`"
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            PRIMARY_TAG="latest"
+            TAGS="\`latest\`, \`${SHORT_SHA}\`"
+          else
+            PRIMARY_TAG="dev-latest"
+            TAGS="\`dev-latest\`, \`${SHORT_SHA}\`"
+          fi
+
           echo "## Multiarch Docker Image Published" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Image** | \`${IMAGE}:${SHORT_SHA}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Image** | \`${IMAGE}:${PRIMARY_TAG}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Tags** | ${TAGS} |" >> $GITHUB_STEP_SUMMARY
           echo "| **Architectures** | \`amd64\`, \`arm64\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Base image** | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-base:latest\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Branch** | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
@@ -241,5 +255,5 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Pull command" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${IMAGE}:${SHORT_SHA}" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${IMAGE}:${PRIMARY_TAG}" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
