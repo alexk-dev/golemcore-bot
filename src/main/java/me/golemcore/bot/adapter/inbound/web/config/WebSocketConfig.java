@@ -2,6 +2,7 @@ package me.golemcore.bot.adapter.inbound.web.config;
 
 import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.adapter.inbound.web.WebSocketChatHandler;
+import me.golemcore.bot.adapter.inbound.web.WebSocketLogsHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.reactive.HandlerMapping;
@@ -18,11 +19,14 @@ import java.util.Map;
 public class WebSocketConfig {
 
     private final WebSocketChatHandler webSocketChatHandler;
+    private final WebSocketLogsHandler webSocketLogsHandler;
 
     @Bean
     public HandlerMapping webSocketHandlerMapping() {
         SimpleUrlHandlerMapping mapping = new SimpleUrlHandlerMapping();
-        mapping.setUrlMap(Map.of("/ws/chat", webSocketChatHandler));
+        mapping.setUrlMap(Map.of(
+                "/ws/chat", webSocketChatHandler,
+                "/ws/logs", webSocketLogsHandler));
         mapping.setOrder(-1);
         return mapping;
     }
