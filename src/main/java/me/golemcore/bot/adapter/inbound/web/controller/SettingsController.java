@@ -12,6 +12,7 @@ import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 
 import java.util.LinkedHashMap;
@@ -207,10 +209,11 @@ public class SettingsController {
                     "Cannot remove provider '" + normalizedName + "' because it is used by model router tiers");
         }
         boolean removed = runtimeConfigService.removeLlmProvider(normalizedName);
-        if (removed) {
-            return Mono.just(ResponseEntity.ok().build());
+        if (!removed) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Provider '" + normalizedName + "' not found");
         }
-        return Mono.just(ResponseEntity.notFound().build());
+        return Mono.just(ResponseEntity.ok().build());
     }
 
     private void validateProviderConfig(String name, RuntimeConfig.LlmProviderConfig config) {
@@ -351,10 +354,10 @@ public class SettingsController {
     @DeleteMapping("/telegram/invite-codes/{code}")
     public Mono<ResponseEntity<Void>> revokeInviteCode(@PathVariable String code) {
         boolean revoked = runtimeConfigService.revokeInviteCode(code);
-        if (revoked) {
-            return Mono.just(ResponseEntity.ok().build());
+        if (!revoked) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Invite code not found");
         }
-        return Mono.just(ResponseEntity.notFound().build());
+        return Mono.just(ResponseEntity.ok().build());
     }
 
     // ==================== Telegram Restart ====================

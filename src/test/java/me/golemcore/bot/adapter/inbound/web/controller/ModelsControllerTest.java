@@ -6,6 +6,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -13,6 +14,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -82,10 +84,10 @@ class ModelsControllerTest {
     void shouldReturnNotFoundWhenDeletingNonexistentModel() {
         when(modelConfigService.deleteModel("nonexistent")).thenReturn(false);
 
-        ResponseEntity<Void> result = controller.deleteModel("nonexistent").block();
-
-        assertNotNull(result);
-        assertEquals(HttpStatus.NOT_FOUND, result.getStatusCode());
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.deleteModel("nonexistent").block());
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+        assertEquals("Model 'nonexistent' not found", ex.getReason());
     }
 
     @Test

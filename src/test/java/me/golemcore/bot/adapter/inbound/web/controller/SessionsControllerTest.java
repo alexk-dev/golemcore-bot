@@ -8,6 +8,7 @@ import me.golemcore.bot.port.outbound.SessionPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.util.List;
@@ -15,6 +16,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -99,9 +101,10 @@ class SessionsControllerTest {
     void shouldReturn404ForMissingSession() {
         when(sessionPort.get("unknown")).thenReturn(Optional.empty());
 
-        StepVerifier.create(controller.getSession("unknown"))
-                .assertNext(response -> assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode()))
-                .verifyComplete();
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.getSession("unknown"));
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+        assertEquals("Session not found", ex.getReason());
     }
 
     @Test

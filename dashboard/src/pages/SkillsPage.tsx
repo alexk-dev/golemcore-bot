@@ -2,6 +2,7 @@ import { type ReactElement, useState } from 'react';
 import { Badge, Card, ListGroup, Row, Col, Button, Form, Spinner, Modal, Placeholder } from 'react-bootstrap';
 import { useSkills, useSkill, useCreateSkill, useUpdateSkill, useDeleteSkill } from '../hooks/useSkills';
 import toast from 'react-hot-toast';
+import { extractErrorMessage } from '../utils/extractErrorMessage';
 import ConfirmModal from '../components/common/ConfirmModal';
 
 const SKILL_TEMPLATE = `---
@@ -11,6 +12,7 @@ model_tier: balanced
 ---
 
 `;
+const SKILL_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 
 export default function SkillsPage(): ReactElement {
   const { data: skills, isLoading } = useSkills();
@@ -25,7 +27,7 @@ export default function SkillsPage(): ReactElement {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [newName, setNewName] = useState('');
 
-  const { data: detail } = useSkill(selected ?? '');
+  const { data: detail, isLoading: detailLoading, isError: detailError, refetch: refetchDetail } = useSkill(selected ?? '');
 
   if (isLoading) {
     return (
@@ -60,7 +62,7 @@ export default function SkillsPage(): ReactElement {
     );
   }
 
-  const filtered = skills?.filter((s) =>
+  const filtered = (skills ?? []).filter((s) =>
     s.name.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -71,6 +73,11 @@ export default function SkillsPage(): ReactElement {
   // Sync editor content when detail loads
   const currentContent = selected === detail?.name ? (detail?.content ?? '') : '';
   const editorContent = selected === detail?.name && editContent === '' ? currentContent : editContent;
+  const isSkillDirty = selected === detail?.name && editorContent !== currentContent;
+  const normalizedNewName = newName.trim().toLowerCase();
+  const newNameInvalid = normalizedNewName.length > 0 && !SKILL_NAME_PATTERN.test(normalizedNewName);
+  const newNameExists = normalizedNewName.length > 0 && (skills ?? []).some((skill) => skill.name === normalizedNewName);
+  const canCreate = normalizedNewName.length > 0 && !newNameInvalid && !newNameExists;
 
   const handleSelectAndLoad = (name: string): void => {
     handleSelect(name);
@@ -78,14 +85,14 @@ export default function SkillsPage(): ReactElement {
   };
 
   const handleSave = async (): Promise<void> => {
-    if (selected == null || selected.length === 0) {
+    if (selected == null || selected.length === 0 || !isSkillDirty) {
       return;
     }
     try {
-      await updateMutation.mutateAsync({ name: selected, content: editContent.length > 0 ? editContent : currentContent });
+      await updateMutation.mutateAsync({ name: selected, content: editorContent });
       toast.success('Skill saved');
-    } catch {
-      toast.error('Failed to save skill');
+    } catch (err: unknown) {
+      toast.error(`Failed to save skill: ${extractErrorMessage(err)}`);
     }
   };
 
@@ -99,30 +106,32 @@ export default function SkillsPage(): ReactElement {
       setEditContent('');
       setShowDeleteConfirm(false);
       toast.success('Skill deleted');
-    } catch {
-      toast.error('Failed to delete skill');
+    } catch (err: unknown) {
+      toast.error(`Failed to delete skill: ${extractErrorMessage(err)}`);
     }
   };
 
   const handleCreate = async (): Promise<void> => {
-    const trimmedName = newName.trim();
-    if (trimmedName.length === 0) {
+    if (normalizedNewName.length === 0) {
+      return;
+    }
+    if (newNameInvalid) {
+      toast.error('Skill name must match [a-z0-9][a-z0-9-]*');
+      return;
+    }
+    if (newNameExists) {
+      toast.error('Skill already exists');
       return;
     }
     try {
-      await createMutation.mutateAsync({ name: trimmedName, content: SKILL_TEMPLATE });
+      await createMutation.mutateAsync({ name: normalizedNewName, content: SKILL_TEMPLATE });
       setShowCreate(false);
       setNewName('');
-      setSelected(trimmedName);
+      setSelected(normalizedNewName);
       setEditContent('');
       toast.success('Skill created');
     } catch (err: unknown) {
-      const status = (err as { response?: { status?: number } })?.response?.status;
-      if (status === 409) {
-        toast.error('Skill already exists');
-      } else {
-        toast.error('Failed to create skill');
-      }
+      toast.error(`Failed to create skill: ${extractErrorMessage(err)}`);
     }
   };
 
@@ -145,7 +154,7 @@ export default function SkillsPage(): ReactElement {
             className="mb-2"
           />
           <ListGroup>
-            {filtered?.map((s) => (
+            {filtered.map((s) => (
               <ListGroup.Item
                 key={s.name}
                 active={selected === s.name}
@@ -165,13 +174,29 @@ export default function SkillsPage(): ReactElement {
                 </div>
               </ListGroup.Item>
             ))}
-            {filtered?.length === 0 && (
+            {filtered.length === 0 && (
               <ListGroup.Item className="text-body-secondary text-center">No skills found</ListGroup.Item>
             )}
           </ListGroup>
         </Col>
         <Col md={8}>
-          {selected != null && selected.length > 0 && detail != null ? (
+          {selected != null && selected.length > 0 && detailLoading ? (
+            <Card className="text-center text-body-secondary py-5">
+              <Card.Body>
+                <Spinner size="sm" className="me-2" />
+                Loading skill...
+              </Card.Body>
+            </Card>
+          ) : selected != null && selected.length > 0 && detailError ? (
+            <Card className="text-center py-5">
+              <Card.Body>
+                <p className="text-danger mb-3">Failed to load selected skill.</p>
+                <Button type="button" size="sm" variant="secondary" onClick={() => { void refetchDetail(); }}>
+                  Retry
+                </Button>
+              </Card.Body>
+            </Card>
+          ) : selected != null && selected.length > 0 && detail != null ? (
             <Card>
               <Card.Header className="d-flex justify-content-between align-items-center">
                 <span className="fw-semibold">{selected}</span>
@@ -192,7 +217,7 @@ export default function SkillsPage(): ReactElement {
                   />
                 </Form.Group>
                 <div className="d-flex gap-2">
-                  <Button type="button" size="sm" onClick={() => { void handleSave(); }} disabled={updateMutation.isPending}>
+                  <Button type="button" size="sm" onClick={() => { void handleSave(); }} disabled={!isSkillDirty || updateMutation.isPending}>
                     {updateMutation.isPending ? 'Saving...' : 'Save'}
                   </Button>
                   <Button type="button"
@@ -224,17 +249,31 @@ export default function SkillsPage(): ReactElement {
             <Form.Control
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void handleCreate();
+                }
+              }}
               placeholder="my-skill"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              isInvalid={newNameInvalid || newNameExists}
               autoFocus
             />
-            <Form.Text className="text-body-secondary">
-              Alphanumeric and hyphens only (e.g. my-skill-name)
+            <Form.Text className={newNameInvalid || newNameExists ? 'text-danger' : 'text-body-secondary'}>
+              {newNameInvalid
+                ? 'Use lowercase letters, digits, and hyphens only (e.g. my-skill-name).'
+                : newNameExists
+                  ? 'A skill with this name already exists.'
+                  : 'Use lowercase letters, digits, and hyphens only (e.g. my-skill-name).'}
             </Form.Text>
           </Form.Group>
         </Modal.Body>
         <Modal.Footer>
           <Button type="button" variant="secondary" size="sm" onClick={() => setShowCreate(false)}>Cancel</Button>
-          <Button type="button" size="sm" onClick={() => { void handleCreate(); }} disabled={createMutation.isPending}>
+          <Button type="button" size="sm" onClick={() => { void handleCreate(); }} disabled={!canCreate || createMutation.isPending}>
             {createMutation.isPending ? 'Creating...' : 'Create'}
           </Button>
         </Modal.Footer>

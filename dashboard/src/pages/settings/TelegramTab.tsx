@@ -1,6 +1,7 @@
 import { type ReactElement, useEffect, useMemo, useState } from 'react';
 import { Badge, Button, Card, Form, InputGroup, Table } from 'react-bootstrap';
 import toast from 'react-hot-toast';
+import { extractErrorMessage } from '../../utils/extractErrorMessage';
 import HelpTip from '../../components/common/HelpTip';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import ConfirmModal from '../../components/common/ConfirmModal';
@@ -80,15 +81,36 @@ export default function TelegramTab({ config, voiceConfig }: TelegramTabProps): 
   );
 
   const isTelegramDirty = hasDiff(currentConfig, initialConfig);
-
-  const handleSave = async (): Promise<void> => {
-    await updateTelegram.mutateAsync(currentConfig);
-    await updateVoice.mutateAsync({
-      ...voiceConfig,
+  const currentVoiceConfig = useMemo(
+    () => ({
       telegramRespondWithVoice,
       telegramTranscribeIncoming,
-    });
-    toast.success('Telegram settings saved');
+    }),
+    [telegramRespondWithVoice, telegramTranscribeIncoming],
+  );
+  const initialVoiceConfig = useMemo(
+    () => ({
+      telegramRespondWithVoice: voiceConfig.telegramRespondWithVoice ?? false,
+      telegramTranscribeIncoming: voiceConfig.telegramTranscribeIncoming ?? false,
+    }),
+    [voiceConfig],
+  );
+  const isVoiceDirty = hasDiff(currentVoiceConfig, initialVoiceConfig);
+  const isSavePending = updateTelegram.isPending || updateVoice.isPending;
+  const isSaveDirty = isTelegramDirty || isVoiceDirty;
+
+  const handleSave = async (): Promise<void> => {
+    try {
+      await updateTelegram.mutateAsync(currentConfig);
+      await updateVoice.mutateAsync({
+        ...voiceConfig,
+        telegramRespondWithVoice,
+        telegramTranscribeIncoming,
+      });
+      toast.success('Telegram settings saved');
+    } catch (err: unknown) {
+      toast.error(`Failed to save settings: ${extractErrorMessage(err)}`);
+    }
   };
 
   const handleRevokeCode = async (): Promise<void> => {
@@ -121,7 +143,12 @@ export default function TelegramTab({ config, voiceConfig }: TelegramTabProps): 
               autoCorrect="off"
               spellCheck={false}
             />
-            <Button type="button" variant="secondary" onClick={() => setShowToken(!showToken)}>
+            <Button
+              type="button"
+              variant="secondary"
+              aria-pressed={showToken}
+              onClick={() => setShowToken(!showToken)}
+            >
               {showToken ? 'Hide' : 'Show'}
             </Button>
           </InputGroup>
@@ -161,9 +188,17 @@ export default function TelegramTab({ config, voiceConfig }: TelegramTabProps): 
           <div className="mb-3">
             <div className="d-flex align-items-center justify-content-between mb-2">
               <span className="small fw-medium">Invite Codes <HelpTip text="Single-use codes that grant Telegram access when redeemed" /></span>
-              <Button type="button" variant="primary" size="sm"
-                onClick={() => genInvite.mutate(undefined, { onSuccess: () => toast.success('Invite code generated') })}>
-                Generate Code
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                disabled={genInvite.isPending}
+                onClick={() => genInvite.mutate(undefined, {
+                  onSuccess: () => toast.success('Invite code generated'),
+                  onError: (err: unknown) => toast.error(`Failed to generate code: ${extractErrorMessage(err)}`),
+                })}
+              >
+                {genInvite.isPending ? 'Generating...' : 'Generate Code'}
               </Button>
             </div>
             {(config.inviteCodes ?? []).length > 0 ? (
@@ -188,9 +223,19 @@ export default function TelegramTab({ config, voiceConfig }: TelegramTabProps): 
                             size="sm"
                             variant="secondary"
                             className="invite-action-btn"
+                            disabled={delInvite.isPending}
                             onClick={() => {
-                              void navigator.clipboard.writeText(ic.code);
-                              toast.success('Copied!');
+                              if (navigator.clipboard?.writeText == null) {
+                                toast.error('Clipboard is not available');
+                                return;
+                              }
+                              void navigator.clipboard.writeText(ic.code)
+                                .then(() => {
+                                  toast.success('Copied!');
+                                })
+                                .catch(() => {
+                                  toast.error('Failed to copy');
+                                });
                             }}
                           >
                             Copy
@@ -199,6 +244,7 @@ export default function TelegramTab({ config, voiceConfig }: TelegramTabProps): 
                             size="sm"
                             variant="danger"
                             className="invite-action-btn"
+                            disabled={delInvite.isPending}
                             onClick={() => setRevokeCode(ic.code)}
                           >
                             Revoke
@@ -243,18 +289,18 @@ export default function TelegramTab({ config, voiceConfig }: TelegramTabProps): 
         </Card>
 
         <SettingsSaveBar className="flex-wrap">
-          <Button type="button" variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isTelegramDirty || updateTelegram.isPending}>
-            {updateTelegram.isPending ? 'Saving...' : 'Save'}
+          <Button type="button" variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isSaveDirty || isSavePending}>
+            {isSavePending ? 'Saving...' : 'Save'}
           </Button>
           <Button type="button" variant="warning" size="sm"
-            disabled={restart.isPending}
+            disabled={restart.isPending || isSavePending}
             onClick={() => restart.mutate(undefined, {
               onSuccess: () => toast.success('Telegram bot restarted'),
-              onError: (err) => toast.error(`Failed to restart: ${err instanceof Error ? err.message : 'Unknown error'}`),
+              onError: (err: unknown) => toast.error(`Failed to restart: ${extractErrorMessage(err)}`),
             })}>
             {restart.isPending ? 'Restarting...' : 'Restart Bot'}
           </Button>
-          <SaveStateHint isDirty={isTelegramDirty} />
+          <SaveStateHint isDirty={isSaveDirty} />
         </SettingsSaveBar>
       </Card.Body>
 

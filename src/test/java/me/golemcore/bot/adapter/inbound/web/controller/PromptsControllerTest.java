@@ -9,6 +9,7 @@ import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Map;
@@ -17,6 +18,7 @@ import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -86,9 +88,10 @@ class PromptsControllerTest {
     void shouldReturn404ForMissingSection() {
         when(promptSectionService.getSection("unknown")).thenReturn(Optional.empty());
 
-        StepVerifier.create(controller.getSection("unknown"))
-                .assertNext(response -> assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode()))
-                .verifyComplete();
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.getSection("unknown"));
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+        assertEquals("Prompt section 'unknown' not found", ex.getReason());
     }
 
     @Test
@@ -114,9 +117,10 @@ class PromptsControllerTest {
     void shouldReturn404ForMissingPreview() {
         when(promptSectionService.getSection("unknown")).thenReturn(Optional.empty());
 
-        StepVerifier.create(controller.previewSection("unknown"))
-                .assertNext(response -> assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode()))
-                .verifyComplete();
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.previewSection("unknown"));
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+        assertEquals("Prompt section 'unknown' not found", ex.getReason());
     }
 
     @Test

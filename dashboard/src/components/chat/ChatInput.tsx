@@ -20,10 +20,88 @@ interface Props {
   onStop?: () => void;
 }
 
+interface ChatInputActionsProps {
+  isDisabled: boolean;
+  isRecording: boolean;
+  speechSupported: boolean;
+  iconBtnClass: string;
+  btnClass: string;
+  running?: boolean;
+  onStop?: () => void;
+  onAttachClick: () => void;
+  onVoiceToggle: () => void;
+  isSubmitDisabled: boolean;
+}
+
+function getVoiceButtonCopy(speechSupported: boolean, isRecording: boolean): { title: string; label: string } {
+  if (!speechSupported) {
+    return {
+      title: 'Voice input is not supported in this browser',
+      label: 'Start voice input',
+    };
+  }
+  if (isRecording) {
+    return {
+      title: 'Stop voice input',
+      label: 'Stop voice input',
+    };
+  }
+  return {
+    title: 'Start voice input',
+    label: 'Start voice input',
+  };
+}
+
+function ChatInputActions({
+  isDisabled,
+  isRecording,
+  speechSupported,
+  iconBtnClass,
+  btnClass,
+  running,
+  onStop,
+  onAttachClick,
+  onVoiceToggle,
+  isSubmitDisabled,
+}: ChatInputActionsProps) {
+  const voiceButtonCopy = getVoiceButtonCopy(speechSupported, isRecording);
+
+  return (
+    <div className="chat-input-actions">
+      <div className="chat-inline-actions">
+        <Button type="button" variant="secondary" disabled={isDisabled}
+          onClick={onAttachClick}
+          className={iconBtnClass} title="Attach images" aria-label="Attach images">
+          <FiPaperclip size={24} />
+        </Button>
+        <Button type="button" variant={isRecording ? 'danger' : 'secondary'}
+          disabled={isDisabled || !speechSupported} onClick={onVoiceToggle}
+          className={iconBtnClass}
+          title={voiceButtonCopy.title}
+          aria-label={voiceButtonCopy.label}
+          aria-pressed={isRecording}>
+          {isRecording ? <FiSquare size={22} /> : <FiMic size={24} />}
+        </Button>
+      </div>
+      {running === true && onStop !== undefined ? (
+        <Button type="button" variant="danger" onClick={onStop}
+          className={btnClass} title="Stop generation" aria-label="Stop generation">
+          <FiStopCircle size={20} />
+        </Button>
+      ) : (
+        <Button type="submit" variant="primary" disabled={isSubmitDisabled} className={btnClass} aria-label="Send message" title="Send message">
+          <FiSend size={18} />
+        </Button>
+      )}
+    </div>
+  );
+}
+
 export default function ChatInput({ onSend, disabled, running, onStop }: Props) {
   const maxAttachmentBytesLabel = '8MB';
   const commandMenuId = 'chat-command-menu';
   const getCommandOptionId = (index: number) => `${commandMenuId}-option-${index}`;
+  const isDisabled = disabled === true;
   const [text, setText] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -39,7 +117,7 @@ export default function ChatInput({ onSend, disabled, running, onStop }: Props) 
   const { suggestions, isMenuOpen, activeIndex, setActiveIndex, applySuggestion } = useChatCommands(
     text,
     availableModels,
-    disabled === true,
+    isDisabled,
   );
 
   // Merge refs: auto-resize ref + local ref for focus management
@@ -50,10 +128,16 @@ export default function ChatInput({ onSend, disabled, running, onStop }: Props) 
 
   // Auto-focus when enabled
   useEffect(() => {
-    if (disabled !== true) {
+    if (!isDisabled) {
       localInputRef.current?.focus();
     }
-  }, [disabled]);
+  }, [isDisabled]);
+
+  useEffect(() => {
+    if (isDisabled) {
+      setIsDragOver(false);
+    }
+  }, [isDisabled]);
 
   const notifyAttachmentResult = useCallback((result: AddImageFilesResult): void => {
     if (result.skippedUnsupported > 0) {
@@ -78,7 +162,7 @@ export default function ChatInput({ onSend, disabled, running, onStop }: Props) 
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (disabled === true) {
+    if (isDisabled) {
       return;
     }
     const trimmed = text.trim();
@@ -131,6 +215,10 @@ export default function ChatInput({ onSend, disabled, running, onStop }: Props) 
   };
 
   const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isDisabled) {
+      e.target.value = '';
+      return;
+    }
     const files = Array.from(e.target.files ?? []);
     const result = await addImageFiles(files);
     notifyAttachmentResult(result);
@@ -141,6 +229,9 @@ export default function ChatInput({ onSend, disabled, running, onStop }: Props) 
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
+    if (isDisabled) {
+      return;
+    }
     const result = await addImageFiles(Array.from(e.dataTransfer.files ?? []));
     notifyAttachmentResult(result);
     localInputRef.current?.focus();
@@ -156,7 +247,7 @@ export default function ChatInput({ onSend, disabled, running, onStop }: Props) 
   };
 
   const shellClasses = `chat-input-shell${isFocused ? ' chat-input-shell--focused' : ''}${isDragOver ? ' chat-drop-target-active' : ''}`;
-  const isSubmitDisabled = disabled === true || (text.trim().length === 0 && attachments.length === 0);
+  const isSubmitDisabled = isDisabled || (text.trim().length === 0 && attachments.length === 0);
   const btnClass = 'chat-send-btn rounded-circle d-flex align-items-center justify-content-center';
   const iconBtnClass = 'chat-inline-icon-btn d-flex align-items-center justify-content-center';
   const activeSuggestion = suggestions[activeIndex];
@@ -166,16 +257,22 @@ export default function ChatInput({ onSend, disabled, running, onStop }: Props) 
       <Form onSubmit={handleSubmit}>
         <div
           className={shellClasses}
-          onDragOver={(e) => { e.preventDefault(); if (disabled !== true) { setIsDragOver(true); } }}
+          onDragOver={(e) => { e.preventDefault(); if (!isDisabled) { setIsDragOver(true); } }}
           onDragLeave={() => setIsDragOver(false)}
           onDrop={handleDrop}
         >
           <ChatAttachmentRow attachments={attachments} onRemove={removeAttachment} />
           <Form.Control
             as="textarea" ref={setTextareaRef} rows={1} value={text}
-            onChange={handleChange} onKeyDown={handleKeyDown} onPaste={(e) => handlePaste(e, notifyAttachmentResult)}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            onPaste={(e) => {
+              if (!isDisabled) {
+                handlePaste(e, notifyAttachmentResult);
+              }
+            }}
             onFocus={() => setIsFocused(true)} onBlur={() => setIsFocused(false)}
-            placeholder="Type a message or drop images..." disabled={disabled} className="chat-textarea"
+            placeholder="Type a message or drop images..." disabled={isDisabled} className="chat-textarea"
             aria-expanded={isMenuOpen}
             aria-controls={commandMenuId}
             aria-haspopup="listbox"
@@ -192,32 +289,18 @@ export default function ChatInput({ onSend, disabled, running, onStop }: Props) 
               onSelect={handleCommandSelect}
             />
           )}
-          <div className="chat-input-actions">
-            <div className="chat-inline-actions">
-              <Button type="button" variant="secondary" disabled={disabled}
-                onClick={() => fileInputRef.current?.click()}
-                className={iconBtnClass} title="Attach images" aria-label="Attach images">
-                <FiPaperclip size={24} />
-              </Button>
-              <Button type="button" variant={isRecording ? 'danger' : 'secondary'}
-                disabled={disabled === true || !speechSupported} onClick={handleVoiceToggle}
-                className={iconBtnClass}
-                title={speechSupported ? 'Voice input' : 'Voice input is not supported in this browser'}
-                aria-label="Voice input">
-                {isRecording ? <FiSquare size={22} /> : <FiMic size={24} />}
-              </Button>
-            </div>
-            {running === true && onStop !== undefined ? (
-              <Button type="button" variant="danger" onClick={onStop}
-                className={btnClass} title="Stop generation" aria-label="Stop generation">
-                <FiStopCircle size={20} />
-              </Button>
-            ) : (
-              <Button type="submit" variant="primary" disabled={isSubmitDisabled} className={btnClass} aria-label="Send message" title="Send message">
-                <FiSend size={18} />
-              </Button>
-            )}
-          </div>
+          <ChatInputActions
+            isDisabled={isDisabled}
+            isRecording={isRecording}
+            speechSupported={speechSupported}
+            iconBtnClass={iconBtnClass}
+            btnClass={btnClass}
+            running={running}
+            onStop={onStop}
+            onAttachClick={() => fileInputRef.current?.click()}
+            onVoiceToggle={handleVoiceToggle}
+            isSubmitDisabled={isSubmitDisabled}
+          />
         </div>
         <input ref={fileInputRef} type="file" accept="image/*" className="d-none" multiple onChange={handleFilesSelected} />
         <small className={`chat-input-hint text-body-secondary d-block mt-2${hasInteracted ? ' chat-input-hint--hidden' : ''}`}>
