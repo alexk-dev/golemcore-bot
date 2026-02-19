@@ -3,6 +3,7 @@ import { Badge, Button, Card, Col, Form, InputGroup, Row, Table } from 'react-bo
 import toast from 'react-hot-toast';
 import HelpTip from '../../components/common/HelpTip';
 import ConfirmModal from '../../components/common/ConfirmModal';
+import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useSettings, useUpdateWebhooks } from '../../hooks/useSettings';
 import type { HookMapping, WebhookConfig } from '../../api/settings';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
@@ -174,9 +175,10 @@ export default function WebhooksTab(): ReactElement {
   return (
     <Card className="settings-card">
       <Card.Body>
-        <Card.Title className="h6 mb-3">
-          Webhooks <HelpTip text="Inbound HTTP webhooks allow external services to trigger bot actions" />
-        </Card.Title>
+        <SettingsCardTitle
+          title="Webhooks"
+          tip="Inbound HTTP webhooks allow external services to trigger bot actions"
+        />
         <Form.Check type="switch" label="Enable Webhooks" checked={form.enabled}
           onChange={(e) => setForm({ ...form, enabled: e.target.checked })} className="mb-3" />
 

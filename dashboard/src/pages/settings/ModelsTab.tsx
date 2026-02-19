@@ -2,6 +2,7 @@ import { type ReactElement, useEffect, useMemo, useState } from 'react';
 import { Badge, Button, Card, Col, Form, Row } from 'react-bootstrap';
 import toast from 'react-hot-toast';
 import HelpTip from '../../components/common/HelpTip';
+import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useUpdateModelRouter } from '../../hooks/useSettings';
 import { useAvailableModels } from '../../hooks/useModels';
 import type { LlmConfig, ModelRouterConfig } from '../../api/settings';
@@ -172,7 +173,7 @@ export default function ModelsTab({ config, llmConfig }: ModelsTabProps): ReactE
     <>
       <Card className="settings-card mb-3">
         <Card.Body>
-          <Card.Title className="h6 mb-3">Global Settings</Card.Title>
+          <SettingsCardTitle title="Global Settings" />
           <Row className="g-3">
             <Col md={6}>
               <Form.Group>
@@ -247,7 +248,7 @@ export default function ModelsTab({ config, llmConfig }: ModelsTabProps): ReactE
           {updateRouter.isPending ? 'Saving...' : 'Save Model Configuration'}
         </Button>
         <SaveStateHint isDirty={isModelsDirty} />
-        </SettingsSaveBar>
+      </SettingsSaveBar>
     </>
   );
 }

@@ -2,6 +2,7 @@ import { type ReactElement, useMemo, useState } from 'react';
 import { Badge, Button, Card, Col, Form, InputGroup, Row, Table } from 'react-bootstrap';
 import toast from 'react-hot-toast';
 import ConfirmModal from '../../components/common/ConfirmModal';
+import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useAddLlmProvider, useUpdateLlmProvider, useRemoveLlmProvider } from '../../hooks/useSettings';
 import type { LlmConfig, LlmProviderConfig, ModelRouterConfig } from '../../api/settings';
 
@@ -251,7 +252,7 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
   return (
     <Card className="settings-card">
       <Card.Body>
-        <Card.Title className="h6 mb-3">LLM Providers</Card.Title>
+        <SettingsCardTitle title="LLM Providers" />
         <div className="small text-body-secondary mb-3">
           Manage API provider credentials. Each provider can be assigned to model tiers on the Models page.
         </div>

@@ -2,6 +2,7 @@ import { type ReactElement, useEffect, useMemo, useState } from 'react';
 import { Button, Card, Col, Form, Row } from 'react-bootstrap';
 import toast from 'react-hot-toast';
 import HelpTip from '../../components/common/HelpTip';
+import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useUpdateAuto } from '../../hooks/useSettings';
 import type { AutoModeConfig } from '../../api/settings';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
@@ -36,9 +37,10 @@ export default function AutoModeTab({ config }: AutoModeTabProps): ReactElement 
   return (
     <Card className="settings-card">
       <Card.Body>
-        <Card.Title className="h6 mb-3">
-          Auto Mode <HelpTip text="Autonomous mode where the bot works on goals independently, checking in periodically" />
-        </Card.Title>
+        <SettingsCardTitle
+          title="Auto Mode"
+          tip="Autonomous mode where the bot works on goals independently, checking in periodically"
+        />
         <Form.Check type="switch" label="Enable Auto Mode" checked={form.enabled ?? false}
           onChange={(e) => setForm({ ...form, enabled: e.target.checked })} className="mb-3" />
 

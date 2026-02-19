@@ -2,6 +2,7 @@ import { type ReactElement, useEffect, useMemo, useState } from 'react';
 import { Button, Card, Col, Form, InputGroup, Row } from 'react-bootstrap';
 import toast from 'react-hot-toast';
 import HelpTip from '../../components/common/HelpTip';
+import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useUpdateVoice } from '../../hooks/useSettings';
 import type { VoiceConfig } from '../../api/settings';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
@@ -34,7 +35,7 @@ export default function VoiceTab({ config }: VoiceTabProps): ReactElement {
   return (
     <Card className="settings-card">
       <Card.Body>
-        <Card.Title className="h6 mb-3">Voice (ElevenLabs)</Card.Title>
+        <SettingsCardTitle title="Voice (ElevenLabs)" />
         <Form.Check type="switch" label={<>Enable Voice <HelpTip text="Enable speech-to-text and text-to-speech via ElevenLabs API" /></>}
           checked={form.enabled ?? false}
           onChange={(e) => setForm({ ...form, enabled: e.target.checked })} className="mb-3" />

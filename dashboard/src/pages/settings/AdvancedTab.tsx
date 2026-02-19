@@ -2,6 +2,7 @@ import { type ReactElement, useEffect, useMemo, useState } from 'react';
 import { Button, Card, Col, Form, Row } from 'react-bootstrap';
 import toast from 'react-hot-toast';
 import HelpTip from '../../components/common/HelpTip';
+import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useUpdateAdvanced } from '../../hooks/useSettings';
 import type { CompactionConfig, RateLimitConfig, SecurityConfig } from '../../api/settings';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
@@ -33,9 +34,10 @@ function RateLimitCard({ rl, setRl }: RateLimitCardProps): ReactElement {
   return (
     <Card className="settings-card h-100">
       <Card.Body>
-        <Card.Title className="h6 mb-3">
-          Rate Limiting <HelpTip text="Throttle user requests to prevent abuse and manage API costs" />
-        </Card.Title>
+        <SettingsCardTitle
+          title="Rate Limiting"
+          tip="Throttle user requests to prevent abuse and manage API costs"
+        />
         <Form.Check type="switch" label="Enable" checked={rl.enabled ?? true}
           onChange={(e) => setRl({ ...rl, enabled: e.target.checked })} className="mb-3" />
         <Form.Group className="mb-2">
@@ -73,9 +75,10 @@ function CompactionCard({ comp, setComp }: CompactionCardProps): ReactElement {
   return (
     <Card className="settings-card h-100">
       <Card.Body>
-        <Card.Title className="h6 mb-3">
-          Context Compaction <HelpTip text="Automatically compress conversation history when it approaches the token limit" />
-        </Card.Title>
+        <SettingsCardTitle
+          title="Context Compaction"
+          tip="Automatically compress conversation history when it approaches the token limit"
+        />
         <Form.Check type="switch" label="Enable" checked={comp.enabled ?? true}
           onChange={(e) => setComp({ ...comp, enabled: e.target.checked })} className="mb-3" />
         <Form.Group className="mb-2">
@@ -106,9 +109,10 @@ function SecurityCard({ sec, setSec }: SecurityCardProps): ReactElement {
   return (
     <Card className="settings-card h-100">
       <Card.Body>
-        <Card.Title className="h6 mb-3">
-          Security <HelpTip text="Input validation and injection detection for incoming messages" />
-        </Card.Title>
+        <SettingsCardTitle
+          title="Security"
+          tip="Input validation and injection detection for incoming messages"
+        />
         <Form.Check type="switch"
           label={<>Sanitize input <HelpTip text="Strip potentially dangerous characters and HTML from user messages" /></>}
           checked={sec.sanitizeInput ?? true}
@@ -198,7 +202,7 @@ export function AdvancedTab({ rateLimit, security, compaction, mode = 'all' }: A
           {updateAdvanced.isPending ? 'Saving...' : 'Save All'}
         </Button>
         <SaveStateHint isDirty={isAdvancedDirty} />
-        </SettingsSaveBar>
+      </SettingsSaveBar>
     </>
   );
 }

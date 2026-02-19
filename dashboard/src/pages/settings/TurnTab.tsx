@@ -2,6 +2,7 @@ import { type ReactElement, useEffect, useMemo, useState } from 'react';
 import { Button, Card, Col, Form, Row } from 'react-bootstrap';
 import toast from 'react-hot-toast';
 import HelpTip from '../../components/common/HelpTip';
+import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useUpdateTurn } from '../../hooks/useSettings';
 import type { TurnConfig } from '../../api/settings';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
@@ -40,7 +41,7 @@ export default function TurnTab({ config }: TurnTabProps): ReactElement {
   return (
     <Card className="settings-card">
       <Card.Body>
-        <Card.Title className="h6 mb-3">Turn Budget</Card.Title>
+        <SettingsCardTitle title="Turn Budget" />
         <Row className="g-3 mb-3">
           <Col md={4}>
             <Form.Group>

@@ -2,6 +2,7 @@ import { type ReactElement, useEffect, useMemo, useState } from 'react';
 import { Badge, Button, Card, Col, Form, Row } from 'react-bootstrap';
 import toast from 'react-hot-toast';
 import HelpTip from '../../components/common/HelpTip';
+import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useBrowserHealthPing } from '../../hooks/useSystem';
 import { useUpdateTools } from '../../hooks/useSettings';
 import type { ImapConfig, SmtpConfig, ToolsConfig } from '../../api/settings';
@@ -205,7 +206,7 @@ export default function ToolsTab({ config, mode = 'all' }: ToolsTabProps): React
       {showToolToggles && (
         <Card className="settings-card tools-card mb-3">
           <Card.Body>
-            <Card.Title className="h6 mb-3 tools-card-title">Tool Toggles</Card.Title>
+            <SettingsCardTitle title="Tool Toggles" className="tools-card-title" />
             {TOOL_ITEMS.map((tool, index) => (
               <ToolToggleRow
                 key={tool.key}
@@ -222,7 +223,7 @@ export default function ToolsTab({ config, mode = 'all' }: ToolsTabProps): React
       {!showToolToggles && selectedTool != null && mode !== 'brave' && (
         <Card className="settings-card tools-card mb-3">
           <Card.Body>
-            <Card.Title className="h6 mb-3 tools-card-title">{selectedTool.label}</Card.Title>
+            <SettingsCardTitle title={selectedTool.label} className="tools-card-title" />
             <Form.Check
               type="switch"
               label={<>Enable {selectedTool.label} <HelpTip text={selectedTool.tip} /></>}
@@ -238,7 +239,7 @@ export default function ToolsTab({ config, mode = 'all' }: ToolsTabProps): React
       {mode === 'brave' && (
         <Card className="settings-card tools-card mb-3">
           <Card.Body>
-            <Card.Title className="h6 mb-3 tools-card-title">Brave Search</Card.Title>
+            <SettingsCardTitle title="Brave Search" className="tools-card-title" />
             <Form.Check
               type="switch"
               label={<>Enable Brave Search <HelpTip text="Enable Brave as active browser search provider" /></>}
@@ -266,7 +267,7 @@ export default function ToolsTab({ config, mode = 'all' }: ToolsTabProps): React
       {showAutomationGroup && (
         <Card className="settings-card tools-card mb-3">
           <Card.Body>
-            <Card.Title className="h6 mb-3 tools-card-title">Automation Tools</Card.Title>
+            <SettingsCardTitle title="Automation Tools" className="tools-card-title" />
             <div className="small text-body-secondary mb-3 tools-note">All tool enable/disable flags are managed here.</div>
             <ToolToggleRow
               item={{
@@ -349,7 +350,7 @@ export default function ToolsTab({ config, mode = 'all' }: ToolsTabProps): React
       {showBrowserInfo && (
         <Card className="settings-card tools-card mb-3">
           <Card.Body>
-            <Card.Title className="h6 mb-2 tools-card-title">Browser Tool</Card.Title>
+            <SettingsCardTitle title="Browser Tool" className="mb-2 tools-card-title" />
             <Row className="g-3">
               <Col md={6}>
                 <Form.Group>
@@ -455,7 +456,7 @@ export default function ToolsTab({ config, mode = 'all' }: ToolsTabProps): React
       {showBraveApiKey && mode !== 'brave' && (form.braveSearchEnabled ?? false) && (
         <Card className="settings-card tools-card mb-3">
           <Card.Body>
-            <Card.Title className="h6 mb-3 tools-card-title">Brave Search Credentials</Card.Title>
+            <SettingsCardTitle title="Brave Search Credentials" className="tools-card-title" />
             <Form.Group>
               <Form.Label className="small fw-medium">
                 Brave Search API Key <HelpTip text="Get your free API key at brave.com/search/api" />
@@ -476,9 +477,11 @@ export default function ToolsTab({ config, mode = 'all' }: ToolsTabProps): React
       {showImap && (
         <Card className="settings-card tools-card mb-3">
           <Card.Body>
-            <Card.Title className="h6 mb-3 tools-card-title">
-              IMAP (Email Reading) <HelpTip text="Read emails from an IMAP mailbox. The bot can search, read, and list emails." />
-            </Card.Title>
+            <SettingsCardTitle
+              title="IMAP (Email Reading)"
+              tip="Read emails from an IMAP mailbox. The bot can search, read, and list emails."
+              className="tools-card-title"
+            />
             <Form.Check
               type="switch"
               label="Enable IMAP"
@@ -612,9 +615,11 @@ export default function ToolsTab({ config, mode = 'all' }: ToolsTabProps): React
       {showSmtp && (
         <Card className="settings-card tools-card mb-3">
           <Card.Body>
-            <Card.Title className="h6 mb-3 tools-card-title">
-              SMTP (Email Sending) <HelpTip text="Send emails via SMTP. The bot can compose and send emails on your behalf." />
-            </Card.Title>
+            <SettingsCardTitle
+              title="SMTP (Email Sending)"
+              tip="Send emails via SMTP. The bot can compose and send emails on your behalf."
+              className="tools-card-title"
+            />
             <Form.Check
               type="switch"
               label="Enable SMTP"
@@ -732,7 +737,7 @@ export default function ToolsTab({ config, mode = 'all' }: ToolsTabProps): React
           {updateTools.isPending ? 'Saving...' : 'Save Tool Settings'}
         </Button>
         <SaveStateHint isDirty={isToolsDirty} />
-        </SettingsSaveBar>
+      </SettingsSaveBar>
     </section>
   );
 }

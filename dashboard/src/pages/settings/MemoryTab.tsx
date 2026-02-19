@@ -2,6 +2,7 @@ import { type ReactElement, useEffect, useMemo, useState } from 'react';
 import { Button, Card, Form } from 'react-bootstrap';
 import toast from 'react-hot-toast';
 import HelpTip from '../../components/common/HelpTip';
+import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useUpdateMemory } from '../../hooks/useSettings';
 import type { MemoryConfig } from '../../api/settings';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
@@ -36,7 +37,7 @@ export default function MemoryTab({ config }: MemoryTabProps): ReactElement {
   return (
     <Card className="settings-card">
       <Card.Body>
-        <Card.Title className="h6 mb-3">Memory</Card.Title>
+        <SettingsCardTitle title="Memory" />
         <Form.Check
           type="switch"
           label={<>Enable Memory <HelpTip text="Persist user/assistant exchanges into long-term notes and include memory context in prompts." /></>}

@@ -27,5 +27,9 @@ export function SettingsSaveBar({ children, className, variant = 'default' }: Se
 }
 
 export function SaveStateHint({ isDirty }: SaveStateHintProps): ReactElement {
-  return <small className="text-body-secondary">{isDirty ? 'Unsaved changes' : 'All changes saved'}</small>;
+  return (
+    <small className="text-body-secondary" role="status" aria-live="polite" aria-atomic="true">
+      {isDirty ? 'Unsaved changes' : 'All changes saved'}
+    </small>
+  );
 }

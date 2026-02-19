@@ -2,6 +2,7 @@ import { type ReactElement, useEffect, useMemo, useState } from 'react';
 import { Button, Card, Form } from 'react-bootstrap';
 import toast from 'react-hot-toast';
 import HelpTip from '../../components/common/HelpTip';
+import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useUpdateUsage } from '../../hooks/useSettings';
 import type { UsageConfig } from '../../api/settings';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
@@ -31,7 +32,7 @@ export default function UsageTab({ config }: UsageTabProps): ReactElement {
   return (
     <Card className="settings-card">
       <Card.Body>
-        <Card.Title className="h6 mb-3">Usage Tracking</Card.Title>
+        <SettingsCardTitle title="Usage Tracking" />
         <Form.Check
           type="switch"
           label={<>Enable Usage Tracking <HelpTip text="Enable collection of LLM request/token/latency metrics for Analytics." /></>}

@@ -746,11 +746,16 @@ textarea:focus-visible,
   }
 }
 
-.tools-card-title {
+.settings-card-title {
   display: flex;
   align-items: center;
   gap: 0.3rem;
   letter-spacing: -0.01em;
+  margin-top: 0;
+}
+
+.tools-card-title {
+  @extend .settings-card-title;
 }
 
 .tools-note {
@@ -835,6 +840,13 @@ textarea:focus-visible,
 
 .setting-tip-btn:hover {
   color: var(--bs-emphasis-color);
+}
+
+.setting-tip-btn:focus-visible {
+  color: var(--bs-emphasis-color);
+  outline: 2px solid var(--bs-primary);
+  outline-offset: 2px;
+  border-radius: 999px;
 }
 
 .setting-tip-btn svg {

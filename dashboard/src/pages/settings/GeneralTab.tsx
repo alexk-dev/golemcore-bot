@@ -3,6 +3,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import { Button, Card, Col, Form, Row } from 'react-bootstrap';
 import toast from 'react-hot-toast';
 import HelpTip from '../../components/common/HelpTip';
+import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useUpdatePreferences } from '../../hooks/useSettings';
 import { changePassword } from '../../api/auth';
 import MfaSetup from '../../components/auth/MfaSetup';
@@ -69,7 +70,7 @@ export default function GeneralTab({ settings, me, qc }: GeneralTabProps): React
       <Col lg={6}>
         <Card className="settings-card">
           <Card.Body>
-            <Card.Title className="h6 mb-3">Preferences</Card.Title>
+            <SettingsCardTitle title="Preferences" />
             <Form onSubmit={handleSavePrefsSubmit}>
               <Form.Group className="mb-3">
                 <Form.Label className="small fw-medium">
@@ -97,7 +98,7 @@ export default function GeneralTab({ settings, me, qc }: GeneralTabProps): React
                   {updatePrefs.isPending ? 'Saving...' : 'Save Preferences'}
                 </Button>
                 <SaveStateHint isDirty={isPrefsDirty} />
-        </SettingsSaveBar>
+              </SettingsSaveBar>
             </Form>
           </Card.Body>
         </Card>
@@ -109,15 +110,29 @@ export default function GeneralTab({ settings, me, qc }: GeneralTabProps): React
         />
         <Card className="settings-card mt-3">
           <Card.Body>
-            <Card.Title className="h6 mb-3">Change Password</Card.Title>
+            <SettingsCardTitle title="Change Password" />
             <Form onSubmit={handleChangePasswordSubmit}>
               <Form.Group className="mb-3">
                 <Form.Label className="small fw-medium">Current Password</Form.Label>
-                <Form.Control size="sm" type="password" value={oldPwd} onChange={(e) => setOldPwd(e.target.value)} required />
+                <Form.Control
+                  size="sm"
+                  type="password"
+                  value={oldPwd}
+                  onChange={(e) => setOldPwd(e.target.value)}
+                  autoComplete="current-password"
+                  required
+                />
               </Form.Group>
               <Form.Group className="mb-3">
                 <Form.Label className="small fw-medium">New Password</Form.Label>
-                <Form.Control size="sm" type="password" value={newPwd} onChange={(e) => setNewPwd(e.target.value)} required />
+                <Form.Control
+                  size="sm"
+                  type="password"
+                  value={newPwd}
+                  onChange={(e) => setNewPwd(e.target.value)}
+                  autoComplete="new-password"
+                  required
+                />
               </Form.Group>
               <Button type="submit" variant="warning" size="sm">Change Password</Button>
             </Form>

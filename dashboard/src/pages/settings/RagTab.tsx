@@ -1,6 +1,7 @@
 import { type ReactElement, useEffect, useMemo, useState } from 'react';
 import { Button, Card, Col, Form, InputGroup, Row } from 'react-bootstrap';
 import toast from 'react-hot-toast';
+import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useUpdateRag } from '../../hooks/useSettings';
 import type { RagConfig } from '../../api/settings';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
@@ -35,7 +36,7 @@ export default function RagTab({ config }: RagTabProps): ReactElement {
   return (
     <Card className="settings-card">
       <Card.Body>
-        <Card.Title className="h6 mb-3">RAG (LightRAG)</Card.Title>
+        <SettingsCardTitle title="RAG (LightRAG)" />
 
         <Form.Check
           type="switch"

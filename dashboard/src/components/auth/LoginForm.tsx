@@ -34,6 +34,7 @@ export default function LoginForm({ mfaRequired, onSubmit, error, loading }: Pro
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Enter admin password"
+            autoComplete="current-password"
             required
             autoFocus
           />
@@ -48,6 +49,8 @@ export default function LoginForm({ mfaRequired, onSubmit, error, loading }: Pro
             value={mfaCode}
             onChange={(e) => setMfaCode(e.target.value)}
             placeholder="Enter 6-digit code"
+            autoComplete="one-time-code"
+            inputMode="numeric"
             maxLength={6}
             required
             autoFocus

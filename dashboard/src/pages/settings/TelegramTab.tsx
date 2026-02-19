@@ -2,6 +2,7 @@ import { type ReactElement, useEffect, useMemo, useState } from 'react';
 import { Badge, Button, Card, Form, InputGroup, Table } from 'react-bootstrap';
 import toast from 'react-hot-toast';
 import HelpTip from '../../components/common/HelpTip';
+import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import ConfirmModal from '../../components/common/ConfirmModal';
 import {
   useDeleteInviteCode,
@@ -222,7 +223,7 @@ export default function TelegramTab({ config, voiceConfig }: TelegramTabProps): 
 
         <Card className="settings-card mt-3">
           <Card.Body>
-            <Card.Title className="h6 mb-2">Telegram Voice</Card.Title>
+            <SettingsCardTitle title="Telegram Voice" className="mb-2" />
             <Form.Check type="switch"
               label={<>Respond with Voice <HelpTip text="If incoming message is voice, bot can answer with synthesized voice." /></>}
               checked={telegramRespondWithVoice}
