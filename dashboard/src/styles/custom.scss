@@ -754,6 +754,13 @@ textarea:focus-visible,
   margin-top: 0;
 }
 
+.settings-catalog-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0;
+}
+
 .tools-card-title {
   @extend .settings-card-title;
 }
