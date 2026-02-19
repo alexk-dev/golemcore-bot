@@ -1,5 +1,5 @@
 import { type ReactElement, useEffect, useMemo, useState } from 'react';
-import { Button, Card, Col, Form, InputGroup, Row } from 'react-bootstrap';
+import { Badge, Button, Card, Col, Form, InputGroup, Row } from 'react-bootstrap';
 import toast from 'react-hot-toast';
 import HelpTip from '../../components/common/HelpTip';
 import { SecretStatusBadges } from '../../components/common/SecretStatusBadges';
@@ -8,7 +8,7 @@ import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { getSecretInputType, getSecretPlaceholder, getSecretToggleLabel } from '../../components/common/secretInputUtils';
 import type { VoiceConfig } from '../../api/settings';
 import { useUpdateVoice } from '../../hooks/useSettings';
-import { STT_PROVIDER_WHISPER, resolveSttProvider, resolveTtsProvider } from './voiceProviders';
+import { STT_PROVIDER_WHISPER, TTS_PROVIDER_ELEVENLABS, resolveSttProvider, resolveTtsProvider } from './voiceProviders';
 
 interface VoiceTabProps {
   config: VoiceConfig;
@@ -39,7 +39,11 @@ export default function VoiceTab({ config }: VoiceTabProps): ReactElement {
   const willUpdateApiKey = (form.apiKey?.length ?? 0) > 0;
   const speedLabel = formatVoiceSpeed(form.speed);
   const speedValue = normalizeVoiceSpeed(form.speed);
-  const isWhisperStt = resolveSttProvider(form.sttProvider) === STT_PROVIDER_WHISPER;
+  const sttProvider = resolveSttProvider(form.sttProvider);
+  const ttsProvider = resolveTtsProvider(form.ttsProvider);
+  const isWhisperStt = sttProvider === STT_PROVIDER_WHISPER;
+  const isElevenLabsStt = !isWhisperStt;
+  const isElevenLabsTts = ttsProvider === TTS_PROVIDER_ELEVENLABS;
 
   // Keep local draft in sync after server-side updates/refetch.
   useEffect(() => {
@@ -59,6 +63,14 @@ export default function VoiceTab({ config }: VoiceTabProps): ReactElement {
     <Card className="settings-card">
       <Card.Body>
         <SettingsCardTitle title="ElevenLabs" />
+        <div className="d-flex align-items-center gap-2 mb-3">
+          <Badge bg={isElevenLabsStt ? 'primary' : 'secondary'}>
+            STT: {isElevenLabsStt ? 'Active' : 'Inactive'}
+          </Badge>
+          <Badge bg={isElevenLabsTts ? 'primary' : 'secondary'}>
+            TTS: {isElevenLabsTts ? 'Active' : 'Inactive'}
+          </Badge>
+        </div>
 
         <Form.Group className="mb-3">
           <Form.Label className="small fw-medium d-flex align-items-center gap-2">

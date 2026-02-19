@@ -1,5 +1,5 @@
 import { type ReactElement, useEffect, useMemo, useState } from 'react';
-import { Button, Card, Form, InputGroup } from 'react-bootstrap';
+import { Badge, Button, Card, Form, InputGroup } from 'react-bootstrap';
 import toast from 'react-hot-toast';
 import HelpTip from '../../components/common/HelpTip';
 import { SecretStatusBadges } from '../../components/common/SecretStatusBadges';
@@ -30,6 +30,7 @@ export default function WhisperTab({ config }: WhisperTabProps): ReactElement {
   const hasStoredApiKey = config.whisperSttApiKeyPresent === true;
   const willUpdateApiKey = (form.whisperSttApiKey?.length ?? 0) > 0;
   const isWhisperStt = resolveSttProvider(form.sttProvider) === STT_PROVIDER_WHISPER;
+  const isWhisperUrlMissing = (form.whisperSttUrl == null || form.whisperSttUrl.trim().length === 0);
 
   // Keep local draft in sync after server-side updates/refetch.
   useEffect(() => {
@@ -49,6 +50,11 @@ export default function WhisperTab({ config }: WhisperTabProps): ReactElement {
     <Card className="settings-card">
       <Card.Body>
         <SettingsCardTitle title="Whisper" />
+        <div className="d-flex align-items-center gap-2 mb-3">
+          <Badge bg={isWhisperStt ? 'primary' : 'secondary'}>
+            STT: {isWhisperStt ? 'Active' : 'Inactive'}
+          </Badge>
+        </div>
 
         {!isWhisperStt && (
           <Form.Text className="text-muted d-block mb-3">
@@ -63,9 +69,13 @@ export default function WhisperTab({ config }: WhisperTabProps): ReactElement {
           <Form.Control
             size="sm"
             value={form.whisperSttUrl ?? ''}
+            isInvalid={isWhisperStt && isWhisperUrlMissing}
             onChange={(event) => setForm((prev) => ({ ...prev, whisperSttUrl: toNullableString(event.target.value) }))}
             placeholder="http://localhost:5092"
           />
+          <Form.Control.Feedback type="invalid">
+            Whisper STT URL is required when Whisper is selected as STT provider.
+          </Form.Control.Feedback>
         </Form.Group>
 
         <Form.Group>
@@ -96,7 +106,7 @@ export default function WhisperTab({ config }: WhisperTabProps): ReactElement {
             variant="primary"
             size="sm"
             onClick={() => { void handleSave(); }}
-            disabled={!isDirty || updateVoice.isPending}
+            disabled={!isDirty || updateVoice.isPending || (isWhisperStt && isWhisperUrlMissing)}
           >
             {updateVoice.isPending ? 'Saving...' : 'Save'}
           </Button>
