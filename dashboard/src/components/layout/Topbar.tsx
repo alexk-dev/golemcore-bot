@@ -12,6 +12,7 @@ export default function Topbar() {
   const theme = useThemeStore((s) => s.theme);
   const toggleTheme = useThemeStore((s) => s.toggle);
   const toggleMobile = useSidebarStore((s) => s.toggleMobile);
+  const mobileOpen = useSidebarStore((s) => s.mobileOpen);
 
   const handleLogout = async () => {
     try {
@@ -23,18 +24,22 @@ export default function Topbar() {
   };
 
   return (
-    <div className="topbar d-flex align-items-center justify-content-between px-3 px-md-4 py-2">
+    <header className="topbar d-flex align-items-center justify-content-between px-3 px-md-4 py-2">
       <Button
+        type="button"
         variant="secondary"
         className="topbar-icon-btn d-md-none"
         onClick={toggleMobile}
-        aria-label="Toggle navigation"
+        aria-label={mobileOpen ? 'Close navigation' : 'Open navigation'}
+        aria-controls="primary-navigation"
+        aria-expanded={mobileOpen}
       >
         <FiMenu size={18} />
       </Button>
       <div className="d-none d-md-block" />
       <div className="d-flex align-items-center gap-2">
         <Button
+          type="button"
           variant="secondary"
           className="topbar-icon-btn text-decoration-none d-flex align-items-center justify-content-center p-0"
           onClick={toggleTheme}
@@ -44,6 +49,7 @@ export default function Topbar() {
           {theme === 'light' ? <FiMoon size={18} /> : <FiSun size={18} />}
         </Button>
         <Button 
+          type="button"
           variant="secondary"
           className="topbar-action-btn text-decoration-none d-flex align-items-center px-3"
           onClick={handleLogout}
@@ -52,6 +58,6 @@ export default function Topbar() {
           <span className="fw-medium small">Logout</span>
         </Button>
       </div>
-    </div>
+    </header>
   );
 }

@@ -1,7 +1,9 @@
 import { type ReactElement, useMemo, useState } from 'react';
 import { Badge, Button, Card, Col, Form, InputGroup, Row, Table } from 'react-bootstrap';
 import toast from 'react-hot-toast';
+import { extractErrorMessage } from '../../utils/extractErrorMessage';
 import ConfirmModal from '../../components/common/ConfirmModal';
+import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useAddLlmProvider, useUpdateLlmProvider, useRemoveLlmProvider } from '../../hooks/useSettings';
 import type { ApiType, LlmConfig, LlmProviderConfig, ModelRouterConfig } from '../../api/settings';
 
@@ -25,6 +27,7 @@ const KNOWN_BASE_URLS: Record<string, string> = {
 };
 
 const KNOWN_PROVIDERS: string[] = Object.keys(KNOWN_BASE_URLS);
+const PROVIDER_NAME_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
 
 const KNOWN_API_TYPES: Record<string, ApiType> = {
   anthropic: 'anthropic',
@@ -87,7 +90,7 @@ function ProviderEditor({
                   value={form.apiKey ?? ''}
                   onChange={(e) => onFormChange({ ...form, apiKey: toNullableString(e.target.value) })}
                 />
-                <Button variant="secondary" onClick={onToggleShowKey}>
+                <Button type="button" variant="secondary" aria-pressed={showKey} onClick={onToggleShowKey}>
                   {showKey ? 'Hide' : 'Show'}
                 </Button>
               </InputGroup>
@@ -98,8 +101,10 @@ function ProviderEditor({
               <Form.Label className="small fw-medium">Base URL</Form.Label>
               <Form.Control
                 size="sm"
+                type="url"
                 value={form.baseUrl ?? ''}
                 onChange={(e) => onFormChange({ ...form, baseUrl: toNullableString(e.target.value) })}
+                placeholder="https://api.example.com/v1"
               />
             </Form.Group>
           </Col>
@@ -135,10 +140,10 @@ function ProviderEditor({
           </Col>
         </Row>
         <div className="d-flex gap-2 mt-2">
-          <Button variant="primary" size="sm" onClick={onSave} disabled={isSaving}>
+          <Button type="button" variant="primary" size="sm" onClick={onSave} disabled={isSaving}>
             {isSaving ? 'Saving...' : 'Save'}
           </Button>
-          <Button variant="secondary" size="sm" onClick={onCancel} disabled={isSaving}>
+          <Button type="button" variant="secondary" size="sm" onClick={onCancel} disabled={isSaving}>
             Cancel
           </Button>
         </div>
@@ -190,20 +195,29 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
   }, [modelRouter]);
 
   const isSaving = addProvider.isPending || updateProvider.isPending;
+  const normalizedNewProviderName = newProviderName.trim().toLowerCase();
+  const isProviderNameInvalid = normalizedNewProviderName.length > 0 && !PROVIDER_NAME_PATTERN.test(normalizedNewProviderName);
+  const providerAlreadyExists = normalizedNewProviderName.length > 0
+    && Object.prototype.hasOwnProperty.call(config.providers, normalizedNewProviderName);
+  const canStartAdd = normalizedNewProviderName.length > 0
+    && !isProviderNameInvalid
+    && !providerAlreadyExists
+    && !isSaving
+    && editingName == null;
 
   const handleStartAdd = (): void => {
-    const name = newProviderName.trim().toLowerCase();
-    if (name.length === 0) {
+    if (normalizedNewProviderName.length === 0) {
       return;
     }
-    if (!/^[a-z0-9][a-z0-9_-]*$/.test(name)) {
+    if (isProviderNameInvalid) {
       toast.error('Provider name must match [a-z0-9][a-z0-9_-]*');
       return;
     }
-    if (Object.prototype.hasOwnProperty.call(config.providers, name)) {
+    if (providerAlreadyExists) {
       toast.error('Provider already exists');
       return;
     }
+    const name = normalizedNewProviderName;
     setEditingName(name);
     setEditForm({
       apiKey: null,
@@ -249,7 +263,7 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
       }
       handleCancelEdit();
     } catch (err) {
-      toast.error(`Failed to save: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      toast.error(`Failed to save: ${extractErrorMessage(err)}`);
     }
   };
 
@@ -264,7 +278,7 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
         handleCancelEdit();
       }
     } catch (err) {
-      toast.error(`Failed to remove: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      toast.error(`Failed to remove: ${extractErrorMessage(err)}`);
     } finally {
       setDeleteProvider(null);
     }
@@ -273,7 +287,7 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
   return (
     <Card className="settings-card">
       <Card.Body>
-        <Card.Title className="h6 mb-3">LLM Providers</Card.Title>
+        <SettingsCardTitle title="LLM Providers" />
         <div className="small text-body-secondary mb-3">
           Manage API provider credentials. Each provider can be assigned to model tiers on the Models page.
         </div>
@@ -283,11 +297,29 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
             placeholder="Provider name (e.g. openai)"
             list="known-llm-providers"
             value={newProviderName}
-            onChange={(e) => setNewProviderName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') { handleStartAdd(); } }}
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            aria-invalid={isProviderNameInvalid || providerAlreadyExists}
+            onChange={(e) => setNewProviderName(e.target.value.toLowerCase())}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                if (canStartAdd) {
+                  handleStartAdd();
+                }
+              }
+            }}
           />
-          <Button variant="primary" onClick={handleStartAdd}>Add Provider</Button>
+          <Button type="button" variant="primary" onClick={handleStartAdd} disabled={!canStartAdd}>Add Provider</Button>
         </InputGroup>
+        <div className={`small mb-3 ${isProviderNameInvalid || providerAlreadyExists ? 'text-danger' : 'text-body-secondary'}`}>
+          {isProviderNameInvalid
+            ? 'Name format: [a-z0-9][a-z0-9_-]*'
+            : providerAlreadyExists
+              ? 'Provider already exists.'
+              : 'Use lowercase provider IDs, for example: openai, anthropic, deepseek.'}
+        </div>
         <datalist id="known-llm-providers">
           {knownSuggestions.map((name) => (
             <option key={name} value={name} />
@@ -295,14 +327,14 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
         </datalist>
 
         {providerNames.length > 0 ? (
-          <Table size="sm" hover responsive className="mb-3">
+          <Table size="sm" hover responsive className="mb-3 dashboard-table responsive-table providers-table">
             <thead>
               <tr>
-                <th>Provider</th>
-                <th>API Type</th>
-                <th>Base URL</th>
-                <th>Status</th>
-                <th className="text-end">Actions</th>
+                <th scope="col">Provider</th>
+                <th scope="col">API Type</th>
+                <th scope="col">Base URL</th>
+                <th scope="col">Status</th>
+                <th scope="col" className="text-end">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -311,42 +343,48 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
                 const isReady = provider?.apiKeyPresent === true;
                 return (
                   <tr key={name}>
-                    <td className="text-capitalize fw-medium">{name}</td>
-                    <td className="small">{provider?.apiType ?? 'openai'}</td>
-                    <td className="small text-body-secondary text-truncate" style={{ maxWidth: '260px' }}>
+                    <td data-label="Provider" className="text-capitalize fw-medium">{name}</td>
+                    <td data-label="API Type" className="small text-body-secondary">
+                      {provider?.apiType ?? 'openai'}
+                    </td>
+                    <td data-label="Base URL" className="small text-body-secondary provider-url-cell">
                       {provider?.baseUrl ?? <em>default</em>}
                     </td>
-                    <td>
+                    <td data-label="Status">
                       {isReady ? (
                         <Badge bg="success">Ready</Badge>
                       ) : (
                         <Badge bg="secondary">Setup needed</Badge>
                       )}
                     </td>
-                    <td className="text-end text-nowrap">
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        className="me-2"
-                        onClick={() => {
-                          if (editingName === name && !isNewProvider) {
-                            handleCancelEdit();
-                          } else {
-                            handleStartEdit(name);
-                          }
-                        }}
-                      >
-                        {editingName === name && !isNewProvider ? 'Close' : 'Edit'}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="danger"
-                        disabled={usedProviders.has(name) || removeProvider.isPending}
-                        title={usedProviders.has(name) ? 'In use by model router' : 'Remove provider'}
-                        onClick={() => setDeleteProvider(name)}
-                      >
-                        Delete
-                      </Button>
+                    <td data-label="Actions" className="text-end text-nowrap">
+                      <div className="d-flex flex-wrap gap-1 providers-actions">
+                        <Button type="button"
+                          size="sm"
+                          variant="secondary"
+                          className="provider-action-btn"
+                          disabled={isSaving}
+                          onClick={() => {
+                            if (editingName === name && !isNewProvider) {
+                              handleCancelEdit();
+                            } else {
+                              handleStartEdit(name);
+                            }
+                          }}
+                        >
+                          {editingName === name && !isNewProvider ? 'Close' : 'Edit'}
+                        </Button>
+                        <Button type="button"
+                          size="sm"
+                          variant="danger"
+                          className="provider-action-btn"
+                          disabled={usedProviders.has(name) || removeProvider.isPending}
+                          title={usedProviders.has(name) ? 'In use by model router' : removeProvider.isPending ? 'Deletion in progress' : 'Remove provider'}
+                          onClick={() => setDeleteProvider(name)}
+                        >
+                          Delete
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 );

@@ -1,17 +1,181 @@
 import { type ReactElement, useState } from 'react';
 import { Table, Button, Badge, Modal, Spinner, Card, Placeholder } from 'react-bootstrap';
 import { useSessions, useSession, useDeleteSession, useCompactSession, useClearSession } from '../hooks/useSessions';
+import type { SessionSummary } from '../api/sessions';
 import toast from 'react-hot-toast';
 import ConfirmModal from '../components/common/ConfirmModal';
 
+interface ConfirmAction {
+  type: 'clear' | 'delete';
+  sessionId: string;
+}
+
+interface SessionRowProps {
+  session: SessionSummary;
+  actionsDisabled: boolean;
+  onOpen: (sessionId: string) => void;
+  onCompact: (sessionId: string) => Promise<void>;
+  onClear: (sessionId: string) => void;
+  onDelete: (sessionId: string) => void;
+}
+
+interface SessionsTableProps {
+  sessions: SessionSummary[];
+  actionsDisabled: boolean;
+  onOpen: (sessionId: string) => void;
+  onCompact: (sessionId: string) => Promise<void>;
+  onClear: (sessionId: string) => void;
+  onDelete: (sessionId: string) => void;
+}
+
+interface ConfirmCopy {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  confirmVariant: 'warning' | 'danger';
+}
+
+function formatUpdatedAt(value: string | null): string {
+  if (value == null || value.length === 0) {
+    return '-';
+  }
+  return new Date(value).toLocaleString();
+}
+
+function getConfirmCopy(actionType: ConfirmAction['type']): ConfirmCopy {
+  if (actionType === 'clear') {
+    return {
+      title: 'Clear Session',
+      message: 'This will remove all messages from the selected session. This action cannot be undone.',
+      confirmLabel: 'Clear',
+      confirmVariant: 'warning',
+    };
+  }
+  return {
+    title: 'Delete Session',
+    message: 'This will permanently delete the selected session. This action cannot be undone.',
+    confirmLabel: 'Delete',
+    confirmVariant: 'danger',
+  };
+}
+
+function SessionRow({
+  session,
+  actionsDisabled,
+  onOpen,
+  onCompact,
+  onClear,
+  onDelete,
+}: SessionRowProps): ReactElement {
+  return (
+    <tr>
+      <td data-label="ID">
+        <Button type="button"
+          variant="secondary"
+          size="sm"
+          className="py-0 px-2 session-id-btn"
+          onClick={() => onOpen(session.id)}
+          title={session.id}
+        >
+          {session.id.length > 8 ? `${session.id.slice(0, 8)}...` : session.id}
+        </Button>
+      </td>
+      <td data-label="Channel"><Badge bg="secondary">{session.channelType}</Badge></td>
+      <td data-label="Messages">{session.messageCount}</td>
+      <td data-label="State"><Badge bg={session.state === 'ACTIVE' ? 'success' : 'warning'}>{session.state}</Badge></td>
+      <td data-label="Updated" className="small">{formatUpdatedAt(session.updatedAt)}</td>
+      <td data-label="Actions">
+        <div className="d-flex flex-wrap gap-1 sessions-actions">
+          <Button type="button"
+            size="sm"
+            variant="primary"
+            className="sessions-action-btn"
+            onClick={() => { void onCompact(session.id); }}
+          >
+            Compact
+          </Button>
+          <Button type="button"
+            size="sm"
+            variant="warning"
+            className="sessions-action-btn"
+            onClick={() => onClear(session.id)}
+            disabled={actionsDisabled}
+          >
+            Clear
+          </Button>
+          <Button type="button"
+            size="sm"
+            variant="danger"
+            className="sessions-action-btn"
+            onClick={() => onDelete(session.id)}
+            disabled={actionsDisabled}
+          >
+            Delete
+          </Button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function SessionsTable({
+  sessions,
+  actionsDisabled,
+  onOpen,
+  onCompact,
+  onClear,
+  onDelete,
+}: SessionsTableProps): ReactElement {
+  return (
+    <Table hover responsive className="dashboard-table responsive-table sessions-table">
+      <thead>
+        <tr>
+          <th scope="col">ID</th>
+          <th scope="col">Channel</th>
+          <th scope="col">Messages</th>
+          <th scope="col">State</th>
+          <th scope="col">Updated</th>
+          <th scope="col">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {sessions.length > 0 ? sessions.map((session) => (
+          <SessionRow
+            key={session.id}
+            session={session}
+            actionsDisabled={actionsDisabled}
+            onOpen={onOpen}
+            onCompact={onCompact}
+            onClear={onClear}
+            onDelete={onDelete}
+          />
+        )) : (
+          <tr>
+            <td colSpan={6} className="text-center text-body-secondary py-4 sessions-empty-cell">
+              No sessions found.
+            </td>
+          </tr>
+        )}
+      </tbody>
+    </Table>
+  );
+}
+
 export default function SessionsPage(): ReactElement {
-  const { data: sessions, isLoading } = useSessions();
+  const { data: sessionsData, isLoading } = useSessions();
   const deleteMut = useDeleteSession();
   const compactMut = useCompactSession();
   const clearMut = useClearSession();
   const [viewId, setViewId] = useState<string | null>(null);
-  const [confirmAction, setConfirmAction] = useState<{ type: 'clear' | 'delete'; sessionId: string } | null>(null);
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const { data: detail } = useSession(viewId ?? '');
+  const sessions = sessionsData ?? [];
+  const confirmCopy = getConfirmCopy(confirmAction?.type ?? 'delete');
+
+  const handleCompact = async (sessionId: string): Promise<void> => {
+    const result = await compactMut.mutateAsync({ id: sessionId });
+    toast.success(`Removed ${result.removed} messages`);
+  };
 
   const handleConfirmAction = async (): Promise<void> => {
     if (confirmAction == null) {
@@ -62,65 +226,14 @@ export default function SessionsPage(): ReactElement {
       <div className="section-header">
         <h4 className="mb-0">Sessions</h4>
       </div>
-      <Table hover responsive>
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Channel</th>
-            <th>Messages</th>
-            <th>State</th>
-            <th>Updated</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {sessions?.map((s) => (
-            <tr key={s.id}>
-              <td>
-                <Button variant="secondary" size="sm" className="py-0 px-2" onClick={() => setViewId(s.id)} title={s.id}>
-                  {s.id.length > 8 ? `${s.id.slice(0, 8)}...` : s.id}
-                </Button>
-              </td>
-              <td><Badge bg="secondary">{s.channelType}</Badge></td>
-              <td>{s.messageCount}</td>
-              <td><Badge bg={s.state === 'ACTIVE' ? 'success' : 'warning'}>{s.state}</Badge></td>
-               <td className="small">{s.updatedAt != null && s.updatedAt.length > 0 ? new Date(s.updatedAt).toLocaleString() : '-'}</td>
-              <td>
-                <div className="d-flex flex-wrap gap-1">
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    onClick={() => {
-                      void (async () => {
-                        const r = await compactMut.mutateAsync({ id: s.id });
-                        toast.success(`Removed ${r.removed} messages`);
-                      })();
-                    }}
-                  >
-                    Compact
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="warning"
-                    onClick={() => setConfirmAction({ type: 'clear', sessionId: s.id })}
-                    disabled={clearMut.isPending || deleteMut.isPending}
-                  >
-                    Clear
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="danger"
-                    onClick={() => setConfirmAction({ type: 'delete', sessionId: s.id })}
-                    disabled={clearMut.isPending || deleteMut.isPending}
-                  >
-                    Delete
-                  </Button>
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </Table>
+      <SessionsTable
+        sessions={sessions}
+        actionsDisabled={clearMut.isPending || deleteMut.isPending}
+        onOpen={(sessionId) => setViewId(sessionId)}
+        onCompact={handleCompact}
+        onClear={(sessionId) => setConfirmAction({ type: 'clear', sessionId })}
+        onDelete={(sessionId) => setConfirmAction({ type: 'delete', sessionId })}
+      />
 
       <Modal show={viewId != null && viewId.length > 0} onHide={() => setViewId(null)} size="lg">
         <Modal.Header closeButton>
@@ -139,14 +252,10 @@ export default function SessionsPage(): ReactElement {
 
       <ConfirmModal
         show={confirmAction != null}
-        title={confirmAction?.type === 'clear' ? 'Clear Session' : 'Delete Session'}
-        message={
-          confirmAction?.type === 'clear'
-            ? 'This will remove all messages from the selected session. This action cannot be undone.'
-            : 'This will permanently delete the selected session. This action cannot be undone.'
-        }
-        confirmLabel={confirmAction?.type === 'clear' ? 'Clear' : 'Delete'}
-        confirmVariant={confirmAction?.type === 'clear' ? 'warning' : 'danger'}
+        title={confirmCopy.title}
+        message={confirmCopy.message}
+        confirmLabel={confirmCopy.confirmLabel}
+        confirmVariant={confirmCopy.confirmVariant}
         isProcessing={clearMut.isPending || deleteMut.isPending}
         onConfirm={() => { void handleConfirmAction(); }}
         onCancel={() => setConfirmAction(null)}

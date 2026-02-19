@@ -46,10 +46,8 @@ public class PlansController {
         }
 
         try {
-            String modelTier = request.modelTier();
-            if (modelTier != null && modelTier.isBlank()) {
-                modelTier = null;
-            }
+            String modelTier = request.modelTier() != null && request.modelTier().isBlank() ? null
+                    : request.modelTier();
             if (!planService.isPlanModeActive()) {
                 planService.activatePlanMode(request.chatId(), modelTier);
             }

@@ -232,6 +232,7 @@ export interface ModelRouterConfig {
 }
 
 export interface ToolsConfig {
+  browserEnabled: boolean | null;
   browserType: string | null;
   browserTimeout: number | null;
   browserUserAgent: string | null;
@@ -245,8 +246,6 @@ export interface ToolsConfig {
   skillTransitionEnabled: boolean | null;
   tierEnabled: boolean | null;
   goalManagementEnabled: boolean | null;
-  imapEnabled: boolean | null;
-  smtpEnabled: boolean | null;
   imap: ImapConfig;
   smtp: SmtpConfig;
 }
