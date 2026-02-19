@@ -8,7 +8,7 @@ import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { getSecretInputType, getSecretPlaceholder, getSecretToggleLabel } from '../../components/common/secretInputUtils';
 import type { VoiceConfig } from '../../api/settings';
 import { useUpdateVoice } from '../../hooks/useSettings';
-import { STT_PROVIDER_WHISPER, resolveSttProvider, resolveTtsProvider } from './voiceProviders';
+import { STT_PROVIDER_WHISPER, isValidHttpUrl, resolveSttProvider, resolveTtsProvider } from './voiceProviders';
 
 interface WhisperTabProps {
   config: VoiceConfig;
@@ -22,6 +22,38 @@ function toNullableString(value: string): string | null {
   return value.length > 0 ? value : null;
 }
 
+interface WhisperUrlValidation {
+  hasError: boolean;
+  message: string;
+}
+
+function buildWhisperUrlValidation(isWhisperStt: boolean, whisperSttUrl: string | null | undefined): WhisperUrlValidation {
+  if (!isWhisperStt) {
+    return { hasError: false, message: '' };
+  }
+  if (whisperSttUrl == null || whisperSttUrl.trim().length === 0) {
+    return {
+      hasError: true,
+      message: 'Whisper STT URL is required when Whisper is selected as STT provider.',
+    };
+  }
+  if (!isValidHttpUrl(whisperSttUrl)) {
+    return {
+      hasError: true,
+      message: 'Whisper STT URL must be a valid http(s) URL.',
+    };
+  }
+  return { hasError: false, message: '' };
+}
+
+function getWhisperStatusVariant(isWhisperStt: boolean): string {
+  return isWhisperStt ? 'primary' : 'secondary';
+}
+
+function getWhisperStatusLabel(isWhisperStt: boolean): string {
+  return isWhisperStt ? 'Active' : 'Inactive';
+}
+
 export default function WhisperTab({ config }: WhisperTabProps): ReactElement {
   const updateVoice = useUpdateVoice();
   const [form, setForm] = useState<VoiceConfig>({ ...config });
@@ -30,7 +62,10 @@ export default function WhisperTab({ config }: WhisperTabProps): ReactElement {
   const hasStoredApiKey = config.whisperSttApiKeyPresent === true;
   const willUpdateApiKey = (form.whisperSttApiKey?.length ?? 0) > 0;
   const isWhisperStt = resolveSttProvider(form.sttProvider) === STT_PROVIDER_WHISPER;
-  const isWhisperUrlMissing = (form.whisperSttUrl == null || form.whisperSttUrl.trim().length === 0);
+  const whisperUrlValidation = buildWhisperUrlValidation(isWhisperStt, form.whisperSttUrl);
+  const whisperStatus = getWhisperStatusLabel(isWhisperStt);
+  const whisperStatusVariant = getWhisperStatusVariant(isWhisperStt);
+  const saveDisabled = !isDirty || updateVoice.isPending || whisperUrlValidation.hasError;
 
   // Keep local draft in sync after server-side updates/refetch.
   useEffect(() => {
@@ -51,8 +86,8 @@ export default function WhisperTab({ config }: WhisperTabProps): ReactElement {
       <Card.Body>
         <SettingsCardTitle title="Whisper" />
         <div className="d-flex align-items-center gap-2 mb-3">
-          <Badge bg={isWhisperStt ? 'primary' : 'secondary'}>
-            STT: {isWhisperStt ? 'Active' : 'Inactive'}
+          <Badge bg={whisperStatusVariant}>
+            STT: {whisperStatus}
           </Badge>
         </div>
 
@@ -69,12 +104,12 @@ export default function WhisperTab({ config }: WhisperTabProps): ReactElement {
           <Form.Control
             size="sm"
             value={form.whisperSttUrl ?? ''}
-            isInvalid={isWhisperStt && isWhisperUrlMissing}
+            isInvalid={whisperUrlValidation.hasError}
             onChange={(event) => setForm((prev) => ({ ...prev, whisperSttUrl: toNullableString(event.target.value) }))}
             placeholder="http://localhost:5092"
           />
           <Form.Control.Feedback type="invalid">
-            Whisper STT URL is required when Whisper is selected as STT provider.
+            {whisperUrlValidation.message}
           </Form.Control.Feedback>
         </Form.Group>
 
@@ -106,7 +141,7 @@ export default function WhisperTab({ config }: WhisperTabProps): ReactElement {
             variant="primary"
             size="sm"
             onClick={() => { void handleSave(); }}
-            disabled={!isDirty || updateVoice.isPending || (isWhisperStt && isWhisperUrlMissing)}
+            disabled={saveDisabled}
           >
             {updateVoice.isPending ? 'Saving...' : 'Save'}
           </Button>

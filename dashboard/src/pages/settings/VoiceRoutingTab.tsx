@@ -10,6 +10,7 @@ import {
   STT_PROVIDER_ELEVENLABS,
   STT_PROVIDER_WHISPER,
   TTS_PROVIDER_ELEVENLABS,
+  isValidHttpUrl,
   resolveSttProvider,
   resolveTtsProvider,
 } from './voiceProviders';
@@ -30,6 +31,7 @@ export default function VoiceRoutingTab({ config }: VoiceRoutingTabProps): React
   const ttsProvider = resolveTtsProvider(form.ttsProvider);
   const isWhisperStt = sttProvider === STT_PROVIDER_WHISPER;
   const whisperUrlMissing = isWhisperStt && (form.whisperSttUrl == null || form.whisperSttUrl.trim().length === 0);
+  const whisperUrlInvalid = isWhisperStt && !whisperUrlMissing && !isValidHttpUrl(form.whisperSttUrl);
 
   // Keep local draft in sync after server-side updates/refetch.
   useEffect(() => {
@@ -107,6 +109,11 @@ export default function VoiceRoutingTab({ config }: VoiceRoutingTabProps): React
             Whisper STT URL is required before you can save this provider selection.
           </Form.Text>
         )}
+        {whisperUrlInvalid && (
+          <Form.Text className="text-danger d-block mt-2">
+            Whisper STT URL must be a valid http(s) URL.
+          </Form.Text>
+        )}
 
         <SettingsSaveBar className="mt-3">
           <Button
@@ -114,7 +121,7 @@ export default function VoiceRoutingTab({ config }: VoiceRoutingTabProps): React
             variant="primary"
             size="sm"
             onClick={() => { void handleSave(); }}
-            disabled={!isDirty || updateVoice.isPending || whisperUrlMissing}
+            disabled={!isDirty || updateVoice.isPending || whisperUrlMissing || whisperUrlInvalid}
           >
             {updateVoice.isPending ? 'Saving...' : 'Save'}
           </Button>
