@@ -27,6 +27,7 @@ const KNOWN_BASE_URLS: Record<string, string> = {
 };
 
 const KNOWN_PROVIDERS: string[] = Object.keys(KNOWN_BASE_URLS);
+const PROVIDER_NAME_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
 
 function toNullableString(value: string): string | null {
   return value.length > 0 ? value : null;
@@ -82,7 +83,7 @@ function ProviderEditor({
                   value={form.apiKey ?? ''}
                   onChange={(e) => onFormChange({ ...form, apiKey: toNullableString(e.target.value) })}
                 />
-                <Button type="button" variant="secondary" onClick={onToggleShowKey}>
+                <Button type="button" variant="secondary" aria-pressed={showKey} onClick={onToggleShowKey}>
                   {showKey ? 'Hide' : 'Show'}
                 </Button>
               </InputGroup>
@@ -93,8 +94,10 @@ function ProviderEditor({
               <Form.Label className="small fw-medium">Base URL</Form.Label>
               <Form.Control
                 size="sm"
+                type="url"
                 value={form.baseUrl ?? ''}
                 onChange={(e) => onFormChange({ ...form, baseUrl: toNullableString(e.target.value) })}
+                placeholder="https://api.example.com/v1"
               />
             </Form.Group>
           </Col>
@@ -171,20 +174,29 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
   }, [modelRouter]);
 
   const isSaving = addProvider.isPending || updateProvider.isPending;
+  const normalizedNewProviderName = newProviderName.trim().toLowerCase();
+  const isProviderNameInvalid = normalizedNewProviderName.length > 0 && !PROVIDER_NAME_PATTERN.test(normalizedNewProviderName);
+  const providerAlreadyExists = normalizedNewProviderName.length > 0
+    && Object.prototype.hasOwnProperty.call(config.providers, normalizedNewProviderName);
+  const canStartAdd = normalizedNewProviderName.length > 0
+    && !isProviderNameInvalid
+    && !providerAlreadyExists
+    && !isSaving
+    && editingName == null;
 
   const handleStartAdd = (): void => {
-    const name = newProviderName.trim().toLowerCase();
-    if (name.length === 0) {
+    if (normalizedNewProviderName.length === 0) {
       return;
     }
-    if (!/^[a-z0-9][a-z0-9_-]*$/.test(name)) {
+    if (isProviderNameInvalid) {
       toast.error('Provider name must match [a-z0-9][a-z0-9_-]*');
       return;
     }
-    if (Object.prototype.hasOwnProperty.call(config.providers, name)) {
+    if (providerAlreadyExists) {
       toast.error('Provider already exists');
       return;
     }
+    const name = normalizedNewProviderName;
     setEditingName(name);
     setEditForm({
       apiKey: null,
@@ -263,11 +275,29 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
             placeholder="Provider name (e.g. openai)"
             list="known-llm-providers"
             value={newProviderName}
-            onChange={(e) => setNewProviderName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') { handleStartAdd(); } }}
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            aria-invalid={isProviderNameInvalid || providerAlreadyExists}
+            onChange={(e) => setNewProviderName(e.target.value.toLowerCase())}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                if (canStartAdd) {
+                  handleStartAdd();
+                }
+              }
+            }}
           />
-          <Button type="button" variant="primary" onClick={handleStartAdd}>Add Provider</Button>
+          <Button type="button" variant="primary" onClick={handleStartAdd} disabled={!canStartAdd}>Add Provider</Button>
         </InputGroup>
+        <div className={`small mb-3 ${isProviderNameInvalid || providerAlreadyExists ? 'text-danger' : 'text-body-secondary'}`}>
+          {isProviderNameInvalid
+            ? 'Name format: [a-z0-9][a-z0-9_-]*'
+            : providerAlreadyExists
+              ? 'Provider already exists.'
+              : 'Use lowercase provider IDs, for example: openai, anthropic, deepseek.'}
+        </div>
         <datalist id="known-llm-providers">
           {knownSuggestions.map((name) => (
             <option key={name} value={name} />
@@ -307,6 +337,7 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
                           size="sm"
                           variant="secondary"
                           className="provider-action-btn"
+                          disabled={isSaving}
                           onClick={() => {
                             if (editingName === name && !isNewProvider) {
                               handleCancelEdit();
@@ -322,7 +353,7 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
                           variant="danger"
                           className="provider-action-btn"
                           disabled={usedProviders.has(name) || removeProvider.isPending}
-                          title={usedProviders.has(name) ? 'In use by model router' : 'Remove provider'}
+                          title={usedProviders.has(name) ? 'In use by model router' : removeProvider.isPending ? 'Deletion in progress' : 'Remove provider'}
                           onClick={() => setDeleteProvider(name)}
                         >
                           Delete
