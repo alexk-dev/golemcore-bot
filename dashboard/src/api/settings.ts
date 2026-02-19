@@ -189,6 +189,7 @@ function toBackendRuntimeConfig(config: RuntimeConfig): UnknownRecord {
     voice: {
       ...voice,
       apiKey: toSecretPayload(voice.apiKey ?? null),
+      whisperSttApiKey: toSecretPayload(voice.whisperSttApiKey ?? null),
     },
     rag: {
       ...rag,
@@ -374,6 +375,7 @@ export interface VoiceConfig {
   telegramRespondWithVoice: boolean | null;
   telegramTranscribeIncoming: boolean | null;
   sttProvider: string | null;
+  ttsProvider: string | null;
   whisperSttUrl: string | null;
   whisperSttApiKey: string | null;
   whisperSttApiKeyPresent?: boolean;

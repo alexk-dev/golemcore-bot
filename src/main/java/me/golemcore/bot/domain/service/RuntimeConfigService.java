@@ -90,6 +90,7 @@ public class RuntimeConfigService {
     private static final int DEFAULT_SMTP_READ_TIMEOUT = 30000;
     private static final String DEFAULT_SMTP_SECURITY = "starttls";
     private static final String DEFAULT_STT_PROVIDER = "elevenlabs";
+    private static final String DEFAULT_TTS_PROVIDER = "elevenlabs";
     private static final String STT_PROVIDER_WHISPER = "whisper";
     private static final String DEFAULT_BROWSER_API_PROVIDER = "brave";
     private static final boolean DEFAULT_BROWSER_ENABLED = true;
@@ -505,6 +506,11 @@ public class RuntimeConfigService {
     public String getSttProvider() {
         String val = getRuntimeConfig().getVoice().getSttProvider();
         return val != null && !val.isBlank() ? val : DEFAULT_STT_PROVIDER;
+    }
+
+    public String getTtsProvider() {
+        String val = getRuntimeConfig().getVoice().getTtsProvider();
+        return val != null && !val.isBlank() ? val : DEFAULT_TTS_PROVIDER;
     }
 
     public String getWhisperSttUrl() {

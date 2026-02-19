@@ -25,8 +25,10 @@ export const SETTINGS_SECTIONS = [
   { key: 'tool-email', title: 'Email (IMAP/SMTP)', description: 'Email reading and sending integrations', icon: FiMail },
   { key: 'tool-automation', title: 'Automation Tools', description: 'Skill management, transitions, and tier switching', icon: FiShuffle },
   { key: 'tool-goals', title: 'Goal Management', description: 'Auto mode goal operations', icon: FiTool },
+  { key: 'tool-voice', title: 'Voice', description: 'STT/TTS provider routing', icon: FiMic },
 
-  { key: 'voice-elevenlabs', title: 'ElevenLabs', description: 'TTS/STT provider settings', icon: FiMic },
+  { key: 'voice-elevenlabs', title: 'ElevenLabs', description: 'ElevenLabs credentials and model settings', icon: FiMic },
+  { key: 'voice-whisper', title: 'Whisper', description: 'Whisper STT endpoint and credentials', icon: FiMic },
   { key: 'memory', title: 'Memory', description: 'Conversation memory persistence and retention', icon: FiHardDrive },
   { key: 'skills', title: 'Skills Runtime', description: 'Enable skills and progressive loading behavior', icon: FiTool },
   { key: 'turn', title: 'Turn Budget', description: 'Runtime limits for LLM/tool calls and deadline', icon: FiCpu },
@@ -60,13 +62,13 @@ export const SETTINGS_BLOCKS: SettingsBlock[] = [
     key: 'tools',
     title: 'Tools',
     description: 'Tool-specific runtime behavior and integrations',
-    sections: ['tool-browser', 'tool-brave', 'tool-filesystem', 'tool-shell', 'tool-email', 'tool-automation', 'tool-goals'],
+    sections: ['tool-browser', 'tool-brave', 'tool-filesystem', 'tool-shell', 'tool-email', 'tool-automation', 'tool-goals', 'tool-voice'],
   },
   {
     key: 'runtime',
     title: 'Runtime',
     description: 'Agent execution, memory, usage, and autonomy',
-    sections: ['voice-elevenlabs', 'memory', 'skills', 'turn', 'usage', 'rag', 'mcp', 'auto', 'webhooks'],
+    sections: ['voice-elevenlabs', 'voice-whisper', 'memory', 'skills', 'turn', 'usage', 'rag', 'mcp', 'auto', 'webhooks'],
   },
   {
     key: 'advanced',

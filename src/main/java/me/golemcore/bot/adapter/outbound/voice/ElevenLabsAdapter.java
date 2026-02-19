@@ -64,6 +64,7 @@ public class ElevenLabsAdapter implements VoicePort {
     private static final String DEFAULT_STT_URL = "https://api.elevenlabs.io/v1/speech-to-text";
     private static final String DEFAULT_TTS_URL_TEMPLATE = "https://api.elevenlabs.io/v1/text-to-speech/%s";
     private static final int HTTP_PAYMENT_REQUIRED = 402;
+    private static final String TTS_PROVIDER_ELEVENLABS = "elevenlabs";
 
     private static final ExecutorService VOICE_EXECUTOR = Executors.newFixedThreadPool(2,
             r -> {
@@ -87,9 +88,10 @@ public class ElevenLabsAdapter implements VoicePort {
             log.warn("[ElevenLabs] Voice is ENABLED but API key is NOT configured — "
                     + "STT/TTS will not work. Set ELEVENLABS_API_KEY env var.");
         }
-        log.info("[ElevenLabs] Adapter initialized: enabled={}, apiKeyConfigured={}, voiceId={}, "
-                + "sttModel={}, ttsModel={}",
-                voiceEnabled, hasApiKey, runtimeConfigService.getVoiceId(),
+        log.info("[ElevenLabs] Adapter initialized: enabled={}, apiKeyConfigured={}, sttProvider={}, "
+                + "ttsProvider={}, voiceId={}, sttModel={}, ttsModel={}",
+                voiceEnabled, hasApiKey, runtimeConfigService.getSttProvider(), runtimeConfigService.getTtsProvider(),
+                runtimeConfigService.getVoiceId(),
                 runtimeConfigService.getSttModelId(), runtimeConfigService.getTtsModelId());
         if (runtimeConfigService.isWhisperSttConfigured()) {
             log.info("[Voice] STT provider: WHISPER ({})", runtimeConfigService.getWhisperSttUrl());
@@ -234,6 +236,10 @@ public class ElevenLabsAdapter implements VoicePort {
     @SuppressWarnings("PMD.CloseResource") // ResponseBody is closed when Response is closed in try-with-resources
     private byte[] doSynthesize(String text, VoiceConfig config) {
         try {
+            String ttsProvider = runtimeConfigService.getTtsProvider();
+            if (!TTS_PROVIDER_ELEVENLABS.equals(ttsProvider)) {
+                throw new IllegalStateException("Unsupported TTS provider: " + ttsProvider);
+            }
             String apiKey = requireApiKey();
 
             String voiceId = config.voiceId() != null ? config.voiceId() : runtimeConfigService.getVoiceId();
