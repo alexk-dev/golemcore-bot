@@ -1,8 +1,8 @@
 import { NavLink } from 'react-router-dom';
-import { Nav } from 'react-bootstrap';
+import { Badge, Nav } from 'react-bootstrap';
 import { FiMessageSquare, FiBarChart2, FiSettings, FiFileText, FiZap, FiList, FiActivity, FiTerminal, FiX } from 'react-icons/fi';
 import { useSidebarStore } from '../../store/sidebarStore';
-import { useSystemHealth } from '../../hooks/useSystem';
+import { useSystemHealth, useSystemUpdateStatus } from '../../hooks/useSystem';
 
 const links = [
   { to: '/', icon: <FiMessageSquare size={20} />, label: 'Chat' },
@@ -19,7 +19,10 @@ export default function Sidebar() {
   const mobileOpen = useSidebarStore((s) => s.mobileOpen);
   const closeMobile = useSidebarStore((s) => s.closeMobile);
   const { data: health } = useSystemHealth();
+  const { data: updateStatus } = useSystemUpdateStatus();
   const version = health?.version ? `v${health.version}` : 'v...';
+  const updateState = updateStatus?.state ?? '';
+  const shouldShowSettingsBadge = updateState === 'AVAILABLE' || updateState === 'STAGED';
 
   const handleNavClick = () => {
     // Close sidebar on mobile when navigation item is clicked
@@ -66,6 +69,9 @@ export default function Sidebar() {
             >
               {link.icon}
               <span className="sidebar-link-text">{link.label}</span>
+              {link.to === '/settings' && shouldShowSettingsBadge && (
+                <Badge bg="warning" text="dark" pill className="ms-auto">1</Badge>
+              )}
             </Nav.Link>
           ))}
         </Nav>

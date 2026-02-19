@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react';
 import { Alert, Badge, Button, Card, Col, Row, Spinner, Table } from 'react-bootstrap';
-import { useSystemDiagnostics } from '../hooks/useSystem';
+import { useNavigate } from 'react-router-dom';
+import { useSystemDiagnostics, useSystemUpdateStatus } from '../hooks/useSystem';
 
 function ValueCell({ value }: { value: string | null }): ReactElement {
   if (value == null || value.trim() === '') {
@@ -9,8 +10,23 @@ function ValueCell({ value }: { value: string | null }): ReactElement {
   return <code>{value}</code>;
 }
 
+function stateVariant(state: string): string {
+  if (state === 'FAILED') {
+    return 'danger';
+  }
+  if (state === 'AVAILABLE' || state === 'STAGED') {
+    return 'warning';
+  }
+  if (state === 'DISABLED') {
+    return 'secondary';
+  }
+  return 'success';
+}
+
 export default function DiagnosticsPage(): ReactElement {
+  const navigate = useNavigate();
   const { data, isLoading, isError, refetch, isFetching } = useSystemDiagnostics();
+  const updateStatusQuery = useSystemUpdateStatus();
 
   if (isLoading) {
     return <Spinner />;
@@ -61,6 +77,38 @@ export default function DiagnosticsPage(): ReactElement {
           </Card>
         </Col>
       </Row>
+
+      <Card className="mb-3">
+        <Card.Body className="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
+          <div>
+            <Card.Title className="h6 mb-2">Updates</Card.Title>
+            {updateStatusQuery.isLoading && (
+              <div className="small text-body-secondary">Loading update status...</div>
+            )}
+            {updateStatusQuery.isError && (
+              <div className="small text-body-secondary">
+                Update endpoint unavailable.
+              </div>
+            )}
+            {!updateStatusQuery.isLoading && !updateStatusQuery.isError && updateStatusQuery.data != null && (
+              <div className="d-flex align-items-center gap-2">
+                <span className="small text-body-secondary">State:</span>
+                <Badge bg={stateVariant(updateStatusQuery.data.state)}>{updateStatusQuery.data.state}</Badge>
+              </div>
+            )}
+          </div>
+          <div className="d-flex align-items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => navigate('/settings/updates')}
+            >
+              Open Updates
+            </Button>
+          </div>
+        </Card.Body>
+      </Card>
 
       <Card>
         <Card.Body>
