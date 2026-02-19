@@ -126,7 +126,7 @@ export default function SkillsPage(): ReactElement {
     <div>
       <div className="section-header d-flex align-items-center justify-content-between">
         <h4 className="mb-0">Skills</h4>
-        <Button size="sm" variant="primary" onClick={() => setShowCreate(true)}>
+        <Button type="button" size="sm" variant="primary" onClick={() => setShowCreate(true)}>
           + New Skill
         </Button>
       </div>
@@ -188,10 +188,10 @@ export default function SkillsPage(): ReactElement {
                   />
                 </Form.Group>
                 <div className="d-flex gap-2">
-                  <Button size="sm" onClick={() => { void handleSave(); }} disabled={updateMutation.isPending}>
+                  <Button type="button" size="sm" onClick={() => { void handleSave(); }} disabled={updateMutation.isPending}>
                     {updateMutation.isPending ? 'Saving...' : 'Save'}
                   </Button>
-                  <Button
+                  <Button type="button"
                     size="sm"
                     variant="danger"
                     onClick={() => setShowDeleteConfirm(true)}
@@ -229,8 +229,8 @@ export default function SkillsPage(): ReactElement {
           </Form.Group>
         </Modal.Body>
         <Modal.Footer>
-          <Button variant="secondary" size="sm" onClick={() => setShowCreate(false)}>Cancel</Button>
-          <Button size="sm" onClick={() => { void handleCreate(); }} disabled={createMutation.isPending}>
+          <Button type="button" variant="secondary" size="sm" onClick={() => setShowCreate(false)}>Cancel</Button>
+          <Button type="button" size="sm" onClick={() => { void handleCreate(); }} disabled={createMutation.isPending}>
             {createMutation.isPending ? 'Creating...' : 'Create'}
           </Button>
         </Modal.Footer>

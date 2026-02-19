@@ -1,10 +1,12 @@
 import { type ReactElement, useEffect, useMemo, useState } from 'react';
-import { Badge, Button, Card, Col, Form, InputGroup, OverlayTrigger, Row, Table, Tooltip } from 'react-bootstrap';
-import { FiHelpCircle } from 'react-icons/fi';
+import { Badge, Button, Card, Col, Form, InputGroup, Row, Table } from 'react-bootstrap';
 import toast from 'react-hot-toast';
+import HelpTip from '../../components/common/HelpTip';
 import ConfirmModal from '../../components/common/ConfirmModal';
+import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useSettings, useUpdateWebhooks } from '../../hooks/useSettings';
 import type { HookMapping, WebhookConfig } from '../../api/settings';
+import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 
 const DEFAULT_WEBHOOK_CONFIG: WebhookConfig = {
   enabled: false,
@@ -33,26 +35,6 @@ function generateSecureToken(): string {
   return Array.from(array, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-interface TipProps {
-  text: string;
-}
-
-function Tip({ text }: TipProps): ReactElement {
-  return (
-    <OverlayTrigger placement="top" overlay={<Tooltip>{text}</Tooltip>}>
-      <span className="setting-tip"><FiHelpCircle /></span>
-    </OverlayTrigger>
-  );
-}
-
-interface SaveStateHintProps {
-  isDirty: boolean;
-}
-
-function SaveStateHint({ isDirty }: SaveStateHintProps): ReactElement {
-  return <small className="text-body-secondary">{isDirty ? 'Unsaved changes' : 'All changes saved'}</small>;
-}
-
 interface WebhookEditorProps {
   form: WebhookConfig;
   editIdx: number;
@@ -67,7 +49,7 @@ function WebhookEditor({ form, editIdx, updateMapping }: WebhookEditorProps): Re
           <Col md={4}>
             <Form.Group>
               <Form.Label className="small fw-medium">
-                Name <Tip text="URL path segment: /api/hooks/{name}" />
+                Name <HelpTip text="URL path segment: /api/hooks/{name}" />
               </Form.Label>
               <Form.Control size="sm" value={form.mappings[editIdx].name}
                 onChange={(e) => updateMapping(editIdx, { name: e.target.value })} />
@@ -76,7 +58,7 @@ function WebhookEditor({ form, editIdx, updateMapping }: WebhookEditorProps): Re
           <Col md={4}>
             <Form.Group>
               <Form.Label className="small fw-medium">
-                Action <Tip text="'wake' sends a fire-and-forget message; 'agent' runs a full agent turn and waits for response" />
+                Action <HelpTip text="'wake' sends a fire-and-forget message; 'agent' runs a full agent turn and waits for response" />
               </Form.Label>
               <Form.Select size="sm" value={form.mappings[editIdx].action}
                 onChange={(e) => updateMapping(editIdx, { action: e.target.value })}>
@@ -88,7 +70,7 @@ function WebhookEditor({ form, editIdx, updateMapping }: WebhookEditorProps): Re
           <Col md={4}>
             <Form.Group>
               <Form.Label className="small fw-medium">
-                Auth Mode <Tip text="'bearer' uses Authorization header; 'hmac' uses HMAC-SHA256 signature verification" />
+                Auth Mode <HelpTip text="'bearer' uses Authorization header; 'hmac' uses HMAC-SHA256 signature verification" />
               </Form.Label>
               <Form.Select size="sm" value={form.mappings[editIdx].authMode}
                 onChange={(e) => updateMapping(editIdx, { authMode: e.target.value })}>
@@ -100,7 +82,7 @@ function WebhookEditor({ form, editIdx, updateMapping }: WebhookEditorProps): Re
           <Col md={12}>
             <Form.Group>
               <Form.Label className="small fw-medium">
-                Message Template <Tip text="Template for the message sent to the bot. Use {field.path} placeholders to extract values from webhook JSON payload." />
+                Message Template <HelpTip text="Template for the message sent to the bot. Use {field.path} placeholders to extract values from webhook JSON payload." />
               </Form.Label>
               <Form.Control size="sm" as="textarea" rows={2}
                 value={form.mappings[editIdx].messageTemplate ?? ''}
@@ -109,7 +91,7 @@ function WebhookEditor({ form, editIdx, updateMapping }: WebhookEditorProps): Re
             </Form.Group>
           </Col>
           <Col md={4}>
-            <Form.Check type="switch" label={<>Deliver to channel <Tip text="Forward the bot response to a messaging channel (e.g. Telegram)" /></>}
+            <Form.Check type="switch" label={<>Deliver to channel <HelpTip text="Forward the bot response to a messaging channel (e.g. Telegram)" /></>}
               className="mt-2"
               checked={form.mappings[editIdx].deliver}
               onChange={(e) => updateMapping(editIdx, { deliver: e.target.checked })} />
@@ -193,9 +175,10 @@ export default function WebhooksTab(): ReactElement {
   return (
     <Card className="settings-card">
       <Card.Body>
-        <Card.Title className="h6 mb-3">
-          Webhooks <Tip text="Inbound HTTP webhooks allow external services to trigger bot actions" />
-        </Card.Title>
+        <SettingsCardTitle
+          title="Webhooks"
+          tip="Inbound HTTP webhooks allow external services to trigger bot actions"
+        />
         <Form.Check type="switch" label="Enable Webhooks" checked={form.enabled}
           onChange={(e) => setForm({ ...form, enabled: e.target.checked })} className="mb-3" />
 
@@ -203,12 +186,19 @@ export default function WebhooksTab(): ReactElement {
           <Col md={6}>
             <Form.Group>
               <Form.Label className="small fw-medium">
-                Bearer Token <Tip text="Secret token for authenticating incoming webhook requests" />
+                Bearer Token <HelpTip text="Secret token for authenticating incoming webhook requests" />
               </Form.Label>
               <InputGroup size="sm">
-                <Form.Control type="password" value={form.token ?? ''}
-                  onChange={(e) => setForm({ ...form, token: toNullableString(e.target.value) })} />
-                <Button variant="secondary" onClick={handleGenerateToken} title="Generate random token">
+                <Form.Control
+                  type="password"
+                  value={form.token ?? ''}
+                  onChange={(e) => setForm({ ...form, token: toNullableString(e.target.value) })}
+                  autoComplete="new-password"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                />
+                <Button type="button" variant="secondary" onClick={handleGenerateToken} title="Generate random token">
                   Generate
                 </Button>
               </InputGroup>
@@ -217,7 +207,7 @@ export default function WebhooksTab(): ReactElement {
           <Col md={6}>
             <Form.Group>
               <Form.Label className="small fw-medium">
-                Max Payload Size <Tip text="Maximum allowed webhook request body size in bytes" />
+                Max Payload Size <HelpTip text="Maximum allowed webhook request body size in bytes" />
               </Form.Label>
               <Form.Control size="sm" type="number" value={form.maxPayloadSize}
                 onChange={(e) => setForm({ ...form, maxPayloadSize: toNullableInt(e.target.value) ?? 65536 })} />
@@ -226,7 +216,7 @@ export default function WebhooksTab(): ReactElement {
           <Col md={4}>
             <Form.Group>
               <Form.Label className="small fw-medium">
-                Default Timeout (s) <Tip text="Maximum time in seconds for the bot to process an agent webhook request" />
+                Default Timeout (s) <HelpTip text="Maximum time in seconds for the bot to process an agent webhook request" />
               </Form.Label>
               <Form.Control size="sm" type="number" value={form.defaultTimeoutSeconds}
                 onChange={(e) => setForm({ ...form, defaultTimeoutSeconds: toNullableInt(e.target.value) ?? 300 })} />
@@ -235,25 +225,45 @@ export default function WebhooksTab(): ReactElement {
         </Row>
 
         <div className="d-flex align-items-center justify-content-between mb-2">
-          <span className="small fw-medium">Hook Mappings <Tip text="Named endpoints (/api/hooks/{name}) that map incoming webhooks to bot actions" /></span>
-          <Button variant="primary" size="sm" onClick={addMapping}>Add Webhook</Button>
+          <span className="small fw-medium">Hook Mappings <HelpTip text="Named endpoints (/api/hooks/{name}) that map incoming webhooks to bot actions" /></span>
+          <Button type="button" variant="primary" size="sm" onClick={addMapping}>Add Webhook</Button>
         </div>
 
         {form.mappings.length > 0 ? (
-          <Table size="sm" hover responsive className="mb-3">
-            <thead><tr><th>Name</th><th>Action</th><th>Auth</th><th></th></tr></thead>
+          <Table size="sm" hover responsive className="mb-3 dashboard-table responsive-table webhooks-table">
+            <thead>
+              <tr>
+                <th scope="col">Name</th>
+                <th scope="col">Action</th>
+                <th scope="col">Auth</th>
+                <th scope="col">Actions</th>
+              </tr>
+            </thead>
             <tbody>
               {form.mappings.map((mapping, idx) => (
                 <tr key={idx}>
-                  <td>{mapping.name.length > 0 ? mapping.name : <em className="text-body-secondary">unnamed</em>}</td>
-                  <td><Badge bg={mapping.action === 'agent' ? 'primary' : 'secondary'}>{mapping.action}</Badge></td>
-                  <td className="small">{mapping.authMode}</td>
-                  <td className="text-end">
-                    <Button size="sm" variant="secondary" className="me-2"
-                      onClick={() => setEditIdx(editIdx === idx ? null : idx)}>
-                      {editIdx === idx ? 'Close' : 'Edit'}
-                    </Button>
-                    <Button size="sm" variant="danger" onClick={() => setDeleteMappingIdx(idx)}>Delete</Button>
+                  <td data-label="Name">{mapping.name.length > 0 ? mapping.name : <em className="text-body-secondary">unnamed</em>}</td>
+                  <td data-label="Action"><Badge bg={mapping.action === 'agent' ? 'primary' : 'secondary'}>{mapping.action}</Badge></td>
+                  <td data-label="Auth" className="small">{mapping.authMode}</td>
+                  <td data-label="Actions" className="text-end">
+                    <div className="d-flex flex-wrap gap-1 webhook-actions">
+                      <Button type="button"
+                        size="sm"
+                        variant="secondary"
+                        className="webhook-action-btn"
+                        onClick={() => setEditIdx(editIdx === idx ? null : idx)}
+                      >
+                        {editIdx === idx ? 'Close' : 'Edit'}
+                      </Button>
+                      <Button type="button"
+                        size="sm"
+                        variant="danger"
+                        className="webhook-action-btn"
+                        onClick={() => setDeleteMappingIdx(idx)}
+                      >
+                        Delete
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -267,12 +277,12 @@ export default function WebhooksTab(): ReactElement {
           <WebhookEditor form={form} editIdx={editIdx} updateMapping={updateMapping} />
         )}
 
-        <div className="d-flex align-items-center gap-2">
-          <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isWebhooksDirty || updateWebhooks.isPending}>
+        <SettingsSaveBar>
+          <Button type="button" variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isWebhooksDirty || updateWebhooks.isPending}>
             {updateWebhooks.isPending ? 'Saving...' : 'Save'}
           </Button>
           <SaveStateHint isDirty={isWebhooksDirty} />
-        </div>
+        </SettingsSaveBar>
       </Card.Body>
 
       <ConfirmModal

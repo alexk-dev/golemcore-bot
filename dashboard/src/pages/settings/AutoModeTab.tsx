@@ -1,21 +1,11 @@
 import { type ReactElement, useEffect, useMemo, useState } from 'react';
-import { Button, Card, Col, Form, OverlayTrigger, Row, Tooltip } from 'react-bootstrap';
-import { FiHelpCircle } from 'react-icons/fi';
+import { Button, Card, Col, Form, Row } from 'react-bootstrap';
 import toast from 'react-hot-toast';
+import HelpTip from '../../components/common/HelpTip';
+import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useUpdateAuto } from '../../hooks/useSettings';
 import type { AutoModeConfig } from '../../api/settings';
-
-function Tip({ text }: { text: string }): ReactElement {
-  return (
-    <OverlayTrigger placement="top" overlay={<Tooltip>{text}</Tooltip>}>
-      <span className="setting-tip"><FiHelpCircle /></span>
-    </OverlayTrigger>
-  );
-}
-
-function SaveStateHint({ isDirty }: { isDirty: boolean }): ReactElement {
-  return <small className="text-body-secondary">{isDirty ? 'Unsaved changes' : 'All changes saved'}</small>;
-}
+import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 
 function hasDiff<T>(current: T, initial: T): boolean {
   return JSON.stringify(current) !== JSON.stringify(initial);
@@ -47,9 +37,10 @@ export default function AutoModeTab({ config }: AutoModeTabProps): ReactElement 
   return (
     <Card className="settings-card">
       <Card.Body>
-        <Card.Title className="h6 mb-3">
-          Auto Mode <Tip text="Autonomous mode where the bot works on goals independently, checking in periodically" />
-        </Card.Title>
+        <SettingsCardTitle
+          title="Auto Mode"
+          tip="Autonomous mode where the bot works on goals independently, checking in periodically"
+        />
         <Form.Check type="switch" label="Enable Auto Mode" checked={form.enabled ?? false}
           onChange={(e) => setForm({ ...form, enabled: e.target.checked })} className="mb-3" />
 
@@ -57,7 +48,7 @@ export default function AutoModeTab({ config }: AutoModeTabProps): ReactElement 
           <Col md={4}>
             <Form.Group>
               <Form.Label className="small fw-medium">
-                Task Time Limit (minutes) <Tip text="Maximum time a single autonomous task can run before being stopped" />
+                Task Time Limit (minutes) <HelpTip text="Maximum time a single autonomous task can run before being stopped" />
               </Form.Label>
               <Form.Control size="sm" type="number" value={form.taskTimeLimitMinutes ?? 10}
                 onChange={(e) => setForm({ ...form, taskTimeLimitMinutes: toNullableInt(e.target.value) })} />
@@ -66,7 +57,7 @@ export default function AutoModeTab({ config }: AutoModeTabProps): ReactElement 
           <Col md={4}>
             <Form.Group>
               <Form.Label className="small fw-medium">
-                Max Goals <Tip text="Maximum number of concurrent goals the bot can work on" />
+                Max Goals <HelpTip text="Maximum number of concurrent goals the bot can work on" />
               </Form.Label>
               <Form.Control size="sm" type="number" value={form.maxGoals ?? 3}
                 onChange={(e) => setForm({ ...form, maxGoals: toNullableInt(e.target.value) })} />
@@ -76,7 +67,7 @@ export default function AutoModeTab({ config }: AutoModeTabProps): ReactElement 
 
         <Form.Group className="mb-3">
           <Form.Label className="small fw-medium">
-            Model Tier <Tip text="Which model tier to use for autonomous tasks" />
+            Model Tier <HelpTip text="Which model tier to use for autonomous tasks" />
           </Form.Label>
           <Form.Select size="sm" value={form.modelTier ?? 'default'} onChange={(e) => setForm({ ...form, modelTier: e.target.value })}>
             <option value="default">Default</option>
@@ -88,20 +79,20 @@ export default function AutoModeTab({ config }: AutoModeTabProps): ReactElement 
         </Form.Group>
 
         <Form.Check type="switch"
-          label={<>Auto-start on startup <Tip text="Start autonomous mode automatically when the application boots" /></>}
+          label={<>Auto-start on startup <HelpTip text="Start autonomous mode automatically when the application boots" /></>}
           checked={form.autoStart ?? true}
           onChange={(e) => setForm({ ...form, autoStart: e.target.checked })} className="mb-2" />
         <Form.Check type="switch"
-          label={<>Notify milestones <Tip text="Send notifications when goals or tasks are completed" /></>}
+          label={<>Notify milestones <HelpTip text="Send notifications when goals or tasks are completed" /></>}
           checked={form.notifyMilestones ?? true}
           onChange={(e) => setForm({ ...form, notifyMilestones: e.target.checked })} className="mb-3" />
 
-        <div className="d-flex align-items-center gap-2">
-          <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isAutoDirty || updateAuto.isPending}>
+        <SettingsSaveBar>
+          <Button type="button" variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isAutoDirty || updateAuto.isPending}>
             {updateAuto.isPending ? 'Saving...' : 'Save'}
           </Button>
           <SaveStateHint isDirty={isAutoDirty} />
-        </div>
+        </SettingsSaveBar>
       </Card.Body>
     </Card>
   );

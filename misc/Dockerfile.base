@@ -57,9 +57,13 @@ RUN npx playwright@1.49.0 install --with-deps chromium \
     && rm -rf /root/.npm /tmp/npx*
 
 # ── 6. Non-root user ────────────────────────────────────────────────────────
-RUN useradd -m -s /bin/bash botuser \
-    && mkdir -p /home/botuser/.golemcore/workspace /home/botuser/.golemcore/sandbox \
-    && chown -R botuser:botuser /home/botuser/.golemcore
+# Ubuntu 24.04 ships with 'ubuntu' user (UID 1000) — reuse it instead of
+# creating a custom user so that bind-mounted host directories (typically
+# owned by UID 1000) are writable without chmod 777 or manual chown.
+RUN mkdir -p /home/ubuntu/.golemcore/workspace /home/ubuntu/.golemcore/sandbox \
+    && chown -R ubuntu:ubuntu /home/ubuntu/.golemcore \
+    && mkdir -p /app/workspace /app/sandbox \
+    && chown -R ubuntu:ubuntu /app/workspace /app/sandbox
 
-USER botuser
-WORKDIR /home/botuser
+USER ubuntu
+WORKDIR /home/ubuntu

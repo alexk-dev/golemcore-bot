@@ -71,15 +71,18 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
 
     const recognition = new SpeechRecognitionCtor();
     recognition.continuous = false;
-    recognition.interimResults = true;
+    recognition.interimResults = false;
     recognition.lang = navigator.language.length > 0 ? navigator.language : 'en-US';
 
     recognition.onresult = (event: SpeechRecognitionEventLike) => {
-      let transcript = '';
-      for (let i = 0; i < event.results.length; i += 1) {
-        transcript += event.results[i][0].transcript;
+      const lastResultIndex = event.results.length - 1;
+      if (lastResultIndex < 0) {
+        return;
       }
-      onTranscript(transcript.trim());
+      const transcript = event.results[lastResultIndex][0].transcript.trim();
+      if (transcript.length > 0) {
+        onTranscript(transcript);
+      }
     };
 
     recognition.onend = () => {

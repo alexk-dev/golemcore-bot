@@ -1,12 +1,10 @@
 import { type ReactElement, useEffect, useMemo, useState } from 'react';
 import { Button, Card, Col, Form, Row } from 'react-bootstrap';
 import toast from 'react-hot-toast';
+import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useUpdateMcp } from '../../hooks/useSettings';
 import type { McpConfig } from '../../api/settings';
-
-function SaveStateHint({ isDirty }: { isDirty: boolean }): ReactElement {
-  return <small className="text-body-secondary">{isDirty ? 'Unsaved changes' : 'All changes saved'}</small>;
-}
+import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 
 function hasDiff<T>(current: T, initial: T): boolean {
   return JSON.stringify(current) !== JSON.stringify(initial);
@@ -38,7 +36,7 @@ export default function McpTab({ config }: McpTabProps): ReactElement {
   return (
     <Card className="settings-card">
       <Card.Body>
-        <Card.Title className="h6 mb-3">MCP (Model Context Protocol)</Card.Title>
+        <SettingsCardTitle title="MCP (Model Context Protocol)" />
         <Form.Check
           type="switch"
           label="Enable MCP"
@@ -74,12 +72,12 @@ export default function McpTab({ config }: McpTabProps): ReactElement {
             </Form.Group>
           </Col>
         </Row>
-        <div className="d-flex align-items-center gap-2">
-          <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateMcp.isPending}>
+        <SettingsSaveBar>
+          <Button type="button" variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateMcp.isPending}>
             {updateMcp.isPending ? 'Saving...' : 'Save'}
           </Button>
           <SaveStateHint isDirty={isDirty} />
-        </div>
+        </SettingsSaveBar>
       </Card.Body>
     </Card>
   );
