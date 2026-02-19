@@ -3,7 +3,7 @@
 > **Autonomous agent + framework** on Java — skill-driven behavior, MCP tool servers, tiered multi-LLM routing, and sandboxed tool execution.
 
 [![CI](https://github.com/alexk-dev/golemcore-bot/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/alexk-dev/golemcore-bot/actions/workflows/docker-publish.yml)
-[![Java](https://img.shields.io/badge/Java-17+-orange.svg)](https://www.oracle.com/java/)
+[![Java](https://img.shields.io/badge/Java-25+-orange.svg)](https://www.oracle.com/java/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0.2-brightgreen.svg)](https://spring.io/projects/spring-boot)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-1451%20passing-success.svg)](https://github.com/alexk-dev/golemcore-bot/actions)
@@ -33,7 +33,7 @@ If you want the deep-dive: start with **[Skills](docs/SKILLS.md)** and **[Model 
 
 ### Prerequisites
 
-- Docker (recommended) **or** Java 17+ / Maven 3.x
+- Docker (recommended) **or** Java 25+ / Maven 3.x
 - At least one LLM API key (OpenAI or Anthropic)
 
 ### Docker (recommended)

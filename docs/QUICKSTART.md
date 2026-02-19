@@ -4,7 +4,7 @@ Get GolemCore Bot running quickly (Docker or JAR) and configure it via the web d
 
 ## Prerequisites
 
-- 🐳 Docker (recommended) OR ☕ Java 17+ with Maven 3.x
+- 🐳 Docker (recommended) OR ☕ Java 25+ with Maven 3.x
 
 ## Method 1: Docker (Recommended)
 

@@ -174,7 +174,7 @@ The `MemoryComponent` interface provides `writeLongTerm(content)` and `readLongT
 ```markdown
 ## Long-term Memory
 User prefers concise responses.
-Project uses Spring Boot 4.0.2 with Java 17.
+Project uses Spring Boot 4.0.2 with Java 25.
 Database is PostgreSQL on port 5432.
 
 ## Today's Notes
