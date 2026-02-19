@@ -142,7 +142,8 @@ public class ToolCallExecutionService {
             return future.get(TOOL_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         } catch (Exception e) {
             log.error("Tool execution failed: {}", toolCall.getName(), e);
-            return ToolResult.failure(ToolFailureKind.EXECUTION_FAILED, "Tool execution failed: " + safeCauseMessage(e));
+            return ToolResult.failure(ToolFailureKind.EXECUTION_FAILED,
+                    "Tool execution failed: " + safeCauseMessage(e));
         }
     }
 
