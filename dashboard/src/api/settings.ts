@@ -16,6 +16,21 @@ function scrubSecret(): null {
   return null;
 }
 
+const SUPPORTED_LLM_API_TYPES = ['openai', 'anthropic', 'gemini'] as const;
+type SupportedLlmApiType = (typeof SUPPORTED_LLM_API_TYPES)[number];
+
+function isSupportedLlmApiType(value: string): value is SupportedLlmApiType {
+  return (SUPPORTED_LLM_API_TYPES as readonly string[]).includes(value);
+}
+
+function normalizeLlmApiType(value: unknown): SupportedLlmApiType | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const normalized = value.trim().toLowerCase();
+  return isSupportedLlmApiType(normalized) ? normalized : null;
+}
+
 type UnknownRecord = Record<string, unknown>;
 
 interface RuntimeConfigUiRecord extends UnknownRecord {
@@ -41,10 +56,12 @@ function toUiRuntimeConfig(data: RuntimeConfigUiRecord): RuntimeConfig {
     Object.entries(cfg.llm.providers).forEach(([name, provider]) => {
       const providerApiKey = provider.apiKey as UnknownRecord | undefined;
       const hasApiKey = Boolean(providerApiKey?.present) || Boolean(providerApiKey?.value);
+      const apiType = normalizeLlmApiType(provider.apiType);
       providers[name] = {
         ...provider,
         apiKey: scrubSecret(),
         apiKeyPresent: hasApiKey,
+        apiType,
       };
     });
     cfg.llm = { ...cfg.llm, providers };
@@ -82,7 +99,7 @@ function toBackendRuntimeConfig(config: RuntimeConfig): UnknownRecord {
             baseUrl: provider.baseUrl,
             requestTimeoutSeconds: provider.requestTimeoutSeconds,
             apiKey: toSecretPayload(provider.apiKey ?? null),
-            apiType: provider.apiType,
+            apiType: normalizeLlmApiType(provider.apiType),
           },
         ]),
       ),
@@ -176,7 +193,7 @@ export interface LlmConfig {
   providers: Record<string, LlmProviderConfig>;
 }
 
-export type ApiType = 'openai' | 'anthropic' | 'gemini';
+export type ApiType = SupportedLlmApiType;
 
 export interface LlmProviderConfig {
   apiKey: string | null;
@@ -392,7 +409,7 @@ export async function updateLlmConfig(config: LlmConfig): Promise<RuntimeConfig>
           baseUrl: provider.baseUrl,
           requestTimeoutSeconds: provider.requestTimeoutSeconds,
           apiKey: toSecretPayload(provider.apiKey ?? null),
-          apiType: provider.apiType,
+          apiType: normalizeLlmApiType(provider.apiType),
         },
       ]),
     ),
@@ -406,7 +423,7 @@ export async function addLlmProvider(name: string, config: LlmProviderConfig): P
     baseUrl: config.baseUrl,
     requestTimeoutSeconds: config.requestTimeoutSeconds,
     apiKey: toSecretPayload(config.apiKey ?? null),
-    apiType: config.apiType,
+    apiType: normalizeLlmApiType(config.apiType),
   };
   const { data } = await client.post<RuntimeConfigUiRecord>(`/settings/runtime/llm/providers/${name}`, payload);
   return toUiRuntimeConfig(data);
@@ -417,7 +434,7 @@ export async function updateLlmProvider(name: string, config: LlmProviderConfig)
     baseUrl: config.baseUrl,
     requestTimeoutSeconds: config.requestTimeoutSeconds,
     apiKey: toSecretPayload(config.apiKey ?? null),
-    apiType: config.apiType,
+    apiType: normalizeLlmApiType(config.apiType),
   };
   const { data } = await client.put<RuntimeConfigUiRecord>(`/settings/runtime/llm/providers/${name}`, payload);
   return toUiRuntimeConfig(data);
