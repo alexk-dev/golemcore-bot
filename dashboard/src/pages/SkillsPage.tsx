@@ -27,7 +27,7 @@ export default function SkillsPage(): ReactElement {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [newName, setNewName] = useState('');
 
-  const { data: detail, isLoading: detailLoading, isError: detailError } = useSkill(selected ?? '');
+  const { data: detail, isLoading: detailLoading, isError: detailError, refetch: refetchDetail } = useSkill(selected ?? '');
 
   if (isLoading) {
     return (
@@ -191,7 +191,7 @@ export default function SkillsPage(): ReactElement {
             <Card className="text-center py-5">
               <Card.Body>
                 <p className="text-danger mb-3">Failed to load selected skill.</p>
-                <Button type="button" size="sm" variant="secondary" onClick={() => handleSelectAndLoad(selected)}>
+                <Button type="button" size="sm" variant="secondary" onClick={() => { void refetchDetail(); }}>
                   Retry
                 </Button>
               </Card.Body>
