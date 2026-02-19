@@ -93,7 +93,7 @@ export default function WhisperTab({ config }: WhisperTabProps): ReactElement {
 
         {!isWhisperStt && (
           <Form.Text className="text-muted d-block mb-3">
-            Whisper is configured but not active. Enable it in Tools -&gt; Voice -&gt; STT Provider.
+            Whisper is configured but not active. Enable it in Voice Routing -&gt; STT Provider.
           </Form.Text>
         )}
 
@@ -111,6 +111,9 @@ export default function WhisperTab({ config }: WhisperTabProps): ReactElement {
           <Form.Control.Feedback type="invalid">
             {whisperUrlValidation.message}
           </Form.Control.Feedback>
+          <Form.Text className="text-muted">
+            Endpoint must support OpenAI-compatible transcriptions (`/v1/audio/transcriptions`).
+          </Form.Text>
         </Form.Group>
 
         <Form.Group>

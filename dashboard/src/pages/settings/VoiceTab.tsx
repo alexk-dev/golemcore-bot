@@ -156,7 +156,7 @@ export default function VoiceTab({ config }: VoiceTabProps): ReactElement {
 
         {isWhisperStt && (
           <Form.Text className="text-muted d-block mt-2">
-            STT provider is set to Whisper in Tools -&gt; Voice, so ElevenLabs STT model is currently ignored.
+            STT provider is set to Whisper in Voice Routing, so ElevenLabs STT model is currently ignored.
           </Form.Text>
         )}
 
