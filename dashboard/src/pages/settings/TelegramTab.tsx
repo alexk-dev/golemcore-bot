@@ -3,6 +3,8 @@ import { Badge, Button, Card, Form, InputGroup, Table } from 'react-bootstrap';
 import toast from 'react-hot-toast';
 import { extractErrorMessage } from '../../utils/extractErrorMessage';
 import HelpTip from '../../components/common/HelpTip';
+import { SecretStatusBadges } from '../../components/common/SecretStatusBadges';
+import { getSecretPlaceholder } from '../../components/common/secretInputUtils';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import ConfirmModal from '../../components/common/ConfirmModal';
 import {
@@ -98,6 +100,8 @@ export default function TelegramTab({ config, voiceConfig }: TelegramTabProps): 
   const isVoiceDirty = hasDiff(currentVoiceConfig, initialVoiceConfig);
   const isSavePending = updateTelegram.isPending || updateVoice.isPending;
   const isSaveDirty = isTelegramDirty || isVoiceDirty;
+  const hasStoredToken = config.tokenPresent === true;
+  const willUpdateToken = token.length > 0;
 
   const handleSave = async (): Promise<void> => {
     try {
@@ -129,15 +133,16 @@ export default function TelegramTab({ config, voiceConfig }: TelegramTabProps): 
           onChange={(e) => setEnabled(e.target.checked)} className="mb-3" />
 
         <Form.Group className="mb-3">
-          <Form.Label className="small fw-medium">
+          <Form.Label className="small fw-medium d-flex align-items-center gap-2">
             Bot Token <HelpTip text="Telegram Bot API token from @BotFather" />
+            <SecretStatusBadges hasStoredSecret={hasStoredToken} willUpdateSecret={willUpdateToken} />
           </Form.Label>
           <InputGroup size="sm">
             <Form.Control
               type={showToken ? 'text' : 'password'}
               value={token}
               onChange={(e) => setToken(e.target.value)}
-              placeholder="123456:ABC-DEF..."
+              placeholder={getSecretPlaceholder(hasStoredToken, '123456:ABC-DEF...')}
               autoComplete="new-password"
               autoCapitalize="off"
               autoCorrect="off"
