@@ -25,13 +25,18 @@ export default function Sidebar() {
   return (
     <>
       {mobileOpen && (
-        <div
+        <button
+          type="button"
           className="sidebar-overlay d-md-none"
           onClick={closeMobile}
-          role="presentation"
+          aria-label="Close navigation menu"
         />
       )}
-      <div className={`sidebar d-flex flex-column ${mobileOpen ? 'mobile-open' : ''}`}>
+      <aside
+        id="primary-navigation"
+        className={`sidebar d-flex flex-column ${mobileOpen ? 'mobile-open' : ''}`}
+        aria-label="Primary navigation"
+      >
         <div className="sidebar-brand d-flex align-items-center justify-content-between">
           <div className="d-flex align-items-center gap-2">
             <span className="brand-icon">&#x1F916;</span>
@@ -63,7 +68,7 @@ export default function Sidebar() {
         <div className="px-4 py-3 sidebar-footer-text small text-body-secondary">
           v0.1.0
         </div>
-      </div>
+      </aside>
     </>
   );
 }

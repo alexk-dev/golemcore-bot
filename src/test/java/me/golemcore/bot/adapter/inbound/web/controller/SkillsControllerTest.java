@@ -8,6 +8,7 @@ import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Map;
@@ -15,6 +16,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -81,16 +83,18 @@ class SkillsControllerTest {
     void shouldReturn404ForMissingSkill() {
         when(skillService.findByName("unknown")).thenReturn(Optional.empty());
 
-        StepVerifier.create(controller.getSkill("unknown"))
-                .assertNext(response -> assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode()))
-                .verifyComplete();
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.getSkill("unknown"));
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+        assertEquals("Skill 'unknown' not found", ex.getReason());
     }
 
     @Test
     void shouldRejectUpdateWithNoContent() {
-        StepVerifier.create(controller.updateSkill("test", Map.of()))
-                .assertNext(response -> assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode()))
-                .verifyComplete();
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.updateSkill("test", Map.of()));
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertEquals("Skill content is required", ex.getReason());
     }
 
     @Test

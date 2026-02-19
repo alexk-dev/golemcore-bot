@@ -1,8 +1,10 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -12,6 +14,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 
 import java.util.LinkedHashMap;
@@ -24,6 +27,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/models")
 @RequiredArgsConstructor
+@Slf4j
 public class ModelsController {
 
     private final ModelConfigService modelConfigService;
@@ -64,10 +68,10 @@ public class ModelsController {
     @DeleteMapping("/{id}")
     public Mono<ResponseEntity<Void>> deleteModel(@PathVariable String id) {
         boolean deleted = modelConfigService.deleteModel(id);
-        if (deleted) {
-            return Mono.just(ResponseEntity.ok().build());
+        if (!deleted) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Model '" + id + "' not found");
         }
-        return Mono.just(ResponseEntity.notFound().build());
+        return Mono.just(ResponseEntity.ok().build());
     }
 
     /**

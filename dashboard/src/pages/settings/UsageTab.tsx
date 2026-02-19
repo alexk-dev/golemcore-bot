@@ -1,21 +1,11 @@
 import { type ReactElement, useEffect, useMemo, useState } from 'react';
-import { Button, Card, Form, OverlayTrigger, Tooltip } from 'react-bootstrap';
-import { FiHelpCircle } from 'react-icons/fi';
+import { Button, Card, Form } from 'react-bootstrap';
 import toast from 'react-hot-toast';
+import HelpTip from '../../components/common/HelpTip';
+import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useUpdateUsage } from '../../hooks/useSettings';
 import type { UsageConfig } from '../../api/settings';
-
-function Tip({ text }: { text: string }): ReactElement {
-  return (
-    <OverlayTrigger placement="top" overlay={<Tooltip>{text}</Tooltip>}>
-      <span className="setting-tip"><FiHelpCircle /></span>
-    </OverlayTrigger>
-  );
-}
-
-function SaveStateHint({ isDirty }: { isDirty: boolean }): ReactElement {
-  return <small className="text-body-secondary">{isDirty ? 'Unsaved changes' : 'All changes saved'}</small>;
-}
+import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 
 function hasDiff<T>(current: T, initial: T): boolean {
   return JSON.stringify(current) !== JSON.stringify(initial);
@@ -42,20 +32,20 @@ export default function UsageTab({ config }: UsageTabProps): ReactElement {
   return (
     <Card className="settings-card">
       <Card.Body>
-        <Card.Title className="h6 mb-3">Usage Tracking</Card.Title>
+        <SettingsCardTitle title="Usage Tracking" />
         <Form.Check
           type="switch"
-          label={<>Enable Usage Tracking <Tip text="Enable collection of LLM request/token/latency metrics for Analytics." /></>}
+          label={<>Enable Usage Tracking <HelpTip text="Enable collection of LLM request/token/latency metrics for Analytics." /></>}
           checked={form.enabled ?? true}
           onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
           className="mb-3"
         />
-        <div className="d-flex align-items-center gap-2">
-          <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateUsage.isPending}>
+        <SettingsSaveBar>
+          <Button type="button" variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateUsage.isPending}>
             {updateUsage.isPending ? 'Saving...' : 'Save'}
           </Button>
           <SaveStateHint isDirty={isDirty} />
-        </div>
+        </SettingsSaveBar>
       </Card.Body>
     </Card>
   );

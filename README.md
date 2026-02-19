@@ -64,7 +64,7 @@ docker logs -f golemcore-bot
 # Open dashboard
 # http://localhost:8080/dashboard
 # On first start, check logs for the temporary admin password.
-# Configure LLM provider API keys in Settings (stored in preferences/runtime-config.json).
+# Configure LLM provider API keys and API type in Settings (stored in preferences/runtime-config.json).
 ```
 
 Why the extra Docker flags?
@@ -83,7 +83,7 @@ More options (Compose, production, systemd): **[Deployment](docs/DEPLOYMENT.md)*
 
 ### Required
 
-- Configure at least one LLM provider API key in `preferences/runtime-config.json` (recommended: use the dashboard).
+- Configure at least one LLM provider API key and API type in `preferences/runtime-config.json` (recommended: use the dashboard).
 - In Docker, set `STORAGE_PATH` to a mounted volume so configuration and sessions persist.
 
 Full reference (runtime config fields, storage layout, browser/sandbox notes): **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)**.

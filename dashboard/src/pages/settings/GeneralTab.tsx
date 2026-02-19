@@ -1,11 +1,13 @@
 import { type ReactElement, useEffect, useState } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
-import { Button, Card, Col, Form, OverlayTrigger, Row, Tooltip } from 'react-bootstrap';
-import { FiHelpCircle } from 'react-icons/fi';
+import { Button, Card, Col, Form, Row } from 'react-bootstrap';
 import toast from 'react-hot-toast';
+import HelpTip from '../../components/common/HelpTip';
+import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useUpdatePreferences } from '../../hooks/useSettings';
 import { changePassword } from '../../api/auth';
 import MfaSetup from '../../components/auth/MfaSetup';
+import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 
 export interface GeneralSettingsData {
   language?: string;
@@ -20,26 +22,6 @@ export interface GeneralTabProps {
   settings: GeneralSettingsData | undefined;
   me: AuthMe | undefined;
   qc: QueryClient;
-}
-
-export interface TipProps {
-  text: string;
-}
-
-function Tip({ text }: TipProps): ReactElement {
-  return (
-    <OverlayTrigger placement="top" overlay={<Tooltip>{text}</Tooltip>}>
-      <span className="setting-tip"><FiHelpCircle /></span>
-    </OverlayTrigger>
-  );
-}
-
-export interface SaveStateHintProps {
-  isDirty: boolean;
-}
-
-function SaveStateHint({ isDirty }: SaveStateHintProps): ReactElement {
-  return <small className="text-body-secondary">{isDirty ? 'Unsaved changes' : 'All changes saved'}</small>;
 }
 
 export default function GeneralTab({ settings, me, qc }: GeneralTabProps): ReactElement {
@@ -88,11 +70,11 @@ export default function GeneralTab({ settings, me, qc }: GeneralTabProps): React
       <Col lg={6}>
         <Card className="settings-card">
           <Card.Body>
-            <Card.Title className="h6 mb-3">Preferences</Card.Title>
+            <SettingsCardTitle title="Preferences" />
             <Form onSubmit={handleSavePrefsSubmit}>
               <Form.Group className="mb-3">
                 <Form.Label className="small fw-medium">
-                  Language <Tip text="UI and bot response language" />
+                  Language <HelpTip text="UI and bot response language" />
                 </Form.Label>
                 <Form.Select size="sm" value={language} onChange={(e) => setLanguage(e.target.value)}>
                   <option value="en">English</option>
@@ -101,7 +83,7 @@ export default function GeneralTab({ settings, me, qc }: GeneralTabProps): React
               </Form.Group>
               <Form.Group className="mb-3">
                 <Form.Label className="small fw-medium">
-                  Timezone <Tip text="Used for scheduling and timestamp display" />
+                  Timezone <HelpTip text="Used for scheduling and timestamp display" />
                 </Form.Label>
                 <Form.Control
                   size="sm"
@@ -111,12 +93,12 @@ export default function GeneralTab({ settings, me, qc }: GeneralTabProps): React
                   placeholder="UTC"
                 />
               </Form.Group>
-              <div className="d-flex align-items-center gap-2">
+              <SettingsSaveBar>
                 <Button type="submit" variant="primary" size="sm" disabled={!isPrefsDirty || updatePrefs.isPending}>
                   {updatePrefs.isPending ? 'Saving...' : 'Save Preferences'}
                 </Button>
                 <SaveStateHint isDirty={isPrefsDirty} />
-              </div>
+              </SettingsSaveBar>
             </Form>
           </Card.Body>
         </Card>
@@ -128,15 +110,29 @@ export default function GeneralTab({ settings, me, qc }: GeneralTabProps): React
         />
         <Card className="settings-card mt-3">
           <Card.Body>
-            <Card.Title className="h6 mb-3">Change Password</Card.Title>
+            <SettingsCardTitle title="Change Password" />
             <Form onSubmit={handleChangePasswordSubmit}>
               <Form.Group className="mb-3">
                 <Form.Label className="small fw-medium">Current Password</Form.Label>
-                <Form.Control size="sm" type="password" value={oldPwd} onChange={(e) => setOldPwd(e.target.value)} required />
+                <Form.Control
+                  size="sm"
+                  type="password"
+                  value={oldPwd}
+                  onChange={(e) => setOldPwd(e.target.value)}
+                  autoComplete="current-password"
+                  required
+                />
               </Form.Group>
               <Form.Group className="mb-3">
                 <Form.Label className="small fw-medium">New Password</Form.Label>
-                <Form.Control size="sm" type="password" value={newPwd} onChange={(e) => setNewPwd(e.target.value)} required />
+                <Form.Control
+                  size="sm"
+                  type="password"
+                  value={newPwd}
+                  onChange={(e) => setNewPwd(e.target.value)}
+                  autoComplete="new-password"
+                  required
+                />
               </Form.Group>
               <Button type="submit" variant="warning" size="sm">Change Password</Button>
             </Form>

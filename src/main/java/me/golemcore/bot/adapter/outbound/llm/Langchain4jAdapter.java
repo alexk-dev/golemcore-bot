@@ -55,6 +55,7 @@ import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.model.chat.request.json.JsonSchemaElement;
 import dev.langchain4j.model.chat.request.json.JsonStringSchema;
 import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -115,7 +116,9 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     private static final int MAX_RETRIES = 5;
     private static final long INITIAL_BACKOFF_MS = 5_000;
     private static final double BACKOFF_MULTIPLIER = 2.0;
-    private static final String PROVIDER_ANTHROPIC = "anthropic";
+    private static final String API_TYPE_OPENAI = "openai";
+    private static final String API_TYPE_ANTHROPIC = "anthropic";
+    private static final String API_TYPE_GEMINI = "gemini";
     private static final String SYNTH_ID_PREFIX = "synth_call_";
     private static final String SCHEMA_KEY_PROPERTIES = "properties";
     private static final java.util.regex.Pattern RESET_SECONDS_PATTERN = java.util.regex.Pattern
@@ -185,13 +188,24 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         String provider = getProvider(model);
         RuntimeConfig.LlmProviderConfig config = getProviderConfig(provider);
         String modelName = stripProviderPrefix(model);
+        String apiType = getApiType(config);
 
-        if (PROVIDER_ANTHROPIC.equals(provider)) {
+        switch (apiType) {
+        case API_TYPE_ANTHROPIC:
             return createAnthropicModel(modelName, config);
-        } else {
-            // All non-Anthropic providers use OpenAI-compatible API
+        case API_TYPE_GEMINI:
+            return createGeminiModel(modelName, config);
+        default:
             return createOpenAiModel(modelName, model, reasoningEffort, config);
         }
+    }
+
+    private String getApiType(RuntimeConfig.LlmProviderConfig config) {
+        String apiType = config.getApiType();
+        if (apiType == null || apiType.isBlank()) {
+            return API_TYPE_OPENAI;
+        }
+        return apiType.trim().toLowerCase(java.util.Locale.ROOT);
     }
 
     private ChatModel createAnthropicModel(String modelName, RuntimeConfig.LlmProviderConfig config) {
@@ -199,7 +213,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         if (apiKey.isBlank()) {
             throw new IllegalStateException("Missing apiKey for provider anthropic in runtime config");
         }
-        var builder = AnthropicChatModel.builder()
+        AnthropicChatModel.AnthropicChatModelBuilder builder = AnthropicChatModel.builder()
                 .apiKey(apiKey)
                 .modelName(modelName)
                 .maxRetries(0) // Retry handled by our backoff logic
@@ -218,13 +232,32 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         return builder.build();
     }
 
+    private ChatModel createGeminiModel(String modelName, RuntimeConfig.LlmProviderConfig config) {
+        String apiKey = Secret.valueOrEmpty(config.getApiKey());
+        if (apiKey.isBlank()) {
+            throw new IllegalStateException("Missing apiKey for Gemini provider in runtime config");
+        }
+        GoogleAiGeminiChatModel.GoogleAiGeminiChatModelBuilder builder = GoogleAiGeminiChatModel.builder()
+                .apiKey(apiKey)
+                .modelName(modelName)
+                .maxRetries(0)
+                .timeout(java.time.Duration.ofSeconds(
+                        config.getRequestTimeoutSeconds() != null ? config.getRequestTimeoutSeconds() : 300));
+
+        if (supportsTemperature(modelName)) {
+            builder.temperature(runtimeConfigService.getTemperature());
+        }
+
+        return builder.build();
+    }
+
     private ChatModel createOpenAiModel(String modelName, String fullModel,
             String reasoningEffort, RuntimeConfig.LlmProviderConfig config) {
         String apiKey = Secret.valueOrEmpty(config.getApiKey());
         if (apiKey.isBlank()) {
             throw new IllegalStateException("Missing apiKey for provider in runtime config");
         }
-        var builder = OpenAiChatModel.builder()
+        OpenAiChatModel.OpenAiChatModelBuilder builder = OpenAiChatModel.builder()
                 .apiKey(apiKey)
                 .modelName(modelName)
                 .maxRetries(0) // Retry handled by our backoff logic
