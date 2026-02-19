@@ -43,6 +43,10 @@ public class SettingsController {
 
     private static final String TELEGRAM_AUTH_MODE_USER = "user";
     private static final String TELEGRAM_AUTH_MODE_INVITE = "invite_only";
+    private static final String STT_PROVIDER_ELEVENLABS = "elevenlabs";
+    private static final String STT_PROVIDER_WHISPER = "whisper";
+    private static final String TTS_PROVIDER_ELEVENLABS = "elevenlabs";
+    private static final Set<String> VALID_STT_PROVIDERS = Set.of(STT_PROVIDER_ELEVENLABS, STT_PROVIDER_WHISPER);
     private static final Set<String> VALID_API_TYPES = Set.of("openai", "anthropic", "gemini");
 
     private final UserPreferencesService preferencesService;
@@ -129,6 +133,7 @@ public class SettingsController {
     public Mono<ResponseEntity<RuntimeConfig>> updateRuntimeConfig(@RequestBody RuntimeConfig config) {
         mergeRuntimeSecrets(runtimeConfigService.getRuntimeConfig(), config);
         validateLlmConfig(config.getLlm(), config.getModelRouter());
+        validateVoiceConfig(config.getVoice());
         runtimeConfigService.updateRuntimeConfig(config);
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
@@ -253,6 +258,9 @@ public class SettingsController {
             @RequestBody RuntimeConfig.VoiceConfig voiceConfig) {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         voiceConfig.setApiKey(mergeSecret(config.getVoice().getApiKey(), voiceConfig.getApiKey()));
+        voiceConfig.setWhisperSttApiKey(
+                mergeSecret(config.getVoice().getWhisperSttApiKey(), voiceConfig.getWhisperSttApiKey()));
+        validateVoiceConfig(voiceConfig);
         config.setVoice(voiceConfig);
         runtimeConfigService.updateRuntimeConfig(config);
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
@@ -488,6 +496,39 @@ public class SettingsController {
         }
     }
 
+    private void validateVoiceConfig(RuntimeConfig.VoiceConfig voiceConfig) {
+        if (voiceConfig == null) {
+            return;
+        }
+
+        String normalizedSttProvider = normalizeProvider(voiceConfig.getSttProvider(), STT_PROVIDER_ELEVENLABS);
+        if (!VALID_STT_PROVIDERS.contains(normalizedSttProvider)) {
+            throw new IllegalArgumentException("voice.sttProvider must be one of " + VALID_STT_PROVIDERS);
+        }
+        voiceConfig.setSttProvider(normalizedSttProvider);
+
+        String normalizedTtsProvider = normalizeProvider(voiceConfig.getTtsProvider(), TTS_PROVIDER_ELEVENLABS);
+        if (!TTS_PROVIDER_ELEVENLABS.equals(normalizedTtsProvider)) {
+            throw new IllegalArgumentException("voice.ttsProvider must be '" + TTS_PROVIDER_ELEVENLABS + "'");
+        }
+        voiceConfig.setTtsProvider(normalizedTtsProvider);
+
+        String whisperSttUrl = voiceConfig.getWhisperSttUrl();
+        if (whisperSttUrl != null && whisperSttUrl.isBlank()) {
+            voiceConfig.setWhisperSttUrl(null);
+            whisperSttUrl = null;
+        }
+        if (STT_PROVIDER_WHISPER.equals(normalizedSttProvider)) {
+            if (whisperSttUrl == null || whisperSttUrl.isBlank()) {
+                throw new IllegalArgumentException(
+                        "voice.whisperSttUrl is required when voice.sttProvider is 'whisper'");
+            }
+            if (!isValidHttpUrl(whisperSttUrl)) {
+                throw new IllegalArgumentException("voice.whisperSttUrl must be a valid http(s) URL");
+            }
+        }
+    }
+
     private Set<String> getProvidersUsedByModelRouter(RuntimeConfig.ModelRouterConfig modelRouterConfig) {
         Set<String> usedProviders = new LinkedHashSet<>();
         if (modelRouterConfig == null) {
@@ -522,6 +563,8 @@ public class SettingsController {
         }
         if (incoming.getVoice() != null && current.getVoice() != null) {
             incoming.getVoice().setApiKey(mergeSecret(current.getVoice().getApiKey(), incoming.getVoice().getApiKey()));
+            incoming.getVoice().setWhisperSttApiKey(
+                    mergeSecret(current.getVoice().getWhisperSttApiKey(), incoming.getVoice().getWhisperSttApiKey()));
         }
         if (incoming.getRag() != null && current.getRag() != null) {
             incoming.getRag().setApiKey(mergeSecret(current.getRag().getApiKey(), incoming.getRag().getApiKey()));
@@ -612,6 +655,13 @@ public class SettingsController {
                 .encrypted(Boolean.TRUE.equals(incoming.getEncrypted()))
                 .present(true)
                 .build();
+    }
+
+    private String normalizeProvider(String value, String fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        return value.trim().toLowerCase(Locale.ROOT);
     }
 
     private boolean isValidHttpUrl(String value) {

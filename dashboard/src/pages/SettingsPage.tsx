@@ -16,6 +16,8 @@ import TelegramTab from './settings/TelegramTab';
 import ModelsTab from './settings/ModelsTab';
 import LlmProvidersTab from './settings/LlmProvidersTab';
 import VoiceTab from './settings/VoiceTab';
+import WhisperTab from './settings/WhisperTab';
+import VoiceRoutingTab from './settings/VoiceRoutingTab';
 import MemoryTab from './settings/MemoryTab';
 import SkillsTab from './settings/SkillsTab';
 import TurnTab from './settings/TurnTab';
@@ -136,8 +138,10 @@ export default function SettingsPage(): ReactElement {
       {selectedSection === 'tool-email' && rc != null && <ToolsTab config={rc.tools} mode="email" />}
       {selectedSection === 'tool-automation' && rc != null && <ToolsTab config={rc.tools} mode="automation" />}
       {selectedSection === 'tool-goals' && rc != null && <ToolsTab config={rc.tools} mode="goals" />}
+      {selectedSection === 'tool-voice' && rc != null && <VoiceRoutingTab config={rc.voice} />}
 
       {selectedSection === 'voice-elevenlabs' && rc != null && <VoiceTab config={rc.voice} />}
+      {selectedSection === 'voice-whisper' && rc != null && <WhisperTab config={rc.voice} />}
       {selectedSection === 'memory' && rc != null && <MemoryTab config={rc.memory} />}
       {selectedSection === 'skills' && rc != null && <SkillsTab config={rc.skills} />}
       {selectedSection === 'turn' && rc != null && <TurnTab config={rc.turn} />}

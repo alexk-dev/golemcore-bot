@@ -21,6 +21,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -328,5 +329,196 @@ class SettingsControllerTest {
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> controller.updateLlmConfig(update));
         assertTrue(error.getMessage().contains("requestTimeoutSeconds must be between 1 and 3600"));
+    }
+
+    @Test
+    void shouldRejectWhisperSttWithoutUrl() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .voice(RuntimeConfig.VoiceConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.VoiceConfig incoming = RuntimeConfig.VoiceConfig.builder()
+                .sttProvider("whisper")
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateVoiceConfig(incoming));
+        assertTrue(error.getMessage().contains("voice.whisperSttUrl is required"));
+    }
+
+    @Test
+    void shouldRejectUnsupportedTtsProvider() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .voice(RuntimeConfig.VoiceConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.VoiceConfig incoming = RuntimeConfig.VoiceConfig.builder()
+                .sttProvider("elevenlabs")
+                .ttsProvider("whisper")
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateVoiceConfig(incoming));
+        assertTrue(error.getMessage().contains("voice.ttsProvider must be 'elevenlabs'"));
+    }
+
+    @Test
+    void shouldPreserveWhisperApiKeyWhenNotProvidedOnUpdate() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .voice(RuntimeConfig.VoiceConfig.builder()
+                        .apiKey(Secret.of("eleven"))
+                        .sttProvider("whisper")
+                        .whisperSttUrl("http://localhost:5092")
+                        .whisperSttApiKey(Secret.of("whisper-secret"))
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.VoiceConfig incoming = RuntimeConfig.VoiceConfig.builder()
+                .sttProvider("whisper")
+                .whisperSttUrl("http://localhost:5092")
+                .build();
+
+        StepVerifier.create(controller.updateVoiceConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        RuntimeConfig.VoiceConfig saved = runtimeConfig.getVoice();
+        assertEquals("whisper-secret", saved.getWhisperSttApiKey().getValue());
+        assertEquals("whisper", saved.getSttProvider());
+        assertEquals("elevenlabs", saved.getTtsProvider());
+        verify(runtimeConfigService).updateRuntimeConfig(runtimeConfig);
+    }
+
+    @Test
+    void shouldNormalizeVoiceProviderValuesOnUpdate() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .voice(RuntimeConfig.VoiceConfig.builder()
+                        .apiKey(Secret.of("eleven"))
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.VoiceConfig incoming = RuntimeConfig.VoiceConfig.builder()
+                .sttProvider("  WHISPER  ")
+                .ttsProvider("  ELEVENLABS  ")
+                .whisperSttUrl("http://localhost:5092")
+                .build();
+
+        StepVerifier.create(controller.updateVoiceConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        RuntimeConfig.VoiceConfig saved = runtimeConfig.getVoice();
+        assertEquals("whisper", saved.getSttProvider());
+        assertEquals("elevenlabs", saved.getTtsProvider());
+    }
+
+    @Test
+    void shouldRejectUnsupportedSttProvider() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .voice(RuntimeConfig.VoiceConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.VoiceConfig incoming = RuntimeConfig.VoiceConfig.builder()
+                .sttProvider("google")
+                .ttsProvider("elevenlabs")
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateVoiceConfig(incoming));
+        assertTrue(error.getMessage().contains("voice.sttProvider must be one of"));
+    }
+
+    @Test
+    void shouldRejectWhisperSttWithInvalidUrl() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .voice(RuntimeConfig.VoiceConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.VoiceConfig incoming = RuntimeConfig.VoiceConfig.builder()
+                .sttProvider("whisper")
+                .ttsProvider("elevenlabs")
+                .whisperSttUrl("ftp://localhost:5092")
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateVoiceConfig(incoming));
+        assertTrue(error.getMessage().contains("voice.whisperSttUrl must be a valid http(s) URL"));
+    }
+
+    @Test
+    void shouldNormalizeBlankWhisperUrlToNullWhenSttIsElevenLabs() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .voice(RuntimeConfig.VoiceConfig.builder()
+                        .sttProvider("elevenlabs")
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.VoiceConfig incoming = RuntimeConfig.VoiceConfig.builder()
+                .sttProvider("elevenlabs")
+                .ttsProvider("elevenlabs")
+                .whisperSttUrl("   ")
+                .build();
+
+        StepVerifier.create(controller.updateVoiceConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        RuntimeConfig.VoiceConfig saved = runtimeConfig.getVoice();
+        assertNull(saved.getWhisperSttUrl());
+        assertEquals("elevenlabs", saved.getSttProvider());
+        assertEquals("elevenlabs", saved.getTtsProvider());
+    }
+
+    @Test
+    void shouldPreserveWhisperApiKeyDuringRuntimeUpdateWhenNotProvided() {
+        RuntimeConfig current = RuntimeConfig.builder()
+                .voice(RuntimeConfig.VoiceConfig.builder()
+                        .sttProvider("whisper")
+                        .ttsProvider("elevenlabs")
+                        .whisperSttUrl("http://localhost:5092")
+                        .whisperSttApiKey(Secret.of("whisper-secret"))
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .voice(RuntimeConfig.VoiceConfig.builder()
+                        .sttProvider("whisper")
+                        .whisperSttUrl("http://localhost:5092")
+                        .build())
+                .build();
+
+        StepVerifier.create(controller.updateRuntimeConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        assertEquals("whisper-secret", incoming.getVoice().getWhisperSttApiKey().getValue());
+        verify(runtimeConfigService).updateRuntimeConfig(incoming);
+    }
+
+    @Test
+    void shouldValidateVoiceConfigInRuntimeUpdate() {
+        RuntimeConfig current = RuntimeConfig.builder()
+                .voice(RuntimeConfig.VoiceConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .voice(RuntimeConfig.VoiceConfig.builder()
+                        .sttProvider("elevenlabs")
+                        .ttsProvider("whisper")
+                        .build())
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateRuntimeConfig(incoming));
+        assertTrue(error.getMessage().contains("voice.ttsProvider must be 'elevenlabs'"));
     }
 }
