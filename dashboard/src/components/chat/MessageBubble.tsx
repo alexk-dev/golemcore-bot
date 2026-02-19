@@ -1,6 +1,6 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 
 interface Props {
   role: string;
@@ -8,6 +8,13 @@ interface Props {
   model?: string | null;
   tier?: string | null;
   reasoning?: string | null;
+  clientStatus?: 'pending' | 'failed';
+  onRetry?: () => void;
+}
+
+interface UserDeliveryStateProps {
+  clientStatus?: 'pending' | 'failed';
+  onRetry?: () => void;
 }
 
 const TIER_META: Record<string, { label: string; className: string }> = {
@@ -20,14 +27,22 @@ const TIER_META: Record<string, { label: string; className: string }> = {
 
 function ToolCallCard({ tool, result }: { tool: string; result: string }) {
   const [open, setOpen] = useState(false);
+  const contentId = useId();
+
   return (
     <div className="tool-call-card">
-      <div className="tool-call-header" onClick={() => setOpen(!open)}>
+      <button
+        type="button"
+        className="tool-call-header"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        aria-controls={contentId}
+      >
         <span className="tool-call-icon">{open ? '\u25BC' : '\u25B6'}</span>
         <span className="tool-call-name">{tool}</span>
-      </div>
+      </button>
       {open && (
-        <div className="tool-call-body">
+        <div id={contentId} className="tool-call-body">
           <pre>{result}</pre>
         </div>
       )}
@@ -78,7 +93,43 @@ function formatModelLabel(model: string | null | undefined, reasoning: string | 
   return model;
 }
 
-export default function MessageBubble({ role, content, model, tier, reasoning }: Props) {
+function renderUserContent(content: string, leadingCommand: { command: string; args: string } | null) {
+  if (leadingCommand == null) {
+    return content;
+  }
+
+  return (
+    <>
+      <span className="user-command-token">{leadingCommand.command}</span>
+      {leadingCommand.args && <span className="user-command-args">{leadingCommand.args}</span>}
+    </>
+  );
+}
+
+function UserDeliveryState({ clientStatus, onRetry }: UserDeliveryStateProps) {
+  if (clientStatus == null) {
+    return null;
+  }
+
+  return (
+    <div className="message-bubble-status" role="status" aria-live="polite">
+      {clientStatus === 'pending' ? (
+        <span className="text-body-secondary">Sending...</span>
+      ) : (
+        <>
+          <span className="text-danger-emphasis">Not sent.</span>
+          {onRetry !== undefined && (
+            <button type="button" className="btn btn-link btn-sm p-0 message-retry-btn" onClick={onRetry}>
+              Retry
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+export default function MessageBubble({ role, content, model, tier, reasoning, clientStatus, onRetry }: Props) {
   const safeContent = content ?? '';
   const isAssistant = role === 'assistant';
   const normalizedTier = (tier ?? '').toLowerCase();
@@ -112,13 +163,9 @@ export default function MessageBubble({ role, content, model, tier, reasoning }:
 
   return (
     <div className="d-flex w-100 justify-content-end fade-in">
-      <div className="message-bubble user">
-        {leadingCommand ? (
-          <>
-            <span className="user-command-token">{leadingCommand.command}</span>
-            {leadingCommand.args && <span className="user-command-args">{leadingCommand.args}</span>}
-          </>
-        ) : safeContent}
+      <div className={`message-bubble user${clientStatus != null ? ` message-bubble--${clientStatus}` : ''}`}>
+        {renderUserContent(safeContent, leadingCommand)}
+        <UserDeliveryState clientStatus={clientStatus} onRetry={onRetry} />
       </div>
     </div>
   );

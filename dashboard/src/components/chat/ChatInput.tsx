@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Form } from 'react-bootstrap';
 import { FiMic, FiPaperclip, FiSend, FiSquare, FiStopCircle } from 'react-icons/fi';
+import toast from 'react-hot-toast';
 import { useAvailableModels } from '../../hooks/useModels';
 import type { CommandSuggestion, OutboundChatPayload } from './chatInputTypes';
 import { ChatAttachmentRow } from './ChatAttachmentRow';
 import { ChatCommandMenu } from './ChatCommandMenu';
-import { useChatAttachments } from './useChatAttachments';
+import { type AddImageFilesResult, useChatAttachments } from './useChatAttachments';
 import { useChatCommands } from './useChatCommands';
 import { useSpeechRecognition } from './useSpeechRecognition';
 import { useTextareaAutoResize } from './useTextareaAutoResize';
@@ -20,6 +21,9 @@ interface Props {
 }
 
 export default function ChatInput({ onSend, disabled, running, onStop }: Props) {
+  const maxAttachmentBytesLabel = '8MB';
+  const commandMenuId = 'chat-command-menu';
+  const getCommandOptionId = (index: number) => `${commandMenuId}-option-${index}`;
   const [text, setText] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -50,6 +54,18 @@ export default function ChatInput({ onSend, disabled, running, onStop }: Props) 
       localInputRef.current?.focus();
     }
   }, [disabled]);
+
+  const notifyAttachmentResult = useCallback((result: AddImageFilesResult): void => {
+    if (result.skippedUnsupported > 0) {
+      toast.error(`Skipped ${result.skippedUnsupported} unsupported file${result.skippedUnsupported > 1 ? 's' : ''}.`);
+    }
+    if (result.skippedOversized > 0) {
+      toast.error(`Skipped ${result.skippedOversized} image${result.skippedOversized > 1 ? 's' : ''} larger than ${maxAttachmentBytesLabel}.`);
+    }
+    if (result.skippedLimit > 0) {
+      toast(`You can attach up to 6 images at once. Skipped ${result.skippedLimit}.`, { icon: 'i' });
+    }
+  }, [maxAttachmentBytesLabel]);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setText(e.target.value);
@@ -116,7 +132,8 @@ export default function ChatInput({ onSend, disabled, running, onStop }: Props) 
 
   const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
-    await addImageFiles(files);
+    const result = await addImageFiles(files);
+    notifyAttachmentResult(result);
     e.target.value = '';
     localInputRef.current?.focus();
   };
@@ -124,7 +141,8 @@ export default function ChatInput({ onSend, disabled, running, onStop }: Props) 
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
-    await addImageFiles(Array.from(e.dataTransfer.files ?? []));
+    const result = await addImageFiles(Array.from(e.dataTransfer.files ?? []));
+    notifyAttachmentResult(result);
     localInputRef.current?.focus();
   };
 
@@ -141,6 +159,7 @@ export default function ChatInput({ onSend, disabled, running, onStop }: Props) 
   const isSubmitDisabled = disabled === true || (text.trim().length === 0 && attachments.length === 0);
   const btnClass = 'chat-send-btn rounded-circle d-flex align-items-center justify-content-center';
   const iconBtnClass = 'chat-inline-icon-btn d-flex align-items-center justify-content-center';
+  const activeSuggestion = suggestions[activeIndex];
 
   return (
     <div className="chat-input-area">
@@ -154,12 +173,24 @@ export default function ChatInput({ onSend, disabled, running, onStop }: Props) 
           <ChatAttachmentRow attachments={attachments} onRemove={removeAttachment} />
           <Form.Control
             as="textarea" ref={setTextareaRef} rows={1} value={text}
-            onChange={handleChange} onKeyDown={handleKeyDown} onPaste={handlePaste}
+            onChange={handleChange} onKeyDown={handleKeyDown} onPaste={(e) => handlePaste(e, notifyAttachmentResult)}
             onFocus={() => setIsFocused(true)} onBlur={() => setIsFocused(false)}
             placeholder="Type a message or drop images..." disabled={disabled} className="chat-textarea"
+            aria-expanded={isMenuOpen}
+            aria-controls={commandMenuId}
+            aria-haspopup="listbox"
+            aria-label="Message input"
+            aria-autocomplete="list"
+            aria-activedescendant={isMenuOpen && activeSuggestion != null ? getCommandOptionId(activeIndex) : undefined}
           />
           {isMenuOpen && (
-            <ChatCommandMenu suggestions={suggestions} activeIndex={activeIndex} onSelect={handleCommandSelect} />
+            <ChatCommandMenu
+              menuId={commandMenuId}
+              suggestions={suggestions}
+              activeIndex={activeIndex}
+              getOptionId={getCommandOptionId}
+              onSelect={handleCommandSelect}
+            />
           )}
           <div className="chat-input-actions">
             <div className="chat-inline-actions">
@@ -182,7 +213,7 @@ export default function ChatInput({ onSend, disabled, running, onStop }: Props) 
                 <FiStopCircle size={20} />
               </Button>
             ) : (
-              <Button type="submit" variant="primary" disabled={isSubmitDisabled} className={btnClass}>
+              <Button type="submit" variant="primary" disabled={isSubmitDisabled} className={btnClass} aria-label="Send message" title="Send message">
                 <FiSend size={18} />
               </Button>
             )}

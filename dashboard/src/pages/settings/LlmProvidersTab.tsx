@@ -2,6 +2,7 @@ import { type ReactElement, useMemo, useState } from 'react';
 import { Badge, Button, Card, Col, Form, InputGroup, Row, Table } from 'react-bootstrap';
 import toast from 'react-hot-toast';
 import ConfirmModal from '../../components/common/ConfirmModal';
+import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useAddLlmProvider, useUpdateLlmProvider, useRemoveLlmProvider } from '../../hooks/useSettings';
 import type { LlmConfig, LlmProviderConfig, ModelRouterConfig } from '../../api/settings';
 
@@ -80,7 +81,7 @@ function ProviderEditor({
                   value={form.apiKey ?? ''}
                   onChange={(e) => onFormChange({ ...form, apiKey: toNullableString(e.target.value) })}
                 />
-                <Button variant="secondary" onClick={onToggleShowKey}>
+                <Button type="button" variant="secondary" onClick={onToggleShowKey}>
                   {showKey ? 'Hide' : 'Show'}
                 </Button>
               </InputGroup>
@@ -114,10 +115,10 @@ function ProviderEditor({
           </Col>
         </Row>
         <div className="d-flex gap-2 mt-2">
-          <Button variant="primary" size="sm" onClick={onSave} disabled={isSaving}>
+          <Button type="button" variant="primary" size="sm" onClick={onSave} disabled={isSaving}>
             {isSaving ? 'Saving...' : 'Save'}
           </Button>
-          <Button variant="secondary" size="sm" onClick={onCancel} disabled={isSaving}>
+          <Button type="button" variant="secondary" size="sm" onClick={onCancel} disabled={isSaving}>
             Cancel
           </Button>
         </div>
@@ -251,7 +252,7 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
   return (
     <Card className="settings-card">
       <Card.Body>
-        <Card.Title className="h6 mb-3">LLM Providers</Card.Title>
+        <SettingsCardTitle title="LLM Providers" />
         <div className="small text-body-secondary mb-3">
           Manage API provider credentials. Each provider can be assigned to model tiers on the Models page.
         </div>
@@ -264,7 +265,7 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
             onChange={(e) => setNewProviderName(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') { handleStartAdd(); } }}
           />
-          <Button variant="primary" onClick={handleStartAdd}>Add Provider</Button>
+          <Button type="button" variant="primary" onClick={handleStartAdd}>Add Provider</Button>
         </InputGroup>
         <datalist id="known-llm-providers">
           {knownSuggestions.map((name) => (
@@ -273,13 +274,13 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
         </datalist>
 
         {providerNames.length > 0 ? (
-          <Table size="sm" hover responsive className="mb-3">
+          <Table size="sm" hover responsive className="mb-3 dashboard-table responsive-table providers-table">
             <thead>
               <tr>
-                <th>Provider</th>
-                <th>Base URL</th>
-                <th>Status</th>
-                <th className="text-end">Actions</th>
+                <th scope="col">Provider</th>
+                <th scope="col">Base URL</th>
+                <th scope="col">Status</th>
+                <th scope="col" className="text-end">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -288,41 +289,44 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
                 const isReady = provider?.apiKeyPresent === true;
                 return (
                   <tr key={name}>
-                    <td className="text-capitalize fw-medium">{name}</td>
-                    <td className="small text-body-secondary text-truncate" style={{ maxWidth: '260px' }}>
+                    <td data-label="Provider" className="text-capitalize fw-medium">{name}</td>
+                    <td data-label="Base URL" className="small text-body-secondary provider-url-cell">
                       {provider?.baseUrl ?? <em>default</em>}
                     </td>
-                    <td>
+                    <td data-label="Status">
                       {isReady ? (
                         <Badge bg="success">Ready</Badge>
                       ) : (
                         <Badge bg="secondary">Setup needed</Badge>
                       )}
                     </td>
-                    <td className="text-end text-nowrap">
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        className="me-2"
-                        onClick={() => {
-                          if (editingName === name && !isNewProvider) {
-                            handleCancelEdit();
-                          } else {
-                            handleStartEdit(name);
-                          }
-                        }}
-                      >
-                        {editingName === name && !isNewProvider ? 'Close' : 'Edit'}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="danger"
-                        disabled={usedProviders.has(name) || removeProvider.isPending}
-                        title={usedProviders.has(name) ? 'In use by model router' : 'Remove provider'}
-                        onClick={() => setDeleteProvider(name)}
-                      >
-                        Delete
-                      </Button>
+                    <td data-label="Actions" className="text-end text-nowrap">
+                      <div className="d-flex flex-wrap gap-1 providers-actions">
+                        <Button type="button"
+                          size="sm"
+                          variant="secondary"
+                          className="provider-action-btn"
+                          onClick={() => {
+                            if (editingName === name && !isNewProvider) {
+                              handleCancelEdit();
+                            } else {
+                              handleStartEdit(name);
+                            }
+                          }}
+                        >
+                          {editingName === name && !isNewProvider ? 'Close' : 'Edit'}
+                        </Button>
+                        <Button type="button"
+                          size="sm"
+                          variant="danger"
+                          className="provider-action-btn"
+                          disabled={usedProviders.has(name) || removeProvider.isPending}
+                          title={usedProviders.has(name) ? 'In use by model router' : 'Remove provider'}
+                          onClick={() => setDeleteProvider(name)}
+                        >
+                          Delete
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 );

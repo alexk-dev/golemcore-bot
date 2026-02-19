@@ -57,6 +57,7 @@ export default function MfaSetup({ mfaEnabled, onUpdate }: Props) {
                 type="password"
                 value={disablePassword}
                 onChange={(e) => setDisablePassword(e.target.value)}
+                autoComplete="current-password"
                 required
               />
             </Form.Group>
@@ -87,6 +88,8 @@ export default function MfaSetup({ mfaEnabled, onUpdate }: Props) {
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
                 placeholder="6-digit code"
+                autoComplete="one-time-code"
+                inputMode="numeric"
                 maxLength={6}
                 required
               />
@@ -105,7 +108,7 @@ export default function MfaSetup({ mfaEnabled, onUpdate }: Props) {
       <Card.Body>
         <Card.Title>Multi-Factor Authentication</Card.Title>
         <p className="text-body-secondary">MFA is not enabled.</p>
-        <Button variant="primary" size="sm" onClick={handleSetup}>
+        <Button type="button" variant="primary" size="sm" onClick={handleSetup}>
           Setup MFA
         </Button>
       </Card.Body>

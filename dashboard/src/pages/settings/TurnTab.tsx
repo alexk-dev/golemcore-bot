@@ -1,21 +1,11 @@
 import { type ReactElement, useEffect, useMemo, useState } from 'react';
-import { Button, Card, Col, Form, OverlayTrigger, Row, Tooltip } from 'react-bootstrap';
-import { FiHelpCircle } from 'react-icons/fi';
+import { Button, Card, Col, Form, Row } from 'react-bootstrap';
 import toast from 'react-hot-toast';
+import HelpTip from '../../components/common/HelpTip';
+import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useUpdateTurn } from '../../hooks/useSettings';
 import type { TurnConfig } from '../../api/settings';
-
-function Tip({ text }: { text: string }): ReactElement {
-  return (
-    <OverlayTrigger placement="top" overlay={<Tooltip>{text}</Tooltip>}>
-      <span className="setting-tip"><FiHelpCircle /></span>
-    </OverlayTrigger>
-  );
-}
-
-function SaveStateHint({ isDirty }: { isDirty: boolean }): ReactElement {
-  return <small className="text-body-secondary">{isDirty ? 'Unsaved changes' : 'All changes saved'}</small>;
-}
+import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 
 function hasDiff<T>(current: T, initial: T): boolean {
   return JSON.stringify(current) !== JSON.stringify(initial);
@@ -51,12 +41,12 @@ export default function TurnTab({ config }: TurnTabProps): ReactElement {
   return (
     <Card className="settings-card">
       <Card.Body>
-        <Card.Title className="h6 mb-3">Turn Budget</Card.Title>
+        <SettingsCardTitle title="Turn Budget" />
         <Row className="g-3 mb-3">
           <Col md={4}>
             <Form.Group>
               <Form.Label className="small fw-medium">
-                Max LLM Calls <Tip text="Maximum LLM requests within a single turn." />
+                Max LLM Calls <HelpTip text="Maximum LLM requests within a single turn." />
               </Form.Label>
               <Form.Control
                 size="sm"
@@ -70,7 +60,7 @@ export default function TurnTab({ config }: TurnTabProps): ReactElement {
           <Col md={4}>
             <Form.Group>
               <Form.Label className="small fw-medium">
-                Max Tool Executions <Tip text="Maximum tool executions within a single turn." />
+                Max Tool Executions <HelpTip text="Maximum tool executions within a single turn." />
               </Form.Label>
               <Form.Control
                 size="sm"
@@ -84,7 +74,7 @@ export default function TurnTab({ config }: TurnTabProps): ReactElement {
           <Col md={4}>
             <Form.Group>
               <Form.Label className="small fw-medium">
-                Deadline <Tip text="Turn deadline in ISO-8601 duration format, e.g. PT1H or PT30M." />
+                Deadline <HelpTip text="Turn deadline in ISO-8601 duration format, e.g. PT1H or PT30M." />
               </Form.Label>
               <Form.Control
                 size="sm"
@@ -95,12 +85,12 @@ export default function TurnTab({ config }: TurnTabProps): ReactElement {
             </Form.Group>
           </Col>
         </Row>
-        <div className="d-flex align-items-center gap-2">
-          <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateTurn.isPending}>
+        <SettingsSaveBar>
+          <Button type="button" variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateTurn.isPending}>
             {updateTurn.isPending ? 'Saving...' : 'Save'}
           </Button>
           <SaveStateHint isDirty={isDirty} />
-        </div>
+        </SettingsSaveBar>
       </Card.Body>
     </Card>
   );
