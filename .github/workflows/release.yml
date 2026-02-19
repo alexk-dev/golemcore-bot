@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   release:
@@ -31,9 +32,15 @@ jobs:
         if: steps.release.outputs.version != ''
         run: git push origin "${{ steps.release.outputs.version }}"
 
+      - name: Trigger Docker publish for release tag
+        if: steps.release.outputs.version != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run docker-publish.yml --ref "${{ steps.release.outputs.version }}"
+
       - name: Summary
         if: steps.release.outputs.version != ''
         run: |
-          echo "## Release v${{ steps.release.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "## Release ${{ steps.release.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Tag \`v${{ steps.release.outputs.version }}\` created and pushed." >> $GITHUB_STEP_SUMMARY
+          echo "Tag \`${{ steps.release.outputs.version }}\` created and pushed." >> $GITHUB_STEP_SUMMARY
