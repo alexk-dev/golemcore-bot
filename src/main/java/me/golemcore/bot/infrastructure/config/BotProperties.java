@@ -293,11 +293,8 @@ public class BotProperties {
 
     @Data
     public static class UpdateProperties {
-        private boolean enabled = false;
-        private String githubRepo = "";
-        private String githubToken = "";
+        private boolean enabled = true;
         private String updatesPath = "/data/updates";
-        private String assetPattern = "bot-*.jar";
         private int maxKeptVersions = 3;
         private java.time.Duration checkInterval = java.time.Duration.ofHours(1);
         private java.time.Duration confirmTtl = java.time.Duration.ofMinutes(2);

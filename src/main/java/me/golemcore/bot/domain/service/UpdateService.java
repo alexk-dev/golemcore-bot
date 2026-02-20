@@ -50,6 +50,8 @@ import java.util.regex.Pattern;
 public class UpdateService {
 
     private static final String GITHUB_API_BASE = "https://api.github.com";
+    private static final String RELEASE_REPOSITORY = "alexk-dev/golemcore-bot";
+    private static final String RELEASE_ASSET_PATTERN = "bot-*.jar";
     private static final String SHA256_FILE_NAME = "sha256sums.txt";
     private static final String JARS_DIR_NAME = "jars";
     private static final String CURRENT_MARKER_NAME = "current.txt";
@@ -342,8 +344,7 @@ public class UpdateService {
     }
 
     public boolean isEnabled() {
-        BotProperties.UpdateProperties config = botProperties.getUpdate();
-        return config.isEnabled() && config.getGithubRepo() != null && !config.getGithubRepo().isBlank();
+        return botProperties.getUpdate().isEnabled();
     }
 
     private UpdateState resolveState(boolean enabled, UpdateVersionInfo staged, UpdateVersionInfo available) {
@@ -437,24 +438,18 @@ public class UpdateService {
 
     private void ensureEnabled() {
         if (!isEnabled()) {
-            throw new IllegalStateException("Update feature is disabled or github repo is not configured");
+            throw new IllegalStateException("Update feature is disabled");
         }
     }
 
     private AvailableRelease fetchLatestRelease() throws IOException, InterruptedException {
-        BotProperties.UpdateProperties config = botProperties.getUpdate();
-        String repo = config.getGithubRepo();
-        String apiUrl = GITHUB_API_BASE + "/repos/" + repo + "/releases/latest";
+        String apiUrl = GITHUB_API_BASE + "/repos/" + RELEASE_REPOSITORY + "/releases/latest";
 
         HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(apiUrl))
                 .GET()
                 .timeout(Duration.ofSeconds(30))
                 .header("Accept", "application/vnd.github+json")
                 .header("User-Agent", "golemcore-bot-updater");
-
-        if (config.getGithubToken() != null && !config.getGithubToken().isBlank()) {
-            builder.header("Authorization", "Bearer " + config.getGithubToken().trim());
-        }
 
         HttpResponse<String> response = buildHttpClient().send(builder.build(), HttpResponse.BodyHandlers.ofString());
         int statusCode = response.statusCode();
@@ -472,10 +467,7 @@ public class UpdateService {
             throw new IllegalStateException("Release assets are missing");
         }
 
-        String assetPattern = config.getAssetPattern() == null || config.getAssetPattern().isBlank()
-                ? "bot-*.jar"
-                : config.getAssetPattern();
-        PathMatcher matcher = FileSystems.getDefault().getPathMatcher("glob:" + assetPattern);
+        PathMatcher matcher = FileSystems.getDefault().getPathMatcher("glob:" + RELEASE_ASSET_PATTERN);
 
         JsonNode jarAssetNode = null;
         JsonNode shaAssetNode = null;
@@ -676,11 +668,6 @@ public class UpdateService {
                 .timeout(Duration.ofMinutes(5))
                 .header("User-Agent", "golemcore-bot-updater");
 
-        String githubToken = botProperties.getUpdate().getGithubToken();
-        if (githubToken != null && !githubToken.isBlank()) {
-            builder.header("Authorization", "Bearer " + githubToken.trim());
-        }
-
         HttpResponse<InputStream> response = buildHttpClient().send(builder.build(),
                 HttpResponse.BodyHandlers.ofInputStream());
         if (response.statusCode() >= 400) {
@@ -698,11 +685,6 @@ public class UpdateService {
                 .GET()
                 .timeout(Duration.ofSeconds(30))
                 .header("User-Agent", "golemcore-bot-updater");
-
-        String githubToken = botProperties.getUpdate().getGithubToken();
-        if (githubToken != null && !githubToken.isBlank()) {
-            builder.header("Authorization", "Bearer " + githubToken.trim());
-        }
 
         HttpResponse<String> response = buildHttpClient().send(builder.build(),
                 HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));

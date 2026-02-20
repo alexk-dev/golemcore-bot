@@ -50,7 +50,6 @@ class UpdateServiceTest {
     @Test
     void shouldReturnDisabledStateWhenUpdateFeatureIsOff() {
         botProperties.getUpdate().setEnabled(false);
-        botProperties.getUpdate().setGithubRepo("alexk-dev/golemcore-bot");
 
         UpdateService service = new UpdateService(
                 botProperties,
@@ -70,7 +69,6 @@ class UpdateServiceTest {
     @Test
     void shouldCreateApplyIntentWhenStagedMarkerExists(@TempDir Path tempDir) throws Exception {
         botProperties.getUpdate().setEnabled(true);
-        botProperties.getUpdate().setGithubRepo("alexk-dev/golemcore-bot");
         botProperties.getUpdate().setUpdatesPath(tempDir.toString());
 
         Path jarsDir = tempDir.resolve("jars");
@@ -97,7 +95,6 @@ class UpdateServiceTest {
     @Test
     void shouldRejectApplyWhenConfirmTokenIsInvalid(@TempDir Path tempDir) throws Exception {
         botProperties.getUpdate().setEnabled(true);
-        botProperties.getUpdate().setGithubRepo("alexk-dev/golemcore-bot");
         botProperties.getUpdate().setUpdatesPath(tempDir.toString());
 
         Path jarsDir = tempDir.resolve("jars");
@@ -120,7 +117,6 @@ class UpdateServiceTest {
     @Test
     void shouldCreateRollbackIntentForCachedVersion(@TempDir Path tempDir) throws Exception {
         botProperties.getUpdate().setEnabled(true);
-        botProperties.getUpdate().setGithubRepo("alexk-dev/golemcore-bot");
         botProperties.getUpdate().setUpdatesPath(tempDir.toString());
 
         Path jarsDir = tempDir.resolve("jars");
