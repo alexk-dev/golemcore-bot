@@ -20,6 +20,11 @@ package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.component.MemoryComponent;
 import me.golemcore.bot.domain.model.Memory;
+import me.golemcore.bot.domain.model.MemoryItem;
+import me.golemcore.bot.domain.model.MemoryPack;
+import me.golemcore.bot.domain.model.MemoryQuery;
+import me.golemcore.bot.domain.model.MemoryScoredItem;
+import me.golemcore.bot.domain.model.TurnMemoryEvent;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.StoragePort;
 import lombok.RequiredArgsConstructor;
@@ -29,7 +34,9 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Service for managing persistent agent memory across conversations. Implements
@@ -45,6 +52,9 @@ public class MemoryService implements MemoryComponent {
     private final StoragePort storagePort;
     private final BotProperties properties;
     private final RuntimeConfigService runtimeConfigService;
+    private final MemoryWriteService memoryWriteService;
+    private final MemoryRetrievalService memoryRetrievalService;
+    private final MemoryPromptPackService memoryPromptPackService;
 
     private static final String LONG_TERM_KEY = "MEMORY.md";
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ISO_LOCAL_DATE;
@@ -91,7 +101,7 @@ public class MemoryService implements MemoryComponent {
 
     @Override
     public String readToday() {
-        if (!runtimeConfigService.isMemoryEnabled()) {
+        if (!runtimeConfigService.isMemoryEnabled() || !runtimeConfigService.isMemoryLegacyDailyNotesEnabled()) {
             return "";
         }
         String key = getTodayKey();
@@ -105,7 +115,7 @@ public class MemoryService implements MemoryComponent {
 
     @Override
     public void appendToday(String entry) {
-        if (!runtimeConfigService.isMemoryEnabled()) {
+        if (!runtimeConfigService.isMemoryEnabled() || !runtimeConfigService.isMemoryLegacyDailyNotesEnabled()) {
             return;
         }
         String key = getTodayKey();
@@ -121,9 +131,86 @@ public class MemoryService implements MemoryComponent {
         return getMemory().toContext();
     }
 
+    @Override
+    public MemoryPack buildMemoryPack(MemoryQuery query) {
+        if (!runtimeConfigService.isMemoryEnabled()) {
+            return MemoryPack.builder()
+                    .items(List.of())
+                    .diagnostics(Map.of("enabled", false))
+                    .renderedContext("")
+                    .build();
+        }
+
+        MemoryQuery normalized = query != null ? query : MemoryQuery.builder()
+                .softPromptBudgetTokens(runtimeConfigService.getMemorySoftPromptBudgetTokens())
+                .maxPromptBudgetTokens(runtimeConfigService.getMemoryMaxPromptBudgetTokens())
+                .workingTopK(runtimeConfigService.getMemoryWorkingTopK())
+                .episodicTopK(runtimeConfigService.getMemoryEpisodicTopK())
+                .semanticTopK(runtimeConfigService.getMemorySemanticTopK())
+                .proceduralTopK(runtimeConfigService.getMemoryProceduralTopK())
+                .build();
+
+        List<MemoryScoredItem> scoredItems = memoryRetrievalService.retrieve(normalized);
+        MemoryPack structuredPack = memoryPromptPackService.build(normalized, scoredItems);
+
+        String structuredContext = structuredPack.getRenderedContext() != null
+                ? structuredPack.getRenderedContext()
+                : "";
+        String legacyContext = runtimeConfigService.isMemoryLegacyDailyNotesEnabled() ? getMemoryContext() : "";
+
+        String finalContext;
+        if (structuredContext.isBlank()) {
+            finalContext = legacyContext;
+        } else if (legacyContext.isBlank()) {
+            finalContext = structuredContext;
+        } else {
+            finalContext = structuredContext + "\n\n## Legacy Memory\n" + legacyContext;
+        }
+
+        Map<String, Object> diagnostics = new LinkedHashMap<>();
+        if (structuredPack.getDiagnostics() != null) {
+            diagnostics.putAll(structuredPack.getDiagnostics());
+        }
+        diagnostics.put("structuredCandidates", scoredItems.size());
+        diagnostics.put("legacyIncluded", !legacyContext.isBlank());
+
+        return MemoryPack.builder()
+                .items(structuredPack.getItems())
+                .diagnostics(diagnostics)
+                .renderedContext(finalContext)
+                .build();
+    }
+
+    @Override
+    public void persistTurnMemory(TurnMemoryEvent event) {
+        memoryWriteService.persistTurnMemory(event);
+    }
+
+    @Override
+    public List<MemoryItem> queryItems(MemoryQuery query) {
+        List<MemoryScoredItem> scoredItems = memoryRetrievalService.retrieve(query);
+        List<MemoryItem> items = new ArrayList<>();
+        for (MemoryScoredItem scoredItem : scoredItems) {
+            if (scoredItem.getItem() != null) {
+                items.add(scoredItem.getItem());
+            }
+        }
+        return items;
+    }
+
+    @Override
+    public void upsertSemanticItem(MemoryItem item) {
+        memoryWriteService.upsertSemanticItem(item);
+    }
+
+    @Override
+    public void upsertProceduralItem(MemoryItem item) {
+        memoryWriteService.upsertProceduralItem(item);
+    }
+
     private List<Memory.DailyNote> getRecentDays() {
         List<Memory.DailyNote> notes = new ArrayList<>();
-        if (!runtimeConfigService.isMemoryEnabled()) {
+        if (!runtimeConfigService.isMemoryEnabled() || !runtimeConfigService.isMemoryLegacyDailyNotesEnabled()) {
             return notes;
         }
         int recentDays = runtimeConfigService.getMemoryRecentDays();

@@ -7,6 +7,7 @@ import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.FinishReason;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.model.TurnOutcome;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -343,5 +344,23 @@ class MemoryPersistSystemTest {
         system.process(ctx);
 
         verify(memoryComponent).appendToday(argThat(entry -> entry.contains("Assistant: legacy reply")));
+    }
+
+    @Test
+    void processPersistsStructuredTurnMemoryEvent() {
+        LlmResponse response = LlmResponse.builder().content("assistant reply").build();
+        AgentContext ctx = contextWith(
+                List.of(Message.builder().role(ROLE_USER).content("user input").timestamp(Instant.now()).build()),
+                response);
+        ctx.setToolResults(Map.of(
+                "t1", ToolResult.success("tool output")));
+
+        system.process(ctx);
+
+        verify(memoryComponent).persistTurnMemory(argThat(event -> event != null
+                && "user input".equals(event.getUserText())
+                && "assistant reply".equals(event.getAssistantText())
+                && event.getToolOutputs() != null
+                && event.getToolOutputs().stream().anyMatch(output -> output.contains("tool output"))));
     }
 }

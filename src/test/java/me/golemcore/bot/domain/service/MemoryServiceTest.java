@@ -1,6 +1,10 @@
 package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.model.Memory;
+import me.golemcore.bot.domain.model.MemoryItem;
+import me.golemcore.bot.domain.model.MemoryPack;
+import me.golemcore.bot.domain.model.MemoryQuery;
+import me.golemcore.bot.domain.model.MemoryScoredItem;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
@@ -8,6 +12,8 @@ import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 
@@ -24,6 +30,9 @@ class MemoryServiceTest {
     private StoragePort storagePort;
     private BotProperties properties;
     private RuntimeConfigService runtimeConfigService;
+    private MemoryWriteService memoryWriteService;
+    private MemoryRetrievalService memoryRetrievalService;
+    private MemoryPromptPackService memoryPromptPackService;
     private MemoryService memoryService;
 
     @BeforeEach
@@ -32,9 +41,20 @@ class MemoryServiceTest {
         properties = new BotProperties();
         properties.getMemory().setDirectory(MEMORY_DIR);
         runtimeConfigService = mock(RuntimeConfigService.class);
+        memoryWriteService = mock(MemoryWriteService.class);
+        memoryRetrievalService = mock(MemoryRetrievalService.class);
+        memoryPromptPackService = mock(MemoryPromptPackService.class);
         when(runtimeConfigService.isMemoryEnabled()).thenReturn(true);
         when(runtimeConfigService.getMemoryRecentDays()).thenReturn(3);
-        memoryService = new MemoryService(storagePort, properties, runtimeConfigService);
+        when(runtimeConfigService.isMemoryLegacyDailyNotesEnabled()).thenReturn(true);
+        when(runtimeConfigService.getMemorySoftPromptBudgetTokens()).thenReturn(1800);
+        when(runtimeConfigService.getMemoryMaxPromptBudgetTokens()).thenReturn(3500);
+        when(runtimeConfigService.getMemoryWorkingTopK()).thenReturn(6);
+        when(runtimeConfigService.getMemoryEpisodicTopK()).thenReturn(8);
+        when(runtimeConfigService.getMemorySemanticTopK()).thenReturn(6);
+        when(runtimeConfigService.getMemoryProceduralTopK()).thenReturn(4);
+        memoryService = new MemoryService(storagePort, properties, runtimeConfigService,
+                memoryWriteService, memoryRetrievalService, memoryPromptPackService);
     }
 
     // ===== getComponentType =====
@@ -210,5 +230,29 @@ class MemoryServiceTest {
 
         assertTrue(context.contains("Long-term Memory"));
         assertTrue(context.contains("Important fact"));
+    }
+
+    @Test
+    void shouldBuildMemoryPackWithStructuredContext() {
+        MemoryItem item = MemoryItem.builder()
+                .id("m1")
+                .type(MemoryItem.Type.PROJECT_FACT)
+                .content("Project uses Spring")
+                .build();
+        when(memoryRetrievalService.retrieve(any()))
+                .thenReturn(List.of(MemoryScoredItem.builder().item(item).score(0.9).build()));
+        when(memoryPromptPackService.build(any(), any()))
+                .thenReturn(MemoryPack.builder()
+                        .items(List.of(item))
+                        .diagnostics(Map.of("selectedCount", 1))
+                        .renderedContext("## Semantic Memory\n- [PROJECT_FACT] Project uses Spring")
+                        .build());
+        when(storagePort.getText(anyString(), anyString()))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
+
+        MemoryPack pack = memoryService.buildMemoryPack(MemoryQuery.builder().queryText("spring").build());
+
+        assertTrue(pack.getRenderedContext().contains("Semantic Memory"));
+        assertEquals(1, pack.getItems().size());
     }
 }

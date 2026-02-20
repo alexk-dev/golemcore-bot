@@ -5,6 +5,8 @@ import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.MemoryPack;
 import me.golemcore.bot.domain.model.McpConfig;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.Plan;
@@ -254,6 +256,23 @@ class ContextBuildingSystemPromptTest {
         assertTrue(prompt.contains("# Workspace Instructions"));
         assertTrue(prompt.contains("Root instructions"));
         assertTrue(prompt.contains("Local dashboard instructions"));
+    }
+
+    @Test
+    void storesMemoryPackDiagnosticsInContextAttributes() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(memoryComponent.buildMemoryPack(any())).thenReturn(MemoryPack.builder()
+                .renderedContext("## Semantic Memory\n- [PROJECT_FACT] Uses Spring")
+                .diagnostics(Map.of("selectedCount", 1))
+                .build());
+
+        AgentContext ctx = createContext();
+        system.process(ctx);
+
+        Object diagnostics = ctx.getAttribute(ContextAttributes.MEMORY_PACK_DIAGNOSTICS);
+        assertNotNull(diagnostics);
+        assertTrue(diagnostics instanceof Map<?, ?>);
+        assertTrue(ctx.getMemoryContext().contains("Semantic Memory"));
     }
 
     // ===== Active skill injection =====

@@ -24,6 +24,8 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.TurnOutcome;
+import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.model.TurnMemoryEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -31,6 +33,9 @@ import org.springframework.stereotype.Component;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 
 /**
  * System for persisting conversation exchanges to daily memory notes
@@ -100,6 +105,20 @@ public class MemoryPersistSystem implements AgentSystem {
             log.warn("Failed to persist to memory", e);
         }
 
+        // Persist structured memory event (Memory V2)
+        try {
+            TurnMemoryEvent event = TurnMemoryEvent.builder()
+                    .timestamp(Instant.now())
+                    .userText(lastUserMessage.getContent())
+                    .assistantText(assistantContent)
+                    .activeSkill(context.getActiveSkill() != null ? context.getActiveSkill().getName() : null)
+                    .toolOutputs(extractToolOutputs(context))
+                    .build();
+            memoryComponent.persistTurnMemory(event);
+        } catch (Exception e) {
+            log.warn("Failed to persist structured memory event", e);
+        }
+
         return context;
     }
 
@@ -135,5 +154,29 @@ public class MemoryPersistSystem implements AgentSystem {
             return text;
         }
         return text.substring(0, maxLength - 3) + "...";
+    }
+
+    private List<String> extractToolOutputs(AgentContext context) {
+        List<String> outputs = new ArrayList<>();
+        Map<String, ToolResult> toolResults = context.getToolResults();
+        if (toolResults == null || toolResults.isEmpty()) {
+            return outputs;
+        }
+
+        for (ToolResult result : toolResults.values()) {
+            if (result == null) {
+                continue;
+            }
+            String output = result.getOutput();
+            if (output != null && !output.isBlank()) {
+                outputs.add(truncate(output, 800));
+                continue;
+            }
+            String error = result.getError();
+            if (error != null && !error.isBlank()) {
+                outputs.add("Error: " + truncate(error, 800));
+            }
+        }
+        return outputs;
     }
 }

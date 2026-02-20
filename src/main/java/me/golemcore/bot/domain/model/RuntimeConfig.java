@@ -282,6 +282,30 @@ public class RuntimeConfig {
         private Boolean enabled = true;
         @Builder.Default
         private Integer recentDays = 7;
+        @Builder.Default
+        private Integer softPromptBudgetTokens = 1800;
+        @Builder.Default
+        private Integer maxPromptBudgetTokens = 3500;
+        @Builder.Default
+        private Integer workingTopK = 6;
+        @Builder.Default
+        private Integer episodicTopK = 8;
+        @Builder.Default
+        private Integer semanticTopK = 6;
+        @Builder.Default
+        private Integer proceduralTopK = 4;
+        @Builder.Default
+        private Boolean promotionEnabled = true;
+        @Builder.Default
+        private Double promotionMinConfidence = 0.75;
+        @Builder.Default
+        private Boolean decayEnabled = true;
+        @Builder.Default
+        private Integer decayDays = 30;
+        @Builder.Default
+        private Boolean codeAwareExtractionEnabled = true;
+        @Builder.Default
+        private Boolean legacyDailyNotesEnabled = true;
     }
 
     @Data

@@ -19,6 +19,12 @@ package me.golemcore.bot.domain.component;
  */
 
 import me.golemcore.bot.domain.model.Memory;
+import me.golemcore.bot.domain.model.MemoryItem;
+import me.golemcore.bot.domain.model.MemoryPack;
+import me.golemcore.bot.domain.model.MemoryQuery;
+import me.golemcore.bot.domain.model.TurnMemoryEvent;
+
+import java.util.List;
 
 /**
  * Component providing access to persistent memory storage. Manages both
@@ -77,4 +83,40 @@ public interface MemoryComponent extends Component {
      * @return the memory context string
      */
     String getMemoryContext();
+
+    /**
+     * Build a scored memory pack for prompt injection.
+     */
+    default MemoryPack buildMemoryPack(MemoryQuery query) {
+        return MemoryPack.builder()
+                .items(List.of())
+                .diagnostics(java.util.Map.of())
+                .renderedContext(getMemoryContext())
+                .build();
+    }
+
+    /**
+     * Persist structured turn data for Memory V2 stores.
+     */
+    default void persistTurnMemory(TurnMemoryEvent event) {
+    }
+
+    /**
+     * Query structured memory items.
+     */
+    default List<MemoryItem> queryItems(MemoryQuery query) {
+        return List.of();
+    }
+
+    /**
+     * Upsert a semantic memory item.
+     */
+    default void upsertSemanticItem(MemoryItem item) {
+    }
+
+    /**
+     * Upsert a procedural memory item.
+     */
+    default void upsertProceduralItem(MemoryItem item) {
+    }
 }

@@ -21,11 +21,14 @@ package me.golemcore.bot.domain.system;
 import me.golemcore.bot.domain.component.MemoryComponent;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
-import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.MemoryPack;
+import me.golemcore.bot.domain.model.MemoryQuery;
 import me.golemcore.bot.domain.model.PromptSection;
 import me.golemcore.bot.domain.model.Skill;
+import me.golemcore.bot.domain.model.SkillTransitionRequest;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
@@ -33,6 +36,7 @@ import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.SkillTemplateEngine;
+import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.WorkspaceInstructionService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
@@ -45,7 +49,6 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import me.golemcore.bot.domain.model.ContextAttributes;
 
 /**
  * System for assembling the complete LLM system prompt with memory, skills,
@@ -92,7 +95,7 @@ public class ContextBuildingSystem implements AgentSystem {
         log.debug("[Context] Building context...");
 
         // Handle skill transitions (from SkillTransitionTool or SkillPipelineSystem)
-        var transition = context.getSkillTransitionRequest();
+        SkillTransitionRequest transition = context.getSkillTransitionRequest();
         String transitionTarget = transition != null ? transition.targetSkill() : null;
         if (transitionTarget != null) {
             skillComponent.findByName(transitionTarget).ifPresent(skill -> {
@@ -106,8 +109,35 @@ public class ContextBuildingSystem implements AgentSystem {
         UserPreferences prefs = userPreferencesService.getPreferences();
         resolveTier(context, prefs);
 
-        // Build memory context
-        String memoryContext = memoryComponent.getMemoryContext();
+        // Build memory context (Memory V2 pack with legacy fallback)
+        String userQueryForMemory = getLastUserMessageText(context);
+        MemoryQuery memoryQuery = MemoryQuery.builder()
+                .queryText(userQueryForMemory)
+                .activeSkill(context.getActiveSkill() != null ? context.getActiveSkill().getName() : null)
+                .softPromptBudgetTokens(runtimeConfigService.getMemorySoftPromptBudgetTokens())
+                .maxPromptBudgetTokens(runtimeConfigService.getMemoryMaxPromptBudgetTokens())
+                .workingTopK(runtimeConfigService.getMemoryWorkingTopK())
+                .episodicTopK(runtimeConfigService.getMemoryEpisodicTopK())
+                .semanticTopK(runtimeConfigService.getMemorySemanticTopK())
+                .proceduralTopK(runtimeConfigService.getMemoryProceduralTopK())
+                .build();
+
+        String memoryContext = "";
+        try {
+            MemoryPack memoryPack = memoryComponent.buildMemoryPack(memoryQuery);
+            if (memoryPack != null && memoryPack.getRenderedContext() != null
+                    && !memoryPack.getRenderedContext().isBlank()) {
+                memoryContext = memoryPack.getRenderedContext();
+            }
+            if (memoryPack != null && memoryPack.getDiagnostics() != null && !memoryPack.getDiagnostics().isEmpty()) {
+                context.setAttribute(ContextAttributes.MEMORY_PACK_DIAGNOSTICS, memoryPack.getDiagnostics());
+            }
+        } catch (Exception e) {
+            log.debug("[Context] Memory pack build failed, using legacy memory context: {}", e.getMessage());
+        }
+        if (memoryContext.isBlank()) {
+            memoryContext = memoryComponent.getMemoryContext();
+        }
         context.setMemoryContext(memoryContext);
         log.debug("[Context] Memory context: {} chars",
                 memoryContext != null ? memoryContext.length() : 0);
