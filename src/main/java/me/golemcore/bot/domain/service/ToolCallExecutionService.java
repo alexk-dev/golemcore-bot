@@ -153,8 +153,13 @@ public class ToolCallExecutionService {
         }
 
         Throwable cursor = error;
-        while (cursor.getCause() != null && cursor.getCause() != cursor) {
-            cursor = cursor.getCause();
+        Throwable cause = cursor.getCause();
+        while (cause != null) {
+            if (cause.equals(cursor)) {
+                break;
+            }
+            cursor = cause;
+            cause = cursor.getCause();
         }
 
         String message = cursor.getMessage();

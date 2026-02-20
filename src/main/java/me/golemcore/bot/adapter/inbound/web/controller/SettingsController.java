@@ -516,14 +516,14 @@ public class SettingsController {
         String whisperSttUrl = voiceConfig.getWhisperSttUrl();
         if (whisperSttUrl != null && whisperSttUrl.isBlank()) {
             voiceConfig.setWhisperSttUrl(null);
-            whisperSttUrl = null;
         }
+        String effectiveWhisperSttUrl = voiceConfig.getWhisperSttUrl();
         if (STT_PROVIDER_WHISPER.equals(normalizedSttProvider)) {
-            if (whisperSttUrl == null || whisperSttUrl.isBlank()) {
+            if (effectiveWhisperSttUrl == null || effectiveWhisperSttUrl.isBlank()) {
                 throw new IllegalArgumentException(
                         "voice.whisperSttUrl is required when voice.sttProvider is 'whisper'");
             }
-            if (!isValidHttpUrl(whisperSttUrl)) {
+            if (!isValidHttpUrl(effectiveWhisperSttUrl)) {
                 throw new IllegalArgumentException("voice.whisperSttUrl must be a valid http(s) URL");
             }
         }

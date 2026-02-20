@@ -2,7 +2,7 @@ import type { IconType } from 'react-icons';
 import {
   FiSliders, FiSend, FiCpu, FiTool, FiMic,
   FiGlobe, FiPlayCircle, FiShield, FiSearch, FiHardDrive, FiBarChart2,
-  FiTerminal, FiMail, FiCompass, FiShuffle, FiKey,
+  FiTerminal, FiMail, FiCompass, FiShuffle, FiKey, FiRefreshCw,
 } from 'react-icons/fi';
 
 export interface SettingsSectionMeta {
@@ -37,6 +37,7 @@ export const SETTINGS_SECTIONS = [
   { key: 'mcp', title: 'MCP', description: 'Model Context Protocol runtime defaults', icon: FiTool },
   { key: 'webhooks', title: 'Webhooks', description: 'Incoming hooks, auth, and delivery actions', icon: FiGlobe },
   { key: 'auto', title: 'Auto Mode', description: 'Autonomous run behavior and constraints', icon: FiPlayCircle },
+  { key: 'updates', title: 'Updates', description: 'Controlled self-update flow with staging and rollback', icon: FiRefreshCw },
   { key: 'advanced-rate-limit', title: 'Rate Limit', description: 'Request throttling configuration', icon: FiShield },
   { key: 'advanced-security', title: 'Security', description: 'Input sanitization and injection guards', icon: FiShield },
   { key: 'advanced-compaction', title: 'Compaction', description: 'Context compaction behavior', icon: FiShield },
@@ -68,7 +69,7 @@ export const SETTINGS_BLOCKS: SettingsBlock[] = [
     key: 'runtime',
     title: 'Runtime',
     description: 'Agent execution, memory, usage, and autonomy',
-    sections: ['memory', 'skills', 'turn', 'usage', 'rag', 'mcp', 'auto', 'webhooks'],
+    sections: ['memory', 'skills', 'turn', 'usage', 'rag', 'mcp', 'auto', 'webhooks', 'updates'],
   },
   {
     key: 'advanced',

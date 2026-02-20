@@ -338,9 +338,26 @@ Some settings are still controlled via Spring properties (application config), t
 
 - Workspace paths: `STORAGE_PATH`, `TOOLS_WORKSPACE`
 - Dashboard toggle: `DASHBOARD_ENABLED`
+- Self-update controls: `BOT_UPDATE_ENABLED`, `UPDATE_PATH`, `BOT_UPDATE_MAX_KEPT_VERSIONS`, `BOT_UPDATE_CHECK_INTERVAL`, `BOT_UPDATE_CONFIRM_TTL`
 - Allowed providers in model picker: `BOT_MODEL_SELECTION_ALLOWED_PROVIDERS`
 - Tool result truncation: `bot.auto-compact.max-tool-result-chars`
 - Plan mode feature flag: `bot.plan.enabled`
+
+### Self-Update (Core)
+
+Core self-update is controlled by Spring properties under `bot.update.*`.
+
+- `bot.update.enabled` defaults to `true` (disable with `BOT_UPDATE_ENABLED=false`).
+- Release repository is fixed in code: `alexk-dev/golemcore-bot`.
+- GitHub token is not required (public repository).
+- Release asset glob is fixed in code: `bot-*.jar`.
+
+Configurable properties:
+
+- `bot.update.updates-path` (`UPDATE_PATH`, default `/data/updates`)
+- `bot.update.max-kept-versions` (`BOT_UPDATE_MAX_KEPT_VERSIONS`, default `3`)
+- `bot.update.check-interval` (`BOT_UPDATE_CHECK_INTERVAL`, default `PT1H`)
+- `bot.update.confirm-ttl` (`BOT_UPDATE_CONFIRM_TTL`, default `PT2M`)
 
 ## Storage Layout
 

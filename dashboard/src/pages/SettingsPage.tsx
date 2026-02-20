@@ -25,6 +25,7 @@ import UsageTab from './settings/UsageTab';
 import RagTab from './settings/RagTab';
 import McpTab from './settings/McpTab';
 import AutoModeTab from './settings/AutoModeTab';
+import { UpdatesTab } from './settings/UpdatesTab';
 import {
   SETTINGS_BLOCKS,
   SETTINGS_SECTIONS,
@@ -150,6 +151,7 @@ export default function SettingsPage(): ReactElement {
       {selectedSection === 'mcp' && rc != null && <McpTab config={rc.mcp} />}
       {selectedSection === 'webhooks' && <WebhooksTab />}
       {selectedSection === 'auto' && rc != null && <AutoModeTab config={rc.autoMode} />}
+      {selectedSection === 'updates' && <UpdatesTab />}
 
       {selectedSection === 'advanced-rate-limit' && rc != null && (
         <AdvancedTab rateLimit={rc.rateLimit} security={rc.security} compaction={rc.compaction} mode="rateLimit" />
