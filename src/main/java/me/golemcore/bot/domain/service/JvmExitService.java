@@ -7,6 +7,6 @@ public class JvmExitService {
 
     @SuppressWarnings({ "PMD.DoNotTerminateVM", "java:S1147" })
     public void exit(int statusCode) {
-        System.exit(statusCode);
+        System.exit(statusCode); // NOSONAR
     }
 }
