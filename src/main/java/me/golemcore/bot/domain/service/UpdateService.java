@@ -73,6 +73,7 @@ public class UpdateService {
             "release-assets.githubusercontent.com");
     private static final Pattern SEMVER_PATTERN = Pattern.compile("^(\\d+)\\.(\\d+)\\.(\\d+)(?:-([0-9A-Za-z.-]+))?$");
     private static final Pattern VERSION_EXTRACT_PATTERN = Pattern.compile("(\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?)");
+    private static final Pattern SAFE_RELEASE_SEGMENT_PATTERN = Pattern.compile("^[0-9A-Za-z._-]+$");
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final BotProperties botProperties;
@@ -484,18 +485,26 @@ public class UpdateService {
         String tagName = root.path("tag_name").asText("");
         String assetName = jarAssetNode.path("name").asText("");
         String version = extractVersion(tagName, assetName);
-        String assetUrl = jarAssetNode.path("browser_download_url").asText("");
-        String shaUrl = shaAssetNode.path("browser_download_url").asText("");
+        String assetUrl = buildReleaseAssetUrl(tagName, assetName);
+        String shaUrl = buildReleaseAssetUrl(tagName, SHA256_FILE_NAME);
         Instant publishedAt = parseInstant(root.path("published_at").asText(null));
-
-        if (assetUrl.isBlank() || shaUrl.isBlank()) {
-            throw new IllegalStateException("Release assets contain empty download URL");
-        }
 
         URI validatedAssetUri = validateDownloadUri(assetUrl);
         URI validatedShaUri = validateDownloadUri(shaUrl);
         return new AvailableRelease(version, tagName, assetName, validatedAssetUri.toString(),
                 validatedShaUri.toString(), publishedAt);
+    }
+
+    private String buildReleaseAssetUrl(String tagName, String assetName) {
+        if (tagName == null || tagName.isBlank()) {
+            throw new IllegalStateException("Release tag is missing");
+        }
+        String normalizedTag = tagName.trim();
+        if (!SAFE_RELEASE_SEGMENT_PATTERN.matcher(normalizedTag).matches()) {
+            throw new IllegalStateException("Release tag contains prohibited characters: " + normalizedTag);
+        }
+        validateAssetName(assetName);
+        return "https://github.com/" + RELEASE_REPOSITORY + "/releases/download/" + normalizedTag + "/" + assetName;
     }
 
     private PendingIntent buildPendingIntent(String operation, String targetVersion) {

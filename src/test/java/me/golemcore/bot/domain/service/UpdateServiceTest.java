@@ -465,7 +465,7 @@ class UpdateServiceTest {
     }
 
     @Test
-    void shouldRejectReleaseWhenDownloadHostIsNotAllowed(@TempDir Path tempDir) {
+    void shouldIgnoreUntrustedBrowserDownloadHost(@TempDir Path tempDir) {
         enableUpdates(tempDir);
         StubHttpClient httpClient = new StubHttpClient();
         httpClient.enqueueStringResponse(200, releaseJson(
@@ -476,14 +476,12 @@ class UpdateServiceTest {
                 "2026-02-19T11:00:00Z"));
         TestableUpdateService service = createTestableService(httpClient);
 
-        IllegalStateException error = assertThrows(IllegalStateException.class, service::check);
-
-        assertTrue(error.getMessage().contains("host is not allowed"));
-        assertEquals(UpdateState.FAILED, service.getStatus().getState());
+        assertEquals("Update available: 0.3.1", service.check().getMessage());
+        assertEquals(UpdateState.AVAILABLE, service.getStatus().getState());
     }
 
     @Test
-    void shouldRejectReleaseWhenDownloadSchemeIsNotHttps(@TempDir Path tempDir) {
+    void shouldIgnoreUntrustedBrowserDownloadScheme(@TempDir Path tempDir) {
         enableUpdates(tempDir);
         StubHttpClient httpClient = new StubHttpClient();
         httpClient.enqueueStringResponse(200, releaseJson(
@@ -494,10 +492,42 @@ class UpdateServiceTest {
                 "2026-02-19T11:00:00Z"));
         TestableUpdateService service = createTestableService(httpClient);
 
+        assertEquals("Update available: 0.3.1", service.check().getMessage());
+        assertEquals(UpdateState.AVAILABLE, service.getStatus().getState());
+    }
+
+    @Test
+    void shouldRejectReleaseWhenTagIsMissing(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+        StubHttpClient httpClient = new StubHttpClient();
+        httpClient.enqueueStringResponse(200, releaseJson(
+                "   ",
+                "bot-0.3.1.jar",
+                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.1/bot-0.3.1.jar",
+                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.1/sha256sums.txt",
+                "2026-02-19T11:00:00Z"));
+        TestableUpdateService service = createTestableService(httpClient);
+
         IllegalStateException error = assertThrows(IllegalStateException.class, service::check);
 
-        assertTrue(error.getMessage().contains("must use https"));
-        assertEquals(UpdateState.FAILED, service.getStatus().getState());
+        assertTrue(error.getMessage().contains("Release tag is missing"));
+    }
+
+    @Test
+    void shouldRejectReleaseWhenTagContainsProhibitedCharacters(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+        StubHttpClient httpClient = new StubHttpClient();
+        httpClient.enqueueStringResponse(200, releaseJson(
+                "release/0.3.1",
+                "bot-0.3.1.jar",
+                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.1/bot-0.3.1.jar",
+                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.1/sha256sums.txt",
+                "2026-02-19T11:00:00Z"));
+        TestableUpdateService service = createTestableService(httpClient);
+
+        IllegalStateException error = assertThrows(IllegalStateException.class, service::check);
+
+        assertTrue(error.getMessage().contains("Release tag contains prohibited characters"));
     }
 
     @Test
