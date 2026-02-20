@@ -479,6 +479,25 @@ class UpdateServiceTest {
     }
 
     @Test
+    void shouldFailPrepareWhenDownloadRedirectHostIsUntrusted(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+        StubHttpClient httpClient = new StubHttpClient();
+        httpClient.enqueueStringResponse(200, releaseJson(
+                "v0.3.1",
+                "bot-0.3.1.jar",
+                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.1/bot-0.3.1.jar",
+                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.1/sha256sums.txt",
+                "2026-02-19T11:00:00Z"));
+        httpClient.enqueueRedirectResponse(302, "https://evil.example.com/bot-0.3.1.jar");
+        TestableUpdateService service = createTestableService(httpClient);
+        service.check();
+
+        IllegalStateException error = assertThrows(IllegalStateException.class, service::prepare);
+
+        assertTrue(error.getMessage().contains("host is not trusted"));
+    }
+
+    @Test
     void shouldIgnoreUntrustedBrowserDownloadHost(@TempDir Path tempDir) {
         enableUpdates(tempDir);
         StubHttpClient httpClient = new StubHttpClient();
@@ -844,15 +863,25 @@ class UpdateServiceTest {
         private final List<URI> requestedUris = new ArrayList<>();
 
         private void enqueueStringResponse(int statusCode, String responseBody) {
-            exchanges.addLast(new StubExchange(statusCode, responseBody.getBytes(StandardCharsets.UTF_8), null, null));
+            exchanges.addLast(new StubExchange(statusCode, responseBody.getBytes(StandardCharsets.UTF_8), Map.of(), null,
+                    null));
         }
 
         private void enqueueBinaryResponse(int statusCode, byte[] responseBody) {
-            exchanges.addLast(new StubExchange(statusCode, responseBody, null, null));
+            exchanges.addLast(new StubExchange(statusCode, responseBody, Map.of(), null, null));
+        }
+
+        private void enqueueRedirectResponse(int statusCode, String location) {
+            exchanges.addLast(new StubExchange(
+                    statusCode,
+                    new byte[0],
+                    Map.of("Location", List.of(location)),
+                    null,
+                    null));
         }
 
         private void enqueueInterrupted(InterruptedException exception) {
-            exchanges.addLast(new StubExchange(0, null, null, exception));
+            exchanges.addLast(new StubExchange(0, null, Map.of(), null, exception));
         }
 
         @Override
@@ -916,7 +945,7 @@ class UpdateServiceTest {
             }
 
             byte[] payload = exchange.responseBody() != null ? exchange.responseBody() : new byte[0];
-            HttpHeaders headers = HttpHeaders.of(Map.of(), (name, value) -> true);
+            HttpHeaders headers = HttpHeaders.of(exchange.responseHeaders(), (name, value) -> true);
             HttpResponse.ResponseInfo info = new StubResponseInfo(exchange.statusCode(), headers);
             HttpResponse.BodySubscriber<T> subscriber = responseBodyHandler.apply(info);
             subscriber.onSubscribe(new Flow.Subscription() {
@@ -965,6 +994,7 @@ class UpdateServiceTest {
     private record StubExchange(
             int statusCode,
             byte[] responseBody,
+            Map<String, List<String>> responseHeaders,
             IOException ioException,
             InterruptedException interruptedException) {
     }

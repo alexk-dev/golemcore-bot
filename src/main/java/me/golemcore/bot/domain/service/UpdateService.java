@@ -52,6 +52,11 @@ import java.util.regex.Pattern;
 public class UpdateService {
 
     private static final String GITHUB_API_BASE = "https://api.github.com";
+    private static final String GITHUB_API_HOST = "api.github.com";
+    private static final String GITHUB_HOST = "github.com";
+    private static final String GITHUB_USERCONTENT_SUFFIX = ".githubusercontent.com";
+    private static final String HTTPS_SCHEME = "https";
+    private static final int HTTPS_PORT = 443;
     private static final String RELEASE_REPOSITORY = "alexk-dev/golemcore-bot";
     private static final String RELEASE_ASSET_API_PATH = "/repos/" + RELEASE_REPOSITORY + "/releases/assets/";
     private static final String RELEASE_ASSET_PATTERN = "bot-*.jar";
@@ -433,7 +438,8 @@ public class UpdateService {
     private AvailableRelease fetchLatestRelease() throws IOException, InterruptedException {
         String apiUrl = GITHUB_API_BASE + "/repos/" + RELEASE_REPOSITORY + "/releases/latest";
 
-        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(apiUrl)) // NOSONAR
+        URI apiUri = requireTrustedApiUri(URI.create(apiUrl));
+        HttpRequest.Builder builder = HttpRequest.newBuilder(apiUri)
                 .GET()
                 .timeout(Duration.ofSeconds(30))
                 .header("Accept", "application/vnd.github+json")
@@ -687,8 +693,8 @@ public class UpdateService {
 
     private void downloadReleaseAsset(long assetId, Path targetPath)
             throws IOException, InterruptedException {
-        URI downloadUri = buildReleaseAssetApiUri(assetId);
-        HttpRequest.Builder builder = HttpRequest.newBuilder(downloadUri) // NOSONAR
+        URI downloadUri = requireTrustedApiUri(buildReleaseAssetApiUri(assetId));
+        HttpRequest.Builder builder = HttpRequest.newBuilder(downloadUri)
                 .GET()
                 .timeout(Duration.ofMinutes(5))
                 .header("Accept", "application/octet-stream")
@@ -696,8 +702,10 @@ public class UpdateService {
 
         HttpResponse<InputStream> response = buildHttpClient().send(builder.build(),
                 HttpResponse.BodyHandlers.ofInputStream());
-        if (response.statusCode() >= 400) {
-            throw new IllegalStateException("Download failed with HTTP " + response.statusCode());
+        response = followTrustedRedirectForBinary(downloadUri, response, Duration.ofMinutes(5));
+        int statusCode = response.statusCode();
+        if (isRedirectStatus(statusCode) || statusCode >= 400) {
+            throw new IllegalStateException("Download failed with HTTP " + statusCode);
         }
 
         Path parent = targetPath.getParent();
@@ -711,8 +719,8 @@ public class UpdateService {
     }
 
     private String downloadReleaseChecksums(long assetId) throws IOException, InterruptedException {
-        URI downloadUri = buildReleaseAssetApiUri(assetId);
-        HttpRequest.Builder builder = HttpRequest.newBuilder(downloadUri) // NOSONAR
+        URI downloadUri = requireTrustedApiUri(buildReleaseAssetApiUri(assetId));
+        HttpRequest.Builder builder = HttpRequest.newBuilder(downloadUri)
                 .GET()
                 .timeout(Duration.ofSeconds(30))
                 .header("Accept", "application/octet-stream")
@@ -720,16 +728,71 @@ public class UpdateService {
 
         HttpResponse<String> response = buildHttpClient().send(builder.build(),
                 HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        if (response.statusCode() >= 400) {
-            throw new IllegalStateException("Download failed with HTTP " + response.statusCode());
+        response = followTrustedRedirectForText(downloadUri, response, Duration.ofSeconds(30));
+        int statusCode = response.statusCode();
+        if (isRedirectStatus(statusCode) || statusCode >= 400) {
+            throw new IllegalStateException("Download failed with HTTP " + statusCode);
         }
         return response.body();
+    }
+
+    private HttpResponse<InputStream> followTrustedRedirectForBinary(
+            URI requestUri,
+            HttpResponse<InputStream> response,
+            Duration timeout) throws IOException, InterruptedException {
+        if (!isRedirectStatus(response.statusCode())) {
+            return response;
+        }
+
+        URI redirectUri = resolveTrustedRedirectUri(requestUri, response);
+        try (InputStream ignored = response.body()) {
+            // close the first response body before issuing the next request
+        }
+
+        HttpRequest.Builder builder = HttpRequest.newBuilder(redirectUri)
+                .GET()
+                .timeout(timeout)
+                .header("Accept", "application/octet-stream")
+                .header("User-Agent", "golemcore-bot-updater");
+        return buildHttpClient().send(builder.build(), HttpResponse.BodyHandlers.ofInputStream());
+    }
+
+    private HttpResponse<String> followTrustedRedirectForText(
+            URI requestUri,
+            HttpResponse<String> response,
+            Duration timeout) throws IOException, InterruptedException {
+        if (!isRedirectStatus(response.statusCode())) {
+            return response;
+        }
+
+        URI redirectUri = resolveTrustedRedirectUri(requestUri, response);
+        HttpRequest.Builder builder = HttpRequest.newBuilder(redirectUri)
+                .GET()
+                .timeout(timeout)
+                .header("Accept", "application/octet-stream")
+                .header("User-Agent", "golemcore-bot-updater");
+        return buildHttpClient().send(builder.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+    }
+
+    private URI resolveTrustedRedirectUri(URI requestUri, HttpResponse<?> response) {
+        String location = response.headers()
+                .firstValue("Location")
+                .orElseThrow(() -> new IllegalStateException("Download redirect is missing Location header"));
+        URI resolved = requestUri.resolve(location).normalize();
+        return requireTrustedDownloadUri(resolved);
+    }
+
+    private boolean isRedirectStatus(int statusCode) {
+        return statusCode == 301
+                || statusCode == 302
+                || statusCode == 303
+                || statusCode == 307
+                || statusCode == 308;
     }
 
     protected HttpClient buildHttpClient() {
         return HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(20))
-                .followRedirects(HttpClient.Redirect.NORMAL)
                 .build();
     }
 
@@ -738,6 +801,52 @@ public class UpdateService {
             throw new IllegalArgumentException("Invalid release asset id: " + assetId);
         }
         return URI.create(GITHUB_API_BASE + RELEASE_ASSET_API_PATH + assetId);
+    }
+
+    private URI requireTrustedApiUri(URI uri) {
+        return requireTrustedUri(uri, true);
+    }
+
+    private URI requireTrustedDownloadUri(URI uri) {
+        return requireTrustedUri(uri, false);
+    }
+
+    private URI requireTrustedUri(URI uri, boolean requireApiHost) {
+        if (uri == null) {
+            throw new IllegalStateException("Download URI is missing");
+        }
+        if (!HTTPS_SCHEME.equalsIgnoreCase(uri.getScheme())) {
+            throw new IllegalStateException("Only HTTPS download URIs are allowed: " + uri);
+        }
+        if (uri.getRawUserInfo() != null) {
+            throw new IllegalStateException("Download URI userinfo is not allowed: " + uri);
+        }
+        if (uri.getFragment() != null) {
+            throw new IllegalStateException("Download URI fragment is not allowed: " + uri);
+        }
+        int port = uri.getPort();
+        if (port != -1 && port != HTTPS_PORT) {
+            throw new IllegalStateException("Download URI port is not allowed: " + uri);
+        }
+
+        String host = uri.getHost();
+        if (host == null || host.isBlank()) {
+            throw new IllegalStateException("Download URI host is missing: " + uri);
+        }
+        String normalizedHost = host.toLowerCase(Locale.ROOT);
+        boolean trustedHost = requireApiHost
+                ? GITHUB_API_HOST.equals(normalizedHost)
+                : isTrustedDownloadHost(normalizedHost);
+        if (!trustedHost) {
+            throw new IllegalStateException("Download URI host is not trusted: " + normalizedHost);
+        }
+        return uri;
+    }
+
+    private boolean isTrustedDownloadHost(String host) {
+        return GITHUB_API_HOST.equals(host)
+                || GITHUB_HOST.equals(host)
+                || host.endsWith(GITHUB_USERCONTENT_SUFFIX);
     }
 
     private String extractExpectedSha256(String checksumsText, String assetName) {
