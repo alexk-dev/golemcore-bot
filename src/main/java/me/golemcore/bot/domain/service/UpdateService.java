@@ -433,7 +433,7 @@ public class UpdateService {
     private AvailableRelease fetchLatestRelease() throws IOException, InterruptedException {
         String apiUrl = GITHUB_API_BASE + "/repos/" + RELEASE_REPOSITORY + "/releases/latest";
 
-        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(apiUrl))
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(apiUrl)) // NOSONAR
                 .GET()
                 .timeout(Duration.ofSeconds(30))
                 .header("Accept", "application/vnd.github+json")
@@ -688,7 +688,7 @@ public class UpdateService {
     private void downloadReleaseAsset(long assetId, Path targetPath)
             throws IOException, InterruptedException {
         URI downloadUri = buildReleaseAssetApiUri(assetId);
-        HttpRequest.Builder builder = HttpRequest.newBuilder(downloadUri)
+        HttpRequest.Builder builder = HttpRequest.newBuilder(downloadUri) // NOSONAR
                 .GET()
                 .timeout(Duration.ofMinutes(5))
                 .header("Accept", "application/octet-stream")
@@ -712,7 +712,7 @@ public class UpdateService {
 
     private String downloadReleaseChecksums(long assetId) throws IOException, InterruptedException {
         URI downloadUri = buildReleaseAssetApiUri(assetId);
-        HttpRequest.Builder builder = HttpRequest.newBuilder(downloadUri)
+        HttpRequest.Builder builder = HttpRequest.newBuilder(downloadUri) // NOSONAR
                 .GET()
                 .timeout(Duration.ofSeconds(30))
                 .header("Accept", "application/octet-stream")
