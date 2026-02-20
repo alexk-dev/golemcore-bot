@@ -690,6 +690,12 @@ class UpdateServiceTest {
         assertTrue(invokeCompareVersions(service, "1.2.3-1", "1.2.3-alpha") < 0);
         assertEquals(0, invokeCompareVersions(service, "v1.2.3+build.1", "1.2.3"));
         assertTrue(invokeCompareVersions(service, "snapshot", "1.0.0") > 0);
+        assertEquals("1.2.3", invokeExtractVersionFromAssetName(service, "bot-1.2.3.jar"));
+        assertEquals("1.2.3-rc.1", invokeExtractVersionFromAssetName(service, "release-v1.2.3-rc.1.jar"));
+        assertEquals("1.2.3", invokeExtractVersionFromAssetName(service, "bot-1.2.3-.jar"));
+        assertNull(invokeExtractVersionFromAssetName(service, "bot-latest.jar"));
+        assertEquals("2.3.4", invokeExtractVersionFromAssetName(service,
+                "prefix-".repeat(5000) + "2.3.4.jar"));
 
         String checksumText = """
                 ignored line
@@ -831,6 +837,11 @@ class UpdateServiceTest {
     private static String invokeComputeSha256(UpdateService service, Path filePath) {
         Method method = getDeclaredMethod("computeSha256", Path.class);
         return (String) invokeReflective(method, service, filePath);
+    }
+
+    private static String invokeExtractVersionFromAssetName(UpdateService service, String assetName) {
+        Method method = getDeclaredMethod("extractVersionFromAssetName", String.class);
+        return (String) invokeReflective(method, service, assetName);
     }
 
     private static void invokeAddHistory(UpdateService service, String operation) {

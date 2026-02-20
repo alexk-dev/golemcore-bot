@@ -72,8 +72,6 @@ public class UpdateService {
     private static final String TOKEN_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final Pattern SEMVER_PATTERN = Pattern
             .compile("^(\\d++)\\.(\\d++)\\.(\\d++)(?:-([0-9A-Za-z.-]++))?$");
-    private static final Pattern VERSION_EXTRACT_PATTERN = Pattern
-            .compile("(\\d++\\.\\d++\\.\\d++(?:-[0-9A-Za-z.-]++)?)");
     private static final Pattern SAFE_RELEASE_SEGMENT_PATTERN = Pattern.compile("^[0-9A-Za-z._-]+$");
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
@@ -925,14 +923,96 @@ public class UpdateService {
     }
 
     private String extractVersionFromAssetName(String assetName) {
-        if (assetName == null) {
+        if (assetName == null || assetName.isBlank()) {
             return null;
         }
-        Matcher matcher = VERSION_EXTRACT_PATTERN.matcher(assetName);
-        if (!matcher.find()) {
+        int length = assetName.length();
+        for (int i = 0; i < length; i++) {
+            char current = assetName.charAt(i);
+            if (!isAsciiDigit(current)) {
+                continue;
+            }
+            if (i > 0 && isAsciiDigit(assetName.charAt(i - 1))) {
+                continue;
+            }
+
+            String candidate = readVersionCandidate(assetName, i);
+            if (candidate != null) {
+                String normalized = normalizeVersion(candidate);
+                if (normalized.endsWith(".jar")) {
+                    return normalized.substring(0, normalized.length() - ".jar".length());
+                }
+                return normalized;
+            }
+        }
+        return null;
+    }
+
+    private String readVersionCandidate(String value, int start) {
+        int length = value.length();
+        int majorEnd = consumeDigits(value, start);
+        if (majorEnd == start || majorEnd >= length || value.charAt(majorEnd) != '.') {
             return null;
         }
-        return normalizeVersion(matcher.group(1));
+
+        int minorStart = majorEnd + 1;
+        int minorEnd = consumeDigits(value, minorStart);
+        if (minorEnd == minorStart || minorEnd >= length || value.charAt(minorEnd) != '.') {
+            return null;
+        }
+
+        int patchStart = minorEnd + 1;
+        int patchEnd = consumeDigits(value, patchStart);
+        if (patchEnd == patchStart) {
+            return null;
+        }
+
+        int versionEnd = patchEnd;
+        if (patchEnd < length && value.charAt(patchEnd) == '-') {
+            int prereleaseStart = patchEnd + 1;
+            if (prereleaseStart < length && isSemverPrereleaseStartChar(value.charAt(prereleaseStart))) {
+                int prereleaseEnd = consumePrereleaseChars(value, prereleaseStart);
+                if (prereleaseEnd > prereleaseStart) {
+                    versionEnd = prereleaseEnd;
+                }
+            }
+        }
+
+        return value.substring(start, versionEnd);
+    }
+
+    private int consumeDigits(String value, int start) {
+        int cursor = start;
+        int length = value.length();
+        while (cursor < length && isAsciiDigit(value.charAt(cursor))) {
+            cursor++;
+        }
+        return cursor;
+    }
+
+    private int consumePrereleaseChars(String value, int start) {
+        int cursor = start;
+        int length = value.length();
+        while (cursor < length && isSemverPrereleaseChar(value.charAt(cursor))) {
+            cursor++;
+        }
+        return cursor;
+    }
+
+    private boolean isAsciiDigit(char value) {
+        return value >= '0' && value <= '9';
+    }
+
+    private boolean isAsciiLetter(char value) {
+        return (value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z');
+    }
+
+    private boolean isSemverPrereleaseChar(char value) {
+        return isAsciiDigit(value) || isAsciiLetter(value) || value == '.' || value == '-';
+    }
+
+    private boolean isSemverPrereleaseStartChar(char value) {
+        return isAsciiDigit(value) || isAsciiLetter(value);
     }
 
     private String normalizeOptionalVersion(String version) {
