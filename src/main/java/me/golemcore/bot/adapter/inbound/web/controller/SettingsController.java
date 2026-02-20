@@ -44,6 +44,16 @@ public class SettingsController {
     private static final String TELEGRAM_AUTH_MODE_USER = "user";
     private static final String TELEGRAM_AUTH_MODE_INVITE = "invite_only";
     private static final Set<String> VALID_API_TYPES = Set.of("openai", "anthropic", "gemini");
+    private static final int MEMORY_RECENT_DAYS_MIN = 1;
+    private static final int MEMORY_RECENT_DAYS_MAX = 90;
+    private static final int MEMORY_SOFT_BUDGET_MIN = 200;
+    private static final int MEMORY_SOFT_BUDGET_MAX = 10000;
+    private static final int MEMORY_MAX_BUDGET_MIN = 200;
+    private static final int MEMORY_MAX_BUDGET_MAX = 12000;
+    private static final int MEMORY_TOP_K_MIN = 0;
+    private static final int MEMORY_TOP_K_MAX = 30;
+    private static final int MEMORY_DECAY_DAYS_MIN = 1;
+    private static final int MEMORY_DECAY_DAYS_MAX = 3650;
 
     private final UserPreferencesService preferencesService;
     private final ModelSelectionService modelSelectionService;
@@ -129,6 +139,9 @@ public class SettingsController {
     public Mono<ResponseEntity<RuntimeConfig>> updateRuntimeConfig(@RequestBody RuntimeConfig config) {
         mergeRuntimeSecrets(runtimeConfigService.getRuntimeConfig(), config);
         validateLlmConfig(config.getLlm(), config.getModelRouter());
+        if (config.getMemory() != null) {
+            validateMemoryConfig(config.getMemory());
+        }
         runtimeConfigService.updateRuntimeConfig(config);
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
@@ -270,6 +283,7 @@ public class SettingsController {
     @PutMapping("/runtime/memory")
     public Mono<ResponseEntity<RuntimeConfig>> updateMemoryConfig(
             @RequestBody RuntimeConfig.MemoryConfig memoryConfig) {
+        validateMemoryConfig(memoryConfig);
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         config.setMemory(memoryConfig);
         runtimeConfigService.updateRuntimeConfig(config);
@@ -485,6 +499,54 @@ public class SettingsController {
                 throw new IllegalArgumentException(
                         "Cannot remove provider '" + usedProvider + "' because it is used by model router tiers");
             }
+        }
+    }
+
+    private void validateMemoryConfig(RuntimeConfig.MemoryConfig memoryConfig) {
+        if (memoryConfig == null) {
+            throw new IllegalArgumentException("memory config is required");
+        }
+
+        validateNullableInteger(memoryConfig.getRecentDays(), MEMORY_RECENT_DAYS_MIN, MEMORY_RECENT_DAYS_MAX,
+                "memory.recentDays");
+        validateNullableInteger(memoryConfig.getSoftPromptBudgetTokens(), MEMORY_SOFT_BUDGET_MIN, MEMORY_SOFT_BUDGET_MAX,
+                "memory.softPromptBudgetTokens");
+        validateNullableInteger(memoryConfig.getMaxPromptBudgetTokens(), MEMORY_MAX_BUDGET_MIN, MEMORY_MAX_BUDGET_MAX,
+                "memory.maxPromptBudgetTokens");
+        validateNullableInteger(memoryConfig.getWorkingTopK(), MEMORY_TOP_K_MIN, MEMORY_TOP_K_MAX, "memory.workingTopK");
+        validateNullableInteger(memoryConfig.getEpisodicTopK(), MEMORY_TOP_K_MIN, MEMORY_TOP_K_MAX,
+                "memory.episodicTopK");
+        validateNullableInteger(memoryConfig.getSemanticTopK(), MEMORY_TOP_K_MIN, MEMORY_TOP_K_MAX,
+                "memory.semanticTopK");
+        validateNullableInteger(memoryConfig.getProceduralTopK(), MEMORY_TOP_K_MIN, MEMORY_TOP_K_MAX,
+                "memory.proceduralTopK");
+        validateNullableDouble(memoryConfig.getPromotionMinConfidence(), 0.0, 1.0, "memory.promotionMinConfidence");
+        validateNullableInteger(memoryConfig.getDecayDays(), MEMORY_DECAY_DAYS_MIN, MEMORY_DECAY_DAYS_MAX,
+                "memory.decayDays");
+
+        Integer softBudget = memoryConfig.getSoftPromptBudgetTokens();
+        Integer maxBudget = memoryConfig.getMaxPromptBudgetTokens();
+        if (softBudget != null && maxBudget != null && maxBudget < softBudget) {
+            throw new IllegalArgumentException(
+                    "memory.maxPromptBudgetTokens must be greater than or equal to memory.softPromptBudgetTokens");
+        }
+    }
+
+    private void validateNullableInteger(Integer value, int min, int max, String fieldName) {
+        if (value == null) {
+            return;
+        }
+        if (value < min || value > max) {
+            throw new IllegalArgumentException(fieldName + " must be between " + min + " and " + max);
+        }
+    }
+
+    private void validateNullableDouble(Double value, double min, double max, String fieldName) {
+        if (value == null) {
+            return;
+        }
+        if (value < min || value > max) {
+            throw new IllegalArgumentException(fieldName + " must be between " + min + " and " + max);
         }
     }
 
