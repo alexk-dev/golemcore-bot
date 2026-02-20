@@ -40,6 +40,7 @@ class UpdateServiceTest {
     private BotProperties botProperties;
     private ObjectProvider<BuildProperties> buildPropertiesProvider;
     private ApplicationContext applicationContext;
+    private JvmExitService jvmExitService;
     private MutableClock clock;
 
     @BeforeEach
@@ -47,6 +48,7 @@ class UpdateServiceTest {
         botProperties = new BotProperties();
         buildPropertiesProvider = mock(ObjectProvider.class);
         applicationContext = mock(ApplicationContext.class);
+        jvmExitService = mock(JvmExitService.class);
         clock = new MutableClock(BASE_TIME, ZoneOffset.UTC);
 
         Properties props = new Properties();
@@ -63,7 +65,8 @@ class UpdateServiceTest {
                 buildPropertiesProvider,
                 new ObjectMapper(),
                 applicationContext,
-                clock);
+                clock,
+                jvmExitService);
 
         UpdateStatus status = service.getStatus();
 
@@ -185,7 +188,8 @@ class UpdateServiceTest {
 
         service.createApplyIntent();
 
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> service.apply("WRONG1"));
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> service.apply("WRONG1"));
 
         assertEquals("Invalid confirmation token", exception.getMessage());
     }
@@ -338,7 +342,8 @@ class UpdateServiceTest {
                 buildPropertiesProvider,
                 new ObjectMapper(),
                 applicationContext,
-                clock);
+                clock,
+                jvmExitService);
     }
 
     private void enableUpdates(Path updatesPath) {
@@ -362,16 +367,16 @@ class UpdateServiceTest {
 
     private static final class MutableClock extends Clock {
 
-        private Instant instant;
+        private Instant currentInstant;
         private final ZoneId zone;
 
         private MutableClock(Instant instant, ZoneId zone) {
-            this.instant = instant;
+            this.currentInstant = instant;
             this.zone = zone;
         }
 
         private void setInstant(Instant instant) {
-            this.instant = instant;
+            this.currentInstant = instant;
         }
 
         @Override
@@ -381,12 +386,12 @@ class UpdateServiceTest {
 
         @Override
         public Clock withZone(ZoneId zone) {
-            return new MutableClock(instant, zone);
+            return new MutableClock(currentInstant, zone);
         }
 
         @Override
         public Instant instant() {
-            return instant;
+            return currentInstant;
         }
     }
 }

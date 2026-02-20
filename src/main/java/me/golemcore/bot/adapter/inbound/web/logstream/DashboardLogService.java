@@ -13,7 +13,6 @@ import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
@@ -79,7 +78,7 @@ public class DashboardLogService {
         Long oldestSeq = snapshot.get(0).getSeq();
         Long newestSeq = snapshot.get(snapshot.size() - 1).getSeq();
 
-        LinkedList<LogEntryDto> page = new LinkedList<>();
+        Deque<LogEntryDto> page = new ArrayDeque<>();
         for (int i = snapshot.size() - 1; i >= 0 && page.size() < pageSize; i--) {
             LogEntryDto entry = snapshot.get(i);
             if (beforeSeq != null && entry.getSeq() >= beforeSeq) {

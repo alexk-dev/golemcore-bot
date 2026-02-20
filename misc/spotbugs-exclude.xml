@@ -112,4 +112,12 @@
             <Class name="me.golemcore.bot.domain.model.Attachment" />
         </Or>
     </Match>
+    <!--
+        JVM restart flow intentionally terminates the process with a specific
+        exit code so an external supervisor can restart the app.
+    -->
+    <Match>
+        <Bug pattern="DM_EXIT" />
+        <Class name="me.golemcore.bot.domain.service.JvmExitService" />
+    </Match>
 </FindBugsFilter>

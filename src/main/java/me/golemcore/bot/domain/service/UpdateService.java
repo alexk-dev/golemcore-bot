@@ -37,10 +37,12 @@ import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -71,14 +73,15 @@ public class UpdateService {
     private final ObjectMapper objectMapper;
     private final ApplicationContext applicationContext;
     private final Clock clock;
+    private final JvmExitService jvmExitService;
 
     private final Object lock = new Object();
 
     private UpdateState transientState = UpdateState.IDLE;
     private Instant lastCheckAt;
-    private String lastCheckError;
-    private AvailableRelease availableRelease;
-    private PendingIntent pendingIntent;
+    private String lastCheckError = "";
+    private Optional<AvailableRelease> availableRelease = Optional.empty();
+    private Optional<PendingIntent> pendingIntent = Optional.empty();
     private final List<UpdateHistoryItem> history = new ArrayList<>();
 
     public UpdateStatus getStatus() {
@@ -97,7 +100,7 @@ public class UpdateService {
                     .staged(staged)
                     .available(available)
                     .lastCheckAt(lastCheckAt)
-                    .lastError(lastCheckError)
+                    .lastError(lastCheckError == null || lastCheckError.isBlank() ? null : lastCheckError)
                     .build();
         }
     }
@@ -113,10 +116,10 @@ public class UpdateService {
             Instant now = Instant.now(clock);
             synchronized (lock) {
                 lastCheckAt = now;
-                lastCheckError = null;
+                lastCheckError = "";
 
                 if (latestRelease == null) {
-                    availableRelease = null;
+                    availableRelease = Optional.empty();
                     transientState = UpdateState.IDLE;
                     addHistory("check", null, "SUCCESS", "No releases available");
                     return UpdateActionResult.builder()
@@ -127,7 +130,7 @@ public class UpdateService {
 
                 String currentVersion = getCurrentVersion();
                 if (!isRemoteVersionNewer(latestRelease.version(), currentVersion)) {
-                    availableRelease = null;
+                    availableRelease = Optional.empty();
                     transientState = UpdateState.IDLE;
                     addHistory("check", currentVersion, "SUCCESS", "Already on latest version");
                     return UpdateActionResult.builder()
@@ -138,7 +141,7 @@ public class UpdateService {
                 }
 
                 if (!isPatchUpdate(currentVersion, latestRelease.version())) {
-                    availableRelease = null;
+                    availableRelease = Optional.empty();
                     transientState = UpdateState.IDLE;
                     addHistory("check", latestRelease.version(), "SUCCESS",
                             "Minor/major update requires docker image rollout");
@@ -149,7 +152,7 @@ public class UpdateService {
                             .build();
                 }
 
-                availableRelease = latestRelease;
+                availableRelease = Optional.of(latestRelease);
                 transientState = UpdateState.IDLE;
                 addHistory("check", latestRelease.version(), "SUCCESS", "Update is available");
 
@@ -159,14 +162,11 @@ public class UpdateService {
                         .version(latestRelease.version())
                         .build();
             }
-        } catch (Exception e) {
-            String message = "Failed to check updates: " + safeMessage(e);
-            synchronized (lock) {
-                lastCheckError = message;
-                transientState = UpdateState.FAILED;
-                addHistory("check", null, "FAILED", message);
-            }
-            throw new IllegalStateException(message, e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw handleCheckFailure(e);
+        } catch (IOException | RuntimeException e) {
+            throw handleCheckFailure(e);
         }
     }
 
@@ -174,11 +174,9 @@ public class UpdateService {
         AvailableRelease release;
         synchronized (lock) {
             ensureEnabled();
-            if (availableRelease == null) {
-                throw new IllegalStateException("No available update. Run check first.");
-            }
+            release = availableRelease
+                    .orElseThrow(() -> new IllegalStateException("No available update. Run check first."));
             transientState = UpdateState.PREPARING;
-            release = availableRelease;
         }
 
         Path tempJar = null;
@@ -214,21 +212,11 @@ public class UpdateService {
                     .message("Update staged: " + release.version())
                     .version(release.version())
                     .build();
-        } catch (Exception e) {
-            if (tempJar != null) {
-                try {
-                    Files.deleteIfExists(tempJar);
-                } catch (IOException ignored) {
-                    // best effort cleanup
-                }
-            }
-            String message = "Failed to prepare update: " + safeMessage(e);
-            synchronized (lock) {
-                transientState = UpdateState.FAILED;
-                lastCheckError = message;
-                addHistory("prepare", release.version(), "FAILED", message);
-            }
-            throw new IllegalStateException(message, e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw handlePrepareFailure(release, tempJar, e);
+        } catch (IOException | RuntimeException e) {
+            throw handlePrepareFailure(release, tempJar, e);
         }
     }
 
@@ -241,7 +229,7 @@ public class UpdateService {
             }
 
             PendingIntent intent = buildPendingIntent("apply", staged.getVersion());
-            pendingIntent = intent;
+            pendingIntent = Optional.of(intent);
 
             return UpdateIntent.builder()
                     .operation(intent.operation())
@@ -264,7 +252,7 @@ public class UpdateService {
 
             writeMarker(getCurrentMarkerPath(), staged.getAssetName());
             deleteMarker(getStagedMarkerPath());
-            pendingIntent = null;
+            pendingIntent = Optional.empty();
             transientState = UpdateState.APPLYING;
             addHistory("apply", staged.getVersion(), "SUCCESS", "Scheduled JVM restart");
 
@@ -287,7 +275,7 @@ public class UpdateService {
             }
 
             PendingIntent intent = buildPendingIntent("rollback", normalizedVersion);
-            pendingIntent = intent;
+            pendingIntent = Optional.of(intent);
 
             return UpdateIntent.builder()
                     .operation(intent.operation())
@@ -302,15 +290,15 @@ public class UpdateService {
         synchronized (lock) {
             ensureEnabled();
             String normalizedVersion = normalizeOptionalVersion(requestedVersion);
-            validatePendingIntent("rollback", confirmToken, normalizedVersion);
+            PendingIntent validatedIntent = validatePendingIntent("rollback", confirmToken, normalizedVersion);
 
-            String targetVersion = pendingIntent.targetVersion();
+            String targetVersion = validatedIntent.targetVersion();
             String versionToUse = targetVersion != null ? targetVersion : normalizedVersion;
 
             if (versionToUse == null) {
                 deleteMarker(getCurrentMarkerPath());
                 deleteMarker(getStagedMarkerPath());
-                pendingIntent = null;
+                pendingIntent = Optional.empty();
                 transientState = UpdateState.ROLLED_BACK;
                 addHistory("rollback", null, "SUCCESS", "Rolled back to image version");
 
@@ -324,7 +312,7 @@ public class UpdateService {
             String assetName = findJarAssetNameByVersion(versionToUse);
             writeMarker(getCurrentMarkerPath(), assetName);
             deleteMarker(getStagedMarkerPath());
-            pendingIntent = null;
+            pendingIntent = Optional.empty();
             transientState = UpdateState.ROLLED_BACK;
             addHistory("rollback", versionToUse, "SUCCESS", "Rolled back to cached jar " + assetName);
 
@@ -390,7 +378,7 @@ public class UpdateService {
                         .assetName(marker)
                         .build();
             }
-        } catch (Exception e) {
+        } catch (IllegalArgumentException e) {
             log.warn("[update] Invalid current marker value: {}", marker);
         }
 
@@ -418,22 +406,20 @@ public class UpdateService {
                     .assetName(marker)
                     .preparedAt(preparedAt)
                     .build();
-        } catch (Exception e) {
+        } catch (IOException | IllegalArgumentException e) {
             log.warn("[update] Invalid staged marker value: {}", marker);
             return null;
         }
     }
 
     private UpdateVersionInfo resolveAvailableInfo() {
-        if (availableRelease == null) {
-            return null;
-        }
-        return UpdateVersionInfo.builder()
-                .version(availableRelease.version())
-                .tag(availableRelease.tagName())
-                .assetName(availableRelease.assetName())
-                .publishedAt(availableRelease.publishedAt())
-                .build();
+        return availableRelease.map(release -> UpdateVersionInfo.builder()
+                .version(release.version())
+                .tag(release.tagName())
+                .assetName(release.assetName())
+                .publishedAt(release.publishedAt())
+                .build())
+                .orElse(null);
     }
 
     private void ensureEnabled() {
@@ -508,31 +494,34 @@ public class UpdateService {
         return new PendingIntent(operation, targetVersion, token, expiresAt);
     }
 
-    private void validatePendingIntent(String expectedOperation, String confirmToken, String requestedVersion) {
+    private PendingIntent validatePendingIntent(String expectedOperation, String confirmToken,
+            String requestedVersion) {
         if (confirmToken == null || confirmToken.isBlank()) {
             throw new IllegalArgumentException("confirmToken is required");
         }
-        if (pendingIntent == null) {
+        PendingIntent activeIntent = pendingIntent.orElse(null);
+        if (activeIntent == null) {
             throw new IllegalStateException("No pending confirmation intent");
         }
-        if (!expectedOperation.equalsIgnoreCase(pendingIntent.operation())) {
-            throw new IllegalStateException("Pending confirmation is for operation: " + pendingIntent.operation());
+        if (!expectedOperation.equalsIgnoreCase(activeIntent.operation())) {
+            throw new IllegalStateException("Pending confirmation is for operation: " + activeIntent.operation());
         }
         Instant now = Instant.now(clock);
-        if (!now.isBefore(pendingIntent.expiresAt())) {
-            pendingIntent = null;
+        if (!now.isBefore(activeIntent.expiresAt())) {
+            pendingIntent = Optional.empty();
             throw new IllegalStateException("Confirmation token has expired");
         }
-        if (!pendingIntent.confirmToken().equals(confirmToken.trim())) {
+        if (!activeIntent.confirmToken().equals(confirmToken.trim())) {
             throw new IllegalArgumentException("Invalid confirmation token");
         }
 
-        String pendingTargetVersion = pendingIntent.targetVersion();
+        String pendingTargetVersion = activeIntent.targetVersion();
         String normalizedRequested = normalizeOptionalVersion(requestedVersion);
         if (pendingTargetVersion != null && normalizedRequested != null
                 && !pendingTargetVersion.equals(normalizedRequested)) {
             throw new IllegalArgumentException("Confirmation token was issued for another version");
         }
+        return activeIntent;
     }
 
     private String getCurrentVersion() {
@@ -592,7 +581,11 @@ public class UpdateService {
 
     private void writeMarker(Path markerPath, String value) {
         try {
-            Files.createDirectories(markerPath.getParent());
+            Path parent = markerPath.getParent();
+            if (parent == null) {
+                throw new IllegalStateException("Failed to resolve marker parent path: " + markerPath);
+            }
+            Files.createDirectories(parent);
             Files.writeString(
                     markerPath,
                     value + System.lineSeparator(),
@@ -630,14 +623,18 @@ public class UpdateService {
         List<Path> jarFiles;
         try (java.util.stream.Stream<Path> stream = Files.list(jarsDir)) {
             jarFiles = stream
-                    .filter(path -> Files.isRegularFile(path) && path.getFileName().toString().endsWith(".jar"))
+                    .filter(this::isJarFile)
                     .sorted(Comparator.comparing(this::lastModified).reversed())
                     .toList();
         }
 
         int kept = 0;
         for (Path file : jarFiles) {
-            String fileName = file.getFileName().toString();
+            Path fileNamePath = file.getFileName();
+            if (fileNamePath == null) {
+                continue;
+            }
+            String fileName = fileNamePath.toString();
             boolean isProtected = fileName.equals(currentAsset) || fileName.equals(stagedAsset);
             if (isProtected || kept < maxKeptVersions) {
                 kept++;
@@ -675,7 +672,11 @@ public class UpdateService {
             throw new IllegalStateException("Download failed with HTTP " + response.statusCode());
         }
 
-        Files.createDirectories(targetPath.getParent());
+        Path parent = targetPath.getParent();
+        if (parent == null) {
+            throw new IllegalStateException("Failed to resolve target parent path: " + targetPath);
+        }
+        Files.createDirectories(parent);
         try (InputStream inputStream = response.body()) {
             Files.copy(inputStream, targetPath, StandardCopyOption.REPLACE_EXISTING);
         }
@@ -733,8 +734,11 @@ public class UpdateService {
 
         try (InputStream inputStream = Files.newInputStream(filePath, StandardOpenOption.READ)) {
             byte[] buffer = new byte[DOWNLOAD_BUFFER_SIZE];
-            int read;
-            while ((read = inputStream.read(buffer)) != -1) {
+            while (true) {
+                int read = inputStream.read(buffer);
+                if (read == -1) {
+                    break;
+                }
                 digest.update(buffer, 0, read);
             }
             byte[] hash = digest.digest();
@@ -920,7 +924,7 @@ public class UpdateService {
         }
         try {
             return Instant.parse(value);
-        } catch (Exception e) {
+        } catch (DateTimeParseException e) {
             return null;
         }
     }
@@ -933,11 +937,15 @@ public class UpdateService {
 
         try (java.util.stream.Stream<Path> stream = Files.list(jarsDir)) {
             List<Path> files = stream
-                    .filter(path -> Files.isRegularFile(path) && path.getFileName().toString().endsWith(".jar"))
+                    .filter(this::isJarFile)
                     .toList();
 
             for (Path path : files) {
-                String fileName = path.getFileName().toString();
+                Path fileNamePath = path.getFileName();
+                if (fileNamePath == null) {
+                    continue;
+                }
+                String fileName = fileNamePath.toString();
                 String version = extractVersionFromAssetName(fileName);
                 if (targetVersion.equals(version)) {
                     return fileName;
@@ -978,11 +986,51 @@ public class UpdateService {
             }
 
             int exitCode = SpringApplication.exit(applicationContext, () -> RESTART_EXIT_CODE);
-            System.exit(exitCode);
+            jvmExitService.exit(exitCode);
         }, "update-restart-thread");
 
         restartThread.setDaemon(false);
         restartThread.start();
+    }
+
+    private IllegalStateException handleCheckFailure(Throwable throwable) {
+        String message = "Failed to check updates: " + safeMessage(throwable);
+        synchronized (lock) {
+            lastCheckError = message;
+            transientState = UpdateState.FAILED;
+            addHistory("check", null, "FAILED", message);
+        }
+        return new IllegalStateException(message, throwable);
+    }
+
+    private IllegalStateException handlePrepareFailure(AvailableRelease release, Path tempJar, Throwable throwable) {
+        cleanupTempJar(tempJar);
+        String message = "Failed to prepare update: " + safeMessage(throwable);
+        synchronized (lock) {
+            transientState = UpdateState.FAILED;
+            lastCheckError = message;
+            addHistory("prepare", release.version(), "FAILED", message);
+        }
+        return new IllegalStateException(message, throwable);
+    }
+
+    private void cleanupTempJar(Path tempJar) {
+        if (tempJar == null) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(tempJar);
+        } catch (IOException ignored) {
+            // best effort cleanup
+        }
+    }
+
+    private boolean isJarFile(Path path) {
+        if (!Files.isRegularFile(path)) {
+            return false;
+        }
+        Path fileName = path.getFileName();
+        return fileName != null && fileName.toString().endsWith(".jar");
     }
 
     private String safeMessage(Throwable throwable) {
