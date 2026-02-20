@@ -863,8 +863,9 @@ class UpdateServiceTest {
         private final List<URI> requestedUris = new ArrayList<>();
 
         private void enqueueStringResponse(int statusCode, String responseBody) {
-            exchanges.addLast(new StubExchange(statusCode, responseBody.getBytes(StandardCharsets.UTF_8), Map.of(), null,
-                    null));
+            exchanges
+                    .addLast(new StubExchange(statusCode, responseBody.getBytes(StandardCharsets.UTF_8), Map.of(), null,
+                            null));
         }
 
         private void enqueueBinaryResponse(int statusCode, byte[] responseBody) {
