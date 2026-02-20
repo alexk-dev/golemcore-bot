@@ -21,6 +21,11 @@ import {
   rollbackSystemUpdate,
 } from '../api/system';
 
+function invalidateUpdateQueries(queryClient: ReturnType<typeof useQueryClient>): void {
+  void queryClient.invalidateQueries({ queryKey: ['system', 'update', 'status'] });
+  void queryClient.invalidateQueries({ queryKey: ['system', 'update', 'history'] });
+}
+
 export function useSystemHealth(): UseQueryResult<SystemHealthResponse, unknown> {
   return useQuery({ queryKey: ['system', 'health'], queryFn: getSystemHealth, refetchInterval: 30000 });
 }
@@ -51,7 +56,7 @@ export function useCheckSystemUpdate(): UseMutationResult<SystemUpdateActionResp
   return useMutation({
     mutationFn: checkSystemUpdate,
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['system', 'update', 'status'] });
+      invalidateUpdateQueries(qc);
     },
   });
 }
@@ -61,7 +66,7 @@ export function usePrepareSystemUpdate(): UseMutationResult<SystemUpdateActionRe
   return useMutation({
     mutationFn: prepareSystemUpdate,
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['system', 'update', 'status'] });
+      invalidateUpdateQueries(qc);
     },
   });
 }
@@ -75,7 +80,7 @@ export function useApplySystemUpdate(): UseMutationResult<SystemUpdateActionResp
   return useMutation({
     mutationFn: (payload: ConfirmTokenRequest) => applySystemUpdate(payload),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['system', 'update', 'status'] });
+      invalidateUpdateQueries(qc);
       void qc.invalidateQueries({ queryKey: ['system', 'health'] });
     },
   });
@@ -90,7 +95,7 @@ export function useRollbackSystemUpdate(): UseMutationResult<SystemUpdateActionR
   return useMutation({
     mutationFn: (payload: RollbackConfirmRequest) => rollbackSystemUpdate(payload),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['system', 'update', 'status'] });
+      invalidateUpdateQueries(qc);
       void qc.invalidateQueries({ queryKey: ['system', 'health'] });
     },
   });
