@@ -20,6 +20,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -74,13 +75,53 @@ class UpdateControllerTest {
     }
 
     @Test
-    void shouldCallApplyAndRollbackEndpoints() {
-        UpdateActionResult applyResult = UpdateActionResult.builder()
+    void shouldCallCheckEndpoint() {
+        UpdateActionResult checkResult = UpdateActionResult.builder()
+                .success(true)
+                .message("Update available")
+                .version("0.3.1")
+                .build();
+        when(updateService.check()).thenReturn(checkResult);
+
+        StepVerifier.create(controller.check())
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertNotNull(response.getBody());
+                    assertEquals("Update available", response.getBody().getMessage());
+                })
+                .verifyComplete();
+
+        verify(updateService).check();
+    }
+
+    @Test
+    void shouldCallPrepareEndpoint() {
+        UpdateActionResult prepareResult = UpdateActionResult.builder()
+                .success(true)
+                .message("Update staged: 0.3.1")
+                .version("0.3.1")
+                .build();
+        when(updateService.prepare()).thenReturn(prepareResult);
+
+        StepVerifier.create(controller.prepare())
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertNotNull(response.getBody());
+                    assertEquals("0.3.1", response.getBody().getVersion());
+                })
+                .verifyComplete();
+
+        verify(updateService).prepare();
+    }
+
+    @Test
+    void shouldCallApplyEndpoint() {
+        UpdateActionResult result = UpdateActionResult.builder()
                 .success(true)
                 .message("apply")
                 .version("0.3.1")
                 .build();
-        when(updateService.apply("ABC123")).thenReturn(applyResult);
+        when(updateService.apply("ABC123")).thenReturn(result);
 
         StepVerifier.create(controller.apply(new UpdateConfirmRequest("ABC123")))
                 .assertNext(response -> {
@@ -90,6 +131,11 @@ class UpdateControllerTest {
                 })
                 .verifyComplete();
 
+        verify(updateService).apply("ABC123");
+    }
+
+    @Test
+    void shouldCallRollbackIntentEndpoint() {
         UpdateIntent rollbackIntent = UpdateIntent.builder()
                 .operation("rollback")
                 .targetVersion("0.3.0")
@@ -106,6 +152,33 @@ class UpdateControllerTest {
                 })
                 .verifyComplete();
 
+        verify(updateService).createRollbackIntent("0.3.0");
+    }
+
+    @Test
+    void shouldCallRollbackIntentEndpointWithNullBody() {
+        UpdateIntent rollbackIntent = UpdateIntent.builder()
+                .operation("rollback")
+                .targetVersion(null)
+                .confirmToken("XYZ789")
+                .expiresAt(Instant.parse("2026-02-19T12:02:00Z"))
+                .build();
+        when(updateService.createRollbackIntent(null)).thenReturn(rollbackIntent);
+
+        StepVerifier.create(controller.createRollbackIntent(null))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertNotNull(response.getBody());
+                    assertEquals("rollback", response.getBody().getOperation());
+                    assertNull(response.getBody().getTargetVersion());
+                })
+                .verifyComplete();
+
+        verify(updateService).createRollbackIntent(null);
+    }
+
+    @Test
+    void shouldCallRollbackEndpoint() {
         UpdateActionResult rollbackResult = UpdateActionResult.builder()
                 .success(true)
                 .message("rollback")
@@ -121,8 +194,6 @@ class UpdateControllerTest {
                 })
                 .verifyComplete();
 
-        verify(updateService).apply("ABC123");
-        verify(updateService).createRollbackIntent("0.3.0");
         verify(updateService).rollback("XYZ789", "0.3.0");
     }
 

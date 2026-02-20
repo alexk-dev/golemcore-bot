@@ -518,7 +518,8 @@ public class UpdateService {
         if (!expectedOperation.equalsIgnoreCase(pendingIntent.operation())) {
             throw new IllegalStateException("Pending confirmation is for operation: " + pendingIntent.operation());
         }
-        if (Instant.now(clock).isAfter(pendingIntent.expiresAt())) {
+        Instant now = Instant.now(clock);
+        if (!now.isBefore(pendingIntent.expiresAt())) {
             pendingIntent = null;
             throw new IllegalStateException("Confirmation token has expired");
         }

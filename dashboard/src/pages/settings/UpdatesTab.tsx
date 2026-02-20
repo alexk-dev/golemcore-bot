@@ -4,10 +4,8 @@ import type { UseMutationResult } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import type {
   RollbackConfirmRequest,
-  RollbackIntentRequest,
   SystemUpdateActionResponse,
   SystemUpdateIntentResponse,
-  SystemUpdateStatusResponse,
 } from '../../api/system';
 import {
   useApplySystemUpdate,
@@ -25,45 +23,17 @@ import { UpdateActionsCard } from './updates/UpdateActionsCard';
 import { UpdateConfirmCard } from './updates/UpdateConfirmCard';
 import { UpdateHistoryCard } from './updates/UpdateHistoryCard';
 import { UpdateStatusCard } from './updates/UpdateStatusCard';
-
-function isIntentExpired(expiresAt: string): boolean {
-  const timestamp = Date.parse(expiresAt);
-  if (Number.isNaN(timestamp)) {
-    return false;
-  }
-  return timestamp <= Date.now();
-}
-
-function hasPendingOperations(flags: boolean[]): boolean {
-  return flags.some((flag) => flag);
-}
-
-function resolveEnabled(status: SystemUpdateStatusResponse | null, hasStatusError: boolean): boolean {
-  if (status?.enabled != null) {
-    return status.enabled;
-  }
-  return !hasStatusError;
-}
-
-function resolveCanPrepare(availableVersion: string | null, stagedVersion: string | null): boolean {
-  return availableVersion != null || stagedVersion != null;
-}
-
-function resolveCanRequestApply(stagedVersion: string | null): boolean {
-  return stagedVersion != null;
-}
-
-function resolveOperationBusy(flags: boolean[], state: string): boolean {
-  return hasPendingOperations(flags) || UPDATE_BUSY_STATES.has(state);
-}
-
-function resolveHistoryLoading(isLoading: boolean, isFetching: boolean): boolean {
-  return isLoading || isFetching;
-}
-
-function resolveConfirmPending(isApplyPending: boolean, isRollbackPending: boolean): boolean {
-  return isApplyPending || isRollbackPending;
-}
+import {
+  buildRollbackConfirmPayload,
+  buildRollbackIntentPayload,
+  isIntentExpired,
+  resolveCanPrepare,
+  resolveCanRequestApply,
+  resolveConfirmPending,
+  resolveEnabled,
+  resolveHistoryLoading,
+  resolveOperationBusy,
+} from './updates/updateFlow';
 
 async function runActionWithToast<T>(
   action: () => Promise<T>,
@@ -76,18 +46,6 @@ async function runActionWithToast<T>(
   } catch (error: unknown) {
     toast.error(`${errorPrefix}: ${extractErrorMessage(error)}`);
   }
-}
-
-function buildRollbackIntentPayload(rollbackVersion: string): RollbackIntentRequest | undefined {
-  const version = rollbackVersion.trim();
-  return version.length > 0 ? { version } : undefined;
-}
-
-function buildRollbackConfirmPayload(intent: SystemUpdateIntentResponse, token: string): RollbackConfirmRequest {
-  if (intent.targetVersion != null && intent.targetVersion.trim().length > 0) {
-    return { confirmToken: token, version: intent.targetVersion };
-  }
-  return { confirmToken: token };
 }
 
 async function confirmIntentAction(
