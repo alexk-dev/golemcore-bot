@@ -34,6 +34,7 @@ import me.golemcore.bot.domain.service.PromptSectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.SkillTemplateEngine;
 import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.service.WorkspaceInstructionService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.McpPort;
 import me.golemcore.bot.port.outbound.RagPort;
@@ -74,6 +75,7 @@ public class ContextBuildingSystem implements AgentSystem {
     private final PromptSectionService promptSectionService;
     private final RuntimeConfigService runtimeConfigService;
     private final UserPreferencesService userPreferencesService;
+    private final WorkspaceInstructionService workspaceInstructionService;
 
     @Override
     public String getName() {
@@ -171,8 +173,12 @@ public class ContextBuildingSystem implements AgentSystem {
             context.setModelTier(runtimeConfigService.getAutoModelTier());
         }
 
+        String workspaceInstructions = workspaceInstructionService.getWorkspaceInstructionsContext();
+        log.debug("[Context] Workspace instructions: {} chars",
+                workspaceInstructions != null ? workspaceInstructions.length() : 0);
+
         // Build system prompt
-        String systemPrompt = buildSystemPrompt(context, prefs);
+        String systemPrompt = buildSystemPrompt(context, prefs, workspaceInstructions);
         context.setSystemPrompt(systemPrompt);
 
         log.info("[Context] Built context: {} tools, memory={}, skills={}, systemPrompt={} chars",
@@ -184,7 +190,7 @@ public class ContextBuildingSystem implements AgentSystem {
         return context;
     }
 
-    private String buildSystemPrompt(AgentContext context, UserPreferences prefs) {
+    private String buildSystemPrompt(AgentContext context, UserPreferences prefs, String workspaceInstructions) {
         StringBuilder sb = new StringBuilder();
 
         // 1. Render file-based prompt sections (identity, rules, etc.)
@@ -201,6 +207,13 @@ public class ContextBuildingSystem implements AgentSystem {
         // 2. Fallback if no sections loaded
         if (sb.isEmpty()) {
             sb.append("You are a helpful AI assistant.").append(DOUBLE_NEWLINE);
+        }
+
+        if (workspaceInstructions != null && !workspaceInstructions.isBlank()) {
+            sb.append("# Workspace Instructions\n");
+            sb.append("Follow these repository instruction files. If instructions conflict, prefer more local files listed later.\n\n");
+            sb.append(workspaceInstructions);
+            sb.append(DOUBLE_NEWLINE);
         }
 
         if (context.getMemoryContext() != null && !context.getMemoryContext().isBlank()) {
