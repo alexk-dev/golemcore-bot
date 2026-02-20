@@ -41,6 +41,7 @@ class ElevenLabsAdapterTest {
     private ElevenLabsAdapter adapter;
     private BotProperties properties;
     private RuntimeConfigService runtimeConfigService;
+    private WhisperCompatibleSttAdapter whisperSttAdapter;
 
     @BeforeEach
     void setUp() throws IOException {
@@ -60,10 +61,15 @@ class ElevenLabsAdapterTest {
         when(runtimeConfigService.getVoiceId()).thenReturn("test-voice-id");
         when(runtimeConfigService.getTtsModelId()).thenReturn("eleven_multilingual_v2");
         when(runtimeConfigService.getSttModelId()).thenReturn("scribe_v1");
+        when(runtimeConfigService.getTtsProvider()).thenReturn("elevenlabs");
         when(runtimeConfigService.getVoiceSpeed()).thenReturn(1.0f);
+        when(runtimeConfigService.isWhisperSttConfigured()).thenReturn(false);
+
+        whisperSttAdapter = mock(WhisperCompatibleSttAdapter.class);
 
         String baseUrl = mockServer.url("/").toString();
-        adapter = new ElevenLabsAdapter(client, properties, runtimeConfigService, new ObjectMapper()) {
+        adapter = new ElevenLabsAdapter(client, properties, runtimeConfigService, new ObjectMapper(),
+                whisperSttAdapter) {
             @Override
             protected String getSttUrl() {
                 return baseUrl + "v1/speech-to-text";
@@ -357,6 +363,21 @@ class ElevenLabsAdapterTest {
     }
 
     @Test
+    void transcribeUsesConfiguredSttModelId() throws Exception {
+        when(runtimeConfigService.getSttModelId()).thenReturn("scribe_v2");
+        mockServer.enqueue(new MockResponse.Builder()
+                .body("{\"text\":\"Hello\",\"language_code\":\"en\"}")
+                .addHeader(CONTENT_TYPE, APPLICATION_JSON).build());
+
+        adapter.transcribe(new byte[] { 1 }, AudioFormat.OGG_OPUS).get(5, TimeUnit.SECONDS);
+
+        RecordedRequest request = mockServer.takeRequest(1, TimeUnit.SECONDS);
+        assertNotNull(request);
+        String body = request.getBody().utf8();
+        assertTrue(body.contains("scribe_v2"));
+    }
+
+    @Test
     void transcribeNullText() throws Exception {
         mockServer.enqueue(new MockResponse.Builder()
                 .body("{\"text\":null,\"language_code\":\"en\"}")
@@ -587,6 +608,84 @@ class ElevenLabsAdapterTest {
             String message = ex.getCause() != null ? ex.getCause().getMessage() : ex.getMessage();
             assertTrue(message != null && message.contains(expectedSubstring));
         }
+    }
+
+    // ===== Whisper STT delegation tests =====
+
+    @Test
+    void shouldDelegateToWhisperWhenWhisperSttConfigured() throws Exception {
+        when(runtimeConfigService.isWhisperSttConfigured()).thenReturn(true);
+        VoicePort.TranscriptionResult whisperResult = new VoicePort.TranscriptionResult(
+                "Whisper result", "en", 1.0f, java.time.Duration.ZERO, java.util.Collections.emptyList());
+        when(whisperSttAdapter.transcribe(
+                org.mockito.ArgumentMatchers.any(byte[].class),
+                org.mockito.ArgumentMatchers.any(AudioFormat.class))).thenReturn(whisperResult);
+
+        VoicePort.TranscriptionResult result = adapter.transcribe(new byte[] { 1 },
+                AudioFormat.OGG_OPUS).get(5, TimeUnit.SECONDS);
+
+        assertEquals("Whisper result", result.text());
+        assertEquals(0, mockServer.getRequestCount());
+    }
+
+    @Test
+    void shouldBeAvailableWithWhisperSttAndNoElevenLabsApiKey() {
+        when(runtimeConfigService.isWhisperSttConfigured()).thenReturn(true);
+        when(runtimeConfigService.getVoiceApiKey()).thenReturn("");
+
+        assertTrue(adapter.isAvailable());
+    }
+
+    @Test
+    void shouldDelegateToWhisperWithoutElevenLabsApiKey() throws Exception {
+        when(runtimeConfigService.isWhisperSttConfigured()).thenReturn(true);
+        when(runtimeConfigService.getVoiceApiKey()).thenReturn("");
+        VoicePort.TranscriptionResult whisperResult = new VoicePort.TranscriptionResult(
+                "Delegated", "en", 1.0f, java.time.Duration.ZERO, java.util.Collections.emptyList());
+        when(whisperSttAdapter.transcribe(
+                org.mockito.ArgumentMatchers.any(byte[].class),
+                org.mockito.ArgumentMatchers.any(AudioFormat.class))).thenReturn(whisperResult);
+
+        VoicePort.TranscriptionResult result = adapter.transcribe(new byte[] { 1 }, AudioFormat.OGG_OPUS)
+                .get(5, TimeUnit.SECONDS);
+
+        assertEquals("Delegated", result.text());
+        assertEquals(0, mockServer.getRequestCount());
+    }
+
+    @Test
+    void shouldPropagateWhisperErrorWithoutElevenLabsFallback() {
+        when(runtimeConfigService.isWhisperSttConfigured()).thenReturn(true);
+        when(whisperSttAdapter.transcribe(
+                org.mockito.ArgumentMatchers.any(byte[].class),
+                org.mockito.ArgumentMatchers.any(AudioFormat.class)))
+                .thenThrow(new IllegalStateException("Whisper offline"));
+
+        CompletableFuture<VoicePort.TranscriptionResult> future = adapter.transcribe(new byte[] { 1 },
+                AudioFormat.OGG_OPUS);
+        Exception ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
+        String message = ex.getCause() != null ? ex.getCause().getMessage() : ex.getMessage();
+        assertTrue(message != null && message.contains("Whisper offline"));
+        assertEquals(0, mockServer.getRequestCount());
+    }
+
+    @Test
+    void shouldRejectSynthesizeWhenTtsProviderIsNotElevenLabs() {
+        when(runtimeConfigService.getTtsProvider()).thenReturn("whisper");
+
+        CompletableFuture<byte[]> future = adapter.synthesize(TTS_TEXT, VoicePort.VoiceConfig.defaultConfig());
+        Exception ex = assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
+        String message = ex.getCause() != null ? ex.getCause().getMessage() : ex.getMessage();
+        assertTrue(message != null && message.contains("Unsupported TTS provider"));
+        assertEquals(0, mockServer.getRequestCount());
+    }
+
+    @Test
+    void shouldNotBeAvailableWhenVoiceDisabledEvenWithWhisperConfigured() {
+        when(runtimeConfigService.isVoiceEnabled()).thenReturn(false);
+        when(runtimeConfigService.isWhisperSttConfigured()).thenReturn(true);
+
+        assertFalse(adapter.isAvailable());
     }
 
 }

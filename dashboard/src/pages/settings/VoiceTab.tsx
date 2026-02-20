@@ -1,13 +1,19 @@
 import { type ReactElement, useEffect, useMemo, useState } from 'react';
-import { Button, Card, Col, Form, InputGroup, Row } from 'react-bootstrap';
+import { Badge, Button, Card, Col, Form, InputGroup, Row } from 'react-bootstrap';
 import toast from 'react-hot-toast';
+import { useNavigate } from 'react-router-dom';
 import HelpTip from '../../components/common/HelpTip';
 import { SecretStatusBadges } from '../../components/common/SecretStatusBadges';
-import { getSecretInputType, getSecretPlaceholder, getSecretToggleLabel } from '../../components/common/secretInputUtils';
-import SettingsCardTitle from '../../components/common/SettingsCardTitle';
-import { useUpdateVoice } from '../../hooks/useSettings';
-import type { VoiceConfig } from '../../api/settings';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
+import SettingsCardTitle from '../../components/common/SettingsCardTitle';
+import { getSecretInputType, getSecretPlaceholder, getSecretToggleLabel } from '../../components/common/secretInputUtils';
+import type { VoiceConfig } from '../../api/settings';
+import { useUpdateVoice } from '../../hooks/useSettings';
+import { STT_PROVIDER_WHISPER, TTS_PROVIDER_ELEVENLABS, resolveSttProvider, resolveTtsProvider } from './voiceProviders';
+
+interface VoiceTabProps {
+  config: VoiceConfig;
+}
 
 function hasDiff<T>(current: T, initial: T): boolean {
   return JSON.stringify(current) !== JSON.stringify(initial);
@@ -15,10 +21,6 @@ function hasDiff<T>(current: T, initial: T): boolean {
 
 function toNullableString(value: string): string | null {
   return value.length > 0 ? value : null;
-}
-
-function getSaveButtonLabel(isPending: boolean): string {
-  return isPending ? 'Saving...' : 'Save';
 }
 
 function normalizeVoiceSpeed(speed: number | null): number {
@@ -29,57 +31,68 @@ function formatVoiceSpeed(speed: number | null): string {
   return normalizeVoiceSpeed(speed).toFixed(1);
 }
 
-interface VoiceTabProps {
-  config: VoiceConfig;
-}
-
 export default function VoiceTab({ config }: VoiceTabProps): ReactElement {
+  const navigate = useNavigate();
   const updateVoice = useUpdateVoice();
   const [form, setForm] = useState<VoiceConfig>({ ...config });
   const [showKey, setShowKey] = useState(false);
-  const isVoiceDirty = useMemo(() => hasDiff(form, config), [form, config]);
+  const isDirty = useMemo(() => hasDiff(form, config), [form, config]);
   const hasStoredApiKey = config.apiKeyPresent === true;
   const willUpdateApiKey = (form.apiKey?.length ?? 0) > 0;
-  const apiKeyInputType = getSecretInputType(showKey);
-  const keyToggleLabel = getSecretToggleLabel(showKey);
-  const saveLabel = getSaveButtonLabel(updateVoice.isPending);
   const speedLabel = formatVoiceSpeed(form.speed);
   const speedValue = normalizeVoiceSpeed(form.speed);
+  const sttProvider = resolveSttProvider(form.sttProvider);
+  const ttsProvider = resolveTtsProvider(form.ttsProvider);
+  const isWhisperStt = sttProvider === STT_PROVIDER_WHISPER;
+  const isElevenLabsStt = !isWhisperStt;
+  const isElevenLabsTts = ttsProvider === TTS_PROVIDER_ELEVENLABS;
+  const sttModelHintId = isWhisperStt ? 'voice-elevenlabs-stt-hint' : undefined;
 
-  // Reset local draft when backend config changes (e.g. after successful save/refetch).
-  useEffect(() => { setForm({ ...config }); }, [config]);
+  // Keep local draft in sync after server-side updates/refetch.
+  useEffect(() => {
+    setForm({ ...config });
+  }, [config]);
 
   const handleSave = async (): Promise<void> => {
-    await updateVoice.mutateAsync(form);
-    toast.success('Voice settings saved');
+    await updateVoice.mutateAsync({
+      ...form,
+      sttProvider: resolveSttProvider(form.sttProvider),
+      ttsProvider: resolveTtsProvider(form.ttsProvider),
+    });
+    toast.success('ElevenLabs settings saved');
   };
 
   return (
     <Card className="settings-card">
       <Card.Body>
-        <SettingsCardTitle title="Voice (ElevenLabs)" />
-        <Form.Check type="switch" label={<>Enable Voice <HelpTip text="Enable speech-to-text and text-to-speech via ElevenLabs API" /></>}
-          checked={form.enabled ?? false}
-          onChange={(e) => setForm({ ...form, enabled: e.target.checked })} className="mb-3" />
+        <SettingsCardTitle title="ElevenLabs" />
+        <div className="d-flex align-items-center gap-2 mb-3">
+          <Badge bg={isElevenLabsStt ? 'primary' : 'secondary'}>
+            STT: {isElevenLabsStt ? 'Active' : 'Inactive'}
+          </Badge>
+          <Badge bg={isElevenLabsTts ? 'primary' : 'secondary'}>
+            TTS: {isElevenLabsTts ? 'Active' : 'Inactive'}
+          </Badge>
+        </div>
 
         <Form.Group className="mb-3">
           <Form.Label className="small fw-medium d-flex align-items-center gap-2">
-            API Key <HelpTip text="Your ElevenLabs API key from elevenlabs.io/app/settings/api-keys" />
+            ElevenLabs API Key <HelpTip text="Used for TTS and for STT when STT provider is set to ElevenLabs" />
             <SecretStatusBadges hasStoredSecret={hasStoredApiKey} willUpdateSecret={willUpdateApiKey} />
           </Form.Label>
           <InputGroup size="sm">
             <Form.Control
-              type={apiKeyInputType}
-              value={form.apiKey ?? ''}
-              onChange={(e) => setForm({ ...form, apiKey: toNullableString(e.target.value) })}
-              placeholder={getSecretPlaceholder(hasStoredApiKey, 'Enter API key')}
+              type={getSecretInputType(showKey)}
               autoComplete="new-password"
+              value={form.apiKey ?? ''}
+              onChange={(event) => setForm((prev) => ({ ...prev, apiKey: toNullableString(event.target.value) }))}
+              placeholder={getSecretPlaceholder(hasStoredApiKey, 'Enter API key')}
               autoCapitalize="off"
               autoCorrect="off"
               spellCheck={false}
             />
             <Button type="button" variant="secondary" onClick={() => setShowKey(!showKey)}>
-              {keyToggleLabel}
+              {getSecretToggleLabel(showKey)}
             </Button>
           </InputGroup>
         </Form.Group>
@@ -90,8 +103,11 @@ export default function VoiceTab({ config }: VoiceTabProps): ReactElement {
               <Form.Label className="small fw-medium">
                 Voice ID <HelpTip text="ElevenLabs voice identifier. Find voices at elevenlabs.io/voice-library" />
               </Form.Label>
-              <Form.Control size="sm" value={form.voiceId ?? ''}
-                onChange={(e) => setForm({ ...form, voiceId: toNullableString(e.target.value) })} />
+              <Form.Control
+                size="sm"
+                value={form.voiceId ?? ''}
+                onChange={(event) => setForm((prev) => ({ ...prev, voiceId: toNullableString(event.target.value) }))}
+              />
             </Form.Group>
           </Col>
           <Col md={6}>
@@ -100,8 +116,13 @@ export default function VoiceTab({ config }: VoiceTabProps): ReactElement {
                 Speed: {speedLabel}
                 <HelpTip text="Voice playback speed multiplier (0.5 = half speed, 2.0 = double speed)" />
               </Form.Label>
-              <Form.Range min={0.5} max={2.0} step={0.1} value={speedValue}
-                onChange={(e) => setForm({ ...form, speed: parseFloat(e.target.value) })} />
+              <Form.Range
+                min={0.5}
+                max={2.0}
+                step={0.1}
+                value={speedValue}
+                onChange={(event) => setForm((prev) => ({ ...prev, speed: parseFloat(event.target.value) }))}
+              />
             </Form.Group>
           </Col>
         </Row>
@@ -110,30 +131,61 @@ export default function VoiceTab({ config }: VoiceTabProps): ReactElement {
           <Col md={6}>
             <Form.Group>
               <Form.Label className="small fw-medium">
-                TTS Model <HelpTip text="Text-to-speech model. eleven_multilingual_v2 supports 29 languages." />
+                TTS Model <HelpTip text="ElevenLabs text-to-speech model. eleven_multilingual_v2 supports 29 languages." />
               </Form.Label>
-              <Form.Control size="sm" value={form.ttsModelId ?? ''}
-                onChange={(e) => setForm({ ...form, ttsModelId: toNullableString(e.target.value) })}
-                placeholder="eleven_multilingual_v2" />
+              <Form.Control
+                size="sm"
+                value={form.ttsModelId ?? ''}
+                onChange={(event) => setForm((prev) => ({ ...prev, ttsModelId: toNullableString(event.target.value) }))}
+                placeholder="eleven_multilingual_v2"
+              />
             </Form.Group>
           </Col>
           <Col md={6}>
             <Form.Group>
               <Form.Label className="small fw-medium">
-                STT Model <HelpTip text="Speech-to-text model for transcribing voice messages." />
+                STT Model <HelpTip text="Used only when STT provider is ElevenLabs" />
               </Form.Label>
-              <Form.Control size="sm" value={form.sttModelId ?? ''}
-                onChange={(e) => setForm({ ...form, sttModelId: toNullableString(e.target.value) })}
-                placeholder="scribe_v1" />
+              <Form.Control
+                size="sm"
+                value={form.sttModelId ?? ''}
+                disabled={isWhisperStt}
+                aria-describedby={sttModelHintId}
+                onChange={(event) => setForm((prev) => ({ ...prev, sttModelId: toNullableString(event.target.value) }))}
+                placeholder="scribe_v1"
+              />
             </Form.Group>
           </Col>
         </Row>
 
+        {isWhisperStt && (
+          <div className="d-flex flex-column flex-sm-row align-items-start gap-2 mt-2 voice-inline-actions">
+            <Form.Text id="voice-elevenlabs-stt-hint" className="text-muted mb-0">
+              STT provider is set to Whisper in Voice Routing, so ElevenLabs STT model is currently ignored.
+            </Form.Text>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="voice-route-shortcut"
+              onClick={() => navigate('/settings/tool-voice')}
+            >
+              Open Voice Routing
+            </Button>
+          </div>
+        )}
+
         <SettingsSaveBar className="mt-3">
-          <Button type="button" variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isVoiceDirty || updateVoice.isPending}>
-            {saveLabel}
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            onClick={() => { void handleSave(); }}
+            disabled={!isDirty || updateVoice.isPending}
+          >
+            {updateVoice.isPending ? 'Saving...' : 'Save'}
           </Button>
-          <SaveStateHint isDirty={isVoiceDirty} />
+          <SaveStateHint isDirty={isDirty} />
         </SettingsSaveBar>
       </Card.Body>
     </Card>

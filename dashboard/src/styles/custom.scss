@@ -872,6 +872,22 @@ textarea:focus-visible,
   min-width: 240px;
 }
 
+.voice-status-badges {
+  flex-wrap: wrap;
+}
+
+.voice-provider-links {
+  margin-top: 0.25rem;
+}
+
+.voice-route-shortcut {
+  width: auto;
+}
+
+.voice-inline-actions {
+  max-width: 100%;
+}
+
 .tier-card {
   border-radius: 0.75rem;
   transition: box-shadow 0.2s ease;
@@ -1392,6 +1408,18 @@ textarea:focus-visible,
 
   .updates-history-table td[data-label='Message'] {
     min-width: 0;
+  }
+
+  .voice-inline-actions {
+    width: 100%;
+  }
+
+  .voice-inline-actions .btn {
+    width: 100%;
+  }
+
+  .voice-route-shortcut {
+    width: 100%;
   }
 }
 
