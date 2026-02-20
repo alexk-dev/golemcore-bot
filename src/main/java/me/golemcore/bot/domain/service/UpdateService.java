@@ -69,7 +69,7 @@ public class UpdateService {
     private static final int MAX_HISTORY_ITEMS = 100;
     private static final long RESTART_DELAY_MILLIS = 500L;
     private static final int TOKEN_LENGTH = 6;
-    private static final String TOKEN_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    private static final String CONFIRMATION_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final Pattern SEMVER_PATTERN = Pattern
             .compile("^(\\d++)\\.(\\d++)\\.(\\d++)(?:-([0-9A-Za-z.-]++))?$");
     private static final Pattern SAFE_RELEASE_SEGMENT_PATTERN = Pattern.compile("^[0-9A-Za-z._-]+$");
@@ -902,8 +902,8 @@ public class UpdateService {
     private String generateToken() {
         StringBuilder builder = new StringBuilder(TOKEN_LENGTH);
         for (int i = 0; i < TOKEN_LENGTH; i++) {
-            int index = SECURE_RANDOM.nextInt(TOKEN_ALPHABET.length());
-            builder.append(TOKEN_ALPHABET.charAt(index));
+            int index = SECURE_RANDOM.nextInt(CONFIRMATION_CODE_ALPHABET.length());
+            builder.append(CONFIRMATION_CODE_ALPHABET.charAt(index));
         }
         return builder.toString();
     }
