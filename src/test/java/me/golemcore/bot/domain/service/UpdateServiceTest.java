@@ -498,6 +498,48 @@ class UpdateServiceTest {
     }
 
     @Test
+    void shouldFailPrepareWhenDownloadRedirectDoesNotContainLocation(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+        StubHttpClient httpClient = new StubHttpClient();
+        httpClient.enqueueStringResponse(200, releaseJson(
+                "v0.3.1",
+                "bot-0.3.1.jar",
+                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.1/bot-0.3.1.jar",
+                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.1/sha256sums.txt",
+                "2026-02-19T11:00:00Z"));
+        httpClient.enqueueBinaryResponse(302, new byte[0]);
+        TestableUpdateService service = createTestableService(httpClient);
+        service.check();
+
+        IllegalStateException error = assertThrows(IllegalStateException.class, service::prepare);
+
+        assertTrue(error.getMessage().contains("missing Location header"));
+    }
+
+    @Test
+    void shouldPrepareWhenDownloadRedirectTargetsTrustedGithubusercontentHost(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+        byte[] jarBytes = "redirected-binary".getBytes(StandardCharsets.UTF_8);
+        String checksum = sha256Hex(jarBytes);
+
+        StubHttpClient httpClient = new StubHttpClient();
+        httpClient.enqueueStringResponse(200, releaseJson(
+                "v0.3.1",
+                "bot-0.3.1.jar",
+                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.1/bot-0.3.1.jar",
+                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.1/sha256sums.txt",
+                "2026-02-19T11:00:00Z"));
+        httpClient.enqueueRedirectResponse(302, "https://objects.githubusercontent.com/releases/bot-0.3.1.jar");
+        httpClient.enqueueBinaryResponse(200, jarBytes);
+        httpClient.enqueueRedirectResponse(302, "https://objects.githubusercontent.com/releases/sha256sums.txt");
+        httpClient.enqueueStringResponse(200, checksum + "  bot-0.3.1.jar\n");
+        TestableUpdateService service = createTestableService(httpClient);
+
+        assertEquals("Update available: 0.3.1", service.check().getMessage());
+        assertEquals("Update staged: 0.3.1", service.prepare().getMessage());
+    }
+
+    @Test
     void shouldIgnoreUntrustedBrowserDownloadHost(@TempDir Path tempDir) {
         enableUpdates(tempDir);
         StubHttpClient httpClient = new StubHttpClient();
