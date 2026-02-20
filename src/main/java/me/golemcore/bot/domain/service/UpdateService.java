@@ -43,7 +43,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
-import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -65,12 +64,6 @@ public class UpdateService {
     private static final long RESTART_DELAY_MILLIS = 500L;
     private static final int TOKEN_LENGTH = 6;
     private static final String TOKEN_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-    private static final String HTTPS_SCHEME = "https";
-    private static final Set<String> ALLOWED_DOWNLOAD_HOSTS = Set.of(
-            "github.com",
-            "objects.githubusercontent.com",
-            "github-releases.githubusercontent.com",
-            "release-assets.githubusercontent.com");
     private static final Pattern SEMVER_PATTERN = Pattern.compile("^(\\d+)\\.(\\d+)\\.(\\d+)(?:-([0-9A-Za-z.-]+))?$");
     private static final Pattern VERSION_EXTRACT_PATTERN = Pattern.compile("(\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?)");
     private static final Pattern SAFE_RELEASE_SEGMENT_PATTERN = Pattern.compile("^[0-9A-Za-z._-]+$");
@@ -196,8 +189,8 @@ public class UpdateService {
             Path targetJar = resolveJarPath(release.assetName());
             tempJar = targetJar.resolveSibling(release.assetName() + ".tmp");
 
-            downloadToFile(release.assetUrl(), tempJar);
-            String checksumsText = downloadToString(release.sha256Url());
+            downloadReleaseAsset(release.tagName(), release.assetName(), tempJar);
+            String checksumsText = downloadReleaseChecksums(release.tagName());
             String expectedHash = extractExpectedSha256(checksumsText, release.assetName());
             String actualHash = computeSha256(tempJar);
 
@@ -485,17 +478,14 @@ public class UpdateService {
         String tagName = root.path("tag_name").asText("");
         String assetName = jarAssetNode.path("name").asText("");
         String version = extractVersion(tagName, assetName);
-        String assetUrl = buildReleaseAssetUrl(tagName, assetName);
-        String shaUrl = buildReleaseAssetUrl(tagName, SHA256_FILE_NAME);
         Instant publishedAt = parseInstant(root.path("published_at").asText(null));
 
-        URI validatedAssetUri = validateDownloadUri(assetUrl);
-        URI validatedShaUri = validateDownloadUri(shaUrl);
-        return new AvailableRelease(version, tagName, assetName, validatedAssetUri.toString(),
-                validatedShaUri.toString(), publishedAt);
+        validateReleaseTag(tagName);
+        validateAssetName(assetName);
+        return new AvailableRelease(version, tagName, assetName, publishedAt);
     }
 
-    private String buildReleaseAssetUrl(String tagName, String assetName) {
+    private void validateReleaseTag(String tagName) {
         if (tagName == null || tagName.isBlank()) {
             throw new IllegalStateException("Release tag is missing");
         }
@@ -503,8 +493,6 @@ public class UpdateService {
         if (!SAFE_RELEASE_SEGMENT_PATTERN.matcher(normalizedTag).matches()) {
             throw new IllegalStateException("Release tag contains prohibited characters: " + normalizedTag);
         }
-        validateAssetName(assetName);
-        return "https://github.com/" + RELEASE_REPOSITORY + "/releases/download/" + normalizedTag + "/" + assetName;
     }
 
     private PendingIntent buildPendingIntent(String operation, String targetVersion) {
@@ -679,8 +667,9 @@ public class UpdateService {
         }
     }
 
-    private void downloadToFile(String url, Path targetPath) throws IOException, InterruptedException {
-        URI downloadUri = validateDownloadUri(url);
+    private void downloadReleaseAsset(String tagName, String assetName, Path targetPath)
+            throws IOException, InterruptedException {
+        URI downloadUri = buildReleaseAssetUri(tagName, assetName);
         HttpRequest.Builder builder = HttpRequest.newBuilder(downloadUri)
                 .GET()
                 .timeout(Duration.ofMinutes(5))
@@ -702,8 +691,8 @@ public class UpdateService {
         }
     }
 
-    private String downloadToString(String url) throws IOException, InterruptedException {
-        URI downloadUri = validateDownloadUri(url);
+    private String downloadReleaseChecksums(String tagName) throws IOException, InterruptedException {
+        URI downloadUri = buildReleaseAssetUri(tagName, SHA256_FILE_NAME);
         HttpRequest.Builder builder = HttpRequest.newBuilder(downloadUri)
                 .GET()
                 .timeout(Duration.ofSeconds(30))
@@ -723,33 +712,17 @@ public class UpdateService {
                 .build();
     }
 
-    private URI validateDownloadUri(String rawUrl) {
-        if (rawUrl == null || rawUrl.isBlank()) {
-            throw new IllegalArgumentException("Download URL is blank");
-        }
-
-        URI uri;
-        try {
-            uri = URI.create(rawUrl.trim());
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("Download URL is malformed", e);
-        }
-
-        String scheme = uri.getScheme();
-        if (scheme == null || !HTTPS_SCHEME.equalsIgnoreCase(scheme)) {
-            throw new IllegalArgumentException("Download URL must use https scheme");
-        }
-
-        String host = uri.getHost();
-        if (host == null || host.isBlank()) {
-            throw new IllegalArgumentException("Download URL host is missing");
-        }
-        String normalizedHost = host.toLowerCase(Locale.ROOT);
-        if (!ALLOWED_DOWNLOAD_HOSTS.contains(normalizedHost)) {
-            throw new IllegalArgumentException("Download URL host is not allowed: " + normalizedHost);
-        }
-
-        return uri;
+    private URI buildReleaseAssetUri(String tagName, String assetName) {
+        validateReleaseTag(tagName);
+        validateAssetName(assetName);
+        String normalizedTag = tagName.trim();
+        String path = "/"
+                + RELEASE_REPOSITORY
+                + "/releases/download/"
+                + normalizedTag
+                + "/"
+                + assetName;
+        return URI.create("https://github.com" + path);
     }
 
     private String extractExpectedSha256(String checksumsText, String assetName) {
@@ -1097,8 +1070,6 @@ public class UpdateService {
             String version,
             String tagName,
             String assetName,
-            String assetUrl,
-            String sha256Url,
             Instant publishedAt) {
     }
 
