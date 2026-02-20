@@ -43,6 +43,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -64,6 +65,12 @@ public class UpdateService {
     private static final long RESTART_DELAY_MILLIS = 500L;
     private static final int TOKEN_LENGTH = 6;
     private static final String TOKEN_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    private static final String HTTPS_SCHEME = "https";
+    private static final Set<String> ALLOWED_DOWNLOAD_HOSTS = Set.of(
+            "github.com",
+            "objects.githubusercontent.com",
+            "github-releases.githubusercontent.com",
+            "release-assets.githubusercontent.com");
     private static final Pattern SEMVER_PATTERN = Pattern.compile("^(\\d+)\\.(\\d+)\\.(\\d+)(?:-([0-9A-Za-z.-]+))?$");
     private static final Pattern VERSION_EXTRACT_PATTERN = Pattern.compile("(\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?)");
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
@@ -485,7 +492,10 @@ public class UpdateService {
             throw new IllegalStateException("Release assets contain empty download URL");
         }
 
-        return new AvailableRelease(version, tagName, assetName, assetUrl, shaUrl, publishedAt);
+        URI validatedAssetUri = validateDownloadUri(assetUrl);
+        URI validatedShaUri = validateDownloadUri(shaUrl);
+        return new AvailableRelease(version, tagName, assetName, validatedAssetUri.toString(),
+                validatedShaUri.toString(), publishedAt);
     }
 
     private PendingIntent buildPendingIntent(String operation, String targetVersion) {
@@ -661,7 +671,8 @@ public class UpdateService {
     }
 
     private void downloadToFile(String url, Path targetPath) throws IOException, InterruptedException {
-        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
+        URI downloadUri = validateDownloadUri(url);
+        HttpRequest.Builder builder = HttpRequest.newBuilder(downloadUri)
                 .GET()
                 .timeout(Duration.ofMinutes(5))
                 .header("User-Agent", "golemcore-bot-updater");
@@ -683,7 +694,8 @@ public class UpdateService {
     }
 
     private String downloadToString(String url) throws IOException, InterruptedException {
-        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
+        URI downloadUri = validateDownloadUri(url);
+        HttpRequest.Builder builder = HttpRequest.newBuilder(downloadUri)
                 .GET()
                 .timeout(Duration.ofSeconds(30))
                 .header("User-Agent", "golemcore-bot-updater");
@@ -696,10 +708,39 @@ public class UpdateService {
         return response.body();
     }
 
-    private HttpClient buildHttpClient() {
+    protected HttpClient buildHttpClient() {
         return HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(20))
                 .build();
+    }
+
+    private URI validateDownloadUri(String rawUrl) {
+        if (rawUrl == null || rawUrl.isBlank()) {
+            throw new IllegalArgumentException("Download URL is blank");
+        }
+
+        URI uri;
+        try {
+            uri = URI.create(rawUrl.trim());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Download URL is malformed", e);
+        }
+
+        String scheme = uri.getScheme();
+        if (scheme == null || !HTTPS_SCHEME.equalsIgnoreCase(scheme)) {
+            throw new IllegalArgumentException("Download URL must use https scheme");
+        }
+
+        String host = uri.getHost();
+        if (host == null || host.isBlank()) {
+            throw new IllegalArgumentException("Download URL host is missing");
+        }
+        String normalizedHost = host.toLowerCase(Locale.ROOT);
+        if (!ALLOWED_DOWNLOAD_HOSTS.contains(normalizedHost)) {
+            throw new IllegalArgumentException("Download URL host is not allowed: " + normalizedHost);
+        }
+
+        return uri;
     }
 
     private String extractExpectedSha256(String checksumsText, String assetName) {
@@ -973,7 +1014,7 @@ public class UpdateService {
         }
     }
 
-    private void requestRestartAsync() {
+    protected void requestRestartAsync() {
         Thread restartThread = new Thread(() -> {
             try {
                 Thread.sleep(RESTART_DELAY_MILLIS);
