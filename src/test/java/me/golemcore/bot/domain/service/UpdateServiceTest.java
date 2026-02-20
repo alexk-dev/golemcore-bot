@@ -37,6 +37,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.List;
@@ -62,6 +63,8 @@ class UpdateServiceTest {
     private static final Instant BASE_TIME = Instant.parse("2026-02-19T12:00:00Z");
     private static final String VERSION_CURRENT = "0.3.0";
     private static final String VERSION_PATCH = "0.3.1";
+    private static final long DEFAULT_JAR_ASSET_ID = 101L;
+    private static final long DEFAULT_SHA_ASSET_ID = 102L;
 
     private BotProperties botProperties;
     private ObjectProvider<BuildProperties> buildPropertiesProvider;
@@ -438,6 +441,17 @@ class UpdateServiceTest {
         try (java.util.stream.Stream<Path> stream = Files.list(tempDir.resolve("jars"))) {
             assertTrue(stream.count() <= 2);
         }
+        assertEquals(
+                URI.create("https://api.github.com/repos/alexk-dev/golemcore-bot/releases/latest"),
+                httpClient.getRequestedUris().get(0));
+        assertEquals(
+                URI.create("https://api.github.com/repos/alexk-dev/golemcore-bot/releases/assets/"
+                        + DEFAULT_JAR_ASSET_ID),
+                httpClient.getRequestedUris().get(1));
+        assertEquals(
+                URI.create("https://api.github.com/repos/alexk-dev/golemcore-bot/releases/assets/"
+                        + DEFAULT_SHA_ASSET_ID),
+                httpClient.getRequestedUris().get(2));
         assertEquals(UpdateState.STAGED, service.getStatus().getState());
     }
 
@@ -528,6 +542,25 @@ class UpdateServiceTest {
         IllegalStateException error = assertThrows(IllegalStateException.class, service::check);
 
         assertTrue(error.getMessage().contains("Release tag contains prohibited characters"));
+    }
+
+    @Test
+    void shouldRejectReleaseWhenJarAssetIdIsInvalid(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+        StubHttpClient httpClient = new StubHttpClient();
+        httpClient.enqueueStringResponse(200, releaseJsonWithAssetIds(
+                "v0.3.1",
+                "bot-0.3.1.jar",
+                0L,
+                DEFAULT_SHA_ASSET_ID,
+                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.1/bot-0.3.1.jar",
+                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.1/sha256sums.txt",
+                "2026-02-19T11:00:00Z"));
+        TestableUpdateService service = createTestableService(httpClient);
+
+        IllegalStateException error = assertThrows(IllegalStateException.class, service::check);
+
+        assertTrue(error.getMessage().contains("Release asset id is invalid"));
     }
 
     @Test
@@ -672,22 +705,42 @@ class UpdateServiceTest {
             String assetUrl,
             String shaUrl,
             String publishedAt) {
+        return releaseJsonWithAssetIds(
+                tagName,
+                assetName,
+                DEFAULT_JAR_ASSET_ID,
+                DEFAULT_SHA_ASSET_ID,
+                assetUrl,
+                shaUrl,
+                publishedAt);
+    }
+
+    private static String releaseJsonWithAssetIds(
+            String tagName,
+            String assetName,
+            long assetId,
+            long shaAssetId,
+            String assetUrl,
+            String shaUrl,
+            String publishedAt) {
         return """
                 {
                   "tag_name": "%s",
                   "published_at": "%s",
                   "assets": [
                     {
+                      "id": %d,
                       "name": "%s",
                       "browser_download_url": "%s"
                     },
                     {
+                      "id": %d,
                       "name": "sha256sums.txt",
                       "browser_download_url": "%s"
                     }
                   ]
                 }
-                """.formatted(tagName, publishedAt, assetName, assetUrl, shaUrl);
+                """.formatted(tagName, publishedAt, assetId, assetName, assetUrl, shaAssetId, shaUrl);
     }
 
     private static String sha256Hex(byte[] bytes) {
@@ -788,6 +841,7 @@ class UpdateServiceTest {
     private static final class StubHttpClient extends HttpClient {
 
         private final Deque<StubExchange> exchanges = new ArrayDeque<>();
+        private final List<URI> requestedUris = new ArrayList<>();
 
         private void enqueueStringResponse(int statusCode, String responseBody) {
             exchanges.addLast(new StubExchange(statusCode, responseBody.getBytes(StandardCharsets.UTF_8), null, null));
@@ -849,6 +903,7 @@ class UpdateServiceTest {
         @Override
         public <T> HttpResponse<T> send(HttpRequest request, HttpResponse.BodyHandler<T> responseBodyHandler)
                 throws IOException, InterruptedException {
+            requestedUris.add(request.uri());
             StubExchange exchange = exchanges.pollFirst();
             if (exchange == null) {
                 throw new IllegalStateException("No stub exchange configured for request " + request.uri());
@@ -900,6 +955,10 @@ class UpdateServiceTest {
                 HttpResponse.BodyHandler<T> responseBodyHandler,
                 HttpResponse.PushPromiseHandler<T> pushPromiseHandler) {
             return sendAsync(request, responseBodyHandler);
+        }
+
+        private List<URI> getRequestedUris() {
+            return List.copyOf(requestedUris);
         }
     }
 

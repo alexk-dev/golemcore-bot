@@ -53,6 +53,7 @@ public class UpdateService {
 
     private static final String GITHUB_API_BASE = "https://api.github.com";
     private static final String RELEASE_REPOSITORY = "alexk-dev/golemcore-bot";
+    private static final String RELEASE_ASSET_API_PATH = "/repos/" + RELEASE_REPOSITORY + "/releases/assets/";
     private static final String RELEASE_ASSET_PATTERN = "bot-*.jar";
     private static final String SHA256_FILE_NAME = "sha256sums.txt";
     private static final String JARS_DIR_NAME = "jars";
@@ -189,8 +190,8 @@ public class UpdateService {
             Path targetJar = resolveJarPath(release.assetName());
             tempJar = targetJar.resolveSibling(release.assetName() + ".tmp");
 
-            downloadReleaseAsset(release.tagName(), release.assetName(), tempJar);
-            String checksumsText = downloadReleaseChecksums(release.tagName());
+            downloadReleaseAsset(release.assetId(), tempJar);
+            String checksumsText = downloadReleaseChecksums(release.checksumAssetId());
             String expectedHash = extractExpectedSha256(checksumsText, release.assetName());
             String actualHash = computeSha256(tempJar);
 
@@ -457,21 +458,26 @@ public class UpdateService {
         PathMatcher matcher = FileSystems.getDefault().getPathMatcher("glob:" + RELEASE_ASSET_PATTERN);
 
         JsonNode jarAssetNode = null;
-        JsonNode shaAssetNode = null;
+        Long jarAssetId = null;
+        Long checksumAssetId = null;
         for (JsonNode assetNode : assets) {
             String assetName = assetNode.path("name").asText("");
             if (matcher.matches(Path.of(assetName))) {
                 jarAssetNode = assetNode;
+                jarAssetId = extractAssetId(assetNode, assetName);
             }
             if (SHA256_FILE_NAME.equals(assetName)) {
-                shaAssetNode = assetNode;
+                checksumAssetId = extractAssetId(assetNode, assetName);
             }
         }
 
         if (jarAssetNode == null) {
             return null;
         }
-        if (shaAssetNode == null) {
+        if (jarAssetId == null) {
+            throw new IllegalStateException("Release asset id is missing");
+        }
+        if (checksumAssetId == null) {
             throw new IllegalStateException("sha256sums.txt not found in release assets");
         }
 
@@ -482,7 +488,7 @@ public class UpdateService {
 
         validateReleaseTag(tagName);
         validateAssetName(assetName);
-        return new AvailableRelease(version, tagName, assetName, publishedAt);
+        return new AvailableRelease(version, tagName, assetName, jarAssetId, checksumAssetId, publishedAt);
     }
 
     private void validateReleaseTag(String tagName) {
@@ -493,6 +499,18 @@ public class UpdateService {
         if (!SAFE_RELEASE_SEGMENT_PATTERN.matcher(normalizedTag).matches()) {
             throw new IllegalStateException("Release tag contains prohibited characters: " + normalizedTag);
         }
+    }
+
+    private long extractAssetId(JsonNode assetNode, String assetName) {
+        JsonNode idNode = assetNode.path("id");
+        if (!idNode.isIntegralNumber()) {
+            throw new IllegalStateException("Release asset id is missing for " + assetName);
+        }
+        long assetId = idNode.asLong();
+        if (assetId <= 0) {
+            throw new IllegalStateException("Release asset id is invalid for " + assetName);
+        }
+        return assetId;
     }
 
     private PendingIntent buildPendingIntent(String operation, String targetVersion) {
@@ -667,12 +685,13 @@ public class UpdateService {
         }
     }
 
-    private void downloadReleaseAsset(String tagName, String assetName, Path targetPath)
+    private void downloadReleaseAsset(long assetId, Path targetPath)
             throws IOException, InterruptedException {
-        URI downloadUri = buildReleaseAssetUri(tagName, assetName);
+        URI downloadUri = buildReleaseAssetApiUri(assetId);
         HttpRequest.Builder builder = HttpRequest.newBuilder(downloadUri)
                 .GET()
                 .timeout(Duration.ofMinutes(5))
+                .header("Accept", "application/octet-stream")
                 .header("User-Agent", "golemcore-bot-updater");
 
         HttpResponse<InputStream> response = buildHttpClient().send(builder.build(),
@@ -691,11 +710,12 @@ public class UpdateService {
         }
     }
 
-    private String downloadReleaseChecksums(String tagName) throws IOException, InterruptedException {
-        URI downloadUri = buildReleaseAssetUri(tagName, SHA256_FILE_NAME);
+    private String downloadReleaseChecksums(long assetId) throws IOException, InterruptedException {
+        URI downloadUri = buildReleaseAssetApiUri(assetId);
         HttpRequest.Builder builder = HttpRequest.newBuilder(downloadUri)
                 .GET()
                 .timeout(Duration.ofSeconds(30))
+                .header("Accept", "application/octet-stream")
                 .header("User-Agent", "golemcore-bot-updater");
 
         HttpResponse<String> response = buildHttpClient().send(builder.build(),
@@ -709,20 +729,15 @@ public class UpdateService {
     protected HttpClient buildHttpClient() {
         return HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(20))
+                .followRedirects(HttpClient.Redirect.NORMAL)
                 .build();
     }
 
-    private URI buildReleaseAssetUri(String tagName, String assetName) {
-        validateReleaseTag(tagName);
-        validateAssetName(assetName);
-        String normalizedTag = tagName.trim();
-        String path = "/"
-                + RELEASE_REPOSITORY
-                + "/releases/download/"
-                + normalizedTag
-                + "/"
-                + assetName;
-        return URI.create("https://github.com" + path);
+    private URI buildReleaseAssetApiUri(long assetId) {
+        if (assetId <= 0) {
+            throw new IllegalArgumentException("Invalid release asset id: " + assetId);
+        }
+        return URI.create(GITHUB_API_BASE + RELEASE_ASSET_API_PATH + assetId);
     }
 
     private String extractExpectedSha256(String checksumsText, String assetName) {
@@ -1070,6 +1085,8 @@ public class UpdateService {
             String version,
             String tagName,
             String assetName,
+            long assetId,
+            long checksumAssetId,
             Instant publishedAt) {
     }
 
