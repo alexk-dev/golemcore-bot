@@ -36,6 +36,41 @@ This guide covers the first three layers. For RAG, see the [RAG Guide](RAG.md).
 
 ---
 
+## Memory V2 (Structured + Legacy)
+
+Current implementation runs in hybrid mode:
+
+1. `MemoryPersistSystem` still appends legacy daily notes (`memory/YYYY-MM-DD.md`).
+2. The same finalized turn is also persisted as structured `MemoryItem` records (`JSONL`) via `MemoryWriteService`.
+3. `ContextBuildingSystem` asks memory for a scored `MemoryPack` first, and falls back to legacy text context only when needed.
+
+Structured stores:
+
+```text
+memory/
+├── MEMORY.md
+├── YYYY-MM-DD.md
+└── items/
+    ├── episodic/YYYY-MM-DD.jsonl
+    ├── semantic.jsonl
+    └── procedural.jsonl
+```
+
+Key model objects:
+
+1. `MemoryItem` — typed memory record with `layer`, `type`, `confidence`, `salience`, `tags`, `references`, `fingerprint`.
+2. `MemoryQuery` — retrieval constraints (`topK`, prompt budgets, query text, active skill).
+3. `MemoryPack` — selected items + diagnostics + rendered context.
+4. `TurnMemoryEvent` — structured turn payload from the pipeline write stage.
+
+Memory layer intent:
+
+1. `EPISODIC` — recent turn events and short-horizon traces.
+2. `SEMANTIC` — durable facts/preferences/constraints.
+3. `PROCEDURAL` — stable execution knowledge (failures/fixes/commands).
+
+---
+
 ## Session Messages
 
 The most immediate form of memory — the full conversation history within the current session.
@@ -199,6 +234,13 @@ If all sections are empty, `toContext()` returns an empty string and the `# Memo
 
 > **Source:** `Memory.java`, `MemoryService.java`
 
+In Memory V2 mode, prompt assembly prefers `memoryComponent.buildMemoryPack(MemoryQuery)`:
+
+1. retrieval ranks structured items across `EPISODIC` / `SEMANTIC` / `PROCEDURAL`;
+2. `MemoryPromptPackService` applies soft/max token budgets;
+3. rendered sections are injected under `# Memory`;
+4. legacy markdown context is used as fallback (and can be disabled via config).
+
 ---
 
 ## Storage Layout
@@ -227,7 +269,19 @@ Runtime config (stored in `preferences/runtime-config.json`):
 {
   "memory": {
     "enabled": true,
-    "recentDays": 7
+    "recentDays": 7,
+    "softPromptBudgetTokens": 1800,
+    "maxPromptBudgetTokens": 3500,
+    "workingTopK": 6,
+    "episodicTopK": 8,
+    "semanticTopK": 6,
+    "proceduralTopK": 4,
+    "promotionEnabled": true,
+    "promotionMinConfidence": 0.75,
+    "decayEnabled": true,
+    "decayDays": 30,
+    "codeAwareExtractionEnabled": true,
+    "legacyDailyNotesEnabled": true
   },
   "compaction": {
     "enabled": true,
@@ -246,9 +300,9 @@ Storage paths/directories are Spring properties (see [Configuration Guide](CONFI
 | Order | System | Memory Behavior |
 |-------|--------|----------------|
 | 18 | `AutoCompactionSystem` | Compacts session messages if context too large |
-| 20 | `ContextBuildingSystem` | **Reads** memory context (MEMORY.md + daily notes + recent days) and injects into system prompt |
+| 20 | `ContextBuildingSystem` | **Reads** scored `MemoryPack` (structured) and injects into system prompt, with legacy fallback |
 | 30 | `ToolLoopExecutionSystem` | LLM call + tool execution; system prompt includes `# Memory` section; LLM can write to `MEMORY.md` via filesystem tool |
-| 50 | `MemoryPersistSystem` | **Writes** today's notes — appends `[HH:mm] User: ... \| Assistant: ...` |
+| 50 | `MemoryPersistSystem` | **Writes** both legacy daily note and structured turn event |
 | 55 | `RagIndexingSystem` | Indexes exchange to LightRAG (separate from this memory system) |
 
 The read path (order=20) runs **before** the write path (order=50), so the LLM sees the memory state **before** the current exchange is recorded.
@@ -260,9 +314,13 @@ The read path (order=20) runs **before** the write path (order=50), so the LLM s
 | Class | Package | Purpose |
 |-------|---------|---------|
 | `Memory` | `domain.model` | Data model: longTermContent, todayNotes, recentDays; `toContext()` formatting |
-| `MemoryComponent` | `domain.component` | Interface: getMemory, readLongTerm, writeLongTerm, readToday, appendToday |
-| `MemoryService` | `domain.service` | Implementation: loads from storage, builds Memory, formats context |
-| `MemoryPersistSystem` | `domain.system` | Order=50: appends conversation exchanges to daily notes |
+| `MemoryComponent` | `domain.component` | Interface: legacy text memory + Memory V2 APIs (`buildMemoryPack`, structured writes/queries) |
+| `MemoryService` | `domain.service` | Facade implementation: legacy compatibility + structured retrieval/pack assembly |
+| `MemoryWriteService` | `domain.service` | Structured JSONL persistence, extraction, dedup, promotion/decay |
+| `MemoryRetrievalService` | `domain.service` | Hybrid scoring + layer top-k selection |
+| `MemoryPromptPackService` | `domain.service` | Token-budgeted rendering of memory packs |
+| `MemoryPersistSystem` | `domain.system` | Order=50: dual-write (legacy daily note + structured turn event) |
+| `MemoryTool` | `tools` | Explicit memory ops for autonomous flows: add/search/update/promote/forget |
 | `SessionService` | `domain.service` | Session CRUD, message history, compaction operations |
 | `CompactionService` | `domain.service` | LLM-powered summarization for context overflow |
 | `AutoCompactionSystem` | `domain.system` | Order=18: automatic compaction when context exceeds threshold |

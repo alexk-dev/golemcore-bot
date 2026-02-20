@@ -2,7 +2,7 @@
 
 How the bot uses LightRAG for long-term semantic memory via knowledge graphs.
 
-> **See also:** [Configuration Guide](CONFIGURATION.md#rag) for runtime config fields, [Memory Guide](MEMORY.md) for short-term memory (daily notes + MEMORY.md), [Deployment Guide](DEPLOYMENT.md) for production setup.
+> **See also:** [Configuration Guide](CONFIGURATION.md#rag) for runtime config fields, [Memory Guide](MEMORY.md) for short-term memory (Memory V2 pack + legacy fallback), [Deployment Guide](DEPLOYMENT.md) for production setup.
 
 ---
 
@@ -165,7 +165,7 @@ RAG context is injected **after** short-term memory and **before** active skill 
 ```
 [Prompt sections: IDENTITY.md, RULES.md, ...]
 
-# Memory                    ← short-term (daily notes, MEMORY.md)
+# Memory                    ← short-term (Memory V2 pack, legacy fallback)
 ...
 
 # Relevant Memory           ← RAG context (knowledge graph retrieval)
@@ -322,7 +322,7 @@ The bot has two memory layers that work together:
 
 | Layer | Mechanism | Scope | Survives `/new`? |
 |-------|-----------|-------|------------------|
-| **Short-term** ([Memory](MEMORY.md)) | Daily notes (`YYYY-MM-DD.md`) + `MEMORY.md` | Recent N days (default 7) | Yes (separate from session) |
+| **Short-term** ([Memory](MEMORY.md)) | Structured memory pack (`items/*.jsonl`) + optional legacy notes (`YYYY-MM-DD.md`, `MEMORY.md`) | Configurable top-k + budget | Yes (separate from session) |
 | **Long-term** (RAG) | Knowledge graph via LightRAG | All indexed conversations | Yes (external storage) |
 
 **Short-term memory** (`# Memory` section in prompt) provides:

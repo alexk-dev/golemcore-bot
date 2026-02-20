@@ -235,6 +235,39 @@ Limits for a single user request (one internal tool loop run):
 }
 ```
 
+### Memory (V2)
+
+Memory behavior is configured under `memory`:
+
+```json
+{
+  "memory": {
+    "enabled": true,
+    "recentDays": 7,
+    "softPromptBudgetTokens": 1800,
+    "maxPromptBudgetTokens": 3500,
+    "workingTopK": 6,
+    "episodicTopK": 8,
+    "semanticTopK": 6,
+    "proceduralTopK": 4,
+    "promotionEnabled": true,
+    "promotionMinConfidence": 0.75,
+    "decayEnabled": true,
+    "decayDays": 30,
+    "codeAwareExtractionEnabled": true,
+    "legacyDailyNotesEnabled": true
+  }
+}
+```
+
+Field notes:
+
+1. `softPromptBudgetTokens` / `maxPromptBudgetTokens`: memory injection budget for prompt packing.
+2. `*TopK`: per-layer candidate limits for retrieval.
+3. `promotion*`: controls promotion from episodic records into semantic/procedural stores.
+4. `decay*`: stale item pruning window.
+5. `legacyDailyNotesEnabled`: compatibility toggle for old markdown daily notes.
+
 ### Telegram
 
 Telegram channel settings are stored in runtime config under `telegram`:
