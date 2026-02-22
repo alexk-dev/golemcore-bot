@@ -2,7 +2,7 @@ import type { IconType } from 'react-icons';
 import {
   FiSliders, FiSend, FiCpu, FiTool, FiMic,
   FiGlobe, FiPlayCircle, FiShield, FiSearch, FiHardDrive, FiBarChart2,
-  FiTerminal, FiMail, FiCompass, FiShuffle, FiKey,
+  FiTerminal, FiMail, FiCompass, FiShuffle, FiKey, FiRefreshCw,
 } from 'react-icons/fi';
 
 export interface SettingsSectionMeta {
@@ -25,8 +25,10 @@ export const SETTINGS_SECTIONS = [
   { key: 'tool-email', title: 'Email (IMAP/SMTP)', description: 'Email reading and sending integrations', icon: FiMail },
   { key: 'tool-automation', title: 'Automation Tools', description: 'Skill management, transitions, and tier switching', icon: FiShuffle },
   { key: 'tool-goals', title: 'Goal Management', description: 'Auto mode goal operations', icon: FiTool },
+  { key: 'tool-voice', title: 'Voice Routing', description: 'Enable voice and choose STT/TTS providers', icon: FiMic },
 
-  { key: 'voice-elevenlabs', title: 'ElevenLabs', description: 'TTS/STT provider settings', icon: FiMic },
+  { key: 'voice-elevenlabs', title: 'Voice: ElevenLabs', description: 'ElevenLabs credentials, voice ID, and model settings', icon: FiMic },
+  { key: 'voice-whisper', title: 'Voice: Whisper STT', description: 'Whisper-compatible STT endpoint and API key', icon: FiMic },
   { key: 'memory', title: 'Memory', description: 'Conversation memory persistence and retention', icon: FiHardDrive },
   { key: 'skills', title: 'Skills Runtime', description: 'Enable skills and progressive loading behavior', icon: FiTool },
   { key: 'turn', title: 'Turn Budget', description: 'Runtime limits for LLM/tool calls and deadline', icon: FiCpu },
@@ -35,6 +37,7 @@ export const SETTINGS_SECTIONS = [
   { key: 'mcp', title: 'MCP', description: 'Model Context Protocol runtime defaults', icon: FiTool },
   { key: 'webhooks', title: 'Webhooks', description: 'Incoming hooks, auth, and delivery actions', icon: FiGlobe },
   { key: 'auto', title: 'Auto Mode', description: 'Autonomous run behavior and constraints', icon: FiPlayCircle },
+  { key: 'updates', title: 'Updates', description: 'Controlled self-update flow with staging and rollback', icon: FiRefreshCw },
   { key: 'advanced-rate-limit', title: 'Rate Limit', description: 'Request throttling configuration', icon: FiShield },
   { key: 'advanced-security', title: 'Security', description: 'Input sanitization and injection guards', icon: FiShield },
   { key: 'advanced-compaction', title: 'Compaction', description: 'Context compaction behavior', icon: FiShield },
@@ -60,13 +63,13 @@ export const SETTINGS_BLOCKS: SettingsBlock[] = [
     key: 'tools',
     title: 'Tools',
     description: 'Tool-specific runtime behavior and integrations',
-    sections: ['tool-browser', 'tool-brave', 'tool-filesystem', 'tool-shell', 'tool-email', 'tool-automation', 'tool-goals'],
+    sections: ['tool-browser', 'tool-brave', 'tool-filesystem', 'tool-shell', 'tool-email', 'tool-automation', 'tool-goals', 'tool-voice', 'voice-elevenlabs', 'voice-whisper'],
   },
   {
     key: 'runtime',
     title: 'Runtime',
     description: 'Agent execution, memory, usage, and autonomy',
-    sections: ['voice-elevenlabs', 'memory', 'skills', 'turn', 'usage', 'rag', 'mcp', 'auto', 'webhooks'],
+    sections: ['memory', 'skills', 'turn', 'usage', 'rag', 'mcp', 'auto', 'webhooks', 'updates'],
   },
   {
     key: 'advanced',

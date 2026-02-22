@@ -68,6 +68,7 @@ public class BotProperties {
     private ToolLoopProperties toolLoop = new ToolLoopProperties();
     private PlanProperties plan = new PlanProperties();
     private DashboardProperties dashboard = new DashboardProperties();
+    private UpdateProperties update = new UpdateProperties();
 
     @Data
     public static class LlmProperties {
@@ -285,6 +286,17 @@ public class BotProperties {
         private int maxPageSize = 1000;
         private int maxMessageChars = 8000;
         private int maxExceptionChars = 16000;
+    }
+
+    // ==================== SELF-UPDATE ====================
+
+    @Data
+    public static class UpdateProperties {
+        private boolean enabled = true;
+        private String updatesPath = "/data/updates";
+        private int maxKeptVersions = 3;
+        private java.time.Duration checkInterval = java.time.Duration.ofHours(1);
+        private java.time.Duration confirmTtl = java.time.Duration.ofMinutes(2);
     }
 
     // ==================== PROMPTS (system prompt sections) ====================

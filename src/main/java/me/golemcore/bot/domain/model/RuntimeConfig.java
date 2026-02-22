@@ -207,6 +207,14 @@ public class RuntimeConfig {
         private Float speed;
         private Boolean telegramRespondWithVoice;
         private Boolean telegramTranscribeIncoming;
+        /** STT provider: "elevenlabs" (default) or "whisper" */
+        private String sttProvider;
+        /** TTS provider: currently only "elevenlabs" */
+        private String ttsProvider;
+        /** Base URL for Whisper-compatible STT server, e.g. "http://parakeet:5092" */
+        private String whisperSttUrl;
+        /** Optional API key for Whisper-compatible STT (e.g. OpenAI) */
+        private Secret whisperSttApiKey;
     }
 
     @Data

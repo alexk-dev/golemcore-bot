@@ -106,11 +106,13 @@ export default function TelegramTab({ config, voiceConfig }: TelegramTabProps): 
   const handleSave = async (): Promise<void> => {
     try {
       await updateTelegram.mutateAsync(currentConfig);
-      await updateVoice.mutateAsync({
-        ...voiceConfig,
-        telegramRespondWithVoice,
-        telegramTranscribeIncoming,
-      });
+      if (isVoiceDirty) {
+        await updateVoice.mutateAsync({
+          ...voiceConfig,
+          telegramRespondWithVoice,
+          telegramTranscribeIncoming,
+        });
+      }
       toast.success('Telegram settings saved');
     } catch (err: unknown) {
       toast.error(`Failed to save settings: ${extractErrorMessage(err)}`);

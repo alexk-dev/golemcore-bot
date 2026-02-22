@@ -100,6 +100,9 @@ public class RuntimeConfigService {
     private static final int DEFAULT_SMTP_CONNECT_TIMEOUT = 10000;
     private static final int DEFAULT_SMTP_READ_TIMEOUT = 30000;
     private static final String DEFAULT_SMTP_SECURITY = "starttls";
+    private static final String DEFAULT_STT_PROVIDER = "elevenlabs";
+    private static final String DEFAULT_TTS_PROVIDER = "elevenlabs";
+    private static final String STT_PROVIDER_WHISPER = "whisper";
     private static final String DEFAULT_BROWSER_API_PROVIDER = "brave";
     private static final boolean DEFAULT_BROWSER_ENABLED = true;
     private static final String DEFAULT_BROWSER_TYPE = "playwright";
@@ -509,6 +512,29 @@ public class RuntimeConfigService {
     public boolean isTelegramTranscribeIncomingEnabled() {
         Boolean val = getRuntimeConfig().getVoice().getTelegramTranscribeIncoming();
         return val != null && val;
+    }
+
+    public String getSttProvider() {
+        String val = getRuntimeConfig().getVoice().getSttProvider();
+        return val != null && !val.isBlank() ? val : DEFAULT_STT_PROVIDER;
+    }
+
+    public String getTtsProvider() {
+        String val = getRuntimeConfig().getVoice().getTtsProvider();
+        return val != null && !val.isBlank() ? val : DEFAULT_TTS_PROVIDER;
+    }
+
+    public String getWhisperSttUrl() {
+        String val = getRuntimeConfig().getVoice().getWhisperSttUrl();
+        return val != null ? val : "";
+    }
+
+    public String getWhisperSttApiKey() {
+        return Secret.valueOrEmpty(getRuntimeConfig().getVoice().getWhisperSttApiKey());
+    }
+
+    public boolean isWhisperSttConfigured() {
+        return STT_PROVIDER_WHISPER.equals(getSttProvider()) && !getWhisperSttUrl().isBlank();
     }
 
     // ==================== IMAP ====================
@@ -1106,6 +1132,7 @@ public class RuntimeConfigService {
         cfg.getTelegram().setToken(normalizeSecret(cfg.getTelegram().getToken()));
         cfg.getTools().setBraveSearchApiKey(normalizeSecret(cfg.getTools().getBraveSearchApiKey()));
         cfg.getVoice().setApiKey(normalizeSecret(cfg.getVoice().getApiKey()));
+        cfg.getVoice().setWhisperSttApiKey(normalizeSecret(cfg.getVoice().getWhisperSttApiKey()));
         cfg.getRag().setApiKey(normalizeSecret(cfg.getRag().getApiKey()));
 
         RuntimeConfig.ImapConfig imapConfig = cfg.getTools().getImap();
@@ -1146,6 +1173,7 @@ public class RuntimeConfigService {
         cfg.getTelegram().setToken(Secret.redacted(cfg.getTelegram().getToken()));
         cfg.getTools().setBraveSearchApiKey(Secret.redacted(cfg.getTools().getBraveSearchApiKey()));
         cfg.getVoice().setApiKey(Secret.redacted(cfg.getVoice().getApiKey()));
+        cfg.getVoice().setWhisperSttApiKey(Secret.redacted(cfg.getVoice().getWhisperSttApiKey()));
         cfg.getRag().setApiKey(Secret.redacted(cfg.getRag().getApiKey()));
 
         RuntimeConfig.ImapConfig imapConfig = cfg.getTools().getImap();
