@@ -10,7 +10,6 @@ const UPDATE_STATE_LABELS: Record<string, string> = {
   APPLYING: 'Applying',
   VERIFYING: 'Verifying',
   FAILED: 'Failed',
-  ROLLED_BACK: 'Rolled Back',
 };
 
 const UPDATE_STATE_DESCRIPTIONS: Record<string, string> = {
@@ -23,7 +22,6 @@ const UPDATE_STATE_DESCRIPTIONS: Record<string, string> = {
   APPLYING: 'Restart is scheduled to apply the staged update.',
   VERIFYING: 'Service is restarting and verifying selected version.',
   FAILED: 'The last update action failed. Check the error details below.',
-  ROLLED_BACK: 'Rollback was requested and restart is in progress.',
 };
 
 export const UPDATE_BUSY_STATES = new Set<string>(['CHECKING', 'PREPARING', 'APPLYING', 'VERIFYING']);
@@ -58,7 +56,7 @@ export function getUpdateStateVariant(state: string): UpdateBadgeVariant {
   if (state === 'CHECKING' || state === 'PREPARING' || state === 'APPLYING' || state === 'VERIFYING') {
     return 'info';
   }
-  if (state === 'DISABLED' || state === 'ROLLED_BACK') {
+  if (state === 'DISABLED') {
     return 'secondary';
   }
   return 'success';
@@ -98,29 +96,4 @@ export function getSidebarUpdateBadge(state: string): SidebarUpdateBadge | null 
     };
   }
   return null;
-}
-
-export function formatUpdateOperation(operation: string): string {
-  const normalized = operation.trim().toLowerCase();
-  if (normalized === 'check') {
-    return 'Check';
-  }
-  if (normalized === 'prepare') {
-    return 'Prepare';
-  }
-  if (normalized === 'apply') {
-    return 'Apply';
-  }
-  if (normalized === 'rollback') {
-    return 'Rollback';
-  }
-  return operation;
-}
-
-export function getUpdateResultVariant(result: string): UpdateBadgeVariant {
-  return result.trim().toUpperCase() === 'SUCCESS' ? 'success' : 'danger';
-}
-
-export function isRollbackOperation(operation: string): boolean {
-  return operation.trim().toLowerCase() === 'rollback';
 }

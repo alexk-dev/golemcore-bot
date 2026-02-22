@@ -32,6 +32,49 @@ jobs:
         if: steps.release.outputs.version != ''
         run: git push origin "${{ steps.release.outputs.version }}"
 
+      - name: Set up JDK 25
+        if: steps.release.outputs.version != ''
+        uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build release JAR
+        if: steps.release.outputs.version != ''
+        run: ./mvnw clean package -DskipTests -DskipGitHooks=true
+
+      - name: Prepare release assets
+        if: steps.release.outputs.version != ''
+        id: assets
+        run: |
+          JAR_PATH=$(find target -maxdepth 1 -type f -name 'bot-*.jar' ! -name '*.jar.original' | sort | head -n 1)
+          if [[ -z "${JAR_PATH}" ]]; then
+            echo "Release jar not found (expected target/bot-*.jar)." >&2
+            exit 1
+          fi
+          JAR_NAME=$(basename "${JAR_PATH}")
+          SHA_FILE=sha256sums.txt
+          sha256sum "${JAR_PATH}" | awk -v jar="${JAR_NAME}" '{print $1 "  " jar}' > "${SHA_FILE}"
+          echo "jar-path=${JAR_PATH}" >> "${GITHUB_OUTPUT}"
+          echo "sha-file=${SHA_FILE}" >> "${GITHUB_OUTPUT}"
+
+      - name: Create or update GitHub Release
+        if: steps.release.outputs.version != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.release.outputs.version }}
+          RELEASE_JAR: ${{ steps.assets.outputs.jar-path }}
+          RELEASE_SHA: ${{ steps.assets.outputs.sha-file }}
+        run: |
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release upload "${RELEASE_TAG}" "${RELEASE_JAR}" "${RELEASE_SHA}" --clobber
+          else
+            gh release create "${RELEASE_TAG}" "${RELEASE_JAR}" "${RELEASE_SHA}" \
+              --title "${RELEASE_TAG}" \
+              --generate-notes
+          fi
+
       - name: Trigger Docker publish for release tag
         if: steps.release.outputs.version != ''
         env:
@@ -44,3 +87,4 @@ jobs:
           echo "## Release ${{ steps.release.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Tag \`${{ steps.release.outputs.version }}\` created and pushed." >> $GITHUB_STEP_SUMMARY
+          echo "GitHub Release with \`bot-*.jar\` and \`sha256sums.txt\` was published." >> $GITHUB_STEP_SUMMARY

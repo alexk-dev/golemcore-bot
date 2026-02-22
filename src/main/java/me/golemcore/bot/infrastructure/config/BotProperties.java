@@ -288,10 +288,9 @@ public class BotProperties {
     @Data
     public static class UpdateProperties {
         private boolean enabled = true;
-        private String updatesPath = "/data/updates";
+        private String updatesPath = "${bot.storage.local.base-path}/updates";
         private int maxKeptVersions = 3;
         private java.time.Duration checkInterval = java.time.Duration.ofHours(1);
-        private java.time.Duration confirmTtl = java.time.Duration.ofMinutes(2);
     }
 
     // ==================== PROMPTS (system prompt sections) ====================
