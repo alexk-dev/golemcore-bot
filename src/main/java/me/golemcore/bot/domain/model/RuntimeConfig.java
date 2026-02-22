@@ -76,7 +76,7 @@ public class RuntimeConfig {
     public static class TelegramConfig {
         private Boolean enabled;
         private Secret token;
-        /** "user" or "invite_only" */
+        /** Invite authentication flow mode. */
         @Builder.Default
         private String authMode = "invite_only";
         @Builder.Default

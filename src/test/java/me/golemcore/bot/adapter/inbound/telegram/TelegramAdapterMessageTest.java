@@ -195,23 +195,13 @@ class TelegramAdapterMessageTest {
     @Test
     void shouldAuthorizeAllowedUser() {
         when(allowlistValidator.isAllowed(CHANNEL_TELEGRAM, USER_ID)).thenReturn(true);
-        when(allowlistValidator.isBlocked(USER_ID)).thenReturn(false);
 
         assertTrue(adapter.isAuthorized(USER_ID));
     }
 
     @Test
-    void shouldDenyBlockedUser() {
-        when(allowlistValidator.isAllowed(CHANNEL_TELEGRAM, USER_ID)).thenReturn(true);
-        when(allowlistValidator.isBlocked(USER_ID)).thenReturn(true);
-
-        assertFalse(adapter.isAuthorized(USER_ID));
-    }
-
-    @Test
     void shouldDenyNonAllowedUser() {
         when(allowlistValidator.isAllowed(CHANNEL_TELEGRAM, USER_ID)).thenReturn(false);
-        when(allowlistValidator.isBlocked(USER_ID)).thenReturn(false);
 
         assertFalse(adapter.isAuthorized(USER_ID));
     }

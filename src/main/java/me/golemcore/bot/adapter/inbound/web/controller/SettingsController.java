@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -41,8 +42,7 @@ import java.util.Set;
 @Slf4j
 public class SettingsController {
 
-    private static final String TELEGRAM_AUTH_MODE_USER = "user";
-    private static final String TELEGRAM_AUTH_MODE_INVITE = "invite_only";
+    private static final String TELEGRAM_AUTH_MODE_INVITE_ONLY = "invite_only";
     private static final String STT_PROVIDER_ELEVENLABS = "elevenlabs";
     private static final String STT_PROVIDER_WHISPER = "whisper";
     private static final String TTS_PROVIDER_ELEVENLABS = "elevenlabs";
@@ -131,6 +131,10 @@ public class SettingsController {
 
     @PutMapping("/runtime")
     public Mono<ResponseEntity<RuntimeConfig>> updateRuntimeConfig(@RequestBody RuntimeConfig config) {
+        if (config.getTelegram() == null) {
+            config.setTelegram(new RuntimeConfig.TelegramConfig());
+        }
+        normalizeAndValidateTelegramConfig(config.getTelegram());
         mergeRuntimeSecrets(runtimeConfigService.getRuntimeConfig(), config);
         validateLlmConfig(config.getLlm(), config.getModelRouter());
         validateVoiceConfig(config.getVoice());
@@ -374,6 +378,18 @@ public class SettingsController {
         return Mono.just(ResponseEntity.ok().build());
     }
 
+    @DeleteMapping("/telegram/allowed-users/{userId}")
+    public Mono<ResponseEntity<Void>> removeTelegramAllowedUser(@PathVariable String userId) {
+        if (userId == null || !userId.matches("\\d+")) {
+            throw new IllegalArgumentException("telegram.userId must be numeric");
+        }
+        boolean removed = runtimeConfigService.removeTelegramAllowedUser(userId);
+        if (!removed) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Telegram user not found");
+        }
+        return Mono.just(ResponseEntity.ok().build());
+    }
+
     // ==================== Telegram Restart ====================
 
     @PostMapping("/telegram/restart")
@@ -394,18 +410,11 @@ public class SettingsController {
     }
 
     private void normalizeAndValidateTelegramConfig(RuntimeConfig.TelegramConfig telegramConfig) {
-        String authMode = telegramConfig.getAuthMode();
-        if (authMode == null || authMode.isBlank()) {
-            throw new IllegalArgumentException("telegram.authMode is required");
-        }
-
-        if (!TELEGRAM_AUTH_MODE_USER.equals(authMode) && !TELEGRAM_AUTH_MODE_INVITE.equals(authMode)) {
-            throw new IllegalArgumentException("telegram.authMode must be 'user' or 'invite_only'");
-        }
+        telegramConfig.setAuthMode(TELEGRAM_AUTH_MODE_INVITE_ONLY);
 
         List<String> allowedUsers = telegramConfig.getAllowedUsers();
         if (allowedUsers == null) {
-            telegramConfig.setAllowedUsers(List.of());
+            telegramConfig.setAllowedUsers(new ArrayList<>());
             return;
         }
 
@@ -415,16 +424,8 @@ public class SettingsController {
             }
         }
 
-        if (TELEGRAM_AUTH_MODE_USER.equals(authMode) && allowedUsers.size() > 1) {
-            throw new IllegalArgumentException("telegram.allowedUsers supports only one ID in user mode");
-        }
-
-        if (TELEGRAM_AUTH_MODE_USER.equals(authMode) && allowedUsers.isEmpty()) {
-            throw new IllegalArgumentException("telegram.allowedUsers must contain one ID in user mode");
-        }
-
-        if (TELEGRAM_AUTH_MODE_INVITE.equals(authMode) && !allowedUsers.isEmpty()) {
-            throw new IllegalArgumentException("telegram.allowedUsers must be empty in invite_only mode");
+        if (allowedUsers.size() > 1) {
+            throw new IllegalArgumentException("telegram.allowedUsers supports only one invited user");
         }
     }
 

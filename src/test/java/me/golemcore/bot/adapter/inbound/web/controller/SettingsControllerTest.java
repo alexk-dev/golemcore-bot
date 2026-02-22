@@ -14,8 +14,10 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -127,6 +129,99 @@ class SettingsControllerTest {
         assertEquals("premium", prefs.getModelTier());
         assertTrue(prefs.isTierForce());
         assertTrue(prefs.isNotificationsEnabled());
+    }
+
+    @Test
+    void shouldAllowInviteOnlyTelegramConfigWithRegisteredUsers() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .telegram(RuntimeConfig.TelegramConfig.builder()
+                        .authMode("invite_only")
+                        .allowedUsers(List.of("1001"))
+                        .token(Secret.of("saved-token"))
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.TelegramConfig incoming = RuntimeConfig.TelegramConfig.builder()
+                .enabled(true)
+                .authMode("user")
+                .allowedUsers(List.of("1001"))
+                .inviteCodes(List.of())
+                .build();
+
+        StepVerifier.create(controller.updateTelegramConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        verify(runtimeConfigService).updateRuntimeConfig(runtimeConfig);
+        assertEquals(List.of("1001"), runtimeConfig.getTelegram().getAllowedUsers());
+        assertEquals("invite_only", runtimeConfig.getTelegram().getAuthMode());
+        assertEquals("saved-token", Secret.valueOrEmpty(runtimeConfig.getTelegram().getToken()));
+    }
+
+    @Test
+    void shouldRejectTelegramConfigWithMultipleAllowedUsers() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .telegram(RuntimeConfig.TelegramConfig.builder()
+                        .authMode("invite_only")
+                        .token(Secret.of("saved-token"))
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.TelegramConfig incoming = RuntimeConfig.TelegramConfig.builder()
+                .enabled(true)
+                .authMode("invite_only")
+                .allowedUsers(List.of("1001", "1002"))
+                .inviteCodes(List.of())
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateTelegramConfig(incoming));
+        assertTrue(error.getMessage().contains("supports only one invited user"));
+    }
+
+    @Test
+    void shouldRejectRuntimeConfigWithMultipleTelegramAllowedUsers() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder().build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .telegram(RuntimeConfig.TelegramConfig.builder()
+                        .authMode("invite_only")
+                        .allowedUsers(List.of("1001", "1002"))
+                        .build())
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateRuntimeConfig(incoming));
+        assertTrue(error.getMessage().contains("supports only one invited user"));
+    }
+
+    @Test
+    void shouldRemoveTelegramAllowedUser() {
+        when(runtimeConfigService.removeTelegramAllowedUser("123")).thenReturn(true);
+
+        StepVerifier.create(controller.removeTelegramAllowedUser("123"))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldRejectNonNumericTelegramAllowedUserId() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.removeTelegramAllowedUser("abc"));
+        assertTrue(error.getMessage().contains("telegram.userId must be numeric"));
+    }
+
+    @Test
+    void shouldReturnNotFoundWhenRemovingMissingTelegramAllowedUser() {
+        when(runtimeConfigService.removeTelegramAllowedUser("123")).thenReturn(false);
+
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> controller.removeTelegramAllowedUser("123"));
+        assertEquals(HttpStatus.NOT_FOUND, error.getStatusCode());
     }
 
     @Test
