@@ -11,6 +11,7 @@ import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.SkillTemplateEngine;
 import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.service.WorkspaceInstructionService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.McpPort;
 import me.golemcore.bot.port.outbound.RagPort;
@@ -42,6 +43,8 @@ class ContextBuildingSystemTest {
         RagPort ragPort = mock(RagPort.class);
         AutoModeService autoModeService = mock(AutoModeService.class);
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        WorkspaceInstructionService workspaceInstructionService = mock(WorkspaceInstructionService.class);
+        when(workspaceInstructionService.getWorkspaceInstructionsContext()).thenReturn("");
 
         PlanService planService = mock(PlanService.class);
         when(planService.isFeatureEnabled()).thenReturn(true);
@@ -62,7 +65,8 @@ class ContextBuildingSystemTest {
                 planService,
                 promptSectionService,
                 runtimeConfigService,
-                userPreferencesService);
+                userPreferencesService,
+                workspaceInstructionService);
 
         AgentContext context = AgentContext.builder().build();
 

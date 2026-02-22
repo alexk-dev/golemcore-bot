@@ -4,10 +4,12 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.adapter.inbound.web.dto.PreferencesUpdateRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.SettingsResponse;
+import me.golemcore.bot.domain.model.MemoryPreset;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.TelegramRestartEvent;
 import me.golemcore.bot.domain.model.UserPreferences;
+import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -48,10 +50,21 @@ public class SettingsController {
     private static final String TTS_PROVIDER_ELEVENLABS = "elevenlabs";
     private static final Set<String> VALID_STT_PROVIDERS = Set.of(STT_PROVIDER_ELEVENLABS, STT_PROVIDER_WHISPER);
     private static final Set<String> VALID_API_TYPES = Set.of("openai", "anthropic", "gemini");
+    private static final int MEMORY_SOFT_BUDGET_MIN = 200;
+    private static final int MEMORY_SOFT_BUDGET_MAX = 10000;
+    private static final int MEMORY_MAX_BUDGET_MIN = 200;
+    private static final int MEMORY_MAX_BUDGET_MAX = 12000;
+    private static final int MEMORY_TOP_K_MIN = 0;
+    private static final int MEMORY_TOP_K_MAX = 30;
+    private static final int MEMORY_DECAY_DAYS_MIN = 1;
+    private static final int MEMORY_DECAY_DAYS_MAX = 3650;
+    private static final int MEMORY_RETRIEVAL_LOOKBACK_DAYS_MIN = 1;
+    private static final int MEMORY_RETRIEVAL_LOOKBACK_DAYS_MAX = 90;
 
     private final UserPreferencesService preferencesService;
     private final ModelSelectionService modelSelectionService;
     private final RuntimeConfigService runtimeConfigService;
+    private final MemoryPresetService memoryPresetService;
     private final ApplicationEventPublisher eventPublisher;
 
     @GetMapping
@@ -137,6 +150,9 @@ public class SettingsController {
         normalizeAndValidateTelegramConfig(config.getTelegram());
         mergeRuntimeSecrets(runtimeConfigService.getRuntimeConfig(), config);
         validateLlmConfig(config.getLlm(), config.getModelRouter());
+        if (config.getMemory() != null) {
+            validateMemoryConfig(config.getMemory());
+        }
         validateVoiceConfig(config.getVoice());
         runtimeConfigService.updateRuntimeConfig(config);
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
@@ -282,10 +298,16 @@ public class SettingsController {
     @PutMapping("/runtime/memory")
     public Mono<ResponseEntity<RuntimeConfig>> updateMemoryConfig(
             @RequestBody RuntimeConfig.MemoryConfig memoryConfig) {
+        validateMemoryConfig(memoryConfig);
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         config.setMemory(memoryConfig);
         runtimeConfigService.updateRuntimeConfig(config);
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    }
+
+    @GetMapping("/runtime/memory/presets")
+    public Mono<ResponseEntity<List<MemoryPreset>>> getMemoryPresets() {
+        return Mono.just(ResponseEntity.ok(memoryPresetService.getPresets()));
     }
 
     @PutMapping("/runtime/skills")
@@ -494,6 +516,56 @@ public class SettingsController {
                 throw new IllegalArgumentException(
                         "Cannot remove provider '" + usedProvider + "' because it is used by model router tiers");
             }
+        }
+    }
+
+    private void validateMemoryConfig(RuntimeConfig.MemoryConfig memoryConfig) {
+        if (memoryConfig == null) {
+            throw new IllegalArgumentException("memory config is required");
+        }
+
+        validateNullableInteger(memoryConfig.getSoftPromptBudgetTokens(), MEMORY_SOFT_BUDGET_MIN,
+                MEMORY_SOFT_BUDGET_MAX,
+                "memory.softPromptBudgetTokens");
+        validateNullableInteger(memoryConfig.getMaxPromptBudgetTokens(), MEMORY_MAX_BUDGET_MIN, MEMORY_MAX_BUDGET_MAX,
+                "memory.maxPromptBudgetTokens");
+        validateNullableInteger(memoryConfig.getWorkingTopK(), MEMORY_TOP_K_MIN, MEMORY_TOP_K_MAX,
+                "memory.workingTopK");
+        validateNullableInteger(memoryConfig.getEpisodicTopK(), MEMORY_TOP_K_MIN, MEMORY_TOP_K_MAX,
+                "memory.episodicTopK");
+        validateNullableInteger(memoryConfig.getSemanticTopK(), MEMORY_TOP_K_MIN, MEMORY_TOP_K_MAX,
+                "memory.semanticTopK");
+        validateNullableInteger(memoryConfig.getProceduralTopK(), MEMORY_TOP_K_MIN, MEMORY_TOP_K_MAX,
+                "memory.proceduralTopK");
+        validateNullableDouble(memoryConfig.getPromotionMinConfidence(), 0.0, 1.0, "memory.promotionMinConfidence");
+        validateNullableInteger(memoryConfig.getDecayDays(), MEMORY_DECAY_DAYS_MIN, MEMORY_DECAY_DAYS_MAX,
+                "memory.decayDays");
+        validateNullableInteger(memoryConfig.getRetrievalLookbackDays(), MEMORY_RETRIEVAL_LOOKBACK_DAYS_MIN,
+                MEMORY_RETRIEVAL_LOOKBACK_DAYS_MAX, "memory.retrievalLookbackDays");
+
+        Integer softBudget = memoryConfig.getSoftPromptBudgetTokens();
+        Integer maxBudget = memoryConfig.getMaxPromptBudgetTokens();
+        if (softBudget != null && maxBudget != null && maxBudget < softBudget) {
+            throw new IllegalArgumentException(
+                    "memory.maxPromptBudgetTokens must be greater than or equal to memory.softPromptBudgetTokens");
+        }
+    }
+
+    private void validateNullableInteger(Integer value, int min, int max, String fieldName) {
+        if (value == null) {
+            return;
+        }
+        if (value < min || value > max) {
+            throw new IllegalArgumentException(fieldName + " must be between " + min + " and " + max);
+        }
+    }
+
+    private void validateNullableDouble(Double value, double min, double max, String fieldName) {
+        if (value == null) {
+            return;
+        }
+        if (value < min || value > max) {
+            throw new IllegalArgumentException(fieldName + " must be between " + min + " and " + max);
         }
     }
 

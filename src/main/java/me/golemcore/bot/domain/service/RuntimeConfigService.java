@@ -75,7 +75,19 @@ public class RuntimeConfigService {
     private static final String DEFAULT_AUTO_MODEL_TIER = "default";
     private static final int DEFAULT_AUTO_COMPACT_MAX_TOKENS = 50000;
     private static final int DEFAULT_AUTO_COMPACT_KEEP_LAST = 20;
-    private static final int DEFAULT_MEMORY_RECENT_DAYS = 7;
+    private static final int DEFAULT_MEMORY_SOFT_PROMPT_BUDGET_TOKENS = 1800;
+    private static final int DEFAULT_MEMORY_MAX_PROMPT_BUDGET_TOKENS = 3500;
+    private static final int DEFAULT_MEMORY_VERSION = 2;
+    private static final int DEFAULT_MEMORY_WORKING_TOP_K = 6;
+    private static final int DEFAULT_MEMORY_EPISODIC_TOP_K = 8;
+    private static final int DEFAULT_MEMORY_SEMANTIC_TOP_K = 6;
+    private static final int DEFAULT_MEMORY_PROCEDURAL_TOP_K = 4;
+    private static final boolean DEFAULT_MEMORY_PROMOTION_ENABLED = true;
+    private static final double DEFAULT_MEMORY_PROMOTION_MIN_CONFIDENCE = 0.75;
+    private static final boolean DEFAULT_MEMORY_DECAY_ENABLED = true;
+    private static final int DEFAULT_MEMORY_DECAY_DAYS = 30;
+    private static final int DEFAULT_MEMORY_RETRIEVAL_LOOKBACK_DAYS = 21;
+    private static final boolean DEFAULT_MEMORY_CODE_AWARE_EXTRACTION_ENABLED = true;
     private static final int DEFAULT_TURN_MAX_LLM_CALLS = 200;
     private static final int DEFAULT_TURN_MAX_TOOL_EXECUTIONS = 500;
     private static final java.time.Duration DEFAULT_TURN_DEADLINE = java.time.Duration.ofHours(1);
@@ -731,13 +743,121 @@ public class RuntimeConfigService {
         return val != null ? val : true;
     }
 
-    public int getMemoryRecentDays() {
+    public int getMemorySoftPromptBudgetTokens() {
         RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
         if (memoryConfig == null) {
-            return DEFAULT_MEMORY_RECENT_DAYS;
+            return DEFAULT_MEMORY_SOFT_PROMPT_BUDGET_TOKENS;
         }
-        Integer val = memoryConfig.getRecentDays();
-        return val != null ? val : DEFAULT_MEMORY_RECENT_DAYS;
+        Integer val = memoryConfig.getSoftPromptBudgetTokens();
+        return val != null ? val : DEFAULT_MEMORY_SOFT_PROMPT_BUDGET_TOKENS;
+    }
+
+    public int getMemoryVersion() {
+        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
+        if (memoryConfig == null) {
+            return DEFAULT_MEMORY_VERSION;
+        }
+        Integer val = memoryConfig.getVersion();
+        return val != null ? val : DEFAULT_MEMORY_VERSION;
+    }
+
+    public int getMemoryMaxPromptBudgetTokens() {
+        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
+        if (memoryConfig == null) {
+            return DEFAULT_MEMORY_MAX_PROMPT_BUDGET_TOKENS;
+        }
+        Integer val = memoryConfig.getMaxPromptBudgetTokens();
+        return val != null ? val : DEFAULT_MEMORY_MAX_PROMPT_BUDGET_TOKENS;
+    }
+
+    public int getMemoryWorkingTopK() {
+        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
+        if (memoryConfig == null) {
+            return DEFAULT_MEMORY_WORKING_TOP_K;
+        }
+        Integer val = memoryConfig.getWorkingTopK();
+        return val != null ? val : DEFAULT_MEMORY_WORKING_TOP_K;
+    }
+
+    public int getMemoryEpisodicTopK() {
+        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
+        if (memoryConfig == null) {
+            return DEFAULT_MEMORY_EPISODIC_TOP_K;
+        }
+        Integer val = memoryConfig.getEpisodicTopK();
+        return val != null ? val : DEFAULT_MEMORY_EPISODIC_TOP_K;
+    }
+
+    public int getMemorySemanticTopK() {
+        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
+        if (memoryConfig == null) {
+            return DEFAULT_MEMORY_SEMANTIC_TOP_K;
+        }
+        Integer val = memoryConfig.getSemanticTopK();
+        return val != null ? val : DEFAULT_MEMORY_SEMANTIC_TOP_K;
+    }
+
+    public int getMemoryProceduralTopK() {
+        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
+        if (memoryConfig == null) {
+            return DEFAULT_MEMORY_PROCEDURAL_TOP_K;
+        }
+        Integer val = memoryConfig.getProceduralTopK();
+        return val != null ? val : DEFAULT_MEMORY_PROCEDURAL_TOP_K;
+    }
+
+    public boolean isMemoryPromotionEnabled() {
+        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
+        if (memoryConfig == null) {
+            return DEFAULT_MEMORY_PROMOTION_ENABLED;
+        }
+        Boolean val = memoryConfig.getPromotionEnabled();
+        return val != null ? val : DEFAULT_MEMORY_PROMOTION_ENABLED;
+    }
+
+    public double getMemoryPromotionMinConfidence() {
+        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
+        if (memoryConfig == null) {
+            return DEFAULT_MEMORY_PROMOTION_MIN_CONFIDENCE;
+        }
+        Double val = memoryConfig.getPromotionMinConfidence();
+        return val != null ? val : DEFAULT_MEMORY_PROMOTION_MIN_CONFIDENCE;
+    }
+
+    public boolean isMemoryDecayEnabled() {
+        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
+        if (memoryConfig == null) {
+            return DEFAULT_MEMORY_DECAY_ENABLED;
+        }
+        Boolean val = memoryConfig.getDecayEnabled();
+        return val != null ? val : DEFAULT_MEMORY_DECAY_ENABLED;
+    }
+
+    public int getMemoryDecayDays() {
+        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
+        if (memoryConfig == null) {
+            return DEFAULT_MEMORY_DECAY_DAYS;
+        }
+        Integer val = memoryConfig.getDecayDays();
+        return val != null ? val : DEFAULT_MEMORY_DECAY_DAYS;
+    }
+
+    public int getMemoryRetrievalLookbackDays() {
+        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
+        if (memoryConfig == null) {
+            return DEFAULT_MEMORY_RETRIEVAL_LOOKBACK_DAYS;
+        }
+        Integer val = memoryConfig.getRetrievalLookbackDays();
+        return val != null ? val : DEFAULT_MEMORY_RETRIEVAL_LOOKBACK_DAYS;
+    }
+
+    public boolean isMemoryCodeAwareExtractionEnabled() {
+        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
+        if (memoryConfig == null) {
+            return DEFAULT_MEMORY_CODE_AWARE_EXTRACTION_ENABLED;
+        }
+        Boolean val = memoryConfig.getCodeAwareExtractionEnabled();
+        return val != null ? val : DEFAULT_MEMORY_CODE_AWARE_EXTRACTION_ENABLED;
     }
 
     // ==================== Skills ====================
@@ -1065,6 +1185,12 @@ public class RuntimeConfigService {
         }
         if (cfg.getLlm().getProviders() == null) {
             cfg.getLlm().setProviders(new java.util.LinkedHashMap<>());
+        }
+        if (cfg.getMemory() == null) {
+            cfg.setMemory(new RuntimeConfig.MemoryConfig());
+        }
+        if (!Integer.valueOf(DEFAULT_MEMORY_VERSION).equals(cfg.getMemory().getVersion())) {
+            cfg.getMemory().setVersion(DEFAULT_MEMORY_VERSION);
         }
         normalizeSecretFlags(cfg);
     }
