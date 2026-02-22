@@ -279,7 +279,15 @@ export interface MemoryConfig {
   promotionMinConfidence: number | null;
   decayEnabled: boolean | null;
   decayDays: number | null;
+  retrievalLookbackDays: number | null;
   codeAwareExtractionEnabled: boolean | null;
+}
+
+export interface MemoryPreset {
+  id: string;
+  label: string;
+  comment: string;
+  memory: MemoryConfig;
 }
 
 export interface SkillsConfig {
@@ -565,6 +573,11 @@ export async function updateVoiceConfig(config: VoiceConfig): Promise<RuntimeCon
 export async function updateMemoryConfig(config: MemoryConfig): Promise<RuntimeConfig> {
   const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/memory', config);
   return toUiRuntimeConfig(data);
+}
+
+export async function getMemoryPresets(): Promise<MemoryPreset[]> {
+  const { data } = await client.get<MemoryPreset[]>('/settings/runtime/memory/presets');
+  return data;
 }
 
 export async function updateSkillsConfig(config: SkillsConfig): Promise<RuntimeConfig> {

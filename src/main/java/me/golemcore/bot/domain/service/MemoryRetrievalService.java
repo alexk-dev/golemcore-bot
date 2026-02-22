@@ -122,11 +122,8 @@ public class MemoryRetrievalService {
     }
 
     private int resolveEpisodicLookbackDays() {
-        if (runtimeConfigService.isMemoryDecayEnabled()) {
-            int decayDays = runtimeConfigService.getMemoryDecayDays();
-            return clampDays(decayDays);
-        }
-        return DEFAULT_EPISODIC_LOOKBACK_DAYS;
+        int configured = runtimeConfigService.getMemoryRetrievalLookbackDays();
+        return clampDays(configured);
     }
 
     private List<MemoryItem> loadJsonl(String path) {

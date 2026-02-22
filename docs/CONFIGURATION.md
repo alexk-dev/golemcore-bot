@@ -253,6 +253,7 @@ Memory behavior is configured under `memory`:
     "promotionMinConfidence": 0.75,
     "decayEnabled": true,
     "decayDays": 30,
+    "retrievalLookbackDays": 21,
     "codeAwareExtractionEnabled": true
   }
 }
@@ -263,7 +264,8 @@ Field notes:
 1. `softPromptBudgetTokens` / `maxPromptBudgetTokens`: memory injection budget for prompt packing.
 2. `*TopK`: per-layer candidate limits for retrieval.
 3. `promotion*`: controls promotion from episodic records into semantic/procedural stores.
-4. `decay*`: stale item pruning window.
+4. `decay*`: stale item pruning window for stored memory.
+5. `retrievalLookbackDays`: episodic retrieval window (how many recent day-files are read per request).
 
 ### Telegram
 

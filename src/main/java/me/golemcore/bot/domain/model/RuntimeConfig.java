@@ -302,6 +302,8 @@ public class RuntimeConfig {
         @Builder.Default
         private Integer decayDays = 30;
         @Builder.Default
+        private Integer retrievalLookbackDays = 21;
+        @Builder.Default
         private Boolean codeAwareExtractionEnabled = true;
     }
 

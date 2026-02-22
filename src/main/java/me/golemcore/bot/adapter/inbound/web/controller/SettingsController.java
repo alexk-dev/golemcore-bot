@@ -4,10 +4,12 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.adapter.inbound.web.dto.PreferencesUpdateRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.SettingsResponse;
+import me.golemcore.bot.domain.model.MemoryPreset;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.TelegramRestartEvent;
 import me.golemcore.bot.domain.model.UserPreferences;
+import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -52,10 +54,13 @@ public class SettingsController {
     private static final int MEMORY_TOP_K_MAX = 30;
     private static final int MEMORY_DECAY_DAYS_MIN = 1;
     private static final int MEMORY_DECAY_DAYS_MAX = 3650;
+    private static final int MEMORY_RETRIEVAL_LOOKBACK_DAYS_MIN = 1;
+    private static final int MEMORY_RETRIEVAL_LOOKBACK_DAYS_MAX = 90;
 
     private final UserPreferencesService preferencesService;
     private final ModelSelectionService modelSelectionService;
     private final RuntimeConfigService runtimeConfigService;
+    private final MemoryPresetService memoryPresetService;
     private final ApplicationEventPublisher eventPublisher;
 
     @GetMapping
@@ -286,6 +291,11 @@ public class SettingsController {
         config.setMemory(memoryConfig);
         runtimeConfigService.updateRuntimeConfig(config);
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    }
+
+    @GetMapping("/runtime/memory/presets")
+    public Mono<ResponseEntity<List<MemoryPreset>>> getMemoryPresets() {
+        return Mono.just(ResponseEntity.ok(memoryPresetService.getPresets()));
     }
 
     @PutMapping("/runtime/skills")
@@ -519,6 +529,8 @@ public class SettingsController {
         validateNullableDouble(memoryConfig.getPromotionMinConfidence(), 0.0, 1.0, "memory.promotionMinConfidence");
         validateNullableInteger(memoryConfig.getDecayDays(), MEMORY_DECAY_DAYS_MIN, MEMORY_DECAY_DAYS_MAX,
                 "memory.decayDays");
+        validateNullableInteger(memoryConfig.getRetrievalLookbackDays(), MEMORY_RETRIEVAL_LOOKBACK_DAYS_MIN,
+                MEMORY_RETRIEVAL_LOOKBACK_DAYS_MAX, "memory.retrievalLookbackDays");
 
         Integer softBudget = memoryConfig.getSoftPromptBudgetTokens();
         Integer maxBudget = memoryConfig.getMaxPromptBudgetTokens();

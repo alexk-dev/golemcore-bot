@@ -229,6 +229,7 @@ class RuntimeConfigServiceTest {
         assertEquals(8, service.getMemoryEpisodicTopK());
         assertEquals(6, service.getMemorySemanticTopK());
         assertEquals(4, service.getMemoryProceduralTopK());
+        assertEquals(21, service.getMemoryRetrievalLookbackDays());
     }
 
     @Test

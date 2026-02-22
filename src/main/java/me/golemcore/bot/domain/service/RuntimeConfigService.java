@@ -85,6 +85,7 @@ public class RuntimeConfigService {
     private static final double DEFAULT_MEMORY_PROMOTION_MIN_CONFIDENCE = 0.75;
     private static final boolean DEFAULT_MEMORY_DECAY_ENABLED = true;
     private static final int DEFAULT_MEMORY_DECAY_DAYS = 30;
+    private static final int DEFAULT_MEMORY_RETRIEVAL_LOOKBACK_DAYS = 21;
     private static final boolean DEFAULT_MEMORY_CODE_AWARE_EXTRACTION_ENABLED = true;
     private static final int DEFAULT_TURN_MAX_LLM_CALLS = 200;
     private static final int DEFAULT_TURN_MAX_TOOL_EXECUTIONS = 500;
@@ -803,6 +804,15 @@ public class RuntimeConfigService {
         }
         Integer val = memoryConfig.getDecayDays();
         return val != null ? val : DEFAULT_MEMORY_DECAY_DAYS;
+    }
+
+    public int getMemoryRetrievalLookbackDays() {
+        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
+        if (memoryConfig == null) {
+            return DEFAULT_MEMORY_RETRIEVAL_LOOKBACK_DAYS;
+        }
+        Integer val = memoryConfig.getRetrievalLookbackDays();
+        return val != null ? val : DEFAULT_MEMORY_RETRIEVAL_LOOKBACK_DAYS;
     }
 
     public boolean isMemoryCodeAwareExtractionEnabled() {

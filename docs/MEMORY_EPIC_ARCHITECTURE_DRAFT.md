@@ -191,7 +191,8 @@ Proposed fields:
 9. `promotionMinConfidence` (default 0.75)
 10. `decayEnabled` (default true)
 11. `decayDays` (default 30)
-12. `codeAwareExtractionEnabled` (default true)
+12. `retrievalLookbackDays` (default 21)
+13. `codeAwareExtractionEnabled` (default true)
 
 ## 10. API and Tooling Changes
 

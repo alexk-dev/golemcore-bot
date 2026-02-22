@@ -103,6 +103,7 @@ Runtime config (`preferences/runtime-config.json`):
     "promotionMinConfidence": 0.75,
     "decayEnabled": true,
     "decayDays": 30,
+    "retrievalLookbackDays": 21,
     "codeAwareExtractionEnabled": true
   }
 }
@@ -113,7 +114,8 @@ Field notes:
 1. `softPromptBudgetTokens` / `maxPromptBudgetTokens`: memory prompt budget targets.
 2. `*TopK`: layer-specific retrieval limits.
 3. `promotion*`: controls semantic/procedural promotion.
-4. `decay*`: staleness window for retrieval and cleanup.
+4. `decay*`: staleness window for memory cleanup/pruning.
+5. `retrievalLookbackDays`: how many recent episodic day-files are scanned during retrieval.
 
 ---
 
