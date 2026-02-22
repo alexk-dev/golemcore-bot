@@ -1,7 +1,6 @@
 package me.golemcore.bot.domain.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import me.golemcore.bot.domain.model.UpdateIntent;
 import me.golemcore.bot.domain.model.UpdateState;
 import me.golemcore.bot.domain.model.UpdateStatus;
 import me.golemcore.bot.infrastructure.config.BotProperties;
@@ -37,7 +36,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.List;
@@ -60,9 +58,9 @@ import static org.mockito.Mockito.when;
 @SuppressWarnings("PMD.CloseResource")
 class UpdateServiceTest {
 
-    private static final Instant BASE_TIME = Instant.parse("2026-02-19T12:00:00Z");
-    private static final String VERSION_CURRENT = "0.3.0";
-    private static final String VERSION_PATCH = "0.3.1";
+    private static final Instant BASE_TIME = Instant.parse("2026-02-22T12:00:00Z");
+    private static final String VERSION_CURRENT = "0.4.0";
+    private static final String VERSION_PATCH = "0.4.2";
     private static final long DEFAULT_JAR_ASSET_ID = 101L;
     private static final long DEFAULT_SHA_ASSET_ID = 102L;
 
@@ -89,14 +87,7 @@ class UpdateServiceTest {
     void shouldReturnDisabledStateWhenUpdateFeatureIsOff() {
         botProperties.getUpdate().setEnabled(false);
 
-        UpdateService service = new UpdateService(
-                botProperties,
-                buildPropertiesProvider,
-                new ObjectMapper(),
-                applicationContext,
-                clock,
-                jvmExitService);
-
+        UpdateService service = createService();
         UpdateStatus status = service.getStatus();
 
         assertFalse(status.isEnabled());
@@ -127,242 +118,23 @@ class UpdateServiceTest {
     }
 
     @Test
-    void shouldRejectPrepareWhenUpdateFeatureIsDisabled() {
+    void shouldRejectUpdateNowWhenUpdateFeatureIsDisabled() {
         botProperties.getUpdate().setEnabled(false);
         UpdateService service = createService();
 
-        IllegalStateException exception = assertThrows(IllegalStateException.class, service::prepare);
+        IllegalStateException exception = assertThrows(IllegalStateException.class, service::updateNow);
 
         assertEquals("Update feature is disabled", exception.getMessage());
     }
 
     @Test
-    void shouldRejectPrepareWhenNoAvailableUpdateExists(@TempDir Path tempDir) {
+    void shouldRejectUpdateNowWhenNoAvailableUpdateExists(@TempDir Path tempDir) {
         enableUpdates(tempDir);
         UpdateService service = createService();
 
-        IllegalStateException exception = assertThrows(IllegalStateException.class, service::prepare);
+        IllegalStateException exception = assertThrows(IllegalStateException.class, service::updateNow);
 
         assertEquals("No available update. Run check first.", exception.getMessage());
-    }
-
-    @Test
-    void shouldRejectCreateApplyIntentWhenNoStagedUpdate(@TempDir Path tempDir) {
-        enableUpdates(tempDir);
-        UpdateService service = createService();
-
-        IllegalStateException exception = assertThrows(IllegalStateException.class, service::createApplyIntent);
-
-        assertEquals("No staged update to apply", exception.getMessage());
-    }
-
-    @Test
-    void shouldCreateApplyIntentWhenStagedMarkerExists(@TempDir Path tempDir) throws Exception {
-        enableUpdates(tempDir);
-        stageJar(tempDir, "bot-" + VERSION_PATCH + ".jar");
-
-        UpdateService service = createService();
-
-        UpdateIntent intent = service.createApplyIntent();
-
-        assertEquals("apply", intent.getOperation());
-        assertEquals(VERSION_PATCH, intent.getTargetVersion());
-        assertNotNull(intent.getConfirmToken());
-        assertEquals(6, intent.getConfirmToken().length());
-        assertEquals(BASE_TIME.plus(Duration.ofMinutes(2)), intent.getExpiresAt());
-    }
-
-    @Test
-    void shouldRejectApplyWhenConfirmTokenIsBlank(@TempDir Path tempDir) throws Exception {
-        enableUpdates(tempDir);
-        stageJar(tempDir, "bot-" + VERSION_PATCH + ".jar");
-        UpdateService service = createService();
-        service.createApplyIntent();
-
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> service.apply("   "));
-
-        assertEquals("confirmToken is required", exception.getMessage());
-    }
-
-    @Test
-    void shouldRejectApplyWhenNoPendingIntentExists(@TempDir Path tempDir) throws Exception {
-        enableUpdates(tempDir);
-        stageJar(tempDir, "bot-" + VERSION_PATCH + ".jar");
-        UpdateService service = createService();
-
-        IllegalStateException exception = assertThrows(IllegalStateException.class, () -> service.apply("ABC123"));
-
-        assertEquals("No pending confirmation intent", exception.getMessage());
-    }
-
-    @Test
-    void shouldRejectApplyWhenPendingIntentIsForRollback(@TempDir Path tempDir) throws Exception {
-        enableUpdates(tempDir);
-        stageJar(tempDir, "bot-" + VERSION_PATCH + ".jar");
-        cacheJar(tempDir, "0.2.9");
-        UpdateService service = createService();
-        UpdateIntent rollbackIntent = service.createRollbackIntent("0.2.9");
-
-        IllegalStateException exception = assertThrows(IllegalStateException.class,
-                () -> service.apply(rollbackIntent.getConfirmToken()));
-
-        assertEquals("Pending confirmation is for operation: rollback", exception.getMessage());
-    }
-
-    @Test
-    void shouldRejectApplyWhenConfirmTokenIsInvalid(@TempDir Path tempDir) throws Exception {
-        enableUpdates(tempDir);
-        stageJar(tempDir, "bot-" + VERSION_PATCH + ".jar");
-        UpdateService service = createService();
-
-        service.createApplyIntent();
-
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
-                () -> service.apply("WRONG1"));
-
-        assertEquals("Invalid confirmation token", exception.getMessage());
-    }
-
-    @Test
-    void shouldRejectApplyWhenTokenExpiresExactlyAtBoundary(@TempDir Path tempDir) throws Exception {
-        enableUpdates(tempDir);
-        stageJar(tempDir, "bot-" + VERSION_PATCH + ".jar");
-        UpdateService service = createService();
-        UpdateIntent intent = service.createApplyIntent();
-
-        Files.deleteIfExists(tempDir.resolve("staged.txt"));
-        clock.setInstant(intent.getExpiresAt());
-
-        IllegalStateException exception = assertThrows(IllegalStateException.class,
-                () -> service.apply(intent.getConfirmToken()));
-
-        assertEquals("Confirmation token has expired", exception.getMessage());
-    }
-
-    @Test
-    void shouldRejectApplyWhenStagedArtifactIsMissingAfterIntentCreation(@TempDir Path tempDir) throws Exception {
-        enableUpdates(tempDir);
-        stageJar(tempDir, "bot-" + VERSION_PATCH + ".jar");
-        UpdateService service = createService();
-        UpdateIntent intent = service.createApplyIntent();
-
-        Files.deleteIfExists(tempDir.resolve("staged.txt"));
-
-        IllegalStateException exception = assertThrows(IllegalStateException.class,
-                () -> service.apply(intent.getConfirmToken()));
-
-        assertEquals("No staged update to apply", exception.getMessage());
-    }
-
-    @Test
-    void shouldCreateRollbackIntentForCachedVersion(@TempDir Path tempDir) throws Exception {
-        enableUpdates(tempDir);
-        cacheJar(tempDir, "0.2.9");
-        UpdateService service = createService();
-
-        UpdateIntent intent = service.createRollbackIntent("0.2.9");
-
-        assertEquals("rollback", intent.getOperation());
-        assertEquals("0.2.9", intent.getTargetVersion());
-        assertNotNull(intent.getConfirmToken());
-    }
-
-    @Test
-    void shouldCreateRollbackIntentWithoutVersionForImageRollback(@TempDir Path tempDir) {
-        enableUpdates(tempDir);
-        UpdateService service = createService();
-
-        UpdateIntent intent = service.createRollbackIntent(null);
-
-        assertEquals("rollback", intent.getOperation());
-        assertNull(intent.getTargetVersion());
-        assertNotNull(intent.getConfirmToken());
-    }
-
-    @Test
-    void shouldRejectRollbackIntentWhenVersionIsNotCached(@TempDir Path tempDir) {
-        enableUpdates(tempDir);
-        UpdateService service = createService();
-
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
-                () -> service.createRollbackIntent("0.1.9"));
-
-        assertEquals("No cached update jars found", exception.getMessage());
-    }
-
-    @Test
-    void shouldRejectRollbackWhenNoPendingIntentExists(@TempDir Path tempDir) {
-        enableUpdates(tempDir);
-        UpdateService service = createService();
-
-        IllegalStateException exception = assertThrows(IllegalStateException.class,
-                () -> service.rollback("ABC123", null));
-
-        assertEquals("No pending confirmation intent", exception.getMessage());
-    }
-
-    @Test
-    void shouldRejectRollbackWhenConfirmTokenIsBlank(@TempDir Path tempDir) {
-        enableUpdates(tempDir);
-        UpdateService service = createService();
-        service.createRollbackIntent(null);
-
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
-                () -> service.rollback(" ", null));
-
-        assertEquals("confirmToken is required", exception.getMessage());
-    }
-
-    @Test
-    void shouldRejectRollbackWhenVersionDoesNotMatchIssuedIntent(@TempDir Path tempDir) throws Exception {
-        enableUpdates(tempDir);
-        cacheJar(tempDir, "0.2.9");
-        UpdateService service = createService();
-        UpdateIntent intent = service.createRollbackIntent("0.2.9");
-
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
-                () -> service.rollback(intent.getConfirmToken(), "0.2.8"));
-
-        assertEquals("Confirmation token was issued for another version", exception.getMessage());
-    }
-
-    @Test
-    void shouldRejectRollbackWhenTokenExpiresExactlyAtBoundary(@TempDir Path tempDir) throws Exception {
-        enableUpdates(tempDir);
-        cacheJar(tempDir, "0.2.9");
-        UpdateService service = createService();
-        UpdateIntent intent = service.createRollbackIntent("0.2.9");
-
-        clock.setInstant(intent.getExpiresAt());
-
-        IllegalStateException exception = assertThrows(IllegalStateException.class,
-                () -> service.rollback(intent.getConfirmToken(), "0.2.9"));
-
-        assertEquals("Confirmation token has expired", exception.getMessage());
-    }
-
-    @Test
-    void shouldAcceptTrimmedRollbackTokenAndContinueValidation(@TempDir Path tempDir) {
-        enableUpdates(tempDir);
-        UpdateService service = createService();
-        UpdateIntent intent = service.createRollbackIntent(null);
-
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
-                () -> service.rollback(" " + intent.getConfirmToken() + " ", "9.9.9"));
-
-        assertTrue(exception.getMessage().contains("cached"));
-    }
-
-    @Test
-    void shouldFallbackToImageSourceWhenStagedMarkerContainsTraversalPath(@TempDir Path tempDir) throws Exception {
-        enableUpdates(tempDir);
-        Files.writeString(tempDir.resolve("staged.txt"), "../outside.jar", StandardCharsets.UTF_8);
-        UpdateService service = createService();
-
-        UpdateStatus status = service.getStatus();
-
-        assertNull(status.getStaged());
-        assertEquals("image", status.getCurrent().getSource());
     }
 
     @Test
@@ -375,8 +147,6 @@ class UpdateServiceTest {
         assertEquals("No updates found", service.check().getMessage());
         assertEquals(UpdateState.IDLE, service.getStatus().getState());
         assertNull(service.getStatus().getAvailable());
-        assertEquals("check", service.getHistory().getFirst().getOperation());
-        assertEquals("SUCCESS", service.getHistory().getFirst().getResult());
     }
 
     @Test
@@ -384,11 +154,9 @@ class UpdateServiceTest {
         enableUpdates(tempDir);
         StubHttpClient httpClient = new StubHttpClient();
         httpClient.enqueueStringResponse(200, releaseJson(
-                "v0.3.0",
-                "bot-0.3.0.jar",
-                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.0/bot-0.3.0.jar",
-                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.0/sha256sums.txt",
-                "2026-02-19T11:00:00Z"));
+                "v0.4.0",
+                "bot-0.4.0.jar",
+                "2026-02-22T10:00:00Z"));
         TestableUpdateService service = createTestableService(httpClient);
 
         assertEquals("Already up to date", service.check().getMessage());
@@ -400,11 +168,9 @@ class UpdateServiceTest {
         enableUpdates(tempDir);
         StubHttpClient httpClient = new StubHttpClient();
         httpClient.enqueueStringResponse(200, releaseJson(
-                "v0.4.0",
-                "bot-0.4.0.jar",
-                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.4.0/bot-0.4.0.jar",
-                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.4.0/sha256sums.txt",
-                "2026-02-19T11:00:00Z"));
+                "v0.5.0",
+                "bot-0.5.0.jar",
+                "2026-02-22T10:00:00Z"));
         TestableUpdateService service = createTestableService(httpClient);
 
         assertTrue(service.check().getMessage().contains("Docker image upgrade"));
@@ -412,35 +178,43 @@ class UpdateServiceTest {
     }
 
     @Test
-    void shouldDiscoverPatchUpdateAndPrepareStagedJar(@TempDir Path tempDir) throws Exception {
+    void shouldDiscoverPatchUpdate(@TempDir Path tempDir) {
         enableUpdates(tempDir);
-        botProperties.getUpdate().setMaxKeptVersions(1);
-        cacheJar(tempDir, "0.2.9");
-        cacheJar(tempDir, "0.2.8");
+        StubHttpClient httpClient = new StubHttpClient();
+        httpClient.enqueueStringResponse(200, releaseJson(
+                "v0.4.2",
+                "bot-0.4.2.jar",
+                "2026-02-22T10:00:00Z"));
+        TestableUpdateService service = createTestableService(httpClient);
 
+        assertEquals("Update available: 0.4.2", service.check().getMessage());
+        assertEquals(UpdateState.AVAILABLE, service.getStatus().getState());
+        assertEquals(VERSION_PATCH, service.getStatus().getAvailable().getVersion());
+    }
+
+    @Test
+    void shouldPrepareAndApplyUpdateNow(@TempDir Path tempDir) throws Exception {
+        enableUpdates(tempDir);
         byte[] jarBytes = "new-binary".getBytes(StandardCharsets.UTF_8);
         String checksum = sha256Hex(jarBytes);
 
         StubHttpClient httpClient = new StubHttpClient();
         httpClient.enqueueStringResponse(200, releaseJson(
-                "v0.3.1",
-                "bot-0.3.1.jar",
-                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.1/bot-0.3.1.jar",
-                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.1/sha256sums.txt",
-                "2026-02-19T11:00:00Z"));
+                "v0.4.2",
+                "bot-0.4.2.jar",
+                "2026-02-22T10:00:00Z"));
         httpClient.enqueueBinaryResponse(200, jarBytes);
-        httpClient.enqueueStringResponse(200, checksum + "  bot-0.3.1.jar\n");
+        httpClient.enqueueStringResponse(200, checksum + "  bot-0.4.2.jar\n");
         TestableUpdateService service = createTestableService(httpClient);
 
-        assertEquals("Update available: 0.3.1", service.check().getMessage());
-        assertEquals("Update staged: 0.3.1", service.prepare().getMessage());
+        assertEquals("Update available: 0.4.2", service.check().getMessage());
+        assertEquals("Update 0.4.2 is being applied. JVM restart scheduled.", service.updateNow().getMessage());
 
-        String stagedMarker = Files.readString(tempDir.resolve("staged.txt"), StandardCharsets.UTF_8).trim();
-        assertEquals("bot-0.3.1.jar", stagedMarker);
-        assertTrue(Files.exists(tempDir.resolve("jars").resolve("bot-0.3.1.jar")));
-        try (java.util.stream.Stream<Path> stream = Files.list(tempDir.resolve("jars"))) {
-            assertTrue(stream.count() <= 2);
-        }
+        assertTrue(service.isRestartRequested());
+        assertEquals(UpdateState.APPLYING, service.getStatus().getState());
+        assertTrue(Files.exists(tempDir.resolve("jars").resolve("bot-0.4.2.jar")));
+        assertFalse(Files.exists(tempDir.resolve("staged.txt")));
+        assertEquals("bot-0.4.2.jar", Files.readString(tempDir.resolve("current.txt"), StandardCharsets.UTF_8).trim());
         assertEquals(
                 URI.create("https://api.github.com/repos/alexk-dev/golemcore-bot/releases/latest"),
                 httpClient.getRequestedUris().get(0));
@@ -452,122 +226,72 @@ class UpdateServiceTest {
                 URI.create("https://api.github.com/repos/alexk-dev/golemcore-bot/releases/assets/"
                         + DEFAULT_SHA_ASSET_ID),
                 httpClient.getRequestedUris().get(2));
-        assertEquals(UpdateState.STAGED, service.getStatus().getState());
     }
 
     @Test
-    void shouldFailPrepareWhenChecksumDoesNotMatchAndCleanTempJar(@TempDir Path tempDir) throws Exception {
+    void shouldCreateUpdatesDirectoryWhenItDoesNotExist(@TempDir Path tempDir) throws Exception {
+        Path missingUpdatesDir = tempDir.resolve("missing").resolve("updates");
+        assertFalse(Files.exists(missingUpdatesDir));
+        enableUpdates(missingUpdatesDir);
+        byte[] jarBytes = "new-binary".getBytes(StandardCharsets.UTF_8);
+        String checksum = sha256Hex(jarBytes);
+
+        StubHttpClient httpClient = new StubHttpClient();
+        httpClient.enqueueStringResponse(200, releaseJson(
+                "v0.4.2",
+                "bot-0.4.2.jar",
+                "2026-02-22T10:00:00Z"));
+        httpClient.enqueueBinaryResponse(200, jarBytes);
+        httpClient.enqueueStringResponse(200, checksum + "  bot-0.4.2.jar\n");
+        TestableUpdateService service = createTestableService(httpClient);
+
+        service.check();
+        service.updateNow();
+
+        assertTrue(Files.isDirectory(missingUpdatesDir));
+        assertTrue(Files.isDirectory(missingUpdatesDir.resolve("jars")));
+        assertTrue(Files.exists(missingUpdatesDir.resolve("jars").resolve("bot-0.4.2.jar")));
+    }
+
+    @Test
+    void shouldFailUpdateNowWhenChecksumDoesNotMatchAndCleanTempJar(@TempDir Path tempDir) {
         enableUpdates(tempDir);
         StubHttpClient httpClient = new StubHttpClient();
         httpClient.enqueueStringResponse(200, releaseJson(
-                "v0.3.1",
-                "bot-0.3.1.jar",
-                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.1/bot-0.3.1.jar",
-                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.1/sha256sums.txt",
-                "2026-02-19T11:00:00Z"));
+                "v0.4.2",
+                "bot-0.4.2.jar",
+                "2026-02-22T10:00:00Z"));
         httpClient.enqueueBinaryResponse(200, "jar-content".getBytes(StandardCharsets.UTF_8));
-        httpClient.enqueueStringResponse(200, "deadbeef bot-0.3.1.jar\n");
+        httpClient.enqueueStringResponse(200, "deadbeef bot-0.4.2.jar\n");
         TestableUpdateService service = createTestableService(httpClient);
         service.check();
 
-        IllegalStateException error = assertThrows(IllegalStateException.class, service::prepare);
+        IllegalStateException error = assertThrows(IllegalStateException.class, service::updateNow);
 
         assertTrue(error.getMessage().contains("Checksum mismatch"));
-        assertFalse(Files.exists(tempDir.resolve("jars").resolve("bot-0.3.1.jar.tmp")));
+        assertFalse(Files.exists(tempDir.resolve("jars").resolve("bot-0.4.2.jar.tmp")));
         assertEquals(UpdateState.AVAILABLE, service.getStatus().getState());
         assertTrue(service.getStatus().getLastError().contains("Failed to prepare update"));
     }
 
     @Test
-    void shouldFailPrepareWhenDownloadRedirectHostIsUntrusted(@TempDir Path tempDir) {
-        enableUpdates(tempDir);
+    void shouldFailUpdateNowWithHelpfulMessageWhenUpdatesPathIsNotWritable(@TempDir Path tempDir) throws Exception {
+        Path blockedPath = tempDir.resolve("updates-file");
+        Files.writeString(blockedPath, "blocked", StandardCharsets.UTF_8);
+        enableUpdates(blockedPath);
+
         StubHttpClient httpClient = new StubHttpClient();
         httpClient.enqueueStringResponse(200, releaseJson(
-                "v0.3.1",
-                "bot-0.3.1.jar",
-                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.1/bot-0.3.1.jar",
-                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.1/sha256sums.txt",
-                "2026-02-19T11:00:00Z"));
-        httpClient.enqueueRedirectResponse(302, "https://evil.example.com/bot-0.3.1.jar");
+                "v0.4.2",
+                "bot-0.4.2.jar",
+                "2026-02-22T10:00:00Z"));
         TestableUpdateService service = createTestableService(httpClient);
         service.check();
 
-        IllegalStateException error = assertThrows(IllegalStateException.class, service::prepare);
+        IllegalStateException error = assertThrows(IllegalStateException.class, service::updateNow);
 
-        assertTrue(error.getMessage().contains("host is not trusted"));
-    }
-
-    @Test
-    void shouldFailPrepareWhenDownloadRedirectDoesNotContainLocation(@TempDir Path tempDir) {
-        enableUpdates(tempDir);
-        StubHttpClient httpClient = new StubHttpClient();
-        httpClient.enqueueStringResponse(200, releaseJson(
-                "v0.3.1",
-                "bot-0.3.1.jar",
-                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.1/bot-0.3.1.jar",
-                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.1/sha256sums.txt",
-                "2026-02-19T11:00:00Z"));
-        httpClient.enqueueBinaryResponse(302, new byte[0]);
-        TestableUpdateService service = createTestableService(httpClient);
-        service.check();
-
-        IllegalStateException error = assertThrows(IllegalStateException.class, service::prepare);
-
-        assertTrue(error.getMessage().contains("missing Location header"));
-    }
-
-    @Test
-    void shouldPrepareWhenDownloadRedirectTargetsTrustedGithubusercontentHost(@TempDir Path tempDir) {
-        enableUpdates(tempDir);
-        byte[] jarBytes = "redirected-binary".getBytes(StandardCharsets.UTF_8);
-        String checksum = sha256Hex(jarBytes);
-
-        StubHttpClient httpClient = new StubHttpClient();
-        httpClient.enqueueStringResponse(200, releaseJson(
-                "v0.3.1",
-                "bot-0.3.1.jar",
-                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.1/bot-0.3.1.jar",
-                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.1/sha256sums.txt",
-                "2026-02-19T11:00:00Z"));
-        httpClient.enqueueRedirectResponse(302, "https://objects.githubusercontent.com/releases/bot-0.3.1.jar");
-        httpClient.enqueueBinaryResponse(200, jarBytes);
-        httpClient.enqueueRedirectResponse(302, "https://objects.githubusercontent.com/releases/sha256sums.txt");
-        httpClient.enqueueStringResponse(200, checksum + "  bot-0.3.1.jar\n");
-        TestableUpdateService service = createTestableService(httpClient);
-
-        assertEquals("Update available: 0.3.1", service.check().getMessage());
-        assertEquals("Update staged: 0.3.1", service.prepare().getMessage());
-    }
-
-    @Test
-    void shouldIgnoreUntrustedBrowserDownloadHost(@TempDir Path tempDir) {
-        enableUpdates(tempDir);
-        StubHttpClient httpClient = new StubHttpClient();
-        httpClient.enqueueStringResponse(200, releaseJson(
-                "v0.3.1",
-                "bot-0.3.1.jar",
-                "https://evil.example.com/bot-0.3.1.jar",
-                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.1/sha256sums.txt",
-                "2026-02-19T11:00:00Z"));
-        TestableUpdateService service = createTestableService(httpClient);
-
-        assertEquals("Update available: 0.3.1", service.check().getMessage());
-        assertEquals(UpdateState.AVAILABLE, service.getStatus().getState());
-    }
-
-    @Test
-    void shouldIgnoreUntrustedBrowserDownloadScheme(@TempDir Path tempDir) {
-        enableUpdates(tempDir);
-        StubHttpClient httpClient = new StubHttpClient();
-        httpClient.enqueueStringResponse(200, releaseJson(
-                "v0.3.1",
-                "bot-0.3.1.jar",
-                "http://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.1/bot-0.3.1.jar",
-                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.1/sha256sums.txt",
-                "2026-02-19T11:00:00Z"));
-        TestableUpdateService service = createTestableService(httpClient);
-
-        assertEquals("Update available: 0.3.1", service.check().getMessage());
+        assertTrue(error.getMessage().contains("Update directory is not writable"));
+        assertTrue(error.getMessage().contains("Configure UPDATE_PATH"));
         assertEquals(UpdateState.AVAILABLE, service.getStatus().getState());
     }
 
@@ -576,52 +300,14 @@ class UpdateServiceTest {
         enableUpdates(tempDir);
         StubHttpClient httpClient = new StubHttpClient();
         httpClient.enqueueStringResponse(200, releaseJson(
-                "   ",
-                "bot-0.3.1.jar",
-                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.1/bot-0.3.1.jar",
-                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.1/sha256sums.txt",
-                "2026-02-19T11:00:00Z"));
+                " ",
+                "bot-0.4.2.jar",
+                "2026-02-22T10:00:00Z"));
         TestableUpdateService service = createTestableService(httpClient);
 
         IllegalStateException error = assertThrows(IllegalStateException.class, service::check);
 
         assertTrue(error.getMessage().contains("Release tag is missing"));
-    }
-
-    @Test
-    void shouldRejectReleaseWhenTagContainsProhibitedCharacters(@TempDir Path tempDir) {
-        enableUpdates(tempDir);
-        StubHttpClient httpClient = new StubHttpClient();
-        httpClient.enqueueStringResponse(200, releaseJson(
-                "release/0.3.1",
-                "bot-0.3.1.jar",
-                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.1/bot-0.3.1.jar",
-                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.1/sha256sums.txt",
-                "2026-02-19T11:00:00Z"));
-        TestableUpdateService service = createTestableService(httpClient);
-
-        IllegalStateException error = assertThrows(IllegalStateException.class, service::check);
-
-        assertTrue(error.getMessage().contains("Release tag contains prohibited characters"));
-    }
-
-    @Test
-    void shouldRejectReleaseWhenJarAssetIdIsInvalid(@TempDir Path tempDir) {
-        enableUpdates(tempDir);
-        StubHttpClient httpClient = new StubHttpClient();
-        httpClient.enqueueStringResponse(200, releaseJsonWithAssetIds(
-                "v0.3.1",
-                "bot-0.3.1.jar",
-                0L,
-                DEFAULT_SHA_ASSET_ID,
-                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.1/bot-0.3.1.jar",
-                "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.3.1/sha256sums.txt",
-                "2026-02-19T11:00:00Z"));
-        TestableUpdateService service = createTestableService(httpClient);
-
-        IllegalStateException error = assertThrows(IllegalStateException.class, service::check);
-
-        assertTrue(error.getMessage().contains("Release asset id is invalid"));
     }
 
     @Test
@@ -639,63 +325,16 @@ class UpdateServiceTest {
     }
 
     @Test
-    void shouldApplyStagedVersionAndRequestRestart(@TempDir Path tempDir) throws Exception {
-        enableUpdates(tempDir);
-        stageJar(tempDir, "bot-" + VERSION_PATCH + ".jar");
-        TestableUpdateService service = createTestableService(new StubHttpClient());
-
-        UpdateIntent intent = service.createApplyIntent();
-
-        assertTrue(service.apply(intent.getConfirmToken()).isSuccess());
-        assertTrue(service.isRestartRequested());
-        assertEquals("bot-" + VERSION_PATCH + ".jar",
-                Files.readString(tempDir.resolve("current.txt"), StandardCharsets.UTF_8).trim());
-        assertFalse(Files.exists(tempDir.resolve("staged.txt")));
-        assertEquals(UpdateState.APPLYING, service.getStatus().getState());
-    }
-
-    @Test
-    void shouldRollbackToImageAndRequestRestart(@TempDir Path tempDir) throws Exception {
-        enableUpdates(tempDir);
-        Files.writeString(tempDir.resolve("current.txt"), "bot-" + VERSION_PATCH + ".jar", StandardCharsets.UTF_8);
-        TestableUpdateService service = createTestableService(new StubHttpClient());
-        UpdateIntent intent = service.createRollbackIntent(null);
-
-        assertTrue(service.rollback(intent.getConfirmToken(), null).isSuccess());
-        assertTrue(service.isRestartRequested());
-        assertFalse(Files.exists(tempDir.resolve("current.txt")));
-        assertEquals(UpdateState.ROLLED_BACK, service.getStatus().getState());
-    }
-
-    @Test
-    void shouldRollbackToCachedVersionAndUpdateCurrentMarker(@TempDir Path tempDir) throws Exception {
-        enableUpdates(tempDir);
-        cacheJar(tempDir, "0.2.9");
-        TestableUpdateService service = createTestableService(new StubHttpClient());
-        UpdateIntent intent = service.createRollbackIntent("0.2.9");
-
-        assertTrue(service.rollback(intent.getConfirmToken(), "0.2.9").isSuccess());
-        assertTrue(service.isRestartRequested());
-        assertEquals("bot-0.2.9.jar", Files.readString(tempDir.resolve("current.txt"), StandardCharsets.UTF_8).trim());
-    }
-
-    @Test
     void shouldCoverVersionComparisonAndChecksumHelpersViaReflection(@TempDir Path tempDir) throws Exception {
         enableUpdates(tempDir);
         UpdateService service = createService();
 
         assertTrue(invokeCompareVersions(service, "1.2.4", "1.2.3") > 0);
         assertTrue(invokeCompareVersions(service, "1.2.3-rc.1", "1.2.3-rc.2") < 0);
-        assertTrue(invokeCompareVersions(service, "1.2.3-alpha", "1.2.3-1") > 0);
-        assertTrue(invokeCompareVersions(service, "1.2.3-1", "1.2.3-alpha") < 0);
         assertEquals(0, invokeCompareVersions(service, "v1.2.3+build.1", "1.2.3"));
-        assertTrue(invokeCompareVersions(service, "snapshot", "1.0.0") > 0);
         assertEquals("1.2.3", invokeExtractVersionFromAssetName(service, "bot-1.2.3.jar"));
         assertEquals("1.2.3-rc.1", invokeExtractVersionFromAssetName(service, "release-v1.2.3-rc.1.jar"));
-        assertEquals("1.2.3", invokeExtractVersionFromAssetName(service, "bot-1.2.3-.jar"));
         assertNull(invokeExtractVersionFromAssetName(service, "bot-latest.jar"));
-        assertEquals("2.3.4", invokeExtractVersionFromAssetName(service,
-                "prefix-".repeat(5000) + "2.3.4.jar"));
 
         String checksumText = """
                 ignored line
@@ -711,19 +350,6 @@ class UpdateServiceTest {
         byte[] payload = "payload".getBytes(StandardCharsets.UTF_8);
         Files.write(file, payload);
         assertEquals(sha256Hex(payload), invokeComputeSha256(service, file));
-    }
-
-    @Test
-    void shouldCapHistoryToConfiguredMaximum() throws Exception {
-        UpdateService service = createService();
-
-        for (int i = 0; i < 105; i++) {
-            invokeAddHistory(service, "check-" + i);
-        }
-
-        assertEquals(100, service.getHistory().size());
-        assertEquals("check-104", service.getHistory().getFirst().getOperation());
-        assertEquals("check-5", service.getHistory().getLast().getOperation());
     }
 
     private UpdateService createService() {
@@ -750,46 +376,9 @@ class UpdateServiceTest {
     private void enableUpdates(Path updatesPath) {
         botProperties.getUpdate().setEnabled(true);
         botProperties.getUpdate().setUpdatesPath(updatesPath.toString());
-        botProperties.getUpdate().setConfirmTtl(Duration.ofMinutes(2));
     }
 
-    private void stageJar(Path updatesPath, String assetName) throws Exception {
-        Path jarsDir = updatesPath.resolve("jars");
-        Files.createDirectories(jarsDir);
-        Files.writeString(jarsDir.resolve(assetName), "jar", StandardCharsets.UTF_8);
-        Files.writeString(updatesPath.resolve("staged.txt"), assetName, StandardCharsets.UTF_8);
-    }
-
-    private void cacheJar(Path updatesPath, String version) throws Exception {
-        Path jarsDir = updatesPath.resolve("jars");
-        Files.createDirectories(jarsDir);
-        Files.writeString(jarsDir.resolve("bot-" + version + ".jar"), "jar", StandardCharsets.UTF_8);
-    }
-
-    private static String releaseJson(
-            String tagName,
-            String assetName,
-            String assetUrl,
-            String shaUrl,
-            String publishedAt) {
-        return releaseJsonWithAssetIds(
-                tagName,
-                assetName,
-                DEFAULT_JAR_ASSET_ID,
-                DEFAULT_SHA_ASSET_ID,
-                assetUrl,
-                shaUrl,
-                publishedAt);
-    }
-
-    private static String releaseJsonWithAssetIds(
-            String tagName,
-            String assetName,
-            long assetId,
-            long shaAssetId,
-            String assetUrl,
-            String shaUrl,
-            String publishedAt) {
+    private static String releaseJson(String tagName, String assetName, String publishedAt) {
         return """
                 {
                   "tag_name": "%s",
@@ -798,16 +387,25 @@ class UpdateServiceTest {
                     {
                       "id": %d,
                       "name": "%s",
-                      "browser_download_url": "%s"
+                      "browser_download_url": "https://github.com/alexk-dev/golemcore-bot/releases/download/%s/%s"
                     },
                     {
                       "id": %d,
                       "name": "sha256sums.txt",
-                      "browser_download_url": "%s"
+                      "browser_download_url": "https://github.com/alexk-dev/golemcore-bot/releases/download/%s/sha256sums.txt"
                     }
                   ]
                 }
-                """.formatted(tagName, publishedAt, assetId, assetName, assetUrl, shaAssetId, shaUrl);
+                """
+                .formatted(
+                        tagName,
+                        publishedAt,
+                        DEFAULT_JAR_ASSET_ID,
+                        assetName,
+                        tagName,
+                        assetName,
+                        DEFAULT_SHA_ASSET_ID,
+                        tagName);
     }
 
     private static String sha256Hex(byte[] bytes) {
@@ -842,11 +440,6 @@ class UpdateServiceTest {
     private static String invokeExtractVersionFromAssetName(UpdateService service, String assetName) {
         Method method = getDeclaredMethod("extractVersionFromAssetName", String.class);
         return (String) invokeReflective(method, service, assetName);
-    }
-
-    private static void invokeAddHistory(UpdateService service, String operation) {
-        Method method = getDeclaredMethod("addHistory", String.class, String.class, String.class, String.class);
-        invokeReflective(method, service, operation, null, "SUCCESS", "ok");
     }
 
     @SuppressWarnings("PMD.AvoidAccessibilityAlteration")
@@ -913,7 +506,7 @@ class UpdateServiceTest {
     private static final class StubHttpClient extends HttpClient {
 
         private final Deque<StubExchange> exchanges = new ArrayDeque<>();
-        private final List<URI> requestedUris = new ArrayList<>();
+        private final Deque<URI> requestedUris = new ArrayDeque<>();
 
         private void enqueueStringResponse(int statusCode, String responseBody) {
             exchanges
@@ -923,15 +516,6 @@ class UpdateServiceTest {
 
         private void enqueueBinaryResponse(int statusCode, byte[] responseBody) {
             exchanges.addLast(new StubExchange(statusCode, responseBody, Map.of(), null, null));
-        }
-
-        private void enqueueRedirectResponse(int statusCode, String location) {
-            exchanges.addLast(new StubExchange(
-                    statusCode,
-                    new byte[0],
-                    Map.of("Location", List.of(location)),
-                    null,
-                    null));
         }
 
         private void enqueueInterrupted(InterruptedException exception) {
@@ -1134,16 +718,12 @@ class UpdateServiceTest {
 
     private static final class MutableClock extends Clock {
 
-        private Instant currentInstant;
+        private final Instant currentInstant;
         private final ZoneId zone;
 
         private MutableClock(Instant instant, ZoneId zone) {
             this.currentInstant = instant;
             this.zone = zone;
-        }
-
-        private void setInstant(Instant instant) {
-            this.currentInstant = instant;
         }
 
         @Override

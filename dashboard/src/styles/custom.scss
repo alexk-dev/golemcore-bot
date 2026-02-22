@@ -839,39 +839,6 @@ textarea:focus-visible,
   }
 }
 
-.updates-meta-list {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.3rem 0.75rem;
-  font-size: 0.85rem;
-
-  dt {
-    margin: 0;
-    color: var(--bs-secondary-color);
-    font-weight: 500;
-  }
-
-  dd {
-    margin: 0;
-    color: var(--bs-body-color);
-  }
-}
-
-.updates-step {
-  border: 1px solid var(--bs-border-color);
-  border-radius: 0.6rem;
-  padding: 0.6rem 0.7rem;
-  background-color: var(--bs-tertiary-bg);
-}
-
-.updates-token-input {
-  letter-spacing: 0.04em;
-}
-
-.updates-history-table td[data-label='Message'] {
-  min-width: 240px;
-}
-
 .voice-status-badges {
   flex-wrap: wrap;
 }
@@ -1396,18 +1363,6 @@ textarea:focus-visible,
 
   .settings-savebar .btn {
     min-height: 2.25rem;
-  }
-
-  .updates-step .d-flex {
-    flex-wrap: wrap;
-  }
-
-  .updates-step .form-control {
-    min-width: 0;
-  }
-
-  .updates-history-table td[data-label='Message'] {
-    min-width: 0;
   }
 
   .voice-inline-actions {
