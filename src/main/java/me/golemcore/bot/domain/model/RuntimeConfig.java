@@ -288,6 +288,8 @@ public class RuntimeConfig {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class MemoryConfig {
         @Builder.Default
+        private Integer version = 2;
+        @Builder.Default
         private Boolean enabled = true;
         @Builder.Default
         private Integer softPromptBudgetTokens = 1800;

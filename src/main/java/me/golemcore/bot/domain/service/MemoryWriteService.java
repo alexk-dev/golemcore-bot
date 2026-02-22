@@ -59,9 +59,6 @@ public class MemoryWriteService {
     private static final String SEMANTIC_FILE = "items/semantic.jsonl";
     private static final String PROCEDURAL_FILE = "items/procedural.jsonl";
 
-    private static final Pattern FILE_REFERENCE_PATTERN = Pattern.compile(
-            "(?:[A-Za-z0-9_./-]+)\\.(?:java|kt|groovy|kts|xml|yml|yaml|json|md|txt|ts|tsx|js|jsx|py|go|rs|sql)");
-
     private static final Pattern TEST_REFERENCE_PATTERN = Pattern.compile(
             "\\b([A-Za-z0-9_$.]+Test(?:#[A-Za-z0-9_]+)?)\\b");
 
@@ -333,19 +330,20 @@ public class MemoryWriteService {
         String joined = (user + "\n" + assistant).trim();
 
         if (!joined.isBlank()) {
+            List<String> references = extractReferences(joined);
             MemoryItem turnItem = MemoryItem.builder()
                     .id(UUID.randomUUID().toString())
                     .layer(MemoryItem.Layer.EPISODIC)
                     .type(MemoryItem.Type.TASK_STATE)
                     .title(buildTurnTitle(user))
                     .content("User: " + truncate(user, 1200) + "\nAssistant: " + truncate(assistant, 1800))
-                    .tags(extractTags(joined, event.getActiveSkill()))
+                    .tags(extractTags(joined, event.getActiveSkill(), references))
                     .source("turn")
                     .confidence(0.65)
                     .salience(calculateSalience(joined))
                     .createdAt(timestamp)
                     .updatedAt(timestamp)
-                    .references(extractReferences(joined))
+                    .references(references)
                     .fingerprint(computeFingerprint("TASK|" + normalizeForFingerprint(joined)))
                     .build();
             items.add(turnItem);
@@ -374,19 +372,20 @@ public class MemoryWriteService {
             double salience, double confidence) {
         Instant timestamp = event.getTimestamp() != null ? event.getTimestamp() : Instant.now();
         String normalized = normalizeText(content);
+        List<String> references = extractReferences(normalized);
         return MemoryItem.builder()
                 .id(UUID.randomUUID().toString())
                 .layer(MemoryItem.Layer.EPISODIC)
                 .type(type)
                 .title(title)
                 .content(normalized)
-                .tags(extractTags(normalized, event.getActiveSkill()))
+                .tags(extractTags(normalized, event.getActiveSkill(), references))
                 .source("derived")
                 .confidence(confidence)
                 .salience(salience)
                 .createdAt(timestamp)
                 .updatedAt(timestamp)
-                .references(extractReferences(normalized))
+                .references(references)
                 .fingerprint(computeFingerprint(type + "|" + normalizeForFingerprint(normalized)))
                 .build();
     }
@@ -424,7 +423,7 @@ public class MemoryWriteService {
         return Math.min(1.0, salience);
     }
 
-    private List<String> extractTags(String content, String activeSkill) {
+    private List<String> extractTags(String content, String activeSkill, List<String> references) {
         Set<String> tags = new LinkedHashSet<>();
         String lower = content != null ? content.toLowerCase(Locale.ROOT) : "";
 
@@ -450,9 +449,8 @@ public class MemoryWriteService {
             tags.add("database");
         }
 
-        Matcher fileMatcher = FILE_REFERENCE_PATTERN.matcher(content != null ? content : "");
-        while (fileMatcher.find()) {
-            String file = fileMatcher.group();
+        List<String> fileReferences = references != null ? references : List.of();
+        for (String file : fileReferences) {
             int dotIdx = file.lastIndexOf('.');
             if (dotIdx >= 0 && dotIdx + 1 < file.length()) {
                 tags.add(file.substring(dotIdx + 1).toLowerCase(Locale.ROOT));
@@ -468,10 +466,7 @@ public class MemoryWriteService {
             return new ArrayList<>(refs);
         }
 
-        Matcher fileMatcher = FILE_REFERENCE_PATTERN.matcher(content);
-        while (fileMatcher.find()) {
-            refs.add(fileMatcher.group());
-        }
+        refs.addAll(extractFileReferences(content));
 
         Matcher testMatcher = TEST_REFERENCE_PATTERN.matcher(content);
         while (testMatcher.find()) {
@@ -479,6 +474,107 @@ public class MemoryWriteService {
         }
 
         return new ArrayList<>(refs);
+    }
+
+    /**
+     * Fast O(n) file reference extraction without regex backtracking. Token format
+     * mirrors legacy pattern: [A-Za-z0-9_./-]+ + '.' + known extension.
+     */
+    private List<String> extractFileReferences(String content) {
+        List<String> refs = new ArrayList<>();
+        int tokenStart = -1;
+        int length = content.length();
+        for (int i = 0; i <= length; i++) {
+            char ch = i < length ? content.charAt(i) : ' ';
+            if (i < length && isFileTokenChar(ch)) {
+                if (tokenStart < 0) {
+                    tokenStart = i;
+                }
+                continue;
+            }
+            if (tokenStart >= 0) {
+                appendIfFileReference(content, tokenStart, i, refs);
+                tokenStart = -1;
+            }
+        }
+        return refs;
+    }
+
+    private void appendIfFileReference(String content, int start, int end, List<String> refs) {
+        int effectiveEnd = trimTrailingDot(content, start, end);
+        if (effectiveEnd <= start) {
+            return;
+        }
+
+        int dotIndex = -1;
+        for (int i = effectiveEnd - 1; i > start; i--) {
+            if (content.charAt(i) == '.') {
+                dotIndex = i;
+                break;
+            }
+        }
+        if (dotIndex <= start || dotIndex >= effectiveEnd - 1) {
+            return;
+        }
+        if (!isKnownFileExtension(content, dotIndex + 1, effectiveEnd)) {
+            return;
+        }
+        refs.add(content.substring(start, effectiveEnd));
+    }
+
+    private int trimTrailingDot(String content, int start, int end) {
+        int trimmedEnd = end;
+        while (trimmedEnd > start && content.charAt(trimmedEnd - 1) == '.') {
+            trimmedEnd--;
+        }
+        return trimmedEnd;
+    }
+
+    private boolean isFileTokenChar(char ch) {
+        return (ch >= 'a' && ch <= 'z')
+                || (ch >= 'A' && ch <= 'Z')
+                || (ch >= '0' && ch <= '9')
+                || ch == '_'
+                || ch == '.'
+                || ch == '/'
+                || ch == '-';
+    }
+
+    private boolean isKnownFileExtension(String content, int start, int end) {
+        int length = end - start;
+        return switch (length) {
+        case 2 -> regionEquals(content, start, "kt")
+                || regionEquals(content, start, "md")
+                || regionEquals(content, start, "ts")
+                || regionEquals(content, start, "js")
+                || regionEquals(content, start, "py")
+                || regionEquals(content, start, "go")
+                || regionEquals(content, start, "rs");
+        case 3 -> regionEquals(content, start, "kts")
+                || regionEquals(content, start, "xml")
+                || regionEquals(content, start, "yml")
+                || regionEquals(content, start, "txt")
+                || regionEquals(content, start, "tsx")
+                || regionEquals(content, start, "jsx")
+                || regionEquals(content, start, "sql");
+        case 4 -> regionEquals(content, start, "java")
+                || regionEquals(content, start, "yaml")
+                || regionEquals(content, start, "json");
+        case 6 -> regionEquals(content, start, "groovy");
+        default -> false;
+        };
+    }
+
+    private boolean regionEquals(String content, int start, String expected) {
+        if (start < 0 || start + expected.length() > content.length()) {
+            return false;
+        }
+        for (int i = 0; i < expected.length(); i++) {
+            if (Character.toLowerCase(content.charAt(start + i)) != expected.charAt(i)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private String buildTurnTitle(String userText) {

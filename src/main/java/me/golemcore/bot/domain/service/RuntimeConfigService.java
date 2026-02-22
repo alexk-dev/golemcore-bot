@@ -77,6 +77,7 @@ public class RuntimeConfigService {
     private static final int DEFAULT_AUTO_COMPACT_KEEP_LAST = 20;
     private static final int DEFAULT_MEMORY_SOFT_PROMPT_BUDGET_TOKENS = 1800;
     private static final int DEFAULT_MEMORY_MAX_PROMPT_BUDGET_TOKENS = 3500;
+    private static final int DEFAULT_MEMORY_VERSION = 2;
     private static final int DEFAULT_MEMORY_WORKING_TOP_K = 6;
     private static final int DEFAULT_MEMORY_EPISODIC_TOP_K = 8;
     private static final int DEFAULT_MEMORY_SEMANTIC_TOP_K = 6;
@@ -751,6 +752,15 @@ public class RuntimeConfigService {
         return val != null ? val : DEFAULT_MEMORY_SOFT_PROMPT_BUDGET_TOKENS;
     }
 
+    public int getMemoryVersion() {
+        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
+        if (memoryConfig == null) {
+            return DEFAULT_MEMORY_VERSION;
+        }
+        Integer val = memoryConfig.getVersion();
+        return val != null ? val : DEFAULT_MEMORY_VERSION;
+    }
+
     public int getMemoryMaxPromptBudgetTokens() {
         RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
         if (memoryConfig == null) {
@@ -1175,6 +1185,12 @@ public class RuntimeConfigService {
         }
         if (cfg.getLlm().getProviders() == null) {
             cfg.getLlm().setProviders(new java.util.LinkedHashMap<>());
+        }
+        if (cfg.getMemory() == null) {
+            cfg.setMemory(new RuntimeConfig.MemoryConfig());
+        }
+        if (!Integer.valueOf(DEFAULT_MEMORY_VERSION).equals(cfg.getMemory().getVersion())) {
+            cfg.getMemory().setVersion(DEFAULT_MEMORY_VERSION);
         }
         normalizeSecretFlags(cfg);
     }
