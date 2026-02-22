@@ -147,6 +147,7 @@ Page ← useHook (cache update) ← api function ← response
 | `useEffect` for derived state | Causes extra renders, stale bugs | `useMemo` or compute inline |
 | `useEffect` to sync props→state | Anti-pattern, duplicates source of truth | Use props directly or lift state |
 | `setState` inside `useEffect` without deps | Infinite loop risk | Rethink the data flow |
+| Bootstrap `outline` buttons (`variant="outline-*"` / `btn-outline-*`) | Poor contrast consistency across themes | Use solid button variants (`primary`, `secondary`, `danger`, etc.) |
 | Inline styles (`style={{}}`) | Unmaintainable, no theming | SCSS classes or Bootstrap utilities |
 | String concatenation for classNames | Fragile | Template literals or `clsx` |
 | Magic numbers/strings | Unverifiable | Named constants |

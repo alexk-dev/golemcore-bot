@@ -164,7 +164,21 @@ class UpdateServiceTest {
     }
 
     @Test
-    void shouldSuggestDockerRolloutWhenMinorOrMajorReleaseIsFound(@TempDir Path tempDir) {
+    void shouldSuggestDockerRolloutWhenMajorReleaseIsFound(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+        StubHttpClient httpClient = new StubHttpClient();
+        httpClient.enqueueStringResponse(200, releaseJson(
+                "v1.0.0",
+                "bot-1.0.0.jar",
+                "2026-02-22T10:00:00Z"));
+        TestableUpdateService service = createTestableService(httpClient);
+
+        assertTrue(service.check().getMessage().contains("Docker image upgrade"));
+        assertNull(service.getStatus().getAvailable());
+    }
+
+    @Test
+    void shouldDiscoverMinorUpdateWhenMajorVersionIsUnchanged(@TempDir Path tempDir) {
         enableUpdates(tempDir);
         StubHttpClient httpClient = new StubHttpClient();
         httpClient.enqueueStringResponse(200, releaseJson(
@@ -173,8 +187,9 @@ class UpdateServiceTest {
                 "2026-02-22T10:00:00Z"));
         TestableUpdateService service = createTestableService(httpClient);
 
-        assertTrue(service.check().getMessage().contains("Docker image upgrade"));
-        assertNull(service.getStatus().getAvailable());
+        assertEquals("Update available: 0.5.0", service.check().getMessage());
+        assertEquals(UpdateState.AVAILABLE, service.getStatus().getState());
+        assertEquals("0.5.0", service.getStatus().getAvailable().getVersion());
     }
 
     @Test

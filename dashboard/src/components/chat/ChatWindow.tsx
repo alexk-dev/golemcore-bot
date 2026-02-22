@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Offcanvas } from 'react-bootstrap';
+import { FiLayout, FiMessageSquare, FiPlus } from 'react-icons/fi';
 import { useAuthStore } from '../../store/authStore';
 import { useContextPanelStore } from '../../store/contextPanelStore';
 import { listSessions, getSession } from '../../api/sessions';
@@ -16,6 +17,23 @@ const LOAD_MORE_COUNT = 50;
 const GOALS_POLL_INTERVAL = 30000;
 const RECONNECT_DELAY_MS = 3000;
 const TYPING_RESET_MS = 3000;
+const STARTER_PROMPTS = [
+  {
+    key: 'plan-next',
+    label: 'Plan next step',
+    text: 'Review the current status and suggest the next three prioritized steps.',
+  },
+  {
+    key: 'risk-check',
+    label: 'Find risks',
+    text: 'Analyze the current work and list the most likely risks with mitigations.',
+  },
+  {
+    key: 'draft-update',
+    label: 'Draft update',
+    text: 'Write a concise progress update I can send to the team.',
+  },
+];
 
 const EMPTY_TURN_METADATA = {
   model: null,
@@ -542,26 +560,50 @@ export default function ChatWindow() {
     <div className="chat-page-layout">
       <div className="chat-container">
         <div className="chat-toolbar">
-          <div className="chat-toolbar-inner d-flex align-items-center">
-            <div className="d-flex align-items-center gap-2 flex-grow-1" aria-live="polite">
-              <span className={`status-dot ${connected ? 'online' : 'offline'}`} aria-hidden="true" />
-              <small className="text-body-secondary">{connected ? 'Connected' : 'Reconnecting...'}</small>
+          <div className="chat-toolbar-inner">
+            <div className="chat-toolbar-main">
+              <div className="chat-toolbar-title-group">
+                <div className="chat-toolbar-title">
+                  <FiMessageSquare aria-hidden="true" />
+                  <span>Workspace Chat</span>
+                </div>
+                <small className="chat-toolbar-subtitle">
+                  Session: <span className="font-mono">{chatSessionId.slice(0, 8)}</span>
+                </small>
+              </div>
+              <div className="chat-toolbar-status" aria-live="polite">
+                <span className={`status-dot ${connected ? 'online' : 'offline'}`} aria-hidden="true" />
+                <small className="text-body-secondary">{connected ? 'Connected' : 'Reconnecting...'}</small>
+              </div>
             </div>
-            <button
-              type="button"
-              className="btn btn-sm btn-secondary panel-toggle-btn"
-              onClick={() => {
-                if (window.innerWidth > 992) {
-                  togglePanel();
-                } else {
-                  openMobileDrawer();
-                }
-              }}
-              title={panelOpen ? 'Hide context panel' : 'Show context panel'}
-              aria-label={panelOpen ? 'Hide context panel' : 'Show context panel'}
-            >
-              {panelOpen ? '\u00BB' : '\u00AB'}
-            </button>
+            <div className="chat-toolbar-actions">
+              <button
+                type="button"
+                className="btn btn-sm btn-secondary chat-toolbar-btn"
+                onClick={startNewConversation}
+                title="Start a new chat session"
+                aria-label="Start a new chat session"
+              >
+                <FiPlus aria-hidden="true" />
+                <span>New chat</span>
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm btn-secondary chat-toolbar-btn panel-toggle-btn"
+                onClick={() => {
+                  if (window.innerWidth > 992) {
+                    togglePanel();
+                  } else {
+                    openMobileDrawer();
+                  }
+                }}
+                title={panelOpen ? 'Hide context panel' : 'Show context panel'}
+                aria-label={panelOpen ? 'Hide context panel' : 'Show context panel'}
+              >
+                <FiLayout aria-hidden="true" />
+                <span>{panelOpen ? 'Hide context' : 'Show context'}</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -586,7 +628,7 @@ export default function ChatWindow() {
                 <small className="text-danger">{historyError}</small>
                 <button
                   type="button"
-                  className="btn btn-sm btn-outline-secondary"
+                  className="btn btn-sm btn-secondary"
                   onClick={() => setHistoryReloadTick((v) => v + 1)}
                 >
                   Retry
@@ -601,12 +643,37 @@ export default function ChatWindow() {
                 ) : (
                   <button
                     type="button"
-                    className="btn btn-sm btn-outline-secondary"
+                    className="btn btn-sm btn-secondary chat-history-load-btn"
                     onClick={() => setVisibleStart(Math.max(0, visibleStart - LOAD_MORE_COUNT))}
                   >
                     Load earlier messages
                   </button>
                 )}
+              </div>
+            )}
+
+            {!historyLoading && historyError == null && visibleMessages.length === 0 && (
+              <div className="chat-empty-state" role="status" aria-live="polite">
+                <div className="chat-empty-state-icon" aria-hidden="true">
+                  <FiMessageSquare />
+                </div>
+                <h2 className="chat-empty-state-title">Start a focused conversation</h2>
+                <p className="chat-empty-state-text">
+                  Pick a starter prompt or type your own message below.
+                </p>
+                <div className="chat-starter-grid">
+                  {STARTER_PROMPTS.map((prompt) => (
+                    <button
+                      key={prompt.key}
+                      type="button"
+                      className="chat-starter-card"
+                      onClick={() => handleSend({ text: prompt.text, attachments: [] })}
+                    >
+                      <span className="chat-starter-title">{prompt.label}</span>
+                      <span className="chat-starter-text">{prompt.text}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -627,7 +694,10 @@ export default function ChatWindow() {
 
             {typing && (
               <div className="typing-indicator" role="status" aria-live="polite" aria-label="Assistant is typing">
-                <span aria-hidden="true" /><span aria-hidden="true" /><span aria-hidden="true" />
+                <span className="typing-label">Thinking</span>
+                <span className="typing-dots" aria-hidden="true">
+                  <span /><span /><span />
+                </span>
               </div>
             )}
           </div>
