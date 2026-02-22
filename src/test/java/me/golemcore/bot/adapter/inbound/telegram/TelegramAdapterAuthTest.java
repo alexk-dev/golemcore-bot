@@ -17,6 +17,7 @@ import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.User;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 
+import java.util.List;
 import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -37,6 +38,7 @@ class TelegramAdapterAuthTest {
     private MessageService messageService;
     private TelegramClient telegramClient;
     private Consumer<Message> messageHandler;
+    private RuntimeConfigService runtimeConfigService;
 
     @BeforeEach
     @SuppressWarnings("unchecked")
@@ -45,11 +47,12 @@ class TelegramAdapterAuthTest {
         messageService = mock(MessageService.class);
         telegramClient = mock(TelegramClient.class);
 
-        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        runtimeConfigService = mock(RuntimeConfigService.class);
         when(runtimeConfigService.isTelegramEnabled()).thenReturn(true);
         when(runtimeConfigService.getTelegramToken()).thenReturn("test-token");
+        when(runtimeConfigService.getTelegramAllowedUsers()).thenReturn(List.of());
         RuntimeConfig.TelegramConfig telegramConfig = RuntimeConfig.TelegramConfig.builder()
-                .authMode("user").build();
+                .authMode("invite_only").build();
         RuntimeConfig runtimeConfig = RuntimeConfig.builder().telegram(telegramConfig).build();
         when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
 
@@ -70,19 +73,19 @@ class TelegramAdapterAuthTest {
     }
 
     @Test
-    void unauthorizedUser_sendsAccessDeniedAndDoesNotProcess() throws Exception {
+    void unauthorizedUser_sendsInviteInvalidAndDoesNotProcess() throws Exception {
         when(allowlistValidator.isAllowed(CHANNEL_TELEGRAM, "999")).thenReturn(false);
-        when(messageService.getMessage("security.unauthorized")).thenReturn("Access denied.");
+        when(messageService.getMessage("telegram.invite.invalid")).thenReturn("Invalid invite code.");
 
         Update update = createTextUpdate(999L, 100L, "Hello bot");
 
         adapter.consume(update);
 
-        // Verify unauthorized message was sent (async — use timeout)
+        // Verify invite invalid message was sent (async — use timeout)
         ArgumentCaptor<SendMessage> captor = ArgumentCaptor.forClass(SendMessage.class);
         verify(telegramClient, timeout(2000)).execute(captor.capture());
         assertEquals("100", captor.getValue().getChatId());
-        assertTrue(captor.getValue().getText().contains("Access denied"));
+        assertTrue(captor.getValue().getText().contains("Invalid invite code"));
 
         // Verify message was NOT passed to handler (no LLM processing)
         verify(messageHandler, never()).accept(any());
@@ -91,7 +94,6 @@ class TelegramAdapterAuthTest {
     @Test
     void authorizedUser_processesMessageNormally() {
         when(allowlistValidator.isAllowed(CHANNEL_TELEGRAM, "123")).thenReturn(true);
-        when(allowlistValidator.isBlocked("123")).thenReturn(false);
 
         Update update = createTextUpdate(123L, 100L, "Hello bot");
 
@@ -102,19 +104,19 @@ class TelegramAdapterAuthTest {
     }
 
     @Test
-    void blockedUser_sendsAccessDeniedAndDoesNotProcess() throws Exception {
-        when(allowlistValidator.isAllowed(CHANNEL_TELEGRAM, "456")).thenReturn(true);
-        when(allowlistValidator.isBlocked("456")).thenReturn(true);
+    void unauthorizedUserAfterFirstInvite_sendsAccessDeniedAndDoesNotProcess() throws Exception {
+        when(runtimeConfigService.getTelegramAllowedUsers()).thenReturn(List.of("123"));
+        when(allowlistValidator.isAllowed(CHANNEL_TELEGRAM, "999")).thenReturn(false);
         when(messageService.getMessage("security.unauthorized")).thenReturn("Access denied.");
 
-        Update update = createTextUpdate(456L, 200L, "Hello");
+        Update update = createTextUpdate(999L, 100L, "SOMECODE123");
 
         adapter.consume(update);
 
         ArgumentCaptor<SendMessage> captor = ArgumentCaptor.forClass(SendMessage.class);
         verify(telegramClient, timeout(2000)).execute(captor.capture());
+        assertEquals("100", captor.getValue().getChatId());
         assertTrue(captor.getValue().getText().contains("Access denied"));
-
         verify(messageHandler, never()).accept(any());
     }
 

@@ -14,7 +14,7 @@ export interface SettingsSectionMeta {
 
 export const SETTINGS_SECTIONS = [
   { key: 'general', title: 'General', description: 'Preferences, account security, and MFA', icon: FiSliders },
-  { key: 'telegram', title: 'Telegram', description: 'Bot token, auth mode, and invite codes', icon: FiSend },
+  { key: 'telegram', title: 'Telegram', description: 'Bot token, invite codes, and invited users', icon: FiSend },
   { key: 'models', title: 'Model Router', description: 'Routing and tier model configuration', icon: FiCpu },
   { key: 'llm-providers', title: 'LLM Providers', description: 'Provider API keys and base URLs', icon: FiKey },
 

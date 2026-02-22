@@ -114,12 +114,6 @@ public class BotProperties {
 
     @Data
     public static class SecurityProperties {
-        private AllowlistProperties allowlist = new AllowlistProperties();
-    }
-
-    @Data
-    public static class AllowlistProperties {
-        private List<String> blockedUsers = new ArrayList<>();
     }
 
     @Data

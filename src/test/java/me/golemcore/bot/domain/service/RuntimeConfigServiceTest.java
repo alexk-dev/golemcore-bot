@@ -517,6 +517,73 @@ class RuntimeConfigServiceTest {
     }
 
     @Test
+    void shouldNotRedeemInviteCodeForAnotherUserWhenUserAlreadyRegistered() {
+        RuntimeConfig.InviteCode firstCode = service.generateInviteCode();
+        RuntimeConfig.InviteCode secondCode = service.generateInviteCode();
+        service.redeemInviteCode(firstCode.getCode(), "user1");
+
+        boolean redeemed = service.redeemInviteCode(secondCode.getCode(), "user2");
+
+        assertFalse(redeemed);
+        assertEquals(List.of("user1"), service.getTelegramAllowedUsers());
+        RuntimeConfig.InviteCode secondInvite = service.getRuntimeConfig().getTelegram().getInviteCodes().stream()
+                .filter(code -> secondCode.getCode().equals(code.getCode()))
+                .findFirst()
+                .orElseThrow();
+        assertFalse(secondInvite.isUsed());
+    }
+
+    @Test
+    void shouldRedeemInviteCodeWhenAllowedUsersListIsImmutable() {
+        RuntimeConfig.InviteCode inviteCode = service.generateInviteCode();
+        service.getRuntimeConfig().getTelegram().setAllowedUsers(List.of());
+
+        boolean redeemed = service.redeemInviteCode(inviteCode.getCode(), "user1");
+
+        assertTrue(redeemed);
+        assertEquals(List.of("user1"), service.getTelegramAllowedUsers());
+    }
+
+    @Test
+    void shouldRemoveTelegramAllowedUser() {
+        RuntimeConfig.InviteCode code = service.generateInviteCode();
+        service.redeemInviteCode(code.getCode(), "user1");
+
+        boolean removed = service.removeTelegramAllowedUser("user1");
+
+        assertTrue(removed);
+        assertFalse(service.getTelegramAllowedUsers().contains("user1"));
+        assertTrue(service.getTelegramAllowedUsers().isEmpty());
+    }
+
+    @Test
+    void shouldRevokeActiveInviteCodesWhenRemovingTelegramAllowedUser() {
+        RuntimeConfig.InviteCode redeemedCode = service.generateInviteCode();
+        RuntimeConfig.InviteCode activeCode = service.generateInviteCode();
+        service.redeemInviteCode(redeemedCode.getCode(), "user1");
+
+        boolean removed = service.removeTelegramAllowedUser("user1");
+
+        assertTrue(removed);
+        List<RuntimeConfig.InviteCode> remainingCodes = service.getRuntimeConfig().getTelegram().getInviteCodes();
+        assertTrue(remainingCodes.stream()
+                .anyMatch(code -> redeemedCode.getCode().equals(code.getCode()) && code.isUsed()));
+        assertFalse(remainingCodes.stream()
+                .anyMatch(code -> activeCode.getCode().equals(code.getCode())));
+    }
+
+    @Test
+    void shouldReturnFalseWhenRemovingUnknownTelegramAllowedUser() {
+        RuntimeConfig.InviteCode code = service.generateInviteCode();
+        service.redeemInviteCode(code.getCode(), "user1");
+
+        boolean removed = service.removeTelegramAllowedUser("missing");
+
+        assertFalse(removed);
+        assertTrue(service.getTelegramAllowedUsers().contains("user1"));
+    }
+
+    @Test
     void shouldRevokeInviteCode() {
         RuntimeConfig.InviteCode generated = service.generateInviteCode();
 
@@ -604,12 +671,15 @@ class RuntimeConfigServiceTest {
     // ==================== Telegram Auth Mode ====================
 
     @Test
-    void shouldSetTelegramAuthModeAndPersist() {
-        service.setTelegramAuthMode("user");
+    void shouldNormalizeTelegramAuthModeToInviteOnly() throws Exception {
+        RuntimeConfig.TelegramConfig telegram = RuntimeConfig.TelegramConfig.builder()
+                .authMode("user")
+                .build();
+        persistedSections.put("telegram.json", objectMapper.writeValueAsString(telegram));
 
-        assertEquals("user", service.getRuntimeConfig().getTelegram().getAuthMode());
-        // Verify that persist was called (15 sections + 15 initial defaults on load)
-        verify(storagePort, atLeast(15)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        assertEquals("invite_only", config.getTelegram().getAuthMode());
     }
 
     // ==================== Voice Telegram Options ====================

@@ -308,7 +308,7 @@ export interface TelegramConfig {
   enabled: boolean | null;
   token: string | null;
   tokenPresent?: boolean;
-  authMode: 'user' | 'invite_only' | null;
+  authMode: 'invite_only' | null;
   allowedUsers: string[];
   inviteCodes: InviteCode[];
 }
@@ -644,6 +644,10 @@ export async function generateInviteCode(): Promise<InviteCode> {
 
 export async function deleteInviteCode(code: string): Promise<void> {
   await client.delete(`/settings/telegram/invite-codes/${code}`);
+}
+
+export async function deleteTelegramAllowedUser(userId: string): Promise<void> {
+  await client.delete(`/settings/telegram/allowed-users/${userId}`);
 }
 
 export async function restartTelegram(): Promise<void> {

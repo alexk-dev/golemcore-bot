@@ -42,6 +42,7 @@ import {
   updateAdvancedConfig,
   generateInviteCode,
   deleteInviteCode,
+  deleteTelegramAllowedUser,
   restartTelegram,
 } from '../api/settings';
 
@@ -224,6 +225,18 @@ export function useDeleteInviteCode(): UseMutationResult<Awaited<ReturnType<type
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (code: string) => deleteInviteCode(code),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useDeleteTelegramAllowedUser(): UseMutationResult<
+  Awaited<ReturnType<typeof deleteTelegramAllowedUser>>,
+  unknown,
+  string
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) => deleteTelegramAllowedUser(userId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
   });
 }
