@@ -136,12 +136,12 @@ public class UpdateService {
                             .build();
                 }
 
-                if (!isPatchUpdate(currentVersion, latestRelease.version())) {
+                if (!isSameMajorUpdate(currentVersion, latestRelease.version())) {
                     availableRelease = Optional.empty();
                     transientState = UpdateState.IDLE;
                     return UpdateActionResult.builder()
                             .success(true)
-                            .message("New major/minor version found. Use Docker image upgrade.")
+                            .message("New major version found. Use Docker image upgrade.")
                             .version(latestRelease.version())
                             .build();
                 }
@@ -900,7 +900,7 @@ public class UpdateService {
         return comparison > 0;
     }
 
-    private boolean isPatchUpdate(String currentVersion, String remoteVersion) {
+    private boolean isSameMajorUpdate(String currentVersion, String remoteVersion) {
         Semver current = parseSemver(currentVersion);
         Semver remote = parseSemver(remoteVersion);
 
@@ -908,9 +908,7 @@ public class UpdateService {
             return false;
         }
 
-        return current.major == remote.major
-                && current.minor == remote.minor
-                && remote.patch > current.patch;
+        return current.major == remote.major;
     }
 
     private int compareVersions(String left, String right) {
