@@ -130,11 +130,13 @@ class UpdateServiceTest {
     @Test
     void shouldRejectUpdateNowWhenNoAvailableUpdateExists(@TempDir Path tempDir) {
         enableUpdates(tempDir);
-        UpdateService service = createService();
+        StubHttpClient httpClient = new StubHttpClient();
+        httpClient.enqueueStringResponse(404, "{}");
+        TestableUpdateService service = createTestableService(httpClient);
 
         IllegalStateException exception = assertThrows(IllegalStateException.class, service::updateNow);
 
-        assertEquals("No available update. Run check first.", exception.getMessage());
+        assertEquals("No updates found", exception.getMessage());
     }
 
     @Test
@@ -241,6 +243,51 @@ class UpdateServiceTest {
                 URI.create("https://api.github.com/repos/alexk-dev/golemcore-bot/releases/assets/"
                         + DEFAULT_SHA_ASSET_ID),
                 httpClient.getRequestedUris().get(2));
+    }
+
+    @Test
+    void shouldCheckAndPrepareWhenUpdateNowCalledWithoutPriorCheck(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+        byte[] jarBytes = "new-binary".getBytes(StandardCharsets.UTF_8);
+        String checksum = sha256Hex(jarBytes);
+
+        StubHttpClient httpClient = new StubHttpClient();
+        httpClient.enqueueStringResponse(200, releaseJson(
+                "v0.4.2",
+                "bot-0.4.2.jar",
+                "2026-02-22T10:00:00Z"));
+        httpClient.enqueueBinaryResponse(200, jarBytes);
+        httpClient.enqueueStringResponse(200, checksum + "  bot-0.4.2.jar\n");
+        TestableUpdateService service = createTestableService(httpClient);
+
+        assertEquals("Update 0.4.2 is being applied. JVM restart scheduled.", service.updateNow().getMessage());
+        assertTrue(service.isRestartRequested());
+        assertTrue(Files.exists(tempDir.resolve("jars").resolve("bot-0.4.2.jar")));
+    }
+
+    @Test
+    void shouldRecoverWhenReleaseExistsButStagedJarIsMissing(@TempDir Path tempDir) throws Exception {
+        enableUpdates(tempDir);
+        Files.createDirectories(tempDir.resolve("jars"));
+        Files.writeString(tempDir.resolve("staged.txt"), "bot-0.4.2.jar\n", StandardCharsets.UTF_8);
+
+        byte[] jarBytes = "new-binary".getBytes(StandardCharsets.UTF_8);
+        String checksum = sha256Hex(jarBytes);
+
+        StubHttpClient httpClient = new StubHttpClient();
+        httpClient.enqueueStringResponse(200, releaseJson(
+                "v0.4.2",
+                "bot-0.4.2.jar",
+                "2026-02-22T10:00:00Z"));
+        httpClient.enqueueBinaryResponse(200, jarBytes);
+        httpClient.enqueueStringResponse(200, checksum + "  bot-0.4.2.jar\n");
+        TestableUpdateService service = createTestableService(httpClient);
+
+        assertEquals("Update 0.4.2 is being applied. JVM restart scheduled.", service.updateNow().getMessage());
+        assertTrue(service.isRestartRequested());
+        assertTrue(Files.exists(tempDir.resolve("jars").resolve("bot-0.4.2.jar")));
+        assertFalse(Files.exists(tempDir.resolve("staged.txt")));
+        assertEquals("bot-0.4.2.jar", Files.readString(tempDir.resolve("current.txt"), StandardCharsets.UTF_8).trim());
     }
 
     @Test

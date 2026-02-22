@@ -213,8 +213,43 @@ public class UpdateService {
     }
 
     public UpdateActionResult updateNow() {
-        prepare();
+        ensureUpdatePreparedForApply();
         return applyStagedUpdate();
+    }
+
+    private void ensureUpdatePreparedForApply() {
+        if (hasStagedUpdate()) {
+            return;
+        }
+
+        UpdateActionResult checkResult = null;
+        if (!hasAvailableRelease()) {
+            checkResult = check();
+        }
+
+        if (hasStagedUpdate()) {
+            return;
+        }
+        if (!hasAvailableRelease()) {
+            String message = checkResult != null
+                    ? checkResult.getMessage()
+                    : "No available update. Run check first.";
+            throw new IllegalStateException(message);
+        }
+
+        prepare();
+    }
+
+    private boolean hasStagedUpdate() {
+        synchronized (lock) {
+            return resolveStagedInfo() != null;
+        }
+    }
+
+    private boolean hasAvailableRelease() {
+        synchronized (lock) {
+            return availableRelease.isPresent();
+        }
     }
 
     private UpdateActionResult applyStagedUpdate() {
