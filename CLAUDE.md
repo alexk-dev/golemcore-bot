@@ -162,6 +162,16 @@ Levels: `error` (failures + exception), `warn` (recoverable), `info` (milestones
 
 ---
 
+## Git Workflow
+
+- **Direct commits/pushes to `main` are prohibited.**
+- Always create a feature branch from `main`, commit there, and open a Pull Request.
+- Merge to `main` only through PR after required checks pass.
+- PR description must include a detailed `Summary` section.
+- Do not add a `Verification` section in PR description unless explicitly requested.
+
+---
+
 ## Commit Messages
 
 Follow [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/).
