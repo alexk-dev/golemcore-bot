@@ -37,21 +37,11 @@ import java.util.List;
 public class MemoryItem {
 
     public enum Layer {
-        WORKING,
-        EPISODIC,
-        SEMANTIC,
-        PROCEDURAL
+        WORKING, EPISODIC, SEMANTIC, PROCEDURAL
     }
 
     public enum Type {
-        DECISION,
-        CONSTRAINT,
-        FAILURE,
-        FIX,
-        PREFERENCE,
-        PROJECT_FACT,
-        TASK_STATE,
-        COMMAND_RESULT
+        DECISION, CONSTRAINT, FAILURE, FIX, PREFERENCE, PROJECT_FACT, TASK_STATE, COMMAND_RESULT
     }
 
     private String id;

@@ -248,7 +248,7 @@ class ContextBuildingSystemPromptTest {
         when(workspaceInstructionService.getWorkspaceInstructionsContext()).thenReturn("""
                 ## AGENTS.md
                 Root instructions
-                                
+
                 ## dashboard/CLAUDE.md
                 Local dashboard instructions
                 """);

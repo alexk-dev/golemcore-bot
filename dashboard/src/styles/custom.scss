@@ -832,6 +832,74 @@ textarea:focus-visible,
   padding-top: 0.75rem;
 }
 
+.memory-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.55rem;
+}
+
+.memory-preset-option {
+  width: 100%;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.65rem;
+  background-color: var(--bs-body-bg);
+  text-align: left;
+  padding: 0.55rem 0.65rem;
+  transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.memory-preset-option:hover {
+  border-color: rgba(var(--bs-primary-rgb), 0.45);
+  background-color: var(--bs-tertiary-bg);
+}
+
+.memory-preset-option:focus-visible {
+  outline: 2px solid rgba(var(--bs-primary-rgb), 0.5);
+  outline-offset: 2px;
+}
+
+.memory-preset-option.is-selected {
+  border-color: rgba(var(--bs-primary-rgb), 0.75);
+  background-color: var(--bs-primary-bg-subtle);
+  box-shadow: 0 0 0 1px rgba(var(--bs-primary-rgb), 0.3) inset;
+}
+
+.memory-preset-option-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.memory-preset-option-title {
+  font-size: 0.83rem;
+  font-weight: 700;
+  color: var(--bs-emphasis-color);
+}
+
+.memory-preset-option-id {
+  font-family: var(--font-mono);
+  font-size: 0.69rem;
+  line-height: 1;
+  color: var(--bs-secondary-color);
+}
+
+.memory-preset-option-comment {
+  display: block;
+  margin-top: 0.22rem;
+  font-size: 0.77rem;
+  line-height: 1.4;
+  color: var(--bs-secondary-color);
+}
+
+.memory-preset-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-top: 0.55rem;
+}
+
 .updates-card {
   .card-body {
     display: flex;
@@ -1365,6 +1433,26 @@ textarea:focus-visible,
     min-height: 2.25rem;
   }
 
+  .memory-preset-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .memory-preset-actions .btn {
+    width: 100%;
+  }
+
+  .updates-step .d-flex {
+    flex-wrap: wrap;
+  }
+
+  .updates-step .form-control {
+    min-width: 0;
+  }
+
+  .updates-history-table td[data-label='Message'] {
+    min-width: 0;
+  }
   .voice-inline-actions {
     width: 100%;
   }

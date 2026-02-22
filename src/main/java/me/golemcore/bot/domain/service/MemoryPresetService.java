@@ -36,7 +36,7 @@ public class MemoryPresetService {
             createPreset(
                     "coding_fast",
                     "Coding Fast",
-                    "Быстро и экономно для коротких coding-сессий: меньше эпизодов, больше упора на практичные паттерны.",
+                    "Fast and lightweight for short coding sessions: fewer episodic recalls, stronger focus on practical patterns.",
                     true,
                     1400,
                     2600,
@@ -53,7 +53,7 @@ public class MemoryPresetService {
             createPreset(
                     "coding_balanced",
                     "Coding Balanced",
-                    "Универсальный дефолт для большинства разработчиков.",
+                    "Recommended default for most developers.",
                     true,
                     1800,
                     3500,
@@ -70,7 +70,7 @@ public class MemoryPresetService {
             createPreset(
                     "coding_deep",
                     "Coding Deep Autonomous",
-                    "Для длинных автономных веток: повышенный бюджет и глубина, но без агрессивного раздувания контекста.",
+                    "For long autonomous coding tracks: deeper recall and higher budget without aggressive context bloat.",
                     true,
                     2400,
                     4200,
@@ -87,7 +87,7 @@ public class MemoryPresetService {
             createPreset(
                     "general_chat",
                     "General Chat",
-                    "Минимум памяти, чтобы не раздувать ответы в обычном диалоге.",
+                    "Minimal memory footprint for everyday conversation to keep replies compact.",
                     true,
                     1000,
                     1800,
@@ -104,7 +104,7 @@ public class MemoryPresetService {
             createPreset(
                     "research_analyst",
                     "Research Analyst",
-                    "Смещён в семантику: факты и выводы важнее сырых эпизодов.",
+                    "Semantic-heavy profile where facts and conclusions are prioritized over raw episodes.",
                     true,
                     2000,
                     3600,
@@ -121,7 +121,7 @@ public class MemoryPresetService {
             createPreset(
                     "ops_support",
                     "Ops / Support",
-                    "Для инцидентов и поддержки: больше procedural (как чинили) и включена code-aware экстракция из логов/ошибок.",
+                    "Incident-focused profile: higher procedural recall and code-aware extraction for logs, errors, and fixes.",
                     true,
                     1500,
                     2800,
@@ -138,7 +138,7 @@ public class MemoryPresetService {
             createPreset(
                     "disabled",
                     "Memory Disabled",
-                    "Память полностью отключена: подходит для privacy-чувствительных задач и отладки поведения без памяти.",
+                    "Memory is fully disabled for privacy-sensitive tasks and debugging without memory context.",
                     false,
                     1800,
                     3500,

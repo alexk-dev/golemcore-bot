@@ -59,14 +59,15 @@ public class MemoryService implements MemoryComponent {
                     .build();
         }
 
-        MemoryQuery normalized = query != null ? query : MemoryQuery.builder()
-                .softPromptBudgetTokens(runtimeConfigService.getMemorySoftPromptBudgetTokens())
-                .maxPromptBudgetTokens(runtimeConfigService.getMemoryMaxPromptBudgetTokens())
-                .workingTopK(runtimeConfigService.getMemoryWorkingTopK())
-                .episodicTopK(runtimeConfigService.getMemoryEpisodicTopK())
-                .semanticTopK(runtimeConfigService.getMemorySemanticTopK())
-                .proceduralTopK(runtimeConfigService.getMemoryProceduralTopK())
-                .build();
+        MemoryQuery normalized = query != null ? query
+                : MemoryQuery.builder()
+                        .softPromptBudgetTokens(runtimeConfigService.getMemorySoftPromptBudgetTokens())
+                        .maxPromptBudgetTokens(runtimeConfigService.getMemoryMaxPromptBudgetTokens())
+                        .workingTopK(runtimeConfigService.getMemoryWorkingTopK())
+                        .episodicTopK(runtimeConfigService.getMemoryEpisodicTopK())
+                        .semanticTopK(runtimeConfigService.getMemorySemanticTopK())
+                        .proceduralTopK(runtimeConfigService.getMemoryProceduralTopK())
+                        .build();
 
         List<MemoryScoredItem> scoredItems = memoryRetrievalService.retrieve(normalized);
         MemoryPack structuredPack = memoryPromptPackService.build(normalized, scoredItems);

@@ -238,7 +238,8 @@ public class ContextBuildingSystem implements AgentSystem {
 
         if (workspaceInstructions != null && !workspaceInstructions.isBlank()) {
             sb.append("# Workspace Instructions\n");
-            sb.append("Follow these repository instruction files. If instructions conflict, prefer more local files listed later.\n\n");
+            sb.append(
+                    "Follow these repository instruction files. If instructions conflict, prefer more local files listed later.\n\n");
             sb.append(workspaceInstructions);
             sb.append(DOUBLE_NEWLINE);
         }

@@ -176,7 +176,8 @@ class MemoryPersistSystemTest {
 
     @Test
     void processHandlesStructuredPersistFailureGracefully() {
-        doThrow(new RuntimeException("write error")).when(memoryComponent).persistTurnMemory(any(TurnMemoryEvent.class));
+        doThrow(new RuntimeException("write error")).when(memoryComponent)
+                .persistTurnMemory(any(TurnMemoryEvent.class));
 
         AgentContext ctx = contextWith(
                 List.of(Message.builder().role(ROLE_USER).content("hello").timestamp(Instant.now()).build()),

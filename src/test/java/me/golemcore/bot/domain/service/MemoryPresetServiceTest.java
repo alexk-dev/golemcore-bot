@@ -45,25 +45,29 @@ class MemoryPresetServiceTest {
         Optional<MemoryPreset> disabled = service.findById("disabled");
 
         assertTrue(codingFast.isPresent());
-        assertEquals("Быстро и экономно для коротких coding-сессий: меньше эпизодов, больше упора на практичные паттерны.",
+        assertEquals(
+                "Fast and lightweight for short coding sessions: fewer episodic recalls, stronger focus on practical patterns.",
                 codingFast.get().getComment());
         assertTrue(codingBalanced.isPresent());
-        assertEquals("Универсальный дефолт для большинства разработчиков.",
+        assertEquals("Recommended default for most developers.",
                 codingBalanced.get().getComment());
         assertTrue(codingDeep.isPresent());
-        assertEquals("Для длинных автономных веток: повышенный бюджет и глубина, но без агрессивного раздувания контекста.",
+        assertEquals(
+                "For long autonomous coding tracks: deeper recall and higher budget without aggressive context bloat.",
                 codingDeep.get().getComment());
         assertTrue(generalChat.isPresent());
-        assertEquals("Минимум памяти, чтобы не раздувать ответы в обычном диалоге.",
+        assertEquals("Minimal memory footprint for everyday conversation to keep replies compact.",
                 generalChat.get().getComment());
         assertTrue(research.isPresent());
-        assertEquals("Смещён в семантику: факты и выводы важнее сырых эпизодов.",
+        assertEquals("Semantic-heavy profile where facts and conclusions are prioritized over raw episodes.",
                 research.get().getComment());
         assertTrue(ops.isPresent());
-        assertEquals("Для инцидентов и поддержки: больше procedural (как чинили) и включена code-aware экстракция из логов/ошибок.",
+        assertEquals(
+                "Incident-focused profile: higher procedural recall and code-aware extraction for logs, errors, and fixes.",
                 ops.get().getComment());
         assertTrue(disabled.isPresent());
-        assertEquals("Память полностью отключена: подходит для privacy-чувствительных задач и отладки поведения без памяти.",
+        assertEquals(
+                "Memory is fully disabled for privacy-sensitive tasks and debugging without memory context.",
                 disabled.get().getComment());
     }
 

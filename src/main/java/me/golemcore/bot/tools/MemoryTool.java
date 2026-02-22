@@ -441,7 +441,8 @@ public class MemoryTool implements ToolComponent {
         return memoryComponent.queryItems(query);
     }
 
-    private MemoryItem buildItem(Map<String, Object> params, MemoryItem.Layer layer, MemoryItem.Type type, String content) {
+    private MemoryItem buildItem(Map<String, Object> params, MemoryItem.Layer layer, MemoryItem.Type type,
+            String content) {
         Instant now = Instant.now();
         String title = normalizeNonBlank(toStringValue(params.get(PARAM_TITLE)));
         Integer ttlDays = toInteger(params.get(PARAM_TTL_DAYS));

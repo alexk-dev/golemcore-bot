@@ -524,11 +524,13 @@ public class SettingsController {
             throw new IllegalArgumentException("memory config is required");
         }
 
-        validateNullableInteger(memoryConfig.getSoftPromptBudgetTokens(), MEMORY_SOFT_BUDGET_MIN, MEMORY_SOFT_BUDGET_MAX,
+        validateNullableInteger(memoryConfig.getSoftPromptBudgetTokens(), MEMORY_SOFT_BUDGET_MIN,
+                MEMORY_SOFT_BUDGET_MAX,
                 "memory.softPromptBudgetTokens");
         validateNullableInteger(memoryConfig.getMaxPromptBudgetTokens(), MEMORY_MAX_BUDGET_MIN, MEMORY_MAX_BUDGET_MAX,
                 "memory.maxPromptBudgetTokens");
-        validateNullableInteger(memoryConfig.getWorkingTopK(), MEMORY_TOP_K_MIN, MEMORY_TOP_K_MAX, "memory.workingTopK");
+        validateNullableInteger(memoryConfig.getWorkingTopK(), MEMORY_TOP_K_MIN, MEMORY_TOP_K_MAX,
+                "memory.workingTopK");
         validateNullableInteger(memoryConfig.getEpisodicTopK(), MEMORY_TOP_K_MIN, MEMORY_TOP_K_MAX,
                 "memory.episodicTopK");
         validateNullableInteger(memoryConfig.getSemanticTopK(), MEMORY_TOP_K_MIN, MEMORY_TOP_K_MAX,

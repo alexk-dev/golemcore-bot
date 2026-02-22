@@ -28,6 +28,7 @@ import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -141,11 +142,11 @@ public class MemoryRetrievalService {
                 try {
                     MemoryItem item = objectMapper.readValue(line, MemoryItem.class);
                     items.add(item);
-                } catch (Exception e) {
+                } catch (IOException | RuntimeException e) {
                     log.trace("[MemoryRetrieval] Skipping invalid line in {}: {}", path, e.getMessage());
                 }
             }
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.trace("[MemoryRetrieval] Failed to load {}: {}", path, e.getMessage());
         }
         return items;

@@ -115,7 +115,7 @@ public class WorkspaceInstructionService {
     }
 
     private List<Path> resolveWorkspaceRoots() {
-        LinkedHashSet<Path> roots = new LinkedHashSet<>();
+        Set<Path> roots = new LinkedHashSet<>();
 
         Path shellRoot = resolveConfiguredPath(properties.getTools().getShell().getWorkspace());
         if (shellRoot != null && Files.isDirectory(shellRoot)) {
@@ -176,7 +176,8 @@ public class WorkspaceInstructionService {
                     }
 
                     Path relative = root.relativize(file);
-                    int directoryDepth = relative.getParent() != null ? relative.getParent().getNameCount() : 0;
+                    Path relativeParent = relative.getParent();
+                    int directoryDepth = relativeParent != null ? relativeParent.getNameCount() : 0;
                     collected.add(new InstructionFile(root, relative, fileName, directoryDepth, content));
                     return FileVisitResult.CONTINUE;
                 }

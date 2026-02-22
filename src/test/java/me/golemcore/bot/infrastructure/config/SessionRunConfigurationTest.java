@@ -16,34 +16,36 @@ class SessionRunConfigurationTest {
     @Test
     void shouldCreateDaemonThreadsWithCorrectName() throws Exception {
         SessionRunConfiguration config = new SessionRunConfiguration();
-        ExecutorService executor = config.sessionRunExecutor();
-        assertNotNull(executor);
+        try (ExecutorService executor = config.sessionRunExecutor()) {
+            assertNotNull(executor);
 
-        AtomicReference<String> threadName = new AtomicReference<>();
-        AtomicReference<Boolean> isDaemon = new AtomicReference<>();
-        CountDownLatch latch = new CountDownLatch(1);
+            AtomicReference<String> threadName = new AtomicReference<>();
+            AtomicReference<Boolean> isDaemon = new AtomicReference<>();
+            CountDownLatch latch = new CountDownLatch(1);
 
-        executor.submit(() -> {
-            threadName.set(Thread.currentThread().getName());
-            isDaemon.set(Thread.currentThread().isDaemon());
-            latch.countDown();
-        });
+            executor.submit(() -> {
+                threadName.set(Thread.currentThread().getName());
+                isDaemon.set(Thread.currentThread().isDaemon());
+                latch.countDown();
+            });
 
-        assertTrue(latch.await(2, TimeUnit.SECONDS));
-        assertEquals("session-run", threadName.get());
-        assertTrue(isDaemon.get());
+            assertTrue(latch.await(2, TimeUnit.SECONDS));
+            assertEquals("session-run", threadName.get());
+            assertTrue(isDaemon.get());
 
-        config.shutdown();
+            config.shutdown();
+        }
     }
 
     @Test
     void shouldShutdownCleanly() {
         SessionRunConfiguration config = new SessionRunConfiguration();
-        ExecutorService executor = config.sessionRunExecutor();
-        assertNotNull(executor);
+        try (ExecutorService executor = config.sessionRunExecutor()) {
+            assertNotNull(executor);
 
-        config.shutdown();
+            config.shutdown();
 
-        assertTrue(executor.isShutdown());
+            assertTrue(executor.isShutdown());
+        }
     }
 }

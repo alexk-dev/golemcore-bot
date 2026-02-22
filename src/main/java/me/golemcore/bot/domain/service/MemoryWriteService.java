@@ -28,8 +28,10 @@ import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -40,6 +42,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -129,7 +132,8 @@ public class MemoryWriteService {
                 item.setUpdatedAt(item.getCreatedAt());
             }
             if (item.getFingerprint() == null || item.getFingerprint().isBlank()) {
-                item.setFingerprint(computeFingerprint(item.getType() + "|" + normalizeForFingerprint(item.getContent())));
+                item.setFingerprint(
+                        computeFingerprint(item.getType() + "|" + normalizeForFingerprint(item.getContent())));
             }
             try {
                 payload.append(objectMapper.writeValueAsString(item)).append("\n");
@@ -145,7 +149,7 @@ public class MemoryWriteService {
         try {
             storagePort.appendText(getMemoryDirectory(), path, payload.toString()).join();
             log.debug("[MemoryWrite] Appended {} item(s) to {}", items.size(), path);
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.warn("[MemoryWrite] Failed to append items to {}: {}", path, e.getMessage());
         }
     }
@@ -171,7 +175,7 @@ public class MemoryWriteService {
             String payload = toJsonl(items);
             storagePort.putTextAtomic(getMemoryDirectory(), filePath, payload, true).join();
             log.debug("[MemoryWrite] Upserted {} item in {}", targetLayer, filePath);
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.warn("[MemoryWrite] Failed upsert to {}: {}", filePath, e.getMessage());
         }
     }
@@ -192,11 +196,11 @@ public class MemoryWriteService {
                 try {
                     MemoryItem item = objectMapper.readValue(line, MemoryItem.class);
                     items.add(item);
-                } catch (Exception e) {
+                } catch (IOException | RuntimeException e) {
                     log.trace("[MemoryWrite] Skipping invalid memory jsonl line: {}", e.getMessage());
                 }
             }
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.trace("[MemoryWrite] Failed reading {}: {}", filePath, e.getMessage());
         }
         return items;
@@ -258,7 +262,8 @@ public class MemoryWriteService {
     private void merge(MemoryItem existing, MemoryItem candidate) {
         existing.setUpdatedAt(Instant.now());
         if (candidate.getContent() != null && !candidate.getContent().isBlank()
-                && (existing.getContent() == null || candidate.getContent().length() > existing.getContent().length())) {
+                && (existing.getContent() == null
+                        || candidate.getContent().length() > existing.getContent().length())) {
             existing.setContent(candidate.getContent());
         }
         if (candidate.getTitle() != null && !candidate.getTitle().isBlank()) {
@@ -277,7 +282,7 @@ public class MemoryWriteService {
             existing.setLastAccessedAt(candidate.getLastAccessedAt());
         }
 
-        LinkedHashSet<String> tags = new LinkedHashSet<>();
+        Set<String> tags = new LinkedHashSet<>();
         if (existing.getTags() != null) {
             tags.addAll(existing.getTags());
         }
@@ -286,7 +291,7 @@ public class MemoryWriteService {
         }
         existing.setTags(new ArrayList<>(tags));
 
-        LinkedHashSet<String> refs = new LinkedHashSet<>();
+        Set<String> refs = new LinkedHashSet<>();
         if (existing.getReferences() != null) {
             refs.addAll(existing.getReferences());
         }
@@ -420,7 +425,7 @@ public class MemoryWriteService {
     }
 
     private List<String> extractTags(String content, String activeSkill) {
-        LinkedHashSet<String> tags = new LinkedHashSet<>();
+        Set<String> tags = new LinkedHashSet<>();
         String lower = content != null ? content.toLowerCase(Locale.ROOT) : "";
 
         if (activeSkill != null && !activeSkill.isBlank()) {
@@ -458,7 +463,7 @@ public class MemoryWriteService {
     }
 
     private List<String> extractReferences(String content) {
-        LinkedHashSet<String> refs = new LinkedHashSet<>();
+        Set<String> refs = new LinkedHashSet<>();
         if (content == null || content.isBlank()) {
             return new ArrayList<>(refs);
         }
@@ -536,7 +541,7 @@ public class MemoryWriteService {
                 sb.append(String.format("%02x", hash[i]));
             }
             return sb.toString();
-        } catch (Exception e) {
+        } catch (NoSuchAlgorithmException e) {
             return UUID.randomUUID().toString().replace("-", "").substring(0, 24);
         }
     }
