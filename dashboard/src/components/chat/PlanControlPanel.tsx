@@ -185,7 +185,7 @@ function PlanModeActions({
       <Button type="button" size="sm" variant="success" disabled={actionPending} onClick={onDone}>
         Plan done
       </Button>
-      <Button type="button" size="sm" variant="outline-secondary" disabled={actionPending} onClick={onDisable}>
+      <Button type="button" size="sm" variant="secondary" disabled={actionPending} onClick={onDisable}>
         Plan OFF
       </Button>
     </div>
@@ -263,7 +263,7 @@ function PlanItemActions({
       )}
 
       {canCancel && (
-        <Button type="button" size="sm" variant="outline-danger" disabled={actionPending} onClick={() => onCancel(plan.id)}>
+        <Button type="button" size="sm" variant="danger" disabled={actionPending} onClick={() => onCancel(plan.id)}>
           Cancel
         </Button>
       )}

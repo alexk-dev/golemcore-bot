@@ -46,7 +46,7 @@ export function LogsFilters(props: LogsFiltersProps): ReactElement {
                 <Button
                   key={level}
                   size="sm"
-                  variant={enabledLevels[level] ? levelVariant(level) : 'outline-secondary'}
+                  variant={enabledLevels[level] ? levelVariant(level) : 'secondary'}
                   onClick={() => onToggleLevel(level)}
                 >
                   {level}

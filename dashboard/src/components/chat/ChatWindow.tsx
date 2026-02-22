@@ -579,7 +579,7 @@ export default function ChatWindow() {
             <div className="chat-toolbar-actions">
               <button
                 type="button"
-                className="btn btn-sm btn-outline-secondary chat-toolbar-btn"
+                className="btn btn-sm btn-secondary chat-toolbar-btn"
                 onClick={startNewConversation}
                 title="Start a new chat session"
                 aria-label="Start a new chat session"
@@ -628,7 +628,7 @@ export default function ChatWindow() {
                 <small className="text-danger">{historyError}</small>
                 <button
                   type="button"
-                  className="btn btn-sm btn-outline-secondary"
+                  className="btn btn-sm btn-secondary"
                   onClick={() => setHistoryReloadTick((v) => v + 1)}
                 >
                   Retry
@@ -643,7 +643,7 @@ export default function ChatWindow() {
                 ) : (
                   <button
                     type="button"
-                    className="btn btn-sm btn-outline-secondary chat-history-load-btn"
+                    className="btn btn-sm btn-secondary chat-history-load-btn"
                     onClick={() => setVisibleStart(Math.max(0, visibleStart - LOAD_MORE_COUNT))}
                   >
                     Load earlier messages

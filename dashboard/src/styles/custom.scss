@@ -818,10 +818,9 @@ textarea:focus-visible,
   padding-inline: 0.75rem;
 }
 
-.chat-history-load-btn:hover,
-.chat-history-load-btn:focus-visible {
-  background-color: rgba(var(--bs-primary-rgb), 0.08);
-  border-color: rgba(var(--bs-primary-rgb), 0.42);
+.chat-history-load-btn:not(:disabled):hover,
+.chat-history-load-btn:not(:disabled):focus-visible {
+  filter: brightness(0.95);
 }
 
 .chat-history-state {
