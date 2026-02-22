@@ -235,6 +235,38 @@ Limits for a single user request (one internal tool loop run):
 }
 ```
 
+### Memory (V2)
+
+Memory behavior is configured under `memory`:
+
+```json
+{
+  "memory": {
+    "enabled": true,
+    "softPromptBudgetTokens": 1800,
+    "maxPromptBudgetTokens": 3500,
+    "workingTopK": 6,
+    "episodicTopK": 8,
+    "semanticTopK": 6,
+    "proceduralTopK": 4,
+    "promotionEnabled": true,
+    "promotionMinConfidence": 0.75,
+    "decayEnabled": true,
+    "decayDays": 30,
+    "retrievalLookbackDays": 21,
+    "codeAwareExtractionEnabled": true
+  }
+}
+```
+
+Field notes:
+
+1. `softPromptBudgetTokens` / `maxPromptBudgetTokens`: memory injection budget for prompt packing.
+2. `*TopK`: per-layer candidate limits for retrieval.
+3. `promotion*`: controls promotion from episodic records into semantic/procedural stores.
+4. `decay*`: stale item pruning window for stored memory.
+5. `retrievalLookbackDays`: episodic retrieval window (how many recent day-files are read per request).
+
 ### Telegram
 
 Telegram channel settings are stored in runtime config under `telegram`:
@@ -365,7 +397,7 @@ Default (macOS/Linux): `~/.golemcore/workspace`
 ```
 workspace/
 ├── auto/                    # auto mode + plan mode state
-├── memory/                  # MEMORY.md + daily notes
+├── memory/                  # structured memory items (JSONL)
 ├── models/                  # models.json (capabilities)
 ├── preferences/             # settings.json, runtime-config.json, admin.json
 ├── sessions/                # conversation sessions

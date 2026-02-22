@@ -7,6 +7,7 @@ import {
   type ToolsConfig,
   type VoiceConfig,
   type MemoryConfig,
+  type MemoryPreset,
   type SkillsConfig,
   type TurnConfig,
   type UsageConfig,
@@ -30,6 +31,7 @@ import {
   updateToolsConfig,
   updateVoiceConfig,
   updateMemoryConfig,
+  getMemoryPresets,
   updateSkillsConfig,
   updateTurnConfig,
   updateUsageConfig,
@@ -136,6 +138,10 @@ export function useUpdateMemory(): UseMutationResult<Awaited<ReturnType<typeof u
     mutationFn: (config: MemoryConfig) => updateMemoryConfig(config),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
   });
+}
+
+export function useMemoryPresets(): UseQueryResult<MemoryPreset[], unknown> {
+  return useQuery({ queryKey: ['runtime-config', 'memory-presets'], queryFn: getMemoryPresets });
 }
 
 export function useUpdateSkills(): UseMutationResult<Awaited<ReturnType<typeof updateSkillsConfig>>, unknown, SkillsConfig> {

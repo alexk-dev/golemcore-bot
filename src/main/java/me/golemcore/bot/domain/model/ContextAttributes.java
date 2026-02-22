@@ -76,6 +76,9 @@ public final class ContextAttributes {
     /** String ? prompt suffix/extra context produced by RAG/context building. */
     public static final String RAG_CONTEXT = "rag.context";
 
+    /** Map<String,Object> ? diagnostics for the selected memory pack. */
+    public static final String MEMORY_PACK_DIAGNOSTICS = "memory.pack.diagnostics";
+
     /** Boolean ? input sanitization already performed for this context. */
     public static final String SANITIZATION_PERFORMED = "sanitization.performed";
 

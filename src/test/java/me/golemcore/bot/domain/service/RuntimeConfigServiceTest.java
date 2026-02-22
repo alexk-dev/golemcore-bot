@@ -232,7 +232,14 @@ class RuntimeConfigServiceTest {
     @Test
     void shouldReturnDefaultMemorySettings() {
         assertTrue(service.isMemoryEnabled());
-        assertEquals(7, service.getMemoryRecentDays());
+        assertEquals(2, service.getMemoryVersion());
+        assertEquals(1800, service.getMemorySoftPromptBudgetTokens());
+        assertEquals(3500, service.getMemoryMaxPromptBudgetTokens());
+        assertEquals(6, service.getMemoryWorkingTopK());
+        assertEquals(8, service.getMemoryEpisodicTopK());
+        assertEquals(6, service.getMemorySemanticTopK());
+        assertEquals(4, service.getMemoryProceduralTopK());
+        assertEquals(21, service.getMemoryRetrievalLookbackDays());
     }
 
     @Test
@@ -444,6 +451,30 @@ class RuntimeConfigServiceTest {
 
         assertTrue(loaded.getTelegram().getToken().getPresent());
         assertFalse(loaded.getTelegram().getToken().getEncrypted());
+    }
+
+    @Test
+    void shouldNormalizeMemoryVersionToTwoWhenMissingInStoredSection() throws Exception {
+        persistedSections.put("memory.json", "{\"version\":null,\"enabled\":true}");
+
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        assertNotNull(config.getMemory());
+        assertEquals(2, config.getMemory().getVersion());
+        assertEquals(2, service.getMemoryVersion());
+    }
+
+    @Test
+    void shouldForceMemoryVersionTwoWhenUpdatingRuntimeConfig() {
+        RuntimeConfig newConfig = RuntimeConfig.builder().build();
+        newConfig.getMemory().setVersion(1);
+        newConfig.getMemory().setEnabled(true);
+
+        service.updateRuntimeConfig(newConfig);
+
+        RuntimeConfig updated = service.getRuntimeConfig();
+        assertEquals(2, updated.getMemory().getVersion());
+        assertEquals(2, service.getMemoryVersion());
     }
 
     // ==================== Invite Codes ====================

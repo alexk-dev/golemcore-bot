@@ -2,9 +2,11 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 
 import me.golemcore.bot.adapter.inbound.web.dto.PreferencesUpdateRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.SettingsResponse;
+import me.golemcore.bot.domain.model.MemoryPreset;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.UserPreferences;
+import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -37,6 +39,7 @@ class SettingsControllerTest {
     private UserPreferencesService preferencesService;
     private ModelSelectionService modelSelectionService;
     private RuntimeConfigService runtimeConfigService;
+    private MemoryPresetService memoryPresetService;
     private ApplicationEventPublisher eventPublisher;
     private SettingsController controller;
 
@@ -45,8 +48,10 @@ class SettingsControllerTest {
         preferencesService = mock(UserPreferencesService.class);
         modelSelectionService = mock(ModelSelectionService.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
+        memoryPresetService = mock(MemoryPresetService.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
         controller = new SettingsController(preferencesService, modelSelectionService, runtimeConfigService,
+                memoryPresetService,
                 eventPublisher);
         when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(RuntimeConfig.builder().build());
     }
@@ -87,6 +92,40 @@ class SettingsControllerTest {
                     assertNotNull(body);
                     assertNotNull(body.getTierOverrides());
                     assertEquals("gpt-4o", body.getTierOverrides().get("standard").getModel());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldGetMemoryPresets() {
+        MemoryPreset preset = MemoryPreset.builder()
+                .id("coding_balanced")
+                .label("Coding Balanced")
+                .comment("Универсальный дефолт для большинства разработчиков.")
+                .memory(RuntimeConfig.MemoryConfig.builder()
+                        .softPromptBudgetTokens(1800)
+                        .maxPromptBudgetTokens(3500)
+                        .workingTopK(6)
+                        .episodicTopK(8)
+                        .semanticTopK(6)
+                        .proceduralTopK(6)
+                        .promotionEnabled(true)
+                        .promotionMinConfidence(0.8)
+                        .decayEnabled(true)
+                        .decayDays(30)
+                        .retrievalLookbackDays(21)
+                        .codeAwareExtractionEnabled(true)
+                        .build())
+                .build();
+        when(memoryPresetService.getPresets()).thenReturn(List.of(preset));
+
+        StepVerifier.create(controller.getMemoryPresets())
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    List<MemoryPreset> body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals(1, body.size());
+                    assertEquals("coding_balanced", body.get(0).getId());
                 })
                 .verifyComplete();
     }
@@ -424,6 +463,121 @@ class SettingsControllerTest {
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> controller.updateLlmConfig(update));
         assertTrue(error.getMessage().contains("requestTimeoutSeconds must be between 1 and 3600"));
+    }
+
+    @Test
+    void shouldUpdateMemoryConfigWhenValid() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .memory(RuntimeConfig.MemoryConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.MemoryConfig memoryConfig = RuntimeConfig.MemoryConfig.builder()
+                .enabled(true)
+                .softPromptBudgetTokens(1800)
+                .maxPromptBudgetTokens(3500)
+                .workingTopK(6)
+                .episodicTopK(8)
+                .semanticTopK(6)
+                .proceduralTopK(4)
+                .promotionEnabled(true)
+                .promotionMinConfidence(0.8)
+                .decayEnabled(true)
+                .decayDays(30)
+                .retrievalLookbackDays(21)
+                .codeAwareExtractionEnabled(true)
+                .build();
+
+        StepVerifier.create(controller.updateMemoryConfig(memoryConfig))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        verify(runtimeConfigService).updateRuntimeConfig(runtimeConfig);
+        assertEquals(3500, runtimeConfig.getMemory().getMaxPromptBudgetTokens());
+    }
+
+    @Test
+    void shouldRejectMemoryConfigWhenMaxBudgetIsLessThanSoftBudget() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .memory(RuntimeConfig.MemoryConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.MemoryConfig memoryConfig = RuntimeConfig.MemoryConfig.builder()
+                .softPromptBudgetTokens(2000)
+                .maxPromptBudgetTokens(1000)
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateMemoryConfig(memoryConfig));
+        assertTrue(error.getMessage().contains("memory.maxPromptBudgetTokens"));
+    }
+
+    @Test
+    void shouldRejectMemoryConfigWhenTopKOutOfRange() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .memory(RuntimeConfig.MemoryConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.MemoryConfig memoryConfig = RuntimeConfig.MemoryConfig.builder()
+                .semanticTopK(99)
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateMemoryConfig(memoryConfig));
+        assertTrue(error.getMessage().contains("memory.semanticTopK"));
+    }
+
+    @Test
+    void shouldRejectMemoryConfigWhenPromotionConfidenceOutOfRange() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .memory(RuntimeConfig.MemoryConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.MemoryConfig memoryConfig = RuntimeConfig.MemoryConfig.builder()
+                .promotionMinConfidence(1.5)
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateMemoryConfig(memoryConfig));
+        assertTrue(error.getMessage().contains("memory.promotionMinConfidence"));
+    }
+
+    @Test
+    void shouldRejectMemoryConfigWhenRetrievalLookbackOutOfRange() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .memory(RuntimeConfig.MemoryConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.MemoryConfig memoryConfig = RuntimeConfig.MemoryConfig.builder()
+                .retrievalLookbackDays(999)
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateMemoryConfig(memoryConfig));
+        assertTrue(error.getMessage().contains("memory.retrievalLookbackDays"));
+    }
+
+    @Test
+    void shouldRejectRuntimeConfigUpdateWhenMemoryConfigIsInvalid() {
+        RuntimeConfig current = RuntimeConfig.builder().build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder().providers(new LinkedHashMap<>()).build())
+                .modelRouter(RuntimeConfig.ModelRouterConfig.builder().build())
+                .memory(RuntimeConfig.MemoryConfig.builder()
+                        .softPromptBudgetTokens(1000)
+                        .maxPromptBudgetTokens(500)
+                        .build())
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateRuntimeConfig(incoming));
+        assertTrue(error.getMessage().contains("memory.maxPromptBudgetTokens"));
     }
 
     @Test
