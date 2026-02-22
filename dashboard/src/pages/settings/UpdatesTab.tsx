@@ -128,7 +128,7 @@ function UpdatesBody({
         </div>
 
         <div className="d-flex flex-wrap gap-2 mb-3">
-          <Button type="button" size="sm" variant="outline-primary" onClick={onCheck} disabled={!canCheck}>
+          <Button type="button" size="sm" variant="secondary" onClick={onCheck} disabled={!canCheck}>
             {isCheckPending ? 'Checking...' : 'Check for updates'}
           </Button>
         </div>

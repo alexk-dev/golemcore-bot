@@ -50,19 +50,19 @@ export function LogsToolbar(props: LogsToolbarProps): ReactElement {
 
       <div className="logs-toolbar-actions mt-2">
         <ButtonGroup size="sm" aria-label="Primary logs actions">
-          <Button variant={isPaused ? 'warning' : 'outline-warning'} onClick={onTogglePause}>
+          <Button variant={isPaused ? 'warning' : 'secondary'} onClick={onTogglePause}>
             {isPaused ? 'Resume' : 'Pause'}
           </Button>
-          <Button variant={autoScroll ? 'primary' : 'outline-primary'} onClick={onJumpToLatest}>
+          <Button variant={autoScroll ? 'primary' : 'secondary'} onClick={onJumpToLatest}>
             Jump To Latest
           </Button>
         </ButtonGroup>
         <ButtonGroup size="sm" aria-label="Secondary logs actions">
-          <Button variant="outline-secondary" onClick={onReload}>
+          <Button variant="secondary" onClick={onReload}>
             Reload
           </Button>
           <Button
-            variant="outline-secondary"
+            variant="secondary"
             onClick={onClearView}
             title="Clears only the local dashboard buffer. Server logs are not deleted."
           >
