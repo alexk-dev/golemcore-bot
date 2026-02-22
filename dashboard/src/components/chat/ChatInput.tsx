@@ -254,7 +254,7 @@ export default function ChatInput({ onSend, disabled, running, onStop }: Props) 
 
   return (
     <div className="chat-input-area">
-      <Form onSubmit={handleSubmit}>
+      <Form onSubmit={handleSubmit} className="chat-input-form">
         <div
           className={shellClasses}
           onDragOver={(e) => { e.preventDefault(); if (!isDisabled) { setIsDragOver(true); } }}
@@ -272,7 +272,7 @@ export default function ChatInput({ onSend, disabled, running, onStop }: Props) 
               }
             }}
             onFocus={() => setIsFocused(true)} onBlur={() => setIsFocused(false)}
-            placeholder="Type a message or drop images..." disabled={isDisabled} className="chat-textarea"
+            placeholder="Message the assistant, type /, or drop images..." disabled={isDisabled} className="chat-textarea"
             aria-expanded={isMenuOpen}
             aria-controls={commandMenuId}
             aria-haspopup="listbox"
@@ -304,7 +304,11 @@ export default function ChatInput({ onSend, disabled, running, onStop }: Props) 
         </div>
         <input ref={fileInputRef} type="file" accept="image/*" className="d-none" multiple onChange={handleFilesSelected} />
         <small className={`chat-input-hint text-body-secondary d-block mt-2${hasInteracted ? ' chat-input-hint--hidden' : ''}`}>
-          Enter to send, Shift+Enter for new line, type / for commands, drag and drop or paste images.
+          <span className="chat-input-shortcut">Enter</span> send
+          <span className="chat-input-separator">•</span>
+          <span className="chat-input-shortcut">Shift + Enter</span> newline
+          <span className="chat-input-separator">•</span>
+          <span className="chat-input-shortcut">/</span> commands
         </small>
       </Form>
     </div>
