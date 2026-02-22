@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 @RestController
 @RequestMapping("/api/system/update")
@@ -20,16 +21,19 @@ public class UpdateController {
 
     @GetMapping("/status")
     public Mono<ResponseEntity<UpdateStatus>> getStatus() {
-        return Mono.just(ResponseEntity.ok(updateService.getStatus()));
+        return Mono.fromCallable(() -> ResponseEntity.ok(updateService.getStatus()))
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     @PostMapping("/check")
     public Mono<ResponseEntity<UpdateActionResult>> check() {
-        return Mono.just(ResponseEntity.ok(updateService.check()));
+        return Mono.fromCallable(() -> ResponseEntity.ok(updateService.check()))
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     @PostMapping("/update-now")
     public Mono<ResponseEntity<UpdateActionResult>> updateNow() {
-        return Mono.just(ResponseEntity.ok(updateService.updateNow()));
+        return Mono.fromCallable(() -> ResponseEntity.ok(updateService.updateNow()))
+                .subscribeOn(Schedulers.boundedElastic());
     }
 }
