@@ -140,21 +140,23 @@ export default function MessageBubble({ role, content, model, tier, reasoning, c
     const { text, tools } = parseToolCalls(safeContent);
 
     return (
-      <div className={`d-flex w-100 justify-content-start fade-in`}>
+      <div className="message-row message-row--assistant fade-in">
         <div className="message-bubble assistant">
-          <div className="d-flex align-items-center gap-2 mb-2">
-            <span className={`badge ${tierMeta?.className ?? 'text-bg-secondary'}`}>
+          <div className="assistant-message-header">
+            <span className={`badge assistant-tier-chip ${tierMeta?.className ?? 'text-bg-secondary'}`}>
               {tierMeta?.label ?? (tier ?? 'Unknown tier')}
             </span>
-            <small className="text-body-secondary">{formatModelLabel(model, reasoning)}</small>
+            <small className="assistant-model-label">{formatModelLabel(model, reasoning)}</small>
           </div>
           {tools.map((t, i) => (
-            <ToolCallCard key={i} tool={t.tool} result={t.result} />
+            <ToolCallCard key={`${t.tool}-${i}`} tool={t.tool} result={t.result} />
           ))}
           {text && (
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {text}
-            </ReactMarkdown>
+            <div className="assistant-message-body">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {text}
+              </ReactMarkdown>
+            </div>
           )}
         </div>
       </div>
@@ -162,7 +164,7 @@ export default function MessageBubble({ role, content, model, tier, reasoning, c
   }
 
   return (
-    <div className="d-flex w-100 justify-content-end fade-in">
+    <div className="message-row message-row--user fade-in">
       <div className={`message-bubble user${clientStatus != null ? ` message-bubble--${clientStatus}` : ''}`}>
         {renderUserContent(safeContent, leadingCommand)}
         <UserDeliveryState clientStatus={clientStatus} onRetry={onRetry} />
