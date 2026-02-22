@@ -109,7 +109,7 @@ public class ContextBuildingSystem implements AgentSystem {
         UserPreferences prefs = userPreferencesService.getPreferences();
         resolveTier(context, prefs);
 
-        // Build memory context (Memory V2 pack with legacy fallback)
+        // Build memory context from structured Memory V2 pack
         String userQueryForMemory = getLastUserMessageText(context);
         MemoryQuery memoryQuery = MemoryQuery.builder()
                 .queryText(userQueryForMemory)
@@ -133,10 +133,7 @@ public class ContextBuildingSystem implements AgentSystem {
                 context.setAttribute(ContextAttributes.MEMORY_PACK_DIAGNOSTICS, memoryPack.getDiagnostics());
             }
         } catch (Exception e) {
-            log.debug("[Context] Memory pack build failed, using legacy memory context: {}", e.getMessage());
-        }
-        if (memoryContext.isBlank()) {
-            memoryContext = memoryComponent.getMemoryContext();
+            log.debug("[Context] Memory pack build failed: {}", e.getMessage());
         }
         context.setMemoryContext(memoryContext);
         log.debug("[Context] Memory context: {} chars",

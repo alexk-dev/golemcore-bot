@@ -102,7 +102,6 @@ public class BotProperties {
     @Data
     public static class MemoryProperties {
         private String directory = "memory";
-        private int recentDays = 7;
     }
 
     @Data

@@ -31,17 +31,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 /**
- * System for persisting conversation exchanges to daily memory notes
- * (order=50). Appends each user-assistant interaction to today's note file for
- * long-term context retention. Runs after tool execution and before response
- * routing in the pipeline.
+ * System for persisting structured turn-level memory events (order=50).
+ * Captures user/assistant exchange and selected tool outputs for Memory V2.
  */
 @Component
 @RequiredArgsConstructor
@@ -49,9 +45,6 @@ import java.util.Map;
 public class MemoryPersistSystem implements AgentSystem {
 
     private final MemoryComponent memoryComponent;
-
-    private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm")
-            .withZone(ZoneId.systemDefault());
 
     @Override
     public String getName() {
@@ -94,17 +87,6 @@ public class MemoryPersistSystem implements AgentSystem {
             assistantContent = response.getContent();
         }
 
-        // Build memory entry
-        String entry = buildMemoryEntry(lastUserMessage, assistantContent);
-
-        // Append to today's notes
-        try {
-            memoryComponent.appendToday(entry);
-            log.debug("Persisted conversation to memory");
-        } catch (Exception e) {
-            log.warn("Failed to persist to memory", e);
-        }
-
         // Persist structured memory event (Memory V2)
         try {
             TurnMemoryEvent event = TurnMemoryEvent.builder()
@@ -134,15 +116,6 @@ public class MemoryPersistSystem implements AgentSystem {
             }
         }
         return null;
-    }
-
-    private String buildMemoryEntry(Message userMessage, String assistantText) {
-        String time = TIME_FORMATTER.format(Instant.now());
-        String userContent = truncate(userMessage.getContent(), 200);
-        String assistantContent = truncate(assistantText, 300);
-
-        return String.format("[%s] User: %s | Assistant: %s%n",
-                time, userContent, assistantContent);
     }
 
     private String truncate(String text, int maxLength) {

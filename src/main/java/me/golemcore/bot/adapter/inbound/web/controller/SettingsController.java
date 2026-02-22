@@ -44,8 +44,6 @@ public class SettingsController {
     private static final String TELEGRAM_AUTH_MODE_USER = "user";
     private static final String TELEGRAM_AUTH_MODE_INVITE = "invite_only";
     private static final Set<String> VALID_API_TYPES = Set.of("openai", "anthropic", "gemini");
-    private static final int MEMORY_RECENT_DAYS_MIN = 1;
-    private static final int MEMORY_RECENT_DAYS_MAX = 90;
     private static final int MEMORY_SOFT_BUDGET_MIN = 200;
     private static final int MEMORY_SOFT_BUDGET_MAX = 10000;
     private static final int MEMORY_MAX_BUDGET_MIN = 200;
@@ -507,8 +505,6 @@ public class SettingsController {
             throw new IllegalArgumentException("memory config is required");
         }
 
-        validateNullableInteger(memoryConfig.getRecentDays(), MEMORY_RECENT_DAYS_MIN, MEMORY_RECENT_DAYS_MAX,
-                "memory.recentDays");
         validateNullableInteger(memoryConfig.getSoftPromptBudgetTokens(), MEMORY_SOFT_BUDGET_MIN, MEMORY_SOFT_BUDGET_MAX,
                 "memory.softPromptBudgetTokens");
         validateNullableInteger(memoryConfig.getMaxPromptBudgetTokens(), MEMORY_MAX_BUDGET_MIN, MEMORY_MAX_BUDGET_MAX,

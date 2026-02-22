@@ -277,11 +277,10 @@ public class RuntimeConfig {
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class MemoryConfig {
         @Builder.Default
         private Boolean enabled = true;
-        @Builder.Default
-        private Integer recentDays = 7;
         @Builder.Default
         private Integer softPromptBudgetTokens = 1800;
         @Builder.Default
@@ -304,8 +303,6 @@ public class RuntimeConfig {
         private Integer decayDays = 30;
         @Builder.Default
         private Boolean codeAwareExtractionEnabled = true;
-        @Builder.Default
-        private Boolean legacyDailyNotesEnabled = true;
     }
 
     @Data

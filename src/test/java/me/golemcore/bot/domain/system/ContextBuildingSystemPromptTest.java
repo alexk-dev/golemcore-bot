@@ -82,7 +82,9 @@ class ContextBuildingSystemPromptTest {
         workspaceInstructionService = mock(WorkspaceInstructionService.class);
         when(runtimeConfigService.getAutoModelTier()).thenReturn(TIER_SMART);
 
-        when(memoryComponent.getMemoryContext()).thenReturn("");
+        when(memoryComponent.buildMemoryPack(any())).thenReturn(MemoryPack.builder()
+                .renderedContext("")
+                .build());
         when(skillComponent.getSkillsSummary()).thenReturn("");
         when(ragPort.isAvailable()).thenReturn(false);
         when(workspaceInstructionService.getWorkspaceInstructionsContext()).thenReturn("");
@@ -201,7 +203,9 @@ class ContextBuildingSystemPromptTest {
         when(promptSectionService.renderSection(any(), any())).thenReturn("Bot identity");
 
         // Set up memory and tools
-        when(memoryComponent.getMemoryContext()).thenReturn("User prefers concise answers.");
+        when(memoryComponent.buildMemoryPack(any())).thenReturn(MemoryPack.builder()
+                .renderedContext("User prefers concise answers.")
+                .build());
 
         ToolComponent tool = mock(ToolComponent.class);
         when(tool.isEnabled()).thenReturn(true);

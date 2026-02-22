@@ -73,19 +73,6 @@ export default function MemoryTab({ config }: MemoryTabProps): ReactElement {
         />
         <Form.Group className="mb-3">
           <Form.Label className="small fw-medium">
-            Recent Days <HelpTip text="How many previous daily memory files to include in context fallback." />
-          </Form.Label>
-          <Form.Control
-            size="sm"
-            type="number"
-            min={1}
-            max={90}
-            value={withNumberFallback(form.recentDays, 7)}
-            onChange={(e) => setIntField('recentDays', e.target.value)}
-          />
-        </Form.Group>
-        <Form.Group className="mb-3">
-          <Form.Label className="small fw-medium">
             Soft Prompt Budget <HelpTip text="Target token budget for memory pack." />
           </Form.Label>
           <Form.Control
@@ -208,13 +195,6 @@ export default function MemoryTab({ config }: MemoryTabProps): ReactElement {
           label={<>Code-aware Extraction <HelpTip text="Extract code-specific facts (errors, tests, files) into memory items." /></>}
           checked={withBooleanFallback(form.codeAwareExtractionEnabled, true)}
           onChange={(e) => setBoolField('codeAwareExtractionEnabled', e.target.checked)}
-          className="mb-3"
-        />
-        <Form.Check
-          type="switch"
-          label={<>Legacy Daily Notes <HelpTip text="Keep writing and injecting legacy daily notes alongside structured memory." /></>}
-          checked={withBooleanFallback(form.legacyDailyNotesEnabled, true)}
-          onChange={(e) => setBoolField('legacyDailyNotesEnabled', e.target.checked)}
           className="mb-3"
         />
         <SettingsSaveBar>

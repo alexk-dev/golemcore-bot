@@ -339,7 +339,6 @@ class SettingsControllerTest {
 
         RuntimeConfig.MemoryConfig memoryConfig = RuntimeConfig.MemoryConfig.builder()
                 .enabled(true)
-                .recentDays(7)
                 .softPromptBudgetTokens(1800)
                 .maxPromptBudgetTokens(3500)
                 .workingTopK(6)
@@ -351,7 +350,6 @@ class SettingsControllerTest {
                 .decayEnabled(true)
                 .decayDays(30)
                 .codeAwareExtractionEnabled(true)
-                .legacyDailyNotesEnabled(true)
                 .build();
 
         StepVerifier.create(controller.updateMemoryConfig(memoryConfig))

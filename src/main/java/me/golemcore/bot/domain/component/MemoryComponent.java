@@ -18,7 +18,6 @@ package me.golemcore.bot.domain.component;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.model.Memory;
 import me.golemcore.bot.domain.model.MemoryItem;
 import me.golemcore.bot.domain.model.MemoryPack;
 import me.golemcore.bot.domain.model.MemoryQuery;
@@ -27,10 +26,7 @@ import me.golemcore.bot.domain.model.TurnMemoryEvent;
 import java.util.List;
 
 /**
- * Component providing access to persistent memory storage. Manages both
- * short-term (conversation history) and long-term memory (MEMORY.md), as well
- * as daily notes. Memory content is injected into the system prompt to provide
- * context across conversations.
+ * Component providing access to structured Memory V2 storage and retrieval.
  */
 public interface MemoryComponent extends Component {
 
@@ -40,58 +36,13 @@ public interface MemoryComponent extends Component {
     }
 
     /**
-     * Returns the current memory state including conversation history.
-     *
-     * @return the memory object
-     */
-    Memory getMemory();
-
-    /**
-     * Reads the long-term memory file (MEMORY.md) containing persistent notes.
-     *
-     * @return the long-term memory content, or empty string if not found
-     */
-    String readLongTerm();
-
-    /**
-     * Writes content to the long-term memory file (MEMORY.md).
-     *
-     * @param content
-     *            the content to write
-     */
-    void writeLongTerm(String content);
-
-    /**
-     * Reads today's daily notes from the notes directory.
-     *
-     * @return today's notes, or empty string if not found
-     */
-    String readToday();
-
-    /**
-     * Appends an entry to today's daily notes file.
-     *
-     * @param entry
-     *            the entry to append
-     */
-    void appendToday(String entry);
-
-    /**
-     * Returns formatted memory content for injection into the system prompt.
-     * Combines long-term memory and recent daily notes.
-     *
-     * @return the memory context string
-     */
-    String getMemoryContext();
-
-    /**
      * Build a scored memory pack for prompt injection.
      */
     default MemoryPack buildMemoryPack(MemoryQuery query) {
         return MemoryPack.builder()
                 .items(List.of())
                 .diagnostics(java.util.Map.of())
-                .renderedContext(getMemoryContext())
+                .renderedContext("")
                 .build();
     }
 

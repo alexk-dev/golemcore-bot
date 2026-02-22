@@ -269,7 +269,6 @@ export interface LlmProviderConfig {
 
 export interface MemoryConfig {
   enabled: boolean | null;
-  recentDays: number | null;
   softPromptBudgetTokens: number | null;
   maxPromptBudgetTokens: number | null;
   workingTopK: number | null;
@@ -281,7 +280,6 @@ export interface MemoryConfig {
   decayEnabled: boolean | null;
   decayDays: number | null;
   codeAwareExtractionEnabled: boolean | null;
-  legacyDailyNotesEnabled: boolean | null;
 }
 
 export interface SkillsConfig {

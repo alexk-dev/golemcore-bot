@@ -8,7 +8,7 @@ Branch: `feat/memory-epic-architecture-draft`
 
 Current memory behavior is simple and stable, but it is not optimal for long autonomous coding sessions:
 
-1. `MemoryService` injects mostly raw text from `MEMORY.md`, today notes, and recent days.
+1. `MemoryService` injects structured, ranked memory packs into prompt context.
 2. `MemoryPersistSystem` writes flat short lines (`User | Assistant`) with minimal structure.
 3. Prompt injection uses a large `# Memory` block without explicit budget arbitration against other sections.
 4. Memory quality depends on full-text accumulation, not relevance scoring.
@@ -35,19 +35,19 @@ The result is acceptable continuity, but weak precision over long horizons and g
 
 ### Read path
 
-1. `ContextBuildingSystem` reads `memoryComponent.getMemoryContext()`.
+1. `ContextBuildingSystem` reads `memoryComponent.buildMemoryPack(...)`.
 2. It appends `# Memory` before `# Relevant Memory` (RAG).
-3. Memory context is plain markdown assembled by `Memory.toContext()`.
+3. Memory context is a packed markdown block assembled by `MemoryPromptPackService`.
 
 ### Write path
 
-1. `MemoryPersistSystem` appends one line per finalized turn to `memory/YYYY-MM-DD.md`.
-2. Data is truncated and lossy (200 chars user, 300 chars assistant).
-3. No explicit salience or confidence metadata.
+1. `MemoryPersistSystem` creates one structured `TurnMemoryEvent` per finalized turn.
+2. `MemoryWriteService` extracts typed items into JSONL stores.
+3. Events and items carry confidence/salience metadata.
 
 ### Config and UI
 
-1. Runtime memory config only has `enabled` and `recentDays`.
+1. Runtime memory config exposes Memory V2 retrieval/promotion/decay controls.
 2. Dashboard Memory tab exposes only these fields.
 
 ## 5. Target Architecture (Memory V2)
@@ -99,14 +99,7 @@ Fields:
 
 ## 7. Storage Layout Changes
 
-### 7.1 Keep existing files for compatibility
-
-1. `memory/MEMORY.md`
-2. `memory/YYYY-MM-DD.md`
-
-### 7.2 Add structured store
-
-Proposed:
+### 7.1 Structured store
 
 1. `memory/items/episodic/YYYY-MM-DD.jsonl`
 2. `memory/items/semantic.jsonl`
@@ -128,7 +121,7 @@ Target:
 1. `MemoryPersistSystem` builds a `TurnMemoryEvent`.
 2. `MemoryWriteService` extracts candidate `MemoryItem` objects.
 3. `MemoryPromotionService` decides whether to store in episodic only or promote to semantic/procedural.
-4. Preserve legacy daily note append in compatibility mode during phase 1.
+4. Emit diagnostics for observability and debugging.
 
 ### B. Code-aware extraction
 
@@ -177,7 +170,7 @@ Responsibilities:
 
 `ContextBuildingSystem` change:
 
-1. Call `memoryComponent.buildMemoryPack(...)` instead of plain `getMemoryContext()`.
+1. Call `memoryComponent.buildMemoryPack(...)`.
 2. Inject packed output into `# Memory`.
 3. Store pack diagnostics in context attributes for logs/debug.
 
@@ -188,25 +181,23 @@ Extend `RuntimeConfig.MemoryConfig` and dashboard form.
 Proposed fields:
 
 1. `enabled` (existing)
-2. `recentDays` (existing, compatibility)
-3. `softPromptBudgetTokens` (default 1800)
-4. `maxPromptBudgetTokens` (default 3500)
-5. `workingTopK` (default 6)
-6. `episodicTopK` (default 8)
-7. `semanticTopK` (default 6)
-8. `proceduralTopK` (default 4)
-9. `promotionEnabled` (default true)
-10. `promotionMinConfidence` (default 0.75)
-11. `decayEnabled` (default true)
-12. `decayDays` (default 30)
-13. `codeAwareExtractionEnabled` (default true)
-14. `legacyDailyNotesEnabled` (default true in migration phase)
+2. `softPromptBudgetTokens` (default 1800)
+3. `maxPromptBudgetTokens` (default 3500)
+4. `workingTopK` (default 6)
+5. `episodicTopK` (default 8)
+6. `semanticTopK` (default 6)
+7. `proceduralTopK` (default 4)
+8. `promotionEnabled` (default true)
+9. `promotionMinConfidence` (default 0.75)
+10. `decayEnabled` (default true)
+11. `decayDays` (default 30)
+12. `codeAwareExtractionEnabled` (default true)
 
 ## 10. API and Tooling Changes
 
 ### 10.1 MemoryComponent contract
 
-Current interface is string-centric (`getMemoryContext()`).
+Current interface is structured (`buildMemoryPack`, `persistTurnMemory`, `queryItems`).
 
 Target additions:
 
@@ -215,7 +206,7 @@ Target additions:
 3. `List<MemoryItem> queryItems(MemoryQuery query)`
 4. `void upsertSemanticItem(MemoryItem item)`
 
-Keep existing methods during migration; deprecate later.
+Legacy string-memory methods are removed.
 
 ### 10.2 Dedicated memory tool
 
@@ -238,25 +229,25 @@ Reason: autonomous updates should not rely on filesystem sandbox path assumption
 1. Document design and acceptance criteria.
 2. Confirm API and data model direction.
 
-### Phase 1: Dual-write, old read
+### Phase 1: Structured write and read
 
-1. `MemoryPersistSystem` writes old daily notes plus structured episodic JSONL.
-2. Prompt read still uses legacy `getMemoryContext()`.
+1. `MemoryPersistSystem` writes structured episodic JSONL.
+2. Prompt read uses `buildMemoryPack(...)`.
 
-### Phase 2: Hybrid read
+### Phase 2: Promotion and ranking tuning
 
 1. `ContextBuildingSystem` uses packed retrieval from structured store.
-2. Legacy memory text appended as fallback only.
+2. No markdown fallback path.
 
-### Phase 3: Promotion and decay
+### Phase 3: Decay and cleanup
 
 1. Enable semantic/procedural promotion.
 2. Enable decay cleanup jobs and dedup compaction.
 
-### Phase 4: Legacy downgrade path
+### Phase 4: Hardening
 
-1. Keep toggle to fall back to legacy prompt memory if needed.
-2. Keep `MEMORY.md` for manual curated notes.
+1. Improve ranking quality and budget adaptation.
+2. Expand autonomous coding extraction patterns.
 
 ## 12. Observability and Quality Gates
 
@@ -345,9 +336,9 @@ Likely docs updates:
 ## 17. Rollout Recommendation
 
 1. Merge this architecture draft first as a standalone PR.
-2. Implement Phase 1 in a separate feature PR with dual-write and no prompt behavior changes.
-3. Implement Phase 2 and Phase 3 in incremental PRs behind runtime flags.
-4. Keep an immediate rollback switch to legacy memory path.
+2. Implement structured write/read changes in a feature PR with tests.
+3. Tune promotion and decay in incremental PRs with runtime metrics.
+4. Keep rollback focused on Memory V2 feature flags (without text-memory fallbacks).
 
 ## 18. Open Questions
 

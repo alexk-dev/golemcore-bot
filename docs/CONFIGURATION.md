@@ -243,7 +243,6 @@ Memory behavior is configured under `memory`:
 {
   "memory": {
     "enabled": true,
-    "recentDays": 7,
     "softPromptBudgetTokens": 1800,
     "maxPromptBudgetTokens": 3500,
     "workingTopK": 6,
@@ -254,8 +253,7 @@ Memory behavior is configured under `memory`:
     "promotionMinConfidence": 0.75,
     "decayEnabled": true,
     "decayDays": 30,
-    "codeAwareExtractionEnabled": true,
-    "legacyDailyNotesEnabled": true
+    "codeAwareExtractionEnabled": true
   }
 }
 ```
@@ -266,7 +264,6 @@ Field notes:
 2. `*TopK`: per-layer candidate limits for retrieval.
 3. `promotion*`: controls promotion from episodic records into semantic/procedural stores.
 4. `decay*`: stale item pruning window.
-5. `legacyDailyNotesEnabled`: compatibility toggle for old markdown daily notes.
 
 ### Telegram
 
@@ -382,7 +379,7 @@ Default (macOS/Linux): `~/.golemcore/workspace`
 ```
 workspace/
 ├── auto/                    # auto mode + plan mode state
-├── memory/                  # MEMORY.md + daily notes
+├── memory/                  # structured memory items (JSONL)
 ├── models/                  # models.json (capabilities)
 ├── preferences/             # settings.json, runtime-config.json, admin.json
 ├── sessions/                # conversation sessions

@@ -223,7 +223,12 @@ class RuntimeConfigServiceTest {
     @Test
     void shouldReturnDefaultMemorySettings() {
         assertTrue(service.isMemoryEnabled());
-        assertEquals(7, service.getMemoryRecentDays());
+        assertEquals(1800, service.getMemorySoftPromptBudgetTokens());
+        assertEquals(3500, service.getMemoryMaxPromptBudgetTokens());
+        assertEquals(6, service.getMemoryWorkingTopK());
+        assertEquals(8, service.getMemoryEpisodicTopK());
+        assertEquals(6, service.getMemorySemanticTopK());
+        assertEquals(4, service.getMemoryProceduralTopK());
     }
 
     @Test

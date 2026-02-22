@@ -54,6 +54,8 @@ public class MemoryRetrievalService {
     private static final String EPISODIC_PREFIX = "items/episodic/";
     private static final String SEMANTIC_FILE = "items/semantic.jsonl";
     private static final String PROCEDURAL_FILE = "items/procedural.jsonl";
+    private static final int DEFAULT_EPISODIC_LOOKBACK_DAYS = 14;
+    private static final int MAX_EPISODIC_LOOKBACK_DAYS = 90;
 
     private final StoragePort storagePort;
     private final BotProperties properties;
@@ -68,7 +70,7 @@ public class MemoryRetrievalService {
         MemoryQuery normalizedQuery = normalizeQuery(query);
         List<MemoryItem> candidates = new ArrayList<>();
 
-        candidates.addAll(loadRecentEpisodic(runtimeConfigService.getMemoryRecentDays() + 1));
+        candidates.addAll(loadRecentEpisodic(resolveEpisodicLookbackDays()));
         candidates.addAll(loadJsonl(SEMANTIC_FILE));
         candidates.addAll(loadJsonl(PROCEDURAL_FILE));
 
@@ -117,6 +119,14 @@ public class MemoryRetrievalService {
             items.addAll(loadJsonl(path));
         }
         return items;
+    }
+
+    private int resolveEpisodicLookbackDays() {
+        if (runtimeConfigService.isMemoryDecayEnabled()) {
+            int decayDays = runtimeConfigService.getMemoryDecayDays();
+            return clampDays(decayDays);
+        }
+        return DEFAULT_EPISODIC_LOOKBACK_DAYS;
     }
 
     private List<MemoryItem> loadJsonl(String path) {
@@ -377,6 +387,13 @@ public class MemoryRetrievalService {
             return fallback;
         }
         return Math.max(0, value);
+    }
+
+    private int clampDays(int days) {
+        if (days < 1) {
+            return 1;
+        }
+        return Math.min(days, MAX_EPISODIC_LOOKBACK_DAYS);
     }
 
     private String getMemoryDirectory() {

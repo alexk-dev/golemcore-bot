@@ -75,7 +75,6 @@ public class RuntimeConfigService {
     private static final String DEFAULT_AUTO_MODEL_TIER = "default";
     private static final int DEFAULT_AUTO_COMPACT_MAX_TOKENS = 50000;
     private static final int DEFAULT_AUTO_COMPACT_KEEP_LAST = 20;
-    private static final int DEFAULT_MEMORY_RECENT_DAYS = 7;
     private static final int DEFAULT_MEMORY_SOFT_PROMPT_BUDGET_TOKENS = 1800;
     private static final int DEFAULT_MEMORY_MAX_PROMPT_BUDGET_TOKENS = 3500;
     private static final int DEFAULT_MEMORY_WORKING_TOP_K = 6;
@@ -87,7 +86,6 @@ public class RuntimeConfigService {
     private static final boolean DEFAULT_MEMORY_DECAY_ENABLED = true;
     private static final int DEFAULT_MEMORY_DECAY_DAYS = 30;
     private static final boolean DEFAULT_MEMORY_CODE_AWARE_EXTRACTION_ENABLED = true;
-    private static final boolean DEFAULT_MEMORY_LEGACY_DAILY_NOTES_ENABLED = true;
     private static final int DEFAULT_TURN_MAX_LLM_CALLS = 200;
     private static final int DEFAULT_TURN_MAX_TOOL_EXECUTIONS = 500;
     private static final java.time.Duration DEFAULT_TURN_DEADLINE = java.time.Duration.ofHours(1);
@@ -717,15 +715,6 @@ public class RuntimeConfigService {
         return val != null ? val : true;
     }
 
-    public int getMemoryRecentDays() {
-        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
-        if (memoryConfig == null) {
-            return DEFAULT_MEMORY_RECENT_DAYS;
-        }
-        Integer val = memoryConfig.getRecentDays();
-        return val != null ? val : DEFAULT_MEMORY_RECENT_DAYS;
-    }
-
     public int getMemorySoftPromptBudgetTokens() {
         RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
         if (memoryConfig == null) {
@@ -823,15 +812,6 @@ public class RuntimeConfigService {
         }
         Boolean val = memoryConfig.getCodeAwareExtractionEnabled();
         return val != null ? val : DEFAULT_MEMORY_CODE_AWARE_EXTRACTION_ENABLED;
-    }
-
-    public boolean isMemoryLegacyDailyNotesEnabled() {
-        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
-        if (memoryConfig == null) {
-            return DEFAULT_MEMORY_LEGACY_DAILY_NOTES_ENABLED;
-        }
-        Boolean val = memoryConfig.getLegacyDailyNotesEnabled();
-        return val != null ? val : DEFAULT_MEMORY_LEGACY_DAILY_NOTES_ENABLED;
     }
 
     // ==================== Skills ====================
