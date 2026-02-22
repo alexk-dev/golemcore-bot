@@ -48,7 +48,6 @@ class TelegramAdapterHandleMessageTest {
     void setUp() {
         allowlistValidator = mock(AllowlistValidator.class);
         when(allowlistValidator.isAllowed("telegram", "123")).thenReturn(true);
-        when(allowlistValidator.isBlocked("123")).thenReturn(false);
 
         eventPublisher = mock(ApplicationEventPublisher.class);
         telegramClient = mock(TelegramClient.class);

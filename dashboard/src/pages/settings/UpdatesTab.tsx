@@ -18,6 +18,7 @@ import {
   useSystemUpdateStatus,
 } from '../../hooks/useSystem';
 import { extractErrorMessage } from '../../utils/extractErrorMessage';
+import { copyTextToClipboard } from '../../utils/clipboard';
 import { UPDATE_BUSY_STATES, isRollbackOperation } from '../../utils/systemUpdateUi';
 import { UpdateActionsCard } from './updates/UpdateActionsCard';
 import { UpdateConfirmCard } from './updates/UpdateConfirmCard';
@@ -140,7 +141,11 @@ export function UpdatesTab(): ReactElement {
     }
 
     try {
-      await navigator.clipboard.writeText(token);
+      const copied = await copyTextToClipboard(token);
+      if (!copied) {
+        toast.error('Unable to copy token');
+        return;
+      }
       toast.success('Token copied');
     } catch (error: unknown) {
       toast.error(`Unable to copy token: ${extractErrorMessage(error)}`);

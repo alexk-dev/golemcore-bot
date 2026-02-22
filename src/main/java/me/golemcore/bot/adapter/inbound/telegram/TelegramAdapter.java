@@ -79,7 +79,7 @@ import java.util.regex.Pattern;
  * Features:
  * <ul>
  * <li>Long polling for incoming messages via Telegram Bot API
- * <li>User authorization via allowlist/blocklist
+ * <li>User authorization via allowlist
  * <li>Command routing (slash commands) before AgentLoop
  * <li>Message splitting for Telegram's 4096 character limit
  * <li>Markdown to HTML formatting via {@link TelegramHtmlFormatter}
@@ -105,7 +105,6 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
     private static final int CALLBACK_DATA_PARTS_COUNT = 3;
     private static final int TELEGRAM_MAX_MESSAGE_LENGTH = 4096;
     private static final int TELEGRAM_MAX_CAPTION_LENGTH = 1024;
-    private static final String TELEGRAM_AUTH_MODE_INVITE_ONLY = "invite_only";
     private static final int INVITE_MAX_FAILED_ATTEMPTS = 3;
     private static final int INVITE_COOLDOWN_SECONDS = 30;
     private static final int MAX_RETRY_ATTEMPTS = 3;
@@ -329,33 +328,34 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
 
         // Check authorization
         if (!isAuthorized(userId)) {
-            String authMode = runtimeConfigService.getRuntimeConfig().getTelegram().getAuthMode();
-            if (TELEGRAM_AUTH_MODE_INVITE_ONLY.equals(authMode)) {
-                String text = telegramMessage.hasText() ? telegramMessage.getText().trim() : "";
-                if (isInviteCooldownActive(userId)) {
-                    long secondsLeft = getInviteCooldownSecondsLeft(userId);
+            List<String> allowedUsers = runtimeConfigService.getTelegramAllowedUsers();
+            if (allowedUsers != null && !allowedUsers.isEmpty()) {
+                log.warn("Unauthorized user: {} in chat: {} (invited user already registered)", userId, chatId);
+                sendMessage(chatId, messageService.getMessage("security.unauthorized"));
+                return;
+            }
+
+            String text = telegramMessage.hasText() ? telegramMessage.getText().trim() : "";
+            if (isInviteCooldownActive(userId)) {
+                long secondsLeft = getInviteCooldownSecondsLeft(userId);
+                sendMessage(chatId, messageService.getMessage("telegram.invite.cooldown", secondsLeft));
+                return;
+            }
+            if (!text.isEmpty() && runtimeConfigService.redeemInviteCode(text, userId)) {
+                clearInviteFailures(userId);
+                log.info("Invite code redeemed by user {} in chat {}", userId, chatId);
+                sendMessage(chatId, messageService.getMessage("telegram.invite.success"));
+                return;
+            }
+            if (!text.isEmpty()) {
+                long secondsLeft = recordInviteFailureAndGetCooldown(userId);
+                if (secondsLeft > 0) {
                     sendMessage(chatId, messageService.getMessage("telegram.invite.cooldown", secondsLeft));
-                    return;
-                }
-                if (!text.isEmpty() && runtimeConfigService.redeemInviteCode(text, userId)) {
-                    clearInviteFailures(userId);
-                    log.info("Invite code redeemed by user {} in chat {}", userId, chatId);
-                    sendMessage(chatId, messageService.getMessage("telegram.invite.success"));
-                    return;
-                }
-                if (!text.isEmpty()) {
-                    long secondsLeft = recordInviteFailureAndGetCooldown(userId);
-                    if (secondsLeft > 0) {
-                        sendMessage(chatId, messageService.getMessage("telegram.invite.cooldown", secondsLeft));
-                    } else {
-                        sendMessage(chatId, messageService.getMessage("telegram.invite.invalid"));
-                    }
                 } else {
-                    sendMessage(chatId, messageService.getMessage("telegram.invite.prompt"));
+                    sendMessage(chatId, messageService.getMessage("telegram.invite.invalid"));
                 }
             } else {
-                log.warn("Unauthorized user: {} in chat: {}", userId, chatId);
-                sendMessage(chatId, messageService.getMessage("security.unauthorized"));
+                sendMessage(chatId, messageService.getMessage("telegram.invite.prompt"));
             }
             return;
         }
@@ -708,8 +708,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
 
     @Override
     public boolean isAuthorized(String senderId) {
-        return allowlistValidator.isAllowed(CHANNEL_TYPE, senderId) &&
-                !allowlistValidator.isBlocked(senderId);
+        return allowlistValidator.isAllowed(CHANNEL_TYPE, senderId);
     }
 
     @Override

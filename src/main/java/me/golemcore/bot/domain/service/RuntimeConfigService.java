@@ -760,15 +760,6 @@ public class RuntimeConfigService {
         return val != null ? val : true;
     }
 
-    /**
-     * Update the Telegram auth mode and persist.
-     */
-    public void setTelegramAuthMode(String mode) {
-        RuntimeConfig cfg = getRuntimeConfig();
-        cfg.getTelegram().setAuthMode(mode);
-        persist(cfg);
-    }
-
     // ==================== Invite Codes ====================
 
     /**
@@ -824,18 +815,18 @@ public class RuntimeConfigService {
             return false;
         }
 
+        List<String> allowed = ensureMutableAllowedUsers(cfg.getTelegram());
+        if (!allowed.isEmpty() && !allowed.contains(userId)) {
+            log.warn("[RuntimeConfig] Invite redemption denied for user {}: invited user already registered", userId);
+            return false;
+        }
+
         for (RuntimeConfig.InviteCode ic : codes) {
             if (ic.getCode().equals(code)) {
                 if (ic.isUsed()) {
                     return false;
                 }
                 ic.setUsed(true);
-
-                List<String> allowed = cfg.getTelegram().getAllowedUsers();
-                if (allowed == null) {
-                    allowed = new ArrayList<>();
-                    cfg.getTelegram().setAllowedUsers(allowed);
-                }
                 if (!allowed.contains(userId)) {
                     allowed.add(userId);
                 }
@@ -845,6 +836,63 @@ public class RuntimeConfigService {
             }
         }
         return false;
+    }
+
+    /**
+     * Remove a Telegram user from allowed users list.
+     */
+    public boolean removeTelegramAllowedUser(String userId) {
+        RuntimeConfig cfg = getRuntimeConfig();
+        RuntimeConfig.TelegramConfig telegramConfig = cfg.getTelegram();
+        List<String> allowedUsers = ensureMutableAllowedUsers(telegramConfig);
+        if (allowedUsers.isEmpty()) {
+            return false;
+        }
+        boolean removed = allowedUsers.removeIf(existingUserId -> existingUserId.equals(userId));
+        if (removed) {
+            int revokedCodes = revokeActiveInviteCodes(telegramConfig);
+            persist(cfg);
+            log.info("[RuntimeConfig] Removed telegram allowed user: {} (revoked {} active invite codes)",
+                    userId, revokedCodes);
+        }
+        return removed;
+    }
+
+    private List<String> ensureMutableAllowedUsers(RuntimeConfig.TelegramConfig telegramConfig) {
+        List<String> allowedUsers = telegramConfig.getAllowedUsers();
+        if (allowedUsers == null) {
+            List<String> mutableAllowedUsers = new ArrayList<>();
+            telegramConfig.setAllowedUsers(mutableAllowedUsers);
+            return mutableAllowedUsers;
+        }
+        if (!(allowedUsers instanceof ArrayList<?>)) {
+            List<String> mutableAllowedUsers = new ArrayList<>(allowedUsers);
+            telegramConfig.setAllowedUsers(mutableAllowedUsers);
+            return mutableAllowedUsers;
+        }
+        return allowedUsers;
+    }
+
+    private int revokeActiveInviteCodes(RuntimeConfig.TelegramConfig telegramConfig) {
+        List<RuntimeConfig.InviteCode> inviteCodes = telegramConfig.getInviteCodes();
+        if (inviteCodes == null || inviteCodes.isEmpty()) {
+            return 0;
+        }
+
+        List<RuntimeConfig.InviteCode> retainedInviteCodes = new ArrayList<>(inviteCodes.size());
+        int revokedCount = 0;
+        for (RuntimeConfig.InviteCode inviteCode : inviteCodes) {
+            if (inviteCode != null && !inviteCode.isUsed()) {
+                revokedCount++;
+                continue;
+            }
+            retainedInviteCodes.add(inviteCode);
+        }
+
+        if (revokedCount > 0) {
+            telegramConfig.setInviteCodes(retainedInviteCodes);
+        }
+        return revokedCount;
     }
 
     // ==================== Persistence ====================
@@ -1008,6 +1056,9 @@ public class RuntimeConfigService {
     private void normalizeRuntimeConfig(RuntimeConfig cfg) {
         if (cfg == null) {
             return;
+        }
+        if (cfg.getTelegram() != null) {
+            cfg.getTelegram().setAuthMode("invite_only");
         }
         if (cfg.getLlm() == null) {
             cfg.setLlm(RuntimeConfig.LlmConfig.builder().build());

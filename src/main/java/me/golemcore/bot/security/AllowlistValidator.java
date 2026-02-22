@@ -27,8 +27,8 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * Validates users against channel-specific allowlists and global blocklists.
- * For Telegram, access is controlled only by RuntimeConfig allowlist.
+ * Validates users against channel-specific allowlists. For Telegram, access is
+ * controlled only by RuntimeConfig allowlist.
  */
 @Component
 @RequiredArgsConstructor
@@ -78,21 +78,4 @@ public class AllowlistValidator {
         return allowed;
     }
 
-    /**
-     * Check if a user is globally blocked.
-     */
-    public boolean isBlocked(String userId) {
-        if (!runtimeConfigService.isAllowlistEnabled()) {
-            return false;
-        }
-        List<String> blockedUsers = properties.getSecurity().getAllowlist().getBlockedUsers();
-        if (blockedUsers == null || blockedUsers.isEmpty()) {
-            return false;
-        }
-        boolean blocked = blockedUsers.contains(userId);
-        if (blocked) {
-            log.warn("[Security] Blocked user: {}", userId);
-        }
-        return blocked;
-    }
 }
