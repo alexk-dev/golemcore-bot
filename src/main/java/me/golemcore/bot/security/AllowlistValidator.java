@@ -27,8 +27,8 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * Validates users against channel-specific allowlists.
- * For Telegram, access is controlled only by RuntimeConfig allowlist.
+ * Validates users against channel-specific allowlists. For Telegram, access is
+ * controlled only by RuntimeConfig allowlist.
  */
 @Component
 @RequiredArgsConstructor
