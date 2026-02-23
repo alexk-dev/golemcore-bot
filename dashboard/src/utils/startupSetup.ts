@@ -1,11 +1,6 @@
 import type { ModelRouterConfig, RuntimeConfig } from '../api/settings';
 
 const STARTUP_SETUP_DISMISSED_COOKIE = 'golemcore_startup_setup_dismissed';
-const DEFAULT_ROUTING_MODEL = 'openai/gpt-5.2-codex';
-const DEFAULT_BALANCED_MODEL = 'openai/gpt-5.1';
-const DEFAULT_SMART_MODEL = 'openai/gpt-5.1';
-const DEFAULT_CODING_MODEL = 'openai/gpt-5.2';
-const DEFAULT_DEEP_MODEL = 'openai/gpt-5.2';
 
 function hasText(value: string | null | undefined): value is string {
   return value != null && value.trim().length > 0;
@@ -19,24 +14,14 @@ function extractProviderName(modelSpec: string): string | null {
   return modelSpec.slice(0, separatorIndex);
 }
 
-function resolveTierModel(
-  model: string | null,
-  fallback: string,
-): string {
-  if (hasText(model)) {
-    return model;
-  }
-  return fallback;
-}
-
-function getRequiredTierModels(modelRouter: ModelRouterConfig): string[] {
+function getConfiguredTierModels(modelRouter: ModelRouterConfig): string[] {
   return [
-    resolveTierModel(modelRouter.routingModel, DEFAULT_ROUTING_MODEL),
-    resolveTierModel(modelRouter.balancedModel, DEFAULT_BALANCED_MODEL),
-    resolveTierModel(modelRouter.smartModel, DEFAULT_SMART_MODEL),
-    resolveTierModel(modelRouter.codingModel, DEFAULT_CODING_MODEL),
-    resolveTierModel(modelRouter.deepModel, DEFAULT_DEEP_MODEL),
-  ];
+    modelRouter.routingModel,
+    modelRouter.balancedModel,
+    modelRouter.smartModel,
+    modelRouter.codingModel,
+    modelRouter.deepModel,
+  ].filter(hasText);
 }
 
 export function getReadyLlmProviders(config: RuntimeConfig): string[] {
@@ -55,10 +40,16 @@ export function hasCompatibleModelRouting(config: RuntimeConfig): boolean {
     return false;
   }
 
-  const tierModels = getRequiredTierModels(config.modelRouter);
+  const tierModels = getConfiguredTierModels(config.modelRouter);
+  if (tierModels.length === 0) {
+    return false;
+  }
   return tierModels.every((modelSpec) => {
     const providerName = extractProviderName(modelSpec);
-    return providerName != null && readyProviders.has(providerName);
+    if (providerName == null) {
+      return true;
+    }
+    return readyProviders.has(providerName);
   });
 }
 
