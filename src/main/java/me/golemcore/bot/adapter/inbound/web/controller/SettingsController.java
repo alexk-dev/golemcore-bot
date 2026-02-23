@@ -723,7 +723,8 @@ public class SettingsController {
         List<RuntimeConfig.ShellEnvironmentVariable> normalized = new ArrayList<>(variables.size());
         Set<String> names = new LinkedHashSet<>();
         for (RuntimeConfig.ShellEnvironmentVariable variable : variables) {
-            RuntimeConfig.ShellEnvironmentVariable normalizedVariable = normalizeAndValidateShellEnvironmentVariable(variable);
+            RuntimeConfig.ShellEnvironmentVariable normalizedVariable = normalizeAndValidateShellEnvironmentVariable(
+                    variable);
             if (!names.add(normalizedVariable.getName())) {
                 throw new IllegalArgumentException(
                         "tools.shellEnvironmentVariables contains duplicate name: " + normalizedVariable.getName());

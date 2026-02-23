@@ -668,7 +668,8 @@ class SettingsControllerTest {
                 .tools(RuntimeConfig.ToolsConfig.builder()
                         .shellEnvironmentVariables(new ArrayList<>(List.of(
                                 RuntimeConfig.ShellEnvironmentVariable.builder().name("API_TOKEN").value("v1").build(),
-                                RuntimeConfig.ShellEnvironmentVariable.builder().name("API_TOKEN").value("v2").build())))
+                                RuntimeConfig.ShellEnvironmentVariable.builder().name("API_TOKEN").value("v2")
+                                        .build())))
                         .build())
                 .build();
 
