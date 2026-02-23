@@ -213,6 +213,8 @@ function toBackendWebhookConfig(config: WebhookConfig): UnknownRecord {
 export interface SettingsResponse extends Record<string, unknown> {
   language?: string;
   timezone?: string;
+  modelTier?: string | null;
+  tierForce?: boolean;
   webhooks?: WebhookConfig;
 }
 

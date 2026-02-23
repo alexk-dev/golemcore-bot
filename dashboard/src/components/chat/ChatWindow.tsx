@@ -2,10 +2,10 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { Offcanvas } from 'react-bootstrap';
 import { FiLayout, FiMessageSquare, FiPlus } from 'react-icons/fi';
 import { useAuthStore } from '../../store/authStore';
-import { useContextPanelStore } from '../../store/contextPanelStore';
+import { useContextPanelStore, type TurnMetadata } from '../../store/contextPanelStore';
 import { listSessions, getSession } from '../../api/sessions';
 import { getGoals } from '../../api/goals';
-import { updatePreferences } from '../../api/settings';
+import { getSettings, updatePreferences } from '../../api/settings';
 import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
 import ContextPanel from './ContextPanel';
@@ -17,6 +17,7 @@ const LOAD_MORE_COUNT = 50;
 const GOALS_POLL_INTERVAL = 30000;
 const RECONNECT_DELAY_MS = 3000;
 const TYPING_RESET_MS = 3000;
+const SUPPORTED_TIERS = ['balanced', 'smart', 'coding', 'deep'] as const;
 const STARTER_PROMPTS = [
   {
     key: 'plan-next',
@@ -66,6 +67,25 @@ function getLocalCommand(text: string): 'new' | 'reset' | null {
   return null;
 }
 
+function isSupportedTier(value: string): value is (typeof SUPPORTED_TIERS)[number] {
+  return SUPPORTED_TIERS.some((tier) => tier === value);
+}
+
+function normalizeTier(value: string | null | undefined): string {
+  if (value == null) {
+    return 'balanced';
+  }
+  const normalized = value.toLowerCase();
+  return isSupportedTier(normalized) ? normalized : 'balanced';
+}
+
+function hasVisibleContent(content: string | null | undefined): boolean {
+  if (content == null) {
+    return false;
+  }
+  return content.trim().length > 0;
+}
+
 interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -108,6 +128,35 @@ interface SocketMessage {
   hint?: AssistantHint;
 }
 
+function toTurnMetadataPatch(hint: AssistantHint): Partial<TurnMetadata> {
+  const patch: Partial<TurnMetadata> = {};
+  if (Object.prototype.hasOwnProperty.call(hint, 'model')) {
+    patch.model = hint.model ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(hint, 'tier')) {
+    patch.tier = hint.tier ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(hint, 'reasoning')) {
+    patch.reasoning = hint.reasoning ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(hint, 'inputTokens')) {
+    patch.inputTokens = hint.inputTokens ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(hint, 'outputTokens')) {
+    patch.outputTokens = hint.outputTokens ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(hint, 'totalTokens')) {
+    patch.totalTokens = hint.totalTokens ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(hint, 'latencyMs')) {
+    patch.latencyMs = hint.latencyMs ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(hint, 'maxContextTokens')) {
+    patch.maxContextTokens = hint.maxContextTokens ?? null;
+  }
+  return patch;
+}
+
 export default function ChatWindow() {
   const [chatSessionId, setChatSessionId] = useState(() => getChatSessionId());
   const [allMessages, setAllMessages] = useState<ChatMessage[]>([]);
@@ -129,6 +178,8 @@ export default function ChatWindow() {
   const lastUpdateWasChunkRef = useRef(false);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const preferenceUpdateQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const hasLocalPreferenceChangesRef = useRef(false);
 
   const token = useAuthStore((s) => s.accessToken);
   const {
@@ -144,6 +195,24 @@ export default function ChatWindow() {
   useEffect(() => {
     chatSessionIdRef.current = chatSessionId;
   }, [chatSessionId]);
+
+  // Keep tier controls in sync with persisted user preferences used by backend tier resolution.
+  useEffect(() => {
+    let cancelled = false;
+    getSettings()
+      .then((settings) => {
+        if (cancelled || hasLocalPreferenceChangesRef.current) {
+          return;
+        }
+        setTier(normalizeTier(settings.modelTier));
+        setTierForce(settings.tierForce === true);
+      })
+      .catch(() => { /* ignore */ });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const clearReconnectTimer = useCallback(() => {
     if (reconnectTimerRef.current != null) {
@@ -246,6 +315,17 @@ export default function ChatWindow() {
     resetTurnMetadata();
   }, [chatSessionId, resetTurnMetadata]);
 
+  const enqueuePreferencesUpdate = useCallback((prefsPatch: Record<string, unknown>) => {
+    preferenceUpdateQueueRef.current = preferenceUpdateQueueRef.current
+      .catch(() => { /* ignore */ })
+      .then(async () => {
+        const settings = await updatePreferences(prefsPatch);
+        setTier(normalizeTier(settings.modelTier));
+        setTierForce(settings.tierForce === true);
+      })
+      .catch(() => { /* ignore */ });
+  }, []);
+
   // Load current session history
   useEffect(() => {
     let cancelled = false;
@@ -272,7 +352,10 @@ export default function ChatWindow() {
         }
 
         const history: ChatMessage[] = detail.messages
-          .filter((message) => message.role === 'user' || message.role === 'assistant')
+          .filter((message) => (
+            (message.role === 'user' || message.role === 'assistant')
+            && hasVisibleContent(message.content)
+          ))
           .map((message) => ({
             id: message.id,
             role: message.role as 'user' | 'assistant',
@@ -415,41 +498,40 @@ export default function ChatWindow() {
             lastUpdateWasChunkRef.current = data.type === 'assistant_chunk';
 
             if (data.hint != null) {
-              setTurnMetadata({
-                model: data.hint.model ?? null,
-                tier: data.hint.tier ?? null,
-                reasoning: data.hint.reasoning ?? null,
-                inputTokens: data.hint.inputTokens ?? null,
-                outputTokens: data.hint.outputTokens ?? null,
-                totalTokens: data.hint.totalTokens ?? null,
-                latencyMs: data.hint.latencyMs ?? null,
-                maxContextTokens: data.hint.maxContextTokens ?? null,
-              });
+              const metadataPatch = toTurnMetadataPatch(data.hint);
+              if (Object.keys(metadataPatch).length > 0) {
+                setTurnMetadata(metadataPatch);
+              }
             }
 
             setAllMessages((prev) => {
               const last = prev.length > 0 ? prev[prev.length - 1] : undefined;
-              const chunkModel = data.hint?.model ?? null;
-              const chunkTier = data.hint?.tier ?? null;
-              const chunkReasoning = data.hint?.reasoning ?? null;
+              const chunkText = data.text ?? '';
+              const chunkModel = data.hint?.model;
+              const chunkTier = data.hint?.tier;
+              const chunkReasoning = data.hint?.reasoning;
 
               if (last?.role === 'assistant' && data.type === 'assistant_chunk') {
                 return [...prev.slice(0, -1), {
                   ...last,
-                  content: `${last.content}${data.text ?? ''}`,
+                  content: `${last.content}${chunkText}`,
                   model: chunkModel ?? last.model ?? null,
                   tier: chunkTier ?? last.tier ?? null,
                   reasoning: chunkReasoning ?? last.reasoning ?? null,
                 }];
               }
 
+              if (chunkText.length === 0) {
+                return prev;
+              }
+
               return [...prev, {
                 id: createUuid(),
                 role: 'assistant',
-                content: data.text ?? '',
-                model: chunkModel,
-                tier: chunkTier,
-                reasoning: chunkReasoning,
+                content: chunkText,
+                model: chunkModel ?? null,
+                tier: chunkTier ?? null,
+                reasoning: chunkReasoning ?? null,
               }];
             });
           }
@@ -539,19 +621,20 @@ export default function ChatWindow() {
     }
   }, [resetConversationState, sendPayload, startNewConversation]);
 
-  const handleTierChange = async (newTier: string) => {
-    setTier(newTier);
-    try {
-      await updatePreferences({ modelTier: newTier, tierForce });
-    } catch { /* ignore */ }
-  };
+  const handleTierChange = useCallback((newTier: string) => {
+    const normalizedTier = normalizeTier(newTier);
+    hasLocalPreferenceChangesRef.current = true;
+    setTier(normalizedTier);
+    setTurnMetadata({ model: null, tier: null, reasoning: null });
+    enqueuePreferencesUpdate({ modelTier: normalizedTier });
+  }, [enqueuePreferencesUpdate, setTurnMetadata]);
 
-  const handleForceChange = async (force: boolean) => {
+  const handleForceChange = useCallback((force: boolean) => {
+    hasLocalPreferenceChangesRef.current = true;
     setTierForce(force);
-    try {
-      await updatePreferences({ modelTier: tier, tierForce: force });
-    } catch { /* ignore */ }
-  };
+    setTurnMetadata({ model: null, tier: null, reasoning: null });
+    enqueuePreferencesUpdate({ tierForce: force });
+  }, [enqueuePreferencesUpdate, setTurnMetadata]);
 
   const visibleMessages = allMessages.slice(visibleStart);
   const hasMore = visibleStart > 0;
