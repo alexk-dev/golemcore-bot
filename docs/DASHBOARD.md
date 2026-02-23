@@ -15,6 +15,7 @@ How to use the built-in web dashboard for chat, sessions, plans, logs, and embed
 - `/dashboard/ide` - embedded code editor
 - `/dashboard/logs` - live and buffered logs
 - `/dashboard/settings` - runtime config and integrations
+- `/dashboard/setup` - startup setup wizard (shown when chat is locked)
 - `/dashboard/skills` - skill library
 - `/dashboard/prompts` - prompt configuration
 - `/dashboard/analytics` - analytics view
@@ -38,12 +39,12 @@ Password: <generated>
 
 ### Provide a Known Password (Optional)
 
-If you want a predefined password (no temporary password in logs), set a BCrypt hash:
+If you want a predefined password (no temporary password in logs), set a plaintext password:
 
-- Spring property: `bot.dashboard.admin-password-hash`
-- Env var: `BOT_DASHBOARD_ADMIN_PASSWORD_HASH`
+- Spring property: `bot.dashboard.admin-password`
+- Env var: `BOT_DASHBOARD_ADMIN_PASSWORD`
 
-The value must be a BCrypt hash, not plaintext.
+The password is hashed automatically at startup and then stored in `preferences/admin.json`.
 
 ## Runtime Configuration
 

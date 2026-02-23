@@ -64,6 +64,7 @@ docker logs -f golemcore-bot
 # Open dashboard
 # http://localhost:8080/dashboard
 # On first start, check logs for the temporary admin password.
+# Optional: preset dashboard password via BOT_DASHBOARD_ADMIN_PASSWORD.
 # Configure LLM provider API keys and API type in Settings (stored in preferences/runtime-config.json).
 ```
 

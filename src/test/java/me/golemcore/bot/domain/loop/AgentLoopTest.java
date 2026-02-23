@@ -875,12 +875,14 @@ class AgentLoopTest {
     }
 
     @Test
-    void shouldDropMessageWhenRateLimited() {
+    void shouldNotifyUserWhenRateLimited() {
         SessionPort sessionPort = mock(SessionPort.class);
         RateLimitPort rateLimitPort = mock(RateLimitPort.class);
         when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.denied(5000, "rate limited"));
 
         UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage("system.rate.limit"))
+                .thenReturn("Rate limit exceeded. Please wait before sending more messages.");
         LlmPort llmPort = mock(LlmPort.class);
         Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
 
@@ -900,6 +902,7 @@ class AgentLoopTest {
 
         verify(sessionPort, never()).getOrCreate(any(), any());
         verify(sessionPort, never()).save(any());
+        verify(channel).sendMessage("1", "Rate limit exceeded. Please wait before sending more messages.");
     }
 
     @Test
