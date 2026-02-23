@@ -27,7 +27,7 @@
         <java.version>25</java.version>
         <feign.version>13.9</feign.version>
         <okhttp.version>5.3.2</okhttp.version>
-        <telegram.version>9.3.0</telegram.version>
+        <telegram.version>9.4.0</telegram.version>
         <langchain4j.version>1.11.0</langchain4j.version>
         <playwright.version>1.49.0</playwright.version>
         <jjwt.version>0.13.0</jjwt.version>
