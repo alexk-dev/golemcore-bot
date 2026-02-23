@@ -12,6 +12,7 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.ActiveSessionPointerService;
 import me.golemcore.bot.domain.service.ConversationKeyValidator;
 import me.golemcore.bot.domain.service.SessionIdentitySupport;
+import me.golemcore.bot.domain.service.StringValueSupport;
 import me.golemcore.bot.port.outbound.SessionPort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -27,7 +28,6 @@ import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 
 import java.security.Principal;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -59,10 +59,11 @@ public class SessionsController {
     @GetMapping
     public Mono<ResponseEntity<List<SessionSummaryDto>>> listSessions(
             @RequestParam(required = false) String channel) {
-        List<AgentSession> sessions = sessionPort.listAll();
+        List<AgentSession> sessions = StringValueSupport.isBlank(channel)
+                ? sessionPort.listAll()
+                : sessionPort.listByChannelType(channel.trim());
         List<SessionSummaryDto> dtos = sessions.stream()
-                .filter(s -> channel == null || channel.equals(s.getChannelType()))
-                .sorted(sessionComparator())
+                .sorted(ConversationKeyValidator.byRecentActivity())
                 .map(session -> toSummary(session, false))
                 .toList();
         return Mono.just(ResponseEntity.ok(dtos));
@@ -79,9 +80,8 @@ public class SessionsController {
         Optional<String> activeConversation = pointerService.getActiveConversationKey(pointerKey);
         int normalizedLimit = Math.max(1, Math.min(limit, MAX_RECENT_LIMIT));
 
-        List<SessionSummaryDto> dtos = sessionPort.listAll().stream()
-                .filter(session -> isSessionVisibleForRecent(session, channel, transportChatId))
-                .sorted(sessionComparator())
+        List<SessionSummaryDto> dtos = listRecentSessionsByOwner(channel, transportChatId).stream()
+                .sorted(ConversationKeyValidator.byRecentActivity())
                 .map(session -> toSummary(session, isActiveSession(session, activeConversation.orElse(null))))
                 .limit(normalizedLimit)
                 .toList();
@@ -140,13 +140,14 @@ public class SessionsController {
     public Mono<ResponseEntity<ActiveSessionResponse>> setActiveSession(
             @RequestBody ActiveSessionRequest request,
             Principal principal) {
-        if (request == null || isBlank(request.getConversationKey())) {
+        if (request == null || StringValueSupport.isBlank(request.getConversationKey())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "conversationKey is required");
         }
         String channel = defaultIfBlank(request.getChannelType(), CHANNEL_WEB);
-        String conversationKey = normalizeConversationKeyForActivation(channel, request.getConversationKey());
+        String conversationKey = normalizeConversationKeyForActivationOrThrow(channel, request.getConversationKey());
 
-        String pointerKey = resolvePointerKey(channel, request.getClientInstanceId(), request.getTransportChatId(), principal);
+        String pointerKey = resolvePointerKey(channel, request.getClientInstanceId(), request.getTransportChatId(),
+                principal);
         pointerService.setActiveConversationKey(pointerKey, conversationKey);
         if (CHANNEL_TELEGRAM.equals(channel)) {
             ensureTelegramSessionBinding(request.getTransportChatId(), conversationKey);
@@ -169,7 +170,7 @@ public class SessionsController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Only web channel session creation is supported");
         }
 
-        String conversationKey = isBlank(normalizedRequest.getConversationKey())
+        String conversationKey = StringValueSupport.isBlank(normalizedRequest.getConversationKey())
                 ? generateConversationKey()
                 : normalizeConversationKeyForCreation(normalizedRequest.getConversationKey());
 
@@ -315,13 +316,13 @@ public class SessionsController {
             Principal principal) {
         if (CHANNEL_WEB.equals(channel)) {
             String username = resolvePrincipalName(principal);
-            if (isBlank(clientInstanceId)) {
+            if (StringValueSupport.isBlank(clientInstanceId)) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "clientInstanceId is required for web");
             }
             return pointerService.buildWebPointerKey(username, clientInstanceId);
         }
         if (CHANNEL_TELEGRAM.equals(channel)) {
-            if (isBlank(transportChatId)) {
+            if (StringValueSupport.isBlank(transportChatId)) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "transportChatId is required for telegram");
             }
             return pointerService.buildTelegramPointerKey(transportChatId);
@@ -330,14 +331,14 @@ public class SessionsController {
     }
 
     private String resolvePrincipalName(Principal principal) {
-        if (principal == null || isBlank(principal.getName())) {
+        if (principal == null || StringValueSupport.isBlank(principal.getName())) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized");
         }
         return principal.getName();
     }
 
     private boolean isActiveSession(AgentSession session, String activeConversation) {
-        if (isBlank(activeConversation)) {
+        if (StringValueSupport.isBlank(activeConversation)) {
             return false;
         }
         return activeConversation.equals(SessionIdentitySupport.resolveConversationKey(session));
@@ -347,8 +348,10 @@ public class SessionsController {
         return UUID.randomUUID().toString();
     }
 
-    private String resolveOrCreateConversationKey(String channel, String transportChatId, String preferredConversation) {
-        if (!isBlank(preferredConversation) && isConversationResolvable(channel, transportChatId, preferredConversation)) {
+    private String resolveOrCreateConversationKey(String channel, String transportChatId,
+            String preferredConversation) {
+        if (!StringValueSupport.isBlank(preferredConversation)
+                && isConversationResolvable(channel, transportChatId, preferredConversation)) {
             return preferredConversation;
         }
 
@@ -361,17 +364,17 @@ public class SessionsController {
         return fallbackConversation;
     }
 
-    private Optional<String> findLatestConversationKey(String channel, String transportChatId, String excludedConversation) {
-        return sessionPort.listAll().stream()
-                .filter(session -> isSessionVisibleForRecent(session, channel, transportChatId))
-                .sorted(sessionComparator())
+    private Optional<String> findLatestConversationKey(String channel, String transportChatId,
+            String excludedConversation) {
+        return listRecentSessionsByOwner(channel, transportChatId).stream()
+                .sorted(ConversationKeyValidator.byRecentActivity())
                 .map(SessionIdentitySupport::resolveConversationKey)
-                .filter(value -> !isBlank(value) && !value.equals(excludedConversation))
+                .filter(value -> !StringValueSupport.isBlank(value) && !value.equals(excludedConversation))
                 .findFirst();
     }
 
     private boolean isConversationResolvable(String channel, String transportChatId, String conversationKey) {
-        if (isBlank(channel) || isBlank(conversationKey)) {
+        if (StringValueSupport.isBlank(channel) || StringValueSupport.isBlank(conversationKey)) {
             return false;
         }
 
@@ -380,7 +383,7 @@ public class SessionsController {
             return false;
         }
 
-        if (!CHANNEL_TELEGRAM.equals(channel) || isBlank(transportChatId)) {
+        if (!CHANNEL_TELEGRAM.equals(channel) || StringValueSupport.isBlank(transportChatId)) {
             return true;
         }
         return transportChatId.equals(SessionIdentitySupport.resolveTransportChatId(session.get()));
@@ -394,21 +397,15 @@ public class SessionsController {
         sessionPort.save(session);
     }
 
-    private boolean isSessionVisibleForRecent(AgentSession session, String channel, String transportChatId) {
-        if (!channel.equals(session.getChannelType())) {
-            return false;
+    private List<AgentSession> listRecentSessionsByOwner(String channel, String transportChatId) {
+        if (!CHANNEL_TELEGRAM.equals(channel) || StringValueSupport.isBlank(transportChatId)) {
+            return sessionPort.listByChannelType(channel);
         }
-        if (!CHANNEL_TELEGRAM.equals(channel)) {
-            return true;
-        }
-        if (isBlank(transportChatId)) {
-            return true;
-        }
-        return transportChatId.equals(SessionIdentitySupport.resolveTransportChatId(session));
+        return sessionPort.listByChannelTypeAndTransportChatId(channel, transportChatId);
     }
 
     private void ensureTelegramSessionBinding(String transportChatId, String conversationKey) {
-        if (isBlank(transportChatId) || isBlank(conversationKey)) {
+        if (StringValueSupport.isBlank(transportChatId) || StringValueSupport.isBlank(conversationKey)) {
             return;
         }
         AgentSession session = sessionPort.getOrCreate(CHANNEL_TELEGRAM, conversationKey);
@@ -417,12 +414,13 @@ public class SessionsController {
     }
 
     private void repairPointersAfterDelete(String deletedSessionId, AgentSession deletedSession) {
-        String channel = deletedSession != null ? deletedSession.getChannelType() : resolveDeletedChannel(deletedSessionId);
+        String channel = deletedSession != null ? deletedSession.getChannelType()
+                : resolveDeletedChannel(deletedSessionId);
         String deletedConversation = deletedSession != null
                 ? SessionIdentitySupport.resolveConversationKey(deletedSession)
                 : resolveDeletedConversation(deletedSessionId);
 
-        if (isBlank(channel) || isBlank(deletedConversation)) {
+        if (StringValueSupport.isBlank(channel) || StringValueSupport.isBlank(deletedConversation)) {
             return;
         }
 
@@ -447,14 +445,14 @@ public class SessionsController {
     }
 
     private boolean isPointerForChannel(String pointerKey, String channel) {
-        if (isBlank(pointerKey) || isBlank(channel)) {
+        if (StringValueSupport.isBlank(pointerKey) || StringValueSupport.isBlank(channel)) {
             return false;
         }
         return pointerKey.startsWith(channel + "|");
     }
 
     private String extractTelegramTransportChatId(String pointerKey) {
-        if (isBlank(pointerKey)) {
+        if (StringValueSupport.isBlank(pointerKey)) {
             return null;
         }
         String prefix = CHANNEL_TELEGRAM + "|";
@@ -465,7 +463,7 @@ public class SessionsController {
     }
 
     private String resolveDeletedChannel(String sessionId) {
-        if (isBlank(sessionId)) {
+        if (StringValueSupport.isBlank(sessionId)) {
             return null;
         }
         int separator = sessionId.indexOf(':');
@@ -476,7 +474,7 @@ public class SessionsController {
     }
 
     private String resolveDeletedConversation(String sessionId) {
-        if (isBlank(sessionId)) {
+        if (StringValueSupport.isBlank(sessionId)) {
             return null;
         }
         int separator = sessionId.indexOf(':');
@@ -484,13 +482,6 @@ public class SessionsController {
             return null;
         }
         return sessionId.substring(separator + 1);
-    }
-
-    private Comparator<AgentSession> sessionComparator() {
-        return Comparator.comparing(
-                (AgentSession session) -> session.getUpdatedAt() != null ? session.getUpdatedAt() : session.getCreatedAt(),
-                Comparator.nullsLast(Comparator.naturalOrder()))
-                .reversed();
     }
 
     private String buildTitle(AgentSession session, String conversationKey) {
@@ -503,12 +494,12 @@ public class SessionsController {
                 continue;
             }
             String content = message.getContent();
-            if (!isBlank(content)) {
+            if (!StringValueSupport.isBlank(content)) {
                 return truncate(content.trim(), TITLE_MAX_LEN);
             }
         }
 
-        if (!isBlank(conversationKey)) {
+        if (!StringValueSupport.isBlank(conversationKey)) {
             return "Session " + truncate(conversationKey, 12);
         }
         return DEFAULT_SESSION_TITLE;
@@ -521,7 +512,7 @@ public class SessionsController {
 
         for (int index = session.getMessages().size() - 1; index >= START_WITH_INDEX; index--) {
             Message message = session.getMessages().get(index);
-            if (message == null || isBlank(message.getContent())) {
+            if (message == null || StringValueSupport.isBlank(message.getContent())) {
                 continue;
             }
             return truncate(message.getContent().trim(), PREVIEW_MAX_LEN);
@@ -538,33 +529,21 @@ public class SessionsController {
         }
     }
 
-    private String normalizeConversationKeyForActivation(String channel, String value) {
-        if (ConversationKeyValidator.isStrictConversationKey(value)) {
-            return ConversationKeyValidator.normalizeStrictOrThrow(value);
-        }
-
-        String candidate;
+    private String normalizeConversationKeyForActivationOrThrow(String channel, String value) {
         try {
-            candidate = ConversationKeyValidator.normalizeLegacyCompatibleOrThrow(value);
+            return ConversationKeyValidator.normalizeForActivationOrThrow(
+                    value,
+                    candidate -> sessionPort.get(channel + ":" + candidate).isPresent());
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         }
-
-        if (sessionPort.get(channel + ":" + candidate).isPresent()) {
-            return candidate;
-        }
-        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "conversationKey must match ^[a-zA-Z0-9_-]{8,64}$");
     }
 
     private String defaultIfBlank(String value, String defaultValue) {
-        if (isBlank(value)) {
+        if (StringValueSupport.isBlank(value)) {
             return defaultValue;
         }
         return value.trim();
-    }
-
-    private boolean isBlank(String value) {
-        return value == null || value.isBlank();
     }
 
     private String truncate(String value, int maxLength) {

@@ -82,7 +82,8 @@ public class MemoryWriteService {
             return;
         }
 
-        String episodicPath = buildScopedPath(eventScope, EPISODIC_PREFIX + resolveDate(event.getTimestamp()) + ".jsonl");
+        String episodicPath = buildScopedPath(eventScope,
+                EPISODIC_PREFIX + resolveDate(event.getTimestamp()) + ".jsonl");
         appendItems(episodicPath, extracted);
 
         if (!memoryPromotionService.isPromotionEnabled()) {

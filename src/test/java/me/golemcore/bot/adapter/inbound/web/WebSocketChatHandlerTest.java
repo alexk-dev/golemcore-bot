@@ -3,6 +3,7 @@ package me.golemcore.bot.adapter.inbound.web;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.adapter.inbound.web.security.JwtTokenProvider;
 import me.golemcore.bot.domain.loop.AgentLoop;
+import me.golemcore.bot.domain.service.ActiveSessionPointerService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.CommandPort;
 import org.junit.jupiter.api.BeforeEach;
@@ -43,6 +44,7 @@ class WebSocketChatHandlerTest {
     private WebChannelAdapter webChannelAdapter;
     private ObjectMapper objectMapper;
     private ApplicationEventPublisher eventPublisher;
+    private ActiveSessionPointerService pointerService;
     @SuppressWarnings("unchecked")
     private ObjectProvider<CommandPort> commandRouterProvider = mock(ObjectProvider.class);
     private WebSocketChatHandler handler;
@@ -57,8 +59,12 @@ class WebSocketChatHandlerTest {
         objectMapper = new ObjectMapper();
         eventPublisher = mock(ApplicationEventPublisher.class);
         webChannelAdapter = new WebChannelAdapter(objectMapper, eventPublisher);
+        pointerService = mock(ActiveSessionPointerService.class);
+        when(pointerService.buildWebPointerKey(any(String.class), any(String.class)))
+                .thenAnswer(invocation -> "web|" + invocation.getArgument(0) + "|" + invocation.getArgument(1));
         when(commandRouterProvider.getIfAvailable()).thenReturn(null);
-        handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider);
+        handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider,
+                pointerService);
     }
 
     @Test
@@ -121,6 +127,27 @@ class WebSocketChatHandlerTest {
                 .verifyComplete();
 
         verify(eventPublisher).publishEvent(any(AgentLoop.InboundMessageEvent.class));
+    }
+
+    @Test
+    void shouldBindWebActivePointerFromSocketPayload() {
+        String token = tokenProvider.generateAccessToken("admin");
+
+        WebSocketSession session = mock(WebSocketSession.class);
+        HandshakeInfo handshakeInfo = mock(HandshakeInfo.class);
+        when(session.getHandshakeInfo()).thenReturn(handshakeInfo);
+        when(handshakeInfo.getUri()).thenReturn(URI.create("ws://localhost/ws/chat?token=" + token));
+        when(session.getId()).thenReturn("session-pointer");
+
+        WebSocketMessage wsMessage = mock(WebSocketMessage.class);
+        when(wsMessage.getPayloadAsText())
+                .thenReturn("{\"text\":\"hello\",\"sessionId\":\"chat-1\",\"clientInstanceId\":\"client-1\"}");
+        when(session.receive()).thenReturn(Flux.just(wsMessage));
+
+        StepVerifier.create(handler.handle(session))
+                .verifyComplete();
+
+        verify(pointerService).setActiveConversationKey("web|admin|client-1", "chat-1");
     }
 
     @Test
@@ -217,7 +244,8 @@ class WebSocketChatHandlerTest {
                 .thenReturn(CompletableFuture.completedFuture(
                         CommandPort.CommandResult.success("Bot status: OK")));
 
-        handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider);
+        handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider,
+                pointerService);
         String token = tokenProvider.generateAccessToken("admin");
 
         WebSocketSession session = mock(WebSocketSession.class);
@@ -245,7 +273,8 @@ class WebSocketChatHandlerTest {
                 .thenReturn(CompletableFuture.completedFuture(
                         CommandPort.CommandResult.success("Bot status: OK")));
 
-        handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider);
+        handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider,
+                pointerService);
         String token = tokenProvider.generateAccessToken("admin");
 
         WebSocketSession session = mock(WebSocketSession.class);
@@ -280,7 +309,8 @@ class WebSocketChatHandlerTest {
                 .thenReturn(CompletableFuture.completedFuture(
                         CommandPort.CommandResult.success("Bot status: OK")));
 
-        handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider);
+        handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider,
+                pointerService);
         String token = tokenProvider.generateAccessToken("admin");
 
         WebSocketSession session = mock(WebSocketSession.class);
@@ -317,7 +347,8 @@ class WebSocketChatHandlerTest {
                 .thenReturn(CompletableFuture.completedFuture(
                         CommandPort.CommandResult.success("Tier set to smart")));
 
-        handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider);
+        handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider,
+                pointerService);
         String token = tokenProvider.generateAccessToken("admin");
 
         WebSocketSession session = mock(WebSocketSession.class);
@@ -341,7 +372,8 @@ class WebSocketChatHandlerTest {
         when(commandRouterProvider.getIfAvailable()).thenReturn(commandRouter);
         when(commandRouter.hasCommand("unknown")).thenReturn(false);
 
-        handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider);
+        handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider,
+                pointerService);
         String token = tokenProvider.generateAccessToken("admin");
 
         WebSocketSession session = mock(WebSocketSession.class);
@@ -367,7 +399,8 @@ class WebSocketChatHandlerTest {
         when(commandRouter.execute(eq("broken"), anyList(), anyMap()))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("boom")));
 
-        handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider);
+        handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider,
+                pointerService);
         String token = tokenProvider.generateAccessToken("admin");
 
         WebSocketSession session = mock(WebSocketSession.class);

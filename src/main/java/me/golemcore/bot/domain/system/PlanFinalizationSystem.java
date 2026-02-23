@@ -25,6 +25,7 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.PlanReadyEvent;
+import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import org.springframework.context.ApplicationEventPublisher;
@@ -50,6 +51,8 @@ import java.util.Optional;
 @RequiredArgsConstructor
 @Slf4j
 public class PlanFinalizationSystem implements AgentSystem {
+
+    private static final String TOOL_PLAN_SET_CONTENT = "plan_set_content";
 
     private final PlanService planService;
     private final ApplicationEventPublisher eventPublisher;
@@ -83,7 +86,7 @@ public class PlanFinalizationSystem implements AgentSystem {
         boolean finalizeRequested = false;
         if (response.getToolCalls() != null) {
             finalizeRequested = response.getToolCalls().stream()
-                    .anyMatch(tc -> me.golemcore.bot.tools.PlanSetContentTool.TOOL_NAME.equals(tc.getName()));
+                    .anyMatch(tc -> TOOL_PLAN_SET_CONTENT.equals(tc.getName()));
         }
         return finalizeRequested
                 || Boolean.TRUE.equals(context.getAttribute(ContextAttributes.PLAN_SET_CONTENT_REQUESTED));
@@ -132,13 +135,13 @@ public class PlanFinalizationSystem implements AgentSystem {
                 return null;
             }
             return response.getToolCalls().stream()
-                    .filter(tc -> me.golemcore.bot.tools.PlanSetContentTool.TOOL_NAME.equals(tc.getName()))
+                    .filter(tc -> TOOL_PLAN_SET_CONTENT.equals(tc.getName()))
                     .findFirst()
                     .map(tc -> {
                         Map<String, Object> args = tc.getArguments() != null ? tc.getArguments() : Map.of();
                         Object md = args.get("plan_markdown");
                         if (!(md instanceof String) && context != null && context.getToolResults() != null) {
-                            var tr = context.getToolResults().get(tc.getId() != null ? tc.getId() : tc.getName());
+                            ToolResult tr = context.getToolResults().get(tc.getId() != null ? tc.getId() : tc.getName());
                             if (tr != null && tr.isSuccess() && tr.getOutput() != null) {
                                 md = tr.getOutput();
                             }

@@ -59,7 +59,7 @@ class TelegramSessionServiceTest {
     void shouldCreateNewConversationWhenPointerMissingAndNoHistoryExists() {
         when(pointerService.buildTelegramPointerKey("100")).thenReturn("telegram|100");
         when(pointerService.getActiveConversationKey("telegram|100")).thenReturn(Optional.empty());
-        when(sessionPort.listAll()).thenReturn(List.of());
+        when(sessionPort.listByChannelTypeAndTransportChatId("telegram", "100")).thenReturn(List.of());
 
         when(sessionPort.getOrCreate(anyString(), anyString())).thenAnswer(invocation -> AgentSession.builder()
                 .id(invocation.getArgument(0) + ":" + invocation.getArgument(1))
@@ -117,7 +117,7 @@ class TelegramSessionServiceTest {
                 .chatId("conv-3")
                 .updatedAt(Instant.now().plusSeconds(20))
                 .build();
-        when(sessionPort.listAll()).thenReturn(List.of(s1, s2, s3));
+        when(sessionPort.listByChannelTypeAndTransportChatId("telegram", "100")).thenReturn(List.of(s1));
 
         List<AgentSession> result = service.listRecentSessions("100", 5);
 
@@ -160,7 +160,7 @@ class TelegramSessionServiceTest {
                 .metadata(metadata("200", "conv-other"))
                 .updatedAt(Instant.now().plusSeconds(10))
                 .build();
-        when(sessionPort.listAll()).thenReturn(List.of(oldSession, otherTransport));
+        when(sessionPort.listByChannelTypeAndTransportChatId("telegram", "100")).thenReturn(List.of(oldSession));
         when(sessionPort.getOrCreate("telegram", "conv-old")).thenReturn(oldSession);
 
         String conversation = service.resolveActiveConversationKey("100");
@@ -210,7 +210,7 @@ class TelegramSessionServiceTest {
                 buildTransportSession("conv-20", "100", Instant.now().plusSeconds(20)),
                 buildTransportSession("conv-21", "100", Instant.now().plusSeconds(21)),
                 buildTransportSession("conv-22", "100", Instant.now().plusSeconds(22)));
-        when(sessionPort.listAll()).thenReturn(sessions);
+        when(sessionPort.listByChannelTypeAndTransportChatId("telegram", "100")).thenReturn(sessions);
 
         List<AgentSession> result = service.listRecentSessions("100", 100);
 
@@ -222,7 +222,7 @@ class TelegramSessionServiceTest {
     void shouldClampRecentLimitToMinimumOne() {
         AgentSession older = buildTransportSession("conv-1", "100", Instant.now().plusSeconds(1));
         AgentSession newer = buildTransportSession("conv-2", "100", Instant.now().plusSeconds(2));
-        when(sessionPort.listAll()).thenReturn(List.of(older, newer));
+        when(sessionPort.listByChannelTypeAndTransportChatId("telegram", "100")).thenReturn(List.of(older, newer));
 
         List<AgentSession> result = service.listRecentSessions("100", 0);
 
@@ -246,7 +246,7 @@ class TelegramSessionServiceTest {
                 .metadata(metadata("100", "conv-2"))
                 .createdAt(Instant.parse("2026-02-20T10:05:00Z"))
                 .build();
-        when(sessionPort.listAll()).thenReturn(List.of(older, newer));
+        when(sessionPort.listByChannelTypeAndTransportChatId("telegram", "100")).thenReturn(List.of(older, newer));
 
         List<AgentSession> result = service.listRecentSessions("100", 5);
 
@@ -269,7 +269,7 @@ class TelegramSessionServiceTest {
                 .metadata(metadata("200", "conv-2"))
                 .updatedAt(Instant.now().plusSeconds(1))
                 .build();
-        when(sessionPort.listAll()).thenReturn(List.of(legacy, unrelated));
+        when(sessionPort.listByChannelTypeAndTransportChatId("telegram", "100")).thenReturn(List.of(legacy, unrelated));
 
         List<AgentSession> result = service.listRecentSessions("100", 5);
 
@@ -329,7 +329,8 @@ class TelegramSessionServiceTest {
         AgentSession fallbackSession = buildTransportSession("conv-own", "100", Instant.now());
 
         when(sessionPort.get("telegram:conv-other")).thenReturn(Optional.of(otherTransportSession));
-        when(sessionPort.listAll()).thenReturn(List.of(otherTransportSession, fallbackSession));
+        when(sessionPort.listByChannelTypeAndTransportChatId("telegram", "100"))
+                .thenReturn(List.of(otherTransportSession, fallbackSession));
         when(sessionPort.getOrCreate("telegram", "conv-own")).thenReturn(fallbackSession);
 
         String conversation = service.resolveActiveConversationKey("100");

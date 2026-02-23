@@ -415,7 +415,8 @@ class MemoryWriteServiceTest {
         when(memoryPromotionService.isPromotionEnabled()).thenReturn(true);
         when(memoryPromotionService.shouldPromoteToSemantic(
                 org.mockito.ArgumentMatchers.argThat(item -> item != null
-                        && item.getType() == MemoryItem.Type.CONSTRAINT))).thenReturn(true);
+                        && item.getType() == MemoryItem.Type.CONSTRAINT)))
+                .thenReturn(true);
 
         TurnMemoryEvent event = TurnMemoryEvent.builder()
                 .timestamp(Instant.parse("2026-02-22T12:00:00Z"))

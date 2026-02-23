@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.service.StringValueSupport;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
@@ -90,7 +91,7 @@ public class WebChannelAdapter implements ChannelPort {
     @Override
     public CompletableFuture<Void> sendMessage(Message message) {
         String chatId = message.getChatId();
-        if (isBlank(chatId)) {
+        if (StringValueSupport.isBlank(chatId)) {
             log.debug("[WebChannel] Skip anonymous message event without chatId");
             return CompletableFuture.completedFuture(null);
         }
@@ -144,7 +145,7 @@ public class WebChannelAdapter implements ChannelPort {
     }
 
     public void bindConnectionToChatId(String connectionId, String chatId) {
-        if (isBlank(connectionId) || isBlank(chatId)) {
+        if (StringValueSupport.isBlank(connectionId) || StringValueSupport.isBlank(chatId)) {
             return;
         }
         WebSocketSession wsSession = sessions.get(connectionId);
@@ -161,12 +162,12 @@ public class WebChannelAdapter implements ChannelPort {
     }
 
     private CompletableFuture<Void> sendJsonToChat(String chatId, Map<String, Object> payload) {
-        if (isBlank(chatId)) {
+        if (StringValueSupport.isBlank(chatId)) {
             log.debug("[WebChannel] Skip send without chatId");
             return CompletableFuture.completedFuture(null);
         }
         Object payloadSessionId = payload != null ? payload.get(KEY_SESSION_ID) : null;
-        if (!(payloadSessionId instanceof String) || isBlank((String) payloadSessionId)) {
+        if (!(payloadSessionId instanceof String) || StringValueSupport.isBlank((String) payloadSessionId)) {
             log.debug("[WebChannel] Skip anonymous websocket payload without sessionId");
             return CompletableFuture.completedFuture(null);
         }
@@ -190,9 +191,5 @@ public class WebChannelAdapter implements ChannelPort {
             log.warn("[WebChannel] Failed to serialize message for {}: {}", chatId, e.getMessage());
             return CompletableFuture.completedFuture(null);
         }
-    }
-
-    private boolean isBlank(String value) {
-        return value == null || value.isBlank();
     }
 }

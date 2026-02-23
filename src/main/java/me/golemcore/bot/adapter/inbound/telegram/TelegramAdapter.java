@@ -275,7 +275,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
     }
 
     private void handleCallback(Update update) {
-        var callback = update.getCallbackQuery();
+        org.telegram.telegrambots.meta.api.objects.CallbackQuery callback = update.getCallbackQuery();
         if (callback.getMessage() == null) {
             log.warn("Callback query without associated message, ignoring");
             return;
@@ -420,7 +420,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
                             "conversationKey", activeConversationKey,
                             "channelType", CHANNEL_TYPE);
                     try {
-                        var result = router.execute(cmd, args, ctx).join();
+                        CommandPort.CommandResult result = router.execute(cmd, args, ctx).join();
                         sendMessage(chatId, result.output());
                     } catch (Exception e) {
                         log.error("Command execution failed: /{}", cmd, e);

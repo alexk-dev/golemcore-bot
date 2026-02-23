@@ -79,7 +79,7 @@ class SessionsControllerTest {
         AgentSession webSession = AgentSession.builder()
                 .id("s2").channelType("web").chatId("456")
                 .createdAt(Instant.now()).messages(List.of()).build();
-        when(sessionPort.listAll()).thenReturn(List.of(tgSession, webSession));
+        when(sessionPort.listByChannelType("web")).thenReturn(List.of(webSession));
 
         StepVerifier.create(controller.listSessions("web"))
                 .assertNext(response -> {
@@ -159,7 +159,7 @@ class SessionsControllerTest {
                 .updatedAt(Instant.now())
                 .messages(List.of())
                 .build();
-        when(sessionPort.listAll()).thenReturn(List.of(session));
+        when(sessionPort.listByChannelType("web")).thenReturn(List.of(session));
         when(pointerService.buildWebPointerKey("admin", "client-1")).thenReturn("web|admin|client-1");
         when(pointerService.getActiveConversationKey("web|admin|client-1"))
                 .thenReturn(Optional.of("abc-session"));
@@ -199,7 +199,7 @@ class SessionsControllerTest {
                 .updatedAt(Instant.now().plusSeconds(10))
                 .messages(List.of())
                 .build();
-        when(sessionPort.listAll()).thenReturn(List.of(first, second));
+        when(sessionPort.listByChannelTypeAndTransportChatId("telegram", "100")).thenReturn(List.of(first));
         when(pointerService.buildTelegramPointerKey("100")).thenReturn("telegram|100");
         when(pointerService.getActiveConversationKey("telegram|100")).thenReturn(Optional.of("conv-1"));
 
@@ -412,7 +412,7 @@ class SessionsControllerTest {
                 .updatedAt(Instant.parse("2026-02-22T10:00:00Z"))
                 .messages(List.of())
                 .build();
-        when(sessionPort.listAll()).thenReturn(List.of(fallback));
+        when(sessionPort.listByChannelType("web")).thenReturn(List.of(fallback));
 
         StepVerifier.create(controller.getActiveSession("web", "client-1", null, () -> "admin"))
                 .assertNext(response -> {
@@ -432,7 +432,7 @@ class SessionsControllerTest {
         when(pointerService.getActiveConversationKey("web|admin|client-1"))
                 .thenReturn(Optional.of("missing-session"));
         when(sessionPort.get("web:missing-session")).thenReturn(Optional.empty());
-        when(sessionPort.listAll()).thenReturn(List.of());
+        when(sessionPort.listByChannelType("web")).thenReturn(List.of());
         when(sessionPort.getOrCreate(eq("web"), any(String.class))).thenAnswer(invocation -> AgentSession.builder()
                 .id("web:" + invocation.getArgument(1))
                 .channelType("web")
@@ -472,7 +472,7 @@ class SessionsControllerTest {
                 .build();
 
         when(sessionPort.get("web:to-delete")).thenReturn(Optional.of(deleted));
-        when(sessionPort.listAll()).thenReturn(List.of(fallback));
+        when(sessionPort.listByChannelType("web")).thenReturn(List.of(fallback));
         when(pointerService.getPointersSnapshot()).thenReturn(Map.of(
                 "web|admin|client-1", "to-delete",
                 "web|other|client-2", "other-session"));

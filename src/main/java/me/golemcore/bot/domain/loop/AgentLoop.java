@@ -27,6 +27,7 @@ import me.golemcore.bot.domain.model.FailureSource;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.RoutingOutcome;
+import me.golemcore.bot.domain.model.SkillTransitionRequest;
 import me.golemcore.bot.domain.model.TurnOutcome;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.SessionIdentitySupport;
@@ -209,7 +210,8 @@ public class AgentLoop {
             transportChatId = message.getChatId();
         }
 
-        if (conversationKey == null || conversationKey.isBlank() || transportChatId == null || transportChatId.isBlank()) {
+        if (conversationKey == null || conversationKey.isBlank() || transportChatId == null
+                || transportChatId.isBlank()) {
             return;
         }
 
@@ -322,7 +324,7 @@ public class AgentLoop {
 
     private boolean shouldContinueLoop(AgentContext context) {
         // SkillPipelineSystem sets skillTransitionRequest to request a new iteration.
-        var transition = context.getSkillTransitionRequest();
+        SkillTransitionRequest transition = context.getSkillTransitionRequest();
         return transition != null && transition.targetSkill() != null;
     }
 

@@ -72,7 +72,8 @@ class ActiveSessionPointerServiceTest {
 
     @Test
     void shouldIgnoreCorruptedStoredPointersAndContinueWorking() {
-        when(storagePort.getText(anyString(), anyString())).thenReturn(CompletableFuture.completedFuture("{broken-json"));
+        when(storagePort.getText(anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture("{broken-json"));
         service = new ActiveSessionPointerService(storagePort, new ObjectMapper());
 
         assertEquals(Optional.empty(), service.getActiveConversationKey("web|admin|client-1"));

@@ -235,13 +235,14 @@ export default function ChatWindow() {
         text: payload.text,
         attachments: payload.attachments,
         sessionId: chatSessionId,
+        clientInstanceId,
       }));
       return true;
     } catch {
       setUserMessageStatus(id, 'failed');
       return false;
     }
-  }, [chatSessionId, setUserMessageStatus]);
+  }, [chatSessionId, clientInstanceId, setUserMessageStatus]);
 
   useEffect(() => {
     resetTurnMetadata();
@@ -752,7 +753,11 @@ export default function ChatWindow() {
           running={typing}
           onStop={() => {
             if (wsRef.current?.readyState === WebSocket.OPEN) {
-              wsRef.current.send(JSON.stringify({ text: '/stop', sessionId: chatSessionId }));
+              wsRef.current.send(JSON.stringify({
+                text: '/stop',
+                sessionId: chatSessionId,
+                clientInstanceId,
+              }));
             }
           }}
         />

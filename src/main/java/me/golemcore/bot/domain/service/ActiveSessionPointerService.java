@@ -32,6 +32,7 @@ import java.io.IOException;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -58,7 +59,8 @@ public class ActiveSessionPointerService {
     private volatile boolean loaded = false;
 
     public String buildWebPointerKey(String username, String clientInstanceId) {
-        return CHANNEL_WEB + KEY_SEPARATOR + normalizeSegment(username) + KEY_SEPARATOR + normalizeSegment(clientInstanceId);
+        return CHANNEL_WEB + KEY_SEPARATOR + normalizeSegment(username) + KEY_SEPARATOR
+                + normalizeSegment(clientInstanceId);
     }
 
     public String buildTelegramPointerKey(String transportChatId) {
@@ -79,41 +81,56 @@ public class ActiveSessionPointerService {
 
     public void setActiveConversationKey(String pointerKey, String conversationKey) {
         ensureLoaded();
-        if (pointerKey == null || pointerKey.isBlank()) {
+        if (StringValueSupport.isBlank(pointerKey)) {
             throw new IllegalArgumentException("pointerKey must not be blank");
         }
-        if (conversationKey == null || conversationKey.isBlank()) {
+        if (StringValueSupport.isBlank(conversationKey)) {
             throw new IllegalArgumentException("conversationKey must not be blank");
         }
 
+        String previous;
+        Map<String, String> snapshot;
         synchronized (lock) {
-            String previous = pointers.put(pointerKey, conversationKey);
-            try {
-                persistPointersLocked();
-            } catch (RuntimeException e) {
-                rollback(pointerKey, previous);
-                throw e;
+            previous = pointers.put(pointerKey, conversationKey);
+            snapshot = new LinkedHashMap<>(pointers);
+        }
+        try {
+            persistSnapshot(snapshot);
+        } catch (RuntimeException e) {
+            synchronized (lock) {
+                String current = pointers.get(pointerKey);
+                if (Objects.equals(current, conversationKey)) {
+                    rollback(pointerKey, previous);
+                }
             }
+            throw e;
         }
     }
 
     public void clearActiveConversationKey(String pointerKey) {
         ensureLoaded();
-        if (pointerKey == null || pointerKey.isBlank()) {
+        if (StringValueSupport.isBlank(pointerKey)) {
             return;
         }
 
+        String previous;
+        Map<String, String> snapshot;
         synchronized (lock) {
-            String previous = pointers.remove(pointerKey);
+            previous = pointers.remove(pointerKey);
             if (previous == null) {
                 return;
             }
-            try {
-                persistPointersLocked();
-            } catch (RuntimeException e) {
-                pointers.put(pointerKey, previous);
-                throw e;
+            snapshot = new LinkedHashMap<>(pointers);
+        }
+        try {
+            persistSnapshot(snapshot);
+        } catch (RuntimeException e) {
+            synchronized (lock) {
+                if (!pointers.containsKey(pointerKey)) {
+                    pointers.put(pointerKey, previous);
+                }
             }
+            throw e;
         }
     }
 
@@ -141,7 +158,7 @@ public class ActiveSessionPointerService {
     private void loadPointersLocked() {
         try {
             String json = storagePort.getText(PREFERENCES_DIR, POINTERS_FILE).join();
-            if (json == null || json.isBlank()) {
+            if (StringValueSupport.isBlank(json)) {
                 return;
             }
 
@@ -154,12 +171,12 @@ public class ActiveSessionPointerService {
         }
     }
 
-    private void persistPointersLocked() {
+    private void persistSnapshot(Map<String, String> snapshot) {
         try {
             SessionPointerRegistry registry = new SessionPointerRegistry();
             registry.setVersion(1);
             registry.setUpdatedAt(Instant.now().toString());
-            registry.setPointers(new LinkedHashMap<>(pointers));
+            registry.setPointers(new LinkedHashMap<>(snapshot));
             String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(registry);
             storagePort.putTextAtomic(PREFERENCES_DIR, POINTERS_FILE, json, true).join();
         } catch (Exception e) {
@@ -168,7 +185,7 @@ public class ActiveSessionPointerService {
     }
 
     private String normalizeSegment(String value) {
-        if (value == null || value.isBlank()) {
+        if (StringValueSupport.isBlank(value)) {
             return "_";
         }
         return value.trim();

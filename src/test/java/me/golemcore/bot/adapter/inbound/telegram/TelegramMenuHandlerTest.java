@@ -100,8 +100,10 @@ class TelegramMenuHandlerTest {
         when(telegramSessionService.resolveActiveConversationKey(CHAT_ID)).thenReturn("conv-1");
         when(telegramSessionService.createAndActivateConversation(anyString())).thenReturn("conv-new");
         when(telegramSessionService.listRecentSessions(CHAT_ID, 5)).thenReturn(List.of(
-                AgentSession.builder().id("telegram:conv-1").channelType("telegram").chatId("conv-1").messages(List.of()).build(),
-                AgentSession.builder().id("telegram:conv-2").channelType("telegram").chatId("conv-2").messages(List.of()).build()));
+                AgentSession.builder().id("telegram:conv-1").channelType("telegram").chatId("conv-1")
+                        .messages(List.of()).build(),
+                AgentSession.builder().id("telegram:conv-2").channelType("telegram").chatId("conv-2")
+                        .messages(List.of()).build()));
     }
 
     // ==================== sendMainMenu ====================
@@ -318,6 +320,17 @@ class TelegramMenuHandlerTest {
         handler.handleCallback(CHAT_ID, MSG_ID, "menu:sessions:back");
 
         verify(telegramClient).execute(any(EditMessageText.class));
+    }
+
+    @Test
+    void shouldDropCachedSessionIndexOnBackFromSessionsMenu() throws Exception {
+        stubEdit();
+
+        handler.handleCallback(CHAT_ID, MSG_ID, "menu:sessions");
+        handler.handleCallback(CHAT_ID, MSG_ID, "menu:sessions:back");
+        handler.handleCallback(CHAT_ID, MSG_ID, "menu:sessions:sw:1");
+
+        verify(telegramSessionService, never()).activateConversation(eq(CHAT_ID), anyString());
     }
 
     @Test

@@ -34,7 +34,7 @@ public final class MemoryScopeSupport {
     }
 
     public static String normalizeScopeOrGlobal(String scope) {
-        if (isBlank(scope)) {
+        if (StringValueSupport.isBlank(scope)) {
             return GLOBAL_SCOPE;
         }
         String candidate = scope.trim();
@@ -100,7 +100,7 @@ public final class MemoryScopeSupport {
     }
 
     private static String normalizeChannel(String value) {
-        if (isBlank(value)) {
+        if (StringValueSupport.isBlank(value)) {
             return null;
         }
         String candidate = value.trim().toLowerCase(Locale.ROOT);
@@ -108,9 +108,5 @@ public final class MemoryScopeSupport {
             return null;
         }
         return candidate;
-    }
-
-    private static boolean isBlank(String value) {
-        return value == null || value.isBlank();
     }
 }

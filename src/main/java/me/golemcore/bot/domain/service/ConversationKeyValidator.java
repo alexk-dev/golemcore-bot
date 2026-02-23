@@ -18,14 +18,17 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
+import me.golemcore.bot.domain.model.AgentSession;
+
+import java.util.Comparator;
+import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
 /**
  * Conversation key validation helpers.
  *
  * <p>
- * Strict contract for newly created keys:
- * {@code ^[a-zA-Z0-9_-]{8,64}$}
+ * Strict contract for newly created keys: {@code ^[a-zA-Z0-9_-]{8,64}$}
  *
  * <p>
  * Legacy-compatible contract for reads/switching existing keys:
@@ -65,14 +68,44 @@ public final class ConversationKeyValidator {
         return normalized;
     }
 
+    /**
+     * Normalizes a conversation key for activation/switch flows.
+     *
+     * <p>
+     * Strict keys are always accepted. Legacy-short keys are accepted only when the
+     * supplied existence predicate confirms that such session already exists.
+     */
+    public static String normalizeForActivationOrThrow(
+            String value,
+            Predicate<String> legacyExistsPredicate) {
+        if (isStrictConversationKey(value)) {
+            return normalizeStrictOrThrow(value);
+        }
+
+        String legacyCandidate = normalizeLegacyCompatibleOrThrow(value);
+        if (legacyExistsPredicate != null && legacyExistsPredicate.test(legacyCandidate)) {
+            return legacyCandidate;
+        }
+
+        throw new IllegalArgumentException("conversationKey must match ^[a-zA-Z0-9_-]{8,64}$");
+    }
+
+    /**
+     * Shared ordering for "recent sessions" lists by last activity timestamp.
+     */
+    public static Comparator<AgentSession> byRecentActivity() {
+        return Comparator.comparing(
+                (AgentSession session) -> session.getUpdatedAt() != null ? session.getUpdatedAt()
+                        : session.getCreatedAt(),
+                Comparator.nullsLast(Comparator.naturalOrder()))
+                .reversed();
+    }
+
     private static String normalize(String value) {
-        if (value == null) {
+        if (StringValueSupport.isBlank(value)) {
             return null;
         }
         String candidate = value.trim();
-        if (candidate.isEmpty()) {
-            return null;
-        }
-        return candidate;
+        return candidate.isEmpty() ? null : candidate;
     }
 }

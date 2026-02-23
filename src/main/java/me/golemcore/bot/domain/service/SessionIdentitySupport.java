@@ -40,19 +40,19 @@ public final class SessionIdentitySupport {
         }
 
         String metadataConversation = readMetadataString(session, ContextAttributes.CONVERSATION_KEY);
-        if (!isBlank(metadataConversation)) {
+        if (!StringValueSupport.isBlank(metadataConversation)) {
             return metadataConversation;
         }
 
         String sessionId = session.getId();
-        if (!isBlank(sessionId)) {
+        if (!StringValueSupport.isBlank(sessionId)) {
             int index = sessionId.indexOf(SESSION_ID_SEPARATOR);
             if (index >= 0 && index + 1 < sessionId.length()) {
                 return sessionId.substring(index + 1);
             }
         }
 
-        if (!isBlank(session.getChatId())) {
+        if (!StringValueSupport.isBlank(session.getChatId())) {
             return session.getChatId();
         }
         return "";
@@ -64,18 +64,18 @@ public final class SessionIdentitySupport {
         }
 
         String metadataTransport = readMetadataString(session, ContextAttributes.TRANSPORT_CHAT_ID);
-        if (!isBlank(metadataTransport)) {
+        if (!StringValueSupport.isBlank(metadataTransport)) {
             return metadataTransport;
         }
 
-        if (!isBlank(session.getChatId())) {
+        if (!StringValueSupport.isBlank(session.getChatId())) {
             return session.getChatId();
         }
         return "";
     }
 
     public static boolean belongsToTransport(AgentSession session, String transportChatId) {
-        if (isBlank(transportChatId)) {
+        if (StringValueSupport.isBlank(transportChatId)) {
             return false;
         }
         return transportChatId.equals(resolveTransportChatId(session));
@@ -96,11 +96,13 @@ public final class SessionIdentitySupport {
         Map<String, Object> metadata = session.getMetadata();
         boolean changed = false;
 
-        if (!isBlank(transportChatId) && !transportChatId.equals(readMetadataString(session, ContextAttributes.TRANSPORT_CHAT_ID))) {
+        if (!StringValueSupport.isBlank(transportChatId)
+                && !transportChatId.equals(readMetadataString(session, ContextAttributes.TRANSPORT_CHAT_ID))) {
             metadata.put(ContextAttributes.TRANSPORT_CHAT_ID, transportChatId);
             changed = true;
         }
-        if (!isBlank(conversationKey) && !conversationKey.equals(readMetadataString(session, ContextAttributes.CONVERSATION_KEY))) {
+        if (!StringValueSupport.isBlank(conversationKey)
+                && !conversationKey.equals(readMetadataString(session, ContextAttributes.CONVERSATION_KEY))) {
             metadata.put(ContextAttributes.CONVERSATION_KEY, conversationKey);
             changed = true;
         }
@@ -108,7 +110,7 @@ public final class SessionIdentitySupport {
     }
 
     public static String readMetadataString(AgentSession session, String key) {
-        if (session == null || session.getMetadata() == null || isBlank(key)) {
+        if (session == null || session.getMetadata() == null || StringValueSupport.isBlank(key)) {
             return null;
         }
         Object value = session.getMetadata().get(key);
@@ -117,9 +119,5 @@ public final class SessionIdentitySupport {
             return stringValue.isEmpty() ? null : stringValue;
         }
         return null;
-    }
-
-    private static boolean isBlank(String value) {
-        return value == null || value.isBlank();
     }
 }

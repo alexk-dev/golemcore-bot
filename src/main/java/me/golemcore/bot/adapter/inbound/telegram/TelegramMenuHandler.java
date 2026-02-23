@@ -43,10 +43,11 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKe
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -84,6 +85,7 @@ public class TelegramMenuHandler {
     private static final String HTML_BOLD_CLOSE_NL = "</b>\n\n";
     private static final int RECENT_SESSIONS_LIMIT = 5;
     private static final int SESSION_TITLE_MAX_LEN = 22;
+    private static final int SESSION_INDEX_CACHE_MAX_ENTRIES = 1024;
     private static final Set<String> VALID_TIERS = Set.of(TIER_BALANCED, TIER_SMART, TIER_CODING, TIER_DEEP);
 
     private final BotProperties properties;
@@ -97,7 +99,12 @@ public class TelegramMenuHandler {
     private final ObjectProvider<CommandPort> commandRouter;
 
     private final AtomicReference<TelegramClient> telegramClient = new AtomicReference<>();
-    private final Map<String, List<String>> sessionIndexCache = new ConcurrentHashMap<>();
+    private final Map<String, List<String>> sessionIndexCache = Collections.synchronizedMap(new LinkedHashMap<>() {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, List<String>> eldest) {
+            return size() > SESSION_INDEX_CACHE_MAX_ENTRIES;
+        }
+    });
 
     public TelegramMenuHandler(
             BotProperties properties,
@@ -515,6 +522,7 @@ public class TelegramMenuHandler {
         }
 
         if (ACTION_BACK.equals(action)) {
+            sessionIndexCache.remove(chatId);
             updateToMainMenu(chatId, messageId);
             return;
         }

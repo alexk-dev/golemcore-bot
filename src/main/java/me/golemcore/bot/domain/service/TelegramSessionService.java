@@ -24,7 +24,6 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.port.outbound.SessionPort;
 import org.springframework.stereotype.Service;
 
-import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -71,7 +70,9 @@ public class TelegramSessionService {
 
     public void activateConversation(String transportChatId, String conversationKey) {
         validateTransportChatId(transportChatId);
-        String normalizedConversationKey = normalizeConversationKeyForActivation(conversationKey);
+        String normalizedConversationKey = ConversationKeyValidator.normalizeForActivationOrThrow(
+                conversationKey,
+                candidate -> sessionPort.get(CHANNEL_TELEGRAM + ":" + candidate).isPresent());
         String pointerKey = pointerService.buildTelegramPointerKey(transportChatId);
         pointerService.setActiveConversationKey(pointerKey, normalizedConversationKey);
         bindSessionToTransport(transportChatId, normalizedConversationKey);
@@ -80,10 +81,10 @@ public class TelegramSessionService {
     public List<AgentSession> listRecentSessions(String transportChatId, int limit) {
         validateTransportChatId(transportChatId);
         int normalizedLimit = Math.max(1, Math.min(limit, MAX_LIMIT));
-        return sessionPort.listAll().stream()
+        return sessionPort.listByChannelTypeAndTransportChatId(CHANNEL_TELEGRAM, transportChatId).stream()
                 .filter(session -> CHANNEL_TELEGRAM.equals(session.getChannelType()))
                 .filter(session -> SessionIdentitySupport.belongsToTransport(session, transportChatId))
-                .sorted(sessionComparator())
+                .sorted(ConversationKeyValidator.byRecentActivity())
                 .limit(normalizedLimit)
                 .toList();
     }
@@ -91,7 +92,7 @@ public class TelegramSessionService {
     private Optional<String> findLatestConversationKey(String transportChatId) {
         return listRecentSessions(transportChatId, DEFAULT_LIMIT).stream()
                 .map(SessionIdentitySupport::resolveConversationKey)
-                .filter(value -> !isBlank(value))
+                .filter(value -> !StringValueSupport.isBlank(value))
                 .findFirst();
     }
 
@@ -101,30 +102,10 @@ public class TelegramSessionService {
         sessionPort.save(session);
     }
 
-    private Comparator<AgentSession> sessionComparator() {
-        return Comparator.comparing(
-                (AgentSession session) -> session.getUpdatedAt() != null ? session.getUpdatedAt() : session.getCreatedAt(),
-                Comparator.nullsLast(Comparator.naturalOrder()))
-                .reversed();
-    }
-
     private void validateTransportChatId(String transportChatId) {
-        if (isBlank(transportChatId)) {
+        if (StringValueSupport.isBlank(transportChatId)) {
             throw new IllegalArgumentException("transportChatId must not be blank");
         }
-    }
-
-    private String normalizeConversationKeyForActivation(String conversationKey) {
-        if (ConversationKeyValidator.isStrictConversationKey(conversationKey)) {
-            return ConversationKeyValidator.normalizeStrictOrThrow(conversationKey);
-        }
-
-        String legacyCandidate = ConversationKeyValidator.normalizeLegacyCompatibleOrThrow(conversationKey);
-        if (sessionPort.get(CHANNEL_TELEGRAM + ":" + legacyCandidate).isPresent()) {
-            return legacyCandidate;
-        }
-
-        throw new IllegalArgumentException("conversationKey must match ^[a-zA-Z0-9_-]{8,64}$");
     }
 
     private boolean isConversationResolvableForTransport(String transportChatId, String conversationKey) {
@@ -140,7 +121,7 @@ public class TelegramSessionService {
         String explicitTransportChatId = SessionIdentitySupport.readMetadataString(
                 session,
                 ContextAttributes.TRANSPORT_CHAT_ID);
-        if (isBlank(explicitTransportChatId)) {
+        if (StringValueSupport.isBlank(explicitTransportChatId)) {
             // Legacy sessions may not have explicit transport binding yet.
             return true;
         }
@@ -149,9 +130,5 @@ public class TelegramSessionService {
 
     private String generateConversationKey() {
         return UUID.randomUUID().toString();
-    }
-
-    private boolean isBlank(String value) {
-        return value == null || value.isBlank();
     }
 }

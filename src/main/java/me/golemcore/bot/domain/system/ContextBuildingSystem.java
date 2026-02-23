@@ -67,6 +67,8 @@ import java.util.Map;
 public class ContextBuildingSystem implements AgentSystem {
 
     private static final String DOUBLE_NEWLINE = "\n\n";
+    private static final String TOOL_PLAN_SET_CONTENT = "plan_set_content";
+    private static final String TOOL_PLAN_GET = "plan_get";
 
     private final MemoryComponent memoryComponent;
     private final SkillComponent skillComponent;
@@ -353,8 +355,7 @@ public class ContextBuildingSystem implements AgentSystem {
 
     private boolean isToolAdvertised(ToolComponent tool, boolean planModeActive) {
         String toolName = tool.getToolName();
-        if (me.golemcore.bot.tools.PlanSetContentTool.TOOL_NAME.equals(toolName)
-                || me.golemcore.bot.tools.PlanGetTool.TOOL_NAME.equals(toolName)) {
+        if (TOOL_PLAN_SET_CONTENT.equals(toolName) || TOOL_PLAN_GET.equals(toolName)) {
             return planModeActive;
         }
         return true;
