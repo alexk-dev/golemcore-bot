@@ -20,6 +20,7 @@ package me.golemcore.bot.adapter.inbound.telegram;
 
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
@@ -177,9 +178,9 @@ public class TelegramMenuHandler {
         try {
             SendMessage message = SendMessage.builder()
                     .chatId(chatId)
-                    .text(buildMainMenuText())
+                    .text(buildMainMenuText(chatId))
                     .parseMode("HTML")
-                    .replyMarkup(buildMainMenuKeyboard())
+                    .replyMarkup(buildMainMenuKeyboard(chatId))
                     .build();
             client.execute(message);
             log.debug("[Menu] Sent main menu to chat: {}", chatId);
@@ -265,7 +266,7 @@ public class TelegramMenuHandler {
 
     // ==================== Menu screens ====================
 
-    private String buildMainMenuText() {
+    private String buildMainMenuText(String chatId) {
         UserPreferences prefs = preferencesService.getPreferences();
         String tier = prefs.getModelTier() != null ? prefs.getModelTier() : TIER_BALANCED;
         ModelSelectionService.ModelSelection selection = modelSelectionService.resolveForTier(tier);
@@ -286,7 +287,7 @@ public class TelegramMenuHandler {
         return sb.toString();
     }
 
-    private InlineKeyboardMarkup buildMainMenuKeyboard() {
+    private InlineKeyboardMarkup buildMainMenuKeyboard(String chatId) {
         List<InlineKeyboardRow> rows = new ArrayList<>();
 
         rows.add(row(
@@ -309,7 +310,8 @@ public class TelegramMenuHandler {
         }
 
         if (planService.isFeatureEnabled()) {
-            String planStatus = planService.isPlanModeActive() ? ON : OFF;
+            SessionIdentity sessionIdentity = resolveTelegramSessionIdentity(chatId);
+            String planStatus = planService.isPlanModeActive(sessionIdentity) ? ON : OFF;
             rows.add(row(button(msg("menu.btn.plan", planStatus), "menu:plan")));
         }
 
@@ -470,7 +472,7 @@ public class TelegramMenuHandler {
     // ==================== Callback handlers ====================
 
     private void updateToMainMenu(String chatId, Integer messageId) {
-        editMessage(chatId, messageId, buildMainMenuText(), buildMainMenuKeyboard());
+        editMessage(chatId, messageId, buildMainMenuText(chatId), buildMainMenuKeyboard(chatId));
     }
 
     private void handleTierCallback(String chatId, Integer messageId, String action) {
@@ -589,10 +591,11 @@ public class TelegramMenuHandler {
         if (!planService.isFeatureEnabled()) {
             return;
         }
-        if (planService.isPlanModeActive()) {
-            planService.deactivatePlanMode();
+        SessionIdentity sessionIdentity = resolveTelegramSessionIdentity(chatId);
+        if (planService.isPlanModeActive(sessionIdentity)) {
+            planService.deactivatePlanMode(sessionIdentity);
         } else {
-            planService.activatePlanMode(chatId, null);
+            planService.activatePlanMode(sessionIdentity, chatId, null);
         }
         updateToMainMenu(chatId, messageId);
     }
@@ -710,6 +713,14 @@ public class TelegramMenuHandler {
         return msg(
                 "menu.sessions.fallback",
                 shortConversationKey(SessionIdentitySupport.resolveConversationKey(session)));
+    }
+
+    private SessionIdentity resolveTelegramSessionIdentity(String chatId) {
+        if (chatId == null || chatId.isBlank()) {
+            return null;
+        }
+        String activeConversationKey = telegramSessionService.resolveActiveConversationKey(chatId);
+        return SessionIdentitySupport.resolveSessionIdentity(CHANNEL_TYPE, activeConversationKey);
     }
 
     private String shortConversationKey(String conversationKey) {

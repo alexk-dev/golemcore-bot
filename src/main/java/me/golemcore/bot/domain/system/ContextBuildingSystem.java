@@ -27,6 +27,7 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.MemoryPack;
 import me.golemcore.bot.domain.model.MemoryQuery;
 import me.golemcore.bot.domain.model.PromptSection;
+import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.SkillTransitionRequest;
 import me.golemcore.bot.domain.model.ToolDefinition;
@@ -36,6 +37,7 @@ import me.golemcore.bot.domain.service.MemoryScopeSupport;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import me.golemcore.bot.domain.service.SkillTemplateEngine;
 import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -50,6 +52,7 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * System for assembling the complete LLM system prompt with memory, skills,
@@ -112,12 +115,27 @@ public class ContextBuildingSystem implements AgentSystem {
         UserPreferences prefs = userPreferencesService.getPreferences();
         resolveTier(context, prefs);
 
+        SessionIdentity sessionIdentity = SessionIdentitySupport.resolveSessionIdentity(context.getSession());
+        boolean planModeActive = sessionIdentity != null
+                ? planService.isPlanModeActive(sessionIdentity)
+                : planService.isPlanModeActive();
+
         // Build memory context from structured Memory V2 pack
         String userQueryForMemory = getLastUserMessageText(context);
+        String autoRunKind = context.getAttribute(ContextAttributes.AUTO_RUN_KIND);
+        String autoGoalId = context.getAttribute(ContextAttributes.AUTO_GOAL_ID);
+        String autoTaskId = context.getAttribute(ContextAttributes.AUTO_TASK_ID);
+        String sessionScope = MemoryScopeSupport.resolveScopeFromSessionOrGlobal(context.getSession());
+        List<String> scopeChain = MemoryScopeSupport.resolveScopeChain(
+                context.getSession(),
+                autoRunKind,
+                autoGoalId,
+                autoTaskId);
         MemoryQuery memoryQuery = MemoryQuery.builder()
                 .queryText(userQueryForMemory)
                 .activeSkill(context.getActiveSkill() != null ? context.getActiveSkill().getName() : null)
-                .scope(MemoryScopeSupport.resolveScopeFromSessionOrGlobal(context.getSession()))
+                .scope(sessionScope)
+                .scopeChain(scopeChain)
                 .softPromptBudgetTokens(runtimeConfigService.getMemorySoftPromptBudgetTokens())
                 .maxPromptBudgetTokens(runtimeConfigService.getMemoryMaxPromptBudgetTokens())
                 .workingTopK(runtimeConfigService.getMemoryWorkingTopK())
@@ -152,7 +170,7 @@ public class ContextBuildingSystem implements AgentSystem {
         // Collect tool definitions (native + MCP)
         List<ToolDefinition> tools = new ArrayList<>(toolComponents.stream()
                 .filter(ToolComponent::isEnabled)
-                .filter(tool -> isToolAdvertised(tool, planService.isPlanModeActive()))
+                .filter(tool -> isToolAdvertised(tool, planModeActive))
                 .map(ToolComponent::getDefinition)
                 .toList());
 
@@ -209,7 +227,7 @@ public class ContextBuildingSystem implements AgentSystem {
                 workspaceInstructions != null ? workspaceInstructions.length() : 0);
 
         // Build system prompt
-        String systemPrompt = buildSystemPrompt(context, prefs, workspaceInstructions);
+        String systemPrompt = buildSystemPrompt(context, prefs, workspaceInstructions, sessionIdentity, planModeActive);
         context.setSystemPrompt(systemPrompt);
 
         log.info("[Context] Built context: {} tools, memory={}, skills={}, systemPrompt={} chars",
@@ -221,7 +239,8 @@ public class ContextBuildingSystem implements AgentSystem {
         return context;
     }
 
-    private String buildSystemPrompt(AgentContext context, UserPreferences prefs, String workspaceInstructions) {
+    private String buildSystemPrompt(AgentContext context, UserPreferences prefs,
+            String workspaceInstructions, SessionIdentity sessionIdentity, boolean planModeActive) {
         StringBuilder sb = new StringBuilder();
 
         // 1. Render file-based prompt sections (identity, rules, etc.)
@@ -323,13 +342,18 @@ public class ContextBuildingSystem implements AgentSystem {
         }
 
         // Inject plan mode context and set model tier override
-        if (planService.isPlanModeActive()) {
-            String planContext = planService.buildPlanContext();
+        if (planModeActive) {
+            String planContext = sessionIdentity != null
+                    ? planService.buildPlanContext(sessionIdentity)
+                    : planService.buildPlanContext();
             if (planContext != null && !planContext.isBlank()) {
                 sb.append("\n").append(planContext).append("\n");
             }
             // Override model tier if plan specifies one
-            planService.getActivePlan().ifPresent(plan -> {
+            Optional<me.golemcore.bot.domain.model.Plan> activePlan = sessionIdentity != null
+                    ? planService.getActivePlan(sessionIdentity)
+                    : planService.getActivePlan();
+            activePlan.ifPresent(plan -> {
                 if (plan.getModelTier() != null && context.getModelTier() == null) {
                     context.setModelTier(plan.getModelTier());
                 }

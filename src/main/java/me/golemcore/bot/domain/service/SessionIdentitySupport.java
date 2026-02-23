@@ -20,8 +20,10 @@ package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.SessionIdentity;
 
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -56,6 +58,27 @@ public final class SessionIdentitySupport {
             return session.getChatId();
         }
         return "";
+    }
+
+    public static SessionIdentity resolveSessionIdentity(AgentSession session) {
+        if (session == null) {
+            return null;
+        }
+        return resolveSessionIdentity(session.getChannelType(), resolveConversationKey(session));
+    }
+
+    public static SessionIdentity resolveSessionIdentity(String channelType, String conversationKey) {
+        if (StringValueSupport.isBlank(channelType) || StringValueSupport.isBlank(conversationKey)) {
+            return null;
+        }
+        String normalizedChannel = channelType.trim().toLowerCase(Locale.ROOT);
+        String normalizedConversationKey;
+        try {
+            normalizedConversationKey = ConversationKeyValidator.normalizeLegacyCompatibleOrThrow(conversationKey);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+        return new SessionIdentity(normalizedChannel, normalizedConversationKey);
     }
 
     public static String resolveTransportChatId(AgentSession session) {

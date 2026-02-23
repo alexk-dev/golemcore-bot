@@ -10,6 +10,7 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.PlanStep;
 import me.golemcore.bot.domain.model.ScheduleEntry;
+import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.UsageStats;
@@ -444,7 +445,8 @@ class CommandRouterTest {
 
         CommandPort.CommandResult result = router.execute(CMD_AUTO, List.of("on"), CTX_WITH_SPLIT_IDENTITIES).get();
         assertTrue(result.success());
-        verify(eventPublisher).publishEvent(new AutoModeChannelRegisteredEvent(CHANNEL_TYPE_TELEGRAM, "transport-900"));
+        verify(eventPublisher).publishEvent(
+                new AutoModeChannelRegisteredEvent(CHANNEL_TYPE_TELEGRAM, "conversation-42", "transport-900"));
     }
 
     @Test
@@ -729,11 +731,15 @@ class CommandRouterTest {
     @Test
     void planOnUsesTransportChatIdFromContext() throws Exception {
         when(planService.isFeatureEnabled()).thenReturn(true);
-        when(planService.isPlanModeActive()).thenReturn(false);
+        when(planService.isPlanModeActive(new SessionIdentity(CHANNEL_TYPE_TELEGRAM, "conversation-42")))
+                .thenReturn(false);
 
         CommandPort.CommandResult result = router.execute(CMD_PLAN, List.of("on"), CTX_WITH_SPLIT_IDENTITIES).get();
         assertTrue(result.success());
-        verify(planService).activatePlanMode("transport-900", null);
+        verify(planService).activatePlanMode(
+                new SessionIdentity(CHANNEL_TYPE_TELEGRAM, "conversation-42"),
+                "transport-900",
+                null);
     }
 
     @Test

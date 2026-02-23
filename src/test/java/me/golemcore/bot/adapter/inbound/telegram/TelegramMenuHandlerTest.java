@@ -1,6 +1,7 @@
 package me.golemcore.bot.adapter.inbound.telegram;
 
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
@@ -451,24 +452,24 @@ class TelegramMenuHandlerTest {
     @Test
     void shouldTogglePlanModeOn() throws Exception {
         when(planService.isFeatureEnabled()).thenReturn(true);
-        when(planService.isPlanModeActive()).thenReturn(false);
+        when(planService.isPlanModeActive(new SessionIdentity("telegram", "conv-1"))).thenReturn(false);
         stubEdit();
 
         handler.handleCallback(CHAT_ID, MSG_ID, "menu:plan");
 
-        verify(planService).activatePlanMode(CHAT_ID, null);
+        verify(planService).activatePlanMode(new SessionIdentity("telegram", "conv-1"), CHAT_ID, null);
         verify(telegramClient).execute(any(EditMessageText.class));
     }
 
     @Test
     void shouldTogglePlanModeOff() throws Exception {
         when(planService.isFeatureEnabled()).thenReturn(true);
-        when(planService.isPlanModeActive()).thenReturn(true);
+        when(planService.isPlanModeActive(new SessionIdentity("telegram", "conv-1"))).thenReturn(true);
         stubEdit();
 
         handler.handleCallback(CHAT_ID, MSG_ID, "menu:plan");
 
-        verify(planService).deactivatePlanMode();
+        verify(planService).deactivatePlanMode(new SessionIdentity("telegram", "conv-1"));
         verify(telegramClient).execute(any(EditMessageText.class));
     }
 

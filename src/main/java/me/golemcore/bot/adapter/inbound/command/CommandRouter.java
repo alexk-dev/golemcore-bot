@@ -28,6 +28,7 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.PlanStep;
 import me.golemcore.bot.domain.model.ScheduleEntry;
+import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.UsageStats;
 import me.golemcore.bot.domain.model.UserPreferences;
@@ -38,6 +39,7 @@ import me.golemcore.bot.domain.service.PlanExecutionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
+import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import me.golemcore.bot.domain.service.SessionRunCoordinator;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
@@ -58,6 +60,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -183,6 +186,12 @@ public class CommandRouter implements CommandPort {
             String chatId = (String) context.get("chatId");
             String sessionChatId = resolveContextString(context, "sessionChatId", chatId);
             String transportChatId = resolveContextString(context, "transportChatId", chatId);
+            boolean explicitSessionRouting = hasExplicitContextString(context, "sessionChatId")
+                    || hasExplicitContextString(context, "conversationKey");
+            SessionIdentity sessionIdentity = explicitSessionRouting
+                    ? SessionIdentitySupport.resolveSessionIdentity(channelType, sessionChatId)
+                    : null;
+            String autoSessionChatId = explicitSessionRouting ? sessionChatId : transportChatId;
             log.debug("Executing command: /{} (session={})", command, sessionId);
 
             return switch (command) {
@@ -190,20 +199,20 @@ public class CommandRouter implements CommandPort {
             case "tools" -> handleTools();
             case CMD_STATUS -> handleStatus(sessionId);
             case "new" -> handleNew();
-            case "reset" -> handleReset(sessionId, sessionChatId);
+            case "reset" -> handleReset(sessionId, sessionIdentity);
             case "compact" -> handleCompact(sessionId, args);
             case CMD_HELP -> handleHelp();
             case "tier" -> handleTier(args);
             case "model" -> handleModel(args);
             case "sessions" -> handleSessions(channelType);
-            case "auto" -> handleAuto(args, channelType, transportChatId);
+            case "auto" -> handleAuto(args, channelType, autoSessionChatId, transportChatId);
             case "goals" -> handleGoals();
             case CMD_GOAL -> handleGoal(args);
             case "diary" -> handleDiary(args);
             case "tasks" -> handleTasks();
             case "schedule" -> handleSchedule(args);
-            case CMD_PLAN -> handlePlan(args, transportChatId);
-            case CMD_PLANS -> handlePlans();
+            case CMD_PLAN -> handlePlan(args, sessionIdentity, transportChatId);
+            case CMD_PLANS -> handlePlans(sessionIdentity);
             case "stop" -> handleStop(channelType, sessionChatId);
             default -> CommandResult.failure(msg("command.unknown", command));
             };
@@ -216,6 +225,11 @@ public class CommandRouter implements CommandPort {
             return (String) value;
         }
         return fallback;
+    }
+
+    private boolean hasExplicitContextString(Map<String, Object> context, String key) {
+        Object value = context.get(key);
+        return value instanceof String && !((String) value).isBlank();
     }
 
     @Override
@@ -408,11 +422,23 @@ public class CommandRouter implements CommandPort {
         return CommandResult.success(msg("command.new.done"));
     }
 
-    private CommandResult handleReset(String sessionId, String chatId) {
+    private CommandResult handleReset(String sessionId, SessionIdentity sessionIdentity) {
         sessionService.clearMessages(sessionId);
-        if (planService.isFeatureEnabled() && planService.isPlanModeActive()) {
-            planService.getActivePlanIdOptional().ifPresent(planService::cancelPlan);
-            planService.deactivatePlanMode();
+        if (!planService.isFeatureEnabled()) {
+            return CommandResult.success(msg("command.reset.done"));
+        }
+
+        if (sessionIdentity == null) {
+            if (planService.isPlanModeActive()) {
+                planService.getActivePlanIdOptional().ifPresent(planService::cancelPlan);
+                planService.deactivatePlanMode();
+            }
+            return CommandResult.success(msg("command.reset.done"));
+        }
+
+        if (planService.isPlanModeActive(sessionIdentity)) {
+            planService.getActivePlanIdOptional(sessionIdentity).ifPresent(planService::cancelPlan);
+            planService.deactivatePlanMode(sessionIdentity);
         }
         return CommandResult.success(msg("command.reset.done"));
     }
@@ -651,7 +677,7 @@ public class CommandRouter implements CommandPort {
 
     // ==================== Auto Mode Commands ====================
 
-    private CommandResult handleAuto(List<String> args, String channelType, String chatId) {
+    private CommandResult handleAuto(List<String> args, String channelType, String sessionChatId, String transportChatId) {
         if (!autoModeService.isFeatureEnabled()) {
             return CommandResult.success(msg(MSG_AUTO_NOT_AVAILABLE));
         }
@@ -665,8 +691,11 @@ public class CommandRouter implements CommandPort {
         return switch (subcommand) {
             case "on" -> {
                 autoModeService.enableAutoMode();
-                if (channelType != null && chatId != null) {
-                    eventPublisher.publishEvent(new AutoModeChannelRegisteredEvent(channelType, chatId));
+                if (channelType != null && sessionChatId != null) {
+                    eventPublisher.publishEvent(new AutoModeChannelRegisteredEvent(
+                            channelType,
+                            sessionChatId,
+                            transportChatId != null ? transportChatId : sessionChatId));
                 }
                 yield CommandResult.success(msg("command.auto.enabled"));
             }
@@ -806,71 +835,97 @@ public class CommandRouter implements CommandPort {
 
     // ==================== Plan Mode Commands ====================
 
-    private CommandResult handlePlan(List<String> args, String chatId) {
+    private CommandResult handlePlan(List<String> args, SessionIdentity sessionIdentity, String transportChatId) {
         if (!planService.isFeatureEnabled()) {
             return CommandResult.success(msg(MSG_PLAN_NOT_AVAILABLE));
         }
 
         if (args.isEmpty()) {
-            boolean active = planService.isPlanModeActive();
+            boolean active = sessionIdentity != null
+                    ? planService.isPlanModeActive(sessionIdentity)
+                    : planService.isPlanModeActive();
             return CommandResult.success(msg("command.plan.status", active ? "ON" : "OFF"));
         }
 
         String subcommand = args.get(0).toLowerCase(Locale.ROOT);
         return switch (subcommand) {
-        case "on" -> handlePlanOn(args, chatId);
-        case "off" -> handlePlanOff();
-        case "done" -> handlePlanDone();
-        case "approve" -> handlePlanApprove(args);
-        case "cancel" -> handlePlanCancel(args);
-        case "resume" -> handlePlanResume(args);
-        case CMD_STATUS -> handlePlanStatus(args);
+        case "on" -> handlePlanOn(args, sessionIdentity, transportChatId);
+        case "off" -> handlePlanOff(sessionIdentity);
+        case "done" -> handlePlanDone(sessionIdentity);
+        case "approve" -> handlePlanApprove(args, sessionIdentity);
+        case "cancel" -> handlePlanCancel(args, sessionIdentity);
+        case "resume" -> handlePlanResume(args, sessionIdentity);
+        case CMD_STATUS -> handlePlanStatus(args, sessionIdentity);
         default -> CommandResult.success(msg("command.plan.usage"));
         };
     }
 
-    private CommandResult handlePlanOn(List<String> args, String chatId) {
-        if (planService.isPlanModeActive()) {
+    private CommandResult handlePlanOn(List<String> args, SessionIdentity sessionIdentity, String transportChatId) {
+        if (sessionIdentity == null && planService.isPlanModeActive()) {
+            return CommandResult.success(msg("command.plan.already-active"));
+        }
+        if (sessionIdentity != null && planService.isPlanModeActive(sessionIdentity)) {
             return CommandResult.success(msg("command.plan.already-active"));
         }
 
         String modelTier = args.size() > 1 ? args.get(1).toLowerCase(Locale.ROOT) : null;
         try {
-            planService.activatePlanMode(chatId, modelTier);
+            if (sessionIdentity == null) {
+                planService.activatePlanMode(transportChatId, modelTier);
+            } else {
+                planService.activatePlanMode(sessionIdentity, transportChatId, modelTier);
+            }
             String tierMsg = modelTier != null ? " (tier: " + modelTier + ")" : "";
             return CommandResult.success(msg("command.plan.enabled") + tierMsg);
-        } catch (IllegalStateException e) {
+        } catch (IllegalArgumentException | IllegalStateException e) {
             return CommandResult.failure(msg("command.plan.limit", properties.getPlan().getMaxPlans()));
         }
     }
 
-    private CommandResult handlePlanOff() {
-        if (!planService.isPlanModeActive()) {
+    private CommandResult handlePlanOff(SessionIdentity sessionIdentity) {
+        if (sessionIdentity == null && !planService.isPlanModeActive()) {
+            return CommandResult.success(msg("command.plan.not-active"));
+        }
+        if (sessionIdentity != null && !planService.isPlanModeActive(sessionIdentity)) {
             return CommandResult.success(msg("command.plan.not-active"));
         }
 
-        planService.deactivatePlanMode();
+        if (sessionIdentity == null) {
+            planService.deactivatePlanMode();
+        } else {
+            planService.deactivatePlanMode(sessionIdentity);
+        }
         return CommandResult.success(msg("command.plan.disabled"));
     }
 
-    private CommandResult handlePlanDone() {
-        if (!planService.isPlanModeActive()) {
+    private CommandResult handlePlanDone(SessionIdentity sessionIdentity) {
+        if (sessionIdentity == null && !planService.isPlanModeActive()) {
+            return CommandResult.success(msg("command.plan.not-active"));
+        }
+        if (sessionIdentity != null && !planService.isPlanModeActive(sessionIdentity)) {
             return CommandResult.success(msg("command.plan.not-active"));
         }
 
         // "Done" means: stop plan drafting mode.
         // The plan itself is finalized via the plan_set_content tool.
-        planService.deactivatePlanMode();
+        if (sessionIdentity == null) {
+            planService.deactivatePlanMode();
+        } else {
+            planService.deactivatePlanMode(sessionIdentity);
+        }
         return CommandResult.success(msg("command.plan.done"));
     }
 
-    private CommandResult handlePlanApprove(List<String> args) {
-        String planId = args.size() > 1 ? args.get(1) : findMostRecentReadyPlanId();
+    private CommandResult handlePlanApprove(List<String> args, SessionIdentity sessionIdentity) {
+        String planId = args.size() > 1 ? args.get(1) : findMostRecentReadyPlanId(sessionIdentity);
         if (planId == null) {
             return CommandResult.failure(msg("command.plan.no-ready"));
         }
 
         try {
+            if (sessionIdentity != null && planService.getPlan(planId, sessionIdentity).isEmpty()) {
+                return CommandResult.failure(msg("command.plan.not-found", planId));
+            }
             planService.approvePlan(planId);
             planExecutionService.executePlan(planId);
             return CommandResult.success(msg("command.plan.approved", planId));
@@ -879,13 +934,16 @@ public class CommandRouter implements CommandPort {
         }
     }
 
-    private CommandResult handlePlanCancel(List<String> args) {
-        String planId = args.size() > 1 ? args.get(1) : findMostRecentActivePlanId();
+    private CommandResult handlePlanCancel(List<String> args, SessionIdentity sessionIdentity) {
+        String planId = args.size() > 1 ? args.get(1) : findMostRecentActivePlanId(sessionIdentity);
         if (planId == null) {
             return CommandResult.failure(msg("command.plan.no-active-plan"));
         }
 
         try {
+            if (sessionIdentity != null && planService.getPlan(planId, sessionIdentity).isEmpty()) {
+                return CommandResult.failure(msg("command.plan.not-found", planId));
+            }
             planService.cancelPlan(planId);
             return CommandResult.success(msg("command.plan.cancelled", planId));
         } catch (IllegalArgumentException e) {
@@ -893,13 +951,16 @@ public class CommandRouter implements CommandPort {
         }
     }
 
-    private CommandResult handlePlanResume(List<String> args) {
-        String planId = args.size() > 1 ? args.get(1) : findMostRecentPartialPlanId();
+    private CommandResult handlePlanResume(List<String> args, SessionIdentity sessionIdentity) {
+        String planId = args.size() > 1 ? args.get(1) : findMostRecentPartialPlanId(sessionIdentity);
         if (planId == null) {
             return CommandResult.failure(msg("command.plan.no-partial"));
         }
 
         try {
+            if (sessionIdentity != null && planService.getPlan(planId, sessionIdentity).isEmpty()) {
+                return CommandResult.failure(msg("command.plan.not-found", planId));
+            }
             planExecutionService.resumePlan(planId);
             return CommandResult.success(msg("command.plan.resumed", planId));
         } catch (IllegalArgumentException | IllegalStateException e) {
@@ -907,29 +968,36 @@ public class CommandRouter implements CommandPort {
         }
     }
 
-    private CommandResult handlePlanStatus(List<String> args) {
-        String planId = args.size() > 1 ? args.get(1) : findMostRecentActivePlanId();
+    private CommandResult handlePlanStatus(List<String> args, SessionIdentity sessionIdentity) {
+        String planId = args.size() > 1 ? args.get(1) : findMostRecentActivePlanId(sessionIdentity);
         if (planId == null) {
             // Show most recent plan of any status
-            List<Plan> plans = planService.getPlans();
+            List<Plan> plans = sessionIdentity != null
+                    ? planService.getPlans(sessionIdentity)
+                    : planService.getPlans();
             if (plans.isEmpty()) {
                 return CommandResult.success(msg("command.plans.empty"));
             }
             planId = plans.get(plans.size() - 1).getId();
         }
 
-        return planService.getPlan(planId)
+        Optional<Plan> plan = sessionIdentity != null
+                ? planService.getPlan(planId, sessionIdentity)
+                : planService.getPlan(planId);
+        return plan
                 .map(this::formatPlanStatus)
                 .map(CommandResult::success)
                 .orElse(CommandResult.failure(msg("command.plan.not-found", planId)));
     }
 
-    private CommandResult handlePlans() {
+    private CommandResult handlePlans(SessionIdentity sessionIdentity) {
         if (!planService.isFeatureEnabled()) {
             return CommandResult.success(msg(MSG_PLAN_NOT_AVAILABLE));
         }
 
-        List<Plan> plans = planService.getPlans();
+        List<Plan> plans = sessionIdentity != null
+                ? planService.getPlans(sessionIdentity)
+                : planService.getPlans();
         if (plans.isEmpty()) {
             return CommandResult.success(msg("command.plans.empty"));
         }
@@ -990,16 +1058,22 @@ public class CommandRouter implements CommandPort {
         return sb.toString();
     }
 
-    private String findMostRecentReadyPlanId() {
-        return planService.getPlans().stream()
+    private String findMostRecentReadyPlanId(SessionIdentity sessionIdentity) {
+        List<Plan> plans = sessionIdentity != null
+                ? planService.getPlans(sessionIdentity)
+                : planService.getPlans();
+        return plans.stream()
                 .filter(p -> p.getStatus() == Plan.PlanStatus.READY)
                 .reduce((first, second) -> second)
                 .map(Plan::getId)
                 .orElse(null);
     }
 
-    private String findMostRecentActivePlanId() {
-        return planService.getPlans().stream()
+    private String findMostRecentActivePlanId(SessionIdentity sessionIdentity) {
+        List<Plan> plans = sessionIdentity != null
+                ? planService.getPlans(sessionIdentity)
+                : planService.getPlans();
+        return plans.stream()
                 .filter(p -> p.getStatus() == Plan.PlanStatus.COLLECTING
                         || p.getStatus() == Plan.PlanStatus.READY
                         || p.getStatus() == Plan.PlanStatus.APPROVED
@@ -1009,8 +1083,11 @@ public class CommandRouter implements CommandPort {
                 .orElse(null);
     }
 
-    private String findMostRecentPartialPlanId() {
-        return planService.getPlans().stream()
+    private String findMostRecentPartialPlanId(SessionIdentity sessionIdentity) {
+        List<Plan> plans = sessionIdentity != null
+                ? planService.getPlans(sessionIdentity)
+                : planService.getPlans();
+        return plans.stream()
                 .filter(p -> p.getStatus() == Plan.PlanStatus.PARTIALLY_COMPLETED)
                 .reduce((first, second) -> second)
                 .map(Plan::getId)

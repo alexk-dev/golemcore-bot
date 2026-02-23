@@ -116,4 +116,22 @@ public final class ContextAttributes {
     /** String ? logical conversation key for the current turn/session. */
     public static final String CONVERSATION_KEY = "session.conversation.key";
 
+    /** String ? channel type from canonical session identity. */
+    public static final String SESSION_IDENTITY_CHANNEL = "session.identity.channel";
+
+    /** String ? conversation key from canonical session identity. */
+    public static final String SESSION_IDENTITY_CONVERSATION = "session.identity.conversation";
+
+    /** String ? auto execution run kind (`GOAL_RUN` or `TASK_RUN`). */
+    public static final String AUTO_RUN_KIND = "auto.run.kind";
+
+    /** String ? unique auto execution run identifier. */
+    public static final String AUTO_RUN_ID = "auto.run.id";
+
+    /** String ? active auto goal identifier for the turn. */
+    public static final String AUTO_GOAL_ID = "auto.goal.id";
+
+    /** String ? active auto task identifier for the turn. */
+    public static final String AUTO_TASK_ID = "auto.task.id";
+
 }

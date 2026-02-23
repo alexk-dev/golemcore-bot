@@ -25,6 +25,7 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.PlanReadyEvent;
+import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.SessionIdentitySupport;
@@ -74,7 +75,11 @@ public class PlanFinalizationSystem implements AgentSystem {
 
     @Override
     public boolean shouldProcess(AgentContext context) {
-        if (!planService.isPlanModeActive()) {
+        SessionIdentity sessionIdentity = SessionIdentitySupport.resolveSessionIdentity(context.getSession());
+        boolean planModeActive = sessionIdentity != null
+                ? planService.isPlanModeActive(sessionIdentity)
+                : planService.isPlanModeActive();
+        if (!planModeActive) {
             return false;
         }
 
@@ -94,10 +99,17 @@ public class PlanFinalizationSystem implements AgentSystem {
 
     @Override
     public AgentContext process(AgentContext context) {
-        Optional<Plan> activePlan = planService.getActivePlan();
+        SessionIdentity sessionIdentity = SessionIdentitySupport.resolveSessionIdentity(context.getSession());
+        Optional<Plan> activePlan = sessionIdentity != null
+                ? planService.getActivePlan(sessionIdentity)
+                : planService.getActivePlan();
         if (activePlan.isEmpty()) {
             log.warn("[PlanSetContent] Plan work active but no active plan found");
-            planService.deactivatePlanMode();
+            if (sessionIdentity != null) {
+                planService.deactivatePlanMode(sessionIdentity);
+            } else {
+                planService.deactivatePlanMode();
+            }
             return context;
         }
 
@@ -118,7 +130,10 @@ public class PlanFinalizationSystem implements AgentSystem {
 
         // Publish event for Telegram approval UI using the current active plan id
         // (important for EXECUTING -> READY revision flow).
-        String readyPlanId = planService.getActivePlan().map(Plan::getId).orElse(plan.getId());
+        Optional<Plan> readyPlan = sessionIdentity != null
+                ? planService.getActivePlan(sessionIdentity)
+                : planService.getActivePlan();
+        String readyPlanId = readyPlan.map(Plan::getId).orElse(plan.getId());
         eventPublisher.publishEvent(new PlanReadyEvent(readyPlanId, chatId));
         context.setAttribute(ContextAttributes.PLAN_APPROVAL_NEEDED, readyPlanId);
 
