@@ -9,12 +9,15 @@ import me.golemcore.bot.domain.service.DashboardFileService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import reactor.test.StepVerifier;
 
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -45,10 +48,65 @@ class FilesControllerTest {
 
         StepVerifier.create(filesController.getTree("src"))
                 .assertNext(response -> {
-                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertStatus(response, HttpStatus.OK);
                     assertNotNull(response.getBody());
                     assertEquals(1, response.getBody().size());
                     assertEquals("src/App.tsx", response.getBody().get(0).getPath());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldMapNestedTreeRecursively() {
+        DashboardFileNode nestedChild = DashboardFileNode.builder()
+                .path("src/components/Button.tsx")
+                .name("Button.tsx")
+                .type("file")
+                .size(42L)
+                .children(List.of())
+                .build();
+
+        DashboardFileNode dir = DashboardFileNode.builder()
+                .path("src/components")
+                .name("components")
+                .type("directory")
+                .children(List.of(nestedChild))
+                .build();
+
+        DashboardFileNode root = DashboardFileNode.builder()
+                .path("src")
+                .name("src")
+                .type("directory")
+                .children(List.of(dir))
+                .build();
+
+        when(dashboardFileService.getTree("src")).thenReturn(List.of(root));
+
+        StepVerifier.create(filesController.getTree("src"))
+                .assertNext(response -> {
+                    assertStatus(response, HttpStatus.OK);
+                    assertNotNull(response.getBody());
+                    assertEquals(1, response.getBody().size());
+
+                    assertEquals("src", response.getBody().get(0).getPath());
+                    assertEquals(1, response.getBody().get(0).getChildren().size());
+                    assertEquals("src/components", response.getBody().get(0).getChildren().get(0).getPath());
+                    assertEquals(1, response.getBody().get(0).getChildren().get(0).getChildren().size());
+                    assertEquals("src/components/Button.tsx",
+                            response.getBody().get(0).getChildren().get(0).getChildren().get(0).getPath());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldReturnEmptyTreePayloadWhenDirectoryHasNoChildren() {
+        when(dashboardFileService.getTree("")).thenReturn(List.of());
+
+        StepVerifier.create(filesController.getTree(""))
+                .assertNext(response -> {
+                    assertStatus(response, HttpStatus.OK);
+                    assertNotNull(response.getBody());
+                    assertTrue(response.getBody().isEmpty());
                 })
                 .verifyComplete();
     }
@@ -58,8 +116,15 @@ class FilesControllerTest {
         when(dashboardFileService.getTree("../etc")).thenThrow(new IllegalArgumentException("Invalid path"));
 
         StepVerifier.create(filesController.getTree("../etc"))
-                .assertNext(response -> assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode()))
+                .assertNext(response -> assertStatus(response, HttpStatus.BAD_REQUEST))
                 .verifyComplete();
+    }
+
+    @Test
+    void shouldThrowWhenTreeEndpointHasUnexpectedServiceFailure() {
+        when(dashboardFileService.getTree("src")).thenThrow(new IllegalStateException("Disk unavailable"));
+
+        assertThrows(IllegalStateException.class, () -> filesController.getTree("src"));
     }
 
     @Test
@@ -75,10 +140,11 @@ class FilesControllerTest {
 
         StepVerifier.create(filesController.getContent("src/App.tsx"))
                 .assertNext(response -> {
-                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertStatus(response, HttpStatus.OK);
                     assertNotNull(response.getBody());
                     assertEquals("src/App.tsx", response.getBody().getPath());
                     assertEquals(31L, response.getBody().getSize());
+                    assertEquals("2026-02-23T00:00:00Z", response.getBody().getUpdatedAt());
                 })
                 .verifyComplete();
     }
@@ -88,7 +154,7 @@ class FilesControllerTest {
         when(dashboardFileService.getContent("../etc/passwd")).thenThrow(new IllegalArgumentException("Invalid path"));
 
         StepVerifier.create(filesController.getContent("../etc/passwd"))
-                .assertNext(response -> assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode()))
+                .assertNext(response -> assertStatus(response, HttpStatus.BAD_REQUEST))
                 .verifyComplete();
     }
 
@@ -110,7 +176,7 @@ class FilesControllerTest {
 
         StepVerifier.create(filesController.createContent(request))
                 .assertNext(response -> {
-                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertStatus(response, HttpStatus.OK);
                     assertNotNull(response.getBody());
                     assertEquals("src/NewFile.ts", response.getBody().getPath());
                     assertEquals("console.log('hello')", response.getBody().getContent());
@@ -129,7 +195,22 @@ class FilesControllerTest {
                 .thenThrow(new IllegalArgumentException("Invalid path"));
 
         StepVerifier.create(filesController.createContent(request))
-                .assertNext(response -> assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode()))
+                .assertNext(response -> assertStatus(response, HttpStatus.BAD_REQUEST))
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldReturnBadRequestWhenCreateRequestContainsNullPath() {
+        FileCreateRequest request = FileCreateRequest.builder()
+                .path(null)
+                .content("x")
+                .build();
+
+        when(dashboardFileService.createContent(null, "x"))
+                .thenThrow(new IllegalArgumentException("Path is required"));
+
+        StepVerifier.create(filesController.createContent(request))
+                .assertNext(response -> assertStatus(response, HttpStatus.BAD_REQUEST))
                 .verifyComplete();
     }
 
@@ -151,7 +232,7 @@ class FilesControllerTest {
 
         StepVerifier.create(filesController.saveContent(request))
                 .assertNext(response -> {
-                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertStatus(response, HttpStatus.OK);
                     assertNotNull(response.getBody());
                     assertEquals("src/App.tsx", response.getBody().getPath());
                     assertEquals("updated", response.getBody().getContent());
@@ -170,7 +251,22 @@ class FilesControllerTest {
                 .thenThrow(new IllegalArgumentException("Invalid path"));
 
         StepVerifier.create(filesController.saveContent(request))
-                .assertNext(response -> assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode()))
+                .assertNext(response -> assertStatus(response, HttpStatus.BAD_REQUEST))
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldReturnBadRequestWhenSaveContentIsInvalid() {
+        FileSaveRequest request = FileSaveRequest.builder()
+                .path("src/App.tsx")
+                .content(null)
+                .build();
+
+        when(dashboardFileService.saveContent("src/App.tsx", null))
+                .thenThrow(new IllegalArgumentException("Content is required"));
+
+        StepVerifier.create(filesController.saveContent(request))
+                .assertNext(response -> assertStatus(response, HttpStatus.BAD_REQUEST))
                 .verifyComplete();
     }
 
@@ -185,7 +281,7 @@ class FilesControllerTest {
 
         StepVerifier.create(filesController.renamePath(request))
                 .assertNext(response -> {
-                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertStatus(response, HttpStatus.OK);
                     assertNotNull(response.getBody());
                     assertEquals("src/Old.ts", response.getBody().getSourcePath());
                     assertEquals("src/New.ts", response.getBody().getTargetPath());
@@ -205,7 +301,7 @@ class FilesControllerTest {
                 .renamePath("../etc/passwd", "x");
 
         StepVerifier.create(filesController.renamePath(request))
-                .assertNext(response -> assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode()))
+                .assertNext(response -> assertStatus(response, HttpStatus.BAD_REQUEST))
                 .verifyComplete();
     }
 
@@ -214,7 +310,7 @@ class FilesControllerTest {
         doNothing().when(dashboardFileService).deletePath("src/App.tsx");
 
         StepVerifier.create(filesController.deletePath("src/App.tsx"))
-                .assertNext(response -> assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode()))
+                .assertNext(response -> assertStatus(response, HttpStatus.NO_CONTENT))
                 .verifyComplete();
     }
 
@@ -225,7 +321,20 @@ class FilesControllerTest {
                 .deletePath("../etc/passwd");
 
         StepVerifier.create(filesController.deletePath("../etc/passwd"))
-                .assertNext(response -> assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode()))
+                .assertNext(response -> assertStatus(response, HttpStatus.BAD_REQUEST))
                 .verifyComplete();
+    }
+
+    @Test
+    void shouldThrowWhenDeleteEndpointHasUnexpectedServiceFailure() {
+        doThrow(new IllegalStateException("I/O failure"))
+                .when(dashboardFileService)
+                .deletePath("src/App.tsx");
+
+        assertThrows(IllegalStateException.class, () -> filesController.deletePath("src/App.tsx"));
+    }
+
+    private void assertStatus(ResponseEntity<?> response, HttpStatus expected) {
+        assertEquals(expected, response.getStatusCode());
     }
 }
