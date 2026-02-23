@@ -27,6 +27,7 @@ import me.golemcore.bot.domain.model.FailureSource;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.RoutingOutcome;
+import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.model.SkillTransitionRequest;
 import me.golemcore.bot.domain.model.TurnOutcome;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -146,6 +147,7 @@ public class AgentLoop {
                 .maxIterations(runtimeConfigService.getTurnMaxLlmCalls())
                 .currentIteration(0)
                 .build();
+        applyRuntimeAttributes(context, message, session);
 
         // Initialize sorted systems + routingSystem (used by feedback guarantee).
         getSortedSystems();
@@ -155,11 +157,12 @@ public class AgentLoop {
         ChannelPort channel = channelRegistry.get(message.getChannelType());
         ScheduledFuture<?> typingTask = null;
         String typingChatId = resolveTransportChatId(message);
-        if (channel != null && typingChatId != null) {
+        if (channel != null && typingChatId != null && !typingChatId.isBlank()) {
             String chatId = typingChatId;
+            sendTypingIndicator(channel, chatId);
             typingTask = typingExecutor.scheduleAtFixedRate(
-                    () -> channel.showTyping(chatId),
-                    0, TYPING_INTERVAL_SECONDS, TimeUnit.SECONDS);
+                    () -> sendTypingIndicator(channel, chatId),
+                    TYPING_INTERVAL_SECONDS, TYPING_INTERVAL_SECONDS, TimeUnit.SECONDS);
         }
 
         log.debug("Starting agent loop (max iterations: {})", context.getMaxIterations());
@@ -224,6 +227,47 @@ public class AgentLoop {
             return transportChatId;
         }
         return message != null ? message.getChatId() : null;
+    }
+
+    private void sendTypingIndicator(ChannelPort channel, String chatId) {
+        try {
+            channel.showTyping(chatId);
+        } catch (Exception e) {
+            log.debug("Typing indicator failed for chat {}: {}", chatId, e.getMessage());
+        }
+    }
+
+    private void applyRuntimeAttributes(AgentContext context, Message message, AgentSession session) {
+        if (context == null) {
+            return;
+        }
+
+        SessionIdentity sessionIdentity = SessionIdentitySupport.resolveSessionIdentity(session);
+        if (sessionIdentity != null) {
+            context.setAttribute(ContextAttributes.SESSION_IDENTITY_CHANNEL, sessionIdentity.channelType());
+            context.setAttribute(ContextAttributes.SESSION_IDENTITY_CONVERSATION, sessionIdentity.conversationKey());
+        }
+
+        String transportChatId = resolveTransportChatId(message);
+        if (transportChatId != null && !transportChatId.isBlank()) {
+            context.setAttribute(ContextAttributes.TRANSPORT_CHAT_ID, transportChatId);
+        }
+        if (sessionIdentity != null && sessionIdentity.conversationKey() != null) {
+            context.setAttribute(ContextAttributes.CONVERSATION_KEY, sessionIdentity.conversationKey());
+        }
+
+        copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_RUN_KIND);
+        copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_RUN_ID);
+        copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_GOAL_ID);
+        copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_TASK_ID);
+    }
+
+    private void copyStringMetadataAttribute(Message message, AgentContext context, String key) {
+        String value = readMetadataString(message, key);
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        context.setAttribute(key, value);
     }
 
     private String readMetadataString(Message message, String key) {
