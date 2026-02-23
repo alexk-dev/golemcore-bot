@@ -102,6 +102,16 @@ Switch model tier mid-conversation (`balanced`, `smart`, `coding`, `deep`).
 
 Auto Mode goal/task/diary management.
 
+### `plan_get` / `plan_set_content`
+
+Plan-work tools for canonical plan drafting (SSOT).
+
+- Advertised only when plan mode is active for the current session.
+- `plan_get` returns the current canonical Markdown plan draft.
+- `plan_set_content` accepts full Markdown in `plan_markdown` (optional `title`) and requests finalization.
+- Persistence/finalization is handled by `PlanFinalizationSystem`; `plan_set_content` is a deterministic control signal.
+- Finalizing a draft makes the plan `READY`, while plan work remains active until `/plan done` or `/plan off`.
+
 ### `memory`
 
 Structured memory operations for autonomous workflows.

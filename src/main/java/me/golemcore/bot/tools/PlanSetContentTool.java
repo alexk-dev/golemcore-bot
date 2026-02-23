@@ -19,10 +19,14 @@ package me.golemcore.bot.tools;
  */
 
 import me.golemcore.bot.domain.component.ToolComponent;
+import me.golemcore.bot.domain.loop.AgentContextHolder;
+import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.PlanService;
+import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
@@ -64,7 +68,8 @@ public class PlanSetContentTool implements ToolComponent {
 
     @Override
     public CompletableFuture<ToolResult> execute(Map<String, Object> parameters) {
-        if (!planService.isPlanModeActive()) {
+        SessionIdentity sessionIdentity = resolveSessionIdentity();
+        if (!planService.isPlanModeActive(sessionIdentity)) {
             return CompletableFuture.completedFuture(
                     ToolResult.failure(ToolFailureKind.POLICY_DENIED, "Plan work is not active"));
         }
@@ -72,6 +77,14 @@ public class PlanSetContentTool implements ToolComponent {
         // Intentionally no mutations here. Finalization is performed by the plan
         // finalization system.
         return CompletableFuture.completedFuture(ToolResult.success("[Plan finalize requested]"));
+    }
+
+    private SessionIdentity resolveSessionIdentity() {
+        AgentContext context = AgentContextHolder.get();
+        if (context == null) {
+            return null;
+        }
+        return SessionIdentitySupport.resolveSessionIdentity(context.getSession());
     }
 
     @Override

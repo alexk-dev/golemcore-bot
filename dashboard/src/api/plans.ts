@@ -15,42 +15,58 @@ export interface PlanSummary {
 
 export interface PlanControlState {
   featureEnabled: boolean;
+  sessionId: string | null;
   planModeActive: boolean;
   activePlanId: string | null;
   plans: PlanSummary[];
 }
 
-export async function getPlanControlState(): Promise<PlanControlState> {
-  const { data } = await client.get<PlanControlState>('/plans');
+export async function getPlanControlState(sessionId: string): Promise<PlanControlState> {
+  const { data } = await client.get<PlanControlState>('/plans', { params: { sessionId } });
   return data;
 }
 
-export async function enablePlanMode(payload: { chatId: string; modelTier?: string | null }): Promise<PlanControlState> {
+export async function enablePlanMode(payload: {
+  sessionId: string;
+  modelTier?: string | null;
+}): Promise<PlanControlState> {
   const { data } = await client.post<PlanControlState>('/plans/mode/on', payload);
   return data;
 }
 
-export async function disablePlanMode(): Promise<PlanControlState> {
-  const { data } = await client.post<PlanControlState>('/plans/mode/off');
+export async function disablePlanMode(sessionId: string): Promise<PlanControlState> {
+  const { data } = await client.post<PlanControlState>('/plans/mode/off', null, { params: { sessionId } });
   return data;
 }
 
-export async function donePlanMode(): Promise<PlanControlState> {
-  const { data } = await client.post<PlanControlState>('/plans/mode/done');
+export async function donePlanMode(sessionId: string): Promise<PlanControlState> {
+  const { data } = await client.post<PlanControlState>('/plans/mode/done', null, { params: { sessionId } });
   return data;
 }
 
-export async function approvePlan(planId: string): Promise<PlanControlState> {
-  const { data } = await client.post<PlanControlState>(`/plans/${encodeURIComponent(planId)}/approve`);
+export async function approvePlan(planId: string, sessionId: string): Promise<PlanControlState> {
+  const { data } = await client.post<PlanControlState>(
+    `/plans/${encodeURIComponent(planId)}/approve`,
+    null,
+    { params: { sessionId } },
+  );
   return data;
 }
 
-export async function cancelPlan(planId: string): Promise<PlanControlState> {
-  const { data } = await client.post<PlanControlState>(`/plans/${encodeURIComponent(planId)}/cancel`);
+export async function cancelPlan(planId: string, sessionId: string): Promise<PlanControlState> {
+  const { data } = await client.post<PlanControlState>(
+    `/plans/${encodeURIComponent(planId)}/cancel`,
+    null,
+    { params: { sessionId } },
+  );
   return data;
 }
 
-export async function resumePlan(planId: string): Promise<PlanControlState> {
-  const { data } = await client.post<PlanControlState>(`/plans/${encodeURIComponent(planId)}/resume`);
+export async function resumePlan(planId: string, sessionId: string): Promise<PlanControlState> {
+  const { data } = await client.post<PlanControlState>(
+    `/plans/${encodeURIComponent(planId)}/resume`,
+    null,
+    { params: { sessionId } },
+  );
   return data;
 }
