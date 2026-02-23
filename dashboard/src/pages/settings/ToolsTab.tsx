@@ -7,8 +7,9 @@ import { getSecretPlaceholder } from '../../components/common/secretInputUtils';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useBrowserHealthPing } from '../../hooks/useSystem';
 import { useUpdateTools } from '../../hooks/useSettings';
-import type { ImapConfig, SmtpConfig, ToolsConfig } from '../../api/settings';
+import type { ImapConfig, ShellEnvironmentVariable, SmtpConfig, ToolsConfig } from '../../api/settings';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
+import { ShellEnvironmentVariablesCard } from './ShellEnvironmentVariablesCard';
 
 type ToolsMode =
   | 'all'
@@ -168,6 +169,7 @@ export default function ToolsTab({ config, mode = 'all' }: ToolsTabProps): React
   const showSmtp = mode === 'all' || mode === 'email';
   const showBrowserInfo = mode === 'browser';
   const showAutomationGroup = mode === 'automation';
+  const showShellEnvironmentVariables = mode === 'all' || mode === 'shell';
   const isBrowserEnabled = form.browserEnabled ?? true;
   const hasStoredBraveApiKey = config.braveSearchApiKeyPresent === true;
   const willUpdateBraveApiKey = (form.braveSearchApiKey?.length ?? 0) > 0;
@@ -201,6 +203,13 @@ export default function ToolsTab({ config, mode = 'all' }: ToolsTabProps): React
         ...prev.smtp,
         ...partial,
       },
+    }));
+  };
+
+  const setShellEnvironmentVariables = (variables: ShellEnvironmentVariable[]): void => {
+    setForm((prev) => ({
+      ...prev,
+      shellEnvironmentVariables: variables,
     }));
   };
 
@@ -242,6 +251,14 @@ export default function ToolsTab({ config, mode = 'all' }: ToolsTabProps): React
             <div className="meta-text">{selectedTool.desc}</div>
           </Card.Body>
         </Card>
+      )}
+
+      {showShellEnvironmentVariables && (
+        <ShellEnvironmentVariablesCard
+          variables={form.shellEnvironmentVariables ?? []}
+          onVariablesChange={setShellEnvironmentVariables}
+          isShellEnabled={form.shellEnabled ?? true}
+        />
       )}
 
       {mode === 'brave' && (
