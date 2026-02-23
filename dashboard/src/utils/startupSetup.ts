@@ -1,5 +1,6 @@
 import type { ModelRouterConfig, RuntimeConfig } from '../api/settings';
 
+const STARTUP_SETUP_DISMISSED_COOKIE = 'golemcore_startup_setup_dismissed';
 const DEFAULT_ROUTING_MODEL = 'openai/gpt-5.2-codex';
 const DEFAULT_BALANCED_MODEL = 'openai/gpt-5.1';
 const DEFAULT_SMART_MODEL = 'openai/gpt-5.1';
@@ -63,4 +64,19 @@ export function hasCompatibleModelRouting(config: RuntimeConfig): boolean {
 
 export function isStartupSetupComplete(config: RuntimeConfig): boolean {
   return hasConfiguredLlmProvider(config) && hasCompatibleModelRouting(config);
+}
+
+export function isStartupSetupInviteDismissed(): boolean {
+  if (typeof document === 'undefined') {
+    return false;
+  }
+  const cookieName = `${STARTUP_SETUP_DISMISSED_COOKIE}=`;
+  return document.cookie.split(';').some((rawCookie) => rawCookie.trim().startsWith(cookieName));
+}
+
+export function dismissStartupSetupInviteForSession(): void {
+  if (typeof document === 'undefined') {
+    return;
+  }
+  document.cookie = `${STARTUP_SETUP_DISMISSED_COOKIE}=1; path=/; SameSite=Lax`;
 }
