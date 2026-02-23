@@ -530,15 +530,16 @@ public class SessionsController {
             return null;
         }
 
-        for (int index = session.getMessages().size() - 1; index >= START_WITH_INDEX; index--) {
+        String preview = null;
+        for (int index = START_WITH_INDEX; index < session.getMessages().size(); index++) {
             Message message = session.getMessages().get(index);
             if (message == null || StringValueSupport.isBlank(message.getContent())) {
                 continue;
             }
-            return truncate(message.getContent().trim(), PREVIEW_MAX_LEN);
+            preview = truncate(message.getContent().trim(), PREVIEW_MAX_LEN);
         }
 
-        return null;
+        return preview;
     }
 
     private String normalizeConversationKeyForCreation(String value) {

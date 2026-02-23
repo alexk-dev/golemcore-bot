@@ -73,9 +73,6 @@ class SessionsControllerTest {
 
     @Test
     void shouldFilterSessionsByChannel() {
-        AgentSession tgSession = AgentSession.builder()
-                .id("s1").channelType("telegram").chatId("123")
-                .createdAt(Instant.now()).messages(List.of()).build();
         AgentSession webSession = AgentSession.builder()
                 .id("s2").channelType("web").chatId("456")
                 .createdAt(Instant.now()).messages(List.of()).build();
@@ -187,16 +184,6 @@ class SessionsControllerTest {
                         "session.transport.chat.id", "100",
                         "session.conversation.key", "conv-1"))
                 .updatedAt(Instant.now())
-                .messages(List.of())
-                .build();
-        AgentSession second = AgentSession.builder()
-                .id("telegram:conv-2")
-                .channelType("telegram")
-                .chatId("conv-2")
-                .metadata(Map.of(
-                        "session.transport.chat.id", "200",
-                        "session.conversation.key", "conv-2"))
-                .updatedAt(Instant.now().plusSeconds(10))
                 .messages(List.of())
                 .build();
         when(sessionPort.listByChannelTypeAndTransportChatId("telegram", "100")).thenReturn(List.of(first));

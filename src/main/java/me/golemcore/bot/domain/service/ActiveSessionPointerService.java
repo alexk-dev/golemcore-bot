@@ -103,7 +103,7 @@ public class ActiveSessionPointerService {
                     rollback(pointerKey, previous);
                 }
             }
-            throw e;
+            throw new IllegalStateException("Failed to set active conversation pointer", e);
         }
     }
 
@@ -130,7 +130,7 @@ public class ActiveSessionPointerService {
                     pointers.put(pointerKey, previous);
                 }
             }
-            throw e;
+            throw new IllegalStateException("Failed to clear active conversation pointer", e);
         }
     }
 

@@ -285,7 +285,7 @@ class WebSocketChatHandlerTest {
         when(session.isOpen()).thenReturn(true);
         when(session.send(any())).thenReturn(Mono.empty());
         when(session.textMessage(any(String.class)))
-                .thenReturn(mock(org.springframework.web.reactive.socket.WebSocketMessage.class));
+                .thenReturn(mock(WebSocketMessage.class));
 
         WebSocketMessage wsMessage = mock(WebSocketMessage.class);
         when(wsMessage.getPayloadAsText()).thenReturn("{\"text\":\"/status\",\"sessionId\":\"chat-first\"}");

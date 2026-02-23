@@ -99,12 +99,8 @@ public class TelegramMenuHandler {
     private final ObjectProvider<CommandPort> commandRouter;
 
     private final AtomicReference<TelegramClient> telegramClient = new AtomicReference<>();
-    private final Map<String, List<String>> sessionIndexCache = Collections.synchronizedMap(new LinkedHashMap<>() {
-        @Override
-        protected boolean removeEldestEntry(Map.Entry<String, List<String>> eldest) {
-            return size() > SESSION_INDEX_CACHE_MAX_ENTRIES;
-        }
-    });
+    private final Map<String, List<String>> sessionIndexCache = Collections
+            .synchronizedMap(new SessionIndexCache(SESSION_INDEX_CACHE_MAX_ENTRIES));
 
     public TelegramMenuHandler(
             BotProperties properties,
@@ -125,6 +121,21 @@ public class TelegramMenuHandler {
         this.telegramSessionService = telegramSessionService;
         this.messageService = messageService;
         this.commandRouter = commandRouter;
+    }
+
+    private static final class SessionIndexCache extends LinkedHashMap<String, List<String>> {
+        private static final long serialVersionUID = 1L;
+
+        private final int maxEntries;
+
+        private SessionIndexCache(int maxEntries) {
+            this.maxEntries = maxEntries;
+        }
+
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, List<String>> eldest) {
+            return size() > maxEntries;
+        }
     }
 
     /**

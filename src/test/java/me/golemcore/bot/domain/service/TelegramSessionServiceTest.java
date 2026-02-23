@@ -104,19 +104,6 @@ class TelegramSessionServiceTest {
                 .metadata(metadata("100", "conv-1"))
                 .updatedAt(Instant.now())
                 .build();
-        AgentSession s2 = AgentSession.builder()
-                .id("telegram:conv-2")
-                .channelType("telegram")
-                .chatId("conv-2")
-                .metadata(metadata("200", "conv-2"))
-                .updatedAt(Instant.now().plusSeconds(10))
-                .build();
-        AgentSession s3 = AgentSession.builder()
-                .id("web:conv-3")
-                .channelType("web")
-                .chatId("conv-3")
-                .updatedAt(Instant.now().plusSeconds(20))
-                .build();
         when(sessionPort.listByChannelTypeAndTransportChatId("telegram", "100")).thenReturn(List.of(s1));
 
         List<AgentSession> result = service.listRecentSessions("100", 5);
@@ -152,13 +139,6 @@ class TelegramSessionServiceTest {
                 .chatId("conv-old")
                 .metadata(metadata("100", "conv-old"))
                 .updatedAt(Instant.now())
-                .build();
-        AgentSession otherTransport = AgentSession.builder()
-                .id("telegram:conv-other")
-                .channelType("telegram")
-                .chatId("conv-other")
-                .metadata(metadata("200", "conv-other"))
-                .updatedAt(Instant.now().plusSeconds(10))
                 .build();
         when(sessionPort.listByChannelTypeAndTransportChatId("telegram", "100")).thenReturn(List.of(oldSession));
         when(sessionPort.getOrCreate("telegram", "conv-old")).thenReturn(oldSession);

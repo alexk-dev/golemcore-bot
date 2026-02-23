@@ -14,6 +14,7 @@ import reactor.core.publisher.Mono;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -138,7 +139,7 @@ public class WebChannelAdapter implements ChannelPort {
         }
         for (String chatId : chatIds) {
             WebSocketSession mappedSession = sessions.get(chatId);
-            if (mappedSession == disconnectedSession) {
+            if (Objects.equals(mappedSession, disconnectedSession)) {
                 sessions.remove(chatId, disconnectedSession);
             }
         }

@@ -48,6 +48,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -928,7 +929,7 @@ class AgentLoopTest {
                 sessionPort, rateLimitPort, List.of(), List.of(channel),
                 mockRuntimeConfigService(1), preferencesService, llmPort, clock);
 
-        java.util.Map<String, Object> meta = new java.util.HashMap<>();
+        Map<String, Object> meta = new HashMap<>();
         meta.put("auto.mode", true);
         Message autoMsg = Message.builder()
                 .role(ROLE_USER).content("auto task")
@@ -971,7 +972,7 @@ class AgentLoopTest {
                 sessionPort, rateLimitPort, List.of(routing), List.of(channel),
                 mockRuntimeConfigService(1), preferencesService, llmPort, clock);
 
-        java.util.Map<String, Object> meta = new java.util.HashMap<>();
+        Map<String, Object> meta = new HashMap<>();
         meta.put("auto.mode", true);
         Message autoMsg = Message.builder()
                 .role(ROLE_USER).content("auto task")
