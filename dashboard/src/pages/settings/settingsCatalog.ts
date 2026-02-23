@@ -14,7 +14,7 @@ export interface SettingsSectionMeta {
 
 export const SETTINGS_SECTIONS = [
   { key: 'general', title: 'General', description: 'Preferences, account security, and MFA', icon: FiSliders },
-  { key: 'telegram', title: 'Telegram', description: 'Bot token, auth mode, and invite codes', icon: FiSend },
+  { key: 'telegram', title: 'Telegram', description: 'Bot token, invite codes, and invited users', icon: FiSend },
   { key: 'models', title: 'Model Router', description: 'Routing and tier model configuration', icon: FiCpu },
   { key: 'llm-providers', title: 'LLM Providers', description: 'Provider API keys and base URLs', icon: FiKey },
 
@@ -37,7 +37,7 @@ export const SETTINGS_SECTIONS = [
   { key: 'mcp', title: 'MCP', description: 'Model Context Protocol runtime defaults', icon: FiTool },
   { key: 'webhooks', title: 'Webhooks', description: 'Incoming hooks, auth, and delivery actions', icon: FiGlobe },
   { key: 'auto', title: 'Auto Mode', description: 'Autonomous run behavior and constraints', icon: FiPlayCircle },
-  { key: 'updates', title: 'Updates', description: 'Controlled self-update flow with staging and rollback', icon: FiRefreshCw },
+  { key: 'updates', title: 'Updates', description: 'Check and install latest patch update', icon: FiRefreshCw },
   { key: 'advanced-rate-limit', title: 'Rate Limit', description: 'Request throttling configuration', icon: FiShield },
   { key: 'advanced-security', title: 'Security', description: 'Input sanitization and injection guards', icon: FiShield },
   { key: 'advanced-compaction', title: 'Compaction', description: 'Context compaction behavior', icon: FiShield },

@@ -21,19 +21,27 @@ package me.golemcore.bot.domain.system;
 import me.golemcore.bot.domain.component.MemoryComponent;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
-import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.MemoryPack;
+import me.golemcore.bot.domain.model.MemoryQuery;
 import me.golemcore.bot.domain.model.PromptSection;
+import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.model.Skill;
+import me.golemcore.bot.domain.model.SkillTransitionRequest;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
+import me.golemcore.bot.domain.service.MemoryScopeSupport;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import me.golemcore.bot.domain.service.SkillTemplateEngine;
+import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.service.WorkspaceInstructionService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.McpPort;
 import me.golemcore.bot.port.outbound.RagPort;
@@ -44,7 +52,7 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import me.golemcore.bot.domain.model.ContextAttributes;
+import java.util.Optional;
 
 /**
  * System for assembling the complete LLM system prompt with memory, skills,
@@ -60,6 +68,8 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 public class ContextBuildingSystem implements AgentSystem {
 
     private static final String DOUBLE_NEWLINE = "\n\n";
+    private static final String TOOL_PLAN_SET_CONTENT = "plan_set_content";
+    private static final String TOOL_PLAN_GET = "plan_get";
 
     private final MemoryComponent memoryComponent;
     private final SkillComponent skillComponent;
@@ -74,6 +84,7 @@ public class ContextBuildingSystem implements AgentSystem {
     private final PromptSectionService promptSectionService;
     private final RuntimeConfigService runtimeConfigService;
     private final UserPreferencesService userPreferencesService;
+    private final WorkspaceInstructionService workspaceInstructionService;
 
     @Override
     public String getName() {
@@ -90,7 +101,7 @@ public class ContextBuildingSystem implements AgentSystem {
         log.debug("[Context] Building context...");
 
         // Handle skill transitions (from SkillTransitionTool or SkillPipelineSystem)
-        var transition = context.getSkillTransitionRequest();
+        SkillTransitionRequest transition = context.getSkillTransitionRequest();
         String transitionTarget = transition != null ? transition.targetSkill() : null;
         if (transitionTarget != null) {
             skillComponent.findByName(transitionTarget).ifPresent(skill -> {
@@ -104,8 +115,48 @@ public class ContextBuildingSystem implements AgentSystem {
         UserPreferences prefs = userPreferencesService.getPreferences();
         resolveTier(context, prefs);
 
-        // Build memory context
-        String memoryContext = memoryComponent.getMemoryContext();
+        SessionIdentity sessionIdentity = SessionIdentitySupport.resolveSessionIdentity(context.getSession());
+        boolean planModeActive = sessionIdentity != null
+                ? planService.isPlanModeActive(sessionIdentity)
+                : planService.isPlanModeActive();
+
+        // Build memory context from structured Memory V2 pack
+        String userQueryForMemory = getLastUserMessageText(context);
+        String autoRunKind = context.getAttribute(ContextAttributes.AUTO_RUN_KIND);
+        String autoGoalId = context.getAttribute(ContextAttributes.AUTO_GOAL_ID);
+        String autoTaskId = context.getAttribute(ContextAttributes.AUTO_TASK_ID);
+        String sessionScope = MemoryScopeSupport.resolveScopeFromSessionOrGlobal(context.getSession());
+        List<String> scopeChain = MemoryScopeSupport.resolveScopeChain(
+                context.getSession(),
+                autoRunKind,
+                autoGoalId,
+                autoTaskId);
+        MemoryQuery memoryQuery = MemoryQuery.builder()
+                .queryText(userQueryForMemory)
+                .activeSkill(context.getActiveSkill() != null ? context.getActiveSkill().getName() : null)
+                .scope(sessionScope)
+                .scopeChain(scopeChain)
+                .softPromptBudgetTokens(runtimeConfigService.getMemorySoftPromptBudgetTokens())
+                .maxPromptBudgetTokens(runtimeConfigService.getMemoryMaxPromptBudgetTokens())
+                .workingTopK(runtimeConfigService.getMemoryWorkingTopK())
+                .episodicTopK(runtimeConfigService.getMemoryEpisodicTopK())
+                .semanticTopK(runtimeConfigService.getMemorySemanticTopK())
+                .proceduralTopK(runtimeConfigService.getMemoryProceduralTopK())
+                .build();
+
+        String memoryContext = "";
+        try {
+            MemoryPack memoryPack = memoryComponent.buildMemoryPack(memoryQuery);
+            if (memoryPack != null && memoryPack.getRenderedContext() != null
+                    && !memoryPack.getRenderedContext().isBlank()) {
+                memoryContext = memoryPack.getRenderedContext();
+            }
+            if (memoryPack != null && memoryPack.getDiagnostics() != null && !memoryPack.getDiagnostics().isEmpty()) {
+                context.setAttribute(ContextAttributes.MEMORY_PACK_DIAGNOSTICS, memoryPack.getDiagnostics());
+            }
+        } catch (Exception e) {
+            log.debug("[Context] Memory pack build failed: {}", e.getMessage());
+        }
         context.setMemoryContext(memoryContext);
         log.debug("[Context] Memory context: {} chars",
                 memoryContext != null ? memoryContext.length() : 0);
@@ -119,7 +170,7 @@ public class ContextBuildingSystem implements AgentSystem {
         // Collect tool definitions (native + MCP)
         List<ToolDefinition> tools = new ArrayList<>(toolComponents.stream()
                 .filter(ToolComponent::isEnabled)
-                .filter(tool -> isToolAdvertised(tool, planService.isPlanModeActive()))
+                .filter(tool -> isToolAdvertised(tool, planModeActive))
                 .map(ToolComponent::getDefinition)
                 .toList());
 
@@ -171,8 +222,12 @@ public class ContextBuildingSystem implements AgentSystem {
             context.setModelTier(runtimeConfigService.getAutoModelTier());
         }
 
+        String workspaceInstructions = workspaceInstructionService.getWorkspaceInstructionsContext();
+        log.debug("[Context] Workspace instructions: {} chars",
+                workspaceInstructions != null ? workspaceInstructions.length() : 0);
+
         // Build system prompt
-        String systemPrompt = buildSystemPrompt(context, prefs);
+        String systemPrompt = buildSystemPrompt(context, prefs, workspaceInstructions, sessionIdentity, planModeActive);
         context.setSystemPrompt(systemPrompt);
 
         log.info("[Context] Built context: {} tools, memory={}, skills={}, systemPrompt={} chars",
@@ -184,7 +239,8 @@ public class ContextBuildingSystem implements AgentSystem {
         return context;
     }
 
-    private String buildSystemPrompt(AgentContext context, UserPreferences prefs) {
+    private String buildSystemPrompt(AgentContext context, UserPreferences prefs,
+            String workspaceInstructions, SessionIdentity sessionIdentity, boolean planModeActive) {
         StringBuilder sb = new StringBuilder();
 
         // 1. Render file-based prompt sections (identity, rules, etc.)
@@ -201,6 +257,14 @@ public class ContextBuildingSystem implements AgentSystem {
         // 2. Fallback if no sections loaded
         if (sb.isEmpty()) {
             sb.append("You are a helpful AI assistant.").append(DOUBLE_NEWLINE);
+        }
+
+        if (workspaceInstructions != null && !workspaceInstructions.isBlank()) {
+            sb.append("# Workspace Instructions\n");
+            sb.append(
+                    "Follow these repository instruction files. If instructions conflict, prefer more local files listed later.\n\n");
+            sb.append(workspaceInstructions);
+            sb.append(DOUBLE_NEWLINE);
         }
 
         if (context.getMemoryContext() != null && !context.getMemoryContext().isBlank()) {
@@ -278,13 +342,18 @@ public class ContextBuildingSystem implements AgentSystem {
         }
 
         // Inject plan mode context and set model tier override
-        if (planService.isPlanModeActive()) {
-            String planContext = planService.buildPlanContext();
+        if (planModeActive) {
+            String planContext = sessionIdentity != null
+                    ? planService.buildPlanContext(sessionIdentity)
+                    : planService.buildPlanContext();
             if (planContext != null && !planContext.isBlank()) {
                 sb.append("\n").append(planContext).append("\n");
             }
             // Override model tier if plan specifies one
-            planService.getActivePlan().ifPresent(plan -> {
+            Optional<me.golemcore.bot.domain.model.Plan> activePlan = sessionIdentity != null
+                    ? planService.getActivePlan(sessionIdentity)
+                    : planService.getActivePlan();
+            activePlan.ifPresent(plan -> {
                 if (plan.getModelTier() != null && context.getModelTier() == null) {
                     context.setModelTier(plan.getModelTier());
                 }
@@ -296,8 +365,7 @@ public class ContextBuildingSystem implements AgentSystem {
 
     private boolean isToolAdvertised(ToolComponent tool, boolean planModeActive) {
         String toolName = tool.getToolName();
-        if (me.golemcore.bot.tools.PlanSetContentTool.TOOL_NAME.equals(toolName)
-                || me.golemcore.bot.tools.PlanGetTool.TOOL_NAME.equals(toolName)) {
+        if (TOOL_PLAN_SET_CONTENT.equals(toolName) || TOOL_PLAN_GET.equals(toolName)) {
             return planModeActive;
         }
         return true;

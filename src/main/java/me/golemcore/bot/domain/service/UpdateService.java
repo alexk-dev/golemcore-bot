@@ -5,8 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.UpdateActionResult;
-import me.golemcore.bot.domain.model.UpdateHistoryItem;
-import me.golemcore.bot.domain.model.UpdateIntent;
 import me.golemcore.bot.domain.model.UpdateState;
 import me.golemcore.bot.domain.model.UpdateStatus;
 import me.golemcore.bot.domain.model.UpdateVersionInfo;
@@ -33,12 +31,10 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
@@ -64,16 +60,13 @@ public class UpdateService {
     private static final String JARS_DIR_NAME = "jars";
     private static final String CURRENT_MARKER_NAME = "current.txt";
     private static final String STAGED_MARKER_NAME = "staged.txt";
+    private static final String UPDATE_PATH_ENV = "UPDATE_PATH";
     private static final int RESTART_EXIT_CODE = 42;
     private static final int DOWNLOAD_BUFFER_SIZE = 8192;
-    private static final int MAX_HISTORY_ITEMS = 100;
     private static final long RESTART_DELAY_MILLIS = 500L;
-    private static final int TOKEN_LENGTH = 6;
-    private static final String CONFIRMATION_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final Pattern SEMVER_PATTERN = Pattern
             .compile("^(\\d++)\\.(\\d++)\\.(\\d++)(?:-([0-9A-Za-z.-]++))?$");
     private static final Pattern SAFE_RELEASE_SEGMENT_PATTERN = Pattern.compile("^[0-9A-Za-z._-]+$");
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final BotProperties botProperties;
     private final ObjectProvider<BuildProperties> buildPropertiesProvider;
@@ -88,8 +81,6 @@ public class UpdateService {
     private Instant lastCheckAt;
     private String lastCheckError = "";
     private Optional<AvailableRelease> availableRelease = Optional.empty();
-    private Optional<PendingIntent> pendingIntent = Optional.empty();
-    private final List<UpdateHistoryItem> history = new ArrayList<>();
 
     public UpdateStatus getStatus() {
         synchronized (lock) {
@@ -128,7 +119,6 @@ public class UpdateService {
                 if (latestRelease == null) {
                     availableRelease = Optional.empty();
                     transientState = UpdateState.IDLE;
-                    addHistory("check", null, "SUCCESS", "No releases available");
                     return UpdateActionResult.builder()
                             .success(true)
                             .message("No updates found")
@@ -139,7 +129,6 @@ public class UpdateService {
                 if (!isRemoteVersionNewer(latestRelease.version(), currentVersion)) {
                     availableRelease = Optional.empty();
                     transientState = UpdateState.IDLE;
-                    addHistory("check", currentVersion, "SUCCESS", "Already on latest version");
                     return UpdateActionResult.builder()
                             .success(true)
                             .message("Already up to date")
@@ -147,21 +136,18 @@ public class UpdateService {
                             .build();
                 }
 
-                if (!isPatchUpdate(currentVersion, latestRelease.version())) {
+                if (!isSameMajorUpdate(currentVersion, latestRelease.version())) {
                     availableRelease = Optional.empty();
                     transientState = UpdateState.IDLE;
-                    addHistory("check", latestRelease.version(), "SUCCESS",
-                            "Minor/major update requires docker image rollout");
                     return UpdateActionResult.builder()
                             .success(true)
-                            .message("New major/minor version found. Use Docker image upgrade.")
+                            .message("New major version found. Use Docker image upgrade.")
                             .version(latestRelease.version())
                             .build();
                 }
 
                 availableRelease = Optional.of(latestRelease);
                 transientState = UpdateState.IDLE;
-                addHistory("check", latestRelease.version(), "SUCCESS", "Update is available");
 
                 return UpdateActionResult.builder()
                         .success(true)
@@ -177,7 +163,7 @@ public class UpdateService {
         }
     }
 
-    public UpdateActionResult prepare() {
+    private UpdateActionResult prepare() {
         AvailableRelease release;
         synchronized (lock) {
             ensureEnabled();
@@ -190,7 +176,7 @@ public class UpdateService {
         try {
             validateAssetName(release.assetName());
             Path jarsDir = getJarsDir();
-            Files.createDirectories(jarsDir);
+            ensureUpdateDirectoryWritable(jarsDir);
 
             Path targetJar = resolveJarPath(release.assetName());
             tempJar = targetJar.resolveSibling(release.assetName() + ".tmp");
@@ -211,7 +197,6 @@ public class UpdateService {
 
             synchronized (lock) {
                 transientState = UpdateState.IDLE;
-                addHistory("prepare", release.version(), "SUCCESS", "Update staged");
             }
 
             return UpdateActionResult.builder()
@@ -221,36 +206,55 @@ public class UpdateService {
                     .build();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw handlePrepareFailure(release, tempJar, e);
+            throw handlePrepareFailure(tempJar, e);
         } catch (IOException | RuntimeException e) {
-            throw handlePrepareFailure(release, tempJar, e);
+            throw handlePrepareFailure(tempJar, e);
         }
     }
 
-    public UpdateIntent createApplyIntent() {
+    public UpdateActionResult updateNow() {
+        ensureUpdatePreparedForApply();
+        return applyStagedUpdate();
+    }
+
+    private void ensureUpdatePreparedForApply() {
+        if (hasStagedUpdate()) {
+            return;
+        }
+
+        UpdateActionResult checkResult = null;
+        if (!hasAvailableRelease()) {
+            checkResult = check();
+        }
+
+        if (hasStagedUpdate()) {
+            return;
+        }
+        if (!hasAvailableRelease()) {
+            String message = checkResult != null
+                    ? checkResult.getMessage()
+                    : "No available update. Run check first.";
+            throw new IllegalStateException(message);
+        }
+
+        prepare();
+    }
+
+    private boolean hasStagedUpdate() {
         synchronized (lock) {
-            ensureEnabled();
-            UpdateVersionInfo staged = resolveStagedInfo();
-            if (staged == null) {
-                throw new IllegalStateException("No staged update to apply");
-            }
-
-            PendingIntent intent = buildPendingIntent("apply", staged.getVersion());
-            pendingIntent = Optional.of(intent);
-
-            return UpdateIntent.builder()
-                    .operation(intent.operation())
-                    .targetVersion(intent.targetVersion())
-                    .confirmToken(intent.confirmToken())
-                    .expiresAt(intent.expiresAt())
-                    .build();
+            return resolveStagedInfo() != null;
         }
     }
 
-    public UpdateActionResult apply(String confirmToken) {
+    private boolean hasAvailableRelease() {
+        synchronized (lock) {
+            return availableRelease.isPresent();
+        }
+    }
+
+    private UpdateActionResult applyStagedUpdate() {
         synchronized (lock) {
             ensureEnabled();
-            validatePendingIntent("apply", confirmToken, null);
 
             UpdateVersionInfo staged = resolveStagedInfo();
             if (staged == null || staged.getAssetName() == null || staged.getAssetName().isBlank()) {
@@ -259,9 +263,7 @@ public class UpdateService {
 
             writeMarker(getCurrentMarkerPath(), staged.getAssetName());
             deleteMarker(getStagedMarkerPath());
-            pendingIntent = Optional.empty();
             transientState = UpdateState.APPLYING;
-            addHistory("apply", staged.getVersion(), "SUCCESS", "Scheduled JVM restart");
 
             requestRestartAsync();
 
@@ -270,71 +272,6 @@ public class UpdateService {
                     .message("Update " + staged.getVersion() + " is being applied. JVM restart scheduled.")
                     .version(staged.getVersion())
                     .build();
-        }
-    }
-
-    public UpdateIntent createRollbackIntent(String requestedVersion) {
-        synchronized (lock) {
-            ensureEnabled();
-            String normalizedVersion = normalizeOptionalVersion(requestedVersion);
-            if (normalizedVersion != null) {
-                findJarAssetNameByVersion(normalizedVersion);
-            }
-
-            PendingIntent intent = buildPendingIntent("rollback", normalizedVersion);
-            pendingIntent = Optional.of(intent);
-
-            return UpdateIntent.builder()
-                    .operation(intent.operation())
-                    .targetVersion(intent.targetVersion())
-                    .confirmToken(intent.confirmToken())
-                    .expiresAt(intent.expiresAt())
-                    .build();
-        }
-    }
-
-    public UpdateActionResult rollback(String confirmToken, String requestedVersion) {
-        synchronized (lock) {
-            ensureEnabled();
-            String normalizedVersion = normalizeOptionalVersion(requestedVersion);
-            PendingIntent validatedIntent = validatePendingIntent("rollback", confirmToken, normalizedVersion);
-
-            String targetVersion = validatedIntent.targetVersion();
-            String versionToUse = targetVersion != null ? targetVersion : normalizedVersion;
-
-            if (versionToUse == null) {
-                deleteMarker(getCurrentMarkerPath());
-                deleteMarker(getStagedMarkerPath());
-                pendingIntent = Optional.empty();
-                transientState = UpdateState.ROLLED_BACK;
-                addHistory("rollback", null, "SUCCESS", "Rolled back to image version");
-
-                requestRestartAsync();
-                return UpdateActionResult.builder()
-                        .success(true)
-                        .message("Rollback to image version scheduled. JVM restart in progress.")
-                        .build();
-            }
-
-            String assetName = findJarAssetNameByVersion(versionToUse);
-            writeMarker(getCurrentMarkerPath(), assetName);
-            deleteMarker(getStagedMarkerPath());
-            pendingIntent = Optional.empty();
-            transientState = UpdateState.ROLLED_BACK;
-            addHistory("rollback", versionToUse, "SUCCESS", "Rolled back to cached jar " + assetName);
-
-            requestRestartAsync();
-            return UpdateActionResult.builder()
-                    .success(true)
-                    .message("Rollback to " + versionToUse + " scheduled. JVM restart in progress.")
-                    .version(versionToUse)
-                    .build();
-        }
-    }
-
-    public List<UpdateHistoryItem> getHistory() {
-        synchronized (lock) {
-            return new ArrayList<>(history);
         }
     }
 
@@ -349,8 +286,7 @@ public class UpdateService {
         if (transientState == UpdateState.CHECKING
                 || transientState == UpdateState.PREPARING
                 || transientState == UpdateState.APPLYING
-                || transientState == UpdateState.VERIFYING
-                || transientState == UpdateState.ROLLED_BACK) {
+                || transientState == UpdateState.VERIFYING) {
             return transientState;
         }
         if (staged != null) {
@@ -519,42 +455,6 @@ public class UpdateService {
         return assetId;
     }
 
-    private PendingIntent buildPendingIntent(String operation, String targetVersion) {
-        Instant expiresAt = Instant.now(clock).plus(botProperties.getUpdate().getConfirmTtl());
-        String token = generateToken();
-        return new PendingIntent(operation, targetVersion, token, expiresAt);
-    }
-
-    private PendingIntent validatePendingIntent(String expectedOperation, String confirmToken,
-            String requestedVersion) {
-        if (confirmToken == null || confirmToken.isBlank()) {
-            throw new IllegalArgumentException("confirmToken is required");
-        }
-        PendingIntent activeIntent = pendingIntent.orElse(null);
-        if (activeIntent == null) {
-            throw new IllegalStateException("No pending confirmation intent");
-        }
-        if (!expectedOperation.equalsIgnoreCase(activeIntent.operation())) {
-            throw new IllegalStateException("Pending confirmation is for operation: " + activeIntent.operation());
-        }
-        Instant now = Instant.now(clock);
-        if (!now.isBefore(activeIntent.expiresAt())) {
-            pendingIntent = Optional.empty();
-            throw new IllegalStateException("Confirmation token has expired");
-        }
-        if (!activeIntent.confirmToken().equals(confirmToken.trim())) {
-            throw new IllegalArgumentException("Invalid confirmation token");
-        }
-
-        String pendingTargetVersion = activeIntent.targetVersion();
-        String normalizedRequested = normalizeOptionalVersion(requestedVersion);
-        if (pendingTargetVersion != null && normalizedRequested != null
-                && !pendingTargetVersion.equals(normalizedRequested)) {
-            throw new IllegalArgumentException("Confirmation token was issued for another version");
-        }
-        return activeIntent;
-    }
-
     private String getCurrentVersion() {
         BuildProperties buildProperties = buildPropertiesProvider.getIfAvailable();
         if (buildProperties == null || buildProperties.getVersion() == null || buildProperties.getVersion().isBlank()) {
@@ -616,7 +516,7 @@ public class UpdateService {
             if (parent == null) {
                 throw new IllegalStateException("Failed to resolve marker parent path: " + markerPath);
             }
-            Files.createDirectories(parent);
+            ensureUpdateDirectoryWritable(parent);
             Files.writeString(
                     markerPath,
                     value + System.lineSeparator(),
@@ -712,9 +612,18 @@ public class UpdateService {
         if (parent == null) {
             throw new IllegalStateException("Failed to resolve target parent path: " + targetPath);
         }
-        Files.createDirectories(parent);
+        ensureUpdateDirectoryWritable(parent);
         try (InputStream inputStream = response.body()) {
             Files.copy(inputStream, targetPath, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    private void ensureUpdateDirectoryWritable(Path directoryPath) {
+        try {
+            Files.createDirectories(directoryPath);
+        } catch (IOException e) {
+            throw new IllegalStateException("Update directory is not writable: " + directoryPath
+                    + ". Configure " + UPDATE_PATH_ENV + " to a writable path.", e);
         }
     }
 
@@ -899,15 +808,6 @@ public class UpdateService {
         }
     }
 
-    private String generateToken() {
-        StringBuilder builder = new StringBuilder(TOKEN_LENGTH);
-        for (int i = 0; i < TOKEN_LENGTH; i++) {
-            int index = SECURE_RANDOM.nextInt(CONFIRMATION_CODE_ALPHABET.length());
-            builder.append(CONFIRMATION_CODE_ALPHABET.charAt(index));
-        }
-        return builder.toString();
-    }
-
     private String extractVersion(String tagName, String assetName) {
         String normalizedTag = normalizeOptionalVersion(tagName);
         if (normalizedTag != null) {
@@ -1035,7 +935,7 @@ public class UpdateService {
         return comparison > 0;
     }
 
-    private boolean isPatchUpdate(String currentVersion, String remoteVersion) {
+    private boolean isSameMajorUpdate(String currentVersion, String remoteVersion) {
         Semver current = parseSemver(currentVersion);
         Semver remote = parseSemver(remoteVersion);
 
@@ -1043,9 +943,7 @@ public class UpdateService {
             return false;
         }
 
-        return current.major == remote.major
-                && current.minor == remote.minor
-                && remote.patch > current.patch;
+        return current.major == remote.major;
     }
 
     private int compareVersions(String left, String right) {
@@ -1158,50 +1056,6 @@ public class UpdateService {
         }
     }
 
-    private String findJarAssetNameByVersion(String targetVersion) {
-        Path jarsDir = getJarsDir();
-        if (!Files.exists(jarsDir)) {
-            throw new IllegalArgumentException("No cached update jars found");
-        }
-
-        try (java.util.stream.Stream<Path> stream = Files.list(jarsDir)) {
-            List<Path> files = stream
-                    .filter(this::isJarFile)
-                    .toList();
-
-            for (Path path : files) {
-                Path fileNamePath = path.getFileName();
-                if (fileNamePath == null) {
-                    continue;
-                }
-                String fileName = fileNamePath.toString();
-                String version = extractVersionFromAssetName(fileName);
-                if (targetVersion.equals(version)) {
-                    return fileName;
-                }
-            }
-        } catch (IOException e) {
-            throw new IllegalStateException("Failed to inspect cached jars", e);
-        }
-
-        throw new IllegalArgumentException("Version " + targetVersion + " is not cached locally");
-    }
-
-    private void addHistory(String operation, String version, String result, String message) {
-        UpdateHistoryItem item = UpdateHistoryItem.builder()
-                .operation(operation)
-                .version(version)
-                .timestamp(Instant.now(clock))
-                .result(result)
-                .message(message)
-                .build();
-
-        history.add(0, item);
-        while (history.size() > MAX_HISTORY_ITEMS) {
-            history.remove(history.size() - 1);
-        }
-    }
-
     protected void requestRestartAsync() {
         Thread restartThread = new Thread(() -> {
             try {
@@ -1227,18 +1081,16 @@ public class UpdateService {
         synchronized (lock) {
             lastCheckError = message;
             transientState = UpdateState.FAILED;
-            addHistory("check", null, "FAILED", message);
         }
         return new IllegalStateException(message, throwable);
     }
 
-    private IllegalStateException handlePrepareFailure(AvailableRelease release, Path tempJar, Throwable throwable) {
+    private IllegalStateException handlePrepareFailure(Path tempJar, Throwable throwable) {
         cleanupTempJar(tempJar);
         String message = "Failed to prepare update: " + safeMessage(throwable);
         synchronized (lock) {
             transientState = UpdateState.FAILED;
             lastCheckError = message;
-            addHistory("prepare", release.version(), "FAILED", message);
         }
         return new IllegalStateException(message, throwable);
     }
@@ -1279,12 +1131,5 @@ public class UpdateService {
             long assetId,
             long checksumAssetId,
             Instant publishedAt) {
-    }
-
-    private record PendingIntent(
-            String operation,
-            String targetVersion,
-            String confirmToken,
-            Instant expiresAt) {
     }
 }

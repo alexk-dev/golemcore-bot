@@ -2,11 +2,13 @@ package me.golemcore.bot.domain.system;
 
 import me.golemcore.bot.domain.component.MemoryComponent;
 import me.golemcore.bot.domain.model.AgentContext;
-import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.FinishReason;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.model.TurnMemoryEvent;
 import me.golemcore.bot.domain.model.TurnOutcome;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,17 +18,21 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 class MemoryPersistSystemTest {
 
     private static final String ROLE_USER = "user";
-    private static final String CONTENT_HELLO = "hello";
-    private static final String CONTENT_REPLY = "reply";
-    private static final String CONTENT_RESPONSE = "response";
     private static final String SESSION_ID = "test";
-    private static final String ATTR_LLM_RESPONSE = ContextAttributes.LLM_RESPONSE;
 
     private MemoryComponent memoryComponent;
     private MemoryPersistSystem system;
@@ -43,12 +49,10 @@ class MemoryPersistSystemTest {
                 .messages(new ArrayList<>(messages))
                 .build();
         if (response != null) {
-            ctx.setAttribute(ATTR_LLM_RESPONSE, response);
+            ctx.setAttribute(ContextAttributes.LLM_RESPONSE, response);
         }
         return ctx;
     }
-
-    // ==================== getOrder / getName ====================
 
     @Test
     void orderIsFifty() {
@@ -60,192 +64,149 @@ class MemoryPersistSystemTest {
         assertEquals("MemoryPersistSystem", system.getName());
     }
 
-    // ==================== process ====================
-
-    @Test
-    void processAppendsMemoryEntry() {
-        LlmResponse response = LlmResponse.builder().content("Hello there!").build();
-        AgentContext ctx = contextWith(
-                List.of(Message.builder().role(ROLE_USER).content("Hi").timestamp(Instant.now()).build()),
-                response);
-
-        system.process(ctx);
-
-        verify(memoryComponent)
-                .appendToday(argThat(entry -> entry.contains("User: Hi") && entry.contains("Assistant: Hello there!")));
-    }
-
     @Test
     void processSkipsWhenNoMessages() {
-        AgentContext ctx = contextWith(List.of(),
-                LlmResponse.builder().content(CONTENT_RESPONSE).build());
+        AgentContext ctx = contextWith(List.of(), LlmResponse.builder().content("response").build());
 
         system.process(ctx);
 
-        verify(memoryComponent, never()).appendToday(any());
-    }
-
-    @Test
-    void processSkipsWhenNullMessages() {
-        AgentContext ctx = AgentContext.builder()
-                .session(AgentSession.builder().id(SESSION_ID).build())
-                .messages(null)
-                .build();
-        ctx.setAttribute(ATTR_LLM_RESPONSE, LlmResponse.builder().content(CONTENT_RESPONSE).build());
-
-        system.process(ctx);
-
-        verify(memoryComponent, never()).appendToday(any());
+        verify(memoryComponent, never()).persistTurnMemory(any());
     }
 
     @Test
     void processSkipsWhenNoUserMessages() {
         AgentContext ctx = contextWith(
                 List.of(Message.builder().role("assistant").content("only assistant").timestamp(Instant.now()).build()),
-                LlmResponse.builder().content(CONTENT_RESPONSE).build());
+                LlmResponse.builder().content("response").build());
 
         system.process(ctx);
 
-        verify(memoryComponent, never()).appendToday(any());
+        verify(memoryComponent, never()).persistTurnMemory(any());
     }
 
     @Test
-    void processSkipsWhenNoLlmResponse() {
+    void processSkipsWhenNoAssistantResponse() {
         AgentContext ctx = contextWith(
-                List.of(Message.builder().role(ROLE_USER).content(CONTENT_HELLO).timestamp(Instant.now()).build()),
+                List.of(Message.builder().role(ROLE_USER).content("hello").timestamp(Instant.now()).build()),
                 null);
 
         system.process(ctx);
 
-        verify(memoryComponent, never()).appendToday(any());
+        verify(memoryComponent, never()).persistTurnMemory(any());
     }
 
     @Test
-    void processSkipsWhenLlmResponseContentIsNull() {
-        AgentContext ctx = contextWith(
-                List.of(Message.builder().role(ROLE_USER).content(CONTENT_HELLO).timestamp(Instant.now()).build()),
-                LlmResponse.builder().content(null).build());
+    void processUsesAssistantTextFromTurnOutcome() {
+        AgentContext ctx = AgentContext.builder()
+                .session(AgentSession.builder().id(SESSION_ID).build())
+                .messages(new ArrayList<>(List.of(
+                        Message.builder().role(ROLE_USER).content("question").timestamp(Instant.now()).build())))
+                .build();
+        ctx.setTurnOutcome(TurnOutcome.builder()
+                .finishReason(FinishReason.SUCCESS)
+                .assistantText("answer from outcome")
+                .build());
+        ctx.setAttribute(ContextAttributes.LLM_RESPONSE, LlmResponse.builder().content("legacy answer").build());
 
         system.process(ctx);
 
-        verify(memoryComponent, never()).appendToday(any());
+        verify(memoryComponent).persistTurnMemory(argThat(event -> event != null
+                && "question".equals(event.getUserText())
+                && "answer from outcome".equals(event.getAssistantText())));
     }
 
     @Test
-    void processFindsLastUserMessage() {
-        LlmResponse response = LlmResponse.builder().content(CONTENT_REPLY).build();
+    void processFallsBackToLlmResponseWhenNoTurnOutcome() {
         AgentContext ctx = contextWith(
-                List.of(
-                        Message.builder().role(ROLE_USER).content("first").timestamp(Instant.now()).build(),
-                        Message.builder().role("assistant").content("response1").timestamp(Instant.now()).build(),
-                        Message.builder().role(ROLE_USER).content("second").timestamp(Instant.now()).build()),
-                response);
+                List.of(Message.builder().role(ROLE_USER).content("hi").timestamp(Instant.now()).build()),
+                LlmResponse.builder().content("legacy reply").build());
 
         system.process(ctx);
 
-        verify(memoryComponent).appendToday(argThat(entry -> entry.contains("User: second")));
+        verify(memoryComponent).persistTurnMemory(argThat(event -> event != null
+                && "legacy reply".equals(event.getAssistantText())));
     }
 
     @Test
-    void processTruncatesLongUserMessage() {
-        String longMsg = "x".repeat(300);
-        LlmResponse response = LlmResponse.builder().content("short").build();
+    void processPersistsStructuredTurnMemoryEvent() {
         AgentContext ctx = contextWith(
-                List.of(Message.builder().role(ROLE_USER).content(longMsg).timestamp(Instant.now()).build()),
-                response);
+                List.of(Message.builder().role(ROLE_USER).content("user input").timestamp(Instant.now()).build()),
+                LlmResponse.builder().content("assistant reply").build());
+        ctx.setToolResults(Map.of("t1", ToolResult.success("tool output")));
 
         system.process(ctx);
 
-        verify(memoryComponent).appendToday(argThat(entry -> {
-            // User content truncated to 200 chars (197 + "...")
-            String userPart = entry.substring(entry.indexOf("User: ") + 6, entry.indexOf(" | "));
-            return userPart.length() == 200 && userPart.endsWith("...");
-        }));
+        verify(memoryComponent).persistTurnMemory(argThat(event -> event != null
+                && "user input".equals(event.getUserText())
+                && "assistant reply".equals(event.getAssistantText())
+                && event.getToolOutputs() != null
+                && event.getToolOutputs().stream().anyMatch(output -> output.contains("tool output"))));
     }
 
     @Test
-    void processTruncatesLongAssistantContent() {
-        String longResponse = "y".repeat(400);
-        LlmResponse response = LlmResponse.builder().content(longResponse).build();
-        AgentContext ctx = contextWith(
-                List.of(Message.builder().role(ROLE_USER).content("q").timestamp(Instant.now()).build()),
-                response);
+    void processPersistsSessionScopeInTurnMemoryEvent() {
+        AgentSession session = AgentSession.builder()
+                .id("web:conv12345")
+                .channelType("web")
+                .chatId("conv12345")
+                .metadata(new java.util.HashMap<>(Map.of(
+                        ContextAttributes.CONVERSATION_KEY, "conv12345")))
+                .build();
+        AgentContext ctx = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>(List.of(
+                        Message.builder().role(ROLE_USER).content("user input").timestamp(Instant.now()).build())))
+                .build();
+        ctx.setAttribute(ContextAttributes.LLM_RESPONSE, LlmResponse.builder().content("assistant reply").build());
 
         system.process(ctx);
 
-        verify(memoryComponent).appendToday(argThat(entry -> {
-            String assistantPart = entry.substring(entry.indexOf("Assistant: ") + 11).trim();
-            return assistantPart.length() == 300 && assistantPart.endsWith("...");
-        }));
+        verify(memoryComponent).persistTurnMemory(argThat(event -> event != null
+                && "session:web:conv12345".equals(event.getScope())));
     }
 
     @Test
-    void processDoesNotTruncateAtExactMaxLength() {
-        String exactMsg = "a".repeat(200);
-        LlmResponse response = LlmResponse.builder().content("short").build();
+    void processTruncatesToolOutputsToExpectedLimit() {
+        String longToolOutput = "x".repeat(1200);
         AgentContext ctx = contextWith(
-                List.of(Message.builder().role(ROLE_USER).content(exactMsg).timestamp(Instant.now()).build()),
-                response);
+                List.of(Message.builder().role(ROLE_USER).content("user").timestamp(Instant.now()).build()),
+                LlmResponse.builder().content("assistant").build());
+        ctx.setToolResults(Map.of("tool", ToolResult.success(longToolOutput)));
 
         system.process(ctx);
 
-        verify(memoryComponent)
-                .appendToday(argThat(entry -> entry.contains("User: " + exactMsg) && !entry.contains("...")));
+        verify(memoryComponent).persistTurnMemory(argThat(event -> event != null
+                && event.getToolOutputs() != null
+                && !event.getToolOutputs().isEmpty()
+                && event.getToolOutputs().get(0).length() == 800
+                && event.getToolOutputs().get(0).endsWith("...")));
     }
 
     @Test
-    void processHandlesNullUserContent() {
-        LlmResponse response = LlmResponse.builder().content(CONTENT_REPLY).build();
+    void processPersistsErrorToolOutputWithPrefix() {
         AgentContext ctx = contextWith(
-                List.of(Message.builder().role(ROLE_USER).content(null).timestamp(Instant.now()).build()),
-                response);
+                List.of(Message.builder().role(ROLE_USER).content("user").timestamp(Instant.now()).build()),
+                LlmResponse.builder().content("assistant").build());
+        ctx.setToolResults(Map.of("tool", ToolResult.failure("boom")));
 
         system.process(ctx);
 
-        // null content becomes empty string via truncate, appendToday IS called
-        verify(memoryComponent)
-                .appendToday(argThat(entry -> entry.contains("User:") && entry.contains("Assistant: reply")));
+        verify(memoryComponent).persistTurnMemory(argThat(event -> event != null
+                && event.getToolOutputs() != null
+                && event.getToolOutputs().stream().anyMatch(output -> output.startsWith("Error: boom"))));
     }
 
     @Test
-    void processReplacesNewlinesInContent() {
-        LlmResponse response = LlmResponse.builder().content("line1\nline2").build();
+    void processHandlesStructuredPersistFailureGracefully() {
+        doThrow(new RuntimeException("write error")).when(memoryComponent)
+                .persistTurnMemory(any(TurnMemoryEvent.class));
+
         AgentContext ctx = contextWith(
-                List.of(Message.builder().role(ROLE_USER).content("hello\nworld").timestamp(Instant.now()).build()),
-                response);
-
-        system.process(ctx);
-
-        verify(memoryComponent).appendToday(
-                argThat(entry -> entry.contains("User: hello world") && entry.contains("Assistant: line1 line2")));
-    }
-
-    @Test
-    void processHandlesMemoryAppendFailure() {
-        doThrow(new RuntimeException("write error")).when(memoryComponent).appendToday(any());
-
-        LlmResponse response = LlmResponse.builder().content(CONTENT_REPLY).build();
-        AgentContext ctx = contextWith(
-                List.of(Message.builder().role(ROLE_USER).content(CONTENT_HELLO).timestamp(Instant.now()).build()),
-                response);
+                List.of(Message.builder().role(ROLE_USER).content("hello").timestamp(Instant.now()).build()),
+                LlmResponse.builder().content("reply").build());
 
         assertDoesNotThrow(() -> system.process(ctx));
     }
-
-    @Test
-    void processEntryIncludesTimestamp() {
-        LlmResponse response = LlmResponse.builder().content(CONTENT_REPLY).build();
-        AgentContext ctx = contextWith(
-                List.of(Message.builder().role(ROLE_USER).content(CONTENT_HELLO).timestamp(Instant.now()).build()),
-                response);
-
-        system.process(ctx);
-
-        verify(memoryComponent).appendToday(
-                argThat(entry -> entry.matches("\\[\\d{2}:\\d{2}\\] User: hello \\| Assistant: reply\\n")));
-    }
-
-    // ==================== shouldProcess (finality gate) ====================
 
     @Test
     void shouldNotProcessWhenFinalAnswerNotReady() {
@@ -269,8 +230,6 @@ class MemoryPersistSystemTest {
         assertTrue(system.shouldProcess(ctx));
     }
 
-    // ==================== TurnOutcome-based tests ====================
-
     @Test
     void shouldProcessWhenTurnOutcomeHasAssistantText() {
         AgentContext ctx = AgentContext.builder()
@@ -286,20 +245,6 @@ class MemoryPersistSystemTest {
     }
 
     @Test
-    void shouldNotProcessWhenTurnOutcomeHasNullAssistantText() {
-        AgentContext ctx = AgentContext.builder()
-                .session(AgentSession.builder().id(SESSION_ID).build())
-                .messages(new ArrayList<>())
-                .build();
-        ctx.setTurnOutcome(TurnOutcome.builder()
-                .finishReason(FinishReason.ERROR)
-                .assistantText(null)
-                .build());
-
-        assertFalse(system.shouldProcess(ctx));
-    }
-
-    @Test
     void shouldNotProcessWhenTurnOutcomeHasBlankAssistantText() {
         AgentContext ctx = AgentContext.builder()
                 .session(AgentSession.builder().id(SESSION_ID).build())
@@ -311,37 +256,5 @@ class MemoryPersistSystemTest {
                 .build());
 
         assertFalse(system.shouldProcess(ctx));
-    }
-
-    @Test
-    void processUsesAssistantTextFromTurnOutcome() {
-        AgentContext ctx = AgentContext.builder()
-                .session(AgentSession.builder().id(SESSION_ID).build())
-                .messages(new ArrayList<>(List.of(
-                        Message.builder().role(ROLE_USER).content("question").timestamp(Instant.now()).build())))
-                .build();
-        ctx.setTurnOutcome(TurnOutcome.builder()
-                .finishReason(FinishReason.SUCCESS)
-                .assistantText("answer from outcome")
-                .build());
-        // Also set legacy attribute — TurnOutcome should take priority
-        ctx.setAttribute(ATTR_LLM_RESPONSE, LlmResponse.builder().content("legacy answer").build());
-
-        system.process(ctx);
-
-        verify(memoryComponent).appendToday(
-                argThat(entry -> entry.contains("Assistant: answer from outcome") && !entry.contains("legacy answer")));
-    }
-
-    @Test
-    void processFallsBackToLlmResponseWhenNoTurnOutcome() {
-        LlmResponse response = LlmResponse.builder().content("legacy reply").build();
-        AgentContext ctx = contextWith(
-                List.of(Message.builder().role(ROLE_USER).content("hi").timestamp(Instant.now()).build()),
-                response);
-
-        system.process(ctx);
-
-        verify(memoryComponent).appendToday(argThat(entry -> entry.contains("Assistant: legacy reply")));
     }
 }

@@ -46,6 +46,11 @@ export default function ContextPanel({ tier, tierForce, chatSessionId, onTierCha
 
   return (
     <div className="context-panel">
+      <div className="context-panel-header">
+        <div className="context-panel-title">Context</div>
+        <small className="text-body-secondary">Live model and token telemetry</small>
+      </div>
+
       {/* MODEL */}
       <div className="context-section">
         <div className="section-label">MODEL</div>

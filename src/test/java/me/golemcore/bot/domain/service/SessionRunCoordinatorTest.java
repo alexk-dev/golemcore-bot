@@ -32,8 +32,7 @@ class SessionRunCoordinatorTest {
         SessionPort sessionPort = mock(SessionPort.class);
         AgentLoop agentLoop = mock(AgentLoop.class);
 
-        ExecutorService executor = Executors.newSingleThreadExecutor();
-        try {
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor);
 
             AgentSession session = AgentSession.builder()
@@ -77,8 +76,6 @@ class SessionRunCoordinatorTest {
             verify(agentLoop, times(2)).processMessage(any(Message.class));
             verify(agentLoop, times(1)).processMessage(a);
             verify(agentLoop, times(1)).processMessage(d);
-        } finally {
-            executor.shutdownNow();
         }
     }
 
@@ -86,15 +83,12 @@ class SessionRunCoordinatorTest {
     void shouldHandleStopWhenIdle() {
         SessionPort sessionPort = mock(SessionPort.class);
         AgentLoop agentLoop = mock(AgentLoop.class);
-        ExecutorService executor = Executors.newSingleThreadExecutor();
 
-        try {
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor);
 
             // requestStop when no task is running should not throw
             coordinator.requestStop(CHANNEL_TYPE, CHAT_ID);
-        } finally {
-            executor.shutdownNow();
         }
     }
 
@@ -103,8 +97,7 @@ class SessionRunCoordinatorTest {
         SessionPort sessionPort = mock(SessionPort.class);
         AgentLoop agentLoop = mock(AgentLoop.class);
 
-        ExecutorService executor = Executors.newSingleThreadExecutor();
-        try {
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor);
 
             Message a = user("A");
@@ -138,8 +131,6 @@ class SessionRunCoordinatorTest {
 
             verify(agentLoop, times(1)).processMessage(a);
             verify(agentLoop, times(1)).processMessage(b);
-        } finally {
-            executor.shutdownNow();
         }
     }
 
@@ -148,8 +139,7 @@ class SessionRunCoordinatorTest {
         SessionPort sessionPort = mock(SessionPort.class);
         AgentLoop agentLoop = mock(AgentLoop.class);
 
-        ExecutorService executor = Executors.newSingleThreadExecutor();
-        try {
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor);
 
             Message a = user("A");
@@ -163,8 +153,6 @@ class SessionRunCoordinatorTest {
 
             // Should not propagate — executor thread stays alive
             verify(agentLoop, times(1)).processMessage(a);
-        } finally {
-            executor.shutdownNow();
         }
     }
 

@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -192,5 +193,48 @@ class WebChannelAdapterTest {
         adapter.stop();
 
         assertFalse(adapter.isRunning());
+    }
+
+    @Test
+    void shouldCleanupAllChatRoutesBoundToConnectionOnDisconnect() {
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.isOpen()).thenReturn(true);
+        when(session.send(any())).thenReturn(Mono.empty());
+        when(session.textMessage(any(String.class)))
+                .thenReturn(mock(org.springframework.web.reactive.socket.WebSocketMessage.class));
+
+        adapter.registerSession("conn-1", session);
+
+        Message first = Message.builder()
+                .id("msg-1")
+                .role("user")
+                .content("hello-a")
+                .channelType("web")
+                .chatId("chat-a")
+                .senderId("admin")
+                .timestamp(Instant.now())
+                .build();
+        Message second = Message.builder()
+                .id("msg-2")
+                .role("user")
+                .content("hello-b")
+                .channelType("web")
+                .chatId("chat-b")
+                .senderId("admin")
+                .timestamp(Instant.now())
+                .build();
+
+        adapter.handleIncomingMessage(first, "conn-1");
+        adapter.handleIncomingMessage(second, "conn-1");
+
+        adapter.sendMessage("chat-a", "before-disconnect").join();
+        adapter.sendMessage("chat-b", "before-disconnect").join();
+        verify(session, times(2)).send(any());
+
+        adapter.deregisterSession("conn-1");
+
+        adapter.sendMessage("chat-a", "after-disconnect").join();
+        adapter.sendMessage("chat-b", "after-disconnect").join();
+        verify(session, times(2)).send(any());
     }
 }

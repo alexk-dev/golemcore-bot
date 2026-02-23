@@ -235,6 +235,38 @@ Limits for a single user request (one internal tool loop run):
 }
 ```
 
+### Memory (V2)
+
+Memory behavior is configured under `memory`:
+
+```json
+{
+  "memory": {
+    "enabled": true,
+    "softPromptBudgetTokens": 1800,
+    "maxPromptBudgetTokens": 3500,
+    "workingTopK": 6,
+    "episodicTopK": 8,
+    "semanticTopK": 6,
+    "proceduralTopK": 4,
+    "promotionEnabled": true,
+    "promotionMinConfidence": 0.75,
+    "decayEnabled": true,
+    "decayDays": 30,
+    "retrievalLookbackDays": 21,
+    "codeAwareExtractionEnabled": true
+  }
+}
+```
+
+Field notes:
+
+1. `softPromptBudgetTokens` / `maxPromptBudgetTokens`: memory injection budget for prompt packing.
+2. `*TopK`: per-layer candidate limits for retrieval.
+3. `promotion*`: controls promotion from episodic records into semantic/procedural stores.
+4. `decay*`: stale item pruning window for stored memory.
+5. `retrievalLookbackDays`: episodic retrieval window (how many recent day-files are read per request).
+
 ### Telegram
 
 Telegram channel settings are stored in runtime config under `telegram`:
@@ -338,7 +370,7 @@ Some settings are still controlled via Spring properties (application config), t
 
 - Workspace paths: `STORAGE_PATH`, `TOOLS_WORKSPACE`
 - Dashboard toggle: `DASHBOARD_ENABLED`
-- Self-update controls: `BOT_UPDATE_ENABLED`, `UPDATE_PATH`, `BOT_UPDATE_MAX_KEPT_VERSIONS`, `BOT_UPDATE_CHECK_INTERVAL`, `BOT_UPDATE_CONFIRM_TTL`
+- Self-update controls: `BOT_UPDATE_ENABLED`, `UPDATE_PATH`, `BOT_UPDATE_MAX_KEPT_VERSIONS`, `BOT_UPDATE_CHECK_INTERVAL`
 - Allowed providers in model picker: `BOT_MODEL_SELECTION_ALLOWED_PROVIDERS`
 - Tool result truncation: `bot.auto-compact.max-tool-result-chars`
 - Plan mode feature flag: `bot.plan.enabled`
@@ -354,10 +386,9 @@ Core self-update is controlled by Spring properties under `bot.update.*`.
 
 Configurable properties:
 
-- `bot.update.updates-path` (`UPDATE_PATH`, default `/data/updates`)
+- `bot.update.updates-path` (`UPDATE_PATH`, default `${STORAGE_PATH}/updates`; if `STORAGE_PATH` is unset, it follows `bot.storage.local.base-path`)
 - `bot.update.max-kept-versions` (`BOT_UPDATE_MAX_KEPT_VERSIONS`, default `3`)
 - `bot.update.check-interval` (`BOT_UPDATE_CHECK_INTERVAL`, default `PT1H`)
-- `bot.update.confirm-ttl` (`BOT_UPDATE_CONFIRM_TTL`, default `PT2M`)
 
 ## Storage Layout
 
@@ -366,7 +397,7 @@ Default (macOS/Linux): `~/.golemcore/workspace`
 ```
 workspace/
 ├── auto/                    # auto mode + plan mode state
-├── memory/                  # MEMORY.md + daily notes
+├── memory/                  # structured memory items (JSONL)
 ├── models/                  # models.json (capabilities)
 ├── preferences/             # settings.json, runtime-config.json, admin.json
 ├── sessions/                # conversation sessions

@@ -55,7 +55,9 @@ public class Plan {
     private List<PlanStep> steps = new ArrayList<>();
 
     private String modelTier;
+    private String channelType;
     private String chatId;
+    private String transportChatId;
     private Instant createdAt;
     private Instant updatedAt;
 

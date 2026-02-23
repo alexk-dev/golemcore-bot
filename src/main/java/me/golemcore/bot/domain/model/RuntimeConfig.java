@@ -76,7 +76,7 @@ public class RuntimeConfig {
     public static class TelegramConfig {
         private Boolean enabled;
         private Secret token;
-        /** "user" or "invite_only" */
+        /** Invite authentication flow mode. */
         @Builder.Default
         private String authMode = "invite_only";
         @Builder.Default
@@ -155,9 +155,20 @@ public class RuntimeConfig {
         private Boolean tierEnabled;
         private Boolean goalManagementEnabled;
         @Builder.Default
+        private List<ShellEnvironmentVariable> shellEnvironmentVariables = new ArrayList<>();
+        @Builder.Default
         private ImapConfig imap = new ImapConfig();
         @Builder.Default
         private SmtpConfig smtp = new SmtpConfig();
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class ShellEnvironmentVariable {
+        private String name;
+        private String value;
     }
 
     @Data
@@ -285,11 +296,36 @@ public class RuntimeConfig {
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class MemoryConfig {
+        @Builder.Default
+        private Integer version = 2;
         @Builder.Default
         private Boolean enabled = true;
         @Builder.Default
-        private Integer recentDays = 7;
+        private Integer softPromptBudgetTokens = 1800;
+        @Builder.Default
+        private Integer maxPromptBudgetTokens = 3500;
+        @Builder.Default
+        private Integer workingTopK = 6;
+        @Builder.Default
+        private Integer episodicTopK = 8;
+        @Builder.Default
+        private Integer semanticTopK = 6;
+        @Builder.Default
+        private Integer proceduralTopK = 4;
+        @Builder.Default
+        private Boolean promotionEnabled = true;
+        @Builder.Default
+        private Double promotionMinConfidence = 0.75;
+        @Builder.Default
+        private Boolean decayEnabled = true;
+        @Builder.Default
+        private Integer decayDays = 30;
+        @Builder.Default
+        private Integer retrievalLookbackDays = 21;
+        @Builder.Default
+        private Boolean codeAwareExtractionEnabled = true;
     }
 
     @Data

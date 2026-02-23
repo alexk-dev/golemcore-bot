@@ -185,7 +185,7 @@ function PlanModeActions({
       <Button type="button" size="sm" variant="success" disabled={actionPending} onClick={onDone}>
         Plan done
       </Button>
-      <Button type="button" size="sm" variant="outline-secondary" disabled={actionPending} onClick={onDisable}>
+      <Button type="button" size="sm" variant="secondary" disabled={actionPending} onClick={onDisable}>
         Plan OFF
       </Button>
     </div>
@@ -263,7 +263,7 @@ function PlanItemActions({
       )}
 
       {canCancel && (
-        <Button type="button" size="sm" variant="outline-danger" disabled={actionPending} onClick={() => onCancel(plan.id)}>
+        <Button type="button" size="sm" variant="danger" disabled={actionPending} onClick={() => onCancel(plan.id)}>
           Cancel
         </Button>
       )}
@@ -272,7 +272,7 @@ function PlanItemActions({
 }
 
 export default function PlanControlPanel({ chatSessionId }: Props) {
-  const { data, isLoading, isError, refetch } = usePlanControlState(true);
+  const { data, isLoading, isError, refetch } = usePlanControlState(chatSessionId, true);
 
   const enableMutation = useEnablePlanMode();
   const disableMutation = useDisablePlanMode();
@@ -305,22 +305,22 @@ export default function PlanControlPanel({ chatSessionId }: Props) {
         isError={isError}
         actionPending={actionPending}
         onEnable={() => {
-          enableMutation.mutate({ chatId: chatSessionId });
+          enableMutation.mutate({ sessionId: chatSessionId });
         }}
         onDone={() => {
-          doneMutation.mutate();
+          doneMutation.mutate(chatSessionId);
         }}
         onDisable={() => {
-          disableMutation.mutate();
+          disableMutation.mutate(chatSessionId);
         }}
         onApprove={(planId) => {
-          approveMutation.mutate(planId);
+          approveMutation.mutate({ planId, sessionId: chatSessionId });
         }}
         onCancel={(planId) => {
-          cancelMutation.mutate(planId);
+          cancelMutation.mutate({ planId, sessionId: chatSessionId });
         }}
         onResume={(planId) => {
-          resumeMutation.mutate(planId);
+          resumeMutation.mutate({ planId, sessionId: chatSessionId });
         }}
       />
     </div>

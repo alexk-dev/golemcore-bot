@@ -175,7 +175,7 @@ function ProviderEditor({
                 {shouldShowUseDefaultBaseUrl && (
                   <Button
                     type="button"
-                    variant="outline-secondary"
+                    variant="secondary"
                     onClick={() => onFormChange({ ...form, baseUrl: suggestedBaseUrl })}
                   >
                     Use default
@@ -184,7 +184,7 @@ function ProviderEditor({
                 {shouldShowClearBaseUrl && (
                   <Button
                     type="button"
-                    variant="outline-secondary"
+                    variant="secondary"
                     onClick={() => onFormChange({ ...form, baseUrl: null })}
                   >
                     Clear

@@ -1,235 +1,195 @@
-import { type ReactElement, useState } from 'react';
-import { Alert, Col, Row } from 'react-bootstrap';
-import type { UseMutationResult } from '@tanstack/react-query';
+import type { ReactElement } from 'react';
+import { Alert, Badge, Button, Card, Spinner } from 'react-bootstrap';
 import toast from 'react-hot-toast';
-import type {
-  RollbackConfirmRequest,
-  SystemUpdateActionResponse,
-  SystemUpdateIntentResponse,
-} from '../../api/system';
-import {
-  useApplySystemUpdate,
-  useCheckSystemUpdate,
-  useCreateSystemUpdateApplyIntent,
-  useCreateSystemUpdateRollbackIntent,
-  usePrepareSystemUpdate,
-  useRollbackSystemUpdate,
-  useSystemUpdateHistory,
-  useSystemUpdateStatus,
-} from '../../hooks/useSystem';
+import type { SystemUpdateActionResponse, SystemUpdateStatusResponse } from '../../api/system';
+import SettingsCardTitle from '../../components/common/SettingsCardTitle';
+import { useCheckSystemUpdate, useSystemUpdateStatus, useUpdateSystemNow } from '../../hooks/useSystem';
 import { extractErrorMessage } from '../../utils/extractErrorMessage';
-import { UPDATE_BUSY_STATES, isRollbackOperation } from '../../utils/systemUpdateUi';
-import { UpdateActionsCard } from './updates/UpdateActionsCard';
-import { UpdateConfirmCard } from './updates/UpdateConfirmCard';
-import { UpdateHistoryCard } from './updates/UpdateHistoryCard';
-import { UpdateStatusCard } from './updates/UpdateStatusCard';
-import {
-  buildRollbackConfirmPayload,
-  buildRollbackIntentPayload,
-  isIntentExpired,
-  resolveCanPrepare,
-  resolveCanRequestApply,
-  resolveConfirmPending,
-  resolveEnabled,
-  resolveHistoryLoading,
-  resolveOperationBusy,
-} from './updates/updateFlow';
+import { UPDATE_BUSY_STATES, formatUpdateTimestamp, getUpdateStateLabel, getUpdateStateVariant } from '../../utils/systemUpdateUi';
 
-async function runActionWithToast<T>(
-  action: () => Promise<T>,
-  onSuccess: (result: T) => void,
-  errorPrefix: string,
-): Promise<void> {
+interface UpdatesErrorCardProps {
+  onRetry: () => void;
+}
+
+interface UpdateAvailabilityAlertProps {
+  availableVersion: string | null;
+  canUpdate: boolean;
+  isUpdatePending: boolean;
+  onUpdateNow: () => void;
+}
+
+interface UpdatesBodyProps {
+  status: SystemUpdateStatusResponse;
+  canCheck: boolean;
+  canUpdate: boolean;
+  isCheckPending: boolean;
+  isUpdatePending: boolean;
+  onCheck: () => void;
+  onUpdateNow: () => void;
+}
+
+function formatVersionLabel(version: string | null): string {
+  if (version == null || version.trim().length === 0) {
+    return 'N/A';
+  }
+  return version;
+}
+
+async function runUpdateAction(action: () => Promise<SystemUpdateActionResponse>, errorPrefix: string): Promise<void> {
   try {
     const result = await action();
-    onSuccess(result);
+    toast.success(result.message);
   } catch (error: unknown) {
     toast.error(`${errorPrefix}: ${extractErrorMessage(error)}`);
   }
 }
 
-async function confirmIntentAction(
-  intent: SystemUpdateIntentResponse,
-  token: string,
-  applyMutation: UseMutationResult<SystemUpdateActionResponse, unknown, { confirmToken: string }>,
-  rollbackMutation: UseMutationResult<SystemUpdateActionResponse, unknown, RollbackConfirmRequest>,
-): Promise<SystemUpdateActionResponse> {
-  if (isRollbackOperation(intent.operation)) {
-    return rollbackMutation.mutateAsync(buildRollbackConfirmPayload(intent, token));
+function UpdatesLoadingCard(): ReactElement {
+  return (
+    <Card className="settings-card updates-card">
+      <Card.Body className="d-flex align-items-center gap-2">
+        <Spinner size="sm" animation="border" />
+        <span className="small text-body-secondary">Loading update status...</span>
+      </Card.Body>
+    </Card>
+  );
+}
+
+function UpdatesErrorCard({ onRetry }: UpdatesErrorCardProps): ReactElement {
+  return (
+    <Card className="settings-card updates-card">
+      <Card.Body>
+        <SettingsCardTitle title="Updates" />
+        <Alert variant="warning" className="mb-3">
+          Unable to load update status from backend.
+        </Alert>
+        <Button type="button" size="sm" variant="secondary" onClick={onRetry}>
+          Retry
+        </Button>
+      </Card.Body>
+    </Card>
+  );
+}
+
+function UpdateAvailabilityAlert({
+  availableVersion,
+  canUpdate,
+  isUpdatePending,
+  onUpdateNow,
+}: UpdateAvailabilityAlertProps): ReactElement {
+  if (availableVersion == null) {
+    return (
+      <Alert variant="secondary" className="mb-3 small">
+        No update available.
+      </Alert>
+    );
   }
 
-  return applyMutation.mutateAsync({ confirmToken: token });
+  return (
+    <Alert variant="warning" className="mb-3">
+      <div className="fw-medium mb-1">Update available: {availableVersion}</div>
+      <div className="small mb-2">Applying update will restart the service.</div>
+      <Button type="button" size="sm" variant="primary" onClick={onUpdateNow} disabled={!canUpdate}>
+        {isUpdatePending ? 'Updating...' : `Update to ${availableVersion}`}
+      </Button>
+    </Alert>
+  );
+}
+
+function UpdatesBody({
+  status,
+  canCheck,
+  canUpdate,
+  isCheckPending,
+  isUpdatePending,
+  onCheck,
+  onUpdateNow,
+}: UpdatesBodyProps): ReactElement {
+  const state = status.state;
+  const currentVersion = status.current?.version ?? null;
+  const availableVersion = status.available?.version ?? null;
+  const hasLastError = status.lastError != null && status.lastError.trim().length > 0;
+
+  return (
+    <Card className="settings-card updates-card">
+      <Card.Body>
+        <SettingsCardTitle title="Updates" tip="Check for new release and update in one click" />
+
+        <div className="d-flex align-items-center gap-2 mb-2">
+          <span className="small text-body-secondary">State</span>
+          <Badge bg={getUpdateStateVariant(state)}>{getUpdateStateLabel(state)}</Badge>
+        </div>
+
+        <div className="small text-body-secondary mb-1">
+          Current version: <span className="text-body">{formatVersionLabel(currentVersion)}</span>
+        </div>
+        <div className="small text-body-secondary mb-3">
+          Last check: <span className="text-body">{formatUpdateTimestamp(status.lastCheckAt)}</span>
+        </div>
+
+        <div className="d-flex flex-wrap gap-2 mb-3">
+          <Button type="button" size="sm" variant="secondary" onClick={onCheck} disabled={!canCheck}>
+            {isCheckPending ? 'Checking...' : 'Check for updates'}
+          </Button>
+        </div>
+
+        <UpdateAvailabilityAlert
+          availableVersion={availableVersion}
+          canUpdate={canUpdate}
+          isUpdatePending={isUpdatePending}
+          onUpdateNow={onUpdateNow}
+        />
+
+        {!status.enabled && (
+          <Alert variant="secondary" className="mb-0 small">
+            Updates are disabled by backend configuration.
+          </Alert>
+        )}
+
+        {hasLastError && (
+          <Alert variant="danger" className="mb-0 small">
+            {status.lastError}
+          </Alert>
+        )}
+      </Card.Body>
+    </Card>
+  );
 }
 
 export function UpdatesTab(): ReactElement {
   const statusQuery = useSystemUpdateStatus();
-  const historyQuery = useSystemUpdateHistory();
   const checkMutation = useCheckSystemUpdate();
-  const prepareMutation = usePrepareSystemUpdate();
-  const applyIntentMutation = useCreateSystemUpdateApplyIntent();
-  const applyMutation = useApplySystemUpdate();
-  const rollbackIntentMutation = useCreateSystemUpdateRollbackIntent();
-  const rollbackMutation = useRollbackSystemUpdate();
-
-  const [rollbackVersion, setRollbackVersion] = useState<string>('');
-  const [intent, setIntent] = useState<SystemUpdateIntentResponse | null>(null);
-  const [tokenInput, setTokenInput] = useState<string>('');
-
+  const updateNowMutation = useUpdateSystemNow();
   const status = statusQuery.data ?? null;
-  const state = status?.state ?? 'UNAVAILABLE';
-  const isEnabled = resolveEnabled(status, statusQuery.isError);
-  const stagedVersion = status?.staged?.version ?? null;
-  const availableVersion = status?.available?.version ?? null;
-  const canPrepare = resolveCanPrepare(availableVersion, stagedVersion);
-  const canRequestApply = resolveCanRequestApply(stagedVersion);
-  const pendingFlags = [
-    checkMutation.isPending,
-    prepareMutation.isPending,
-    applyIntentMutation.isPending,
-    applyMutation.isPending,
-    rollbackIntentMutation.isPending,
-    rollbackMutation.isPending,
-  ];
-  const isOperationBusy = resolveOperationBusy(pendingFlags, state);
-  const isConfirmPending = resolveConfirmPending(applyMutation.isPending, rollbackMutation.isPending);
-  const isHistoryLoading = resolveHistoryLoading(historyQuery.isLoading, historyQuery.isFetching);
-  const showBusyBanner = UPDATE_BUSY_STATES.has(state);
 
-  const handleCheck = (): Promise<void> => runActionWithToast<SystemUpdateActionResponse>(
-    () => checkMutation.mutateAsync(),
-    (result) => {
-      toast.success(result.message);
-    },
-    'Check failed',
-  );
+  if (statusQuery.isLoading) {
+    return <UpdatesLoadingCard />;
+  }
+  if (statusQuery.isError || status == null) {
+    return <UpdatesErrorCard onRetry={() => { void statusQuery.refetch(); }} />;
+  }
 
-  const handlePrepare = (): Promise<void> => runActionWithToast<SystemUpdateActionResponse>(
-    () => prepareMutation.mutateAsync(),
-    (result) => {
-      toast.success(result.message);
-    },
-    'Prepare failed',
-  );
+  const isBusy = checkMutation.isPending || updateNowMutation.isPending || UPDATE_BUSY_STATES.has(status.state);
+  const canCheck = status.enabled && !isBusy;
+  const canUpdate = status.enabled && !isBusy && status.available?.version != null;
 
-  const handleCreateApplyIntent = (): Promise<void> => runActionWithToast<SystemUpdateIntentResponse>(
-    () => applyIntentMutation.mutateAsync(),
-    (result) => {
-      setIntent(result);
-      setTokenInput(result.confirmToken);
-      toast.success('Apply confirmation token created');
-    },
-    'Unable to create apply intent',
-  );
-
-  const handleCreateRollbackIntent = (): Promise<void> => runActionWithToast<SystemUpdateIntentResponse>(
-    () => rollbackIntentMutation.mutateAsync(buildRollbackIntentPayload(rollbackVersion)),
-    (result) => {
-      setIntent(result);
-      setTokenInput(result.confirmToken);
-      setRollbackVersion(result.targetVersion ?? '');
-      toast.success('Rollback confirmation token created');
-    },
-    'Unable to create rollback intent',
-  );
-
-  const handleCopyToken = async (): Promise<void> => {
-    const token = tokenInput.trim();
-    if (token.length === 0) {
-      toast.error('No token to copy');
-      return;
-    }
-
-    try {
-      await navigator.clipboard.writeText(token);
-      toast.success('Token copied');
-    } catch (error: unknown) {
-      toast.error(`Unable to copy token: ${extractErrorMessage(error)}`);
-    }
+  const handleCheck = (): void => {
+    void runUpdateAction(() => checkMutation.mutateAsync(), 'Check failed');
   };
 
-  const handleConfirmIntent = async (): Promise<void> => {
-    if (intent == null) {
-      return;
-    }
-
-    const token = tokenInput.trim();
-    if (token.length === 0) {
-      toast.error('Confirmation token is required');
-      return;
-    }
-    if (isIntentExpired(intent.expiresAt)) {
-      toast.error('Confirmation token expired. Request a new intent.');
-      return;
-    }
-
-    try {
-      const result = await confirmIntentAction(intent, token, applyMutation, rollbackMutation);
-      toast.success(result.message);
-      setIntent(null);
-      setTokenInput('');
-    } catch (error: unknown) {
-      toast.error(`Operation failed: ${extractErrorMessage(error)}`);
-    }
+  const handleUpdateNow = (): void => {
+    void runUpdateAction(() => updateNowMutation.mutateAsync(), 'Update failed');
   };
 
   return (
-    <section className="updates-tab">
-      {showBusyBanner && (
-        <Alert variant="info" className="small mb-3">
-          Update service is currently <strong>{state.toLowerCase()}</strong>. Actions are temporarily locked.
-        </Alert>
-      )}
-
-      <Row className="g-3 mb-3">
-        <Col xl={4}>
-          <UpdateStatusCard
-            status={status}
-            isLoading={statusQuery.isLoading}
-            isError={statusQuery.isError}
-            onRetry={() => { void statusQuery.refetch(); }}
-          />
-        </Col>
-        <Col xl={4}>
-          <UpdateActionsCard
-            isBusy={isOperationBusy}
-            isEnabled={isEnabled}
-            canPrepare={canPrepare}
-            canRequestApply={canRequestApply}
-            rollbackVersion={rollbackVersion}
-            isChecking={checkMutation.isPending}
-            isPreparing={prepareMutation.isPending}
-            isApplyIntentPending={applyIntentMutation.isPending}
-            isRollbackIntentPending={rollbackIntentMutation.isPending}
-            onRollbackVersionChange={setRollbackVersion}
-            onCheck={() => { void handleCheck(); }}
-            onPrepare={() => { void handlePrepare(); }}
-            onCreateApplyIntent={() => { void handleCreateApplyIntent(); }}
-            onCreateRollbackIntent={() => { void handleCreateRollbackIntent(); }}
-          />
-        </Col>
-        <Col xl={4}>
-          <UpdateConfirmCard
-            intent={intent}
-            tokenInput={tokenInput}
-            isBusy={isOperationBusy}
-            isConfirmPending={isConfirmPending}
-            onTokenChange={setTokenInput}
-            onConfirm={() => { void handleConfirmIntent(); }}
-            onClear={() => {
-              setIntent(null);
-              setTokenInput('');
-            }}
-            onCopyToken={() => { void handleCopyToken(); }}
-          />
-        </Col>
-      </Row>
-
-      <UpdateHistoryCard
-        items={historyQuery.data ?? []}
-        isLoading={isHistoryLoading}
-        isError={historyQuery.isError}
-        onRetry={() => { void historyQuery.refetch(); }}
-      />
-    </section>
+    <UpdatesBody
+      status={status}
+      canCheck={canCheck}
+      canUpdate={canUpdate}
+      isCheckPending={checkMutation.isPending}
+      isUpdatePending={updateNowMutation.isPending}
+      onCheck={handleCheck}
+      onUpdateNow={handleUpdateNow}
+    />
   );
 }

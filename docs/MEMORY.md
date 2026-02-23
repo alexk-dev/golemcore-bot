@@ -1,291 +1,162 @@
 # Memory Guide
 
-How the bot persists and recalls conversation context across sessions.
+How the bot persists and recalls context for long-running coding sessions.
 
-> **See also:** [RAG Guide](RAG.md) for long-term semantic memory via knowledge graphs, [Configuration Guide](CONFIGURATION.md) for environment variables, [Model Routing](MODEL_ROUTING.md#context-overflow-protection) for context overflow and compaction.
+> **See also:** [RAG Guide](RAG.md), [Configuration Guide](CONFIGURATION.md), [Model Routing](MODEL_ROUTING.md#context-overflow-protection).
 
 ---
 
 ## Overview
 
-The bot has a multi-layered memory system that ensures continuity across conversations:
+Memory V2 is structured-only and works in two stages:
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│                      System Prompt                           │
-│                                                              │
-│  # Memory                    ← MemoryService                │
-│  ## Long-term Memory         ← MEMORY.md (persistent)       │
-│  ## Today's Notes            ← 2026-02-07.md (daily log)    │
-│  ## Recent Context           ← last 7 days of notes         │
-│                                                              │
-│  # Relevant Memory           ← RAG (see RAG.md)             │
-│                                                              │
-│  [conversation messages]     ← SessionService (in-memory)   │
-└──────────────────────────────────────────────────────────────┘
+1. **Write stage**: finalized turn -> structured `TurnMemoryEvent` -> extracted `MemoryItem` records.
+2. **Read stage**: query + runtime limits -> ranked `MemoryPack` -> injected under `# Memory`.
+
+```text
+System prompt
+├── # Memory            <- MemoryPack (structured retrieval)
+├── # Relevant Memory   <- RAG result (optional)
+└── conversation        <- session messages
 ```
 
-| Layer | Storage | Scope | Survives `/new`? | Written By |
-|-------|---------|-------|------------------|------------|
-| **Session messages** | `sessions/{id}.json` | Current conversation | No (cleared) | `SessionService` |
-| **Daily notes** | `memory/YYYY-MM-DD.md` | Today + recent N days | Yes | `MemoryPersistSystem` |
-| **Long-term memory** | `memory/MEMORY.md` | Permanent | Yes | LLM (via tools) or user |
-| **RAG** | LightRAG knowledge graph | All past conversations | Yes | `RagIndexingSystem` |
-
-This guide covers the first three layers. For RAG, see the [RAG Guide](RAG.md).
+| Layer | Storage | Scope | Survives `/new`? | Writer |
+|-------|---------|-------|------------------|--------|
+| Session messages | `sessions/{id}.json` | Current conversation | No | `SessionService` |
+| Structured memory | `memory/items/*.jsonl` | Cross-session durable memory | Yes | `MemoryPersistSystem` + `MemoryWriteService` |
+| RAG | LightRAG graph/index | Broad historical retrieval | Yes | `RagIndexingSystem` |
 
 ---
 
-## Session Messages
+## Write Path
 
-The most immediate form of memory — the full conversation history within the current session.
+`MemoryPersistSystem` (order=50):
 
-### AgentSession Model
+1. Reads the latest user message.
+2. Resolves assistant final text (`TurnOutcome` first, fallback `LLM_RESPONSE`).
+3. Builds `TurnMemoryEvent` with message text, active skill, and tool outputs.
+4. Calls `memoryComponent.persistTurnMemory(event)`.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | string | Format: `{channelType}:{chatId}` (e.g., `telegram:12345`) |
-| `channelType` | string | Channel identifier (e.g., `telegram`) |
-| `chatId` | string | Chat identifier within channel |
-| `messages` | List\<Message\> | Full conversation history |
-| `metadata` | Map | Session metadata |
-| `state` | enum | `ACTIVE`, `PAUSED`, `TERMINATED` |
-| `createdAt` | Instant | Session creation time |
-| `updatedAt` | Instant | Last message time |
+`MemoryWriteService` then:
 
-> **Source:** `AgentSession.java`
+1. Extracts candidate `MemoryItem` entries.
+2. Writes episodic JSONL records.
+3. Optionally promotes high-confidence items to semantic/procedural stores.
+4. Applies dedup and decay policy.
 
-### SessionService
-
-Manages session lifecycle with in-memory caching and filesystem persistence.
-
-**Storage:** `sessions/{channelType}:{chatId}.json`
-
-**Key operations:**
-
-| Method | Description |
-|--------|-------------|
-| `getOrCreate(channelType, chatId)` | Lazy load from disk or create new session |
-| `save(session)` | Persist to disk + update cache |
-| `delete(sessionId)` | Remove from cache and disk |
-| `clearMessages(sessionId)` | Wipe message history (used by `/new` command) |
-| `getMessageCount(sessionId)` | Count messages in session |
-
-Sessions are cached in a `ConcurrentHashMap` for fast access. Disk persistence happens on every `save()` call.
-
-> **Source:** `SessionService.java`
-
-### Compaction
-
-When conversation history grows too large for the model's context window, it can be compacted:
-
-**Manual compaction** — `/compact [N]` command:
-1. `CompactionService.summarize()` sends old messages to the default (balanced) LLM model
-2. LLM produces a concise summary
-3. `SessionService.compactWithSummary()` replaces old messages with a summary message + last N messages
-
-**Automatic compaction** — `AutoCompactionSystem` (order=18):
-1. Estimates token count: `sum(message.length) / 3.5 + 8000` (system prompt overhead)
-2. Compares against model's `maxInputTokens * 0.8` from `models.json`
-3. If exceeded, triggers the same compaction flow
-
-**Summary message format:**
-```
-[Conversation summary]
-User discussed deploying a Spring Boot app with Docker. Key decisions:
-- Using Jib for image builds (multi-stage, ~180MB)
-- Docker Compose for orchestration with health checks
-- LightRAG container alongside the main bot
-```
-
-The summary is stored as a `system` role message at the beginning of the conversation history.
-
-**CompactionService details:**
-- Model: balanced tier (low reasoning, temperature 0.3)
-- Max output: 500 tokens
-- Timeout: 15 seconds
-- Filters out tool result messages for cleaner summaries
-- Truncates individual messages to 300 chars before summarization
-- Falls back to simple truncation (drop oldest, keep last N) if LLM unavailable
-
-> **Source:** `CompactionService.java`, `SessionService.java`, `AutoCompactionSystem.java`
->
-> **See:** [Model Routing — Large Input Truncation](MODEL_ROUTING.md#large-input-truncation) for the full 3-layer context overflow protection.
+Persistence is fail-safe: failures are logged and do not block user responses.
 
 ---
 
-## Daily Notes
+## Read Path
 
-`MemoryPersistSystem` (order=50) automatically logs each conversation exchange as a timestamped note in a daily file.
+`ContextBuildingSystem` (order=20):
 
-### How It Works
+1. Builds `MemoryQuery` from user text, active skill, and runtime top-k/budget limits.
+2. Calls `memoryComponent.buildMemoryPack(query)`.
+3. Stores pack diagnostics in context attributes.
+4. Injects `pack.renderedContext` under `# Memory` when non-empty.
 
-After every LLM response, the system:
+`MemoryRetrievalService` scoring combines:
 
-1. Extracts the last user message and the LLM response
-2. Truncates: user to 200 chars, assistant to 300 chars
-3. Replaces newlines with spaces
-4. Formats as: `[HH:mm] User: {text} | Assistant: {text}`
-5. Appends to today's file: `memory/YYYY-MM-DD.md`
+- lexical relevance
+- recency
+- salience
+- confidence
+- type/skill boosts
 
-**Example daily file** (`memory/2026-02-07.md`):
-
-```
-[14:15] User: How do I configure Docker health checks? | Assistant: Add a healthcheck section to your docker-compose.yml with test, interval, and timeout...
-[14:30] User: What about restart policies? | Assistant: Use restart: unless-stopped for production. This restarts the container unless explicitly stopped...
-[14:45] User: Show me the full compose file | Assistant: Here's a complete docker-compose.yml with health checks, restart policies, and volume mounts...
-```
-
-> **Source:** `MemoryPersistSystem.java`
-
-### Error Handling
-
-If persistence fails (e.g., disk full, permission denied), the error is logged as a warning and the response pipeline continues. Memory persistence is fail-safe — it never blocks the user from getting a response.
-
----
-
-## Long-Term Memory
-
-`MEMORY.md` is a persistent file that survives conversation resets and contains curated knowledge the LLM should always remember.
-
-### Storage
-
-Path: `memory/MEMORY.md` (within workspace: `~/.golemcore/workspace/memory/MEMORY.md`)
-
-### How It's Used
-
-On every request, `ContextBuildingSystem` loads `MEMORY.md` content and includes it under `## Long-term Memory` in the system prompt. This gives the LLM persistent knowledge across all sessions.
-
-### How It's Written
-
-`MEMORY.md` can be updated in two ways:
-
-1. **By the LLM** — using the `filesystem` tool to write to the memory directory (if the skill or prompt instructs it to maintain persistent notes)
-2. **By the user** — manually editing the file at `~/.golemcore/workspace/memory/MEMORY.md`
-
-The `MemoryComponent` interface provides `writeLongTerm(content)` and `readLongTerm()` methods.
-
----
-
-## Memory Context Format
-
-`MemoryService.getMemoryContext()` calls `Memory.toContext()` which formats all memory layers into markdown for the system prompt:
-
-```markdown
-## Long-term Memory
-User prefers concise responses.
-Project uses Spring Boot 4.0.2 with Java 25.
-Database is PostgreSQL on port 5432.
-
-## Today's Notes
-[14:15] User: How do I configure health checks? | Assistant: Add healthcheck section...
-[14:30] User: What about restart? | Assistant: Use restart: unless-stopped...
-
-## Recent Context
-### 2026-02-06
-[10:00] User: Set up CI/CD pipeline | Assistant: Created GitHub Actions workflow...
-[10:30] User: Add test stage | Assistant: Added test job with mvn test...
-
-### 2026-02-05
-[16:00] User: Initialize project | Assistant: Created Spring Boot project with...
-```
-
-**Sections included:**
-- `## Long-term Memory` — only if `MEMORY.md` has content
-- `## Today's Notes` — only if today's file exists and has content
-- `## Recent Context` — includes the last N days (default 7), with each day as a `###` subsection. Only days with content are shown.
-
-If all sections are empty, `toContext()` returns an empty string and the `# Memory` header is not included in the system prompt.
-
-> **Source:** `Memory.java`, `MemoryService.java`
+`MemoryPromptPackService` enforces soft/hard prompt budgets and renders compact markdown sections.
 
 ---
 
 ## Storage Layout
 
-```
+```text
 ~/.golemcore/workspace/
 ├── memory/
-│   ├── MEMORY.md              # Long-term persistent memory
-│   ├── 2026-02-07.md          # Today's notes
-│   ├── 2026-02-06.md          # Yesterday's notes
-│   ├── 2026-02-05.md          # ...
-│   └── ...                    # Up to recent-days files loaded
-│
+│   └── items/
+│       ├── episodic/
+│       │   └── 2026-02-22.jsonl
+│       ├── semantic.jsonl
+│       └── procedural.jsonl
 └── sessions/
-    ├── telegram:12345.json    # Session with messages, metadata
-    └── ...
+    └── {channel}:{chatId}.json
 ```
 
 ---
 
 ## Configuration
 
-Runtime config (stored in `preferences/runtime-config.json`):
+Runtime config (`preferences/runtime-config.json`):
 
 ```json
 {
   "memory": {
     "enabled": true,
-    "recentDays": 7
-  },
-  "compaction": {
-    "enabled": true,
-    "maxContextTokens": 50000,
-    "keepLastMessages": 20
+    "softPromptBudgetTokens": 1800,
+    "maxPromptBudgetTokens": 3500,
+    "workingTopK": 6,
+    "episodicTopK": 8,
+    "semanticTopK": 6,
+    "proceduralTopK": 4,
+    "promotionEnabled": true,
+    "promotionMinConfidence": 0.75,
+    "decayEnabled": true,
+    "decayDays": 30,
+    "retrievalLookbackDays": 21,
+    "codeAwareExtractionEnabled": true
   }
 }
 ```
 
-Storage paths/directories are Spring properties (see [Configuration Guide](CONFIGURATION.md)).
+Field notes:
+
+1. `softPromptBudgetTokens` / `maxPromptBudgetTokens`: memory prompt budget targets.
+2. `*TopK`: layer-specific retrieval limits.
+3. `promotion*`: controls semantic/procedural promotion.
+4. `decay*`: staleness window for memory cleanup/pruning.
+5. `retrievalLookbackDays`: how many recent episodic day-files are scanned during retrieval.
 
 ---
 
 ## Pipeline Integration
 
-| Order | System | Memory Behavior |
-|-------|--------|----------------|
-| 18 | `AutoCompactionSystem` | Compacts session messages if context too large |
-| 20 | `ContextBuildingSystem` | **Reads** memory context (MEMORY.md + daily notes + recent days) and injects into system prompt |
-| 30 | `ToolLoopExecutionSystem` | LLM call + tool execution; system prompt includes `# Memory` section; LLM can write to `MEMORY.md` via filesystem tool |
-| 50 | `MemoryPersistSystem` | **Writes** today's notes — appends `[HH:mm] User: ... \| Assistant: ...` |
-| 55 | `RagIndexingSystem` | Indexes exchange to LightRAG (separate from this memory system) |
+| Order | System | Memory behavior |
+|-------|--------|-----------------|
+| 18 | `AutoCompactionSystem` | Compacts oversized session history |
+| 20 | `ContextBuildingSystem` | Reads scored `MemoryPack` and injects `# Memory` |
+| 50 | `MemoryPersistSystem` | Writes structured turn memory events |
+| 55 | `RagIndexingSystem` | Indexes exchange for RAG |
 
-The read path (order=20) runs **before** the write path (order=50), so the LLM sees the memory state **before** the current exchange is recorded.
+Read path runs before write path in a turn, so the model sees pre-turn memory state.
 
 ---
 
-## Architecture: Key Classes
+## Key Classes
 
 | Class | Package | Purpose |
 |-------|---------|---------|
-| `Memory` | `domain.model` | Data model: longTermContent, todayNotes, recentDays; `toContext()` formatting |
-| `MemoryComponent` | `domain.component` | Interface: getMemory, readLongTerm, writeLongTerm, readToday, appendToday |
-| `MemoryService` | `domain.service` | Implementation: loads from storage, builds Memory, formats context |
-| `MemoryPersistSystem` | `domain.system` | Order=50: appends conversation exchanges to daily notes |
-| `SessionService` | `domain.service` | Session CRUD, message history, compaction operations |
-| `CompactionService` | `domain.service` | LLM-powered summarization for context overflow |
-| `AutoCompactionSystem` | `domain.system` | Order=18: automatic compaction when context exceeds threshold |
-| `AgentSession` | `domain.model` | Session model: id, messages, state, timestamps |
+| `MemoryComponent` | `domain.component` | Memory V2 interface for query/pack/persist/upsert |
+| `MemoryService` | `domain.service` | Memory facade implementation |
+| `MemoryWriteService` | `domain.service` | Event extraction, JSONL persistence, promotion |
+| `MemoryRetrievalService` | `domain.service` | Candidate loading, ranking, top-k selection |
+| `MemoryPromptPackService` | `domain.service` | Budgeted rendering into prompt context |
+| `MemoryPersistSystem` | `domain.system` | Pipeline writer for structured turn events |
+| `MemoryTool` | `tools` | Explicit memory operations for autonomous workflows |
 
 ---
 
 ## Debugging
 
-### Log Messages
+Typical logs:
 
-```
-[Context] Memory context: 1250 chars
-[MemoryPersist] Appended memory entry (85 chars)
-[AutoCompact] Context too large: ~150000 tokens (threshold 102400), 45 messages. Compacting...
-[AutoCompact] Compacted with LLM summary: removed 35 messages, kept 10
+```text
+[Context] Memory context: 1240 chars
+[Context] Built context: 12 tools, memory=true, skills=true, systemPrompt=8420 chars
 ```
 
-### Useful Commands
+Quick checks:
 
-| Command | What It Shows |
-|---------|--------------|
-| `/status` | Session message count, memory state |
-| `/compact [N]` | Manually compact conversation, keep last N messages |
-| `/stop` | Interrupt the current run (messages will be queued until your next message) |
-| `/new` | Clear session messages (memory files preserved) |
+1. Verify memory enabled and budgets in `preferences/runtime-config.json`.
+2. Inspect `memory/items/` JSONL files for extracted records.
+3. Confirm `ContextAttributes.MEMORY_PACK_DIAGNOSTICS` is populated in tests.

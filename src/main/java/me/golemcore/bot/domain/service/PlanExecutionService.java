@@ -173,12 +173,15 @@ public class PlanExecutionService {
     }
 
     private void publishExecutionSummary(Plan plan) {
-        if (plan.getChatId() == null) {
+        String deliveryChatId = plan.getTransportChatId() != null
+                ? plan.getTransportChatId()
+                : plan.getChatId();
+        if (deliveryChatId == null) {
             return;
         }
 
         String summary = buildExecutionSummary(plan);
-        eventPublisher.publishEvent(new PlanExecutionCompletedEvent(plan.getId(), plan.getChatId(), summary));
+        eventPublisher.publishEvent(new PlanExecutionCompletedEvent(plan.getId(), deliveryChatId, summary));
     }
 
     String buildExecutionSummary(Plan plan) {

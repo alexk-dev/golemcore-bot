@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -75,7 +76,19 @@ public class RuntimeConfigService {
     private static final String DEFAULT_AUTO_MODEL_TIER = "default";
     private static final int DEFAULT_AUTO_COMPACT_MAX_TOKENS = 50000;
     private static final int DEFAULT_AUTO_COMPACT_KEEP_LAST = 20;
-    private static final int DEFAULT_MEMORY_RECENT_DAYS = 7;
+    private static final int DEFAULT_MEMORY_SOFT_PROMPT_BUDGET_TOKENS = 1800;
+    private static final int DEFAULT_MEMORY_MAX_PROMPT_BUDGET_TOKENS = 3500;
+    private static final int DEFAULT_MEMORY_VERSION = 2;
+    private static final int DEFAULT_MEMORY_WORKING_TOP_K = 6;
+    private static final int DEFAULT_MEMORY_EPISODIC_TOP_K = 8;
+    private static final int DEFAULT_MEMORY_SEMANTIC_TOP_K = 6;
+    private static final int DEFAULT_MEMORY_PROCEDURAL_TOP_K = 4;
+    private static final boolean DEFAULT_MEMORY_PROMOTION_ENABLED = true;
+    private static final double DEFAULT_MEMORY_PROMOTION_MIN_CONFIDENCE = 0.75;
+    private static final boolean DEFAULT_MEMORY_DECAY_ENABLED = true;
+    private static final int DEFAULT_MEMORY_DECAY_DAYS = 30;
+    private static final int DEFAULT_MEMORY_RETRIEVAL_LOOKBACK_DAYS = 21;
+    private static final boolean DEFAULT_MEMORY_CODE_AWARE_EXTRACTION_ENABLED = true;
     private static final int DEFAULT_TURN_MAX_LLM_CALLS = 200;
     private static final int DEFAULT_TURN_MAX_TOOL_EXECUTIONS = 500;
     private static final java.time.Duration DEFAULT_TURN_DEADLINE = java.time.Duration.ofHours(1);
@@ -389,6 +402,25 @@ public class RuntimeConfigService {
     public boolean isShellEnabled() {
         Boolean val = getRuntimeConfig().getTools().getShellEnabled();
         return val != null ? val : true;
+    }
+
+    public Map<String, String> getShellEnvironmentVariables() {
+        List<RuntimeConfig.ShellEnvironmentVariable> configured = getRuntimeConfig()
+                .getTools()
+                .getShellEnvironmentVariables();
+        if (configured == null || configured.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> result = new LinkedHashMap<>();
+        for (RuntimeConfig.ShellEnvironmentVariable variable : configured) {
+            if (variable == null || variable.getName() == null || variable.getName().isBlank()) {
+                continue;
+            }
+            String name = variable.getName().trim();
+            String value = variable.getValue() != null ? variable.getValue() : "";
+            result.put(name, value);
+        }
+        return result;
     }
 
     public boolean isSkillManagementEnabled() {
@@ -731,13 +763,121 @@ public class RuntimeConfigService {
         return val != null ? val : true;
     }
 
-    public int getMemoryRecentDays() {
+    public int getMemorySoftPromptBudgetTokens() {
         RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
         if (memoryConfig == null) {
-            return DEFAULT_MEMORY_RECENT_DAYS;
+            return DEFAULT_MEMORY_SOFT_PROMPT_BUDGET_TOKENS;
         }
-        Integer val = memoryConfig.getRecentDays();
-        return val != null ? val : DEFAULT_MEMORY_RECENT_DAYS;
+        Integer val = memoryConfig.getSoftPromptBudgetTokens();
+        return val != null ? val : DEFAULT_MEMORY_SOFT_PROMPT_BUDGET_TOKENS;
+    }
+
+    public int getMemoryVersion() {
+        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
+        if (memoryConfig == null) {
+            return DEFAULT_MEMORY_VERSION;
+        }
+        Integer val = memoryConfig.getVersion();
+        return val != null ? val : DEFAULT_MEMORY_VERSION;
+    }
+
+    public int getMemoryMaxPromptBudgetTokens() {
+        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
+        if (memoryConfig == null) {
+            return DEFAULT_MEMORY_MAX_PROMPT_BUDGET_TOKENS;
+        }
+        Integer val = memoryConfig.getMaxPromptBudgetTokens();
+        return val != null ? val : DEFAULT_MEMORY_MAX_PROMPT_BUDGET_TOKENS;
+    }
+
+    public int getMemoryWorkingTopK() {
+        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
+        if (memoryConfig == null) {
+            return DEFAULT_MEMORY_WORKING_TOP_K;
+        }
+        Integer val = memoryConfig.getWorkingTopK();
+        return val != null ? val : DEFAULT_MEMORY_WORKING_TOP_K;
+    }
+
+    public int getMemoryEpisodicTopK() {
+        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
+        if (memoryConfig == null) {
+            return DEFAULT_MEMORY_EPISODIC_TOP_K;
+        }
+        Integer val = memoryConfig.getEpisodicTopK();
+        return val != null ? val : DEFAULT_MEMORY_EPISODIC_TOP_K;
+    }
+
+    public int getMemorySemanticTopK() {
+        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
+        if (memoryConfig == null) {
+            return DEFAULT_MEMORY_SEMANTIC_TOP_K;
+        }
+        Integer val = memoryConfig.getSemanticTopK();
+        return val != null ? val : DEFAULT_MEMORY_SEMANTIC_TOP_K;
+    }
+
+    public int getMemoryProceduralTopK() {
+        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
+        if (memoryConfig == null) {
+            return DEFAULT_MEMORY_PROCEDURAL_TOP_K;
+        }
+        Integer val = memoryConfig.getProceduralTopK();
+        return val != null ? val : DEFAULT_MEMORY_PROCEDURAL_TOP_K;
+    }
+
+    public boolean isMemoryPromotionEnabled() {
+        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
+        if (memoryConfig == null) {
+            return DEFAULT_MEMORY_PROMOTION_ENABLED;
+        }
+        Boolean val = memoryConfig.getPromotionEnabled();
+        return val != null ? val : DEFAULT_MEMORY_PROMOTION_ENABLED;
+    }
+
+    public double getMemoryPromotionMinConfidence() {
+        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
+        if (memoryConfig == null) {
+            return DEFAULT_MEMORY_PROMOTION_MIN_CONFIDENCE;
+        }
+        Double val = memoryConfig.getPromotionMinConfidence();
+        return val != null ? val : DEFAULT_MEMORY_PROMOTION_MIN_CONFIDENCE;
+    }
+
+    public boolean isMemoryDecayEnabled() {
+        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
+        if (memoryConfig == null) {
+            return DEFAULT_MEMORY_DECAY_ENABLED;
+        }
+        Boolean val = memoryConfig.getDecayEnabled();
+        return val != null ? val : DEFAULT_MEMORY_DECAY_ENABLED;
+    }
+
+    public int getMemoryDecayDays() {
+        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
+        if (memoryConfig == null) {
+            return DEFAULT_MEMORY_DECAY_DAYS;
+        }
+        Integer val = memoryConfig.getDecayDays();
+        return val != null ? val : DEFAULT_MEMORY_DECAY_DAYS;
+    }
+
+    public int getMemoryRetrievalLookbackDays() {
+        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
+        if (memoryConfig == null) {
+            return DEFAULT_MEMORY_RETRIEVAL_LOOKBACK_DAYS;
+        }
+        Integer val = memoryConfig.getRetrievalLookbackDays();
+        return val != null ? val : DEFAULT_MEMORY_RETRIEVAL_LOOKBACK_DAYS;
+    }
+
+    public boolean isMemoryCodeAwareExtractionEnabled() {
+        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
+        if (memoryConfig == null) {
+            return DEFAULT_MEMORY_CODE_AWARE_EXTRACTION_ENABLED;
+        }
+        Boolean val = memoryConfig.getCodeAwareExtractionEnabled();
+        return val != null ? val : DEFAULT_MEMORY_CODE_AWARE_EXTRACTION_ENABLED;
     }
 
     // ==================== Skills ====================
@@ -758,15 +898,6 @@ public class RuntimeConfigService {
         }
         Boolean val = skillsConfig.getProgressiveLoading();
         return val != null ? val : true;
-    }
-
-    /**
-     * Update the Telegram auth mode and persist.
-     */
-    public void setTelegramAuthMode(String mode) {
-        RuntimeConfig cfg = getRuntimeConfig();
-        cfg.getTelegram().setAuthMode(mode);
-        persist(cfg);
     }
 
     // ==================== Invite Codes ====================
@@ -824,18 +955,18 @@ public class RuntimeConfigService {
             return false;
         }
 
+        List<String> allowed = ensureMutableAllowedUsers(cfg.getTelegram());
+        if (!allowed.isEmpty() && !allowed.contains(userId)) {
+            log.warn("[RuntimeConfig] Invite redemption denied for user {}: invited user already registered", userId);
+            return false;
+        }
+
         for (RuntimeConfig.InviteCode ic : codes) {
             if (ic.getCode().equals(code)) {
                 if (ic.isUsed()) {
                     return false;
                 }
                 ic.setUsed(true);
-
-                List<String> allowed = cfg.getTelegram().getAllowedUsers();
-                if (allowed == null) {
-                    allowed = new ArrayList<>();
-                    cfg.getTelegram().setAllowedUsers(allowed);
-                }
                 if (!allowed.contains(userId)) {
                     allowed.add(userId);
                 }
@@ -845,6 +976,63 @@ public class RuntimeConfigService {
             }
         }
         return false;
+    }
+
+    /**
+     * Remove a Telegram user from allowed users list.
+     */
+    public boolean removeTelegramAllowedUser(String userId) {
+        RuntimeConfig cfg = getRuntimeConfig();
+        RuntimeConfig.TelegramConfig telegramConfig = cfg.getTelegram();
+        List<String> allowedUsers = ensureMutableAllowedUsers(telegramConfig);
+        if (allowedUsers.isEmpty()) {
+            return false;
+        }
+        boolean removed = allowedUsers.removeIf(existingUserId -> existingUserId.equals(userId));
+        if (removed) {
+            int revokedCodes = revokeActiveInviteCodes(telegramConfig);
+            persist(cfg);
+            log.info("[RuntimeConfig] Removed telegram allowed user: {} (revoked {} active invite codes)",
+                    userId, revokedCodes);
+        }
+        return removed;
+    }
+
+    private List<String> ensureMutableAllowedUsers(RuntimeConfig.TelegramConfig telegramConfig) {
+        List<String> allowedUsers = telegramConfig.getAllowedUsers();
+        if (allowedUsers == null) {
+            List<String> mutableAllowedUsers = new ArrayList<>();
+            telegramConfig.setAllowedUsers(mutableAllowedUsers);
+            return mutableAllowedUsers;
+        }
+        if (!(allowedUsers instanceof ArrayList<?>)) {
+            List<String> mutableAllowedUsers = new ArrayList<>(allowedUsers);
+            telegramConfig.setAllowedUsers(mutableAllowedUsers);
+            return mutableAllowedUsers;
+        }
+        return allowedUsers;
+    }
+
+    private int revokeActiveInviteCodes(RuntimeConfig.TelegramConfig telegramConfig) {
+        List<RuntimeConfig.InviteCode> inviteCodes = telegramConfig.getInviteCodes();
+        if (inviteCodes == null || inviteCodes.isEmpty()) {
+            return 0;
+        }
+
+        List<RuntimeConfig.InviteCode> retainedInviteCodes = new ArrayList<>(inviteCodes.size());
+        int revokedCount = 0;
+        for (RuntimeConfig.InviteCode inviteCode : inviteCodes) {
+            if (inviteCode != null && !inviteCode.isUsed()) {
+                revokedCount++;
+                continue;
+            }
+            retainedInviteCodes.add(inviteCode);
+        }
+
+        if (revokedCount > 0) {
+            telegramConfig.setInviteCodes(retainedInviteCodes);
+        }
+        return revokedCount;
     }
 
     // ==================== Persistence ====================
@@ -1009,13 +1197,47 @@ public class RuntimeConfigService {
         if (cfg == null) {
             return;
         }
+        if (cfg.getTelegram() != null) {
+            cfg.getTelegram().setAuthMode("invite_only");
+        }
+        if (cfg.getTools() == null) {
+            cfg.setTools(RuntimeConfig.ToolsConfig.builder().build());
+        }
+        cfg.getTools().setShellEnvironmentVariables(
+                normalizeShellEnvironmentVariables(cfg.getTools().getShellEnvironmentVariables()));
         if (cfg.getLlm() == null) {
             cfg.setLlm(RuntimeConfig.LlmConfig.builder().build());
         }
         if (cfg.getLlm().getProviders() == null) {
-            cfg.getLlm().setProviders(new java.util.LinkedHashMap<>());
+            cfg.getLlm().setProviders(new LinkedHashMap<>());
+        }
+        if (cfg.getMemory() == null) {
+            cfg.setMemory(new RuntimeConfig.MemoryConfig());
+        }
+        if (!Integer.valueOf(DEFAULT_MEMORY_VERSION).equals(cfg.getMemory().getVersion())) {
+            cfg.getMemory().setVersion(DEFAULT_MEMORY_VERSION);
         }
         normalizeSecretFlags(cfg);
+    }
+
+    private List<RuntimeConfig.ShellEnvironmentVariable> normalizeShellEnvironmentVariables(
+            List<RuntimeConfig.ShellEnvironmentVariable> variables) {
+        if (variables == null || variables.isEmpty()) {
+            return new ArrayList<>();
+        }
+        Map<String, RuntimeConfig.ShellEnvironmentVariable> deduplicated = new LinkedHashMap<>();
+        for (RuntimeConfig.ShellEnvironmentVariable variable : variables) {
+            if (variable == null || variable.getName() == null || variable.getName().isBlank()) {
+                continue;
+            }
+            String normalizedName = variable.getName().trim();
+            String normalizedValue = variable.getValue() != null ? variable.getValue() : "";
+            deduplicated.put(normalizedName, RuntimeConfig.ShellEnvironmentVariable.builder()
+                    .name(normalizedName)
+                    .value(normalizedValue)
+                    .build());
+        }
+        return new ArrayList<>(deduplicated.values());
     }
 
     private void normalizeSecretFlags(RuntimeConfig cfg) {

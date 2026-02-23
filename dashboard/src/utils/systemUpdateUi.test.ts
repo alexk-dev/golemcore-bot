@@ -1,13 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
-  formatUpdateOperation,
   formatUpdateTimestamp,
   getSidebarUpdateBadge,
-  getUpdateResultVariant,
   getUpdateStateDescription,
   getUpdateStateLabel,
   getUpdateStateVariant,
-  isRollbackOperation,
 } from './systemUpdateUi';
 
 describe('systemUpdateUi', () => {
@@ -30,7 +27,7 @@ describe('systemUpdateUi', () => {
   });
 
   it('shouldResolveUpdateLabelsAndDescriptionsWithFallback', () => {
-    expect(getUpdateStateLabel('ROLLED_BACK')).toBe('Rolled Back');
+    expect(getUpdateStateLabel('FAILED')).toBe('Failed');
     expect(getUpdateStateLabel('CUSTOM')).toBe('CUSTOM');
     expect(getUpdateStateDescription('FAILED')).toContain('failed');
     expect(getUpdateStateDescription('CUSTOM')).toBe('Unknown state');
@@ -56,21 +53,5 @@ describe('systemUpdateUi', () => {
       title: 'Last update operation failed',
     });
     expect(getSidebarUpdateBadge('IDLE')).toBeNull();
-  });
-
-  it('shouldFormatOperationsAndResolveRollbackOperation', () => {
-    expect(formatUpdateOperation(' CHECK ')).toBe('Check');
-    expect(formatUpdateOperation('prepare')).toBe('Prepare');
-    expect(formatUpdateOperation('apply')).toBe('Apply');
-    expect(formatUpdateOperation('rollback')).toBe('Rollback');
-    expect(formatUpdateOperation('custom')).toBe('custom');
-
-    expect(isRollbackOperation('ROLLBACK')).toBe(true);
-    expect(isRollbackOperation('apply')).toBe(false);
-  });
-
-  it('shouldResolveHistoryResultVariant', () => {
-    expect(getUpdateResultVariant('SUCCESS')).toBe('success');
-    expect(getUpdateResultVariant(' failed ')).toBe('danger');
   });
 });

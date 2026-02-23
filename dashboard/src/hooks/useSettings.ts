@@ -7,6 +7,7 @@ import {
   type ToolsConfig,
   type VoiceConfig,
   type MemoryConfig,
+  type MemoryPreset,
   type SkillsConfig,
   type TurnConfig,
   type UsageConfig,
@@ -30,6 +31,7 @@ import {
   updateToolsConfig,
   updateVoiceConfig,
   updateMemoryConfig,
+  getMemoryPresets,
   updateSkillsConfig,
   updateTurnConfig,
   updateUsageConfig,
@@ -40,6 +42,7 @@ import {
   updateAdvancedConfig,
   generateInviteCode,
   deleteInviteCode,
+  deleteTelegramAllowedUser,
   restartTelegram,
 } from '../api/settings';
 
@@ -137,6 +140,10 @@ export function useUpdateMemory(): UseMutationResult<Awaited<ReturnType<typeof u
   });
 }
 
+export function useMemoryPresets(): UseQueryResult<MemoryPreset[], unknown> {
+  return useQuery({ queryKey: ['runtime-config', 'memory-presets'], queryFn: getMemoryPresets });
+}
+
 export function useUpdateSkills(): UseMutationResult<Awaited<ReturnType<typeof updateSkillsConfig>>, unknown, SkillsConfig> {
   const qc = useQueryClient();
   return useMutation({
@@ -218,6 +225,18 @@ export function useDeleteInviteCode(): UseMutationResult<Awaited<ReturnType<type
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (code: string) => deleteInviteCode(code),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useDeleteTelegramAllowedUser(): UseMutationResult<
+  Awaited<ReturnType<typeof deleteTelegramAllowedUser>>,
+  unknown,
+  string
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) => deleteTelegramAllowedUser(userId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
   });
 }

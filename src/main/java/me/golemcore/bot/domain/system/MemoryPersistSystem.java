@@ -24,19 +24,23 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.TurnOutcome;
+import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.model.TurnMemoryEvent;
+import me.golemcore.bot.domain.service.MemoryScopeSupport;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
- * System for persisting conversation exchanges to daily memory notes
- * (order=50). Appends each user-assistant interaction to today's note file for
- * long-term context retention. Runs after tool execution and before response
- * routing in the pipeline.
+ * System for persisting structured turn-level memory events (order=50).
+ * Captures user/assistant exchange and selected tool outputs for Memory V2.
  */
 @Component
 @RequiredArgsConstructor
@@ -44,9 +48,6 @@ import java.time.format.DateTimeFormatter;
 public class MemoryPersistSystem implements AgentSystem {
 
     private final MemoryComponent memoryComponent;
-
-    private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm")
-            .withZone(ZoneId.systemDefault());
 
     @Override
     public String getName() {
@@ -89,15 +90,23 @@ public class MemoryPersistSystem implements AgentSystem {
             assistantContent = response.getContent();
         }
 
-        // Build memory entry
-        String entry = buildMemoryEntry(lastUserMessage, assistantContent);
-
-        // Append to today's notes
+        // Persist structured memory event (Memory V2)
         try {
-            memoryComponent.appendToday(entry);
-            log.debug("Persisted conversation to memory");
+            List<String> scopes = resolvePersistScopes(context);
+            List<String> toolOutputs = extractToolOutputs(context);
+            for (String scope : scopes) {
+                TurnMemoryEvent event = TurnMemoryEvent.builder()
+                        .timestamp(Instant.now())
+                        .userText(lastUserMessage.getContent())
+                        .assistantText(assistantContent)
+                        .activeSkill(context.getActiveSkill() != null ? context.getActiveSkill().getName() : null)
+                        .scope(scope)
+                        .toolOutputs(toolOutputs)
+                        .build();
+                memoryComponent.persistTurnMemory(event);
+            }
         } catch (Exception e) {
-            log.warn("Failed to persist to memory", e);
+            log.warn("Failed to persist structured memory event", e);
         }
 
         return context;
@@ -117,15 +126,6 @@ public class MemoryPersistSystem implements AgentSystem {
         return null;
     }
 
-    private String buildMemoryEntry(Message userMessage, String assistantText) {
-        String time = TIME_FORMATTER.format(Instant.now());
-        String userContent = truncate(userMessage.getContent(), 200);
-        String assistantContent = truncate(assistantText, 300);
-
-        return String.format("[%s] User: %s | Assistant: %s%n",
-                time, userContent, assistantContent);
-    }
-
     private String truncate(String text, int maxLength) {
         if (text == null) {
             return "";
@@ -135,5 +135,60 @@ public class MemoryPersistSystem implements AgentSystem {
             return text;
         }
         return text.substring(0, maxLength - 3) + "...";
+    }
+
+    private List<String> extractToolOutputs(AgentContext context) {
+        List<String> outputs = new ArrayList<>();
+        Map<String, ToolResult> toolResults = context.getToolResults();
+        if (toolResults == null || toolResults.isEmpty()) {
+            return outputs;
+        }
+
+        for (ToolResult result : toolResults.values()) {
+            if (result == null) {
+                continue;
+            }
+            String output = result.getOutput();
+            if (output != null && !output.isBlank()) {
+                outputs.add(truncate(output, 800));
+                continue;
+            }
+            String error = result.getError();
+            if (error != null && !error.isBlank()) {
+                outputs.add("Error: " + truncate(error, 800));
+            }
+        }
+        return outputs;
+    }
+
+    private List<String> resolvePersistScopes(AgentContext context) {
+        String runKind = context.getAttribute(ContextAttributes.AUTO_RUN_KIND);
+        String goalId = context.getAttribute(ContextAttributes.AUTO_GOAL_ID);
+        String taskId = context.getAttribute(ContextAttributes.AUTO_TASK_ID);
+
+        String sessionScope = MemoryScopeSupport.resolveScopeFromSessionOrGlobal(context.getSession());
+        if (runKind == null || runKind.isBlank()) {
+            return List.of(sessionScope);
+        }
+
+        Set<String> scopes = new LinkedHashSet<>();
+        String taskScope = MemoryScopeSupport.buildTaskScopeOrGlobal(taskId);
+        if (!MemoryScopeSupport.GLOBAL_SCOPE.equals(taskScope)) {
+            scopes.add(taskScope);
+        }
+
+        if ("GOAL_RUN".equalsIgnoreCase(runKind)) {
+            String channelType = context.getAttribute(ContextAttributes.SESSION_IDENTITY_CHANNEL);
+            String conversationKey = context.getAttribute(ContextAttributes.SESSION_IDENTITY_CONVERSATION);
+            String goalScope = MemoryScopeSupport.buildGoalScopeOrGlobal(channelType, conversationKey, goalId);
+            if (!MemoryScopeSupport.GLOBAL_SCOPE.equals(goalScope)) {
+                scopes.add(goalScope);
+            }
+        }
+
+        if (scopes.isEmpty()) {
+            scopes.add(sessionScope);
+        }
+        return new ArrayList<>(scopes);
     }
 }

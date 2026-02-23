@@ -1,21 +1,42 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Offcanvas } from 'react-bootstrap';
+import { FiLayout, FiMessageSquare, FiPlus } from 'react-icons/fi';
 import { useAuthStore } from '../../store/authStore';
-import { useContextPanelStore } from '../../store/contextPanelStore';
-import { listSessions, getSession } from '../../api/sessions';
+import { useChatSessionStore } from '../../store/chatSessionStore';
+import { useContextPanelStore, type TurnMetadata } from '../../store/contextPanelStore';
+import { getActiveSession, listSessions, getSession, setActiveSession } from '../../api/sessions';
+import { useCreateSession } from '../../hooks/useSessions';
 import { getGoals } from '../../api/goals';
-import { updatePreferences } from '../../api/settings';
+import { getSettings, updatePreferences } from '../../api/settings';
 import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
 import ContextPanel from './ContextPanel';
 import { createUuid } from '../../utils/uuid';
+import { isLegacyCompatibleConversationKey, normalizeConversationKey } from '../../utils/conversationKey';
 
-const SESSION_KEY = 'golem-chat-session-id';
 const INITIAL_MESSAGES = 50;
 const LOAD_MORE_COUNT = 50;
 const GOALS_POLL_INTERVAL = 30000;
 const RECONNECT_DELAY_MS = 3000;
 const TYPING_RESET_MS = 3000;
+const SUPPORTED_TIERS = ['balanced', 'smart', 'coding', 'deep'] as const;
+const STARTER_PROMPTS = [
+  {
+    key: 'plan-next',
+    label: 'Plan next step',
+    text: 'Review the current status and suggest the next three prioritized steps.',
+  },
+  {
+    key: 'risk-check',
+    label: 'Find risks',
+    text: 'Analyze the current work and list the most likely risks with mitigations.',
+  },
+  {
+    key: 'draft-update',
+    label: 'Draft update',
+    text: 'Write a concise progress update I can send to the team.',
+  },
+];
 
 const EMPTY_TURN_METADATA = {
   model: null,
@@ -28,15 +49,6 @@ const EMPTY_TURN_METADATA = {
   maxContextTokens: null,
 };
 
-function getChatSessionId(): string {
-  let id = localStorage.getItem(SESSION_KEY);
-  if (id == null || id.length === 0) {
-    id = createUuid();
-    localStorage.setItem(SESSION_KEY, id);
-  }
-  return id;
-}
-
 function getLocalCommand(text: string): 'new' | 'reset' | null {
   const command = (text.split(/\s+/)[0] ?? '').toLowerCase();
   if (command === '/new') {
@@ -46,6 +58,25 @@ function getLocalCommand(text: string): 'new' | 'reset' | null {
     return 'reset';
   }
   return null;
+}
+
+function isSupportedTier(value: string): value is (typeof SUPPORTED_TIERS)[number] {
+  return SUPPORTED_TIERS.some((tier) => tier === value);
+}
+
+function normalizeTier(value: string | null | undefined): string {
+  if (value == null) {
+    return 'balanced';
+  }
+  const normalized = value.toLowerCase();
+  return isSupportedTier(normalized) ? normalized : 'balanced';
+}
+
+function hasVisibleContent(content: string | null | undefined): boolean {
+  if (content == null) {
+    return false;
+  }
+  return content.trim().length > 0;
 }
 
 interface ChatMessage {
@@ -90,8 +121,40 @@ interface SocketMessage {
   hint?: AssistantHint;
 }
 
+function toTurnMetadataPatch(hint: AssistantHint): Partial<TurnMetadata> {
+  const patch: Partial<TurnMetadata> = {};
+  if (Object.prototype.hasOwnProperty.call(hint, 'model')) {
+    patch.model = hint.model ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(hint, 'tier')) {
+    patch.tier = hint.tier ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(hint, 'reasoning')) {
+    patch.reasoning = hint.reasoning ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(hint, 'inputTokens')) {
+    patch.inputTokens = hint.inputTokens ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(hint, 'outputTokens')) {
+    patch.outputTokens = hint.outputTokens ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(hint, 'totalTokens')) {
+    patch.totalTokens = hint.totalTokens ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(hint, 'latencyMs')) {
+    patch.latencyMs = hint.latencyMs ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(hint, 'maxContextTokens')) {
+    patch.maxContextTokens = hint.maxContextTokens ?? null;
+  }
+  return patch;
+}
+
 export default function ChatWindow() {
-  const [chatSessionId, setChatSessionId] = useState(() => getChatSessionId());
+  const chatSessionId = useChatSessionStore((s) => s.activeSessionId);
+  const setChatSessionId = useChatSessionStore((s) => s.setActiveSessionId);
+  const clientInstanceId = useChatSessionStore((s) => s.clientInstanceId);
+  const createSessionMutation = useCreateSession();
   const [allMessages, setAllMessages] = useState<ChatMessage[]>([]);
   const [visibleStart, setVisibleStart] = useState(0);
   const [connected, setConnected] = useState(false);
@@ -111,6 +174,10 @@ export default function ChatWindow() {
   const lastUpdateWasChunkRef = useRef(false);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const historySessionRef = useRef(chatSessionId);
+  const hasSessionInteractionRef = useRef(false);
+  const preferenceUpdateQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const hasLocalPreferenceChangesRef = useRef(false);
 
   const token = useAuthStore((s) => s.accessToken);
   const {
@@ -126,6 +193,24 @@ export default function ChatWindow() {
   useEffect(() => {
     chatSessionIdRef.current = chatSessionId;
   }, [chatSessionId]);
+
+  // Keep tier controls in sync with persisted user preferences used by backend tier resolution.
+  useEffect(() => {
+    let cancelled = false;
+    getSettings()
+      .then((settings) => {
+        if (cancelled || hasLocalPreferenceChangesRef.current) {
+          return;
+        }
+        setTier(normalizeTier(settings.modelTier));
+        setTierForce(settings.tierForce === true);
+      })
+      .catch(() => { /* ignore */ });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const clearReconnectTimer = useCallback(() => {
     if (reconnectTimerRef.current != null) {
@@ -152,11 +237,21 @@ export default function ChatWindow() {
   }, [resetTurnMetadata]);
 
   const startNewConversation = useCallback(() => {
+    hasSessionInteractionRef.current = true;
     const newSessionId = createUuid();
-    localStorage.setItem(SESSION_KEY, newSessionId);
     setChatSessionId(newSessionId);
     resetConversationState();
-  }, [resetConversationState]);
+    createSessionMutation.mutate({
+      channelType: 'web',
+      clientInstanceId,
+      conversationKey: newSessionId,
+      activate: true,
+    }, {
+      onError: () => {
+        // ignore creation failures; session will still be created lazily on first message
+      },
+    });
+  }, [clientInstanceId, createSessionMutation, resetConversationState, setChatSessionId]);
 
   const setUserMessageStatus = useCallback((id: string, status: 'pending' | 'failed' | null): void => {
     setAllMessages((prev) => {
@@ -216,27 +311,89 @@ export default function ChatWindow() {
         text: payload.text,
         attachments: payload.attachments,
         sessionId: chatSessionId,
+        clientInstanceId,
       }));
       return true;
     } catch {
       setUserMessageStatus(id, 'failed');
       return false;
     }
-  }, [chatSessionId, setUserMessageStatus]);
+  }, [chatSessionId, clientInstanceId, setUserMessageStatus]);
 
   useEffect(() => {
     resetTurnMetadata();
   }, [chatSessionId, resetTurnMetadata]);
 
+  // Keep server-side active pointer in sync with local chat session selection.
+  useEffect(() => {
+    if (!isLegacyCompatibleConversationKey(chatSessionId)) {
+      return;
+    }
+    setActiveSession({
+      channelType: 'web',
+      clientInstanceId,
+      conversationKey: chatSessionId,
+    }).catch(() => {
+      // ignore pointer persistence failures
+    });
+  }, [chatSessionId, clientInstanceId]);
+
+  // Resolve active conversation from backend on mount to keep sidebar/chat consistent across pages.
+  useEffect(() => {
+    let cancelled = false;
+    const initialSessionId = chatSessionIdRef.current;
+    getActiveSession('web', clientInstanceId)
+      .then((activeSession) => {
+        if (cancelled || hasSessionInteractionRef.current || chatSessionIdRef.current !== initialSessionId) {
+          return;
+        }
+        const nextConversationKey = normalizeConversationKey(activeSession.conversationKey);
+        if (nextConversationKey == null || !isLegacyCompatibleConversationKey(nextConversationKey)) {
+          startNewConversation();
+          return;
+        }
+        if (nextConversationKey === chatSessionIdRef.current) {
+          return;
+        }
+        setChatSessionId(nextConversationKey);
+        resetConversationState();
+      })
+      .catch(() => {
+        // ignore active session resolution failures
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [clientInstanceId, resetConversationState, setChatSessionId, startNewConversation]);
+
+  const enqueuePreferencesUpdate = useCallback((prefsPatch: Record<string, unknown>) => {
+    preferenceUpdateQueueRef.current = preferenceUpdateQueueRef.current
+      .catch(() => { /* ignore */ })
+      .then(async () => {
+        const settings = await updatePreferences(prefsPatch);
+        setTier(normalizeTier(settings.modelTier));
+        setTierForce(settings.tierForce === true);
+      })
+      .catch(() => { /* ignore */ });
+  }, []);
+
   // Load current session history
   useEffect(() => {
     let cancelled = false;
+    const sessionChanged = historySessionRef.current !== chatSessionId;
+    historySessionRef.current = chatSessionId;
+
     setHistoryLoading(true);
     setHistoryError(null);
+    if (sessionChanged) {
+      setAllMessages([]);
+      setVisibleStart(0);
+    }
 
     listSessions('web')
       .then((sessions) => {
-        const match = sessions.find((session) => session.chatId === chatSessionId);
+        const match = sessions.find((session) => session.conversationKey === chatSessionId || session.chatId === chatSessionId);
         if (match == null) {
           return null;
         }
@@ -254,7 +411,10 @@ export default function ChatWindow() {
         }
 
         const history: ChatMessage[] = detail.messages
-          .filter((message) => message.role === 'user' || message.role === 'assistant')
+          .filter((message) => (
+            (message.role === 'user' || message.role === 'assistant')
+            && hasVisibleContent(message.content)
+          ))
           .map((message) => ({
             id: message.id,
             role: message.role as 'user' | 'assistant',
@@ -397,41 +557,40 @@ export default function ChatWindow() {
             lastUpdateWasChunkRef.current = data.type === 'assistant_chunk';
 
             if (data.hint != null) {
-              setTurnMetadata({
-                model: data.hint.model ?? null,
-                tier: data.hint.tier ?? null,
-                reasoning: data.hint.reasoning ?? null,
-                inputTokens: data.hint.inputTokens ?? null,
-                outputTokens: data.hint.outputTokens ?? null,
-                totalTokens: data.hint.totalTokens ?? null,
-                latencyMs: data.hint.latencyMs ?? null,
-                maxContextTokens: data.hint.maxContextTokens ?? null,
-              });
+              const metadataPatch = toTurnMetadataPatch(data.hint);
+              if (Object.keys(metadataPatch).length > 0) {
+                setTurnMetadata(metadataPatch);
+              }
             }
 
             setAllMessages((prev) => {
               const last = prev.length > 0 ? prev[prev.length - 1] : undefined;
-              const chunkModel = data.hint?.model ?? null;
-              const chunkTier = data.hint?.tier ?? null;
-              const chunkReasoning = data.hint?.reasoning ?? null;
+              const chunkText = data.text ?? '';
+              const chunkModel = data.hint?.model;
+              const chunkTier = data.hint?.tier;
+              const chunkReasoning = data.hint?.reasoning;
 
               if (last?.role === 'assistant' && data.type === 'assistant_chunk') {
                 return [...prev.slice(0, -1), {
                   ...last,
-                  content: `${last.content}${data.text ?? ''}`,
+                  content: `${last.content}${chunkText}`,
                   model: chunkModel ?? last.model ?? null,
                   tier: chunkTier ?? last.tier ?? null,
                   reasoning: chunkReasoning ?? last.reasoning ?? null,
                 }];
               }
 
+              if (chunkText.length === 0) {
+                return prev;
+              }
+
               return [...prev, {
                 id: createUuid(),
                 role: 'assistant',
-                content: data.text ?? '',
-                model: chunkModel,
-                tier: chunkTier,
-                reasoning: chunkReasoning,
+                content: chunkText,
+                model: chunkModel ?? null,
+                tier: chunkTier ?? null,
+                reasoning: chunkReasoning ?? null,
               }];
             });
           }
@@ -466,6 +625,7 @@ export default function ChatWindow() {
   }, [allMessages, typing]);
 
   const handleRetry = useCallback((messageId: string) => {
+    hasSessionInteractionRef.current = true;
     let payloadToRetry: OutboundChatPayload | null = null;
 
     setAllMessages((prev) => prev.map((message) => {
@@ -487,6 +647,14 @@ export default function ChatWindow() {
 
   const handleSend = useCallback(({ text, attachments }: OutboundChatPayload) => {
     const trimmed = text.trim();
+    const localCommand = getLocalCommand(trimmed);
+    if (localCommand === 'new' && attachments.length === 0) {
+      startNewConversation();
+      return;
+    }
+
+    hasSessionInteractionRef.current = true;
+
     const fallback = attachments.length > 0
       ? `[${attachments.length} image attachment${attachments.length > 1 ? 's' : ''}]`
       : '';
@@ -509,31 +677,26 @@ export default function ChatWindow() {
     lastUpdateWasChunkRef.current = false;
 
     const sent = sendPayload(messageId, outboundPayload);
-    const localCommand = getLocalCommand(trimmed);
-
-    if (localCommand === 'new') {
-      startNewConversation();
-      return;
-    }
 
     if (localCommand === 'reset' && sent) {
       resetConversationState();
     }
   }, [resetConversationState, sendPayload, startNewConversation]);
 
-  const handleTierChange = async (newTier: string) => {
-    setTier(newTier);
-    try {
-      await updatePreferences({ modelTier: newTier, tierForce });
-    } catch { /* ignore */ }
-  };
+  const handleTierChange = useCallback((newTier: string) => {
+    const normalizedTier = normalizeTier(newTier);
+    hasLocalPreferenceChangesRef.current = true;
+    setTier(normalizedTier);
+    setTurnMetadata({ model: null, tier: null, reasoning: null });
+    enqueuePreferencesUpdate({ modelTier: normalizedTier });
+  }, [enqueuePreferencesUpdate, setTurnMetadata]);
 
-  const handleForceChange = async (force: boolean) => {
+  const handleForceChange = useCallback((force: boolean) => {
+    hasLocalPreferenceChangesRef.current = true;
     setTierForce(force);
-    try {
-      await updatePreferences({ modelTier: tier, tierForce: force });
-    } catch { /* ignore */ }
-  };
+    setTurnMetadata({ model: null, tier: null, reasoning: null });
+    enqueuePreferencesUpdate({ tierForce: force });
+  }, [enqueuePreferencesUpdate, setTurnMetadata]);
 
   const visibleMessages = allMessages.slice(visibleStart);
   const hasMore = visibleStart > 0;
@@ -542,26 +705,50 @@ export default function ChatWindow() {
     <div className="chat-page-layout">
       <div className="chat-container">
         <div className="chat-toolbar">
-          <div className="chat-toolbar-inner d-flex align-items-center">
-            <div className="d-flex align-items-center gap-2 flex-grow-1" aria-live="polite">
-              <span className={`status-dot ${connected ? 'online' : 'offline'}`} aria-hidden="true" />
-              <small className="text-body-secondary">{connected ? 'Connected' : 'Reconnecting...'}</small>
+          <div className="chat-toolbar-inner">
+            <div className="chat-toolbar-main">
+              <div className="chat-toolbar-title-group">
+                <div className="chat-toolbar-title">
+                  <FiMessageSquare aria-hidden="true" />
+                  <span>Workspace Chat</span>
+                </div>
+                <small className="chat-toolbar-subtitle">
+                  Session: <span className="font-mono">{chatSessionId.slice(0, 8)}</span>
+                </small>
+              </div>
+              <div className="chat-toolbar-status" aria-live="polite">
+                <span className={`status-dot ${connected ? 'online' : 'offline'}`} aria-hidden="true" />
+                <small className="text-body-secondary">{connected ? 'Connected' : 'Reconnecting...'}</small>
+              </div>
             </div>
-            <button
-              type="button"
-              className="btn btn-sm btn-secondary panel-toggle-btn"
-              onClick={() => {
-                if (window.innerWidth > 992) {
-                  togglePanel();
-                } else {
-                  openMobileDrawer();
-                }
-              }}
-              title={panelOpen ? 'Hide context panel' : 'Show context panel'}
-              aria-label={panelOpen ? 'Hide context panel' : 'Show context panel'}
-            >
-              {panelOpen ? '\u00BB' : '\u00AB'}
-            </button>
+            <div className="chat-toolbar-actions">
+              <button
+                type="button"
+                className="btn btn-sm btn-secondary chat-toolbar-btn"
+                onClick={startNewConversation}
+                title="Start a new chat session"
+                aria-label="Start a new chat session"
+              >
+                <FiPlus aria-hidden="true" />
+                <span>New chat</span>
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm btn-secondary chat-toolbar-btn panel-toggle-btn"
+                onClick={() => {
+                  if (window.innerWidth > 992) {
+                    togglePanel();
+                  } else {
+                    openMobileDrawer();
+                  }
+                }}
+                title={panelOpen ? 'Hide context panel' : 'Show context panel'}
+                aria-label={panelOpen ? 'Hide context panel' : 'Show context panel'}
+              >
+                <FiLayout aria-hidden="true" />
+                <span>{panelOpen ? 'Hide context' : 'Show context'}</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -586,7 +773,7 @@ export default function ChatWindow() {
                 <small className="text-danger">{historyError}</small>
                 <button
                   type="button"
-                  className="btn btn-sm btn-outline-secondary"
+                  className="btn btn-sm btn-secondary"
                   onClick={() => setHistoryReloadTick((v) => v + 1)}
                 >
                   Retry
@@ -601,12 +788,37 @@ export default function ChatWindow() {
                 ) : (
                   <button
                     type="button"
-                    className="btn btn-sm btn-outline-secondary"
+                    className="btn btn-sm btn-secondary chat-history-load-btn"
                     onClick={() => setVisibleStart(Math.max(0, visibleStart - LOAD_MORE_COUNT))}
                   >
                     Load earlier messages
                   </button>
                 )}
+              </div>
+            )}
+
+            {!historyLoading && historyError == null && visibleMessages.length === 0 && (
+              <div className="chat-empty-state" role="status" aria-live="polite">
+                <div className="chat-empty-state-icon" aria-hidden="true">
+                  <FiMessageSquare />
+                </div>
+                <h2 className="chat-empty-state-title">Start a focused conversation</h2>
+                <p className="chat-empty-state-text">
+                  Pick a starter prompt or type your own message below.
+                </p>
+                <div className="chat-starter-grid">
+                  {STARTER_PROMPTS.map((prompt) => (
+                    <button
+                      key={prompt.key}
+                      type="button"
+                      className="chat-starter-card"
+                      onClick={() => handleSend({ text: prompt.text, attachments: [] })}
+                    >
+                      <span className="chat-starter-title">{prompt.label}</span>
+                      <span className="chat-starter-text">{prompt.text}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -627,7 +839,10 @@ export default function ChatWindow() {
 
             {typing && (
               <div className="typing-indicator" role="status" aria-live="polite" aria-label="Assistant is typing">
-                <span aria-hidden="true" /><span aria-hidden="true" /><span aria-hidden="true" />
+                <span className="typing-label">Thinking</span>
+                <span className="typing-dots" aria-hidden="true">
+                  <span /><span /><span />
+                </span>
               </div>
             )}
           </div>
@@ -639,7 +854,11 @@ export default function ChatWindow() {
           running={typing}
           onStop={() => {
             if (wsRef.current?.readyState === WebSocket.OPEN) {
-              wsRef.current.send(JSON.stringify({ text: '/stop', sessionId: chatSessionId }));
+              wsRef.current.send(JSON.stringify({
+                text: '/stop',
+                sessionId: chatSessionId,
+                clientInstanceId,
+              }));
             }
           }}
         />

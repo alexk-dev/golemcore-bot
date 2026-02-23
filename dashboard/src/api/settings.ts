@@ -42,6 +42,33 @@ function normalizeLlmApiType(value: unknown): SupportedLlmApiType | null {
 
 type UnknownRecord = Record<string, unknown>;
 
+function toShellEnvironmentVariables(value: unknown): ShellEnvironmentVariable[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const normalized: ShellEnvironmentVariable[] = [];
+  value.forEach((entry) => {
+    if (entry == null || typeof entry !== 'object') {
+      return;
+    }
+    const record = entry as UnknownRecord;
+    const nameRaw = record.name;
+    const valueRaw = record.value;
+    if (typeof nameRaw !== 'string') {
+      return;
+    }
+    const name = nameRaw.trim();
+    if (name.length === 0) {
+      return;
+    }
+    normalized.push({
+      name,
+      value: typeof valueRaw === 'string' ? valueRaw : '',
+    });
+  });
+  return normalized;
+}
+
 interface RuntimeConfigUiRecord extends UnknownRecord {
   telegram?: UnknownRecord;
   llm?: {
@@ -84,6 +111,7 @@ function toUiRuntimeConfig(data: RuntimeConfigUiRecord): RuntimeConfig {
     const smtp = cfg.tools.smtp;
     cfg.tools = {
       ...cfg.tools,
+      shellEnvironmentVariables: toShellEnvironmentVariables(cfg.tools.shellEnvironmentVariables),
       braveSearchApiKey: scrubSecret(),
       braveSearchApiKeyPresent: hasSecretValue(cfg.tools.braveSearchApiKey),
       imap: imap
@@ -213,6 +241,8 @@ function toBackendWebhookConfig(config: WebhookConfig): UnknownRecord {
 export interface SettingsResponse extends Record<string, unknown> {
   language?: string;
   timezone?: string;
+  modelTier?: string | null;
+  tierForce?: boolean;
   webhooks?: WebhookConfig;
 }
 
@@ -272,7 +302,25 @@ export interface LlmProviderConfig {
 
 export interface MemoryConfig {
   enabled: boolean | null;
-  recentDays: number | null;
+  softPromptBudgetTokens: number | null;
+  maxPromptBudgetTokens: number | null;
+  workingTopK: number | null;
+  episodicTopK: number | null;
+  semanticTopK: number | null;
+  proceduralTopK: number | null;
+  promotionEnabled: boolean | null;
+  promotionMinConfidence: number | null;
+  decayEnabled: boolean | null;
+  decayDays: number | null;
+  retrievalLookbackDays: number | null;
+  codeAwareExtractionEnabled: boolean | null;
+}
+
+export interface MemoryPreset {
+  id: string;
+  label: string;
+  comment: string;
+  memory: MemoryConfig;
 }
 
 export interface SkillsConfig {
@@ -290,7 +338,7 @@ export interface TelegramConfig {
   enabled: boolean | null;
   token: string | null;
   tokenPresent?: boolean;
-  authMode: 'user' | 'invite_only' | null;
+  authMode: 'invite_only' | null;
   allowedUsers: string[];
   inviteCodes: InviteCode[];
 }
@@ -332,8 +380,14 @@ export interface ToolsConfig {
   skillTransitionEnabled: boolean | null;
   tierEnabled: boolean | null;
   goalManagementEnabled: boolean | null;
+  shellEnvironmentVariables: ShellEnvironmentVariable[];
   imap: ImapConfig;
   smtp: SmtpConfig;
+}
+
+export interface ShellEnvironmentVariable {
+  name: string;
+  value: string;
 }
 
 export interface ImapConfig {
@@ -569,6 +623,11 @@ export async function updateMemoryConfig(config: MemoryConfig): Promise<RuntimeC
   return toUiRuntimeConfig(data);
 }
 
+export async function getMemoryPresets(): Promise<MemoryPreset[]> {
+  const { data } = await client.get<MemoryPreset[]>('/settings/runtime/memory/presets');
+  return data;
+}
+
 export async function updateSkillsConfig(config: SkillsConfig): Promise<RuntimeConfig> {
   const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/skills', config);
   return toUiRuntimeConfig(data);
@@ -621,6 +680,10 @@ export async function generateInviteCode(): Promise<InviteCode> {
 
 export async function deleteInviteCode(code: string): Promise<void> {
   await client.delete(`/settings/telegram/invite-codes/${code}`);
+}
+
+export async function deleteTelegramAllowedUser(userId: string): Promise<void> {
+  await client.delete(`/settings/telegram/allowed-users/${userId}`);
 }
 
 export async function restartTelegram(): Promise<void> {

@@ -5,6 +5,9 @@ import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.MemoryPack;
+import me.golemcore.bot.domain.model.MemoryQuery;
 import me.golemcore.bot.domain.model.McpConfig;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.Plan;
@@ -19,6 +22,7 @@ import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.SkillTemplateEngine;
 import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.service.WorkspaceInstructionService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.McpPort;
 import me.golemcore.bot.port.outbound.RagPort;
@@ -59,6 +63,7 @@ class ContextBuildingSystemPromptTest {
     private PromptSectionService promptSectionService;
     private RuntimeConfigService runtimeConfigService;
     private UserPreferencesService userPreferencesService;
+    private WorkspaceInstructionService workspaceInstructionService;
     private ContextBuildingSystem system;
 
     @BeforeEach
@@ -75,11 +80,15 @@ class ContextBuildingSystemPromptTest {
         promptSectionService = mock(PromptSectionService.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
         userPreferencesService = mock(UserPreferencesService.class);
+        workspaceInstructionService = mock(WorkspaceInstructionService.class);
         when(runtimeConfigService.getAutoModelTier()).thenReturn(TIER_SMART);
 
-        when(memoryComponent.getMemoryContext()).thenReturn("");
+        when(memoryComponent.buildMemoryPack(any())).thenReturn(MemoryPack.builder()
+                .renderedContext("")
+                .build());
         when(skillComponent.getSkillsSummary()).thenReturn("");
         when(ragPort.isAvailable()).thenReturn(false);
+        when(workspaceInstructionService.getWorkspaceInstructionsContext()).thenReturn("");
         when(userPreferencesService.getPreferences())
                 .thenReturn(UserPreferences.builder().build());
 
@@ -96,7 +105,8 @@ class ContextBuildingSystemPromptTest {
                 planService,
                 promptSectionService,
                 runtimeConfigService,
-                userPreferencesService);
+                userPreferencesService,
+                workspaceInstructionService);
     }
 
     private AgentContext createContext() {
@@ -194,7 +204,9 @@ class ContextBuildingSystemPromptTest {
         when(promptSectionService.renderSection(any(), any())).thenReturn("Bot identity");
 
         // Set up memory and tools
-        when(memoryComponent.getMemoryContext()).thenReturn("User prefers concise answers.");
+        when(memoryComponent.buildMemoryPack(any())).thenReturn(MemoryPack.builder()
+                .renderedContext("User prefers concise answers.")
+                .build());
 
         ToolComponent tool = mock(ToolComponent.class);
         when(tool.isEnabled()).thenReturn(true);
@@ -217,7 +229,8 @@ class ContextBuildingSystemPromptTest {
                 planService,
                 promptSectionService,
                 runtimeConfigService,
-                userPreferencesService);
+                userPreferencesService,
+                workspaceInstructionService);
 
         AgentContext ctx = createContext();
         system.process(ctx);
@@ -228,6 +241,68 @@ class ContextBuildingSystemPromptTest {
         assertTrue(prompt.contains("User prefers concise answers."));
         assertTrue(prompt.contains("# Available Tools"));
         assertTrue(prompt.contains("test_tool"));
+    }
+
+    @Test
+    void injectsWorkspaceInstructionsWhenAvailable() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(workspaceInstructionService.getWorkspaceInstructionsContext()).thenReturn("""
+                ## AGENTS.md
+                Root instructions
+
+                ## dashboard/CLAUDE.md
+                Local dashboard instructions
+                """);
+
+        AgentContext ctx = createContext();
+        system.process(ctx);
+
+        String prompt = ctx.getSystemPrompt();
+        assertTrue(prompt.contains("# Workspace Instructions"));
+        assertTrue(prompt.contains("Root instructions"));
+        assertTrue(prompt.contains("Local dashboard instructions"));
+    }
+
+    @Test
+    void storesMemoryPackDiagnosticsInContextAttributes() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(memoryComponent.buildMemoryPack(any())).thenReturn(MemoryPack.builder()
+                .renderedContext("## Semantic Memory\n- [PROJECT_FACT] Uses Spring")
+                .diagnostics(Map.of("selectedCount", 1))
+                .build());
+
+        AgentContext ctx = createContext();
+        system.process(ctx);
+
+        Object diagnostics = ctx.getAttribute(ContextAttributes.MEMORY_PACK_DIAGNOSTICS);
+        assertNotNull(diagnostics);
+        assertTrue(diagnostics instanceof Map<?, ?>);
+        assertTrue(ctx.getMemoryContext().contains("Semantic Memory"));
+    }
+
+    @Test
+    void buildsMemoryQueryWithSessionScope() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(memoryComponent.buildMemoryPack(any())).thenReturn(MemoryPack.builder()
+                .renderedContext("")
+                .build());
+
+        AgentSession session = AgentSession.builder()
+                .id("web:conv12345")
+                .channelType("web")
+                .chatId("conv12345")
+                .metadata(new HashMap<>(Map.of(ContextAttributes.CONVERSATION_KEY, "conv12345")))
+                .build();
+        AgentContext ctx = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>(List.of(
+                        Message.builder().role("user").content("Hello").timestamp(Instant.now()).build())))
+                .build();
+
+        system.process(ctx);
+
+        verify(memoryComponent).buildMemoryPack(argThat((MemoryQuery query) -> query != null
+                && "session:web:conv12345".equals(query.getScope())));
     }
 
     // ===== Active skill injection =====
