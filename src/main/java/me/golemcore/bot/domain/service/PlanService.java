@@ -23,6 +23,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.PlanStep;
+import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.stereotype.Service;
@@ -32,22 +33,16 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Core service for plan mode managing plan lifecycle, steps, and persistence.
- * Single-user design with simplified storage layout following
- * {@link AutoModeService} patterns.
- *
- * <p>
- * Storage layout:
- * <ul>
- * <li>auto/plans.json - list of all plans</li>
- * </ul>
+ * Core service for plan mode lifecycle and persistence.
  */
 @Service
 @Slf4j
@@ -56,6 +51,8 @@ public class PlanService {
     private static final String AUTO_DIR = "auto";
     private static final String PLANS_FILE = "plans.json";
     private static final String PLAN_NOT_FOUND = "Plan not found: ";
+    private static final String LEGACY_CHANNEL = "legacy";
+    private static final String NO_ACTIVE_PLAN_ID = "";
     private static final String RECOVERY_INTERRUPTED_MSG = "Interrupted by restart/crash during execution";
     private static final TypeReference<List<Plan>> PLAN_LIST_TYPE_REF = new TypeReference<>() {
     };
@@ -65,9 +62,12 @@ public class PlanService {
     private final BotProperties properties;
     private final Clock clock;
 
-    // In-memory state
-    private volatile boolean planWorkActive = false;
-    private volatile String activePlanId;
+    /**
+     * In-memory plan mode state keyed by canonical session identity.
+     */
+    private final Map<String, String> activePlanIdBySession = new HashMap<>();
+    private volatile boolean legacyPlanWorkActive = false;
+    private volatile String legacyActivePlanId = NO_ACTIVE_PLAN_ID;
     private final AtomicReference<List<Plan>> plansCache = new AtomicReference<>();
 
     public PlanService(StoragePort storagePort, ObjectMapper objectMapper,
@@ -85,29 +85,66 @@ public class PlanService {
     // ==================== Plan mode state ====================
 
     public boolean isPlanModeActive() {
-        return planWorkActive;
+        return legacyPlanWorkActive;
+    }
+
+    public boolean isPlanModeActive(SessionIdentity sessionIdentity) {
+        return getActivePlanIdOptional(sessionIdentity).isPresent();
     }
 
     public String getActivePlanId() {
-        return activePlanId;
+        return normalizeLegacyActivePlanId(legacyActivePlanId);
+    }
+
+    public String getActivePlanId(SessionIdentity sessionIdentity) {
+        return getActivePlanIdOptional(sessionIdentity).orElse(null);
     }
 
     public Optional<String> getActivePlanIdOptional() {
-        return Optional.ofNullable(activePlanId);
+        return Optional.ofNullable(getActivePlanId());
+    }
+
+    public Optional<String> getActivePlanIdOptional(SessionIdentity sessionIdentity) {
+        SessionIdentity normalized = normalizeSessionIdentityOrNull(sessionIdentity);
+        if (normalized == null) {
+            return Optional.empty();
+        }
+        synchronized (activePlanIdBySession) {
+            return Optional.ofNullable(activePlanIdBySession.get(normalized.asKey()));
+        }
     }
 
     public void activatePlanMode(String chatId, String modelTier) {
         Plan plan = createPlan(null, null, chatId, modelTier);
-        activePlanId = plan.getId();
-        planWorkActive = true;
-        log.info("[PlanMode] Activated, plan: {}", plan.getId());
+        legacyActivePlanId = plan.getId();
+        legacyPlanWorkActive = true;
+        log.info("[PlanMode] Activated legacy plan: {}", plan.getId());
     }
 
-    @SuppressWarnings("PMD.NullAssignment") // intentional: clearing volatile state means "no active plan"
+    public void activatePlanMode(SessionIdentity sessionIdentity, String transportChatId, String modelTier) {
+        SessionIdentity normalized = requireSessionIdentity(sessionIdentity);
+        Plan plan = createPlan(null, null, normalized, transportChatId, modelTier);
+        synchronized (activePlanIdBySession) {
+            activePlanIdBySession.put(normalized.asKey(), plan.getId());
+        }
+        log.info("[PlanMode] Activated session={} plan={}", normalized.asKey(), plan.getId());
+    }
+
     public void deactivatePlanMode() {
-        planWorkActive = false;
-        activePlanId = null;
-        log.info("[PlanMode] Deactivated");
+        legacyPlanWorkActive = false;
+        legacyActivePlanId = NO_ACTIVE_PLAN_ID;
+        log.info("[PlanMode] Deactivated legacy plan mode");
+    }
+
+    public void deactivatePlanMode(SessionIdentity sessionIdentity) {
+        SessionIdentity normalized = normalizeSessionIdentityOrNull(sessionIdentity);
+        if (normalized == null) {
+            return;
+        }
+        synchronized (activePlanIdBySession) {
+            activePlanIdBySession.remove(normalized.asKey());
+        }
+        log.info("[PlanMode] Deactivated session={}", normalized.asKey());
     }
 
     // ==================== Plan CRUD ====================
@@ -116,10 +153,7 @@ public class PlanService {
         List<Plan> plans = getPlans();
 
         long activeCount = plans.stream()
-                .filter(p -> p.getStatus() == Plan.PlanStatus.COLLECTING
-                        || p.getStatus() == Plan.PlanStatus.READY
-                        || p.getStatus() == Plan.PlanStatus.APPROVED
-                        || p.getStatus() == Plan.PlanStatus.EXECUTING)
+                .filter(this::isActivePlanStatus)
                 .count();
         if (activeCount >= properties.getPlan().getMaxPlans()) {
             throw new IllegalStateException("Maximum active plans reached: " + properties.getPlan().getMaxPlans());
@@ -130,7 +164,9 @@ public class PlanService {
                 .id(UUID.randomUUID().toString())
                 .title(title)
                 .description(description)
+                .channelType(LEGACY_CHANNEL)
                 .chatId(chatId)
+                .transportChatId(chatId)
                 .modelTier(modelTier)
                 .status(Plan.PlanStatus.COLLECTING)
                 .createdAt(now)
@@ -139,7 +175,43 @@ public class PlanService {
 
         plans.add(plan);
         savePlans(plans);
-        log.info("[PlanMode] Created plan '{}' (tier: {})", plan.getId(), modelTier);
+        log.info("[PlanMode] Created legacy plan '{}' (tier: {})", plan.getId(), modelTier);
+        return plan;
+    }
+
+    public Plan createPlan(String title, String description, SessionIdentity sessionIdentity,
+            String transportChatId, String modelTier) {
+        SessionIdentity normalized = requireSessionIdentity(sessionIdentity);
+        List<Plan> plans = getPlans();
+
+        long activeCount = getPlans(normalized).stream()
+                .filter(this::isActivePlanStatus)
+                .count();
+        if (activeCount >= properties.getPlan().getMaxPlans()) {
+            throw new IllegalStateException("Maximum active plans reached: " + properties.getPlan().getMaxPlans());
+        }
+
+        Instant now = Instant.now(clock);
+        String resolvedTransportChatId = !StringValueSupport.isBlank(transportChatId)
+                ? transportChatId
+                : normalized.conversationKey();
+
+        Plan plan = Plan.builder()
+                .id(UUID.randomUUID().toString())
+                .title(title)
+                .description(description)
+                .channelType(normalized.channelType())
+                .chatId(normalized.conversationKey())
+                .transportChatId(resolvedTransportChatId)
+                .modelTier(modelTier)
+                .status(Plan.PlanStatus.COLLECTING)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+
+        plans.add(plan);
+        savePlans(plans);
+        log.info("[PlanMode] Created plan '{}' (session={}, tier={})", plan.getId(), normalized.asKey(), modelTier);
         return plan;
     }
 
@@ -153,17 +225,59 @@ public class PlanService {
         return cached;
     }
 
+    public List<Plan> getPlans(SessionIdentity sessionIdentity) {
+        SessionIdentity normalized = normalizeSessionIdentityOrNull(sessionIdentity);
+        if (normalized == null) {
+            return List.of();
+        }
+        return getPlans().stream()
+                .filter(plan -> belongsToSession(plan, normalized))
+                .toList();
+    }
+
     public Optional<Plan> getPlan(String planId) {
         return getPlans().stream()
                 .filter(p -> p.getId().equals(planId))
                 .findFirst();
     }
 
+    public Optional<Plan> getPlan(String planId, SessionIdentity sessionIdentity) {
+        SessionIdentity normalized = normalizeSessionIdentityOrNull(sessionIdentity);
+        if (normalized == null) {
+            return Optional.empty();
+        }
+        return getPlan(planId).filter(plan -> belongsToSession(plan, normalized));
+    }
+
     public Optional<Plan> getActivePlan() {
-        if (activePlanId == null) {
+        String activePlanId = getActivePlanId();
+        if (!legacyPlanWorkActive || activePlanId == null) {
             return Optional.empty();
         }
         return getPlan(activePlanId);
+    }
+
+    public Optional<Plan> getActivePlan(SessionIdentity sessionIdentity) {
+        SessionIdentity normalized = normalizeSessionIdentityOrNull(sessionIdentity);
+        if (normalized == null) {
+            return Optional.empty();
+        }
+
+        String planId;
+        synchronized (activePlanIdBySession) {
+            planId = activePlanIdBySession.get(normalized.asKey());
+        }
+        if (planId == null) {
+            return Optional.empty();
+        }
+
+        Optional<Plan> plan = getPlan(planId, normalized);
+        if (plan.isEmpty()) {
+            synchronized (activePlanIdBySession) {
+                activePlanIdBySession.remove(normalized.asKey());
+            }
+        }
+        return plan;
     }
 
     public void deletePlan(String planId) {
@@ -172,9 +286,7 @@ public class PlanService {
         if (!removed) {
             throw new IllegalArgumentException(PLAN_NOT_FOUND + planId);
         }
-        if (planId.equals(activePlanId)) {
-            deactivatePlanMode();
-        }
+        clearActiveMappingForPlan(planId);
         savePlans(plans);
         log.info("[PlanMode] Deleted plan '{}'", planId);
     }
@@ -245,22 +357,31 @@ public class PlanService {
             throw new IllegalArgumentException("plan_markdown must not be blank");
         }
 
-        // If we are executing, create a revision and supersede the current plan.
         if (plan.getStatus() == Plan.PlanStatus.EXECUTING) {
-            Plan revision = createPlan(title, null, plan.getChatId(), plan.getModelTier());
+            SessionIdentity sessionIdentity = resolvePlanSessionIdentity(plan);
+            if (sessionIdentity == null) {
+                throw new IllegalStateException("Cannot resolve session identity for plan: " + planId);
+            }
+            Plan revision = createPlan(title, null, sessionIdentity, plan.getTransportChatId(), plan.getModelTier());
             revision.setMarkdown(planMarkdown);
             revision.setStatus(Plan.PlanStatus.READY);
             revision.setUpdatedAt(Instant.now(clock));
-            // Supersede old plan
+
             plan.setStatus(Plan.PlanStatus.CANCELLED);
             plan.setUpdatedAt(Instant.now(clock));
-            activePlanId = revision.getId();
+            synchronized (activePlanIdBySession) {
+                activePlanIdBySession.put(sessionIdentity.asKey(), revision.getId());
+            }
+            if (LEGACY_CHANNEL.equals(sessionIdentity.channelType()) || planId.equals(getActivePlanId())) {
+                legacyActivePlanId = revision.getId();
+                legacyPlanWorkActive = true;
+            }
             savePlans(getPlans());
-            log.info("[PlanMode] Plan revised: old={} new={}", planId, revision.getId());
+            log.info("[PlanMode] Plan revised: old={} new={} session={}",
+                    planId, revision.getId(), sessionIdentity.asKey());
             return;
         }
 
-        // COLLECTING -> READY, or READY -> READY (overwrite draft)
         if (title != null && !title.isBlank()) {
             plan.setTitle(title);
         }
@@ -291,9 +412,7 @@ public class PlanService {
 
         plan.setStatus(Plan.PlanStatus.CANCELLED);
         plan.setUpdatedAt(Instant.now(clock));
-        if (planId.equals(activePlanId)) {
-            deactivatePlanMode();
-        }
+        clearActiveMappingForPlan(planId);
         savePlans(getPlans());
         log.info("[PlanMode] Plan '{}' cancelled", planId);
     }
@@ -364,16 +483,23 @@ public class PlanService {
 
     // ==================== Context building ====================
 
-    /**
-     * Builds markdown context for system prompt injection during plan collection.
-     */
     public String buildPlanContext() {
         Optional<Plan> activePlan = getActivePlan();
         if (activePlan.isEmpty()) {
             return null;
         }
+        return buildPlanContextForPlan(activePlan.get());
+    }
 
-        Plan plan = activePlan.get();
+    public String buildPlanContext(SessionIdentity sessionIdentity) {
+        Optional<Plan> activePlan = getActivePlan(sessionIdentity);
+        if (activePlan.isEmpty()) {
+            return null;
+        }
+        return buildPlanContextForPlan(activePlan.get());
+    }
+
+    private String buildPlanContextForPlan(Plan plan) {
         StringBuilder sb = new StringBuilder();
         sb.append("# Plan Work\n\n");
         sb.append("Plan work is ACTIVE.\n");
@@ -399,8 +525,6 @@ public class PlanService {
     }
 
     private synchronized void recoverRuntimeState(List<Plan> plans) {
-        recoverActivePlanMode(plans);
-
         boolean changed = false;
         for (Plan plan : plans) {
             if (plan.getStatus() == Plan.PlanStatus.EXECUTING) {
@@ -409,26 +533,47 @@ public class PlanService {
             }
         }
 
+        recoverActivePlanMode(plans);
+
         if (changed) {
             savePlans(plans);
         }
     }
 
     private void recoverActivePlanMode(List<Plan> plans) {
-        if (activePlanId != null && planWorkActive) {
-            return;
+        Map<String, String> recovered = new HashMap<>();
+        List<Plan> sorted = new ArrayList<>(plans);
+        sorted.sort(Comparator.comparing(this::updatedAtSafe));
+
+        for (Plan plan : sorted) {
+            if (!isActivePlanStatus(plan)) {
+                continue;
+            }
+            SessionIdentity sessionIdentity = resolvePlanSessionIdentity(plan);
+            if (sessionIdentity == null) {
+                continue;
+            }
+            recovered.put(sessionIdentity.asKey(), plan.getId());
         }
-        plans.stream()
-                .filter(p -> p.getStatus() == Plan.PlanStatus.COLLECTING
-                        || p.getStatus() == Plan.PlanStatus.READY
-                        || p.getStatus() == Plan.PlanStatus.APPROVED
-                        || p.getStatus() == Plan.PlanStatus.EXECUTING)
+
+        synchronized (activePlanIdBySession) {
+            activePlanIdBySession.clear();
+            activePlanIdBySession.putAll(recovered);
+        }
+
+        legacyPlanWorkActive = false;
+        legacyActivePlanId = NO_ACTIVE_PLAN_ID;
+        sorted.stream()
+                .filter(this::isActivePlanStatus)
                 .reduce((first, second) -> second)
                 .ifPresent(plan -> {
-                    activePlanId = plan.getId();
-                    planWorkActive = true;
-                    log.info("[PlanMode] Recovered active plan '{}' after restart", activePlanId);
+                    legacyActivePlanId = plan.getId();
+                    legacyPlanWorkActive = true;
                 });
+
+        if (!recovered.isEmpty()) {
+            log.info("[PlanMode] Recovered active plan sessions: {}", recovered.size());
+        }
     }
 
     private void recoverExecutingPlan(Plan plan) {
@@ -477,4 +622,89 @@ public class PlanService {
         }
         return new ArrayList<>();
     }
+
+    private void clearActiveMappingForPlan(String planId) {
+        synchronized (activePlanIdBySession) {
+            activePlanIdBySession.entrySet().removeIf(entry -> planId.equals(entry.getValue()));
+        }
+        if (planId != null && planId.equals(getActivePlanId())) {
+            deactivatePlanMode();
+        }
+    }
+
+    private boolean isActivePlanStatus(Plan plan) {
+        if (plan == null) {
+            return false;
+        }
+        return plan.getStatus() == Plan.PlanStatus.COLLECTING
+                || plan.getStatus() == Plan.PlanStatus.READY
+                || plan.getStatus() == Plan.PlanStatus.APPROVED
+                || plan.getStatus() == Plan.PlanStatus.EXECUTING;
+    }
+
+    private SessionIdentity resolvePlanSessionIdentity(Plan plan) {
+        if (plan == null || StringValueSupport.isBlank(plan.getChatId())) {
+            return null;
+        }
+        String channelType = StringValueSupport.isBlank(plan.getChannelType())
+                ? LEGACY_CHANNEL
+                : plan.getChannelType();
+        return SessionIdentitySupport.resolveSessionIdentity(channelType, plan.getChatId());
+    }
+
+    private boolean belongsToSession(Plan plan, SessionIdentity sessionIdentity) {
+        SessionIdentity planIdentity = resolvePlanSessionIdentity(plan);
+        if (planIdentity == null) {
+            return false;
+        }
+
+        if (!sessionIdentity.conversationKey().equals(planIdentity.conversationKey())) {
+            return false;
+        }
+
+        if (LEGACY_CHANNEL.equals(planIdentity.channelType())) {
+            return true;
+        }
+
+        return sessionIdentity.channelType().equals(planIdentity.channelType());
+    }
+
+    private Instant updatedAtSafe(Plan plan) {
+        if (plan.getUpdatedAt() != null) {
+            return plan.getUpdatedAt();
+        }
+        if (plan.getCreatedAt() != null) {
+            return plan.getCreatedAt();
+        }
+        return Instant.EPOCH;
+    }
+
+    private SessionIdentity requireSessionIdentity(SessionIdentity sessionIdentity) {
+        SessionIdentity normalized = normalizeSessionIdentityOrNull(sessionIdentity);
+        if (normalized == null) {
+            throw new IllegalArgumentException("Session identity is required");
+        }
+        return normalized;
+    }
+
+    private SessionIdentity normalizeSessionIdentityOrNull(SessionIdentity sessionIdentity) {
+        if (sessionIdentity == null) {
+            return null;
+        }
+        if (StringValueSupport.isBlank(sessionIdentity.channelType())
+                || StringValueSupport.isBlank(sessionIdentity.conversationKey())) {
+            return null;
+        }
+        return SessionIdentitySupport.resolveSessionIdentity(
+                sessionIdentity.channelType().toLowerCase(Locale.ROOT),
+                sessionIdentity.conversationKey());
+    }
+
+    private String normalizeLegacyActivePlanId(String planId) {
+        if (StringValueSupport.isBlank(planId)) {
+            return null;
+        }
+        return planId;
+    }
+
 }

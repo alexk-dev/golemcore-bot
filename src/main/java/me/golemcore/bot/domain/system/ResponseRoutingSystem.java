@@ -27,6 +27,7 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.RoutingOutcome;
 import me.golemcore.bot.domain.model.SkillTransitionRequest;
 import me.golemcore.bot.domain.model.TurnOutcome;
+import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.service.VoiceResponseHandler.VoiceSendResult;
@@ -155,7 +156,7 @@ public class ResponseRoutingSystem implements AgentSystem {
         if (channel == null) {
             return null;
         }
-        String chatId = session.getChatId();
+        String chatId = SessionIdentitySupport.resolveTransportChatId(session);
         try {
             channel.sendMessage(chatId, outgoing.getText(), outgoing.getHints()).get(30, TimeUnit.SECONDS);
             return null;
@@ -195,7 +196,7 @@ public class ResponseRoutingSystem implements AgentSystem {
             return false;
         }
 
-        String chatId = session.getChatId();
+        String chatId = SessionIdentitySupport.resolveTransportChatId(session);
         log.debug("[Response] Sending voice for OutgoingResponse: {} chars, chatId={}", textToSpeak.length(), chatId);
         VoiceSendResult result = voiceHandler.trySendVoice(channel, chatId, textToSpeak);
         if (result == VoiceSendResult.QUOTA_EXCEEDED) {
@@ -220,7 +221,7 @@ public class ResponseRoutingSystem implements AgentSystem {
         }
 
         int sent = 0;
-        String chatId = session.getChatId();
+        String chatId = SessionIdentitySupport.resolveTransportChatId(session);
         for (Attachment attachment : outgoing.getAttachments()) {
             try {
                 if (attachment.getType() == Attachment.Type.IMAGE) {

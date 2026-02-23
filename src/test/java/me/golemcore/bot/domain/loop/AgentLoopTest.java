@@ -48,7 +48,9 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -150,6 +152,107 @@ class AgentLoopTest {
         loop.processMessage(inbound);
 
         verify(sessionPort, times(1)).save(session);
+    }
+
+    @Test
+    void shouldUseTransportChatIdForTypingIndicator() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType(CHANNEL_TYPE)
+                .chatId("conv-1")
+                .messages(new ArrayList<>())
+                .build();
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "conv-1")).thenReturn(session);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+
+        AgentLoop loop = new AgentLoop(
+                sessionPort,
+                rateLimitPort,
+                List.of(),
+                List.of(channel),
+                mockRuntimeConfigService(1),
+                preferencesService,
+                llmPort,
+                clock);
+
+        Message inbound = Message.builder()
+                .role(ROLE_USER)
+                .content("hi")
+                .channelType(CHANNEL_TYPE)
+                .chatId("conv-1")
+                .senderId("u1")
+                .metadata(Map.of(
+                        ContextAttributes.TRANSPORT_CHAT_ID, "transport-99",
+                        ContextAttributes.CONVERSATION_KEY, "conv-1"))
+                .timestamp(clock.instant())
+                .build();
+
+        loop.processMessage(inbound);
+
+        verify(channel, timeout(2000).atLeastOnce()).showTyping("transport-99");
+    }
+
+    @Test
+    void shouldPersistSessionIdentityMetadataFromInboundMessage() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType(CHANNEL_TYPE)
+                .chatId("conv-1")
+                .messages(new ArrayList<>())
+                .build();
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "conv-1")).thenReturn(session);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+
+        AgentLoop loop = new AgentLoop(
+                sessionPort,
+                rateLimitPort,
+                List.of(),
+                List.of(channel),
+                mockRuntimeConfigService(1),
+                preferencesService,
+                llmPort,
+                clock);
+
+        Message inbound = Message.builder()
+                .role(ROLE_USER)
+                .content("identity bind")
+                .channelType(CHANNEL_TYPE)
+                .chatId("conv-1")
+                .senderId("u1")
+                .metadata(Map.of(
+                        ContextAttributes.TRANSPORT_CHAT_ID, "transport-42",
+                        ContextAttributes.CONVERSATION_KEY, "conv-1"))
+                .timestamp(clock.instant())
+                .build();
+
+        loop.processMessage(inbound);
+
+        assertEquals("transport-42", session.getMetadata().get(ContextAttributes.TRANSPORT_CHAT_ID));
+        assertEquals("conv-1", session.getMetadata().get(ContextAttributes.CONVERSATION_KEY));
     }
 
     @Test
@@ -826,7 +929,7 @@ class AgentLoopTest {
                 sessionPort, rateLimitPort, List.of(), List.of(channel),
                 mockRuntimeConfigService(1), preferencesService, llmPort, clock);
 
-        java.util.Map<String, Object> meta = new java.util.HashMap<>();
+        Map<String, Object> meta = new HashMap<>();
         meta.put("auto.mode", true);
         Message autoMsg = Message.builder()
                 .role(ROLE_USER).content("auto task")
@@ -869,7 +972,7 @@ class AgentLoopTest {
                 sessionPort, rateLimitPort, List.of(routing), List.of(channel),
                 mockRuntimeConfigService(1), preferencesService, llmPort, clock);
 
-        java.util.Map<String, Object> meta = new java.util.HashMap<>();
+        Map<String, Object> meta = new HashMap<>();
         meta.put("auto.mode", true);
         Message autoMsg = Message.builder()
                 .role(ROLE_USER).content("auto task")

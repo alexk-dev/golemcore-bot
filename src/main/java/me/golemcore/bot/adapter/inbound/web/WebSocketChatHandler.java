@@ -5,6 +5,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.adapter.inbound.web.security.JwtTokenProvider;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.service.ActiveSessionPointerService;
+import me.golemcore.bot.domain.service.ConversationKeyValidator;
+import me.golemcore.bot.domain.service.StringValueSupport;
 import me.golemcore.bot.port.inbound.CommandPort;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
@@ -43,6 +46,7 @@ public class WebSocketChatHandler implements WebSocketHandler {
     private final WebChannelAdapter webChannelAdapter;
     private final ObjectMapper objectMapper;
     private final ObjectProvider<CommandPort> commandRouter;
+    private final ActiveSessionPointerService pointerService;
 
     @Override
     public Mono<Void> handle(WebSocketSession session) {
@@ -74,8 +78,11 @@ public class WebSocketChatHandler implements WebSocketHandler {
             Map<String, Object> json = objectMapper.readValue(payload, Map.class);
 
             String text = (String) json.get("text");
-            String sessionId = (String) json.getOrDefault("sessionId", connectionId);
+            String sessionId = normalizeSessionId((String) json.get("sessionId"), connectionId);
+            String clientInstanceId = normalizeClientInstanceId((String) json.get("clientInstanceId"));
             List<Map<String, Object>> attachments = extractImageAttachments(json.get("attachments"));
+            webChannelAdapter.bindConnectionToChatId(connectionId, sessionId);
+            bindWebPointer(username, clientInstanceId, sessionId);
 
             if ((text == null || text.isBlank()) && attachments.isEmpty()) {
                 return;
@@ -115,6 +122,7 @@ public class WebSocketChatHandler implements WebSocketHandler {
         if (cmd.isBlank()) {
             return false;
         }
+        webChannelAdapter.bindConnectionToChatId(connectionId, sessionId);
 
         CommandPort router = commandRouter.getIfAvailable();
         if (router == null || !router.hasCommand(cmd)) {
@@ -128,6 +136,9 @@ public class WebSocketChatHandler implements WebSocketHandler {
         Map<String, Object> ctx = Map.of(
                 "sessionId", fullSessionId,
                 "chatId", sessionId,
+                "sessionChatId", sessionId,
+                "transportChatId", sessionId,
+                "conversationKey", sessionId,
                 "channelType", CHANNEL_TYPE);
 
         try {
@@ -205,5 +216,39 @@ public class WebSocketChatHandler implements WebSocketHandler {
             return stringValue;
         }
         return null;
+    }
+
+    private String normalizeSessionId(String sessionId, String fallback) {
+        if (StringValueSupport.isBlank(sessionId)) {
+            return fallback;
+        }
+        String candidate = sessionId.trim();
+        if (candidate.isEmpty()) {
+            return fallback;
+        }
+        return candidate;
+    }
+
+    private String normalizeClientInstanceId(String clientInstanceId) {
+        if (StringValueSupport.isBlank(clientInstanceId)) {
+            return null;
+        }
+        String candidate = clientInstanceId.trim();
+        return candidate.isEmpty() ? null : candidate;
+    }
+
+    private void bindWebPointer(String username, String clientInstanceId, String sessionId) {
+        if (StringValueSupport.isBlank(username) || StringValueSupport.isBlank(clientInstanceId)) {
+            return;
+        }
+        if (!ConversationKeyValidator.isLegacyCompatibleConversationKey(sessionId)) {
+            return;
+        }
+        try {
+            String pointerKey = pointerService.buildWebPointerKey(username, clientInstanceId);
+            pointerService.setActiveConversationKey(pointerKey, sessionId);
+        } catch (RuntimeException e) { // NOSONAR - pointer persistence should not block chat delivery
+            log.debug("[WebSocket] Failed to persist active pointer: {}", e.getMessage());
+        }
     }
 }

@@ -1,9 +1,27 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import { Badge, Nav } from 'react-bootstrap';
-import { FiMessageSquare, FiBarChart2, FiSettings, FiFileText, FiZap, FiList, FiActivity, FiTerminal, FiX } from 'react-icons/fi';
+import {
+  FiMessageSquare,
+  FiBarChart2,
+  FiSettings,
+  FiFileText,
+  FiZap,
+  FiList,
+  FiActivity,
+  FiTerminal,
+  FiX,
+  FiCode,
+} from 'react-icons/fi';
+import type { SessionSummary } from '../../api/sessions';
 import { useSidebarStore } from '../../store/sidebarStore';
+import { useChatSessionStore } from '../../store/chatSessionStore';
+import { useActiveSession, useCreateSession, useRecentSessions } from '../../hooks/useSessions';
 import { useSystemHealth, useSystemUpdateStatus } from '../../hooks/useSystem';
+import { createUuid } from '../../utils/uuid';
+import { isLegacyCompatibleConversationKey, normalizeConversationKey } from '../../utils/conversationKey';
 import { getSidebarUpdateBadge } from '../../utils/systemUpdateUi';
+
+const RECENT_SESSIONS_LIMIT = 5;
 
 const links = [
   { to: '/', icon: <FiMessageSquare size={20} />, label: 'Chat' },
@@ -12,22 +30,147 @@ const links = [
   { to: '/prompts', icon: <FiFileText size={20} />, label: 'Prompts' },
   { to: '/skills', icon: <FiZap size={20} />, label: 'Skills' },
   { to: '/diagnostics', icon: <FiActivity size={20} />, label: 'Diagnostics' },
+  { to: '/ide', icon: <FiCode size={20} />, label: 'IDE' },
   { to: '/logs', icon: <FiTerminal size={20} />, label: 'Logs' },
   { to: '/settings', icon: <FiSettings size={20} />, label: 'Settings' },
 ];
 
+function getSessionTitle(session: SessionSummary): string {
+  if (session.title != null && session.title.length > 0) {
+    return session.title;
+  }
+  if (session.conversationKey.length > 10) {
+    return `Session ${session.conversationKey.slice(0, 10)}`;
+  }
+  return `Session ${session.conversationKey}`;
+}
+
+interface SidebarChatSessionsProps {
+  recentSessions: SessionSummary[];
+  recentSessionsLoading: boolean;
+  recentSessionsError: boolean;
+  effectiveActiveSessionId: string;
+  isCreating: boolean;
+  onNewSession: () => void;
+  onSessionClick: (conversationKey: string) => void;
+}
+
+function SidebarChatSessions({
+  recentSessions,
+  recentSessionsLoading,
+  recentSessionsError,
+  effectiveActiveSessionId,
+  isCreating,
+  onNewSession,
+  onSessionClick,
+}: SidebarChatSessionsProps) {
+  return (
+    <div className="sidebar-chat-group">
+      <div className="sidebar-chat-group-header">
+        <span className="sidebar-chat-group-label">Chat Sessions</span>
+        <button
+          type="button"
+          className="sidebar-chat-new-btn"
+          onClick={onNewSession}
+          disabled={isCreating}
+        >
+          {isCreating ? 'Creating...' : 'New'}
+        </button>
+      </div>
+
+      <div className="sidebar-chat-list" role="list" aria-label="Recent chat sessions">
+        {recentSessionsLoading && (
+          <div className="sidebar-chat-state" role="status" aria-live="polite">
+            Loading recent sessions...
+          </div>
+        )}
+
+        {!recentSessionsLoading && recentSessionsError && (
+          <div className="sidebar-chat-state sidebar-chat-state--error" role="status" aria-live="polite">
+            Failed to load sessions
+          </div>
+        )}
+
+        {!recentSessionsLoading && !recentSessionsError && recentSessions.length === 0 && (
+          <div className="sidebar-chat-state" role="status" aria-live="polite">
+            No recent sessions
+          </div>
+        )}
+
+        {!recentSessionsLoading && !recentSessionsError && recentSessions.map((session) => {
+          const sessionKey = session.conversationKey;
+          const isActive = sessionKey === effectiveActiveSessionId;
+          return (
+            <button
+              key={session.id}
+              type="button"
+              className={`sidebar-chat-item${isActive ? ' active' : ''}`}
+              onClick={() => onSessionClick(sessionKey)}
+              title={session.preview ?? getSessionTitle(session)}
+              role="listitem"
+              aria-pressed={isActive}
+            >
+              <span className="sidebar-chat-item-title">{getSessionTitle(session)}</span>
+              {session.preview != null && session.preview.length > 0 && (
+                <span className="sidebar-chat-item-preview">{session.preview}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function Sidebar() {
+  const navigate = useNavigate();
   const mobileOpen = useSidebarStore((s) => s.mobileOpen);
   const closeMobile = useSidebarStore((s) => s.closeMobile);
+  const clientInstanceId = useChatSessionStore((s) => s.clientInstanceId);
+  const activeSessionId = useChatSessionStore((s) => s.activeSessionId);
+  const setActiveSessionId = useChatSessionStore((s) => s.setActiveSessionId);
   const { data: health } = useSystemHealth();
   const { data: updateStatus } = useSystemUpdateStatus();
+  const {
+    data: recentSessionsData,
+    isLoading: recentSessionsLoading,
+    isError: recentSessionsError,
+  } = useRecentSessions('web', clientInstanceId, RECENT_SESSIONS_LIMIT);
+  const { data: activeSessionData } = useActiveSession('web', clientInstanceId);
+  const createSessionMutation = useCreateSession();
   const version = health?.version ? `v${health.version}` : 'v...';
   const updateState = updateStatus?.state ?? '';
   const settingsBadge = getSidebarUpdateBadge(updateState);
+  const recentSessions = recentSessionsData ?? [];
+  const serverConversationKey = normalizeConversationKey(activeSessionData?.conversationKey);
+  const effectiveActiveSessionId = serverConversationKey ?? activeSessionId;
 
   const handleNavClick = () => {
     // Close sidebar on mobile when navigation item is clicked
     closeMobile();
+  };
+
+  const handleNewSession = () => {
+    const nextConversationKey = createUuid();
+    setActiveSessionId(nextConversationKey);
+    closeMobile();
+    navigate('/');
+    createSessionMutation.mutate({
+      channelType: 'web',
+      clientInstanceId,
+      conversationKey: nextConversationKey,
+      activate: true,
+    });
+  };
+
+  const handleSessionClick = (conversationKey: string) => {
+    const normalized = normalizeConversationKey(conversationKey);
+    if (normalized == null || !isLegacyCompatibleConversationKey(normalized)) {
+      return;
+    }
+    setActiveSessionId(normalized);
+    closeMobile();
+    navigate('/');
   };
 
   return (
@@ -83,6 +226,16 @@ export default function Sidebar() {
               )}
             </Nav.Link>
           ))}
+
+          <SidebarChatSessions
+            recentSessions={recentSessions}
+            recentSessionsLoading={recentSessionsLoading}
+            recentSessionsError={recentSessionsError}
+            effectiveActiveSessionId={effectiveActiveSessionId}
+            isCreating={createSessionMutation.isPending}
+            onNewSession={handleNewSession}
+            onSessionClick={handleSessionClick}
+          />
         </Nav>
         <div className="px-4 py-3 sidebar-footer-text small text-body-secondary">
           {version}

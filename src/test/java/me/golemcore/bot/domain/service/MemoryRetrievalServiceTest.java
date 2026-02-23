@@ -234,6 +234,48 @@ class MemoryRetrievalServiceTest {
         assertEquals("p-skill", result.get(0).getItem().getId());
     }
 
+    @Test
+    void shouldRetrieveSessionScopeFirstAndFallbackToGlobal() throws Exception {
+        when(runtimeConfigService.getMemoryRetrievalLookbackDays()).thenReturn(1);
+
+        Instant now = Instant.now();
+        String todayPath = "items/episodic/" + LocalDate.now(ZoneId.systemDefault()) + ".jsonl";
+        MemoryItem sessionItem = item("session-a", MemoryItem.Layer.EPISODIC, MemoryItem.Type.TASK_STATE,
+                "redis failure in active session", now, now, "session-a-fp", null, List.of("ops"));
+        sessionItem.setScope("session:web:conv-a");
+        putJsonl("scopes/session/web/conv-a/" + todayPath, List.of(sessionItem));
+
+        MemoryItem otherSessionItem = item("session-b", MemoryItem.Layer.EPISODIC, MemoryItem.Type.TASK_STATE,
+                "redis failure in another session", now, now, "session-b-fp", null, List.of("ops"));
+        otherSessionItem.setScope("session:web:conv-b");
+        putJsonl("scopes/session/web/conv-b/" + todayPath, List.of(otherSessionItem));
+
+        MemoryItem globalItem = item("global-1", MemoryItem.Layer.SEMANTIC, MemoryItem.Type.CONSTRAINT,
+                "redis failure workaround for all sessions", now, now, "global-1-fp", null, List.of("ops"));
+        globalItem.setScope("global");
+        putJsonl("items/semantic.jsonl", List.of(globalItem));
+
+        List<MemoryScoredItem> result = service.retrieve(MemoryQuery.builder()
+                .queryText("redis failure")
+                .scope("session:web:conv-a")
+                .workingTopK(0)
+                .episodicTopK(1)
+                .semanticTopK(1)
+                .proceduralTopK(0)
+                .build());
+
+        Set<String> ids = new HashSet<>();
+        for (MemoryScoredItem scored : result) {
+            ids.add(scored.getItem().getId());
+        }
+
+        assertEquals(2, result.size());
+        assertEquals("session-a", result.get(0).getItem().getId());
+        assertTrue(ids.contains("session-a"));
+        assertTrue(ids.contains("global-1"));
+        assertTrue(!ids.contains("session-b"));
+    }
+
     private void putJsonl(String path, List<MemoryItem> items) throws Exception {
         StringBuilder payload = new StringBuilder();
         for (MemoryItem item : items) {
