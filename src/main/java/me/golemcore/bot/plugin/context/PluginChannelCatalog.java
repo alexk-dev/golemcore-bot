@@ -20,6 +20,7 @@ package me.golemcore.bot.plugin.context;
 
 import jakarta.annotation.PostConstruct;
 import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.ChannelCatalogPort;
 import org.springframework.stereotype.Component;
 
 import java.util.Collections;
@@ -31,7 +32,7 @@ import java.util.Map;
  * Unified channel catalog with strict plugin-managed channels.
  */
 @Component
-public class PluginChannelCatalog {
+public class PluginChannelCatalog implements ChannelCatalogPort {
 
     private static final Map<String, String> MANAGED_CHANNELS = Map.of(
             "telegram", "channel.telegram",
@@ -81,10 +82,12 @@ public class PluginChannelCatalog {
         rebuildRegistry();
     }
 
+    @Override
     public List<ChannelPort> getAllChannels() {
         return List.copyOf(channelRegistry.values());
     }
 
+    @Override
     public ChannelPort getChannel(String channelType) {
         return channelRegistry.get(channelType);
     }

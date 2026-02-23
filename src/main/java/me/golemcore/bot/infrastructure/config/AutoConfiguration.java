@@ -19,7 +19,7 @@ package me.golemcore.bot.infrastructure.config;
  */
 
 import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.plugin.context.PluginChannelCatalog;
+import me.golemcore.bot.port.outbound.ChannelCatalogPort;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -61,7 +61,7 @@ import java.time.Clock;
 public class AutoConfiguration {
 
     private final BotProperties properties;
-    private final PluginChannelCatalog pluginChannelCatalog;
+    private final ChannelCatalogPort pluginChannelCatalog;
     private final RuntimeConfigService runtimeConfigService;
     private final ObjectProvider<BuildProperties> buildPropertiesProvider;
     private final ObjectProvider<GitProperties> gitPropertiesProvider;

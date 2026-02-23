@@ -43,8 +43,8 @@ import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import me.golemcore.bot.domain.service.SessionRunCoordinator;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
-import me.golemcore.bot.plugin.context.PluginPortResolver;
-import me.golemcore.bot.plugin.context.PluginToolCatalog;
+import me.golemcore.bot.port.outbound.CorePortResolver;
+import me.golemcore.bot.port.outbound.ToolCatalogPort;
 import me.golemcore.bot.port.inbound.CommandPort;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
@@ -120,8 +120,8 @@ public class CommandRouter implements CommandPort {
     private static final String ERR_NO_REASONING = "no.reasoning";
 
     private final SkillComponent skillComponent;
-    private final PluginToolCatalog pluginToolCatalog;
-    private final PluginPortResolver pluginPortResolver;
+    private final ToolCatalogPort pluginToolCatalog;
+    private final CorePortResolver pluginPortResolver;
     private final SessionPort sessionService;
     private final UserPreferencesService preferencesService;
     private final CompactionService compactionService;
@@ -146,8 +146,8 @@ public class CommandRouter implements CommandPort {
 
     public CommandRouter(
             SkillComponent skillComponent,
-            PluginToolCatalog pluginToolCatalog,
-            PluginPortResolver pluginPortResolver,
+            ToolCatalogPort pluginToolCatalog,
+            CorePortResolver pluginPortResolver,
             SessionPort sessionService,
             UserPreferencesService preferencesService,
             CompactionService compactionService,

@@ -29,7 +29,7 @@ import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
-import me.golemcore.bot.plugin.context.PluginChannelCatalog;
+import me.golemcore.bot.port.outbound.ChannelCatalogPort;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.tools.GoalManagementTool;
 import jakarta.annotation.PostConstruct;
@@ -98,7 +98,7 @@ public class AutoModeScheduler {
 
     public AutoModeScheduler(AutoModeService autoModeService, ScheduleService scheduleService,
             AgentLoop agentLoop, RuntimeConfigService runtimeConfigService,
-            GoalManagementTool goalManagementTool, PluginChannelCatalog pluginChannelCatalog) {
+            GoalManagementTool goalManagementTool, ChannelCatalogPort pluginChannelCatalog) {
         this.autoModeService = autoModeService;
         this.scheduleService = scheduleService;
         this.agentLoop = agentLoop;

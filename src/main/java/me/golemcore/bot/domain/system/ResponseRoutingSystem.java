@@ -31,7 +31,7 @@ import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.service.VoiceResponseHandler.VoiceSendResult;
-import me.golemcore.bot.plugin.context.PluginChannelCatalog;
+import me.golemcore.bot.port.outbound.ChannelCatalogPort;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -57,7 +57,7 @@ public class ResponseRoutingSystem implements AgentSystem {
     private final UserPreferencesService preferencesService;
     private final VoiceResponseHandler voiceHandler;
 
-    public ResponseRoutingSystem(PluginChannelCatalog pluginChannelCatalog, UserPreferencesService preferencesService,
+    public ResponseRoutingSystem(ChannelCatalogPort pluginChannelCatalog, UserPreferencesService preferencesService,
             VoiceResponseHandler voiceHandler) {
         this.preferencesService = preferencesService;
         this.voiceHandler = voiceHandler;

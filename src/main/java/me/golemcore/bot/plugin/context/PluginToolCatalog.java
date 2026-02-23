@@ -20,6 +20,7 @@ package me.golemcore.bot.plugin.context;
 
 import jakarta.annotation.PostConstruct;
 import me.golemcore.bot.domain.component.ToolComponent;
+import me.golemcore.bot.port.outbound.ToolCatalogPort;
 import org.springframework.stereotype.Component;
 
 import java.util.Collection;
@@ -33,7 +34,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * fallback.
  */
 @Component
-public class PluginToolCatalog {
+public class PluginToolCatalog implements ToolCatalogPort {
 
     private static final Map<String, String> MANAGED_TOOLS = Map.of(
             "brave_search", "tool.brave_search",
@@ -66,18 +67,22 @@ public class PluginToolCatalog {
         rebuildRegistry();
     }
 
+    @Override
     public List<ToolComponent> getAllTools() {
         return List.copyOf(toolRegistry.values());
     }
 
+    @Override
     public ToolComponent getTool(String toolName) {
         return toolRegistry.get(toolName);
     }
 
+    @Override
     public void registerTool(ToolComponent toolComponent) {
         toolRegistry.put(toolComponent.getToolName(), toolComponent);
     }
 
+    @Override
     public void unregisterTools(Collection<String> toolNames) {
         if (toolNames == null) {
             return;

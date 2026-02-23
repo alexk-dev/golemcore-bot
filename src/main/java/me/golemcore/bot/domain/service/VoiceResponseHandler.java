@@ -19,7 +19,7 @@ package me.golemcore.bot.domain.service;
  */
 
 import me.golemcore.bot.domain.model.AudioFormat;
-import me.golemcore.bot.plugin.context.PluginPortResolver;
+import me.golemcore.bot.port.outbound.CorePortResolver;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.VoicePort;
 import lombok.RequiredArgsConstructor;
@@ -42,7 +42,7 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 public class VoiceResponseHandler {
 
-    private final PluginPortResolver pluginPortResolver;
+    private final CorePortResolver pluginPortResolver;
     private final RuntimeConfigService runtimeConfigService;
 
     /**

@@ -20,6 +20,7 @@ package me.golemcore.bot.plugin.context;
 
 import me.golemcore.bot.domain.component.SanitizerComponent;
 import me.golemcore.bot.port.outbound.ConfirmationPort;
+import me.golemcore.bot.port.outbound.CorePortResolver;
 import me.golemcore.bot.port.outbound.RagPort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
 import me.golemcore.bot.port.outbound.VoicePort;
@@ -29,7 +30,7 @@ import org.springframework.stereotype.Component;
  * Strict resolver for plugin-managed core ports/components.
  */
 @Component
-public class PluginPortResolver {
+public class PluginPortResolver implements CorePortResolver {
 
     private static final String CONTRIBUTION_RAG = "port.rag";
     private static final String CONTRIBUTION_VOICE = "port.voice";
@@ -74,22 +75,27 @@ public class PluginPortResolver {
         };
     }
 
+    @Override
     public RagPort requireRagPort() {
         return requireContribution(CONTRIBUTION_RAG, RagPort.class);
     }
 
+    @Override
     public VoicePort requireVoicePort() {
         return requireContribution(CONTRIBUTION_VOICE, VoicePort.class);
     }
 
+    @Override
     public UsageTrackingPort requireUsageTrackingPort() {
         return requireContribution(CONTRIBUTION_USAGE, UsageTrackingPort.class);
     }
 
+    @Override
     public SanitizerComponent requireSanitizerComponent() {
         return requireContribution(CONTRIBUTION_SANITIZER, SanitizerComponent.class);
     }
 
+    @Override
     public ConfirmationPort requireConfirmationPort() {
         return requireContribution(CONTRIBUTION_CONFIRMATION, ConfirmationPort.class);
     }

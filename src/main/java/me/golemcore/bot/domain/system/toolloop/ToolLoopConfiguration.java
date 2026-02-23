@@ -9,7 +9,7 @@ import me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
 import me.golemcore.bot.domain.system.toolloop.view.ToolMessageMasker;
 import me.golemcore.bot.infrastructure.config.BotProperties;
-import me.golemcore.bot.plugin.context.PluginPortResolver;
+import me.golemcore.bot.port.outbound.CorePortResolver;
 import me.golemcore.bot.port.outbound.LlmPort;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -48,7 +48,7 @@ public class ToolLoopConfiguration {
             HistoryWriter historyWriter, ConversationViewBuilder viewBuilder, BotProperties botProperties,
             ModelSelectionService modelSelectionService, PlanService planService,
             RuntimeConfigService runtimeConfigService,
-            PluginPortResolver pluginPortResolver) {
+            CorePortResolver pluginPortResolver) {
         me.golemcore.bot.port.outbound.UsageTrackingPort usageTracker = pluginPortResolver.requireUsageTrackingPort();
         LlmPort tracked = new UsageTrackingLlmPortDecorator(llmPort, usageTracker);
         return new DefaultToolLoopSystem(tracked, toolExecutorPort, historyWriter, viewBuilder,

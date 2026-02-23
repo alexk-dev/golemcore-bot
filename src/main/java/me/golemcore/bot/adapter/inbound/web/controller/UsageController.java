@@ -4,7 +4,7 @@ import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.adapter.inbound.web.dto.UsageStatsResponse;
 import me.golemcore.bot.domain.model.UsageMetric;
 import me.golemcore.bot.domain.model.UsageStats;
-import me.golemcore.bot.plugin.context.PluginPortResolver;
+import me.golemcore.bot.port.outbound.CorePortResolver;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,7 +26,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class UsageController {
 
-    private final PluginPortResolver pluginPortResolver;
+    private final CorePortResolver pluginPortResolver;
 
     @GetMapping("/stats")
     public Mono<ResponseEntity<UsageStatsResponse>> getStats(

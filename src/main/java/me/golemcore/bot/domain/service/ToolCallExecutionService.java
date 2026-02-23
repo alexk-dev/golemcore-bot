@@ -9,9 +9,9 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.infrastructure.config.BotProperties;
-import me.golemcore.bot.plugin.context.PluginChannelCatalog;
-import me.golemcore.bot.plugin.context.PluginPortResolver;
-import me.golemcore.bot.plugin.context.PluginToolCatalog;
+import me.golemcore.bot.port.outbound.ChannelCatalogPort;
+import me.golemcore.bot.port.outbound.CorePortResolver;
+import me.golemcore.bot.port.outbound.ToolCatalogPort;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.ConfirmationPort;
 import org.springframework.stereotype.Component;
@@ -40,15 +40,15 @@ public class ToolCallExecutionService {
 
     private final Map<String, ToolComponent> toolRegistry;
     private final ToolConfirmationPolicy confirmationPolicy;
-    private final PluginPortResolver pluginPortResolver;
+    private final CorePortResolver pluginPortResolver;
     private final BotProperties properties;
-    private final PluginChannelCatalog pluginChannelCatalog;
+    private final ChannelCatalogPort pluginChannelCatalog;
 
-    public ToolCallExecutionService(PluginToolCatalog pluginToolCatalog,
+    public ToolCallExecutionService(ToolCatalogPort pluginToolCatalog,
             ToolConfirmationPolicy confirmationPolicy,
-            PluginPortResolver pluginPortResolver,
+            CorePortResolver pluginPortResolver,
             BotProperties properties,
-            PluginChannelCatalog pluginChannelCatalog) {
+            ChannelCatalogPort pluginChannelCatalog) {
         this.toolRegistry = new ConcurrentHashMap<>();
         registerCatalogTools(pluginToolCatalog);
         this.confirmationPolicy = confirmationPolicy;
@@ -238,7 +238,7 @@ public class ToolCallExecutionService {
         }
     }
 
-    private void registerCatalogTools(PluginToolCatalog pluginToolCatalog) {
+    private void registerCatalogTools(ToolCatalogPort pluginToolCatalog) {
         if (pluginToolCatalog == null) {
             return;
         }

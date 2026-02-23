@@ -25,7 +25,7 @@ import me.golemcore.bot.domain.model.PlanExecutionCompletedEvent;
 import me.golemcore.bot.domain.model.PlanStep;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.infrastructure.config.BotProperties;
-import me.golemcore.bot.plugin.context.PluginToolCatalog;
+import me.golemcore.bot.port.outbound.ToolCatalogPort;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
@@ -54,7 +54,7 @@ public class PlanExecutionService {
     private final BotProperties properties;
 
     public PlanExecutionService(PlanService planService,
-            PluginToolCatalog pluginToolCatalog,
+            ToolCatalogPort pluginToolCatalog,
             ApplicationEventPublisher eventPublisher,
             BotProperties properties) {
         this.planService = planService;
