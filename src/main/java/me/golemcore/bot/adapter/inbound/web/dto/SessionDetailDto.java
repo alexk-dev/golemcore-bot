@@ -15,6 +15,8 @@ public class SessionDetailDto {
     private String id;
     private String channelType;
     private String chatId;
+    private String conversationKey;
+    private String transportChatId;
     private String state;
     private String createdAt;
     private String updatedAt;

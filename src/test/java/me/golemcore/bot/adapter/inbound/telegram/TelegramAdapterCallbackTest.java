@@ -3,6 +3,7 @@ package me.golemcore.bot.adapter.inbound.telegram;
 import me.golemcore.bot.domain.model.ConfirmationCallbackEvent;
 import me.golemcore.bot.domain.model.PlanApprovalCallbackEvent;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.TelegramSessionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.i18n.MessageService;
 import me.golemcore.bot.port.inbound.CommandPort;
@@ -51,7 +52,8 @@ class TelegramAdapterCallbackTest {
                 mock(MessageService.class),
                 new TestObjectProvider<>(mock(CommandPort.class)),
                 mock(TelegramVoiceHandler.class),
-                mock(TelegramMenuHandler.class));
+                mock(TelegramMenuHandler.class),
+                mock(TelegramSessionService.class));
         adapter.setTelegramClient(telegramClient);
     }
 

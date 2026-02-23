@@ -49,4 +49,8 @@ public interface SessionPort {
     int getMessageCount(String sessionId);
 
     List<AgentSession> listAll();
+
+    List<AgentSession> listByChannelType(String channelType);
+
+    List<AgentSession> listByChannelTypeAndTransportChatId(String channelType, String transportChatId);
 }

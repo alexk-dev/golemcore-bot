@@ -19,11 +19,15 @@ package me.golemcore.bot.tools;
  */
 
 import me.golemcore.bot.domain.component.ToolComponent;
+import me.golemcore.bot.domain.loop.AgentContextHolder;
+import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Plan;
+import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.PlanService;
+import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
@@ -57,16 +61,25 @@ public class PlanGetTool implements ToolComponent {
 
     @Override
     public CompletableFuture<ToolResult> execute(Map<String, Object> parameters) {
-        if (!planService.isPlanModeActive()) {
+        SessionIdentity sessionIdentity = resolveSessionIdentity();
+        if (!planService.isPlanModeActive(sessionIdentity)) {
             return CompletableFuture.completedFuture(
                     ToolResult.failure(ToolFailureKind.POLICY_DENIED, "Plan work is not active"));
         }
 
-        return CompletableFuture.completedFuture(planService.getActivePlan()
+        return CompletableFuture.completedFuture(planService.getActivePlan(sessionIdentity)
                 .map(Plan::getMarkdown)
                 .filter(md -> md != null && !md.isBlank())
                 .map(ToolResult::success)
                 .orElseGet(() -> ToolResult.failure(ToolFailureKind.POLICY_DENIED, "No plan markdown available")));
+    }
+
+    private SessionIdentity resolveSessionIdentity() {
+        AgentContext context = AgentContextHolder.get();
+        if (context == null) {
+            return null;
+        }
+        return SessionIdentitySupport.resolveSessionIdentity(context.getSession());
     }
 
     @Override
