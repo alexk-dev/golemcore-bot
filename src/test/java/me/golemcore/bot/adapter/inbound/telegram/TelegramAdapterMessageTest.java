@@ -1,6 +1,7 @@
 package me.golemcore.bot.adapter.inbound.telegram;
 
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.TelegramSessionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.i18n.MessageService;
 import me.golemcore.bot.port.inbound.CommandPort;
@@ -31,6 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -52,6 +54,9 @@ class TelegramAdapterMessageTest {
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         when(runtimeConfigService.isTelegramEnabled()).thenReturn(true);
         when(runtimeConfigService.getTelegramToken()).thenReturn("test-token");
+        TelegramSessionService telegramSessionService = mock(TelegramSessionService.class);
+        when(telegramSessionService.resolveActiveConversationKey(anyString()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
 
         adapter = new TelegramAdapter(
                 runtimeConfigService,
@@ -62,7 +67,8 @@ class TelegramAdapterMessageTest {
                 mock(MessageService.class),
                 new TestObjectProvider<>(mock(CommandPort.class)),
                 mock(TelegramVoiceHandler.class),
-                mock(TelegramMenuHandler.class));
+                mock(TelegramMenuHandler.class),
+                telegramSessionService);
         adapter.setTelegramClient(telegramClient);
     }
 

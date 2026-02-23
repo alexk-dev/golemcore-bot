@@ -107,4 +107,13 @@ public final class ContextAttributes {
     /** WebSocketSession — reference to WebSocket session for streaming. */
     public static final String WEB_STREAM_SINK = "web.stream.sink";
 
+    /**
+     * String ? transport chat id used for outbound delivery (for example Telegram
+     * chat id when logical session key differs).
+     */
+    public static final String TRANSPORT_CHAT_ID = "session.transport.chat.id";
+
+    /** String ? logical conversation key for the current turn/session. */
+    public static final String CONVERSATION_KEY = "session.conversation.key";
+
 }

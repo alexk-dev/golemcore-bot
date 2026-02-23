@@ -27,6 +27,7 @@ import org.mockito.ArgumentCaptor;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyMap;
@@ -233,6 +234,78 @@ class WebSocketChatHandlerTest {
 
         verify(commandRouter).execute(eq("status"), eq(List.of()), anyMap());
         verify(eventPublisher, never()).publishEvent(any(AgentLoop.InboundMessageEvent.class));
+    }
+
+    @Test
+    void shouldBindSessionForFirstCommandAndRouteResponseToSameChat() {
+        CommandPort commandRouter = mock(CommandPort.class);
+        when(commandRouterProvider.getIfAvailable()).thenReturn(commandRouter);
+        when(commandRouter.hasCommand("status")).thenReturn(true);
+        when(commandRouter.execute(eq("status"), anyList(), anyMap()))
+                .thenReturn(CompletableFuture.completedFuture(
+                        CommandPort.CommandResult.success("Bot status: OK")));
+
+        handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider);
+        String token = tokenProvider.generateAccessToken("admin");
+
+        WebSocketSession session = mock(WebSocketSession.class);
+        HandshakeInfo handshakeInfo = mock(HandshakeInfo.class);
+        when(session.getHandshakeInfo()).thenReturn(handshakeInfo);
+        when(handshakeInfo.getUri()).thenReturn(URI.create("ws://localhost/ws/chat?token=" + token));
+        when(session.getId()).thenReturn("session-cmd-bind");
+        when(session.isOpen()).thenReturn(true);
+        when(session.send(any())).thenReturn(Mono.empty());
+        when(session.textMessage(any(String.class)))
+                .thenReturn(mock(org.springframework.web.reactive.socket.WebSocketMessage.class));
+
+        WebSocketMessage wsMessage = mock(WebSocketMessage.class);
+        when(wsMessage.getPayloadAsText()).thenReturn("{\"text\":\"/status\",\"sessionId\":\"chat-first\"}");
+        when(session.receive()).thenReturn(Flux.just(wsMessage));
+
+        StepVerifier.create(handler.handle(session)).verifyComplete();
+
+        ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
+        verify(session).textMessage(payloadCaptor.capture());
+        String payload = payloadCaptor.getValue();
+        assertTrue(payload.contains("\"sessionId\":\"chat-first\""));
+        assertTrue(payload.contains("\"type\":\"assistant_chunk\""));
+    }
+
+    @Test
+    void shouldPassConsistentSessionConversationContextForCommandExecution() {
+        CommandPort commandRouter = mock(CommandPort.class);
+        when(commandRouterProvider.getIfAvailable()).thenReturn(commandRouter);
+        when(commandRouter.hasCommand("status")).thenReturn(true);
+        when(commandRouter.execute(eq("status"), anyList(), anyMap()))
+                .thenReturn(CompletableFuture.completedFuture(
+                        CommandPort.CommandResult.success("Bot status: OK")));
+
+        handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider);
+        String token = tokenProvider.generateAccessToken("admin");
+
+        WebSocketSession session = mock(WebSocketSession.class);
+        HandshakeInfo handshakeInfo = mock(HandshakeInfo.class);
+        when(session.getHandshakeInfo()).thenReturn(handshakeInfo);
+        when(handshakeInfo.getUri()).thenReturn(URI.create("ws://localhost/ws/chat?token=" + token));
+        when(session.getId()).thenReturn("session-cmd-ctx");
+
+        WebSocketMessage wsMessage = mock(WebSocketMessage.class);
+        when(wsMessage.getPayloadAsText()).thenReturn("{\"text\":\"/status\",\"sessionId\":\"chat-cmd-ctx\"}");
+        when(session.receive()).thenReturn(Flux.just(wsMessage));
+
+        StepVerifier.create(handler.handle(session)).verifyComplete();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> contextCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(commandRouter).execute(eq("status"), eq(List.of()), contextCaptor.capture());
+
+        Map<String, Object> context = contextCaptor.getValue();
+        assertEquals("web:chat-cmd-ctx", context.get("sessionId"));
+        assertEquals("chat-cmd-ctx", context.get("chatId"));
+        assertEquals("chat-cmd-ctx", context.get("sessionChatId"));
+        assertEquals("chat-cmd-ctx", context.get("transportChatId"));
+        assertEquals("chat-cmd-ctx", context.get("conversationKey"));
+        assertEquals("web", context.get("channelType"));
     }
 
     @Test

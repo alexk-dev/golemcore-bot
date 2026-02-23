@@ -74,8 +74,9 @@ public class WebSocketChatHandler implements WebSocketHandler {
             Map<String, Object> json = objectMapper.readValue(payload, Map.class);
 
             String text = (String) json.get("text");
-            String sessionId = (String) json.getOrDefault("sessionId", connectionId);
+            String sessionId = normalizeSessionId((String) json.get("sessionId"), connectionId);
             List<Map<String, Object>> attachments = extractImageAttachments(json.get("attachments"));
+            webChannelAdapter.bindConnectionToChatId(connectionId, sessionId);
 
             if ((text == null || text.isBlank()) && attachments.isEmpty()) {
                 return;
@@ -115,6 +116,7 @@ public class WebSocketChatHandler implements WebSocketHandler {
         if (cmd.isBlank()) {
             return false;
         }
+        webChannelAdapter.bindConnectionToChatId(connectionId, sessionId);
 
         CommandPort router = commandRouter.getIfAvailable();
         if (router == null || !router.hasCommand(cmd)) {
@@ -128,6 +130,9 @@ public class WebSocketChatHandler implements WebSocketHandler {
         Map<String, Object> ctx = Map.of(
                 "sessionId", fullSessionId,
                 "chatId", sessionId,
+                "sessionChatId", sessionId,
+                "transportChatId", sessionId,
+                "conversationKey", sessionId,
                 "channelType", CHANNEL_TYPE);
 
         try {
@@ -205,5 +210,16 @@ public class WebSocketChatHandler implements WebSocketHandler {
             return stringValue;
         }
         return null;
+    }
+
+    private String normalizeSessionId(String sessionId, String fallback) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return fallback;
+        }
+        String candidate = sessionId.trim();
+        if (candidate.isEmpty()) {
+            return fallback;
+        }
+        return candidate;
     }
 }

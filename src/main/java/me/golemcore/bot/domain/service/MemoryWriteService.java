@@ -76,12 +76,13 @@ public class MemoryWriteService {
             return;
         }
 
-        List<MemoryItem> extracted = extractItems(event);
+        String eventScope = MemoryScopeSupport.normalizeScopeOrGlobal(event.getScope());
+        List<MemoryItem> extracted = extractItems(event, eventScope);
         if (extracted.isEmpty()) {
             return;
         }
 
-        String episodicPath = EPISODIC_PREFIX + resolveDate(event.getTimestamp()) + ".jsonl";
+        String episodicPath = buildScopedPath(eventScope, EPISODIC_PREFIX + resolveDate(event.getTimestamp()) + ".jsonl");
         appendItems(episodicPath, extracted);
 
         if (!memoryPromotionService.isPromotionEnabled()) {
@@ -90,10 +91,18 @@ public class MemoryWriteService {
 
         for (MemoryItem item : extracted) {
             if (memoryPromotionService.shouldPromoteToSemantic(item)) {
-                upsertItem(SEMANTIC_FILE, item, MemoryItem.Layer.SEMANTIC);
+                upsertItem(
+                        buildScopedPath(MemoryScopeSupport.GLOBAL_SCOPE, SEMANTIC_FILE),
+                        item,
+                        MemoryItem.Layer.SEMANTIC,
+                        MemoryScopeSupport.GLOBAL_SCOPE);
             }
             if (memoryPromotionService.shouldPromoteToProcedural(item)) {
-                upsertItem(PROCEDURAL_FILE, item, MemoryItem.Layer.PROCEDURAL);
+                upsertItem(
+                        buildScopedPath(MemoryScopeSupport.GLOBAL_SCOPE, PROCEDURAL_FILE),
+                        item,
+                        MemoryItem.Layer.PROCEDURAL,
+                        MemoryScopeSupport.GLOBAL_SCOPE);
             }
         }
     }
@@ -102,14 +111,16 @@ public class MemoryWriteService {
         if (item == null || !runtimeConfigService.isMemoryEnabled()) {
             return;
         }
-        upsertItem(SEMANTIC_FILE, item, MemoryItem.Layer.SEMANTIC);
+        String scope = MemoryScopeSupport.normalizeScopeOrGlobal(item.getScope());
+        upsertItem(buildScopedPath(scope, SEMANTIC_FILE), item, MemoryItem.Layer.SEMANTIC, scope);
     }
 
     public void upsertProceduralItem(MemoryItem item) {
         if (item == null || !runtimeConfigService.isMemoryEnabled()) {
             return;
         }
-        upsertItem(PROCEDURAL_FILE, item, MemoryItem.Layer.PROCEDURAL);
+        String scope = MemoryScopeSupport.normalizeScopeOrGlobal(item.getScope());
+        upsertItem(buildScopedPath(scope, PROCEDURAL_FILE), item, MemoryItem.Layer.PROCEDURAL, scope);
     }
 
     private void appendItems(String path, List<MemoryItem> items) {
@@ -132,6 +143,7 @@ public class MemoryWriteService {
                 item.setFingerprint(
                         computeFingerprint(item.getType() + "|" + normalizeForFingerprint(item.getContent())));
             }
+            item.setScope(MemoryScopeSupport.normalizeScopeOrGlobal(item.getScope()));
             try {
                 payload.append(objectMapper.writeValueAsString(item)).append("\n");
             } catch (JsonProcessingException e) {
@@ -151,10 +163,10 @@ public class MemoryWriteService {
         }
     }
 
-    private void upsertItem(String filePath, MemoryItem sourceItem, MemoryItem.Layer targetLayer) {
+    private void upsertItem(String filePath, MemoryItem sourceItem, MemoryItem.Layer targetLayer, String scope) {
         try {
-            List<MemoryItem> items = readJsonl(filePath);
-            MemoryItem normalized = normalizeItem(sourceItem, targetLayer);
+            List<MemoryItem> items = readJsonl(filePath, scope);
+            MemoryItem normalized = normalizeItem(sourceItem, targetLayer, scope);
 
             boolean updated = false;
             for (MemoryItem existing : items) {
@@ -177,7 +189,7 @@ public class MemoryWriteService {
         }
     }
 
-    private List<MemoryItem> readJsonl(String filePath) {
+    private List<MemoryItem> readJsonl(String filePath, String defaultScope) {
         List<MemoryItem> items = new ArrayList<>();
         try {
             String content = storagePort.getText(getMemoryDirectory(), filePath).join();
@@ -192,6 +204,8 @@ public class MemoryWriteService {
                 }
                 try {
                     MemoryItem item = objectMapper.readValue(line, MemoryItem.class);
+                    item.setScope(MemoryScopeSupport.normalizeScopeOrGlobal(
+                            item.getScope() != null ? item.getScope() : defaultScope));
                     items.add(item);
                 } catch (IOException | RuntimeException e) {
                     log.trace("[MemoryWrite] Skipping invalid memory jsonl line: {}", e.getMessage());
@@ -215,12 +229,13 @@ public class MemoryWriteService {
         return sb.toString();
     }
 
-    private MemoryItem normalizeItem(MemoryItem source, MemoryItem.Layer layer) {
+    private MemoryItem normalizeItem(MemoryItem source, MemoryItem.Layer layer, String scope) {
         MemoryItem normalized = source != null ? source : new MemoryItem();
         if (normalized.getId() == null || normalized.getId().isBlank()) {
             normalized.setId(UUID.randomUUID().toString());
         }
         normalized.setLayer(layer);
+        normalized.setScope(MemoryScopeSupport.normalizeScopeOrGlobal(scope));
         if (normalized.getCreatedAt() == null) {
             normalized.setCreatedAt(Instant.now());
         }
@@ -272,6 +287,7 @@ public class MemoryWriteService {
                 defaultDouble(candidate.getSalience(), 0.0)));
         existing.setType(candidate.getType() != null ? candidate.getType() : existing.getType());
         existing.setSource(candidate.getSource() != null ? candidate.getSource() : existing.getSource());
+        existing.setScope(MemoryScopeSupport.normalizeScopeOrGlobal(candidate.getScope()));
         if (candidate.getTtlDays() != null) {
             existing.setTtlDays(candidate.getTtlDays());
         }
@@ -321,7 +337,7 @@ public class MemoryWriteService {
         });
     }
 
-    private List<MemoryItem> extractItems(TurnMemoryEvent event) {
+    private List<MemoryItem> extractItems(TurnMemoryEvent event, String scope) {
         List<MemoryItem> items = new ArrayList<>();
         Instant timestamp = event.getTimestamp() != null ? event.getTimestamp() : Instant.now();
 
@@ -337,6 +353,7 @@ public class MemoryWriteService {
                     .type(MemoryItem.Type.TASK_STATE)
                     .title(buildTurnTitle(user))
                     .content("User: " + truncate(user, 1200) + "\nAssistant: " + truncate(assistant, 1800))
+                    .scope(scope)
                     .tags(extractTags(joined, event.getActiveSkill(), references))
                     .source("turn")
                     .confidence(0.65)
@@ -353,15 +370,15 @@ public class MemoryWriteService {
             String combined = (joined + "\n" + String.join("\n", event.getToolOutputs())).trim();
             if (containsConstraintSignal(combined)) {
                 items.add(createDerivedItem(event, MemoryItem.Type.CONSTRAINT, "Constraint",
-                        extractSentenceSnippet(combined, 360), 0.82, 0.78));
+                        extractSentenceSnippet(combined, 360), 0.82, 0.78, scope));
             }
             if (containsFailureSignal(combined)) {
                 items.add(createDerivedItem(event, MemoryItem.Type.FAILURE, "Failure context",
-                        extractSentenceSnippet(combined, 420), 0.86, 0.80));
+                        extractSentenceSnippet(combined, 420), 0.86, 0.80, scope));
             }
             if (containsFixSignal(combined)) {
                 items.add(createDerivedItem(event, MemoryItem.Type.FIX, "Fix context",
-                        extractSentenceSnippet(combined, 420), 0.83, 0.78));
+                        extractSentenceSnippet(combined, 420), 0.83, 0.78, scope));
             }
         }
 
@@ -369,7 +386,7 @@ public class MemoryWriteService {
     }
 
     private MemoryItem createDerivedItem(TurnMemoryEvent event, MemoryItem.Type type, String title, String content,
-            double salience, double confidence) {
+            double salience, double confidence, String scope) {
         Instant timestamp = event.getTimestamp() != null ? event.getTimestamp() : Instant.now();
         String normalized = normalizeText(content);
         List<String> references = extractReferences(normalized);
@@ -379,6 +396,7 @@ public class MemoryWriteService {
                 .type(type)
                 .title(title)
                 .content(normalized)
+                .scope(scope)
                 .tags(extractTags(normalized, event.getActiveSkill(), references))
                 .source("derived")
                 .confidence(confidence)
@@ -626,6 +644,11 @@ public class MemoryWriteService {
     private String resolveDate(Instant timestamp) {
         Instant ts = timestamp != null ? timestamp : Instant.now();
         return LocalDate.ofInstant(ts, ZoneId.systemDefault()).toString();
+    }
+
+    private String buildScopedPath(String scope, String relativePath) {
+        String normalizedScope = MemoryScopeSupport.normalizeScopeOrGlobal(scope);
+        return MemoryScopeSupport.toStoragePrefix(normalizedScope) + relativePath;
     }
 
     private String computeFingerprint(String content) {

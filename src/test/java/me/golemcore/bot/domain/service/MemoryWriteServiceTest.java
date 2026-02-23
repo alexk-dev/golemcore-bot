@@ -12,6 +12,8 @@ import org.mockito.ArgumentCaptor;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.HashSet;
 import java.util.List;
@@ -381,6 +383,59 @@ class MemoryWriteServiceTest {
                 .build());
 
         verify(storagePort, never()).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
+    }
+
+    @Test
+    void shouldPersistTurnMemoryIntoSessionScopedPath() throws Exception {
+        String scope = "session:web:conv12345";
+        Instant timestamp = Instant.parse("2026-02-22T12:00:00Z");
+        TurnMemoryEvent event = TurnMemoryEvent.builder()
+                .timestamp(timestamp)
+                .scope(scope)
+                .userText("Investigate src/main/App.java")
+                .assistantText("Applied fix")
+                .build();
+
+        service.persistTurnMemory(event);
+
+        String expectedDate = LocalDate.ofInstant(timestamp, ZoneId.systemDefault()).toString();
+        String expectedPath = "scopes/session/web/conv12345/items/episodic/" + expectedDate + ".jsonl";
+
+        ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
+        verify(storagePort).appendText(eq("memory"), eq(expectedPath), payloadCaptor.capture());
+
+        MemoryItem persisted = readFirstJsonlItem(payloadCaptor.getValue());
+        assertNotNull(persisted);
+        assertEquals(scope, persisted.getScope());
+    }
+
+    @Test
+    void shouldPromoteSessionScopedItemsToGlobalScope() throws Exception {
+        when(runtimeConfigService.isMemoryCodeAwareExtractionEnabled()).thenReturn(true);
+        when(memoryPromotionService.isPromotionEnabled()).thenReturn(true);
+        when(memoryPromotionService.shouldPromoteToSemantic(
+                org.mockito.ArgumentMatchers.argThat(item -> item != null
+                        && item.getType() == MemoryItem.Type.CONSTRAINT))).thenReturn(true);
+
+        TurnMemoryEvent event = TurnMemoryEvent.builder()
+                .timestamp(Instant.parse("2026-02-22T12:00:00Z"))
+                .scope("session:web:conv12345")
+                .userText("We must keep API compatibility and avoid breaking clients.")
+                .assistantText("Acknowledged and implemented safely.")
+                .build();
+
+        service.persistTurnMemory(event);
+
+        ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
+        verify(storagePort, atLeastOnce()).putTextAtomic(
+                eq("memory"),
+                eq("items/semantic.jsonl"),
+                payloadCaptor.capture(),
+                eq(true));
+
+        List<MemoryItem> promotedItems = readJsonlItems(payloadCaptor.getValue());
+        assertFalse(promotedItems.isEmpty());
+        assertEquals("global", promotedItems.get(0).getScope());
     }
 
     private MemoryItem persistAndRead(TurnMemoryEvent event) throws Exception {

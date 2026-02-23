@@ -2,16 +2,17 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { Offcanvas } from 'react-bootstrap';
 import { FiLayout, FiMessageSquare, FiPlus } from 'react-icons/fi';
 import { useAuthStore } from '../../store/authStore';
+import { useChatSessionStore } from '../../store/chatSessionStore';
 import { useContextPanelStore } from '../../store/contextPanelStore';
-import { listSessions, getSession } from '../../api/sessions';
+import { createSession, getActiveSession, listSessions, getSession, setActiveSession } from '../../api/sessions';
 import { getGoals } from '../../api/goals';
 import { updatePreferences } from '../../api/settings';
 import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
 import ContextPanel from './ContextPanel';
 import { createUuid } from '../../utils/uuid';
+import { isLegacyCompatibleConversationKey, normalizeConversationKey } from '../../utils/conversationKey';
 
-const SESSION_KEY = 'golem-chat-session-id';
 const INITIAL_MESSAGES = 50;
 const LOAD_MORE_COUNT = 50;
 const GOALS_POLL_INTERVAL = 30000;
@@ -45,15 +46,6 @@ const EMPTY_TURN_METADATA = {
   latencyMs: null,
   maxContextTokens: null,
 };
-
-function getChatSessionId(): string {
-  let id = localStorage.getItem(SESSION_KEY);
-  if (id == null || id.length === 0) {
-    id = createUuid();
-    localStorage.setItem(SESSION_KEY, id);
-  }
-  return id;
-}
 
 function getLocalCommand(text: string): 'new' | 'reset' | null {
   const command = (text.split(/\s+/)[0] ?? '').toLowerCase();
@@ -109,7 +101,9 @@ interface SocketMessage {
 }
 
 export default function ChatWindow() {
-  const [chatSessionId, setChatSessionId] = useState(() => getChatSessionId());
+  const chatSessionId = useChatSessionStore((s) => s.activeSessionId);
+  const setChatSessionId = useChatSessionStore((s) => s.setActiveSessionId);
+  const clientInstanceId = useChatSessionStore((s) => s.clientInstanceId);
   const [allMessages, setAllMessages] = useState<ChatMessage[]>([]);
   const [visibleStart, setVisibleStart] = useState(0);
   const [connected, setConnected] = useState(false);
@@ -171,10 +165,17 @@ export default function ChatWindow() {
 
   const startNewConversation = useCallback(() => {
     const newSessionId = createUuid();
-    localStorage.setItem(SESSION_KEY, newSessionId);
     setChatSessionId(newSessionId);
     resetConversationState();
-  }, [resetConversationState]);
+    createSession({
+      channelType: 'web',
+      clientInstanceId,
+      conversationKey: newSessionId,
+      activate: true,
+    }).catch(() => {
+      // ignore creation failures; session will still be created lazily on first message
+    });
+  }, [clientInstanceId, resetConversationState, setChatSessionId]);
 
   const setUserMessageStatus = useCallback((id: string, status: 'pending' | 'failed' | null): void => {
     setAllMessages((prev) => {
@@ -246,6 +247,48 @@ export default function ChatWindow() {
     resetTurnMetadata();
   }, [chatSessionId, resetTurnMetadata]);
 
+  // Keep server-side active pointer in sync with local chat session selection.
+  useEffect(() => {
+    if (!isLegacyCompatibleConversationKey(chatSessionId)) {
+      return;
+    }
+    setActiveSession({
+      channelType: 'web',
+      clientInstanceId,
+      conversationKey: chatSessionId,
+    }).catch(() => {
+      // ignore pointer persistence failures
+    });
+  }, [chatSessionId, clientInstanceId]);
+
+  // Resolve active conversation from backend on mount to keep sidebar/chat consistent across pages.
+  useEffect(() => {
+    let cancelled = false;
+    getActiveSession('web', clientInstanceId)
+      .then((activeSession) => {
+        if (cancelled) {
+          return;
+        }
+        const nextConversationKey = normalizeConversationKey(activeSession.conversationKey);
+        if (nextConversationKey == null || !isLegacyCompatibleConversationKey(nextConversationKey)) {
+          startNewConversation();
+          return;
+        }
+        if (nextConversationKey === chatSessionIdRef.current) {
+          return;
+        }
+        setChatSessionId(nextConversationKey);
+        resetConversationState();
+      })
+      .catch(() => {
+        // ignore active session resolution failures
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [clientInstanceId, resetConversationState, setChatSessionId, startNewConversation]);
+
   // Load current session history
   useEffect(() => {
     let cancelled = false;
@@ -254,7 +297,7 @@ export default function ChatWindow() {
 
     listSessions('web')
       .then((sessions) => {
-        const match = sessions.find((session) => session.chatId === chatSessionId);
+        const match = sessions.find((session) => session.conversationKey === chatSessionId || session.chatId === chatSessionId);
         if (match == null) {
           return null;
         }
@@ -505,6 +548,12 @@ export default function ChatWindow() {
 
   const handleSend = useCallback(({ text, attachments }: OutboundChatPayload) => {
     const trimmed = text.trim();
+    const localCommand = getLocalCommand(trimmed);
+    if (localCommand === 'new' && attachments.length === 0) {
+      startNewConversation();
+      return;
+    }
+
     const fallback = attachments.length > 0
       ? `[${attachments.length} image attachment${attachments.length > 1 ? 's' : ''}]`
       : '';
@@ -527,12 +576,6 @@ export default function ChatWindow() {
     lastUpdateWasChunkRef.current = false;
 
     const sent = sendPayload(messageId, outboundPayload);
-    const localCommand = getLocalCommand(trimmed);
-
-    if (localCommand === 'new') {
-      startNewConversation();
-      return;
-    }
 
     if (localCommand === 'reset' && sent) {
       resetConversationState();

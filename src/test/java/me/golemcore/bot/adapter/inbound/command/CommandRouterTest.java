@@ -191,6 +191,7 @@ class CommandRouterTest {
         assertTrue(router.hasCommand("reset"));
         assertTrue(router.hasCommand(CMD_COMPACT));
         assertTrue(router.hasCommand("help"));
+        assertTrue(router.hasCommand("sessions"));
         assertTrue(router.hasCommand(CMD_AUTO));
         assertTrue(router.hasCommand(CMD_GOALS));
         assertTrue(router.hasCommand(CMD_GOAL));
@@ -207,7 +208,7 @@ class CommandRouterTest {
     @Test
     void listCommands() {
         List<CommandPort.CommandDefinition> commands = router.listCommands();
-        assertEquals(10, commands.size());
+        assertEquals(11, commands.size());
     }
 
     @Test
@@ -302,7 +303,7 @@ class CommandRouterTest {
     void newCommand() throws Exception {
         CommandPort.CommandResult result = router.execute("new", List.of(), CTX).get();
         assertTrue(result.success());
-        verify(sessionService).clearMessages(SESSION_ID);
+        verify(sessionService, never()).clearMessages(SESSION_ID);
     }
 
     @Test
@@ -388,6 +389,25 @@ class CommandRouterTest {
     }
 
     @Test
+    void sessionsCommandForTelegram() throws Exception {
+        CommandPort.CommandResult result = router.execute("sessions", List.of(), CTX_WITH_CHANNEL).get();
+        assertTrue(result.success());
+        assertTrue(result.output().contains("command.sessions.use-menu"));
+    }
+
+    @Test
+    void sessionsCommandForNonTelegram() throws Exception {
+        Map<String, Object> webCtx = Map.of(
+                "sessionId", "web:abc",
+                "channelType", "web",
+                "chatId", "abc");
+
+        CommandPort.CommandResult result = router.execute("sessions", List.of(), webCtx).get();
+        assertTrue(result.success());
+        assertTrue(result.output().contains("command.sessions.not-available"));
+    }
+
+    @Test
     void unknownCommand() throws Exception {
         CommandPort.CommandResult result = router.execute("foobar", List.of(), CTX).get();
         assertFalse(result.success());
@@ -400,6 +420,12 @@ class CommandRouterTest {
             "sessionId", SESSION_ID,
             "channelType", CHANNEL_TYPE_TELEGRAM,
             "chatId", CHAT_ID);
+    private static final Map<String, Object> CTX_WITH_SPLIT_IDENTITIES = Map.of(
+            "sessionId", "telegram:conversation-42",
+            "channelType", CHANNEL_TYPE_TELEGRAM,
+            "chatId", "conversation-42",
+            "sessionChatId", "conversation-42",
+            "transportChatId", "transport-900");
 
     @Test
     void autoOnEnablesAutoMode() throws Exception {
@@ -410,6 +436,15 @@ class CommandRouterTest {
         assertTrue(result.output().contains("command.auto.enabled"));
         verify(autoModeService).enableAutoMode();
         verify(eventPublisher).publishEvent(new AutoModeChannelRegisteredEvent(CHANNEL_TYPE_TELEGRAM, CHAT_ID));
+    }
+
+    @Test
+    void autoOnUsesTransportChatIdFromContext() throws Exception {
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+
+        CommandPort.CommandResult result = router.execute(CMD_AUTO, List.of("on"), CTX_WITH_SPLIT_IDENTITIES).get();
+        assertTrue(result.success());
+        verify(eventPublisher).publishEvent(new AutoModeChannelRegisteredEvent(CHANNEL_TYPE_TELEGRAM, "transport-900"));
     }
 
     @Test
@@ -618,7 +653,7 @@ class CommandRouterTest {
         assertTrue(commands.stream().anyMatch(c -> CMD_GOALS.equals(c.name())));
         assertTrue(commands.stream().anyMatch(c -> CMD_DIARY.equals(c.name())));
         assertTrue(commands.stream().anyMatch(c -> CMD_SCHEDULE.equals(c.name())));
-        assertEquals(16, commands.size()); // 9 base + 1 model + 6 auto mode
+        assertEquals(17, commands.size()); // 11 base + 6 auto mode
     }
 
     @Test
@@ -628,7 +663,7 @@ class CommandRouterTest {
         List<CommandPort.CommandDefinition> commands = router.listCommands();
         assertTrue(commands.stream().anyMatch(c -> "plan".equals(c.name())));
         assertTrue(commands.stream().anyMatch(c -> "plans".equals(c.name())));
-        assertEquals(12, commands.size()); // 9 base + 1 model + 2 plan
+        assertEquals(13, commands.size()); // 11 base + 2 plan
     }
 
     // ===== Plan commands =====
@@ -689,6 +724,16 @@ class CommandRouterTest {
         assertTrue(result.success());
         assertTrue(result.output().contains("command.plan.enabled"));
         verify(planService).activatePlanMode(CHAT_ID, null);
+    }
+
+    @Test
+    void planOnUsesTransportChatIdFromContext() throws Exception {
+        when(planService.isFeatureEnabled()).thenReturn(true);
+        when(planService.isPlanModeActive()).thenReturn(false);
+
+        CommandPort.CommandResult result = router.execute(CMD_PLAN, List.of("on"), CTX_WITH_SPLIT_IDENTITIES).get();
+        assertTrue(result.success());
+        verify(planService).activatePlanMode("transport-900", null);
     }
 
     @Test
@@ -1347,6 +1392,13 @@ class CommandRouterTest {
         assertTrue(result.success());
         assertTrue(result.output().contains("command.stop.ack"));
         verify(runCoordinator).requestStop(CHANNEL_TYPE_TELEGRAM, CHAT_ID);
+    }
+
+    @Test
+    void stopCommandUsesSessionChatIdFromContext() throws Exception {
+        CommandPort.CommandResult result = router.execute("stop", List.of(), CTX_WITH_SPLIT_IDENTITIES).get();
+        assertTrue(result.success());
+        verify(runCoordinator).requestStop(CHANNEL_TYPE_TELEGRAM, "conversation-42");
     }
 
     @Test

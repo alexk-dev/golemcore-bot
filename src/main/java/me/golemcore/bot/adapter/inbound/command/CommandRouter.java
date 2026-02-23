@@ -133,7 +133,7 @@ public class CommandRouter implements CommandPort {
 
     private static final List<String> KNOWN_COMMANDS = List.of(
             "skills", "tools", CMD_STATUS, "new", SUBCMD_RESET, "compact", CMD_HELP,
-            "tier", "model", "auto", "goals", CMD_GOAL, "diary", "tasks", "schedule",
+            "tier", "model", "sessions", "auto", "goals", CMD_GOAL, "diary", "tasks", "schedule",
             CMD_PLAN, CMD_PLANS, "stop");
 
     private static final java.util.Set<String> VALID_TIERS = java.util.Set.of(
@@ -181,30 +181,41 @@ public class CommandRouter implements CommandPort {
             String sessionId = (String) context.get("sessionId");
             String channelType = (String) context.get("channelType");
             String chatId = (String) context.get("chatId");
+            String sessionChatId = resolveContextString(context, "sessionChatId", chatId);
+            String transportChatId = resolveContextString(context, "transportChatId", chatId);
             log.debug("Executing command: /{} (session={})", command, sessionId);
 
             return switch (command) {
             case "skills" -> handleSkills();
             case "tools" -> handleTools();
             case CMD_STATUS -> handleStatus(sessionId);
-            case "new" -> handleNew(sessionId);
-            case "reset" -> handleReset(sessionId, chatId);
+            case "new" -> handleNew();
+            case "reset" -> handleReset(sessionId, sessionChatId);
             case "compact" -> handleCompact(sessionId, args);
             case CMD_HELP -> handleHelp();
             case "tier" -> handleTier(args);
             case "model" -> handleModel(args);
-            case "auto" -> handleAuto(args, channelType, chatId);
+            case "sessions" -> handleSessions(channelType);
+            case "auto" -> handleAuto(args, channelType, transportChatId);
             case "goals" -> handleGoals();
             case CMD_GOAL -> handleGoal(args);
             case "diary" -> handleDiary(args);
             case "tasks" -> handleTasks();
             case "schedule" -> handleSchedule(args);
-            case CMD_PLAN -> handlePlan(args, chatId);
+            case CMD_PLAN -> handlePlan(args, transportChatId);
             case CMD_PLANS -> handlePlans();
-            case "stop" -> handleStop(channelType, chatId);
+            case "stop" -> handleStop(channelType, sessionChatId);
             default -> CommandResult.failure(msg("command.unknown", command));
             };
         });
+    }
+
+    private String resolveContextString(Map<String, Object> context, String key, String fallback) {
+        Object value = context.get(key);
+        if (value instanceof String && !((String) value).isBlank()) {
+            return (String) value;
+        }
+        return fallback;
     }
 
     @Override
@@ -225,6 +236,7 @@ public class CommandRouter implements CommandPort {
                 new CommandDefinition("tier", "Set model tier", "/tier [balanced|smart|coding|deep] [force]"),
                 new CommandDefinition("model", "Per-tier model selection",
                         "/model [list|<tier> <model>|<tier> reasoning <level>|<tier> reset]"),
+                new CommandDefinition("sessions", "Open session switcher menu (Telegram)", "/sessions"),
                 new CommandDefinition("stop", "Stop current run", "/stop")));
         if (autoModeService.isFeatureEnabled()) {
             commands.add(new CommandDefinition("auto", "Toggle auto mode", "/auto [on|off]"));
@@ -387,8 +399,12 @@ public class CommandRouter implements CommandPort {
         return String.valueOf(tokens);
     }
 
-    private CommandResult handleNew(String sessionId) {
-        sessionService.clearMessages(sessionId);
+    private CommandResult handleNew() {
+        // /new semantics are channel-specific:
+        // - Web creates a new conversation on client side before WS send.
+        // - Telegram creates/activates a new conversation in TelegramAdapter.
+        // Command router keeps backward-compatible acknowledgement and does not
+        // mutate current session history.
         return CommandResult.success(msg("command.new.done"));
     }
 
@@ -439,6 +455,13 @@ public class CommandRouter implements CommandPort {
 
     private CommandResult handleHelp() {
         return CommandResult.success(msg("command.help.text"));
+    }
+
+    private CommandResult handleSessions(String channelType) {
+        if (!"telegram".equals(channelType)) {
+            return CommandResult.success(msg("command.sessions.not-available"));
+        }
+        return CommandResult.success(msg("command.sessions.use-menu"));
     }
 
     // ==================== Tier Command ====================

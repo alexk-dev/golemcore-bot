@@ -20,12 +20,15 @@ package me.golemcore.bot.domain.system;
 
 import me.golemcore.bot.domain.component.MemoryComponent;
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.TurnOutcome;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.model.TurnMemoryEvent;
+import me.golemcore.bot.domain.service.MemoryScopeSupport;
+import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -94,6 +97,7 @@ public class MemoryPersistSystem implements AgentSystem {
                     .userText(lastUserMessage.getContent())
                     .assistantText(assistantContent)
                     .activeSkill(context.getActiveSkill() != null ? context.getActiveSkill().getName() : null)
+                    .scope(resolveScope(context.getSession()))
                     .toolOutputs(extractToolOutputs(context))
                     .build();
             memoryComponent.persistTurnMemory(event);
@@ -116,6 +120,20 @@ public class MemoryPersistSystem implements AgentSystem {
             }
         }
         return null;
+    }
+
+    private String resolveScope(AgentSession session) {
+        if (session == null) {
+            return MemoryScopeSupport.GLOBAL_SCOPE;
+        }
+
+        String channelType = session.getChannelType();
+        String conversationKey = SessionIdentitySupport.resolveConversationKey(session);
+        if (conversationKey == null || conversationKey.isBlank()) {
+            conversationKey = session.getChatId();
+        }
+
+        return MemoryScopeSupport.buildSessionScopeOrGlobal(channelType, conversationKey);
     }
 
     private String truncate(String text, int maxLength) {

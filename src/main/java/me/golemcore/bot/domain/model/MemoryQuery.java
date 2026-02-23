@@ -36,6 +36,9 @@ public class MemoryQuery {
     private String activeSkill;
 
     @Builder.Default
+    private String scope = "global";
+
+    @Builder.Default
     private Integer softPromptBudgetTokens = 1800;
 
     @Builder.Default

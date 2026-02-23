@@ -22,6 +22,7 @@ import me.golemcore.bot.domain.component.MemoryComponent;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.MemoryPack;
@@ -32,9 +33,11 @@ import me.golemcore.bot.domain.model.SkillTransitionRequest;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
+import me.golemcore.bot.domain.service.MemoryScopeSupport;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import me.golemcore.bot.domain.service.SkillTemplateEngine;
 import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -114,6 +117,7 @@ public class ContextBuildingSystem implements AgentSystem {
         MemoryQuery memoryQuery = MemoryQuery.builder()
                 .queryText(userQueryForMemory)
                 .activeSkill(context.getActiveSkill() != null ? context.getActiveSkill().getName() : null)
+                .scope(resolveMemoryScope(context.getSession()))
                 .softPromptBudgetTokens(runtimeConfigService.getMemorySoftPromptBudgetTokens())
                 .maxPromptBudgetTokens(runtimeConfigService.getMemoryMaxPromptBudgetTokens())
                 .workingTopK(runtimeConfigService.getMemoryWorkingTopK())
@@ -215,6 +219,18 @@ public class ContextBuildingSystem implements AgentSystem {
                 systemPrompt.length());
 
         return context;
+    }
+
+    private String resolveMemoryScope(AgentSession session) {
+        if (session == null) {
+            return MemoryScopeSupport.GLOBAL_SCOPE;
+        }
+
+        String conversationKey = SessionIdentitySupport.resolveConversationKey(session);
+        if (conversationKey == null || conversationKey.isBlank()) {
+            conversationKey = session.getChatId();
+        }
+        return MemoryScopeSupport.buildSessionScopeOrGlobal(session.getChannelType(), conversationKey);
     }
 
     private String buildSystemPrompt(AgentContext context, UserPreferences prefs, String workspaceInstructions) {

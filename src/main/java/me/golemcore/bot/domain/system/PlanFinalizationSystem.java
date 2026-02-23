@@ -26,6 +26,7 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.PlanReadyEvent;
 import me.golemcore.bot.domain.service.PlanService;
+import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
@@ -98,7 +99,7 @@ public class PlanFinalizationSystem implements AgentSystem {
         }
 
         Plan plan = activePlan.get();
-        String chatId = context.getSession().getChatId();
+        String chatId = SessionIdentitySupport.resolveTransportChatId(context.getSession());
 
         LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
         PlanSetContentArgs finalizeArgs = PlanSetContentArgs.from(response, context);

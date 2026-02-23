@@ -29,6 +29,7 @@ import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.RoutingOutcome;
 import me.golemcore.bot.domain.model.TurnOutcome;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.domain.system.AgentSystem;
@@ -135,6 +136,7 @@ public class AgentLoop {
                 message.getChatId());
         log.debug("Session: {}, messages in history: {}", session.getId(), session.getMessages().size());
 
+        applySessionIdentityMetadata(session, message);
         session.addMessage(message);
 
         AgentContext context = AgentContext.builder()
@@ -151,8 +153,9 @@ public class AgentLoop {
 
         ChannelPort channel = channelRegistry.get(message.getChannelType());
         ScheduledFuture<?> typingTask = null;
-        if (channel != null && message.getChatId() != null) {
-            String chatId = message.getChatId();
+        String typingChatId = resolveTransportChatId(message);
+        if (channel != null && typingChatId != null) {
+            String chatId = typingChatId;
             typingTask = typingExecutor.scheduleAtFixedRate(
                     () -> channel.showTyping(chatId),
                     0, TYPING_INTERVAL_SECONDS, TimeUnit.SECONDS);
@@ -189,6 +192,47 @@ public class AgentLoop {
         if (text.length() <= maxLen)
             return text;
         return text.substring(0, maxLen) + "...";
+    }
+
+    private void applySessionIdentityMetadata(AgentSession session, Message message) {
+        if (session == null || message == null) {
+            return;
+        }
+
+        String conversationKey = readMetadataString(message, ContextAttributes.CONVERSATION_KEY);
+        if (conversationKey == null || conversationKey.isBlank()) {
+            conversationKey = message.getChatId();
+        }
+
+        String transportChatId = readMetadataString(message, ContextAttributes.TRANSPORT_CHAT_ID);
+        if (transportChatId == null || transportChatId.isBlank()) {
+            transportChatId = message.getChatId();
+        }
+
+        if (conversationKey == null || conversationKey.isBlank() || transportChatId == null || transportChatId.isBlank()) {
+            return;
+        }
+
+        SessionIdentitySupport.bindTransportAndConversation(session, transportChatId, conversationKey);
+    }
+
+    private String resolveTransportChatId(Message message) {
+        String transportChatId = readMetadataString(message, ContextAttributes.TRANSPORT_CHAT_ID);
+        if (transportChatId != null && !transportChatId.isBlank()) {
+            return transportChatId;
+        }
+        return message != null ? message.getChatId() : null;
+    }
+
+    private String readMetadataString(Message message, String key) {
+        if (message == null || message.getMetadata() == null || key == null || key.isBlank()) {
+            return null;
+        }
+        Object value = message.getMetadata().get(key);
+        if (value instanceof String) {
+            return (String) value;
+        }
+        return null;
     }
 
     // Inbound messages are handled by SessionRunCoordinator via
