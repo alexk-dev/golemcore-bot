@@ -18,15 +18,15 @@ package me.golemcore.bot.plugin.builtin.whisper;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.plugin.builtin.whisper.adapter.WhisperCompatibleSttAdapter;
+import me.golemcore.bot.plugin.builtin.whisper.adapter.WhisperAdapter;
 import me.golemcore.bot.domain.model.AudioFormat;
 import me.golemcore.bot.port.outbound.VoicePort;
 
 final class WhisperSttProviderAdapter implements SttProvider {
 
-    private final WhisperCompatibleSttAdapter delegate;
+    private final WhisperAdapter delegate;
 
-    WhisperSttProviderAdapter(WhisperCompatibleSttAdapter delegate) {
+    WhisperSttProviderAdapter(WhisperAdapter delegate) {
         this.delegate = delegate;
     }
 

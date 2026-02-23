@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.model.AudioFormat;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
-import me.golemcore.bot.plugin.builtin.whisper.adapter.WhisperCompatibleSttAdapter;
+import me.golemcore.bot.plugin.builtin.whisper.adapter.WhisperAdapter;
 import me.golemcore.bot.port.outbound.VoicePort;
 import me.golemcore.bot.testsupport.http.OkHttpMockEngine;
 import okhttp3.OkHttpClient;
@@ -40,7 +40,7 @@ class ElevenLabsAdapterTest {
     private ElevenLabsAdapter adapter;
     private BotProperties properties;
     private RuntimeConfigService runtimeConfigService;
-    private WhisperCompatibleSttAdapter whisperSttAdapter;
+    private WhisperAdapter whisperSttAdapter;
 
     @BeforeEach
     void setUp() {
@@ -64,7 +64,7 @@ class ElevenLabsAdapterTest {
         when(runtimeConfigService.getVoiceSpeed()).thenReturn(1.0f);
         when(runtimeConfigService.isWhisperSttConfigured()).thenReturn(false);
 
-        whisperSttAdapter = mock(WhisperCompatibleSttAdapter.class);
+        whisperSttAdapter = mock(WhisperAdapter.class);
         adapter = new ElevenLabsAdapter(client, properties, runtimeConfigService, new ObjectMapper(),
                 whisperSttAdapter) {
             @Override

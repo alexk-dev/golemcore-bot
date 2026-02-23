@@ -18,7 +18,7 @@ package me.golemcore.bot.plugin.builtin.whisper;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.plugin.builtin.whisper.adapter.WhisperCompatibleSttAdapter;
+import me.golemcore.bot.plugin.builtin.whisper.adapter.WhisperAdapter;
 import me.golemcore.bot.plugin.api.PluginContext;
 import me.golemcore.bot.plugin.builtin.AbstractPlugin;
 
@@ -38,7 +38,7 @@ public final class WhisperSttPlugin extends AbstractPlugin {
     @Override
     public void start(PluginContext context) {
         resetContributions();
-        WhisperCompatibleSttAdapter sttAdapter = context.requireService(WhisperCompatibleSttAdapter.class);
+        WhisperAdapter sttAdapter = context.requireService(WhisperAdapter.class);
         WhisperSttProviderAdapter providerAdapter = new WhisperSttProviderAdapter(sttAdapter);
         addContribution("stt.whisper", SttProvider.class, providerAdapter);
     }

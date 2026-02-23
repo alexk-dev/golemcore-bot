@@ -52,7 +52,7 @@ import java.util.Collections;
 @Component
 @RequiredArgsConstructor
 @Slf4j
-public class WhisperCompatibleSttAdapter {
+public class WhisperAdapter {
 
     private static final String TRANSCRIPTION_PATH = "/v1/audio/transcriptions";
     private static final int MAX_RETRIES = 3;

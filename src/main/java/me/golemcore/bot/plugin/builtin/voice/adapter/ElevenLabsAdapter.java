@@ -21,7 +21,7 @@ package me.golemcore.bot.plugin.builtin.voice.adapter;
 import me.golemcore.bot.domain.model.AudioFormat;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
-import me.golemcore.bot.plugin.builtin.whisper.adapter.WhisperCompatibleSttAdapter;
+import me.golemcore.bot.plugin.builtin.whisper.adapter.WhisperAdapter;
 import me.golemcore.bot.port.outbound.VoicePort;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -78,7 +78,7 @@ public class ElevenLabsAdapter implements VoicePort {
     private final BotProperties properties;
     private final RuntimeConfigService runtimeConfigService;
     private final ObjectMapper objectMapper;
-    private final WhisperCompatibleSttAdapter whisperSttAdapter;
+    private final WhisperAdapter whisperSttAdapter;
 
     @PostConstruct
     void init() {

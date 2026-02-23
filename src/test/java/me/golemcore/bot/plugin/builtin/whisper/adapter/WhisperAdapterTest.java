@@ -18,14 +18,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-class WhisperCompatibleSttAdapterTest {
+class WhisperAdapterTest {
 
     private static final String CONTENT_TYPE = "Content-Type";
     private static final String APPLICATION_JSON = "application/json";
     private static final String BASE_URL = "http://mock.whisper.local";
 
     private OkHttpMockEngine httpEngine;
-    private WhisperCompatibleSttAdapter adapter;
+    private WhisperAdapter adapter;
     private RuntimeConfigService runtimeConfigService;
 
     @BeforeEach
@@ -40,7 +40,7 @@ class WhisperCompatibleSttAdapterTest {
         when(runtimeConfigService.getWhisperSttUrl()).thenReturn(BASE_URL);
         when(runtimeConfigService.getWhisperSttApiKey()).thenReturn("");
 
-        adapter = new WhisperCompatibleSttAdapter(client, runtimeConfigService, new ObjectMapper()) {
+        adapter = new WhisperAdapter(client, runtimeConfigService, new ObjectMapper()) {
             @Override
             protected void sleepBeforeRetry(long backoffMs) {
                 // No-op in tests to avoid real backoff delays.
