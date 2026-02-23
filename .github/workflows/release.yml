@@ -21,7 +21,7 @@ jobs:
 
       - name: Cocogitto release
         id: release
-        uses: cocogitto/cocogitto-action@c7a74f5406bab86da17da0f0e460a69f8219a68c # v3
+        uses: cocogitto/cocogitto-action@9a9fe03b31c47444290c0d7f9b1ee1b44ee13f20 # v4.1.0
         with:
           release: true
           check-latest-tag-only: true

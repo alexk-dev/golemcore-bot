@@ -43,6 +43,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Retrieves and ranks memory items for prompt injection.
@@ -69,13 +70,19 @@ public class MemoryRetrievalService {
         }
 
         MemoryQuery normalizedQuery = normalizeQuery(query);
+        List<String> requestedScopes = resolveRequestedScopes(normalizedQuery);
+        String requestedScope = requestedScopes.isEmpty()
+                ? MemoryScopeSupport.GLOBAL_SCOPE
+                : requestedScopes.get(0);
         List<MemoryItem> candidates = new ArrayList<>();
 
-        candidates.addAll(loadRecentEpisodic(resolveEpisodicLookbackDays()));
-        candidates.addAll(loadJsonl(SEMANTIC_FILE));
-        candidates.addAll(loadJsonl(PROCEDURAL_FILE));
+        for (String scope : requestedScopes) {
+            candidates.addAll(loadRecentEpisodic(scope, resolveEpisodicLookbackDays()));
+            candidates.addAll(loadJsonl(buildScopedPath(scope, SEMANTIC_FILE), scope));
+            candidates.addAll(loadJsonl(buildScopedPath(scope, PROCEDURAL_FILE), scope));
+        }
 
-        List<MemoryItem> filtered = filterCandidates(candidates);
+        List<MemoryItem> filtered = filterCandidates(candidates, requestedScopes);
         List<MemoryScoredItem> scored = new ArrayList<>();
         for (MemoryItem item : filtered) {
             double score = score(normalizedQuery, item);
@@ -91,15 +98,20 @@ public class MemoryRetrievalService {
                 .thenComparing((MemoryScoredItem scoredItem) -> resolveTimestamp(scoredItem.getItem()),
                         Comparator.nullsLast(Comparator.reverseOrder())));
 
-        List<MemoryScoredItem> topByLayer = applyLayerTopK(scored, normalizedQuery);
-        return deduplicate(topByLayer);
+        List<MemoryScoredItem> topByLayer = applyLayerTopK(scored, normalizedQuery, requestedScopes);
+        List<MemoryScoredItem> deduplicated = deduplicate(topByLayer);
+        logScopeMetrics(requestedScope, filtered.size(), deduplicated);
+        return deduplicated;
     }
 
     private MemoryQuery normalizeQuery(MemoryQuery query) {
         MemoryQuery source = query != null ? query : new MemoryQuery();
+        String normalizedScope = MemoryScopeSupport.normalizeScopeOrGlobal(source.getScope());
         return MemoryQuery.builder()
                 .queryText(source.getQueryText())
                 .activeSkill(source.getActiveSkill())
+                .scope(normalizedScope)
+                .scopeChain(normalizeScopeChain(source.getScopeChain(), normalizedScope))
                 .softPromptBudgetTokens(normalizePositive(source.getSoftPromptBudgetTokens(),
                         runtimeConfigService.getMemorySoftPromptBudgetTokens()))
                 .maxPromptBudgetTokens(normalizePositive(source.getMaxPromptBudgetTokens(),
@@ -112,12 +124,12 @@ public class MemoryRetrievalService {
                 .build();
     }
 
-    private List<MemoryItem> loadRecentEpisodic(int days) {
+    private List<MemoryItem> loadRecentEpisodic(String scope, int days) {
         List<MemoryItem> items = new ArrayList<>();
         for (int i = 0; i < days; i++) {
             String date = LocalDate.now(ZoneId.systemDefault()).minusDays(i).toString();
-            String path = EPISODIC_PREFIX + date + ".jsonl";
-            items.addAll(loadJsonl(path));
+            String path = buildScopedPath(scope, EPISODIC_PREFIX + date + ".jsonl");
+            items.addAll(loadJsonl(path, scope));
         }
         return items;
     }
@@ -127,7 +139,7 @@ public class MemoryRetrievalService {
         return clampDays(configured);
     }
 
-    private List<MemoryItem> loadJsonl(String path) {
+    private List<MemoryItem> loadJsonl(String path, String defaultScope) {
         List<MemoryItem> items = new ArrayList<>();
         try {
             String content = storagePort.getText(getMemoryDirectory(), path).join();
@@ -141,6 +153,13 @@ public class MemoryRetrievalService {
                 }
                 try {
                     MemoryItem item = objectMapper.readValue(line, MemoryItem.class);
+                    String itemScope = MemoryScopeSupport.normalizeScopeOrGlobal(item.getScope());
+                    if (MemoryScopeSupport.GLOBAL_SCOPE.equals(itemScope)
+                            && MemoryScopeSupport.isSessionScope(defaultScope)
+                            && !path.startsWith("items/")) {
+                        itemScope = MemoryScopeSupport.normalizeScopeOrGlobal(defaultScope);
+                    }
+                    item.setScope(itemScope);
                     items.add(item);
                 } catch (IOException | RuntimeException e) {
                     log.trace("[MemoryRetrieval] Skipping invalid line in {}: {}", path, e.getMessage());
@@ -152,17 +171,25 @@ public class MemoryRetrievalService {
         return items;
     }
 
-    private List<MemoryItem> filterCandidates(List<MemoryItem> items) {
+    private List<MemoryItem> filterCandidates(List<MemoryItem> items, List<String> requestedScopes) {
         List<MemoryItem> result = new ArrayList<>();
         if (items == null || items.isEmpty()) {
             return result;
         }
+        Set<String> allowedScopes = requestedScopes.stream()
+                .map(MemoryScopeSupport::normalizeScopeOrGlobal)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
 
         Instant decayThreshold = Instant.now().minus(runtimeConfigService.getMemoryDecayDays(), ChronoUnit.DAYS);
         for (MemoryItem item : items) {
             if (item == null) {
                 continue;
             }
+            String itemScope = MemoryScopeSupport.normalizeScopeOrGlobal(item.getScope());
+            if (!isScopeAllowed(allowedScopes, itemScope)) {
+                continue;
+            }
+            item.setScope(itemScope);
             if (item.getContent() == null || item.getContent().isBlank()) {
                 continue;
             }
@@ -187,7 +214,10 @@ public class MemoryRetrievalService {
         return result;
     }
 
-    private List<MemoryScoredItem> applyLayerTopK(List<MemoryScoredItem> scored, MemoryQuery query) {
+    private List<MemoryScoredItem> applyLayerTopK(
+            List<MemoryScoredItem> scored,
+            MemoryQuery query,
+            List<String> requestedScopes) {
         Map<MemoryItem.Layer, Integer> limits = new LinkedHashMap<>();
         limits.put(MemoryItem.Layer.WORKING, normalizeTopK(query.getWorkingTopK(), 0));
         limits.put(MemoryItem.Layer.EPISODIC, normalizeTopK(query.getEpisodicTopK(), 0));
@@ -197,17 +227,23 @@ public class MemoryRetrievalService {
         Map<MemoryItem.Layer, Integer> counters = new HashMap<>();
         List<MemoryScoredItem> selected = new ArrayList<>();
 
-        for (MemoryScoredItem candidate : scored) {
-            MemoryItem item = candidate.getItem();
-            MemoryItem.Layer layer = item.getLayer() != null ? item.getLayer() : MemoryItem.Layer.EPISODIC;
-            int limit = limits.getOrDefault(layer, 4);
-            int current = counters.getOrDefault(layer, 0);
-            if (current >= limit) {
-                continue;
+        if (!requestedScopes.isEmpty()) {
+            for (String scope : requestedScopes) {
+                String normalizedScope = MemoryScopeSupport.normalizeScopeOrGlobal(scope);
+                for (MemoryScoredItem candidate : scored) {
+                    MemoryItem item = candidate.getItem();
+                    String itemScope = normalizeItemScope(item);
+                    if (!normalizedScope.equals(itemScope)) {
+                        continue;
+                    }
+                    trySelectWithLayerLimit(candidate, limits, counters, selected);
+                }
             }
+            return selected;
+        }
 
-            selected.add(candidate);
-            counters.put(layer, current + 1);
+        for (MemoryScoredItem candidate : scored) {
+            trySelectWithLayerLimit(candidate, limits, counters, selected);
         }
 
         return selected;
@@ -237,6 +273,65 @@ public class MemoryRetrievalService {
             dedup.add(candidate);
         }
         return dedup;
+    }
+
+    private void logScopeMetrics(String requestedScope, int filteredCount, List<MemoryScoredItem> selectedItems) {
+        int sessionSelected = 0;
+        int globalSelected = 0;
+        for (MemoryScoredItem selectedItem : selectedItems) {
+            MemoryItem item = selectedItem.getItem();
+            if (item == null) {
+                continue;
+            }
+            String scope = normalizeItemScope(item);
+            if (MemoryScopeSupport.isSessionScope(scope)) {
+                sessionSelected++;
+            } else if (MemoryScopeSupport.GLOBAL_SCOPE.equals(scope)) {
+                globalSelected++;
+            }
+        }
+        int filteredOut = Math.max(0, filteredCount - selectedItems.size());
+        log.info("[SessionMetrics] metric=memory.scope.session.selected.count value={} requestedScope={}",
+                sessionSelected, requestedScope);
+        log.info("[SessionMetrics] metric=memory.scope.global.selected.count value={} requestedScope={}",
+                globalSelected, requestedScope);
+        log.info("[SessionMetrics] metric=memory.scope.filtered.count value={} requestedScope={}",
+                filteredOut, requestedScope);
+    }
+
+    private void trySelectWithLayerLimit(
+            MemoryScoredItem candidate,
+            Map<MemoryItem.Layer, Integer> limits,
+            Map<MemoryItem.Layer, Integer> counters,
+            List<MemoryScoredItem> selected) {
+        if (candidate == null || candidate.getItem() == null) {
+            return;
+        }
+
+        MemoryItem item = candidate.getItem();
+        MemoryItem.Layer layer = item.getLayer() != null ? item.getLayer() : MemoryItem.Layer.EPISODIC;
+        int limit = limits.getOrDefault(layer, 4);
+        int current = counters.getOrDefault(layer, 0);
+        if (current >= limit) {
+            return;
+        }
+
+        selected.add(candidate);
+        counters.put(layer, current + 1);
+    }
+
+    private boolean isScopeAllowed(Set<String> requestedScopes, String itemScope) {
+        String normalizedItem = MemoryScopeSupport.normalizeScopeOrGlobal(itemScope);
+        return requestedScopes.contains(normalizedItem);
+    }
+
+    private String normalizeItemScope(MemoryItem item) {
+        if (item == null) {
+            return MemoryScopeSupport.GLOBAL_SCOPE;
+        }
+        String normalized = MemoryScopeSupport.normalizeScopeOrGlobal(item.getScope());
+        item.setScope(normalized);
+        return normalized;
     }
 
     private double score(MemoryQuery query, MemoryItem item) {
@@ -392,6 +487,39 @@ public class MemoryRetrievalService {
             return 1;
         }
         return Math.min(days, MAX_EPISODIC_LOOKBACK_DAYS);
+    }
+
+    private String buildScopedPath(String scope, String relativePath) {
+        String normalizedScope = MemoryScopeSupport.normalizeScopeOrGlobal(scope);
+        return MemoryScopeSupport.toStoragePrefix(normalizedScope) + relativePath;
+    }
+
+    private List<String> resolveRequestedScopes(MemoryQuery query) {
+        List<String> scopes = normalizeScopeChain(query.getScopeChain(), query.getScope());
+        if (scopes.isEmpty()) {
+            return List.of(MemoryScopeSupport.GLOBAL_SCOPE);
+        }
+        return scopes;
+    }
+
+    private List<String> normalizeScopeChain(List<String> rawScopes, String fallbackScope) {
+        Set<String> normalized = new LinkedHashSet<>();
+        if (rawScopes != null) {
+            for (String scope : rawScopes) {
+                String normalizedScope = MemoryScopeSupport.normalizeScopeOrGlobal(scope);
+                if (!MemoryScopeSupport.GLOBAL_SCOPE.equals(normalizedScope)) {
+                    normalized.add(normalizedScope);
+                }
+            }
+        }
+
+        String normalizedFallback = MemoryScopeSupport.normalizeScopeOrGlobal(fallbackScope);
+        if (!MemoryScopeSupport.GLOBAL_SCOPE.equals(normalizedFallback)) {
+            normalized.add(normalizedFallback);
+        }
+        normalized.add(MemoryScopeSupport.GLOBAL_SCOPE);
+
+        return new ArrayList<>(normalized);
     }
 
     private String getMemoryDirectory() {

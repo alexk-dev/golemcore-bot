@@ -144,6 +144,28 @@ class MemoryPersistSystemTest {
     }
 
     @Test
+    void processPersistsSessionScopeInTurnMemoryEvent() {
+        AgentSession session = AgentSession.builder()
+                .id("web:conv12345")
+                .channelType("web")
+                .chatId("conv12345")
+                .metadata(new java.util.HashMap<>(Map.of(
+                        ContextAttributes.CONVERSATION_KEY, "conv12345")))
+                .build();
+        AgentContext ctx = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>(List.of(
+                        Message.builder().role(ROLE_USER).content("user input").timestamp(Instant.now()).build())))
+                .build();
+        ctx.setAttribute(ContextAttributes.LLM_RESPONSE, LlmResponse.builder().content("assistant reply").build());
+
+        system.process(ctx);
+
+        verify(memoryComponent).persistTurnMemory(argThat(event -> event != null
+                && "session:web:conv12345".equals(event.getScope())));
+    }
+
+    @Test
     void processTruncatesToolOutputsToExpectedLimit() {
         String longToolOutput = "x".repeat(1200);
         AgentContext ctx = contextWith(
