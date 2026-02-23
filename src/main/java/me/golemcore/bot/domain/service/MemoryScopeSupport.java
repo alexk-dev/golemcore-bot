@@ -84,7 +84,8 @@ public final class MemoryScopeSupport {
     }
 
     /**
-     * Resolve canonical memory scope for a session, or {@code global} if session identity is invalid.
+     * Resolve canonical memory scope for a session, or {@code global} if session
+     * identity is invalid.
      */
     public static String resolveScopeFromSessionOrGlobal(AgentSession session) {
         if (session == null) {
