@@ -107,4 +107,31 @@ public final class ContextAttributes {
     /** WebSocketSession — reference to WebSocket session for streaming. */
     public static final String WEB_STREAM_SINK = "web.stream.sink";
 
+    /**
+     * String ? transport chat id used for outbound delivery (for example Telegram
+     * chat id when logical session key differs).
+     */
+    public static final String TRANSPORT_CHAT_ID = "session.transport.chat.id";
+
+    /** String ? logical conversation key for the current turn/session. */
+    public static final String CONVERSATION_KEY = "session.conversation.key";
+
+    /** String ? channel type from canonical session identity. */
+    public static final String SESSION_IDENTITY_CHANNEL = "session.identity.channel";
+
+    /** String ? conversation key from canonical session identity. */
+    public static final String SESSION_IDENTITY_CONVERSATION = "session.identity.conversation";
+
+    /** String ? auto execution run kind (`GOAL_RUN` or `TASK_RUN`). */
+    public static final String AUTO_RUN_KIND = "auto.run.kind";
+
+    /** String ? unique auto execution run identifier. */
+    public static final String AUTO_RUN_ID = "auto.run.id";
+
+    /** String ? active auto goal identifier for the turn. */
+    public static final String AUTO_GOAL_ID = "auto.goal.id";
+
+    /** String ? active auto task identifier for the turn. */
+    public static final String AUTO_TASK_ID = "auto.task.id";
+
 }

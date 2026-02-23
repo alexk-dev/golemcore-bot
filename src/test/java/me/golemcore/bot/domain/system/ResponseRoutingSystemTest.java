@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -71,12 +72,21 @@ class ResponseRoutingSystemTest {
     }
 
     private AgentContext createContext() {
+        return createContext(CHAT_ID, null);
+    }
+
+    private AgentContext createContext(String sessionChatId, String transportChatId) {
         AgentSession session = AgentSession.builder()
                 .id(SESSION_ID)
-                .chatId(CHAT_ID)
+                .chatId(sessionChatId)
                 .channelType(CHANNEL_TELEGRAM)
                 .messages(new ArrayList<>())
                 .build();
+        if (transportChatId != null) {
+            Map<String, Object> metadata = new HashMap<>();
+            metadata.put(ContextAttributes.TRANSPORT_CHAT_ID, transportChatId);
+            session.setMetadata(metadata);
+        }
 
         return AgentContext.builder()
                 .session(session)
@@ -100,6 +110,16 @@ class ResponseRoutingSystemTest {
     }
 
     @Test
+    void shouldSendOutgoingResponseTextToTransportChatIdFromMetadata() {
+        AgentContext context = createContext("conversation-42", "transport-777");
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly(CONTENT_RESPONSE));
+
+        system.process(context);
+
+        verify(channelPort).sendMessage(eq("transport-777"), eq(CONTENT_RESPONSE), any());
+    }
+
+    @Test
     void shouldSendOutgoingResponseWithDocumentAttachment() {
         AgentContext context = createContext();
 
@@ -119,6 +139,26 @@ class ResponseRoutingSystemTest {
         system.process(context);
 
         verify(channelPort).sendDocument(eq(CHAT_ID), eq(new byte[] { 4, 5, 6 }), eq("report.pdf"), eq("The report"));
+    }
+
+    @Test
+    void shouldSendAttachmentToTransportChatIdFromMetadata() {
+        AgentContext context = createContext("conversation-5", "transport-5");
+        Attachment attachment = Attachment.builder()
+                .type(Attachment.Type.DOCUMENT)
+                .data(new byte[] { 7, 8, 9 })
+                .filename("edge.pdf")
+                .mimeType("application/pdf")
+                .caption("Edge")
+                .build();
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.builder()
+                .text("File")
+                .attachment(attachment)
+                .build());
+
+        system.process(context);
+
+        verify(channelPort).sendDocument(eq("transport-5"), eq(new byte[] { 7, 8, 9 }), eq("edge.pdf"), eq("Edge"));
     }
 
     @Test

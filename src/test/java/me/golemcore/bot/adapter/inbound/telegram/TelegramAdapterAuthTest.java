@@ -3,6 +3,7 @@ package me.golemcore.bot.adapter.inbound.telegram;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.TelegramSessionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.i18n.MessageService;
 import me.golemcore.bot.port.inbound.CommandPort;
@@ -23,6 +24,7 @@ import java.util.function.Consumer;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
@@ -55,6 +57,9 @@ class TelegramAdapterAuthTest {
                 .authMode("invite_only").build();
         RuntimeConfig runtimeConfig = RuntimeConfig.builder().telegram(telegramConfig).build();
         when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+        TelegramSessionService telegramSessionService = mock(TelegramSessionService.class);
+        when(telegramSessionService.resolveActiveConversationKey(anyString()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
 
         adapter = new TelegramAdapter(
                 runtimeConfigService,
@@ -65,7 +70,8 @@ class TelegramAdapterAuthTest {
                 messageService,
                 new TestObjectProvider<>(mock(CommandPort.class)),
                 mock(TelegramVoiceHandler.class),
-                mock(TelegramMenuHandler.class));
+                mock(TelegramMenuHandler.class),
+                telegramSessionService);
         adapter.setTelegramClient(telegramClient);
 
         messageHandler = mock(Consumer.class);

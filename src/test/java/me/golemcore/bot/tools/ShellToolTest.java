@@ -35,6 +35,7 @@ class ShellToolTest {
         BotProperties properties = createTestProperties(tempDir.toString(), true);
         runtimeConfigService = mock(RuntimeConfigService.class);
         when(runtimeConfigService.isShellEnabled()).thenReturn(true);
+        when(runtimeConfigService.getShellEnvironmentVariables()).thenReturn(Map.of());
         when(runtimeConfigService.isPromptInjectionDetectionEnabled()).thenReturn(true);
         when(runtimeConfigService.isCommandInjectionDetectionEnabled()).thenReturn(true);
         tool = new ShellTool(properties, runtimeConfigService, new InjectionGuard(runtimeConfigService));
@@ -164,6 +165,7 @@ class ShellToolTest {
         BotProperties disabledProps = createTestProperties(tempDir.toString(), false);
         RuntimeConfigService disabledRuntimeConfigService = mock(RuntimeConfigService.class);
         when(disabledRuntimeConfigService.isShellEnabled()).thenReturn(false);
+        when(disabledRuntimeConfigService.getShellEnvironmentVariables()).thenReturn(Map.of());
         when(disabledRuntimeConfigService.isPromptInjectionDetectionEnabled()).thenReturn(true);
         when(disabledRuntimeConfigService.isCommandInjectionDetectionEnabled()).thenReturn(true);
         ShellTool disabledTool = new ShellTool(
@@ -380,5 +382,54 @@ class ShellToolTest {
         ToolResult result = customTool.execute(Map.of(COMMAND, "echo ok")).get();
         assertTrue(result.isSuccess());
         assertTrue(result.getOutput().contains("ok"));
+    }
+
+    @Test
+    @DisabledOnOs(OS.WINDOWS)
+    void shouldInjectRuntimeEnvironmentVariables() throws Exception {
+        when(runtimeConfigService.getShellEnvironmentVariables()).thenReturn(Map.of("CUSTOM_TOKEN", "runtime-value"));
+
+        ToolResult result = tool.execute(Map.of(COMMAND, "printf '%s' \"$CUSTOM_TOKEN\"")).get();
+
+        assertTrue(result.isSuccess());
+        assertTrue(result.getOutput().contains("runtime-value"));
+    }
+
+    @Test
+    @DisabledOnOs(OS.WINDOWS)
+    void shouldInjectRuntimeEnvironmentVariableWithEmptyValue() throws Exception {
+        when(runtimeConfigService.getShellEnvironmentVariables()).thenReturn(Map.of("EMPTY_VAR", ""));
+
+        ToolResult result = tool.execute(Map.of(COMMAND, "env | grep '^EMPTY_VAR='")).get();
+
+        assertTrue(result.isSuccess());
+        assertTrue(result.getOutput().contains("EMPTY_VAR="));
+    }
+
+    @Test
+    @DisabledOnOs(OS.WINDOWS)
+    void shouldIgnoreBlankRuntimeEnvironmentVariableName() throws Exception {
+        when(runtimeConfigService.getShellEnvironmentVariables())
+                .thenReturn(Map.of("", "ignored", "VISIBLE_VAR", "visible-value"));
+
+        ToolResult result = tool.execute(Map.of(COMMAND, "printf '%s' \"$VISIBLE_VAR\"")).get();
+
+        assertTrue(result.isSuccess());
+        assertTrue(result.getOutput().contains("visible-value"));
+    }
+
+    @Test
+    @DisabledOnOs(OS.WINDOWS)
+    void shouldNotOverrideReservedHomeAndPwdFromRuntimeEnvironmentVariables() throws Exception {
+        when(runtimeConfigService.getShellEnvironmentVariables())
+                .thenReturn(Map.of("HOME", "/tmp/hacked-home", "PWD", "/tmp/hacked-pwd"));
+
+        ToolResult homeResult = tool.execute(Map.of(COMMAND, "printf '%s' \"$HOME\"")).get();
+        ToolResult pwdResult = tool.execute(Map.of(COMMAND, "printf '%s' \"$PWD\"")).get();
+
+        assertTrue(homeResult.isSuccess());
+        assertTrue(pwdResult.isSuccess());
+        assertEquals(tempDir.toString(), homeResult.getOutput().trim());
+        assertEquals(tempDir.toString(), pwdResult.getOutput().trim());
     }
 }

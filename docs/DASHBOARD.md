@@ -73,3 +73,68 @@ The dashboard supports TOTP MFA for the admin account.
 - Setup: `POST /api/auth/mfa/setup`
 - Enable: `POST /api/auth/mfa/enable`
 - Disable: `POST /api/auth/mfa/disable`
+# Embedded IDE in Dashboard
+
+This dashboard now includes a lightweight embedded IDE based on CodeMirror and React Arborist.
+
+## Features (MVP)
+
+- File tree browsing from sandbox workspace (`bot.tools.filesystem.workspace`)
+- Open file in tabs
+- Syntax highlighting (CodeMirror, extension-based)
+- Edit and save file content
+- Unsaved tab indicator and close confirmation
+- Save shortcut: `Ctrl+S` / `Cmd+S`
+
+## Route
+
+- `/dashboard/ide`
+
+## Backend API
+
+All endpoints require dashboard admin auth (same as other `/api/*` routes).
+
+### `GET /api/files/tree?path=`
+Returns tree nodes for the given directory (empty path = workspace root).
+
+### `GET /api/files/content?path=...`
+Returns UTF-8 file content and metadata.
+
+### `PUT /api/files/content`
+Request body:
+
+```json
+{
+  "path": "relative/path/to/file.txt",
+  "content": "new content"
+}
+```
+
+## Security
+
+- Paths are sandboxed to filesystem workspace root
+- Absolute paths are rejected
+- Path traversal (`../`) is rejected
+- Existing path ancestry is validated via `toRealPath()` against workspace root
+- Symlinks are not traversed in tree listing
+- Non-UTF-8 files are rejected for editor read
+- Max editor file size: 2 MB
+
+## Architecture
+
+- Backend:
+  - `DashboardFileService` (domain service)
+  - `FilesController` (`/api/files`)
+  - DTOs in `adapter/inbound/web/dto`
+- Frontend:
+  - API: `dashboard/src/api/files.ts`
+  - Hooks: `dashboard/src/hooks/useFiles.ts`
+  - Page: `dashboard/src/pages/IdePage.tsx`
+  - Components: `dashboard/src/components/ide/*`
+  - UI store: `dashboard/src/store/ideStore.ts`
+
+## ADR
+
+Design decision is documented in:
+
+- `docs/adr/0001-dashboard-embedded-ide.md`
