@@ -33,6 +33,83 @@ function getSessionTitle(session: SessionSummary): string {
   return `Session ${session.conversationKey}`;
 }
 
+interface SidebarChatSessionsProps {
+  recentSessions: SessionSummary[];
+  recentSessionsLoading: boolean;
+  recentSessionsError: boolean;
+  effectiveActiveSessionId: string;
+  isCreating: boolean;
+  onNewSession: () => void;
+  onSessionClick: (conversationKey: string) => void;
+}
+
+function SidebarChatSessions({
+  recentSessions,
+  recentSessionsLoading,
+  recentSessionsError,
+  effectiveActiveSessionId,
+  isCreating,
+  onNewSession,
+  onSessionClick,
+}: SidebarChatSessionsProps) {
+  return (
+    <div className="sidebar-chat-group">
+      <div className="sidebar-chat-group-header">
+        <span className="sidebar-chat-group-label">Chat Sessions</span>
+        <button
+          type="button"
+          className="sidebar-chat-new-btn"
+          onClick={onNewSession}
+          disabled={isCreating}
+        >
+          {isCreating ? 'Creating...' : 'New'}
+        </button>
+      </div>
+
+      <div className="sidebar-chat-list" role="list" aria-label="Recent chat sessions">
+        {recentSessionsLoading && (
+          <div className="sidebar-chat-state" role="status" aria-live="polite">
+            Loading recent sessions...
+          </div>
+        )}
+
+        {!recentSessionsLoading && recentSessionsError && (
+          <div className="sidebar-chat-state sidebar-chat-state--error" role="status" aria-live="polite">
+            Failed to load sessions
+          </div>
+        )}
+
+        {!recentSessionsLoading && !recentSessionsError && recentSessions.length === 0 && (
+          <div className="sidebar-chat-state" role="status" aria-live="polite">
+            No recent sessions
+          </div>
+        )}
+
+        {!recentSessionsLoading && !recentSessionsError && recentSessions.map((session) => {
+          const sessionKey = session.conversationKey;
+          const isActive = sessionKey === effectiveActiveSessionId;
+          return (
+            <button
+              key={session.id}
+              type="button"
+              className={`sidebar-chat-item${isActive ? ' active' : ''}`}
+              onClick={() => onSessionClick(sessionKey)}
+              title={session.preview ?? getSessionTitle(session)}
+              role="listitem"
+              aria-pressed={isActive}
+            >
+              <span className="sidebar-chat-item-title">{getSessionTitle(session)}</span>
+              {session.preview != null && session.preview.length > 0 && (
+                <span className="sidebar-chat-item-preview">{session.preview}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function Sidebar() {
   const navigate = useNavigate();
   const mobileOpen = useSidebarStore((s) => s.mobileOpen);
@@ -138,60 +215,15 @@ export default function Sidebar() {
             </Nav.Link>
           ))}
 
-          <div className="sidebar-chat-group">
-            <div className="sidebar-chat-group-header">
-              <span className="sidebar-chat-group-label">Chat Sessions</span>
-              <button
-                type="button"
-                className="sidebar-chat-new-btn"
-                onClick={handleNewSession}
-                disabled={createSessionMutation.isPending}
-              >
-                {createSessionMutation.isPending ? 'Creating...' : 'New'}
-              </button>
-            </div>
-
-            <div className="sidebar-chat-list" role="list" aria-label="Recent chat sessions">
-              {recentSessionsLoading && (
-                <div className="sidebar-chat-state" role="status" aria-live="polite">
-                  Loading recent sessions...
-                </div>
-              )}
-
-              {!recentSessionsLoading && recentSessionsError && (
-                <div className="sidebar-chat-state sidebar-chat-state--error" role="status" aria-live="polite">
-                  Failed to load sessions
-                </div>
-              )}
-
-              {!recentSessionsLoading && !recentSessionsError && recentSessions.length === 0 && (
-                <div className="sidebar-chat-state" role="status" aria-live="polite">
-                  No recent sessions
-                </div>
-              )}
-
-              {!recentSessionsLoading && !recentSessionsError && recentSessions.map((session) => {
-                const sessionKey = session.conversationKey;
-                const isActive = sessionKey === effectiveActiveSessionId;
-                return (
-                  <button
-                    key={session.id}
-                    type="button"
-                    className={`sidebar-chat-item${isActive ? ' active' : ''}`}
-                    onClick={() => handleSessionClick(sessionKey)}
-                    title={session.preview ?? getSessionTitle(session)}
-                    role="listitem"
-                    aria-pressed={isActive}
-                  >
-                    <span className="sidebar-chat-item-title">{getSessionTitle(session)}</span>
-                    {session.preview != null && session.preview.length > 0 && (
-                      <span className="sidebar-chat-item-preview">{session.preview}</span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          <SidebarChatSessions
+            recentSessions={recentSessions}
+            recentSessionsLoading={recentSessionsLoading}
+            recentSessionsError={recentSessionsError}
+            effectiveActiveSessionId={effectiveActiveSessionId}
+            isCreating={createSessionMutation.isPending}
+            onNewSession={handleNewSession}
+            onSessionClick={handleSessionClick}
+          />
         </Nav>
         <div className="px-4 py-3 sidebar-footer-text small text-body-secondary">
           {version}
