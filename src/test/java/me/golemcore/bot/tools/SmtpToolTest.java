@@ -81,6 +81,22 @@ class SmtpToolTest {
         assertTrue(tool.isEnabled());
     }
 
+    @Test
+    void shouldUseLatestRuntimeConfigForEnabledCheck() {
+        BotProperties.SmtpToolProperties initialConfig = new BotProperties.SmtpToolProperties();
+        BotProperties.SmtpToolProperties updatedConfig = new BotProperties.SmtpToolProperties();
+        updatedConfig.setEnabled(true);
+        updatedConfig.setHost(SMTP_HOST);
+        updatedConfig.setUsername(USERNAME);
+        updatedConfig.setPassword(PASSWORD);
+        when(runtimeConfigService.getResolvedSmtpConfig()).thenReturn(initialConfig, updatedConfig);
+
+        SmtpTool tool = new SmtpTool(runtimeConfigService);
+
+        assertFalse(tool.isEnabled());
+        assertTrue(tool.isEnabled());
+    }
+
     // ==================== Parameter validation ====================
 
     @Test
