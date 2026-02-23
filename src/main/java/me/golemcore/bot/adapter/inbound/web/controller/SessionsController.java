@@ -109,6 +109,9 @@ public class SessionsController {
                         POINTER_SOURCE)));
             }
 
+            log.info(
+                    "[SessionMetrics] metric=sessions.active.pointer.stale.count channel={} pointerKey={} staleConversation={}",
+                    channel, pointerKey, currentConversation);
             String repairedConversation = resolveOrCreateConversationKey(channel, transportChatId, currentConversation);
             pointerService.setActiveConversationKey(pointerKey, repairedConversation);
             if (CHANNEL_TELEGRAM.equals(channel)) {
@@ -122,6 +125,8 @@ public class SessionsController {
                     REPAIRED_SOURCE)));
         }
 
+        log.info("[SessionMetrics] metric=sessions.active.pointer.miss.count channel={} pointerKey={}", channel,
+                pointerKey);
         String fallbackConversation = resolveOrCreateConversationKey(channel, transportChatId, null);
         pointerService.setActiveConversationKey(pointerKey, fallbackConversation);
         if (CHANNEL_TELEGRAM.equals(channel)) {
@@ -149,6 +154,8 @@ public class SessionsController {
         String pointerKey = resolvePointerKey(channel, request.getClientInstanceId(), request.getTransportChatId(),
                 principal);
         pointerService.setActiveConversationKey(pointerKey, conversationKey);
+        log.info("[SessionMetrics] metric=sessions.switch.count channel={} pointerKey={} conversationKey={}",
+                channel, pointerKey, conversationKey);
         if (CHANNEL_TELEGRAM.equals(channel)) {
             ensureTelegramSessionBinding(request.getTransportChatId(), conversationKey);
         }
@@ -176,6 +183,8 @@ public class SessionsController {
 
         AgentSession session = sessionPort.getOrCreate(channel, conversationKey);
         sessionPort.save(session);
+        log.info("[SessionMetrics] metric=sessions.create.count channel={} conversationKey={}", channel,
+                conversationKey);
 
         boolean shouldActivate = normalizedRequest.getActivate() == null || normalizedRequest.getActivate();
         if (shouldActivate) {

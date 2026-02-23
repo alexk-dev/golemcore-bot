@@ -18,6 +18,8 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
+import me.golemcore.bot.domain.model.AgentSession;
+
 import java.util.Locale;
 import java.util.regex.Pattern;
 
@@ -79,6 +81,17 @@ public final class MemoryScopeSupport {
         }
 
         return SESSION_PREFIX + normalizedChannel + ":" + normalizedConversation;
+    }
+
+    /**
+     * Resolve canonical memory scope for a session, or {@code global} if session identity is invalid.
+     */
+    public static String resolveScopeFromSessionOrGlobal(AgentSession session) {
+        if (session == null) {
+            return GLOBAL_SCOPE;
+        }
+        String conversationKey = SessionIdentitySupport.resolveConversationKey(session);
+        return buildSessionScopeOrGlobal(session.getChannelType(), conversationKey);
     }
 
     public static boolean isSessionScope(String scope) {

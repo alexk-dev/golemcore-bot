@@ -73,6 +73,8 @@ public class MemoryRetrievalService {
         List<MemoryItem> candidates = new ArrayList<>();
 
         candidates.addAll(loadRecentEpisodic(requestedScope, resolveEpisodicLookbackDays()));
+        // Keep session-scoped semantic/procedural reads enabled for explicit upserts.
+        // Automatic promotion currently writes these layers to global scope only.
         candidates.addAll(loadJsonl(buildScopedPath(requestedScope, SEMANTIC_FILE), requestedScope));
         candidates.addAll(loadJsonl(buildScopedPath(requestedScope, PROCEDURAL_FILE), requestedScope));
         if (MemoryScopeSupport.isSessionScope(requestedScope)) {
@@ -98,7 +100,9 @@ public class MemoryRetrievalService {
                         Comparator.nullsLast(Comparator.reverseOrder())));
 
         List<MemoryScoredItem> topByLayer = applyLayerTopK(scored, normalizedQuery);
-        return deduplicate(topByLayer);
+        List<MemoryScoredItem> deduplicated = deduplicate(topByLayer);
+        logScopeMetrics(requestedScope, filtered.size(), deduplicated);
+        return deduplicated;
     }
 
     private MemoryQuery normalizeQuery(MemoryQuery query) {
@@ -268,6 +272,30 @@ public class MemoryRetrievalService {
             dedup.add(candidate);
         }
         return dedup;
+    }
+
+    private void logScopeMetrics(String requestedScope, int filteredCount, List<MemoryScoredItem> selectedItems) {
+        int sessionSelected = 0;
+        int globalSelected = 0;
+        for (MemoryScoredItem selectedItem : selectedItems) {
+            MemoryItem item = selectedItem.getItem();
+            if (item == null) {
+                continue;
+            }
+            String scope = normalizeItemScope(item);
+            if (MemoryScopeSupport.isSessionScope(scope)) {
+                sessionSelected++;
+            } else if (MemoryScopeSupport.GLOBAL_SCOPE.equals(scope)) {
+                globalSelected++;
+            }
+        }
+        int filteredOut = Math.max(0, filteredCount - selectedItems.size());
+        log.info("[SessionMetrics] metric=memory.scope.session.selected.count value={} requestedScope={}",
+                sessionSelected, requestedScope);
+        log.info("[SessionMetrics] metric=memory.scope.global.selected.count value={} requestedScope={}",
+                globalSelected, requestedScope);
+        log.info("[SessionMetrics] metric=memory.scope.filtered.count value={} requestedScope={}",
+                filteredOut, requestedScope);
     }
 
     private void trySelectWithLayerLimit(
