@@ -200,6 +200,8 @@ export function FileTreePanel({
           <div
             ref={innerRef}
             {...attrs}
+            onFocus={(event) => event.stopPropagation()}
+            onClick={node.handleClick}
             onContextMenu={(event) => handleContextMenuNode(event, node)}
           >
             {children}
