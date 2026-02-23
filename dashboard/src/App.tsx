@@ -1,9 +1,7 @@
 import { Suspense, lazy } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store/authStore';
-import { useRuntimeConfig } from './hooks/useSettings';
 import DashboardLayout from './components/layout/DashboardLayout';
-import { isStartupSetupComplete } from './utils/startupSetup';
 
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const ChatPage = lazy(() => import('./pages/ChatPage'));
@@ -27,17 +25,6 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function ChatStartRoute({ children }: { children: React.ReactNode }) {
-  const runtimeConfigQuery = useRuntimeConfig();
-  if (runtimeConfigQuery.isLoading) {
-    return <RouteFallback />;
-  }
-  if (runtimeConfigQuery.data == null || !isStartupSetupComplete(runtimeConfigQuery.data)) {
-    return <Navigate to="/setup" replace />;
-  }
-  return <>{children}</>;
-}
-
 export default function App() {
   return (
     <Routes>
@@ -56,8 +43,8 @@ export default function App() {
             <DashboardLayout>
               <Suspense fallback={<RouteFallback />}>
                 <Routes>
-                  <Route path="/" element={<ChatStartRoute><ChatPage /></ChatStartRoute>} />
-                  <Route path="/chat" element={<ChatStartRoute><ChatPage /></ChatStartRoute>} />
+                  <Route path="/" element={<ChatPage />} />
+                  <Route path="/chat" element={<ChatPage />} />
                   <Route path="/setup" element={<SetupPage />} />
                   <Route path="/analytics" element={<AnalyticsPage />} />
                   <Route path="/settings" element={<SettingsPage />} />

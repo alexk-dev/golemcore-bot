@@ -15,7 +15,7 @@ How to use the built-in web dashboard for chat, sessions, plans, logs, and embed
 - `/dashboard/ide` - embedded code editor
 - `/dashboard/logs` - live and buffered logs
 - `/dashboard/settings` - runtime config and integrations
-- `/dashboard/setup` - startup setup wizard (shown when chat is locked)
+- `/dashboard/setup` - startup setup wizard (recommended setup flow)
 - `/dashboard/skills` - skill library
 - `/dashboard/prompts` - prompt configuration
 - `/dashboard/analytics` - analytics view
@@ -58,6 +58,8 @@ Typical first setup:
 1. Configure provider API keys and API types in `llm.providers`.
 2. Choose tier models in `modelRouter`.
 3. Optionally enable Telegram (`telegram.enabled`, `telegram.token`).
+
+If startup setup is incomplete, chat remains available and dashboard shows a one-time session popup invitation to open `/dashboard/setup`.
 
 ## Sessions and Active Conversation
 

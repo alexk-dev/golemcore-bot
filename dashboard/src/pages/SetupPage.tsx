@@ -33,7 +33,7 @@ function SetupStepCard({
           <div className="d-flex align-items-center gap-2 mb-2">
             <Badge bg="secondary">Step {step}</Badge>
             <h5 className="mb-0">{title}</h5>
-            <Badge bg={isDone ? 'success' : 'warning'}>{isDone ? 'Done' : 'Required'}</Badge>
+            <Badge bg={isDone ? 'success' : 'warning'}>{isDone ? 'Done' : 'Pending'}</Badge>
           </div>
           <p className="text-body-secondary mb-0">{description}</p>
         </div>
@@ -89,7 +89,7 @@ export default function SetupPage(): ReactElement {
       <div className="page-header">
         <h4>Startup Setup Wizard</h4>
         <p className="text-body-secondary mb-0">
-          Chat is locked until LLM provider and model routing are configured.
+          Finish recommended startup configuration for reliable model routing and responses.
         </p>
       </div>
 
@@ -128,15 +128,10 @@ export default function SetupPage(): ReactElement {
             <p className="text-body-secondary mb-0">
               {setupComplete
                 ? 'Setup is complete. You can start chatting now.'
-                : 'Complete all required steps to unlock chat.'}
+                : 'Chat is available, but setup is recommended before active usage.'}
             </p>
           </div>
-          <Button
-            type="button"
-            variant="primary"
-            onClick={() => navigate('/chat')}
-            disabled={!setupComplete}
-          >
+          <Button type="button" variant="primary" onClick={() => navigate('/chat')}>
             Open Chat
           </Button>
         </Card.Body>
