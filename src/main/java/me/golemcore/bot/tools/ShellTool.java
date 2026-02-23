@@ -342,6 +342,15 @@ public class ShellTool implements ToolComponent {
         env.keySet().retainAll(allowedEnvVars);
         env.put("HOME", workspaceRoot.toString());
         env.put("PWD", workDir.toString());
+        Map<String, String> runtimeEnv = runtimeConfigService.getShellEnvironmentVariables();
+        for (Map.Entry<String, String> entry : runtimeEnv.entrySet()) {
+            String key = entry.getKey();
+            if (key == null || key.isBlank()) {
+                continue;
+            }
+            String value = entry.getValue() != null ? entry.getValue() : "";
+            env.put(key, value);
+        }
 
         long startTime = System.currentTimeMillis();
 

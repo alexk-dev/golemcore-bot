@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -401,6 +402,25 @@ public class RuntimeConfigService {
     public boolean isShellEnabled() {
         Boolean val = getRuntimeConfig().getTools().getShellEnabled();
         return val != null ? val : true;
+    }
+
+    public Map<String, String> getShellEnvironmentVariables() {
+        List<RuntimeConfig.ShellEnvironmentVariable> configured = getRuntimeConfig()
+                .getTools()
+                .getShellEnvironmentVariables();
+        if (configured == null || configured.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> result = new LinkedHashMap<>();
+        for (RuntimeConfig.ShellEnvironmentVariable variable : configured) {
+            if (variable == null || variable.getName() == null || variable.getName().isBlank()) {
+                continue;
+            }
+            String name = variable.getName().trim();
+            String value = variable.getValue() != null ? variable.getValue() : "";
+            result.put(name, value);
+        }
+        return result;
     }
 
     public boolean isSkillManagementEnabled() {
@@ -1180,6 +1200,11 @@ public class RuntimeConfigService {
         if (cfg.getTelegram() != null) {
             cfg.getTelegram().setAuthMode("invite_only");
         }
+        if (cfg.getTools() == null) {
+            cfg.setTools(RuntimeConfig.ToolsConfig.builder().build());
+        }
+        cfg.getTools().setShellEnvironmentVariables(
+                normalizeShellEnvironmentVariables(cfg.getTools().getShellEnvironmentVariables()));
         if (cfg.getLlm() == null) {
             cfg.setLlm(RuntimeConfig.LlmConfig.builder().build());
         }
@@ -1193,6 +1218,26 @@ public class RuntimeConfigService {
             cfg.getMemory().setVersion(DEFAULT_MEMORY_VERSION);
         }
         normalizeSecretFlags(cfg);
+    }
+
+    private List<RuntimeConfig.ShellEnvironmentVariable> normalizeShellEnvironmentVariables(
+            List<RuntimeConfig.ShellEnvironmentVariable> variables) {
+        if (variables == null || variables.isEmpty()) {
+            return new ArrayList<>();
+        }
+        Map<String, RuntimeConfig.ShellEnvironmentVariable> deduplicated = new LinkedHashMap<>();
+        for (RuntimeConfig.ShellEnvironmentVariable variable : variables) {
+            if (variable == null || variable.getName() == null || variable.getName().isBlank()) {
+                continue;
+            }
+            String normalizedName = variable.getName().trim();
+            String normalizedValue = variable.getValue() != null ? variable.getValue() : "";
+            deduplicated.put(normalizedName, RuntimeConfig.ShellEnvironmentVariable.builder()
+                    .name(normalizedName)
+                    .value(normalizedValue)
+                    .build());
+        }
+        return new ArrayList<>(deduplicated.values());
     }
 
     private void normalizeSecretFlags(RuntimeConfig cfg) {

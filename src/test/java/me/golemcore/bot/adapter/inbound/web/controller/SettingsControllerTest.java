@@ -18,6 +18,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -463,6 +464,199 @@ class SettingsControllerTest {
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> controller.updateLlmConfig(update));
         assertTrue(error.getMessage().contains("requestTimeoutSeconds must be between 1 and 3600"));
+    }
+
+    @Test
+    void shouldCreateShellEnvironmentVariable() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .tools(RuntimeConfig.ToolsConfig.builder()
+                        .shellEnvironmentVariables(new ArrayList<>())
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.ShellEnvironmentVariable variable = RuntimeConfig.ShellEnvironmentVariable.builder()
+                .name("API_TOKEN")
+                .value("abc123")
+                .build();
+
+        StepVerifier.create(controller.createShellEnvironmentVariable(variable))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        assertEquals(1, runtimeConfig.getTools().getShellEnvironmentVariables().size());
+        assertEquals("API_TOKEN", runtimeConfig.getTools().getShellEnvironmentVariables().get(0).getName());
+        assertEquals("abc123", runtimeConfig.getTools().getShellEnvironmentVariables().get(0).getValue());
+        verify(runtimeConfigService).updateRuntimeConfig(runtimeConfig);
+    }
+
+    @Test
+    void shouldRejectDuplicateShellEnvironmentVariableName() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .tools(RuntimeConfig.ToolsConfig.builder()
+                        .shellEnvironmentVariables(new ArrayList<>(List.of(
+                                RuntimeConfig.ShellEnvironmentVariable.builder()
+                                        .name("API_TOKEN")
+                                        .value("v1")
+                                        .build())))
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.ShellEnvironmentVariable duplicate = RuntimeConfig.ShellEnvironmentVariable.builder()
+                .name("API_TOKEN")
+                .value("v2")
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.createShellEnvironmentVariable(duplicate));
+        assertTrue(error.getMessage().contains("duplicate name"));
+    }
+
+    @Test
+    void shouldUpdateShellEnvironmentVariable() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .tools(RuntimeConfig.ToolsConfig.builder()
+                        .shellEnvironmentVariables(new ArrayList<>(List.of(
+                                RuntimeConfig.ShellEnvironmentVariable.builder()
+                                        .name("API_TOKEN")
+                                        .value("old")
+                                        .build())))
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.ShellEnvironmentVariable update = RuntimeConfig.ShellEnvironmentVariable.builder()
+                .name("API_TOKEN")
+                .value("new-value")
+                .build();
+
+        StepVerifier.create(controller.updateShellEnvironmentVariable("API_TOKEN", update))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        assertEquals("new-value", runtimeConfig.getTools().getShellEnvironmentVariables().get(0).getValue());
+        verify(runtimeConfigService).updateRuntimeConfig(runtimeConfig);
+    }
+
+    @Test
+    void shouldRenameShellEnvironmentVariable() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .tools(RuntimeConfig.ToolsConfig.builder()
+                        .shellEnvironmentVariables(new ArrayList<>(List.of(
+                                RuntimeConfig.ShellEnvironmentVariable.builder()
+                                        .name("OLD_NAME")
+                                        .value("value")
+                                        .build())))
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.ShellEnvironmentVariable update = RuntimeConfig.ShellEnvironmentVariable.builder()
+                .name("NEW_NAME")
+                .value("value")
+                .build();
+
+        StepVerifier.create(controller.updateShellEnvironmentVariable("OLD_NAME", update))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        assertEquals("NEW_NAME", runtimeConfig.getTools().getShellEnvironmentVariables().get(0).getName());
+    }
+
+    @Test
+    void shouldDeleteShellEnvironmentVariable() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .tools(RuntimeConfig.ToolsConfig.builder()
+                        .shellEnvironmentVariables(new ArrayList<>(List.of(
+                                RuntimeConfig.ShellEnvironmentVariable.builder()
+                                        .name("DELETE_ME")
+                                        .value("value")
+                                        .build())))
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(runtimeConfig);
+
+        StepVerifier.create(controller.deleteShellEnvironmentVariable("DELETE_ME"))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        assertTrue(runtimeConfig.getTools().getShellEnvironmentVariables().isEmpty());
+        verify(runtimeConfigService).updateRuntimeConfig(runtimeConfig);
+    }
+
+    @Test
+    void shouldReturnNotFoundWhenDeletingUnknownShellEnvironmentVariable() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .tools(RuntimeConfig.ToolsConfig.builder()
+                        .shellEnvironmentVariables(new ArrayList<>())
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> controller.deleteShellEnvironmentVariable("MISSING_VAR"));
+        assertEquals(HttpStatus.NOT_FOUND, error.getStatusCode());
+    }
+
+    @Test
+    void shouldRejectInvalidShellEnvironmentVariableName() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .tools(RuntimeConfig.ToolsConfig.builder()
+                        .shellEnvironmentVariables(new ArrayList<>())
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.ShellEnvironmentVariable invalid = RuntimeConfig.ShellEnvironmentVariable.builder()
+                .name("1INVALID")
+                .value("value")
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.createShellEnvironmentVariable(invalid));
+        assertTrue(error.getMessage().contains("[A-Za-z_][A-Za-z0-9_]*"));
+    }
+
+    @Test
+    void shouldRejectReservedShellEnvironmentVariableName() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .tools(RuntimeConfig.ToolsConfig.builder()
+                        .shellEnvironmentVariables(new ArrayList<>())
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.ShellEnvironmentVariable invalid = RuntimeConfig.ShellEnvironmentVariable.builder()
+                .name("HOME")
+                .value("/tmp")
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.createShellEnvironmentVariable(invalid));
+        assertTrue(error.getMessage().contains("reserved variable"));
+    }
+
+    @Test
+    void shouldRejectDuplicateShellEnvironmentVariableWhenUpdatingToolsConfig() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .tools(RuntimeConfig.ToolsConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.ToolsConfig toolsConfig = RuntimeConfig.ToolsConfig.builder()
+                .shellEnvironmentVariables(new ArrayList<>(List.of(
+                        RuntimeConfig.ShellEnvironmentVariable.builder().name("API_TOKEN").value("v1").build(),
+                        RuntimeConfig.ShellEnvironmentVariable.builder().name("API_TOKEN").value("v2").build())))
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateToolsConfig(toolsConfig));
+        assertTrue(error.getMessage().contains("duplicate name"));
     }
 
     @Test

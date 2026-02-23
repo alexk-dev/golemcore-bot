@@ -34,6 +34,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * Settings and preferences management endpoints.
@@ -60,6 +61,10 @@ public class SettingsController {
     private static final int MEMORY_DECAY_DAYS_MAX = 3650;
     private static final int MEMORY_RETRIEVAL_LOOKBACK_DAYS_MIN = 1;
     private static final int MEMORY_RETRIEVAL_LOOKBACK_DAYS_MAX = 90;
+    private static final Pattern SHELL_ENV_VAR_NAME_PATTERN = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
+    private static final Set<String> RESERVED_SHELL_ENV_VAR_NAMES = Set.of("HOME", "PWD");
+    private static final int SHELL_ENV_VAR_NAME_MAX_LENGTH = 128;
+    private static final int SHELL_ENV_VAR_VALUE_MAX_LENGTH = 8192;
 
     private final UserPreferencesService preferencesService;
     private final ModelSelectionService modelSelectionService;
@@ -149,6 +154,7 @@ public class SettingsController {
         }
         normalizeAndValidateTelegramConfig(config.getTelegram());
         mergeRuntimeSecrets(runtimeConfigService.getRuntimeConfig(), config);
+        normalizeAndValidateShellEnvironmentVariables(config.getTools());
         validateLlmConfig(config.getLlm(), config.getModelRouter());
         if (config.getMemory() != null) {
             validateMemoryConfig(config.getMemory());
@@ -268,7 +274,90 @@ public class SettingsController {
             @RequestBody RuntimeConfig.ToolsConfig toolsConfig) {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         mergeToolsSecrets(config.getTools(), toolsConfig);
+        normalizeAndValidateShellEnvironmentVariables(toolsConfig);
         config.setTools(toolsConfig);
+        runtimeConfigService.updateRuntimeConfig(config);
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    }
+
+    @GetMapping("/runtime/tools/shell/env")
+    public Mono<ResponseEntity<List<RuntimeConfig.ShellEnvironmentVariable>>> getShellEnvironmentVariables() {
+        RuntimeConfig.ToolsConfig toolsConfig = runtimeConfigService.getRuntimeConfigForApi().getTools();
+        List<RuntimeConfig.ShellEnvironmentVariable> variables = toolsConfig != null
+                && toolsConfig.getShellEnvironmentVariables() != null
+                        ? toolsConfig.getShellEnvironmentVariables()
+                        : List.of();
+        return Mono.just(ResponseEntity.ok(variables));
+    }
+
+    @PostMapping("/runtime/tools/shell/env")
+    public Mono<ResponseEntity<RuntimeConfig>> createShellEnvironmentVariable(
+            @RequestBody RuntimeConfig.ShellEnvironmentVariable variable) {
+        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        RuntimeConfig.ToolsConfig toolsConfig = ensureToolsConfig(config);
+        List<RuntimeConfig.ShellEnvironmentVariable> variables = ensureShellEnvironmentVariables(toolsConfig);
+
+        RuntimeConfig.ShellEnvironmentVariable normalized = normalizeAndValidateShellEnvironmentVariable(variable);
+        if (containsShellEnvironmentVariableName(variables, normalized.getName())) {
+            throw new IllegalArgumentException(
+                    "tools.shellEnvironmentVariables contains duplicate name: " + normalized.getName());
+        }
+        variables.add(normalized);
+        runtimeConfigService.updateRuntimeConfig(config);
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    }
+
+    @PutMapping("/runtime/tools/shell/env/{name}")
+    public Mono<ResponseEntity<RuntimeConfig>> updateShellEnvironmentVariable(
+            @PathVariable String name,
+            @RequestBody RuntimeConfig.ShellEnvironmentVariable variable) {
+        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        RuntimeConfig.ToolsConfig toolsConfig = ensureToolsConfig(config);
+        List<RuntimeConfig.ShellEnvironmentVariable> variables = ensureShellEnvironmentVariables(toolsConfig);
+        String normalizedCurrentName = normalizeAndValidateShellEnvironmentVariableName(name);
+
+        int index = findShellEnvironmentVariableIndex(variables, normalizedCurrentName);
+        if (index < 0) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Shell environment variable '" + normalizedCurrentName + "' not found");
+        }
+
+        RuntimeConfig.ShellEnvironmentVariable source = variable != null ? variable
+                : RuntimeConfig.ShellEnvironmentVariable.builder().build();
+        String updatedName = source.getName() == null || source.getName().isBlank()
+                ? normalizedCurrentName
+                : source.getName();
+        RuntimeConfig.ShellEnvironmentVariable normalizedUpdated = normalizeAndValidateShellEnvironmentVariable(
+                RuntimeConfig.ShellEnvironmentVariable.builder()
+                        .name(updatedName)
+                        .value(source.getValue())
+                        .build());
+
+        if (!normalizedCurrentName.equals(normalizedUpdated.getName())
+                && containsShellEnvironmentVariableName(variables, normalizedUpdated.getName())) {
+            throw new IllegalArgumentException(
+                    "tools.shellEnvironmentVariables contains duplicate name: " + normalizedUpdated.getName());
+        }
+
+        variables.set(index, normalizedUpdated);
+        runtimeConfigService.updateRuntimeConfig(config);
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    }
+
+    @DeleteMapping("/runtime/tools/shell/env/{name}")
+    public Mono<ResponseEntity<RuntimeConfig>> deleteShellEnvironmentVariable(@PathVariable String name) {
+        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        RuntimeConfig.ToolsConfig toolsConfig = ensureToolsConfig(config);
+        List<RuntimeConfig.ShellEnvironmentVariable> variables = ensureShellEnvironmentVariables(toolsConfig);
+        String normalizedName = normalizeAndValidateShellEnvironmentVariableName(name);
+
+        int index = findShellEnvironmentVariableIndex(variables, normalizedName);
+        if (index < 0) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Shell environment variable '" + normalizedName + "' not found");
+        }
+
+        variables.remove(index);
         runtimeConfigService.updateRuntimeConfig(config);
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
@@ -600,6 +689,105 @@ public class SettingsController {
                 throw new IllegalArgumentException("voice.whisperSttUrl must be a valid http(s) URL");
             }
         }
+    }
+
+    private RuntimeConfig.ToolsConfig ensureToolsConfig(RuntimeConfig config) {
+        RuntimeConfig.ToolsConfig toolsConfig = config.getTools();
+        if (toolsConfig == null) {
+            toolsConfig = RuntimeConfig.ToolsConfig.builder().build();
+            config.setTools(toolsConfig);
+        }
+        return toolsConfig;
+    }
+
+    private List<RuntimeConfig.ShellEnvironmentVariable> ensureShellEnvironmentVariables(
+            RuntimeConfig.ToolsConfig toolsConfig) {
+        List<RuntimeConfig.ShellEnvironmentVariable> variables = toolsConfig.getShellEnvironmentVariables();
+        if (variables == null) {
+            variables = new ArrayList<>();
+            toolsConfig.setShellEnvironmentVariables(variables);
+        }
+        return variables;
+    }
+
+    private void normalizeAndValidateShellEnvironmentVariables(RuntimeConfig.ToolsConfig toolsConfig) {
+        if (toolsConfig == null) {
+            return;
+        }
+        List<RuntimeConfig.ShellEnvironmentVariable> variables = toolsConfig.getShellEnvironmentVariables();
+        if (variables == null || variables.isEmpty()) {
+            toolsConfig.setShellEnvironmentVariables(new ArrayList<>());
+            return;
+        }
+
+        List<RuntimeConfig.ShellEnvironmentVariable> normalized = new ArrayList<>(variables.size());
+        Set<String> names = new LinkedHashSet<>();
+        for (RuntimeConfig.ShellEnvironmentVariable variable : variables) {
+            RuntimeConfig.ShellEnvironmentVariable normalizedVariable = normalizeAndValidateShellEnvironmentVariable(variable);
+            if (!names.add(normalizedVariable.getName())) {
+                throw new IllegalArgumentException(
+                        "tools.shellEnvironmentVariables contains duplicate name: " + normalizedVariable.getName());
+            }
+            normalized.add(normalizedVariable);
+        }
+        toolsConfig.setShellEnvironmentVariables(normalized);
+    }
+
+    private RuntimeConfig.ShellEnvironmentVariable normalizeAndValidateShellEnvironmentVariable(
+            RuntimeConfig.ShellEnvironmentVariable variable) {
+        if (variable == null) {
+            throw new IllegalArgumentException("tools.shellEnvironmentVariables item is required");
+        }
+        String normalizedName = normalizeAndValidateShellEnvironmentVariableName(variable.getName());
+        String normalizedValue = normalizeAndValidateShellEnvironmentVariableValue(variable.getValue(), normalizedName);
+        return RuntimeConfig.ShellEnvironmentVariable.builder()
+                .name(normalizedName)
+                .value(normalizedValue)
+                .build();
+    }
+
+    private String normalizeAndValidateShellEnvironmentVariableName(String value) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("tools.shellEnvironmentVariables.name is required");
+        }
+        String normalized = value.trim();
+        if (normalized.length() > SHELL_ENV_VAR_NAME_MAX_LENGTH) {
+            throw new IllegalArgumentException("tools.shellEnvironmentVariables.name must be at most "
+                    + SHELL_ENV_VAR_NAME_MAX_LENGTH + " characters");
+        }
+        if (!SHELL_ENV_VAR_NAME_PATTERN.matcher(normalized).matches()) {
+            throw new IllegalArgumentException(
+                    "tools.shellEnvironmentVariables.name must match [A-Za-z_][A-Za-z0-9_]*");
+        }
+        if (RESERVED_SHELL_ENV_VAR_NAMES.contains(normalized)) {
+            throw new IllegalArgumentException(
+                    "tools.shellEnvironmentVariables.name must not redefine reserved variable: " + normalized);
+        }
+        return normalized;
+    }
+
+    private String normalizeAndValidateShellEnvironmentVariableValue(String value, String normalizedName) {
+        String normalizedValue = value != null ? value : "";
+        if (normalizedValue.length() > SHELL_ENV_VAR_VALUE_MAX_LENGTH) {
+            throw new IllegalArgumentException("tools.shellEnvironmentVariables." + normalizedName
+                    + ".value must be at most " + SHELL_ENV_VAR_VALUE_MAX_LENGTH + " characters");
+        }
+        return normalizedValue;
+    }
+
+    private boolean containsShellEnvironmentVariableName(List<RuntimeConfig.ShellEnvironmentVariable> variables,
+            String name) {
+        return findShellEnvironmentVariableIndex(variables, name) >= 0;
+    }
+
+    private int findShellEnvironmentVariableIndex(List<RuntimeConfig.ShellEnvironmentVariable> variables, String name) {
+        for (int index = 0; index < variables.size(); index++) {
+            RuntimeConfig.ShellEnvironmentVariable variable = variables.get(index);
+            if (variable != null && name.equals(variable.getName())) {
+                return index;
+            }
+        }
+        return -1;
     }
 
     private Set<String> getProvidersUsedByModelRouter(RuntimeConfig.ModelRouterConfig modelRouterConfig) {
