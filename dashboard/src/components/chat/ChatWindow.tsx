@@ -4,7 +4,8 @@ import { FiLayout, FiMessageSquare, FiPlus } from 'react-icons/fi';
 import { useAuthStore } from '../../store/authStore';
 import { useChatSessionStore } from '../../store/chatSessionStore';
 import { useContextPanelStore } from '../../store/contextPanelStore';
-import { createSession, getActiveSession, listSessions, getSession, setActiveSession } from '../../api/sessions';
+import { getActiveSession, listSessions, getSession, setActiveSession } from '../../api/sessions';
+import { useCreateSession } from '../../hooks/useSessions';
 import { getGoals } from '../../api/goals';
 import { updatePreferences } from '../../api/settings';
 import MessageBubble from './MessageBubble';
@@ -104,6 +105,7 @@ export default function ChatWindow() {
   const chatSessionId = useChatSessionStore((s) => s.activeSessionId);
   const setChatSessionId = useChatSessionStore((s) => s.setActiveSessionId);
   const clientInstanceId = useChatSessionStore((s) => s.clientInstanceId);
+  const createSessionMutation = useCreateSession();
   const [allMessages, setAllMessages] = useState<ChatMessage[]>([]);
   const [visibleStart, setVisibleStart] = useState(0);
   const [connected, setConnected] = useState(false);
@@ -123,6 +125,8 @@ export default function ChatWindow() {
   const lastUpdateWasChunkRef = useRef(false);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const historySessionRef = useRef(chatSessionId);
+  const hasSessionInteractionRef = useRef(false);
 
   const token = useAuthStore((s) => s.accessToken);
   const {
@@ -164,18 +168,21 @@ export default function ChatWindow() {
   }, [resetTurnMetadata]);
 
   const startNewConversation = useCallback(() => {
+    hasSessionInteractionRef.current = true;
     const newSessionId = createUuid();
     setChatSessionId(newSessionId);
     resetConversationState();
-    createSession({
+    createSessionMutation.mutate({
       channelType: 'web',
       clientInstanceId,
       conversationKey: newSessionId,
       activate: true,
-    }).catch(() => {
-      // ignore creation failures; session will still be created lazily on first message
+    }, {
+      onError: () => {
+        // ignore creation failures; session will still be created lazily on first message
+      },
     });
-  }, [clientInstanceId, resetConversationState, setChatSessionId]);
+  }, [clientInstanceId, createSessionMutation, resetConversationState, setChatSessionId]);
 
   const setUserMessageStatus = useCallback((id: string, status: 'pending' | 'failed' | null): void => {
     setAllMessages((prev) => {
@@ -265,9 +272,10 @@ export default function ChatWindow() {
   // Resolve active conversation from backend on mount to keep sidebar/chat consistent across pages.
   useEffect(() => {
     let cancelled = false;
+    const initialSessionId = chatSessionIdRef.current;
     getActiveSession('web', clientInstanceId)
       .then((activeSession) => {
-        if (cancelled) {
+        if (cancelled || hasSessionInteractionRef.current || chatSessionIdRef.current !== initialSessionId) {
           return;
         }
         const nextConversationKey = normalizeConversationKey(activeSession.conversationKey);
@@ -293,8 +301,15 @@ export default function ChatWindow() {
   // Load current session history
   useEffect(() => {
     let cancelled = false;
+    const sessionChanged = historySessionRef.current !== chatSessionId;
+    historySessionRef.current = chatSessionId;
+
     setHistoryLoading(true);
     setHistoryError(null);
+    if (sessionChanged) {
+      setAllMessages([]);
+      setVisibleStart(0);
+    }
 
     listSessions('web')
       .then((sessions) => {
@@ -528,6 +543,7 @@ export default function ChatWindow() {
   }, [allMessages, typing]);
 
   const handleRetry = useCallback((messageId: string) => {
+    hasSessionInteractionRef.current = true;
     let payloadToRetry: OutboundChatPayload | null = null;
 
     setAllMessages((prev) => prev.map((message) => {
@@ -554,6 +570,8 @@ export default function ChatWindow() {
       startNewConversation();
       return;
     }
+
+    hasSessionInteractionRef.current = true;
 
     const fallback = attachments.length > 0
       ? `[${attachments.length} image attachment${attachments.length > 1 ? 's' : ''}]`

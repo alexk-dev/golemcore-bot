@@ -4,7 +4,7 @@ import { FiMessageSquare, FiBarChart2, FiSettings, FiFileText, FiZap, FiList, Fi
 import type { SessionSummary } from '../../api/sessions';
 import { useSidebarStore } from '../../store/sidebarStore';
 import { useChatSessionStore } from '../../store/chatSessionStore';
-import { useCreateSession, useRecentSessions } from '../../hooks/useSessions';
+import { useActiveSession, useCreateSession, useRecentSessions } from '../../hooks/useSessions';
 import { useSystemHealth, useSystemUpdateStatus } from '../../hooks/useSystem';
 import { createUuid } from '../../utils/uuid';
 import { isLegacyCompatibleConversationKey, normalizeConversationKey } from '../../utils/conversationKey';
@@ -42,12 +42,19 @@ export default function Sidebar() {
   const setActiveSessionId = useChatSessionStore((s) => s.setActiveSessionId);
   const { data: health } = useSystemHealth();
   const { data: updateStatus } = useSystemUpdateStatus();
-  const { data: recentSessionsData } = useRecentSessions('web', clientInstanceId, RECENT_SESSIONS_LIMIT);
+  const {
+    data: recentSessionsData,
+    isLoading: recentSessionsLoading,
+    isError: recentSessionsError,
+  } = useRecentSessions('web', clientInstanceId, RECENT_SESSIONS_LIMIT);
+  const { data: activeSessionData } = useActiveSession('web', clientInstanceId);
   const createSessionMutation = useCreateSession();
   const version = health?.version ? `v${health.version}` : 'v...';
   const updateState = updateStatus?.state ?? '';
   const settingsBadge = getSidebarUpdateBadge(updateState);
   const recentSessions = recentSessionsData ?? [];
+  const serverConversationKey = normalizeConversationKey(activeSessionData?.conversationKey);
+  const effectiveActiveSessionId = serverConversationKey ?? activeSessionId;
 
   const handleNavClick = () => {
     // Close sidebar on mobile when navigation item is clicked
@@ -140,14 +147,32 @@ export default function Sidebar() {
                 onClick={handleNewSession}
                 disabled={createSessionMutation.isPending}
               >
-                New
+                {createSessionMutation.isPending ? 'Creating...' : 'New'}
               </button>
             </div>
 
-            <div className="sidebar-chat-list">
-              {recentSessions.map((session) => {
+            <div className="sidebar-chat-list" role="list" aria-label="Recent chat sessions">
+              {recentSessionsLoading && (
+                <div className="sidebar-chat-state" role="status" aria-live="polite">
+                  Loading recent sessions...
+                </div>
+              )}
+
+              {!recentSessionsLoading && recentSessionsError && (
+                <div className="sidebar-chat-state sidebar-chat-state--error" role="status" aria-live="polite">
+                  Failed to load sessions
+                </div>
+              )}
+
+              {!recentSessionsLoading && !recentSessionsError && recentSessions.length === 0 && (
+                <div className="sidebar-chat-state" role="status" aria-live="polite">
+                  No recent sessions
+                </div>
+              )}
+
+              {!recentSessionsLoading && !recentSessionsError && recentSessions.map((session) => {
                 const sessionKey = session.conversationKey;
-                const isActive = sessionKey === activeSessionId || session.active;
+                const isActive = sessionKey === effectiveActiveSessionId;
                 return (
                   <button
                     key={session.id}
@@ -155,6 +180,8 @@ export default function Sidebar() {
                     className={`sidebar-chat-item${isActive ? ' active' : ''}`}
                     onClick={() => handleSessionClick(sessionKey)}
                     title={session.preview ?? getSessionTitle(session)}
+                    role="listitem"
+                    aria-pressed={isActive}
                   >
                     <span className="sidebar-chat-item-title">{getSessionTitle(session)}</span>
                     {session.preview != null && session.preview.length > 0 && (

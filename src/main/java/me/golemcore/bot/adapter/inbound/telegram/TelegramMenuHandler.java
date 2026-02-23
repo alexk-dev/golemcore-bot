@@ -683,7 +683,9 @@ public class TelegramMenuHandler {
 
     private String resolveSessionTitle(AgentSession session) {
         if (session == null || session.getMessages() == null || session.getMessages().isEmpty()) {
-            return "Session " + shortConversationKey(SessionIdentitySupport.resolveConversationKey(session));
+            return msg(
+                    "menu.sessions.fallback",
+                    shortConversationKey(SessionIdentitySupport.resolveConversationKey(session)));
         }
 
         for (me.golemcore.bot.domain.model.Message message : session.getMessages()) {
@@ -694,7 +696,9 @@ public class TelegramMenuHandler {
                 return message.getContent().trim();
             }
         }
-        return "Session " + shortConversationKey(SessionIdentitySupport.resolveConversationKey(session));
+        return msg(
+                "menu.sessions.fallback",
+                shortConversationKey(SessionIdentitySupport.resolveConversationKey(session)));
     }
 
     private String shortConversationKey(String conversationKey) {
