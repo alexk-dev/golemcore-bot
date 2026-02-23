@@ -24,19 +24,20 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.TurnOutcome;
+import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.model.TurnMemoryEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 
 /**
- * System for persisting conversation exchanges to daily memory notes
- * (order=50). Appends each user-assistant interaction to today's note file for
- * long-term context retention. Runs after tool execution and before response
- * routing in the pipeline.
+ * System for persisting structured turn-level memory events (order=50).
+ * Captures user/assistant exchange and selected tool outputs for Memory V2.
  */
 @Component
 @RequiredArgsConstructor
@@ -44,9 +45,6 @@ import java.time.format.DateTimeFormatter;
 public class MemoryPersistSystem implements AgentSystem {
 
     private final MemoryComponent memoryComponent;
-
-    private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm")
-            .withZone(ZoneId.systemDefault());
 
     @Override
     public String getName() {
@@ -89,15 +87,18 @@ public class MemoryPersistSystem implements AgentSystem {
             assistantContent = response.getContent();
         }
 
-        // Build memory entry
-        String entry = buildMemoryEntry(lastUserMessage, assistantContent);
-
-        // Append to today's notes
+        // Persist structured memory event (Memory V2)
         try {
-            memoryComponent.appendToday(entry);
-            log.debug("Persisted conversation to memory");
+            TurnMemoryEvent event = TurnMemoryEvent.builder()
+                    .timestamp(Instant.now())
+                    .userText(lastUserMessage.getContent())
+                    .assistantText(assistantContent)
+                    .activeSkill(context.getActiveSkill() != null ? context.getActiveSkill().getName() : null)
+                    .toolOutputs(extractToolOutputs(context))
+                    .build();
+            memoryComponent.persistTurnMemory(event);
         } catch (Exception e) {
-            log.warn("Failed to persist to memory", e);
+            log.warn("Failed to persist structured memory event", e);
         }
 
         return context;
@@ -117,15 +118,6 @@ public class MemoryPersistSystem implements AgentSystem {
         return null;
     }
 
-    private String buildMemoryEntry(Message userMessage, String assistantText) {
-        String time = TIME_FORMATTER.format(Instant.now());
-        String userContent = truncate(userMessage.getContent(), 200);
-        String assistantContent = truncate(assistantText, 300);
-
-        return String.format("[%s] User: %s | Assistant: %s%n",
-                time, userContent, assistantContent);
-    }
-
     private String truncate(String text, int maxLength) {
         if (text == null) {
             return "";
@@ -135,5 +127,29 @@ public class MemoryPersistSystem implements AgentSystem {
             return text;
         }
         return text.substring(0, maxLength - 3) + "...";
+    }
+
+    private List<String> extractToolOutputs(AgentContext context) {
+        List<String> outputs = new ArrayList<>();
+        Map<String, ToolResult> toolResults = context.getToolResults();
+        if (toolResults == null || toolResults.isEmpty()) {
+            return outputs;
+        }
+
+        for (ToolResult result : toolResults.values()) {
+            if (result == null) {
+                continue;
+            }
+            String output = result.getOutput();
+            if (output != null && !output.isBlank()) {
+                outputs.add(truncate(output, 800));
+                continue;
+            }
+            String error = result.getError();
+            if (error != null && !error.isBlank()) {
+                outputs.add("Error: " + truncate(error, 800));
+            }
+        }
+        return outputs;
     }
 }

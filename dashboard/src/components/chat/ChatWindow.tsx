@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Badge, Offcanvas } from 'react-bootstrap';
+import { Offcanvas } from 'react-bootstrap';
+import { FiLayout, FiMessageSquare, FiPlus } from 'react-icons/fi';
 import { useAuthStore } from '../../store/authStore';
-import { useContextPanelStore } from '../../store/contextPanelStore';
+import { useContextPanelStore, type TurnMetadata } from '../../store/contextPanelStore';
 import { listSessions, getSession } from '../../api/sessions';
 import { getGoals } from '../../api/goals';
-import { updatePreferences } from '../../api/settings';
+import { getSettings, updatePreferences } from '../../api/settings';
 import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
 import ContextPanel from './ContextPanel';
@@ -14,6 +15,37 @@ const SESSION_KEY = 'golem-chat-session-id';
 const INITIAL_MESSAGES = 50;
 const LOAD_MORE_COUNT = 50;
 const GOALS_POLL_INTERVAL = 30000;
+const RECONNECT_DELAY_MS = 3000;
+const TYPING_RESET_MS = 3000;
+const SUPPORTED_TIERS = ['balanced', 'smart', 'coding', 'deep'] as const;
+const STARTER_PROMPTS = [
+  {
+    key: 'plan-next',
+    label: 'Plan next step',
+    text: 'Review the current status and suggest the next three prioritized steps.',
+  },
+  {
+    key: 'risk-check',
+    label: 'Find risks',
+    text: 'Analyze the current work and list the most likely risks with mitigations.',
+  },
+  {
+    key: 'draft-update',
+    label: 'Draft update',
+    text: 'Write a concise progress update I can send to the team.',
+  },
+];
+
+const EMPTY_TURN_METADATA = {
+  model: null,
+  tier: null,
+  reasoning: null,
+  inputTokens: null,
+  outputTokens: null,
+  totalTokens: null,
+  latencyMs: null,
+  maxContextTokens: null,
+};
 
 function getChatSessionId(): string {
   let id = localStorage.getItem(SESSION_KEY);
@@ -24,12 +56,45 @@ function getChatSessionId(): string {
   return id;
 }
 
+function getLocalCommand(text: string): 'new' | 'reset' | null {
+  const command = (text.split(/\s+/)[0] ?? '').toLowerCase();
+  if (command === '/new') {
+    return 'new';
+  }
+  if (command === '/reset') {
+    return 'reset';
+  }
+  return null;
+}
+
+function isSupportedTier(value: string): value is (typeof SUPPORTED_TIERS)[number] {
+  return SUPPORTED_TIERS.some((tier) => tier === value);
+}
+
+function normalizeTier(value: string | null | undefined): string {
+  if (value == null) {
+    return 'balanced';
+  }
+  const normalized = value.toLowerCase();
+  return isSupportedTier(normalized) ? normalized : 'balanced';
+}
+
+function hasVisibleContent(content: string | null | undefined): boolean {
+  if (content == null) {
+    return false;
+  }
+  return content.trim().length > 0;
+}
+
 interface ChatMessage {
-  role: string;
+  id: string;
+  role: 'user' | 'assistant';
   content: string;
   model?: string | null;
   tier?: string | null;
   reasoning?: string | null;
+  status?: 'pending' | 'failed';
+  outbound?: OutboundChatPayload;
 }
 
 interface ChatAttachmentPayload {
@@ -59,60 +124,266 @@ interface SocketMessage {
   type?: string;
   eventType?: string;
   text?: string;
+  sessionId?: string;
   hint?: AssistantHint;
 }
 
+function toTurnMetadataPatch(hint: AssistantHint): Partial<TurnMetadata> {
+  const patch: Partial<TurnMetadata> = {};
+  if (Object.prototype.hasOwnProperty.call(hint, 'model')) {
+    patch.model = hint.model ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(hint, 'tier')) {
+    patch.tier = hint.tier ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(hint, 'reasoning')) {
+    patch.reasoning = hint.reasoning ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(hint, 'inputTokens')) {
+    patch.inputTokens = hint.inputTokens ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(hint, 'outputTokens')) {
+    patch.outputTokens = hint.outputTokens ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(hint, 'totalTokens')) {
+    patch.totalTokens = hint.totalTokens ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(hint, 'latencyMs')) {
+    patch.latencyMs = hint.latencyMs ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(hint, 'maxContextTokens')) {
+    patch.maxContextTokens = hint.maxContextTokens ?? null;
+  }
+  return patch;
+}
+
 export default function ChatWindow() {
+  const [chatSessionId, setChatSessionId] = useState(() => getChatSessionId());
   const [allMessages, setAllMessages] = useState<ChatMessage[]>([]);
   const [visibleStart, setVisibleStart] = useState(0);
   const [connected, setConnected] = useState(false);
   const [typing, setTyping] = useState(false);
-  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyReloadTick, setHistoryReloadTick] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [tier, setTier] = useState('balanced');
   const [tierForce, setTierForce] = useState(false);
+
   const wsRef = useRef<WebSocket | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const token = useAuthStore((s) => s.accessToken);
-  const chatSessionId = useRef(getChatSessionId()).current;
+  const chatSessionIdRef = useRef(chatSessionId);
   const shouldAutoScroll = useRef(true);
-  const { panelOpen, togglePanel, mobileDrawerOpen, openMobileDrawer, closeMobileDrawer, setTurnMetadata, setGoals } = useContextPanelStore();
+  const lastUpdateWasChunkRef = useRef(false);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const preferenceUpdateQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const hasLocalPreferenceChangesRef = useRef(false);
 
-  // Load history from backend on mount
+  const token = useAuthStore((s) => s.accessToken);
+  const {
+    panelOpen,
+    togglePanel,
+    mobileDrawerOpen,
+    openMobileDrawer,
+    closeMobileDrawer,
+    setTurnMetadata,
+    setGoals,
+  } = useContextPanelStore();
+
   useEffect(() => {
-    if (historyLoaded) {return;}
+    chatSessionIdRef.current = chatSessionId;
+  }, [chatSessionId]);
+
+  // Keep tier controls in sync with persisted user preferences used by backend tier resolution.
+  useEffect(() => {
+    let cancelled = false;
+    getSettings()
+      .then((settings) => {
+        if (cancelled || hasLocalPreferenceChangesRef.current) {
+          return;
+        }
+        setTier(normalizeTier(settings.modelTier));
+        setTierForce(settings.tierForce === true);
+      })
+      .catch(() => { /* ignore */ });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const clearReconnectTimer = useCallback(() => {
+    if (reconnectTimerRef.current != null) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+  }, []);
+
+  const clearTypingTimer = useCallback(() => {
+    if (typingTimerRef.current != null) {
+      clearTimeout(typingTimerRef.current);
+      typingTimerRef.current = null;
+    }
+  }, []);
+
+  const resetTurnMetadata = useCallback(() => {
+    setTurnMetadata(EMPTY_TURN_METADATA);
+  }, [setTurnMetadata]);
+
+  const resetConversationState = useCallback(() => {
+    setAllMessages([]);
+    setVisibleStart(0);
+    resetTurnMetadata();
+  }, [resetTurnMetadata]);
+
+  const startNewConversation = useCallback(() => {
+    const newSessionId = createUuid();
+    localStorage.setItem(SESSION_KEY, newSessionId);
+    setChatSessionId(newSessionId);
+    resetConversationState();
+  }, [resetConversationState]);
+
+  const setUserMessageStatus = useCallback((id: string, status: 'pending' | 'failed' | null): void => {
+    setAllMessages((prev) => {
+      const index = prev.findIndex((message) => message.id === id && message.role === 'user');
+      if (index < 0) {
+        return prev;
+      }
+
+      const next = [...prev];
+      const current = next[index];
+      if (status == null) {
+        next[index] = { ...current, status: undefined, outbound: undefined };
+      } else {
+        next[index] = { ...current, status };
+      }
+      return next;
+    });
+  }, []);
+
+  const markFirstPendingAsSent = useCallback(() => {
+    setAllMessages((prev) => {
+      const index = prev.findIndex((message) => message.role === 'user' && message.status === 'pending');
+      if (index < 0) {
+        return prev;
+      }
+
+      const next = [...prev];
+      const target = next[index];
+      next[index] = { ...target, status: undefined, outbound: undefined };
+      return next;
+    });
+  }, []);
+
+  const markPendingAsFailed = useCallback(() => {
+    setAllMessages((prev) => {
+      let changed = false;
+      const next = prev.map((message) => {
+        if (message.role === 'user' && message.status === 'pending') {
+          changed = true;
+          return { ...message, status: 'failed' as const };
+        }
+        return message;
+      });
+      return changed ? next : prev;
+    });
+  }, []);
+
+  const sendPayload = useCallback((id: string, payload: OutboundChatPayload): boolean => {
+    const socket = wsRef.current;
+    if (socket?.readyState !== WebSocket.OPEN) {
+      setUserMessageStatus(id, 'failed');
+      return false;
+    }
+
+    try {
+      socket.send(JSON.stringify({
+        text: payload.text,
+        attachments: payload.attachments,
+        sessionId: chatSessionId,
+      }));
+      return true;
+    } catch {
+      setUserMessageStatus(id, 'failed');
+      return false;
+    }
+  }, [chatSessionId, setUserMessageStatus]);
+
+  useEffect(() => {
+    resetTurnMetadata();
+  }, [chatSessionId, resetTurnMetadata]);
+
+  const enqueuePreferencesUpdate = useCallback((prefsPatch: Record<string, unknown>) => {
+    preferenceUpdateQueueRef.current = preferenceUpdateQueueRef.current
+      .catch(() => { /* ignore */ })
+      .then(async () => {
+        const settings = await updatePreferences(prefsPatch);
+        setTier(normalizeTier(settings.modelTier));
+        setTierForce(settings.tierForce === true);
+      })
+      .catch(() => { /* ignore */ });
+  }, []);
+
+  // Load current session history
+  useEffect(() => {
+    let cancelled = false;
+    setHistoryLoading(true);
+    setHistoryError(null);
+
     listSessions('web')
       .then((sessions) => {
-        const sorted = sessions.sort((a, b) =>
-          (b.updatedAt ?? b.createdAt ?? '').localeCompare(a.updatedAt ?? a.createdAt ?? '')
-        );
-        const match = sorted.find((s) => s.chatId === chatSessionId) ?? sorted[0];
-        if (match != null) {
-          if (match.chatId !== chatSessionId) {
-            localStorage.setItem(SESSION_KEY, match.chatId);
-          }
-          return getSession(match.id);
+        const match = sessions.find((session) => session.chatId === chatSessionId);
+        if (match == null) {
+          return null;
         }
-        return null;
+        return getSession(match.id);
       })
       .then((detail) => {
-        if (detail != null && detail.messages.length > 0) {
-          const history: ChatMessage[] = detail.messages
-            .filter((m) => m.role === 'user' || m.role === 'assistant')
-            .map((m) => ({
-              role: m.role,
-              content: m.content ?? '',
-              model: m.model,
-              tier: m.modelTier,
-            }));
-          setAllMessages(history);
-          setVisibleStart(Math.max(0, history.length - INITIAL_MESSAGES));
+        if (cancelled) {
+          return;
         }
-        setHistoryLoaded(true);
+
+        if (detail == null) {
+          setAllMessages([]);
+          setVisibleStart(0);
+          return;
+        }
+
+        const history: ChatMessage[] = detail.messages
+          .filter((message) => (
+            (message.role === 'user' || message.role === 'assistant')
+            && hasVisibleContent(message.content)
+          ))
+          .map((message) => ({
+            id: message.id,
+            role: message.role as 'user' | 'assistant',
+            content: message.content ?? '',
+            model: message.model,
+            tier: message.modelTier,
+          }));
+
+        setAllMessages(history);
+        setVisibleStart(Math.max(0, history.length - INITIAL_MESSAGES));
       })
-      .catch(() => setHistoryLoaded(true));
-  }, [chatSessionId, historyLoaded]);
+      .catch(() => {
+        if (!cancelled) {
+          setHistoryError('Failed to load chat history.');
+          setAllMessages([]);
+          setVisibleStart(0);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setHistoryLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [chatSessionId, historyReloadTick]);
 
   // Poll goals every 30s
   useEffect(() => {
@@ -121,6 +392,7 @@ export default function ChatWindow() {
         .then((res) => setGoals(res.goals, res.featureEnabled, res.autoModeEnabled))
         .catch(() => { /* ignore */ });
     };
+
     fetchGoals();
     const interval = setInterval(fetchGoals, GOALS_POLL_INTERVAL);
     return () => clearInterval(interval);
@@ -148,115 +420,221 @@ export default function ChatWindow() {
     }
   }, [visibleStart, loadingMore]);
 
-  const connect = useCallback(() => {
-    if (token == null || token.length === 0) {return;}
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/chat?token=${token}`);
+  // WebSocket lifecycle with safe reconnect
+  useEffect(() => {
+    clearReconnectTimer();
+    clearTypingTimer();
 
-    ws.onopen = () => setConnected(true);
-    ws.onclose = () => {
+    if (token == null || token.length === 0) {
       setConnected(false);
-      setTimeout(() => connect(), 3000);
-    };
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data) as SocketMessage;
-        if (data.type === 'system_event' && data.eventType === 'typing') {
-          setTyping(true);
-          setTimeout(() => setTyping(false), 3000);
+      setTyping(false);
+      wsRef.current?.close();
+      wsRef.current = null;
+      return;
+    }
+
+    let disposed = false;
+
+    const openSocket = () => {
+      if (disposed) {
+        return;
+      }
+
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const ws = new WebSocket(`${protocol}//${window.location.host}/ws/chat?token=${token}`);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        if (disposed) {
+          ws.close();
           return;
         }
-        if (data.type === 'assistant_chunk' || data.type === 'assistant_done') {
-          setTyping(false);
+        clearReconnectTimer();
+        setConnected(true);
+      };
 
-          // Extract hints for context panel
-          if (data.hint != null) {
-            setTurnMetadata({
-              model: data.hint.model ?? null,
-              tier: data.hint.tier ?? null,
-              reasoning: data.hint.reasoning ?? null,
-              inputTokens: data.hint.inputTokens ?? null,
-              outputTokens: data.hint.outputTokens ?? null,
-              totalTokens: data.hint.totalTokens ?? null,
-              latencyMs: data.hint.latencyMs ?? null,
-              maxContextTokens: data.hint.maxContextTokens ?? null,
-            });
+      ws.onclose = () => {
+        if (disposed) {
+          return;
+        }
+        setConnected(false);
+        setTyping(false);
+        clearTypingTimer();
+        markPendingAsFailed();
+        clearReconnectTimer();
+        reconnectTimerRef.current = setTimeout(() => {
+          openSocket();
+        }, RECONNECT_DELAY_MS);
+      };
+
+      ws.onmessage = (event) => {
+        if (disposed) {
+          return;
+        }
+
+        try {
+          const data = JSON.parse(event.data) as SocketMessage;
+
+          if (data.sessionId != null && data.sessionId.length > 0 && data.sessionId !== chatSessionIdRef.current) {
+            return;
           }
 
-          setAllMessages((prev) => {
-            const last = prev.length > 0 ? prev[prev.length - 1] : undefined;
-            const chunkModel = data.hint?.model ?? null;
-            const chunkTier = data.hint?.tier ?? null;
-            const chunkReasoning = data.hint?.reasoning ?? null;
-            if (last?.role === 'assistant' && data.type === 'assistant_chunk') {
-              return [...prev.slice(0, -1), {
-                role: 'assistant',
-                content: `${last.content}${data.text ?? ''}`,
-                model: chunkModel ?? last.model ?? null,
-                tier: chunkTier ?? last.tier ?? null,
-                reasoning: chunkReasoning ?? last.reasoning ?? null,
-              }];
+          if (data.type === 'system_event' && data.eventType === 'typing') {
+            setTyping(true);
+            markFirstPendingAsSent();
+            clearTypingTimer();
+            typingTimerRef.current = setTimeout(() => {
+              if (!disposed) {
+                setTyping(false);
+              }
+            }, TYPING_RESET_MS);
+            return;
+          }
+
+          if (data.type === 'assistant_chunk' || data.type === 'assistant_done') {
+            setTyping(false);
+            clearTypingTimer();
+            markFirstPendingAsSent();
+            lastUpdateWasChunkRef.current = data.type === 'assistant_chunk';
+
+            if (data.hint != null) {
+              const metadataPatch = toTurnMetadataPatch(data.hint);
+              if (Object.keys(metadataPatch).length > 0) {
+                setTurnMetadata(metadataPatch);
+              }
             }
-            return [...prev, {
-              role: 'assistant',
-              content: data.text ?? '',
-              model: chunkModel,
-              tier: chunkTier,
-              reasoning: chunkReasoning,
-            }];
-          });
+
+            setAllMessages((prev) => {
+              const last = prev.length > 0 ? prev[prev.length - 1] : undefined;
+              const chunkText = data.text ?? '';
+              const chunkModel = data.hint?.model;
+              const chunkTier = data.hint?.tier;
+              const chunkReasoning = data.hint?.reasoning;
+
+              if (last?.role === 'assistant' && data.type === 'assistant_chunk') {
+                return [...prev.slice(0, -1), {
+                  ...last,
+                  content: `${last.content}${chunkText}`,
+                  model: chunkModel ?? last.model ?? null,
+                  tier: chunkTier ?? last.tier ?? null,
+                  reasoning: chunkReasoning ?? last.reasoning ?? null,
+                }];
+              }
+
+              if (chunkText.length === 0) {
+                return prev;
+              }
+
+              return [...prev, {
+                id: createUuid(),
+                role: 'assistant',
+                content: chunkText,
+                model: chunkModel ?? null,
+                tier: chunkTier ?? null,
+                reasoning: chunkReasoning ?? null,
+              }];
+            });
+          }
+        } catch {
+          // ignore parse errors
         }
-      } catch {
-        // ignore parse errors
-      }
+      };
     };
 
-    wsRef.current = ws;
-    return () => ws.close();
-  }, [token, setTurnMetadata]);
+    openSocket();
 
-  useEffect(() => {
-    const cleanup = connect();
-    return cleanup;
-  }, [connect]);
+    return () => {
+      disposed = true;
+      clearReconnectTimer();
+      clearTypingTimer();
+      setConnected(false);
+      setTyping(false);
+      const socket = wsRef.current;
+      wsRef.current = null;
+      socket?.close();
+    };
+  }, [token, clearReconnectTimer, clearTypingTimer, markPendingAsFailed, markFirstPendingAsSent, setTurnMetadata]);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
-    if (shouldAutoScroll.current) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (!shouldAutoScroll.current) {
+      return;
     }
+
+    const behavior: ScrollBehavior = lastUpdateWasChunkRef.current ? 'auto' : 'smooth';
+    bottomRef.current?.scrollIntoView({ behavior });
   }, [allMessages, typing]);
 
-  const handleSend = ({ text, attachments }: OutboundChatPayload) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      const trimmed = text.trim();
-      const fallback = attachments.length > 0
-        ? `[${attachments.length} image attachment${attachments.length > 1 ? 's' : ''}]`
-        : '';
-      const newMsg = { role: 'user', content: trimmed.length > 0 ? trimmed : fallback };
-      setAllMessages((prev) => [...prev, newMsg]);
-      shouldAutoScroll.current = true;
-      wsRef.current.send(JSON.stringify({
-        text,
-        attachments,
-        sessionId: chatSessionId,
-      }));
+  const handleRetry = useCallback((messageId: string) => {
+    let payloadToRetry: OutboundChatPayload | null = null;
+
+    setAllMessages((prev) => prev.map((message) => {
+      if (message.id !== messageId || message.role !== 'user' || message.outbound == null) {
+        return message;
+      }
+      payloadToRetry = message.outbound;
+      return { ...message, status: 'pending' as const };
+    }));
+
+    if (payloadToRetry == null) {
+      return;
     }
-  };
 
-  const handleTierChange = async (newTier: string) => {
-    setTier(newTier);
-    try {
-      await updatePreferences({ modelTier: newTier, tierForce });
-    } catch { /* ignore */ }
-  };
+    shouldAutoScroll.current = true;
+    lastUpdateWasChunkRef.current = false;
+    sendPayload(messageId, payloadToRetry);
+  }, [sendPayload]);
 
-  const handleForceChange = async (force: boolean) => {
+  const handleSend = useCallback(({ text, attachments }: OutboundChatPayload) => {
+    const trimmed = text.trim();
+    const fallback = attachments.length > 0
+      ? `[${attachments.length} image attachment${attachments.length > 1 ? 's' : ''}]`
+      : '';
+
+    const messageId = createUuid();
+    const outboundPayload: OutboundChatPayload = {
+      text: trimmed,
+      attachments,
+    };
+
+    setAllMessages((prev) => [...prev, {
+      id: messageId,
+      role: 'user',
+      content: trimmed.length > 0 ? trimmed : fallback,
+      status: 'pending',
+      outbound: outboundPayload,
+    }]);
+
+    shouldAutoScroll.current = true;
+    lastUpdateWasChunkRef.current = false;
+
+    const sent = sendPayload(messageId, outboundPayload);
+    const localCommand = getLocalCommand(trimmed);
+
+    if (localCommand === 'new') {
+      startNewConversation();
+      return;
+    }
+
+    if (localCommand === 'reset' && sent) {
+      resetConversationState();
+    }
+  }, [resetConversationState, sendPayload, startNewConversation]);
+
+  const handleTierChange = useCallback((newTier: string) => {
+    const normalizedTier = normalizeTier(newTier);
+    hasLocalPreferenceChangesRef.current = true;
+    setTier(normalizedTier);
+    setTurnMetadata({ model: null, tier: null, reasoning: null });
+    enqueuePreferencesUpdate({ modelTier: normalizedTier });
+  }, [enqueuePreferencesUpdate, setTurnMetadata]);
+
+  const handleForceChange = useCallback((force: boolean) => {
+    hasLocalPreferenceChangesRef.current = true;
     setTierForce(force);
-    try {
-      await updatePreferences({ modelTier: tier, tierForce: force });
-    } catch { /* ignore */ }
-  };
+    setTurnMetadata({ model: null, tier: null, reasoning: null });
+    enqueuePreferencesUpdate({ tierForce: force });
+  }, [enqueuePreferencesUpdate, setTurnMetadata]);
 
   const visibleMessages = allMessages.slice(visibleStart);
   const hasMore = visibleStart > 0;
@@ -264,67 +642,153 @@ export default function ChatWindow() {
   return (
     <div className="chat-page-layout">
       <div className="chat-container">
-        {/* Toolbar */}
         <div className="chat-toolbar">
-          <div className="chat-toolbar-inner d-flex align-items-center">
-            <div className="d-flex align-items-center gap-2 flex-grow-1">
-              <span className={`status-dot ${connected ? 'online' : 'offline'}`} />
-              <small className="text-body-secondary">{connected ? 'Connected' : 'Reconnecting...'}</small>
+          <div className="chat-toolbar-inner">
+            <div className="chat-toolbar-main">
+              <div className="chat-toolbar-title-group">
+                <div className="chat-toolbar-title">
+                  <FiMessageSquare aria-hidden="true" />
+                  <span>Workspace Chat</span>
+                </div>
+                <small className="chat-toolbar-subtitle">
+                  Session: <span className="font-mono">{chatSessionId.slice(0, 8)}</span>
+                </small>
+              </div>
+              <div className="chat-toolbar-status" aria-live="polite">
+                <span className={`status-dot ${connected ? 'online' : 'offline'}`} aria-hidden="true" />
+                <small className="text-body-secondary">{connected ? 'Connected' : 'Reconnecting...'}</small>
+              </div>
             </div>
-            <button
-              className="btn btn-sm btn-secondary panel-toggle-btn"
-              onClick={() => {
-                if (window.innerWidth > 992) {
-                  togglePanel();
-                } else {
-                  openMobileDrawer();
-                }
-              }}
-              title={panelOpen ? 'Hide context panel' : 'Show context panel'}
-            >
-              {panelOpen ? '\u00BB' : '\u00AB'}
-            </button>
+            <div className="chat-toolbar-actions">
+              <button
+                type="button"
+                className="btn btn-sm btn-secondary chat-toolbar-btn"
+                onClick={startNewConversation}
+                title="Start a new chat session"
+                aria-label="Start a new chat session"
+              >
+                <FiPlus aria-hidden="true" />
+                <span>New chat</span>
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm btn-secondary chat-toolbar-btn panel-toggle-btn"
+                onClick={() => {
+                  if (window.innerWidth > 992) {
+                    togglePanel();
+                  } else {
+                    openMobileDrawer();
+                  }
+                }}
+                title={panelOpen ? 'Hide context panel' : 'Show context panel'}
+                aria-label={panelOpen ? 'Hide context panel' : 'Show context panel'}
+              >
+                <FiLayout aria-hidden="true" />
+                <span>{panelOpen ? 'Hide context' : 'Show context'}</span>
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Messages */}
-        <div className="chat-window" ref={scrollRef} onScroll={handleScroll}>
+        <div
+          className="chat-window"
+          ref={scrollRef}
+          onScroll={handleScroll}
+          role="log"
+          aria-relevant="additions text"
+          aria-busy={typing}
+        >
           <div className="chat-content-shell">
-            {hasMore && (
+            {historyLoading && (
+              <div className="chat-history-state" role="status" aria-live="polite">
+                <span className="spinner-border spinner-border-sm" aria-hidden="true" />
+                <small className="text-body-secondary">Loading history...</small>
+              </div>
+            )}
+
+            {!historyLoading && historyError != null && (
+              <div className="chat-history-state" role="status" aria-live="polite">
+                <small className="text-danger">{historyError}</small>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-secondary"
+                  onClick={() => setHistoryReloadTick((v) => v + 1)}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+
+            {!historyLoading && hasMore && (
               <div className="text-center py-2">
                 {loadingMore ? (
                   <small className="text-body-secondary">Loading...</small>
                 ) : (
-                  <Badge bg="secondary" className="cursor-pointer"
-                    onClick={() => setVisibleStart(Math.max(0, visibleStart - LOAD_MORE_COUNT))}>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-secondary chat-history-load-btn"
+                    onClick={() => setVisibleStart(Math.max(0, visibleStart - LOAD_MORE_COUNT))}
+                  >
                     Load earlier messages
-                  </Badge>
+                  </button>
                 )}
               </div>
             )}
-            {visibleMessages.map((msg, i) => (
+
+            {!historyLoading && historyError == null && visibleMessages.length === 0 && (
+              <div className="chat-empty-state" role="status" aria-live="polite">
+                <div className="chat-empty-state-icon" aria-hidden="true">
+                  <FiMessageSquare />
+                </div>
+                <h2 className="chat-empty-state-title">Start a focused conversation</h2>
+                <p className="chat-empty-state-text">
+                  Pick a starter prompt or type your own message below.
+                </p>
+                <div className="chat-starter-grid">
+                  {STARTER_PROMPTS.map((prompt) => (
+                    <button
+                      key={prompt.key}
+                      type="button"
+                      className="chat-starter-card"
+                      onClick={() => handleSend({ text: prompt.text, attachments: [] })}
+                    >
+                      <span className="chat-starter-title">{prompt.label}</span>
+                      <span className="chat-starter-text">{prompt.text}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {visibleMessages.map((msg) => (
               <MessageBubble
-                key={visibleStart + i}
+                key={msg.id}
                 role={msg.role}
                 content={msg.content}
                 model={msg.model ?? null}
                 tier={msg.tier ?? null}
                 reasoning={msg.reasoning ?? null}
+                clientStatus={msg.role === 'user' ? msg.status : undefined}
+                onRetry={msg.role === 'user' && msg.status === 'failed' && msg.outbound != null
+                  ? () => handleRetry(msg.id)
+                  : undefined}
               />
             ))}
+
             {typing && (
-              <div className="typing-indicator">
-                <span /><span /><span />
+              <div className="typing-indicator" role="status" aria-live="polite" aria-label="Assistant is typing">
+                <span className="typing-label">Thinking</span>
+                <span className="typing-dots" aria-hidden="true">
+                  <span /><span /><span />
+                </span>
               </div>
             )}
           </div>
           <div ref={bottomRef} />
         </div>
 
-        {/* Input */}
         <ChatInput
           onSend={handleSend}
-          disabled={!connected}
           running={typing}
           onStop={() => {
             if (wsRef.current?.readyState === WebSocket.OPEN) {

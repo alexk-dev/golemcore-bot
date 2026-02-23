@@ -6,6 +6,7 @@ How to use the built-in web dashboard for chat and configuration.
 
 - URL: `http://localhost:8080/dashboard`
 - WebSocket chat endpoint (used by the UI): `/ws/chat?token=...`
+- WebSocket logs endpoint (used by Logs page): `/ws/logs?token=...&afterSeq=...`
 
 ## Authentication
 
@@ -45,9 +46,24 @@ Most settings are stored in the workspace runtime config file and are editable f
 
 Typical first setup:
 
-1. Set LLM provider API keys in runtime config (`llm.providers.*.apiKey`).
+1. Set LLM provider API keys and API type in runtime config (`llm.providers.*.apiKey`, `llm.providers.*.apiType`).
 2. Choose tier models in runtime config (`modelRouter.*Model`).
 3. (Optional) Enable Telegram and paste bot token (`telegram.enabled`, `telegram.token`).
+
+## Logs In Dashboard
+
+Dashboard includes a dedicated **Logs** page with:
+
+- Live stream over WebSocket (`/ws/logs`)
+- Infinite scroll to load older buffered records (`GET /api/system/logs`)
+- Local filters by level/logger/text
+
+Runtime options:
+
+- `bot.dashboard.logs.enabled`
+- `bot.dashboard.logs.max-entries`
+- `bot.dashboard.logs.default-page-size`
+- `bot.dashboard.logs.max-page-size`
 
 ## MFA (Optional)
 

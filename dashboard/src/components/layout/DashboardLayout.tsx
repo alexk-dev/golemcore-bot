@@ -12,11 +12,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     : 'dashboard-main flex-grow-1 overflow-auto';
 
   return (
-    <div className="d-flex vh-100 overflow-hidden">
+    <div className="d-flex app-shell overflow-hidden">
+      <a href="#main-content" className="skip-link">Skip to main content</a>
       <Sidebar />
       <div className="flex-grow-1 d-flex flex-column h-100 overflow-hidden">
         <Topbar />
-        <main className={mainClassName}>
+        <main id="main-content" className={mainClassName}>
           {children}
         </main>
       </div>

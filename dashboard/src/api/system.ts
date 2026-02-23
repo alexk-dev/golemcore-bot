@@ -1,5 +1,14 @@
 import client from './client';
 
+export interface SystemHealthResponse {
+  status: string;
+  version: string;
+  gitCommit: string | null;
+  buildTime: string | null;
+  uptimeMs: number;
+  channels: Record<string, { type: string; running: boolean; enabled: boolean }>;
+}
+
 export interface SystemDiagnosticsResponse {
   storage: {
     configuredBasePath: string;
@@ -30,12 +39,79 @@ export interface BrowserHealthResponse {
   message: string;
 }
 
+export interface LogEntryResponse {
+  seq: number;
+  timestamp: string;
+  level: string;
+  logger: string | null;
+  thread: string | null;
+  message: string | null;
+  exception: string | null;
+}
+
+export interface LogsPageResponse {
+  items: LogEntryResponse[];
+  oldestSeq: number | null;
+  newestSeq: number | null;
+  hasMore: boolean;
+}
+
+export interface SystemUpdateVersionInfo {
+  version: string;
+  source?: string;
+  tag?: string;
+  assetName?: string;
+  preparedAt?: string;
+  publishedAt?: string;
+}
+
+export interface SystemUpdateStatusResponse {
+  state: string;
+  enabled: boolean;
+  current: SystemUpdateVersionInfo | null;
+  staged: SystemUpdateVersionInfo | null;
+  available: SystemUpdateVersionInfo | null;
+  lastCheckAt: string | null;
+  lastError: string | null;
+}
+
+export interface SystemUpdateActionResponse {
+  success: boolean;
+  message: string;
+  version?: string | null;
+}
+
+export async function getSystemHealth(): Promise<SystemHealthResponse> {
+  const { data } = await client.get<SystemHealthResponse>('/system/health');
+  return data;
+}
+
 export async function getSystemDiagnostics(): Promise<SystemDiagnosticsResponse> {
   const { data } = await client.get<SystemDiagnosticsResponse>('/system/diagnostics');
   return data;
 }
 
+export async function getSystemUpdateStatus(): Promise<SystemUpdateStatusResponse> {
+  const { data } = await client.get<SystemUpdateStatusResponse>('/system/update/status');
+  return data;
+}
+
+export async function checkSystemUpdate(): Promise<SystemUpdateActionResponse> {
+  const { data } = await client.post<SystemUpdateActionResponse>('/system/update/check');
+  return data;
+}
+
+export async function updateSystemNow(): Promise<SystemUpdateActionResponse> {
+  const { data } = await client.post<SystemUpdateActionResponse>('/system/update/update-now');
+  return data;
+}
+
 export async function getBrowserHealth(): Promise<BrowserHealthResponse> {
   const { data } = await client.get<BrowserHealthResponse>('/system/browser/health');
+  return data;
+}
+
+export async function getSystemLogs(params?: { beforeSeq?: number; limit?: number }): Promise<LogsPageResponse> {
+  const { data } = await client.get<LogsPageResponse>('/system/logs', { params });
   return data;
 }

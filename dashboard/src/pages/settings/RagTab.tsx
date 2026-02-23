@@ -1,12 +1,12 @@
 import { type ReactElement, useEffect, useMemo, useState } from 'react';
 import { Button, Card, Col, Form, InputGroup, Row } from 'react-bootstrap';
 import toast from 'react-hot-toast';
+import { SecretStatusBadges } from '../../components/common/SecretStatusBadges';
+import { getSecretInputType, getSecretPlaceholder, getSecretToggleLabel } from '../../components/common/secretInputUtils';
+import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useUpdateRag } from '../../hooks/useSettings';
 import type { RagConfig } from '../../api/settings';
-
-function SaveStateHint({ isDirty }: { isDirty: boolean }): ReactElement {
-  return <small className="text-body-secondary">{isDirty ? 'Unsaved changes' : 'All changes saved'}</small>;
-}
+import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 
 function hasDiff<T>(current: T, initial: T): boolean {
   return JSON.stringify(current) !== JSON.stringify(initial);
@@ -14,6 +14,10 @@ function hasDiff<T>(current: T, initial: T): boolean {
 
 function toNullableString(value: string): string | null {
   return value.length > 0 ? value : null;
+}
+
+function getSaveButtonLabel(isPending: boolean): string {
+  return isPending ? 'Saving...' : 'Save';
 }
 
 interface RagTabProps {
@@ -25,7 +29,13 @@ export default function RagTab({ config }: RagTabProps): ReactElement {
   const [form, setForm] = useState<RagConfig>({ ...config });
   const [showApiKey, setShowApiKey] = useState(false);
   const isDirty = useMemo(() => hasDiff(form, config), [form, config]);
+  const hasStoredApiKey = config.apiKeyPresent === true;
+  const willUpdateApiKey = (form.apiKey?.length ?? 0) > 0;
+  const apiKeyInputType = getSecretInputType(showApiKey);
+  const apiKeyToggleLabel = getSecretToggleLabel(showApiKey);
+  const saveLabel = getSaveButtonLabel(updateRag.isPending);
 
+  // Reset local draft when backend config changes (e.g. after successful save/refetch).
   useEffect(() => {
     setForm({ ...config });
   }, [config]);
@@ -38,7 +48,7 @@ export default function RagTab({ config }: RagTabProps): ReactElement {
   return (
     <Card className="settings-card">
       <Card.Body>
-        <Card.Title className="h6 mb-3">RAG (LightRAG)</Card.Title>
+        <SettingsCardTitle title="RAG (LightRAG)" />
 
         <Form.Check
           type="switch"
@@ -99,24 +109,35 @@ export default function RagTab({ config }: RagTabProps): ReactElement {
           </Col>
           <Col md={12}>
             <Form.Group>
-              <Form.Label className="small fw-medium">API Key (optional)</Form.Label>
+              <Form.Label className="small fw-medium d-flex align-items-center gap-2">
+                API Key (optional)
+                <SecretStatusBadges hasStoredSecret={hasStoredApiKey} willUpdateSecret={willUpdateApiKey} />
+              </Form.Label>
               <InputGroup size="sm">
-                <Form.Control type={showApiKey ? 'text' : 'password'} value={form.apiKey ?? ''}
-                  onChange={(e) => setForm({ ...form, apiKey: toNullableString(e.target.value) })} />
-                <Button variant="secondary" onClick={() => setShowApiKey(!showApiKey)}>
-                  {showApiKey ? 'Hide' : 'Show'}
+                <Form.Control
+                  type={apiKeyInputType}
+                  value={form.apiKey ?? ''}
+                  onChange={(e) => setForm({ ...form, apiKey: toNullableString(e.target.value) })}
+                  placeholder={getSecretPlaceholder(hasStoredApiKey, 'Enter API key')}
+                  autoComplete="new-password"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                />
+                <Button type="button" variant="secondary" onClick={() => setShowApiKey(!showApiKey)}>
+                  {apiKeyToggleLabel}
                 </Button>
               </InputGroup>
             </Form.Group>
           </Col>
         </Row>
 
-        <div className="d-flex align-items-center gap-2 mt-3">
-          <Button variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateRag.isPending}>
-            {updateRag.isPending ? 'Saving...' : 'Save'}
+        <SettingsSaveBar className="mt-3">
+          <Button type="button" variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateRag.isPending}>
+            {saveLabel}
           </Button>
           <SaveStateHint isDirty={isDirty} />
-        </div>
+        </SettingsSaveBar>
       </Card.Body>
     </Card>
   );

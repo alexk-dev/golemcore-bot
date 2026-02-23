@@ -1,12 +1,14 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.adapter.inbound.web.dto.PromptCreateRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.PromptSectionDto;
 import me.golemcore.bot.domain.model.PromptSection;
 import me.golemcore.bot.domain.service.PromptSectionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.port.outbound.StoragePort;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -15,6 +17,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 
 import java.util.Locale;
@@ -28,6 +31,7 @@ import java.util.Optional;
 @RestController
 @RequestMapping("/api/prompts")
 @RequiredArgsConstructor
+@Slf4j
 public class PromptsController {
 
     private static final String PROMPTS_DIR = "prompts";
@@ -47,9 +51,10 @@ public class PromptsController {
     @GetMapping("/{name}")
     public Mono<ResponseEntity<PromptSectionDto>> getSection(@PathVariable String name) {
         Optional<PromptSection> section = promptSectionService.getSection(name);
-        return section
-                .map(s -> Mono.just(ResponseEntity.ok(toDto(s))))
-                .orElse(Mono.just(ResponseEntity.notFound().build()));
+        if (section.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Prompt section '" + name + "' not found");
+        }
+        return Mono.just(ResponseEntity.ok(toDto(section.get())));
     }
 
     @PutMapping("/{name}")
@@ -61,9 +66,11 @@ public class PromptsController {
                 .then(Mono.fromRunnable(promptSectionService::reload))
                 .then(Mono.defer(() -> {
                     Optional<PromptSection> updated = promptSectionService.getSection(name);
-                    return updated
-                            .map(s -> Mono.just(ResponseEntity.ok(toDto(s))))
-                            .orElse(Mono.just(ResponseEntity.notFound().build()));
+                    if (updated.isEmpty()) {
+                        throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                                "Prompt section '" + name + "' not found after update");
+                    }
+                    return Mono.just(ResponseEntity.ok(toDto(updated.get())));
                 }));
     }
 
@@ -71,7 +78,7 @@ public class PromptsController {
     public Mono<ResponseEntity<Map<String, String>>> previewSection(@PathVariable String name) {
         Optional<PromptSection> section = promptSectionService.getSection(name);
         if (section.isEmpty()) {
-            return Mono.just(ResponseEntity.notFound().build());
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Prompt section '" + name + "' not found");
         }
         Map<String, String> vars = promptSectionService.buildTemplateVariables(
                 preferencesService.getPreferences());

@@ -1,6 +1,7 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.adapter.inbound.web.dto.SkillDto;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.service.SkillService;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -29,6 +31,7 @@ import java.util.regex.Pattern;
 @RestController
 @RequestMapping("/api/skills")
 @RequiredArgsConstructor
+@Slf4j
 public class SkillsController {
 
     private static final String SKILLS_DIR = "skills";
@@ -49,9 +52,10 @@ public class SkillsController {
     @GetMapping("/{name}")
     public Mono<ResponseEntity<SkillDto>> getSkill(@PathVariable String name) {
         Optional<Skill> skill = skillService.findByName(name);
-        return skill
-                .map(s -> Mono.just(ResponseEntity.ok(toDetailDto(s))))
-                .orElse(Mono.just(ResponseEntity.notFound().build()));
+        if (skill.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Skill '" + name + "' not found");
+        }
+        return Mono.just(ResponseEntity.ok(toDetailDto(skill.get())));
     }
 
     @PostMapping
@@ -59,13 +63,14 @@ public class SkillsController {
         String name = body.get("name");
         String content = body.get("content");
         if (name == null || name.isBlank() || !VALID_NAME.matcher(name).matches()) {
-            return Mono.just(ResponseEntity.badRequest().build());
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Skill name is required and must match [a-zA-Z0-9][a-zA-Z0-9-]*");
         }
         if (content == null) {
-            return Mono.just(ResponseEntity.badRequest().build());
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill content is required");
         }
         if (skillService.findByName(name).isPresent()) {
-            return Mono.just(ResponseEntity.status(HttpStatus.CONFLICT).build());
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Skill '" + name + "' already exists");
         }
         String path = name + "/SKILL.md";
         return Mono.fromFuture(storagePort.putText(SKILLS_DIR, path, content))
@@ -83,7 +88,7 @@ public class SkillsController {
             @PathVariable String name, @RequestBody Map<String, String> body) {
         String content = body.get("content");
         if (content == null) {
-            return Mono.just(ResponseEntity.badRequest().build());
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill content is required");
         }
         String path = name + "/SKILL.md";
         return Mono.fromFuture(storagePort.putText(SKILLS_DIR, path, content))
@@ -105,7 +110,7 @@ public class SkillsController {
     @DeleteMapping("/{name}")
     public Mono<ResponseEntity<Void>> deleteSkill(@PathVariable String name) {
         if (skillService.findByName(name).isEmpty()) {
-            return Mono.just(ResponseEntity.notFound().build());
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Skill '" + name + "' not found");
         }
         String path = name + "/SKILL.md";
         return Mono.fromFuture(storagePort.deleteObject(SKILLS_DIR, path))

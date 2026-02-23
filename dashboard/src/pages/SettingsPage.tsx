@@ -16,6 +16,8 @@ import TelegramTab from './settings/TelegramTab';
 import ModelsTab from './settings/ModelsTab';
 import LlmProvidersTab from './settings/LlmProvidersTab';
 import VoiceTab from './settings/VoiceTab';
+import WhisperTab from './settings/WhisperTab';
+import VoiceRoutingTab from './settings/VoiceRoutingTab';
 import MemoryTab from './settings/MemoryTab';
 import SkillsTab from './settings/SkillsTab';
 import TurnTab from './settings/TurnTab';
@@ -23,6 +25,7 @@ import UsageTab from './settings/UsageTab';
 import RagTab from './settings/RagTab';
 import McpTab from './settings/McpTab';
 import AutoModeTab from './settings/AutoModeTab';
+import { UpdatesTab } from './settings/UpdatesTab';
 import {
   SETTINGS_BLOCKS,
   SETTINGS_SECTIONS,
@@ -76,7 +79,7 @@ export default function SettingsPage(): ReactElement {
         {SETTINGS_BLOCKS.map((block) => (
           <div key={block.key} className="mb-4">
             <div className="mb-2">
-              <h6 className="mb-1">{block.title}</h6>
+              <h2 className="h6 mb-1">{block.title}</h2>
               <p className="text-body-secondary small mb-0">{block.description}</p>
             </div>
             <Row className="g-3">
@@ -90,13 +93,13 @@ export default function SettingsPage(): ReactElement {
                   <Col sm={6} lg={4} xl={3} key={item.key}>
                     <Card className="settings-card h-100">
                       <Card.Body className="d-flex flex-column">
-                        <div className="d-flex align-items-center gap-2 mb-2">
-                           <span className="text-primary"><item.icon size={18} /></span>
-                          <Card.Title className="h6 mb-0">{item.title}</Card.Title>
-                        </div>
+                        <h3 className="h6 mb-2 settings-catalog-title">
+                          <span className="text-primary"><item.icon size={18} /></span>
+                          <span>{item.title}</span>
+                        </h3>
                         <Card.Text className="text-body-secondary small mb-3">{item.description}</Card.Text>
                         <div className="mt-auto">
-                          <Button size="sm" variant="primary" onClick={() => navigate(`/settings/${item.key}`)}>
+                          <Button type="button" size="sm" variant="primary" onClick={() => navigate(`/settings/${item.key}`)}>
                             Open
                           </Button>
                         </div>
@@ -119,7 +122,7 @@ export default function SettingsPage(): ReactElement {
         <p className="text-body-secondary mb-0">{sectionMeta?.description ?? 'Configure your GolemCore instance'}</p>
       </div>
       <div className="mb-3">
-        <Button variant="secondary" size="sm" onClick={() => navigate('/settings')}>
+        <Button type="button" variant="secondary" size="sm" onClick={() => navigate('/settings')}>
           Back to catalog
         </Button>
       </div>
@@ -136,8 +139,10 @@ export default function SettingsPage(): ReactElement {
       {selectedSection === 'tool-email' && rc != null && <ToolsTab config={rc.tools} mode="email" />}
       {selectedSection === 'tool-automation' && rc != null && <ToolsTab config={rc.tools} mode="automation" />}
       {selectedSection === 'tool-goals' && rc != null && <ToolsTab config={rc.tools} mode="goals" />}
+      {selectedSection === 'tool-voice' && rc != null && <VoiceRoutingTab config={rc.voice} />}
 
       {selectedSection === 'voice-elevenlabs' && rc != null && <VoiceTab config={rc.voice} />}
+      {selectedSection === 'voice-whisper' && rc != null && <WhisperTab config={rc.voice} />}
       {selectedSection === 'memory' && rc != null && <MemoryTab config={rc.memory} />}
       {selectedSection === 'skills' && rc != null && <SkillsTab config={rc.skills} />}
       {selectedSection === 'turn' && rc != null && <TurnTab config={rc.turn} />}
@@ -146,6 +151,7 @@ export default function SettingsPage(): ReactElement {
       {selectedSection === 'mcp' && rc != null && <McpTab config={rc.mcp} />}
       {selectedSection === 'webhooks' && <WebhooksTab />}
       {selectedSection === 'auto' && rc != null && <AutoModeTab config={rc.autoMode} />}
+      {selectedSection === 'updates' && <UpdatesTab />}
 
       {selectedSection === 'advanced-rate-limit' && rc != null && (
         <AdvancedTab rateLimit={rc.rateLimit} security={rc.security} compaction={rc.compaction} mode="rateLimit" />

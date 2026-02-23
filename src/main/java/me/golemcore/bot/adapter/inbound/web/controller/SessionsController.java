@@ -1,11 +1,13 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionDetailDto;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionSummaryDto;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.port.outbound.SessionPort;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -14,6 +16,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 
 import java.util.Comparator;
@@ -27,6 +30,7 @@ import java.util.Optional;
 @RestController
 @RequestMapping("/api/sessions")
 @RequiredArgsConstructor
+@Slf4j
 public class SessionsController {
 
     private final SessionPort sessionPort;
@@ -48,9 +52,10 @@ public class SessionsController {
     @GetMapping("/{id}")
     public Mono<ResponseEntity<SessionDetailDto>> getSession(@PathVariable String id) {
         Optional<AgentSession> session = sessionPort.get(id);
-        return session
-                .map(s -> Mono.just(ResponseEntity.ok(toDetail(s))))
-                .orElse(Mono.just(ResponseEntity.notFound().build()));
+        if (session.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found");
+        }
+        return Mono.just(ResponseEntity.ok(toDetail(session.get())));
     }
 
     @DeleteMapping("/{id}")

@@ -18,6 +18,7 @@ import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.SkillTemplateEngine;
 import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.service.WorkspaceInstructionService;
 import me.golemcore.bot.domain.system.toolloop.DefaultHistoryWriter;
 import me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem;
 import me.golemcore.bot.domain.system.toolloop.ToolExecutorPort;
@@ -198,6 +199,8 @@ class PlanWorkLifecycleBddTest {
         RagPort ragPort = mock(RagPort.class);
         AutoModeService autoModeService = mock(AutoModeService.class);
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        WorkspaceInstructionService workspaceInstructionService = mock(WorkspaceInstructionService.class);
+        when(workspaceInstructionService.getWorkspaceInstructionsContext()).thenReturn("");
 
         return new ContextBuildingSystem(
                 memoryComponent,
@@ -212,6 +215,7 @@ class PlanWorkLifecycleBddTest {
                 planService,
                 promptSectionService,
                 runtimeConfigService,
-                userPreferencesService);
+                userPreferencesService,
+                workspaceInstructionService);
     }
 }

@@ -4,7 +4,7 @@ Get GolemCore Bot running quickly (Docker or JAR) and configure it via the web d
 
 ## Prerequisites
 
-- 🐳 Docker (recommended) OR ☕ Java 17+ with Maven 3.x
+- 🐳 Docker (recommended) OR ☕ Java 25+ with Maven 3.x
 
 ## Method 1: Docker (Recommended)
 
@@ -48,7 +48,7 @@ See: [Dashboard Guide](DASHBOARD.md)
 
 ### 4. Configure LLM Providers
 
-In the dashboard Settings, set at least one provider API key (stored in `preferences/runtime-config.json`).
+In the dashboard Settings, set at least one provider API key and API type (stored in `preferences/runtime-config.json`).
 
 Example runtime config snippet:
 
@@ -56,8 +56,9 @@ Example runtime config snippet:
 {
   "llm": {
     "providers": {
-      "openai": { "apiKey": "sk-proj-..." },
-      "anthropic": { "apiKey": "sk-ant-..." }
+      "openai": { "apiKey": "sk-proj-...", "apiType": "openai" },
+      "anthropic": { "apiKey": "sk-ant-...", "apiType": "anthropic" },
+      "google": { "apiKey": "AIza...", "apiType": "gemini" }
     }
   }
 }

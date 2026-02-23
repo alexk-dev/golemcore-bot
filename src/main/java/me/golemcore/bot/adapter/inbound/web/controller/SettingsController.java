@@ -4,14 +4,17 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.adapter.inbound.web.dto.PreferencesUpdateRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.SettingsResponse;
+import me.golemcore.bot.domain.model.MemoryPreset;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.TelegramRestartEvent;
 import me.golemcore.bot.domain.model.UserPreferences;
+import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,14 +24,17 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * Settings and preferences management endpoints.
@@ -39,12 +45,31 @@ import java.util.Set;
 @Slf4j
 public class SettingsController {
 
-    private static final String TELEGRAM_AUTH_MODE_USER = "user";
-    private static final String TELEGRAM_AUTH_MODE_INVITE = "invite_only";
+    private static final String TELEGRAM_AUTH_MODE_INVITE_ONLY = "invite_only";
+    private static final String STT_PROVIDER_ELEVENLABS = "elevenlabs";
+    private static final String STT_PROVIDER_WHISPER = "whisper";
+    private static final String TTS_PROVIDER_ELEVENLABS = "elevenlabs";
+    private static final Set<String> VALID_STT_PROVIDERS = Set.of(STT_PROVIDER_ELEVENLABS, STT_PROVIDER_WHISPER);
+    private static final Set<String> VALID_API_TYPES = Set.of("openai", "anthropic", "gemini");
+    private static final int MEMORY_SOFT_BUDGET_MIN = 200;
+    private static final int MEMORY_SOFT_BUDGET_MAX = 10000;
+    private static final int MEMORY_MAX_BUDGET_MIN = 200;
+    private static final int MEMORY_MAX_BUDGET_MAX = 12000;
+    private static final int MEMORY_TOP_K_MIN = 0;
+    private static final int MEMORY_TOP_K_MAX = 30;
+    private static final int MEMORY_DECAY_DAYS_MIN = 1;
+    private static final int MEMORY_DECAY_DAYS_MAX = 3650;
+    private static final int MEMORY_RETRIEVAL_LOOKBACK_DAYS_MIN = 1;
+    private static final int MEMORY_RETRIEVAL_LOOKBACK_DAYS_MAX = 90;
+    private static final Pattern SHELL_ENV_VAR_NAME_PATTERN = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
+    private static final Set<String> RESERVED_SHELL_ENV_VAR_NAMES = Set.of("HOME", "PWD");
+    private static final int SHELL_ENV_VAR_NAME_MAX_LENGTH = 128;
+    private static final int SHELL_ENV_VAR_VALUE_MAX_LENGTH = 8192;
 
     private final UserPreferencesService preferencesService;
     private final ModelSelectionService modelSelectionService;
     private final RuntimeConfigService runtimeConfigService;
+    private final MemoryPresetService memoryPresetService;
     private final ApplicationEventPublisher eventPublisher;
 
     @GetMapping
@@ -124,8 +149,17 @@ public class SettingsController {
 
     @PutMapping("/runtime")
     public Mono<ResponseEntity<RuntimeConfig>> updateRuntimeConfig(@RequestBody RuntimeConfig config) {
+        if (config.getTelegram() == null) {
+            config.setTelegram(new RuntimeConfig.TelegramConfig());
+        }
+        normalizeAndValidateTelegramConfig(config.getTelegram());
         mergeRuntimeSecrets(runtimeConfigService.getRuntimeConfig(), config);
+        normalizeAndValidateShellEnvironmentVariables(config.getTools());
         validateLlmConfig(config.getLlm(), config.getModelRouter());
+        if (config.getMemory() != null) {
+            validateMemoryConfig(config.getMemory());
+        }
+        validateVoiceConfig(config.getVoice());
         runtimeConfigService.updateRuntimeConfig(config);
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
@@ -207,10 +241,11 @@ public class SettingsController {
                     "Cannot remove provider '" + normalizedName + "' because it is used by model router tiers");
         }
         boolean removed = runtimeConfigService.removeLlmProvider(normalizedName);
-        if (removed) {
-            return Mono.just(ResponseEntity.ok().build());
+        if (!removed) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Provider '" + normalizedName + "' not found");
         }
-        return Mono.just(ResponseEntity.notFound().build());
+        return Mono.just(ResponseEntity.ok().build());
     }
 
     private void validateProviderConfig(String name, RuntimeConfig.LlmProviderConfig config) {
@@ -227,6 +262,11 @@ public class SettingsController {
             throw new IllegalArgumentException(
                     "llm.providers." + name + ".baseUrl must be a valid http(s) URL");
         }
+        String apiType = config.getApiType();
+        if (apiType != null && !apiType.isBlank() && !VALID_API_TYPES.contains(apiType.toLowerCase(Locale.ROOT))) {
+            throw new IllegalArgumentException(
+                    "llm.providers." + name + ".apiType must be one of " + VALID_API_TYPES);
+        }
     }
 
     @PutMapping("/runtime/tools")
@@ -234,7 +274,90 @@ public class SettingsController {
             @RequestBody RuntimeConfig.ToolsConfig toolsConfig) {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         mergeToolsSecrets(config.getTools(), toolsConfig);
+        normalizeAndValidateShellEnvironmentVariables(toolsConfig);
         config.setTools(toolsConfig);
+        runtimeConfigService.updateRuntimeConfig(config);
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    }
+
+    @GetMapping("/runtime/tools/shell/env")
+    public Mono<ResponseEntity<List<RuntimeConfig.ShellEnvironmentVariable>>> getShellEnvironmentVariables() {
+        RuntimeConfig.ToolsConfig toolsConfig = runtimeConfigService.getRuntimeConfigForApi().getTools();
+        List<RuntimeConfig.ShellEnvironmentVariable> variables = toolsConfig != null
+                && toolsConfig.getShellEnvironmentVariables() != null
+                        ? toolsConfig.getShellEnvironmentVariables()
+                        : List.of();
+        return Mono.just(ResponseEntity.ok(variables));
+    }
+
+    @PostMapping("/runtime/tools/shell/env")
+    public Mono<ResponseEntity<RuntimeConfig>> createShellEnvironmentVariable(
+            @RequestBody RuntimeConfig.ShellEnvironmentVariable variable) {
+        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        RuntimeConfig.ToolsConfig toolsConfig = ensureToolsConfig(config);
+        List<RuntimeConfig.ShellEnvironmentVariable> variables = ensureShellEnvironmentVariables(toolsConfig);
+
+        RuntimeConfig.ShellEnvironmentVariable normalized = normalizeAndValidateShellEnvironmentVariable(variable);
+        if (containsShellEnvironmentVariableName(variables, normalized.getName())) {
+            throw new IllegalArgumentException(
+                    "tools.shellEnvironmentVariables contains duplicate name: " + normalized.getName());
+        }
+        variables.add(normalized);
+        runtimeConfigService.updateRuntimeConfig(config);
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    }
+
+    @PutMapping("/runtime/tools/shell/env/{name}")
+    public Mono<ResponseEntity<RuntimeConfig>> updateShellEnvironmentVariable(
+            @PathVariable String name,
+            @RequestBody RuntimeConfig.ShellEnvironmentVariable variable) {
+        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        RuntimeConfig.ToolsConfig toolsConfig = ensureToolsConfig(config);
+        List<RuntimeConfig.ShellEnvironmentVariable> variables = ensureShellEnvironmentVariables(toolsConfig);
+        String normalizedCurrentName = normalizeAndValidateShellEnvironmentVariableName(name);
+
+        int index = findShellEnvironmentVariableIndex(variables, normalizedCurrentName);
+        if (index < 0) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Shell environment variable '" + normalizedCurrentName + "' not found");
+        }
+
+        RuntimeConfig.ShellEnvironmentVariable source = variable != null ? variable
+                : RuntimeConfig.ShellEnvironmentVariable.builder().build();
+        String updatedName = source.getName() == null || source.getName().isBlank()
+                ? normalizedCurrentName
+                : source.getName();
+        RuntimeConfig.ShellEnvironmentVariable normalizedUpdated = normalizeAndValidateShellEnvironmentVariable(
+                RuntimeConfig.ShellEnvironmentVariable.builder()
+                        .name(updatedName)
+                        .value(source.getValue())
+                        .build());
+
+        if (!normalizedCurrentName.equals(normalizedUpdated.getName())
+                && containsShellEnvironmentVariableName(variables, normalizedUpdated.getName())) {
+            throw new IllegalArgumentException(
+                    "tools.shellEnvironmentVariables contains duplicate name: " + normalizedUpdated.getName());
+        }
+
+        variables.set(index, normalizedUpdated);
+        runtimeConfigService.updateRuntimeConfig(config);
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    }
+
+    @DeleteMapping("/runtime/tools/shell/env/{name}")
+    public Mono<ResponseEntity<RuntimeConfig>> deleteShellEnvironmentVariable(@PathVariable String name) {
+        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        RuntimeConfig.ToolsConfig toolsConfig = ensureToolsConfig(config);
+        List<RuntimeConfig.ShellEnvironmentVariable> variables = ensureShellEnvironmentVariables(toolsConfig);
+        String normalizedName = normalizeAndValidateShellEnvironmentVariableName(name);
+
+        int index = findShellEnvironmentVariableIndex(variables, normalizedName);
+        if (index < 0) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Shell environment variable '" + normalizedName + "' not found");
+        }
+
+        variables.remove(index);
         runtimeConfigService.updateRuntimeConfig(config);
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
@@ -244,6 +367,9 @@ public class SettingsController {
             @RequestBody RuntimeConfig.VoiceConfig voiceConfig) {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         voiceConfig.setApiKey(mergeSecret(config.getVoice().getApiKey(), voiceConfig.getApiKey()));
+        voiceConfig.setWhisperSttApiKey(
+                mergeSecret(config.getVoice().getWhisperSttApiKey(), voiceConfig.getWhisperSttApiKey()));
+        validateVoiceConfig(voiceConfig);
         config.setVoice(voiceConfig);
         runtimeConfigService.updateRuntimeConfig(config);
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
@@ -261,10 +387,16 @@ public class SettingsController {
     @PutMapping("/runtime/memory")
     public Mono<ResponseEntity<RuntimeConfig>> updateMemoryConfig(
             @RequestBody RuntimeConfig.MemoryConfig memoryConfig) {
+        validateMemoryConfig(memoryConfig);
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         config.setMemory(memoryConfig);
         runtimeConfigService.updateRuntimeConfig(config);
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    }
+
+    @GetMapping("/runtime/memory/presets")
+    public Mono<ResponseEntity<List<MemoryPreset>>> getMemoryPresets() {
+        return Mono.just(ResponseEntity.ok(memoryPresetService.getPresets()));
     }
 
     @PutMapping("/runtime/skills")
@@ -351,10 +483,22 @@ public class SettingsController {
     @DeleteMapping("/telegram/invite-codes/{code}")
     public Mono<ResponseEntity<Void>> revokeInviteCode(@PathVariable String code) {
         boolean revoked = runtimeConfigService.revokeInviteCode(code);
-        if (revoked) {
-            return Mono.just(ResponseEntity.ok().build());
+        if (!revoked) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Invite code not found");
         }
-        return Mono.just(ResponseEntity.notFound().build());
+        return Mono.just(ResponseEntity.ok().build());
+    }
+
+    @DeleteMapping("/telegram/allowed-users/{userId}")
+    public Mono<ResponseEntity<Void>> removeTelegramAllowedUser(@PathVariable String userId) {
+        if (userId == null || !userId.matches("\\d+")) {
+            throw new IllegalArgumentException("telegram.userId must be numeric");
+        }
+        boolean removed = runtimeConfigService.removeTelegramAllowedUser(userId);
+        if (!removed) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Telegram user not found");
+        }
+        return Mono.just(ResponseEntity.ok().build());
     }
 
     // ==================== Telegram Restart ====================
@@ -377,18 +521,11 @@ public class SettingsController {
     }
 
     private void normalizeAndValidateTelegramConfig(RuntimeConfig.TelegramConfig telegramConfig) {
-        String authMode = telegramConfig.getAuthMode();
-        if (authMode == null || authMode.isBlank()) {
-            throw new IllegalArgumentException("telegram.authMode is required");
-        }
-
-        if (!TELEGRAM_AUTH_MODE_USER.equals(authMode) && !TELEGRAM_AUTH_MODE_INVITE.equals(authMode)) {
-            throw new IllegalArgumentException("telegram.authMode must be 'user' or 'invite_only'");
-        }
+        telegramConfig.setAuthMode(TELEGRAM_AUTH_MODE_INVITE_ONLY);
 
         List<String> allowedUsers = telegramConfig.getAllowedUsers();
         if (allowedUsers == null) {
-            telegramConfig.setAllowedUsers(List.of());
+            telegramConfig.setAllowedUsers(new ArrayList<>());
             return;
         }
 
@@ -398,16 +535,8 @@ public class SettingsController {
             }
         }
 
-        if (TELEGRAM_AUTH_MODE_USER.equals(authMode) && allowedUsers.size() > 1) {
-            throw new IllegalArgumentException("telegram.allowedUsers supports only one ID in user mode");
-        }
-
-        if (TELEGRAM_AUTH_MODE_USER.equals(authMode) && allowedUsers.isEmpty()) {
-            throw new IllegalArgumentException("telegram.allowedUsers must contain one ID in user mode");
-        }
-
-        if (TELEGRAM_AUTH_MODE_INVITE.equals(authMode) && !allowedUsers.isEmpty()) {
-            throw new IllegalArgumentException("telegram.allowedUsers must be empty in invite_only mode");
+        if (allowedUsers.size() > 1) {
+            throw new IllegalArgumentException("telegram.allowedUsers supports only one invited user");
         }
     }
 
@@ -461,6 +590,13 @@ public class SettingsController {
                             "llm.providers." + providerName + ".baseUrl must be a valid http(s) URL");
                 }
             }
+
+            String apiType = providerConfig.getApiType();
+            if (apiType != null && !apiType.isBlank()
+                    && !VALID_API_TYPES.contains(apiType.toLowerCase(Locale.ROOT))) {
+                throw new IllegalArgumentException(
+                        "llm.providers." + providerName + ".apiType must be one of " + VALID_API_TYPES);
+            }
         }
 
         Set<String> providersUsedByModelRouter = getProvidersUsedByModelRouter(modelRouterConfig);
@@ -470,6 +606,189 @@ public class SettingsController {
                         "Cannot remove provider '" + usedProvider + "' because it is used by model router tiers");
             }
         }
+    }
+
+    private void validateMemoryConfig(RuntimeConfig.MemoryConfig memoryConfig) {
+        if (memoryConfig == null) {
+            throw new IllegalArgumentException("memory config is required");
+        }
+
+        validateNullableInteger(memoryConfig.getSoftPromptBudgetTokens(), MEMORY_SOFT_BUDGET_MIN,
+                MEMORY_SOFT_BUDGET_MAX,
+                "memory.softPromptBudgetTokens");
+        validateNullableInteger(memoryConfig.getMaxPromptBudgetTokens(), MEMORY_MAX_BUDGET_MIN, MEMORY_MAX_BUDGET_MAX,
+                "memory.maxPromptBudgetTokens");
+        validateNullableInteger(memoryConfig.getWorkingTopK(), MEMORY_TOP_K_MIN, MEMORY_TOP_K_MAX,
+                "memory.workingTopK");
+        validateNullableInteger(memoryConfig.getEpisodicTopK(), MEMORY_TOP_K_MIN, MEMORY_TOP_K_MAX,
+                "memory.episodicTopK");
+        validateNullableInteger(memoryConfig.getSemanticTopK(), MEMORY_TOP_K_MIN, MEMORY_TOP_K_MAX,
+                "memory.semanticTopK");
+        validateNullableInteger(memoryConfig.getProceduralTopK(), MEMORY_TOP_K_MIN, MEMORY_TOP_K_MAX,
+                "memory.proceduralTopK");
+        validateNullableDouble(memoryConfig.getPromotionMinConfidence(), 0.0, 1.0, "memory.promotionMinConfidence");
+        validateNullableInteger(memoryConfig.getDecayDays(), MEMORY_DECAY_DAYS_MIN, MEMORY_DECAY_DAYS_MAX,
+                "memory.decayDays");
+        validateNullableInteger(memoryConfig.getRetrievalLookbackDays(), MEMORY_RETRIEVAL_LOOKBACK_DAYS_MIN,
+                MEMORY_RETRIEVAL_LOOKBACK_DAYS_MAX, "memory.retrievalLookbackDays");
+
+        Integer softBudget = memoryConfig.getSoftPromptBudgetTokens();
+        Integer maxBudget = memoryConfig.getMaxPromptBudgetTokens();
+        if (softBudget != null && maxBudget != null && maxBudget < softBudget) {
+            throw new IllegalArgumentException(
+                    "memory.maxPromptBudgetTokens must be greater than or equal to memory.softPromptBudgetTokens");
+        }
+    }
+
+    private void validateNullableInteger(Integer value, int min, int max, String fieldName) {
+        if (value == null) {
+            return;
+        }
+        if (value < min || value > max) {
+            throw new IllegalArgumentException(fieldName + " must be between " + min + " and " + max);
+        }
+    }
+
+    private void validateNullableDouble(Double value, double min, double max, String fieldName) {
+        if (value == null) {
+            return;
+        }
+        if (value < min || value > max) {
+            throw new IllegalArgumentException(fieldName + " must be between " + min + " and " + max);
+        }
+    }
+
+    private void validateVoiceConfig(RuntimeConfig.VoiceConfig voiceConfig) {
+        if (voiceConfig == null) {
+            return;
+        }
+
+        String normalizedSttProvider = normalizeProvider(voiceConfig.getSttProvider(), STT_PROVIDER_ELEVENLABS);
+        if (!VALID_STT_PROVIDERS.contains(normalizedSttProvider)) {
+            throw new IllegalArgumentException("voice.sttProvider must be one of " + VALID_STT_PROVIDERS);
+        }
+        voiceConfig.setSttProvider(normalizedSttProvider);
+
+        String normalizedTtsProvider = normalizeProvider(voiceConfig.getTtsProvider(), TTS_PROVIDER_ELEVENLABS);
+        if (!TTS_PROVIDER_ELEVENLABS.equals(normalizedTtsProvider)) {
+            throw new IllegalArgumentException("voice.ttsProvider must be '" + TTS_PROVIDER_ELEVENLABS + "'");
+        }
+        voiceConfig.setTtsProvider(normalizedTtsProvider);
+
+        String whisperSttUrl = voiceConfig.getWhisperSttUrl();
+        if (whisperSttUrl != null && whisperSttUrl.isBlank()) {
+            voiceConfig.setWhisperSttUrl(null);
+        }
+        String effectiveWhisperSttUrl = voiceConfig.getWhisperSttUrl();
+        if (STT_PROVIDER_WHISPER.equals(normalizedSttProvider)) {
+            if (effectiveWhisperSttUrl == null || effectiveWhisperSttUrl.isBlank()) {
+                throw new IllegalArgumentException(
+                        "voice.whisperSttUrl is required when voice.sttProvider is 'whisper'");
+            }
+            if (!isValidHttpUrl(effectiveWhisperSttUrl)) {
+                throw new IllegalArgumentException("voice.whisperSttUrl must be a valid http(s) URL");
+            }
+        }
+    }
+
+    private RuntimeConfig.ToolsConfig ensureToolsConfig(RuntimeConfig config) {
+        RuntimeConfig.ToolsConfig toolsConfig = config.getTools();
+        if (toolsConfig == null) {
+            toolsConfig = RuntimeConfig.ToolsConfig.builder().build();
+            config.setTools(toolsConfig);
+        }
+        return toolsConfig;
+    }
+
+    private List<RuntimeConfig.ShellEnvironmentVariable> ensureShellEnvironmentVariables(
+            RuntimeConfig.ToolsConfig toolsConfig) {
+        List<RuntimeConfig.ShellEnvironmentVariable> variables = toolsConfig.getShellEnvironmentVariables();
+        if (variables == null) {
+            variables = new ArrayList<>();
+            toolsConfig.setShellEnvironmentVariables(variables);
+        }
+        return variables;
+    }
+
+    private void normalizeAndValidateShellEnvironmentVariables(RuntimeConfig.ToolsConfig toolsConfig) {
+        if (toolsConfig == null) {
+            return;
+        }
+        List<RuntimeConfig.ShellEnvironmentVariable> variables = toolsConfig.getShellEnvironmentVariables();
+        if (variables == null || variables.isEmpty()) {
+            toolsConfig.setShellEnvironmentVariables(new ArrayList<>());
+            return;
+        }
+
+        List<RuntimeConfig.ShellEnvironmentVariable> normalized = new ArrayList<>(variables.size());
+        Set<String> names = new LinkedHashSet<>();
+        for (RuntimeConfig.ShellEnvironmentVariable variable : variables) {
+            RuntimeConfig.ShellEnvironmentVariable normalizedVariable = normalizeAndValidateShellEnvironmentVariable(
+                    variable);
+            if (!names.add(normalizedVariable.getName())) {
+                throw new IllegalArgumentException(
+                        "tools.shellEnvironmentVariables contains duplicate name: " + normalizedVariable.getName());
+            }
+            normalized.add(normalizedVariable);
+        }
+        toolsConfig.setShellEnvironmentVariables(normalized);
+    }
+
+    private RuntimeConfig.ShellEnvironmentVariable normalizeAndValidateShellEnvironmentVariable(
+            RuntimeConfig.ShellEnvironmentVariable variable) {
+        if (variable == null) {
+            throw new IllegalArgumentException("tools.shellEnvironmentVariables item is required");
+        }
+        String normalizedName = normalizeAndValidateShellEnvironmentVariableName(variable.getName());
+        String normalizedValue = normalizeAndValidateShellEnvironmentVariableValue(variable.getValue(), normalizedName);
+        return RuntimeConfig.ShellEnvironmentVariable.builder()
+                .name(normalizedName)
+                .value(normalizedValue)
+                .build();
+    }
+
+    private String normalizeAndValidateShellEnvironmentVariableName(String value) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("tools.shellEnvironmentVariables.name is required");
+        }
+        String normalized = value.trim();
+        if (normalized.length() > SHELL_ENV_VAR_NAME_MAX_LENGTH) {
+            throw new IllegalArgumentException("tools.shellEnvironmentVariables.name must be at most "
+                    + SHELL_ENV_VAR_NAME_MAX_LENGTH + " characters");
+        }
+        if (!SHELL_ENV_VAR_NAME_PATTERN.matcher(normalized).matches()) {
+            throw new IllegalArgumentException(
+                    "tools.shellEnvironmentVariables.name must match [A-Za-z_][A-Za-z0-9_]*");
+        }
+        if (RESERVED_SHELL_ENV_VAR_NAMES.contains(normalized)) {
+            throw new IllegalArgumentException(
+                    "tools.shellEnvironmentVariables.name must not redefine reserved variable: " + normalized);
+        }
+        return normalized;
+    }
+
+    private String normalizeAndValidateShellEnvironmentVariableValue(String value, String normalizedName) {
+        String normalizedValue = value != null ? value : "";
+        if (normalizedValue.length() > SHELL_ENV_VAR_VALUE_MAX_LENGTH) {
+            throw new IllegalArgumentException("tools.shellEnvironmentVariables." + normalizedName
+                    + ".value must be at most " + SHELL_ENV_VAR_VALUE_MAX_LENGTH + " characters");
+        }
+        return normalizedValue;
+    }
+
+    private boolean containsShellEnvironmentVariableName(List<RuntimeConfig.ShellEnvironmentVariable> variables,
+            String name) {
+        return findShellEnvironmentVariableIndex(variables, name) >= 0;
+    }
+
+    private int findShellEnvironmentVariableIndex(List<RuntimeConfig.ShellEnvironmentVariable> variables, String name) {
+        for (int index = 0; index < variables.size(); index++) {
+            RuntimeConfig.ShellEnvironmentVariable variable = variables.get(index);
+            if (variable != null && name.equals(variable.getName())) {
+                return index;
+            }
+        }
+        return -1;
     }
 
     private Set<String> getProvidersUsedByModelRouter(RuntimeConfig.ModelRouterConfig modelRouterConfig) {
@@ -506,6 +825,8 @@ public class SettingsController {
         }
         if (incoming.getVoice() != null && current.getVoice() != null) {
             incoming.getVoice().setApiKey(mergeSecret(current.getVoice().getApiKey(), incoming.getVoice().getApiKey()));
+            incoming.getVoice().setWhisperSttApiKey(
+                    mergeSecret(current.getVoice().getWhisperSttApiKey(), incoming.getVoice().getWhisperSttApiKey()));
         }
         if (incoming.getRag() != null && current.getRag() != null) {
             incoming.getRag().setApiKey(mergeSecret(current.getRag().getApiKey(), incoming.getRag().getApiKey()));
@@ -596,6 +917,13 @@ public class SettingsController {
                 .encrypted(Boolean.TRUE.equals(incoming.getEncrypted()))
                 .present(true)
                 .build();
+    }
+
+    private String normalizeProvider(String value, String fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        return value.trim().toLowerCase(Locale.ROOT);
     }
 
     private boolean isValidHttpUrl(String value) {

@@ -45,6 +45,8 @@ import me.golemcore.bot.port.inbound.CommandPort;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.info.BuildProperties;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
@@ -127,6 +129,7 @@ public class CommandRouter implements CommandPort {
     private final ApplicationEventPublisher eventPublisher;
     private final BotProperties properties;
     private final RuntimeConfigService runtimeConfigService;
+    private final ObjectProvider<BuildProperties> buildPropertiesProvider;
 
     private static final List<String> KNOWN_COMMANDS = List.of(
             "skills", "tools", CMD_STATUS, "new", SUBCMD_RESET, "compact", CMD_HELP,
@@ -151,7 +154,8 @@ public class CommandRouter implements CommandPort {
             SessionRunCoordinator runCoordinator,
             ApplicationEventPublisher eventPublisher,
             BotProperties properties,
-            RuntimeConfigService runtimeConfigService) {
+            RuntimeConfigService runtimeConfigService,
+            ObjectProvider<BuildProperties> buildPropertiesProvider) {
         this.skillComponent = skillComponent;
         this.toolComponents = toolComponents;
         this.sessionService = sessionService;
@@ -167,6 +171,7 @@ public class CommandRouter implements CommandPort {
         this.eventPublisher = eventPublisher;
         this.properties = properties;
         this.runtimeConfigService = runtimeConfigService;
+        this.buildPropertiesProvider = buildPropertiesProvider;
         log.info("CommandRouter initialized with commands: {}", KNOWN_COMMANDS);
     }
 
@@ -297,6 +302,12 @@ public class CommandRouter implements CommandPort {
 
     private CommandResult handleStatus(String sessionId) {
         StringBuilder sb = new StringBuilder();
+
+        BuildProperties buildProps = buildPropertiesProvider.getIfAvailable();
+        if (buildProps != null) {
+            sb.append(msg("command.status.version", buildProps.getVersion())).append(DOUBLE_NEWLINE);
+        }
+
         sb.append("**").append(msg("command.status.title")).append("**").append(DOUBLE_NEWLINE);
 
         int messageCount = sessionService.getMessageCount(sessionId);

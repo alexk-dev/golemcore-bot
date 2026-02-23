@@ -1,0 +1,21 @@
+from_latest_tag = true
+tag_prefix = "v"
+branch_whitelist = ["main"]
+
+# Skip pom.xml version bump — jgitver handles it from git tags
+pre_bump_hooks = []
+post_bump_hooks = []
+
+[commit_types]
+feat = { changelog_title = "Features" }
+fix = { changelog_title = "Bug Fixes" }
+refactor = { changelog_title = "Refactoring" }
+perf = { changelog_title = "Performance" }
+test = { changelog_title = "Tests", bump_minor = false, bump_patch = false }
+docs = { changelog_title = "Documentation", bump_minor = false, bump_patch = false }
+style = { changelog_title = "Style", bump_minor = false, bump_patch = false }
+chore = { changelog_title = "Miscellaneous", bump_minor = false, bump_patch = false }
+ci = { changelog_title = "CI/CD", bump_minor = false, bump_patch = false }
+
+[changelog]
+path = "CHANGELOG.md"

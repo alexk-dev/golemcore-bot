@@ -102,6 +102,16 @@ Switch model tier mid-conversation (`balanced`, `smart`, `coding`, `deep`).
 
 Auto Mode goal/task/diary management.
 
+### `memory`
+
+Structured memory operations for autonomous workflows.
+
+Operations:
+
+- `memory_add`, `memory_search`, `memory_update`, `memory_promote`, `memory_forget`
+
+This tool uses Memory V2 APIs (no direct filesystem assumptions for memory writes).
+
 ### `imap` / `smtp`
 
 Email tools.

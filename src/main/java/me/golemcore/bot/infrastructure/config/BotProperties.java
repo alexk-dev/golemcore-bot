@@ -68,6 +68,7 @@ public class BotProperties {
     private ToolLoopProperties toolLoop = new ToolLoopProperties();
     private PlanProperties plan = new PlanProperties();
     private DashboardProperties dashboard = new DashboardProperties();
+    private UpdateProperties update = new UpdateProperties();
 
     @Data
     public static class LlmProperties {
@@ -102,7 +103,6 @@ public class BotProperties {
     @Data
     public static class MemoryProperties {
         private String directory = "memory";
-        private int recentDays = 7;
     }
 
     @Data
@@ -114,12 +114,6 @@ public class BotProperties {
 
     @Data
     public static class SecurityProperties {
-        private AllowlistProperties allowlist = new AllowlistProperties();
-    }
-
-    @Data
-    public static class AllowlistProperties {
-        private List<String> blockedUsers = new ArrayList<>();
     }
 
     @Data
@@ -275,6 +269,27 @@ public class BotProperties {
         private int jwtExpirationMinutes = 30;
         private int refreshExpirationDays = 7;
         private String corsAllowedOrigins = "";
+        private LogsProperties logs = new LogsProperties();
+    }
+
+    @Data
+    public static class LogsProperties {
+        private boolean enabled = true;
+        private int maxEntries = 10000;
+        private int defaultPageSize = 200;
+        private int maxPageSize = 1000;
+        private int maxMessageChars = 8000;
+        private int maxExceptionChars = 16000;
+    }
+
+    // ==================== SELF-UPDATE ====================
+
+    @Data
+    public static class UpdateProperties {
+        private boolean enabled = true;
+        private String updatesPath = "${bot.storage.local.base-path}/updates";
+        private int maxKeptVersions = 3;
+        private java.time.Duration checkInterval = java.time.Duration.ofHours(1);
     }
 
     // ==================== PROMPTS (system prompt sections) ====================

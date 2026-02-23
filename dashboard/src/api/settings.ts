@@ -16,7 +16,58 @@ function scrubSecret(): null {
   return null;
 }
 
+function hasSecretValue(secret: unknown): boolean {
+  if (secret == null || typeof secret !== 'object') {
+    return false;
+  }
+  const value = (secret as UnknownRecord).value;
+  const present = (secret as UnknownRecord).present;
+  return Boolean(present) || (typeof value === 'string' && value.length > 0);
+}
+
+const SUPPORTED_LLM_API_TYPES = ['openai', 'anthropic', 'gemini'] as const;
+type SupportedLlmApiType = (typeof SUPPORTED_LLM_API_TYPES)[number];
+
+function isSupportedLlmApiType(value: string): value is SupportedLlmApiType {
+  return (SUPPORTED_LLM_API_TYPES as readonly string[]).includes(value);
+}
+
+function normalizeLlmApiType(value: unknown): SupportedLlmApiType | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const normalized = value.trim().toLowerCase();
+  return isSupportedLlmApiType(normalized) ? normalized : null;
+}
+
 type UnknownRecord = Record<string, unknown>;
+
+function toShellEnvironmentVariables(value: unknown): ShellEnvironmentVariable[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const normalized: ShellEnvironmentVariable[] = [];
+  value.forEach((entry) => {
+    if (entry == null || typeof entry !== 'object') {
+      return;
+    }
+    const record = entry as UnknownRecord;
+    const nameRaw = record.name;
+    const valueRaw = record.value;
+    if (typeof nameRaw !== 'string') {
+      return;
+    }
+    const name = nameRaw.trim();
+    if (name.length === 0) {
+      return;
+    }
+    normalized.push({
+      name,
+      value: typeof valueRaw === 'string' ? valueRaw : '',
+    });
+  });
+  return normalized;
+}
 
 interface RuntimeConfigUiRecord extends UnknownRecord {
   telegram?: UnknownRecord;
@@ -34,44 +85,104 @@ interface RuntimeConfigUiRecord extends UnknownRecord {
 function toUiRuntimeConfig(data: RuntimeConfigUiRecord): RuntimeConfig {
   const cfg: RuntimeConfigUiRecord = { ...data };
   if (cfg.telegram) {
-    cfg.telegram = { ...cfg.telegram, token: scrubSecret() };
+    cfg.telegram = {
+      ...cfg.telegram,
+      token: scrubSecret(),
+      tokenPresent: hasSecretValue(cfg.telegram.token),
+    };
   }
   if (cfg.llm?.providers != null) {
     const providers: Record<string, UnknownRecord> = {};
     Object.entries(cfg.llm.providers).forEach(([name, provider]) => {
       const providerApiKey = provider.apiKey as UnknownRecord | undefined;
-      const hasApiKey = Boolean(providerApiKey?.present) || Boolean(providerApiKey?.value);
+      const hasApiKey = hasSecretValue(providerApiKey);
+      const apiType = normalizeLlmApiType(provider.apiType);
       providers[name] = {
         ...provider,
         apiKey: scrubSecret(),
         apiKeyPresent: hasApiKey,
+        apiType,
       };
     });
     cfg.llm = { ...cfg.llm, providers };
   }
   if (cfg.tools) {
+    const imap = cfg.tools.imap;
+    const smtp = cfg.tools.smtp;
     cfg.tools = {
       ...cfg.tools,
+      shellEnvironmentVariables: toShellEnvironmentVariables(cfg.tools.shellEnvironmentVariables),
       braveSearchApiKey: scrubSecret(),
-      imap: cfg.tools.imap ? { ...cfg.tools.imap, password: scrubSecret() } : cfg.tools.imap,
-      smtp: cfg.tools.smtp ? { ...cfg.tools.smtp, password: scrubSecret() } : cfg.tools.smtp,
+      braveSearchApiKeyPresent: hasSecretValue(cfg.tools.braveSearchApiKey),
+      imap: imap
+        ? {
+          ...imap,
+          password: scrubSecret(),
+          passwordPresent: hasSecretValue(imap.password),
+        }
+        : imap,
+      smtp: smtp
+        ? {
+          ...smtp,
+          password: scrubSecret(),
+          passwordPresent: hasSecretValue(smtp.password),
+        }
+        : smtp,
     };
   }
   if (cfg.voice) {
-    cfg.voice = { ...cfg.voice, apiKey: scrubSecret() };
+    cfg.voice = {
+      ...cfg.voice,
+      apiKey: scrubSecret(),
+      apiKeyPresent: hasSecretValue(cfg.voice.apiKey),
+      whisperSttApiKey: scrubSecret(),
+      whisperSttApiKeyPresent: hasSecretValue(cfg.voice.whisperSttApiKey),
+    };
   }
   if (cfg.rag) {
-    cfg.rag = { ...cfg.rag, apiKey: scrubSecret() };
+    cfg.rag = {
+      ...cfg.rag,
+      apiKey: scrubSecret(),
+      apiKeyPresent: hasSecretValue(cfg.rag.apiKey),
+    };
   }
   return cfg as unknown as RuntimeConfig;
 }
 
+function stripImapPasswordPresence(config: ImapConfig | null | undefined): Omit<ImapConfig, 'passwordPresent'> | null | undefined {
+  if (config == null) {
+    return config;
+  }
+  const { passwordPresent: _passwordPresent, ...rest } = config;
+  return rest;
+}
+
+function stripSmtpPasswordPresence(config: SmtpConfig | null | undefined): Omit<SmtpConfig, 'passwordPresent'> | null | undefined {
+  if (config == null) {
+    return config;
+  }
+  const { passwordPresent: _passwordPresent, ...rest } = config;
+  return rest;
+}
+
 function toBackendRuntimeConfig(config: RuntimeConfig): UnknownRecord {
+  const { tokenPresent: _telegramTokenPresent, ...telegram } = config.telegram;
+  const { apiKeyPresent: _voiceApiKeyPresent, whisperSttApiKeyPresent: _whisperSttApiKeyPresent, ...voice } = config.voice;
+  const { apiKeyPresent: _ragApiKeyPresent, ...rag } = config.rag;
+  const {
+    braveSearchApiKeyPresent: _braveSearchApiKeyPresent,
+    imap: toolsImap,
+    smtp: toolsSmtp,
+    ...tools
+  } = config.tools;
+  const imap = stripImapPasswordPresence(toolsImap);
+  const smtp = stripSmtpPasswordPresence(toolsSmtp);
+
   const payload: UnknownRecord = {
     ...config,
     telegram: {
-      ...config.telegram,
-      token: toSecretPayload(config.telegram?.token ?? null),
+      ...telegram,
+      token: toSecretPayload(telegram.token ?? null),
     },
     llm: {
       ...config.llm,
@@ -82,33 +193,35 @@ function toBackendRuntimeConfig(config: RuntimeConfig): UnknownRecord {
             baseUrl: provider.baseUrl,
             requestTimeoutSeconds: provider.requestTimeoutSeconds,
             apiKey: toSecretPayload(provider.apiKey ?? null),
+            apiType: normalizeLlmApiType(provider.apiType),
           },
         ]),
       ),
     },
     tools: {
-      ...config.tools,
+      ...tools,
       braveSearchApiKey: toSecretPayload(config.tools.braveSearchApiKey ?? null),
-      imap: config.tools.imap
+      imap: imap != null
         ? {
-          ...config.tools.imap,
-          password: toSecretPayload(config.tools.imap.password ?? null),
+          ...imap,
+          password: toSecretPayload(imap.password ?? null),
         }
-        : config.tools.imap,
-      smtp: config.tools.smtp
+        : imap,
+      smtp: smtp != null
         ? {
-          ...config.tools.smtp,
-          password: toSecretPayload(config.tools.smtp.password ?? null),
+          ...smtp,
+          password: toSecretPayload(smtp.password ?? null),
         }
-        : config.tools.smtp,
+        : smtp,
     },
     voice: {
-      ...config.voice,
-      apiKey: toSecretPayload(config.voice.apiKey ?? null),
+      ...voice,
+      apiKey: toSecretPayload(voice.apiKey ?? null),
+      whisperSttApiKey: toSecretPayload(voice.whisperSttApiKey ?? null),
     },
     rag: {
-      ...config.rag,
-      apiKey: toSecretPayload(config.rag.apiKey ?? null),
+      ...rag,
+      apiKey: toSecretPayload(rag.apiKey ?? null),
     },
   };
   return payload;
@@ -128,6 +241,8 @@ function toBackendWebhookConfig(config: WebhookConfig): UnknownRecord {
 export interface SettingsResponse extends Record<string, unknown> {
   language?: string;
   timezone?: string;
+  modelTier?: string | null;
+  tierForce?: boolean;
   webhooks?: WebhookConfig;
 }
 
@@ -175,16 +290,37 @@ export interface LlmConfig {
   providers: Record<string, LlmProviderConfig>;
 }
 
+export type ApiType = SupportedLlmApiType;
+
 export interface LlmProviderConfig {
   apiKey: string | null;
   apiKeyPresent?: boolean;
   baseUrl: string | null;
   requestTimeoutSeconds: number | null;
+  apiType: ApiType | null;
 }
 
 export interface MemoryConfig {
   enabled: boolean | null;
-  recentDays: number | null;
+  softPromptBudgetTokens: number | null;
+  maxPromptBudgetTokens: number | null;
+  workingTopK: number | null;
+  episodicTopK: number | null;
+  semanticTopK: number | null;
+  proceduralTopK: number | null;
+  promotionEnabled: boolean | null;
+  promotionMinConfidence: number | null;
+  decayEnabled: boolean | null;
+  decayDays: number | null;
+  retrievalLookbackDays: number | null;
+  codeAwareExtractionEnabled: boolean | null;
+}
+
+export interface MemoryPreset {
+  id: string;
+  label: string;
+  comment: string;
+  memory: MemoryConfig;
 }
 
 export interface SkillsConfig {
@@ -201,7 +337,8 @@ export interface TurnConfig {
 export interface TelegramConfig {
   enabled: boolean | null;
   token: string | null;
-  authMode: 'user' | 'invite_only' | null;
+  tokenPresent?: boolean;
+  authMode: 'invite_only' | null;
   allowedUsers: string[];
   inviteCodes: InviteCode[];
 }
@@ -228,6 +365,7 @@ export interface ModelRouterConfig {
 }
 
 export interface ToolsConfig {
+  browserEnabled: boolean | null;
   browserType: string | null;
   browserTimeout: number | null;
   browserUserAgent: string | null;
@@ -237,14 +375,19 @@ export interface ToolsConfig {
   browserHeadless: boolean | null;
   braveSearchEnabled: boolean | null;
   braveSearchApiKey: string | null;
+  braveSearchApiKeyPresent?: boolean;
   skillManagementEnabled: boolean | null;
   skillTransitionEnabled: boolean | null;
   tierEnabled: boolean | null;
   goalManagementEnabled: boolean | null;
-  imapEnabled: boolean | null;
-  smtpEnabled: boolean | null;
+  shellEnvironmentVariables: ShellEnvironmentVariable[];
   imap: ImapConfig;
   smtp: SmtpConfig;
+}
+
+export interface ShellEnvironmentVariable {
+  name: string;
+  value: string;
 }
 
 export interface ImapConfig {
@@ -253,6 +396,7 @@ export interface ImapConfig {
   port: number | null;
   username: string | null;
   password: string | null;
+  passwordPresent?: boolean;
   security: string | null;
   sslTrust: string | null;
   connectTimeout: number | null;
@@ -267,6 +411,7 @@ export interface SmtpConfig {
   port: number | null;
   username: string | null;
   password: string | null;
+  passwordPresent?: boolean;
   security: string | null;
   sslTrust: string | null;
   connectTimeout: number | null;
@@ -276,12 +421,18 @@ export interface SmtpConfig {
 export interface VoiceConfig {
   enabled: boolean | null;
   apiKey: string | null;
+  apiKeyPresent?: boolean;
   voiceId: string | null;
   ttsModelId: string | null;
   sttModelId: string | null;
   speed: number | null;
   telegramRespondWithVoice: boolean | null;
   telegramTranscribeIncoming: boolean | null;
+  sttProvider: string | null;
+  ttsProvider: string | null;
+  whisperSttUrl: string | null;
+  whisperSttApiKey: string | null;
+  whisperSttApiKeyPresent?: boolean;
 }
 
 export interface UsageConfig {
@@ -292,6 +443,7 @@ export interface RagConfig {
   enabled: boolean | null;
   url: string | null;
   apiKey: string | null;
+  apiKeyPresent?: boolean;
   queryMode: string | null;
   timeoutSeconds: number | null;
   indexMinLength: number | null;
@@ -369,7 +521,8 @@ export async function updateRuntimeConfig(config: RuntimeConfig): Promise<Runtim
 }
 
 export async function updateTelegramConfig(config: TelegramConfig): Promise<RuntimeConfig> {
-  const payload = { ...config, token: toSecretPayload(config.token ?? null) };
+  const { tokenPresent: _tokenPresent, ...telegram } = config;
+  const payload = { ...telegram, token: toSecretPayload(telegram.token ?? null) };
   const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/telegram', payload);
   return toUiRuntimeConfig(data);
 }
@@ -389,6 +542,7 @@ export async function updateLlmConfig(config: LlmConfig): Promise<RuntimeConfig>
           baseUrl: provider.baseUrl,
           requestTimeoutSeconds: provider.requestTimeoutSeconds,
           apiKey: toSecretPayload(provider.apiKey ?? null),
+          apiType: normalizeLlmApiType(provider.apiType),
         },
       ]),
     ),
@@ -402,6 +556,7 @@ export async function addLlmProvider(name: string, config: LlmProviderConfig): P
     baseUrl: config.baseUrl,
     requestTimeoutSeconds: config.requestTimeoutSeconds,
     apiKey: toSecretPayload(config.apiKey ?? null),
+    apiType: normalizeLlmApiType(config.apiType),
   };
   const { data } = await client.post<RuntimeConfigUiRecord>(`/settings/runtime/llm/providers/${name}`, payload);
   return toUiRuntimeConfig(data);
@@ -412,6 +567,7 @@ export async function updateLlmProvider(name: string, config: LlmProviderConfig)
     baseUrl: config.baseUrl,
     requestTimeoutSeconds: config.requestTimeoutSeconds,
     apiKey: toSecretPayload(config.apiKey ?? null),
+    apiType: normalizeLlmApiType(config.apiType),
   };
   const { data } = await client.put<RuntimeConfigUiRecord>(`/settings/runtime/llm/providers/${name}`, payload);
   return toUiRuntimeConfig(data);
@@ -422,28 +578,42 @@ export async function removeLlmProvider(name: string): Promise<void> {
 }
 
 export async function updateToolsConfig(config: ToolsConfig): Promise<RuntimeConfig> {
+  const {
+    braveSearchApiKeyPresent: _braveSearchApiKeyPresent,
+    imap,
+    smtp,
+    ...tools
+  } = config;
+  const cleanImap = stripImapPasswordPresence(imap);
+  const cleanSmtp = stripSmtpPasswordPresence(smtp);
+
   const payload = {
-    ...config,
+    ...tools,
     braveSearchApiKey: toSecretPayload(config.braveSearchApiKey ?? null),
-    imap: config.imap
+    imap: cleanImap != null
       ? {
-        ...config.imap,
-        password: toSecretPayload(config.imap.password ?? null),
+        ...cleanImap,
+        password: toSecretPayload(cleanImap.password ?? null),
       }
-      : config.imap,
-    smtp: config.smtp
+      : cleanImap,
+    smtp: cleanSmtp != null
       ? {
-        ...config.smtp,
-        password: toSecretPayload(config.smtp.password ?? null),
+        ...cleanSmtp,
+        password: toSecretPayload(cleanSmtp.password ?? null),
       }
-      : config.smtp,
+      : cleanSmtp,
   };
   const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/tools', payload);
   return toUiRuntimeConfig(data);
 }
 
 export async function updateVoiceConfig(config: VoiceConfig): Promise<RuntimeConfig> {
-  const payload = { ...config, apiKey: toSecretPayload(config.apiKey ?? null) };
+  const { apiKeyPresent: _apiKeyPresent, whisperSttApiKeyPresent: _whisperSttApiKeyPresent, ...voice } = config;
+  const payload = {
+    ...voice,
+    apiKey: toSecretPayload(voice.apiKey ?? null),
+    whisperSttApiKey: toSecretPayload(voice.whisperSttApiKey ?? null),
+  };
   const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/voice', payload);
   return toUiRuntimeConfig(data);
 }
@@ -451,6 +621,11 @@ export async function updateVoiceConfig(config: VoiceConfig): Promise<RuntimeCon
 export async function updateMemoryConfig(config: MemoryConfig): Promise<RuntimeConfig> {
   const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/memory', config);
   return toUiRuntimeConfig(data);
+}
+
+export async function getMemoryPresets(): Promise<MemoryPreset[]> {
+  const { data } = await client.get<MemoryPreset[]>('/settings/runtime/memory/presets');
+  return data;
 }
 
 export async function updateSkillsConfig(config: SkillsConfig): Promise<RuntimeConfig> {
@@ -469,7 +644,8 @@ export async function updateUsageConfig(config: UsageConfig): Promise<RuntimeCon
 }
 
 export async function updateRagConfig(config: RagConfig): Promise<RuntimeConfig> {
-  const payload = { ...config, apiKey: toSecretPayload(config.apiKey ?? null) };
+  const { apiKeyPresent: _apiKeyPresent, ...rag } = config;
+  const payload = { ...rag, apiKey: toSecretPayload(rag.apiKey ?? null) };
   const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/rag', payload);
   return toUiRuntimeConfig(data);
 }
@@ -504,6 +680,10 @@ export async function generateInviteCode(): Promise<InviteCode> {
 
 export async function deleteInviteCode(code: string): Promise<void> {
   await client.delete(`/settings/telegram/invite-codes/${code}`);
+}
+
+export async function deleteTelegramAllowedUser(userId: string): Promise<void> {
+  await client.delete(`/settings/telegram/allowed-users/${userId}`);
 }
 
 export async function restartTelegram(): Promise<void> {

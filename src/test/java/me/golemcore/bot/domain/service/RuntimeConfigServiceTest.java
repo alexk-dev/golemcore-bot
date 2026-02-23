@@ -74,6 +74,8 @@ class RuntimeConfigServiceTest {
         assertNotNull(config.getModelRouter());
         assertNotNull(config.getLlm());
         assertNotNull(config.getTools());
+        assertNotNull(config.getTools().getShellEnvironmentVariables());
+        assertTrue(config.getTools().getShellEnvironmentVariables().isEmpty());
     }
 
     @Test
@@ -196,6 +198,15 @@ class RuntimeConfigServiceTest {
     }
 
     @Test
+    void shouldReturnDefaultVoiceProvidersWhenNotConfigured() {
+        assertEquals("elevenlabs", service.getSttProvider());
+        assertEquals("elevenlabs", service.getTtsProvider());
+        assertEquals("", service.getWhisperSttUrl());
+        assertEquals("", service.getWhisperSttApiKey());
+        assertFalse(service.isWhisperSttConfigured());
+    }
+
+    @Test
     void shouldReturnDefaultMcpSettings() {
         assertTrue(service.isMcpEnabled());
         assertEquals(30, service.getMcpDefaultStartupTimeout());
@@ -223,7 +234,14 @@ class RuntimeConfigServiceTest {
     @Test
     void shouldReturnDefaultMemorySettings() {
         assertTrue(service.isMemoryEnabled());
-        assertEquals(7, service.getMemoryRecentDays());
+        assertEquals(2, service.getMemoryVersion());
+        assertEquals(1800, service.getMemorySoftPromptBudgetTokens());
+        assertEquals(3500, service.getMemoryMaxPromptBudgetTokens());
+        assertEquals(6, service.getMemoryWorkingTopK());
+        assertEquals(8, service.getMemoryEpisodicTopK());
+        assertEquals(6, service.getMemorySemanticTopK());
+        assertEquals(4, service.getMemoryProceduralTopK());
+        assertEquals(21, service.getMemoryRetrievalLookbackDays());
     }
 
     @Test
@@ -242,6 +260,99 @@ class RuntimeConfigServiceTest {
         assertTrue(service.isGoalManagementEnabled());
         assertTrue(service.isBrowserEnabled());
         assertTrue(service.isDynamicTierEnabled());
+    }
+
+    @Test
+    void shouldReturnEmptyShellEnvironmentVariablesByDefault() {
+        assertTrue(service.getShellEnvironmentVariables().isEmpty());
+    }
+
+    @Test
+    void shouldReturnConfiguredShellEnvironmentVariables() throws Exception {
+        RuntimeConfig.ToolsConfig tools = RuntimeConfig.ToolsConfig.builder()
+                .shellEnvironmentVariables(List.of(
+                        RuntimeConfig.ShellEnvironmentVariable.builder()
+                                .name("TEST_API_KEY")
+                                .value("value-1")
+                                .build(),
+                        RuntimeConfig.ShellEnvironmentVariable.builder()
+                                .name("ANOTHER_VAR")
+                                .value("value-2")
+                                .build()))
+                .build();
+        persistedSections.put("tools.json", objectMapper.writeValueAsString(tools));
+
+        Map<String, String> environmentVariables = service.getShellEnvironmentVariables();
+
+        assertEquals(2, environmentVariables.size());
+        assertEquals("value-1", environmentVariables.get("TEST_API_KEY"));
+        assertEquals("value-2", environmentVariables.get("ANOTHER_VAR"));
+    }
+
+    @Test
+    void shouldNormalizeNullShellEnvironmentVariablesList() throws Exception {
+        persistedSections.put("tools.json", "{\"shellEnvironmentVariables\":null}");
+
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        assertNotNull(config.getTools().getShellEnvironmentVariables());
+        assertTrue(config.getTools().getShellEnvironmentVariables().isEmpty());
+    }
+
+    @Test
+    void shouldNormalizeShellEnvironmentVariablesByTrimmingAndDroppingInvalidEntries() throws Exception {
+        persistedSections.put("tools.json", """
+                {
+                  "shellEnvironmentVariables": [
+                    { "name": "  API_TOKEN  ", "value": "value-1" },
+                    { "name": "   ", "value": "ignored" },
+                    null,
+                    { "name": "SECOND_VAR", "value": null }
+                  ]
+                }
+                """);
+
+        RuntimeConfig config = service.getRuntimeConfig();
+        Map<String, String> environmentVariables = service.getShellEnvironmentVariables();
+
+        assertEquals(2, config.getTools().getShellEnvironmentVariables().size());
+        assertEquals("API_TOKEN", config.getTools().getShellEnvironmentVariables().get(0).getName());
+        assertEquals("SECOND_VAR", config.getTools().getShellEnvironmentVariables().get(1).getName());
+        assertEquals("value-1", environmentVariables.get("API_TOKEN"));
+        assertEquals("", environmentVariables.get("SECOND_VAR"));
+    }
+
+    @Test
+    void shouldUseLastValueForDuplicateShellEnvironmentVariablesAfterNormalization() throws Exception {
+        persistedSections.put("tools.json", """
+                {
+                  "shellEnvironmentVariables": [
+                    { "name": "API_TOKEN", "value": "old" },
+                    { "name": " API_TOKEN ", "value": "new" }
+                  ]
+                }
+                """);
+
+        RuntimeConfig config = service.getRuntimeConfig();
+        Map<String, String> environmentVariables = service.getShellEnvironmentVariables();
+
+        assertEquals(1, config.getTools().getShellEnvironmentVariables().size());
+        assertEquals("API_TOKEN", config.getTools().getShellEnvironmentVariables().get(0).getName());
+        assertEquals("new", config.getTools().getShellEnvironmentVariables().get(0).getValue());
+        assertEquals("new", environmentVariables.get("API_TOKEN"));
+    }
+
+    @Test
+    void shouldInitializeToolsWhenNullDuringRuntimeConfigUpdate() {
+        RuntimeConfig newConfig = RuntimeConfig.builder().build();
+        newConfig.setTools(null);
+
+        service.updateRuntimeConfig(newConfig);
+
+        RuntimeConfig updated = service.getRuntimeConfig();
+        assertNotNull(updated.getTools());
+        assertNotNull(updated.getTools().getShellEnvironmentVariables());
+        assertTrue(updated.getTools().getShellEnvironmentVariables().isEmpty());
     }
 
     @Test
@@ -319,6 +430,7 @@ class RuntimeConfigServiceTest {
 
         RuntimeConfig.VoiceConfig voice = RuntimeConfig.VoiceConfig.builder()
                 .apiKey(Secret.of("voice-key-secret"))
+                .whisperSttApiKey(Secret.of("whisper-key-secret"))
                 .build();
         persistedSections.put("voice.json", objectMapper.writeValueAsString(voice));
 
@@ -347,6 +459,8 @@ class RuntimeConfigServiceTest {
         assertTrue(redacted.getTelegram().getToken().getPresent());
         assertNull(redacted.getVoice().getApiKey().getValue());
         assertTrue(redacted.getVoice().getApiKey().getPresent());
+        assertNull(redacted.getVoice().getWhisperSttApiKey().getValue());
+        assertTrue(redacted.getVoice().getWhisperSttApiKey().getPresent());
         assertNull(redacted.getRag().getApiKey().getValue());
         assertNull(redacted.getTools().getBraveSearchApiKey().getValue());
         assertNull(redacted.getLlm().getProviders().get("openai").getApiKey().getValue());
@@ -434,6 +548,30 @@ class RuntimeConfigServiceTest {
         assertFalse(loaded.getTelegram().getToken().getEncrypted());
     }
 
+    @Test
+    void shouldNormalizeMemoryVersionToTwoWhenMissingInStoredSection() throws Exception {
+        persistedSections.put("memory.json", "{\"version\":null,\"enabled\":true}");
+
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        assertNotNull(config.getMemory());
+        assertEquals(2, config.getMemory().getVersion());
+        assertEquals(2, service.getMemoryVersion());
+    }
+
+    @Test
+    void shouldForceMemoryVersionTwoWhenUpdatingRuntimeConfig() {
+        RuntimeConfig newConfig = RuntimeConfig.builder().build();
+        newConfig.getMemory().setVersion(1);
+        newConfig.getMemory().setEnabled(true);
+
+        service.updateRuntimeConfig(newConfig);
+
+        RuntimeConfig updated = service.getRuntimeConfig();
+        assertEquals(2, updated.getMemory().getVersion());
+        assertEquals(2, service.getMemoryVersion());
+    }
+
     // ==================== Invite Codes ====================
 
     @Test
@@ -496,6 +634,73 @@ class RuntimeConfigServiceTest {
                 .filter("user1"::equals)
                 .count();
         assertEquals(1, count);
+    }
+
+    @Test
+    void shouldNotRedeemInviteCodeForAnotherUserWhenUserAlreadyRegistered() {
+        RuntimeConfig.InviteCode firstCode = service.generateInviteCode();
+        RuntimeConfig.InviteCode secondCode = service.generateInviteCode();
+        service.redeemInviteCode(firstCode.getCode(), "user1");
+
+        boolean redeemed = service.redeemInviteCode(secondCode.getCode(), "user2");
+
+        assertFalse(redeemed);
+        assertEquals(List.of("user1"), service.getTelegramAllowedUsers());
+        RuntimeConfig.InviteCode secondInvite = service.getRuntimeConfig().getTelegram().getInviteCodes().stream()
+                .filter(code -> secondCode.getCode().equals(code.getCode()))
+                .findFirst()
+                .orElseThrow();
+        assertFalse(secondInvite.isUsed());
+    }
+
+    @Test
+    void shouldRedeemInviteCodeWhenAllowedUsersListIsImmutable() {
+        RuntimeConfig.InviteCode inviteCode = service.generateInviteCode();
+        service.getRuntimeConfig().getTelegram().setAllowedUsers(List.of());
+
+        boolean redeemed = service.redeemInviteCode(inviteCode.getCode(), "user1");
+
+        assertTrue(redeemed);
+        assertEquals(List.of("user1"), service.getTelegramAllowedUsers());
+    }
+
+    @Test
+    void shouldRemoveTelegramAllowedUser() {
+        RuntimeConfig.InviteCode code = service.generateInviteCode();
+        service.redeemInviteCode(code.getCode(), "user1");
+
+        boolean removed = service.removeTelegramAllowedUser("user1");
+
+        assertTrue(removed);
+        assertFalse(service.getTelegramAllowedUsers().contains("user1"));
+        assertTrue(service.getTelegramAllowedUsers().isEmpty());
+    }
+
+    @Test
+    void shouldRevokeActiveInviteCodesWhenRemovingTelegramAllowedUser() {
+        RuntimeConfig.InviteCode redeemedCode = service.generateInviteCode();
+        RuntimeConfig.InviteCode activeCode = service.generateInviteCode();
+        service.redeemInviteCode(redeemedCode.getCode(), "user1");
+
+        boolean removed = service.removeTelegramAllowedUser("user1");
+
+        assertTrue(removed);
+        List<RuntimeConfig.InviteCode> remainingCodes = service.getRuntimeConfig().getTelegram().getInviteCodes();
+        assertTrue(remainingCodes.stream()
+                .anyMatch(code -> redeemedCode.getCode().equals(code.getCode()) && code.isUsed()));
+        assertFalse(remainingCodes.stream()
+                .anyMatch(code -> activeCode.getCode().equals(code.getCode())));
+    }
+
+    @Test
+    void shouldReturnFalseWhenRemovingUnknownTelegramAllowedUser() {
+        RuntimeConfig.InviteCode code = service.generateInviteCode();
+        service.redeemInviteCode(code.getCode(), "user1");
+
+        boolean removed = service.removeTelegramAllowedUser("missing");
+
+        assertFalse(removed);
+        assertTrue(service.getTelegramAllowedUsers().contains("user1"));
     }
 
     @Test
@@ -586,12 +791,15 @@ class RuntimeConfigServiceTest {
     // ==================== Telegram Auth Mode ====================
 
     @Test
-    void shouldSetTelegramAuthModeAndPersist() {
-        service.setTelegramAuthMode("user");
+    void shouldNormalizeTelegramAuthModeToInviteOnly() throws Exception {
+        RuntimeConfig.TelegramConfig telegram = RuntimeConfig.TelegramConfig.builder()
+                .authMode("user")
+                .build();
+        persistedSections.put("telegram.json", objectMapper.writeValueAsString(telegram));
 
-        assertEquals("user", service.getRuntimeConfig().getTelegram().getAuthMode());
-        // Verify that persist was called (15 sections + 15 initial defaults on load)
-        verify(storagePort, atLeast(15)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        assertEquals("invite_only", config.getTelegram().getAuthMode());
     }
 
     // ==================== Voice Telegram Options ====================
@@ -600,6 +808,34 @@ class RuntimeConfigServiceTest {
     void shouldReturnFalseForVoiceTelegramOptions() {
         assertFalse(service.isTelegramRespondWithVoiceEnabled());
         assertFalse(service.isTelegramTranscribeIncomingEnabled());
+    }
+
+    @Test
+    void shouldDetectWhisperProviderWhenConfigured() throws Exception {
+        RuntimeConfig.VoiceConfig voice = RuntimeConfig.VoiceConfig.builder()
+                .sttProvider("whisper")
+                .ttsProvider("elevenlabs")
+                .whisperSttUrl("http://localhost:5092")
+                .whisperSttApiKey(Secret.of("whisper-secret"))
+                .build();
+        persistedSections.put("voice.json", objectMapper.writeValueAsString(voice));
+
+        assertEquals("whisper", service.getSttProvider());
+        assertEquals("elevenlabs", service.getTtsProvider());
+        assertEquals("http://localhost:5092", service.getWhisperSttUrl());
+        assertEquals("whisper-secret", service.getWhisperSttApiKey());
+        assertTrue(service.isWhisperSttConfigured());
+    }
+
+    @Test
+    void shouldNotConsiderWhisperConfiguredWhenUrlBlank() throws Exception {
+        RuntimeConfig.VoiceConfig voice = RuntimeConfig.VoiceConfig.builder()
+                .sttProvider("whisper")
+                .whisperSttUrl("")
+                .build();
+        persistedSections.put("voice.json", objectMapper.writeValueAsString(voice));
+
+        assertFalse(service.isWhisperSttConfigured());
     }
 
     // ==================== Brave Search ====================
