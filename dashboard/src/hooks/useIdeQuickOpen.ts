@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import type { FileTreeNode } from '../api/files';
+import { useDebouncedValue } from './useDebouncedValue';
 
 export interface QuickOpenItem {
   path: string;
@@ -7,12 +8,15 @@ export interface QuickOpenItem {
 }
 
 export interface UseIdeQuickOpenResult {
-  searchQuery: string;
+  treeSearchQuery: string;
+  debouncedTreeSearchQuery: string;
+  quickOpenQuery: string;
   isQuickOpenVisible: boolean;
   quickOpenItems: QuickOpenItem[];
-  setSearchQuery: (value: string) => void;
+  setTreeSearchQuery: (value: string) => void;
   openQuickOpen: () => void;
   closeQuickOpen: () => void;
+  updateQuickOpenQuery: (value: string) => void;
   openFileFromQuickOpen: (path: string) => void;
 }
 
@@ -29,12 +33,16 @@ export function useIdeQuickOpen(
   treeData: FileTreeNode[] | undefined,
   setActivePath: (path: string | null) => void,
 ): UseIdeQuickOpenResult {
-  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [treeSearchQuery, setTreeSearchQuery] = useState<string>('');
+  const [quickOpenQuery, setQuickOpenQuery] = useState<string>('');
   const [isQuickOpenVisible, setIsQuickOpenVisible] = useState<boolean>(false);
+
+  const debouncedTreeSearchQuery = useDebouncedValue(treeSearchQuery, 120);
+  const debouncedQuickOpenQuery = useDebouncedValue(quickOpenQuery, 120);
 
   const quickOpenItems = useMemo(() => {
     const files = collectFileNodes(treeData ?? []);
-    const lowered = searchQuery.trim().toLowerCase();
+    const lowered = debouncedQuickOpenQuery.trim().toLowerCase();
     if (lowered.length === 0) {
       return files.slice(0, 200);
     }
@@ -42,14 +50,19 @@ export function useIdeQuickOpen(
     return files
       .filter((file) => file.path.toLowerCase().includes(lowered) || file.title.toLowerCase().includes(lowered))
       .slice(0, 200);
-  }, [searchQuery, treeData]);
+  }, [debouncedQuickOpenQuery, treeData]);
 
   const openQuickOpen = useCallback((): void => {
+    setQuickOpenQuery(treeSearchQuery);
     setIsQuickOpenVisible(true);
-  }, []);
+  }, [treeSearchQuery]);
 
   const closeQuickOpen = useCallback((): void => {
     setIsQuickOpenVisible(false);
+  }, []);
+
+  const updateQuickOpenQuery = useCallback((value: string): void => {
+    setQuickOpenQuery(value);
   }, []);
 
   const openFileFromQuickOpen = useCallback((path: string): void => {
@@ -58,12 +71,15 @@ export function useIdeQuickOpen(
   }, [setActivePath]);
 
   return {
-    searchQuery,
+    treeSearchQuery,
+    debouncedTreeSearchQuery,
+    quickOpenQuery,
     isQuickOpenVisible,
     quickOpenItems,
-    setSearchQuery,
+    setTreeSearchQuery,
     openQuickOpen,
     closeQuickOpen,
+    updateQuickOpenQuery,
     openFileFromQuickOpen,
   };
 }

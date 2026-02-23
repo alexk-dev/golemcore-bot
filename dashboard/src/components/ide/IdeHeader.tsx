@@ -8,8 +8,8 @@ export interface IdeHeaderProps {
   isRefreshingTree: boolean;
   canSaveActiveTab: boolean;
   isSaving: boolean;
-  searchQuery: string;
-  onSearchQueryChange: (value: string) => void;
+  treeSearchQuery: string;
+  onTreeSearchQueryChange: (value: string) => void;
   onRefreshTree: () => void;
   onSaveActiveTab: () => void;
   onOpenQuickOpen: () => void;
@@ -23,8 +23,8 @@ export function IdeHeader({
   isRefreshingTree,
   canSaveActiveTab,
   isSaving,
-  searchQuery,
-  onSearchQueryChange,
+  treeSearchQuery,
+  onTreeSearchQueryChange,
   onRefreshTree,
   onSaveActiveTab,
   onOpenQuickOpen,
@@ -46,10 +46,10 @@ export function IdeHeader({
             <FiSearch size={14} />
           </InputGroup.Text>
           <Form.Control
-            value={searchQuery}
-            onChange={(event) => onSearchQueryChange(event.target.value)}
-            placeholder="Search files"
-            aria-label="Search files"
+            value={treeSearchQuery}
+            onChange={(event) => onTreeSearchQueryChange(event.target.value)}
+            placeholder="Search in file tree"
+            aria-label="Search in file tree"
           />
         </InputGroup>
 

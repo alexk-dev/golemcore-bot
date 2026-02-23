@@ -20,8 +20,8 @@ export default function IdePage(): ReactElement {
         isRefreshingTree={ide.treeQuery.isFetching}
         canSaveActiveTab={ide.canSaveActiveTab}
         isSaving={ide.saveMutation.isPending}
-        searchQuery={ide.searchQuery}
-        onSearchQueryChange={ide.setSearchQuery}
+        treeSearchQuery={ide.treeSearchQuery}
+        onTreeSearchQueryChange={ide.setTreeSearchQuery}
         onRefreshTree={ide.refreshTree}
         onSaveActiveTab={ide.saveActiveTab}
         onOpenQuickOpen={ide.openQuickOpen}
@@ -43,7 +43,7 @@ export default function IdePage(): ReactElement {
                 nodes={ide.treeQuery.data ?? []}
                 selectedPath={ide.activePath}
                 dirtyPaths={ide.dirtyPaths}
-                searchQuery={ide.searchQuery}
+                searchQuery={ide.debouncedTreeSearchQuery}
                 onOpenFile={ide.setActivePath}
               />
             )}
@@ -76,6 +76,9 @@ export default function IdePage(): ReactElement {
               activePath={ide.activeTab?.path ?? null}
               line={ide.activeLine}
               column={ide.activeColumn}
+              language={ide.activeLanguage}
+              fileSizeBytes={ide.activeFileSize}
+              updatedAt={ide.activeUpdatedAt}
             />
 
             <div className="flex-grow-1 overflow-hidden">
@@ -100,9 +103,10 @@ export default function IdePage(): ReactElement {
 
       <QuickOpenModal
         show={ide.isQuickOpenVisible}
-        query={ide.searchQuery}
+        query={ide.quickOpenQuery}
         items={ide.quickOpenItems}
         onClose={ide.closeQuickOpen}
+        onQueryChange={ide.updateQuickOpenQuery}
         onPick={ide.openFileFromQuickOpen}
       />
 

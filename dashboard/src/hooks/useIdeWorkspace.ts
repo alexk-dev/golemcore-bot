@@ -23,14 +23,19 @@ export interface UseIdeWorkspaceResult {
   isCloseWithSavePending: boolean;
   isFileOpening: boolean;
   hasFileLoadError: boolean;
-  searchQuery: string;
+  treeSearchQuery: string;
+  debouncedTreeSearchQuery: string;
+  quickOpenQuery: string;
   isQuickOpenVisible: boolean;
   quickOpenItems: QuickOpenItem[];
   activeLine: number;
   activeColumn: number;
+  activeLanguage: string;
+  activeFileSize: number;
+  activeUpdatedAt: string | null;
   sidebarWidth: number;
   setActivePath: (path: string | null) => void;
-  setSearchQuery: (value: string) => void;
+  setTreeSearchQuery: (value: string) => void;
   refreshTree: () => void;
   saveActiveTab: () => void;
   requestCloseTab: (path: string) => void;
@@ -41,6 +46,7 @@ export interface UseIdeWorkspaceResult {
   updateActiveTabContent: (nextValue: string) => void;
   openQuickOpen: () => void;
   closeQuickOpen: () => void;
+  updateQuickOpenQuery: (value: string) => void;
   openFileFromQuickOpen: (path: string) => void;
   setEditorCursor: (line: number, column: number) => void;
   startSidebarResize: (clientX: number) => void;
@@ -53,6 +59,42 @@ function findTabByPath(tabs: IdeTabState[], path: string | null): IdeTabState | 
     return null;
   }
   return tabs.find((tab) => tab.path === path) ?? null;
+}
+
+function resolveLanguage(filePath: string | null): string {
+  if (filePath == null) {
+    return 'plain';
+  }
+
+  const parts = filePath.split('/');
+  const fileName = parts[parts.length - 1] ?? '';
+  const extension = fileName.split('.').pop()?.toLowerCase() ?? '';
+
+  const aliases: Record<string, string> = {
+    java: 'java',
+    ts: 'typescript',
+    tsx: 'typescript',
+    js: 'javascript',
+    jsx: 'javascript',
+    json: 'json',
+    md: 'markdown',
+    yml: 'yaml',
+    yaml: 'yaml',
+    xml: 'xml',
+    html: 'html',
+    css: 'css',
+    scss: 'scss',
+    sh: 'bash',
+    py: 'python',
+    go: 'go',
+    rs: 'rust',
+    kt: 'kotlin',
+    sql: 'sql',
+    toml: 'toml',
+    ini: 'ini',
+  };
+
+  return aliases[extension] ?? (extension.length > 0 ? extension : 'plain');
 }
 
 export function useIdeWorkspace(): UseIdeWorkspaceResult {
@@ -93,6 +135,22 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
   }, [openedTabs]);
 
   const canSaveActiveTab = activeTab != null && activeTab.isDirty && !saveMutation.isPending && !isCloseWithSavePending;
+
+  const activeLanguage = useMemo(() => resolveLanguage(activeTab?.path ?? null), [activeTab?.path]);
+  const activeFileSize = useMemo(() => {
+    if (activeTab == null) {
+      return 0;
+    }
+    return new Blob([activeTab.content]).size;
+  }, [activeTab]);
+
+  const activeUpdatedAt = useMemo(() => {
+    if (contentQuery.data?.path !== activeTab?.path) {
+      return null;
+    }
+
+    return contentQuery.data?.updatedAt ?? null;
+  }, [activeTab?.path, contentQuery.data]);
 
   const saveTab = useCallback(async (tab: IdeTabState): Promise<boolean> => {
     try {
@@ -208,14 +266,19 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
     isCloseWithSavePending,
     isFileOpening,
     hasFileLoadError,
-    searchQuery: quickOpen.searchQuery,
+    treeSearchQuery: quickOpen.treeSearchQuery,
+    debouncedTreeSearchQuery: quickOpen.debouncedTreeSearchQuery,
+    quickOpenQuery: quickOpen.quickOpenQuery,
     isQuickOpenVisible: quickOpen.isQuickOpenVisible,
     quickOpenItems: quickOpen.quickOpenItems,
     activeLine,
     activeColumn,
+    activeLanguage,
+    activeFileSize,
+    activeUpdatedAt,
     sidebarWidth: sidebar.width,
     setActivePath,
-    setSearchQuery: quickOpen.setSearchQuery,
+    setTreeSearchQuery: quickOpen.setTreeSearchQuery,
     refreshTree,
     saveActiveTab,
     requestCloseTab,
@@ -226,6 +289,7 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
     updateActiveTabContent,
     openQuickOpen: quickOpen.openQuickOpen,
     closeQuickOpen: quickOpen.closeQuickOpen,
+    updateQuickOpenQuery: quickOpen.updateQuickOpenQuery,
     openFileFromQuickOpen: quickOpen.openFileFromQuickOpen,
     setEditorCursor,
     startSidebarResize: sidebar.startResize,

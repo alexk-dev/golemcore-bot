@@ -5,15 +5,76 @@ export interface EditorStatusBarProps {
   activePath: string | null;
   line: number;
   column: number;
+  language: string;
+  fileSizeBytes: number;
+  updatedAt: string | null;
 }
 
-export function EditorStatusBar({ activePath, line, column }: EditorStatusBarProps): ReactElement {
+function formatFileSize(fileSizeBytes: number): string {
+  if (fileSizeBytes < 1024) {
+    return `${fileSizeBytes} B`;
+  }
+  if (fileSizeBytes < 1024 * 1024) {
+    return `${(fileSizeBytes / 1024).toFixed(1)} KB`;
+  }
+  return `${(fileSizeBytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function formatUpdatedAt(updatedAt: string | null): string {
+  if (updatedAt == null || updatedAt.length === 0) {
+    return 'not saved';
+  }
+
+  const parsed = new Date(updatedAt);
+  if (Number.isNaN(parsed.getTime())) {
+    return 'not saved';
+  }
+
+  return parsed.toLocaleString();
+}
+
+function getLanguageIcon(language: string): string {
+  const icons: Record<string, string> = {
+    java: '☕',
+    typescript: '🔷',
+    javascript: '🟨',
+    json: '🧩',
+    markdown: '📝',
+    yaml: '📘',
+    xml: '🧷',
+    html: '🌐',
+    css: '🎨',
+    scss: '🎨',
+    bash: '💻',
+    python: '🐍',
+    go: '🐹',
+    rust: '🦀',
+    kotlin: '🟣',
+    sql: '🗄️',
+    toml: '⚙️',
+    ini: '⚙️',
+  };
+
+  return icons[language] ?? '📄';
+}
+
+export function EditorStatusBar({
+  activePath,
+  line,
+  column,
+  language,
+  fileSizeBytes,
+  updatedAt,
+}: EditorStatusBarProps): ReactElement {
   return (
     <div className="ide-statusbar d-flex align-items-center justify-content-between px-3 py-2 border-bottom small">
       <div className="text-truncate pe-2" title={activePath ?? ''}>
         {activePath ?? 'No file selected'}
       </div>
       <div className="text-body-secondary d-flex align-items-center gap-3">
+        <span title={language}>{getLanguageIcon(language)} {language.toUpperCase()}</span>
+        <span>{formatFileSize(fileSizeBytes)}</span>
+        <span title={updatedAt ?? ''}>Updated: {formatUpdatedAt(updatedAt)}</span>
         <span>
           Ln {line}, Col {column}
         </span>
