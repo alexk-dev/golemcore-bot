@@ -1,10 +1,13 @@
 import { Suspense, lazy } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store/authStore';
+import { useRuntimeConfig } from './hooks/useSettings';
 import DashboardLayout from './components/layout/DashboardLayout';
+import { isStartupSetupComplete } from './utils/startupSetup';
 
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const ChatPage = lazy(() => import('./pages/ChatPage'));
+const SetupPage = lazy(() => import('./pages/SetupPage'));
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const PromptsPage = lazy(() => import('./pages/PromptsPage'));
@@ -21,6 +24,17 @@ function RouteFallback() {
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.accessToken);
   if (!token) {return <Navigate to="/login" replace />;}
+  return <>{children}</>;
+}
+
+function ChatStartRoute({ children }: { children: React.ReactNode }) {
+  const runtimeConfigQuery = useRuntimeConfig();
+  if (runtimeConfigQuery.isLoading) {
+    return <RouteFallback />;
+  }
+  if (runtimeConfigQuery.data == null || !isStartupSetupComplete(runtimeConfigQuery.data)) {
+    return <Navigate to="/setup" replace />;
+  }
   return <>{children}</>;
 }
 
@@ -42,8 +56,9 @@ export default function App() {
             <DashboardLayout>
               <Suspense fallback={<RouteFallback />}>
                 <Routes>
-                  <Route path="/" element={<ChatPage />} />
-                  <Route path="/chat" element={<ChatPage />} />
+                  <Route path="/" element={<ChatStartRoute><ChatPage /></ChatStartRoute>} />
+                  <Route path="/chat" element={<ChatStartRoute><ChatPage /></ChatStartRoute>} />
+                  <Route path="/setup" element={<SetupPage />} />
                   <Route path="/analytics" element={<AnalyticsPage />} />
                   <Route path="/settings" element={<SettingsPage />} />
                   <Route path="/settings/:section" element={<SettingsPage />} />

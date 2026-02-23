@@ -38,6 +38,11 @@ export default function LoginForm({ mfaRequired, onSubmit, error, loading }: Pro
             required
             autoFocus
           />
+          <Form.Text className="text-body-secondary d-block mt-2">
+            First Docker startup? Run <code>docker logs &lt;container_name&gt;</code> and find
+            {' '}
+            <code>DASHBOARD TEMPORARY PASSWORD</code>.
+          </Form.Text>
         </Form.Group>
       )}
 

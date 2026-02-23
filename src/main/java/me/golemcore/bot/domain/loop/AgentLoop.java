@@ -129,6 +129,7 @@ public class AgentLoop {
             RateLimitResult rateLimit = rateLimiter.tryConsume();
             if (!rateLimit.isAllowed()) {
                 log.warn("Rate limit exceeded");
+                notifyRateLimited(message);
                 return;
             }
         }
@@ -234,6 +235,33 @@ public class AgentLoop {
             channel.showTyping(chatId);
         } catch (Exception e) {
             log.debug("Typing indicator failed for chat {}: {}", chatId, e.getMessage());
+        }
+    }
+
+    private void notifyRateLimited(Message message) {
+        if (message == null || message.getChannelType() == null || message.getChannelType().isBlank()) {
+            return;
+        }
+
+        String chatId = resolveTransportChatId(message);
+        if (chatId == null || chatId.isBlank()) {
+            return;
+        }
+
+        ChannelPort channel = channelRegistry.get(message.getChannelType());
+        if (channel == null) {
+            return;
+        }
+
+        String text = preferencesService.getMessage("system.rate.limit");
+        if (text == null || text.isBlank()) {
+            text = "Rate limit exceeded. Please wait before sending more messages.";
+        }
+
+        try {
+            channel.sendMessage(chatId, text);
+        } catch (Exception e) { // NOSONAR - user feedback must not break request handling
+            log.debug("Rate limit notification failed for chat {}: {}", chatId, e.getMessage());
         }
     }
 

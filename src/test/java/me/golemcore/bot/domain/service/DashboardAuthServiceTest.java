@@ -27,8 +27,6 @@ class DashboardAuthServiceTest {
     private static final String NEW_PASSWORD = "new-password";
     private static final String EXISTING_PASSWORD = "existing-password";
     private static final BCryptPasswordEncoder TEST_ENCODER = new BCryptPasswordEncoder(4);
-    private static final String PASSWORD_HASH = TEST_ENCODER.encode(PASSWORD);
-    private static final String OLD_PASSWORD_HASH = TEST_ENCODER.encode(OLD_PASSWORD);
     private static final String EXISTING_PASSWORD_HASH = TEST_ENCODER.encode(EXISTING_PASSWORD);
 
     private DashboardAuthService authService;
@@ -69,15 +67,14 @@ class DashboardAuthServiceTest {
     }
 
     @Test
-    void shouldUseConfiguredPasswordHash() {
-        String hash = PASSWORD_HASH;
-        botProperties.getDashboard().setAdminPasswordHash(hash);
+    void shouldUseConfiguredPlaintextPassword() {
+        botProperties.getDashboard().setAdminPassword(PASSWORD);
 
         authService.init();
 
         AdminCredentials creds = authService.getCredentials();
         assertNotNull(creds);
-        assertEquals(hash, creds.getPasswordHash());
+        assertTrue(TEST_ENCODER.matches(PASSWORD, creds.getPasswordHash()));
     }
 
     @Test
@@ -99,7 +96,7 @@ class DashboardAuthServiceTest {
 
     @Test
     void shouldAuthenticateWithCorrectPassword() {
-        botProperties.getDashboard().setAdminPasswordHash(PASSWORD_HASH);
+        botProperties.getDashboard().setAdminPassword(PASSWORD);
         authService.init();
 
         DashboardAuthService.TokenPair tokens = authService.authenticate(PASSWORD, null);
@@ -110,7 +107,7 @@ class DashboardAuthServiceTest {
 
     @Test
     void shouldRejectWrongPassword() {
-        botProperties.getDashboard().setAdminPasswordHash(PASSWORD_HASH);
+        botProperties.getDashboard().setAdminPassword(PASSWORD);
         authService.init();
 
         DashboardAuthService.TokenPair tokens = authService.authenticate("wrong-password", null);
@@ -154,7 +151,7 @@ class DashboardAuthServiceTest {
 
     @Test
     void shouldChangePassword() {
-        botProperties.getDashboard().setAdminPasswordHash(OLD_PASSWORD_HASH);
+        botProperties.getDashboard().setAdminPassword(OLD_PASSWORD);
         authService.init();
 
         boolean changed = authService.changePassword(OLD_PASSWORD, NEW_PASSWORD);
@@ -171,7 +168,7 @@ class DashboardAuthServiceTest {
 
     @Test
     void shouldRejectPasswordChangeWithWrongOldPassword() {
-        botProperties.getDashboard().setAdminPasswordHash(OLD_PASSWORD_HASH);
+        botProperties.getDashboard().setAdminPassword(OLD_PASSWORD);
         authService.init();
 
         boolean changed = authService.changePassword("wrong-old-password", "new-password");
@@ -180,7 +177,7 @@ class DashboardAuthServiceTest {
 
     @Test
     void shouldDisableMfaWithCorrectPassword() {
-        botProperties.getDashboard().setAdminPasswordHash(PASSWORD_HASH);
+        botProperties.getDashboard().setAdminPassword(PASSWORD);
         authService.init();
 
         // Manually enable MFA
@@ -195,7 +192,7 @@ class DashboardAuthServiceTest {
 
     @Test
     void shouldRejectMfaDisableWithWrongPassword() {
-        botProperties.getDashboard().setAdminPasswordHash(PASSWORD_HASH);
+        botProperties.getDashboard().setAdminPassword(PASSWORD);
         authService.init();
 
         boolean disabled = authService.disableMfa("wrong-password");
@@ -204,7 +201,7 @@ class DashboardAuthServiceTest {
 
     @Test
     void shouldRefreshAccessToken() {
-        botProperties.getDashboard().setAdminPasswordHash(PASSWORD_HASH);
+        botProperties.getDashboard().setAdminPassword(PASSWORD);
         authService.init();
 
         DashboardAuthService.TokenPair original = authService.authenticate(PASSWORD, null);
@@ -225,7 +222,7 @@ class DashboardAuthServiceTest {
 
     @Test
     void shouldRejectAccessTokenAsRefreshToken() {
-        botProperties.getDashboard().setAdminPasswordHash(PASSWORD_HASH);
+        botProperties.getDashboard().setAdminPassword(PASSWORD);
         authService.init();
 
         DashboardAuthService.TokenPair tokens = authService.authenticate(PASSWORD, null);
@@ -245,7 +242,7 @@ class DashboardAuthServiceTest {
 
     @Test
     void shouldRejectMfaWhenMfaEnabledButNoCodeProvided() {
-        botProperties.getDashboard().setAdminPasswordHash(PASSWORD_HASH);
+        botProperties.getDashboard().setAdminPassword(PASSWORD);
         authService.init();
 
         // Enable MFA manually

@@ -264,7 +264,7 @@ public class BotProperties {
     @Data
     public static class DashboardProperties {
         private boolean enabled = false;
-        private String adminPasswordHash = "";
+        private String adminPassword = "";
         private String jwtSecret = "";
         private int jwtExpirationMinutes = 30;
         private int refreshExpirationDays = 7;

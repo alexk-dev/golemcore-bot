@@ -164,13 +164,13 @@ public class DashboardAuthService {
             return;
         }
 
-        String configHash = botProperties.getDashboard().getAdminPasswordHash();
-        if (configHash != null && !configHash.isBlank()) {
+        String configPassword = botProperties.getDashboard().getAdminPassword();
+        if (configPassword != null && !configPassword.isBlank()) {
             credentials = AdminCredentials.builder()
-                    .passwordHash(configHash)
+                    .passwordHash(passwordEncoder.encode(configPassword))
                     .build();
             persistCredentials();
-            log.info("[Dashboard] Created admin credentials from config hash");
+            log.info("[Dashboard] Created admin credentials from config password");
             return;
         }
 
