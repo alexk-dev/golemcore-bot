@@ -53,6 +53,16 @@ docker run -d \
 
 ## Built-in Tools
 
+### Dashboard IDE API vs `filesystem` Tool
+
+The dashboard embedded IDE uses direct authenticated HTTP endpoints under `/api/files`.
+This API is separate from the `filesystem` tool used by the agent tool loop.
+
+- Dashboard IDE API (`/api/files`) is deterministic UI/backend integration.
+- `filesystem` tool is an LLM-callable tool with tool-loop semantics.
+
+Both are sandboxed to the configured filesystem workspace root.
+
 ### `filesystem`
 
 Sandboxed file operations (read/write/list/create/delete/send) under the tool workspace.
