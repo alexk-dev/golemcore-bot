@@ -42,5 +42,8 @@ public class TurnMemoryEvent {
     private String activeSkill;
 
     @Builder.Default
+    private String scope = "global";
+
+    @Builder.Default
     private List<String> toolOutputs = new ArrayList<>();
 }

@@ -1,7 +1,9 @@
 package me.golemcore.bot.adapter.inbound.telegram;
 
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.TelegramSessionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.i18n.MessageService;
 import me.golemcore.bot.port.inbound.CommandPort;
@@ -22,6 +24,7 @@ import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -41,6 +44,7 @@ class TelegramAdapterHandleMessageTest {
     private MessageService messageService;
     private ApplicationEventPublisher eventPublisher;
     private TelegramMenuHandler menuHandler;
+    private TelegramSessionService telegramSessionService;
     private Consumer<Message> messageHandler;
 
     @BeforeEach
@@ -59,6 +63,9 @@ class TelegramAdapterHandleMessageTest {
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         when(runtimeConfigService.isTelegramEnabled()).thenReturn(true);
         when(runtimeConfigService.getTelegramToken()).thenReturn("test-token");
+        telegramSessionService = mock(TelegramSessionService.class);
+        when(telegramSessionService.resolveActiveConversationKey(anyString()))
+                .thenReturn("conv-active");
 
         adapter = new TelegramAdapter(
                 runtimeConfigService,
@@ -69,7 +76,8 @@ class TelegramAdapterHandleMessageTest {
                 messageService,
                 new TestObjectProvider<>(commandRouter),
                 mock(TelegramVoiceHandler.class),
-                menuHandler);
+                menuHandler,
+                telegramSessionService);
         adapter.setTelegramClient(telegramClient);
 
         messageHandler = mock(Consumer.class);
@@ -136,6 +144,32 @@ class TelegramAdapterHandleMessageTest {
     }
 
     @Test
+    void shouldDelegateSessionsCommandToMenuHandler() {
+        Update update = createTextUpdate(123L, 100L, "/sessions");
+        adapter.consume(update);
+
+        verify(menuHandler).sendSessionsMenu("100");
+        verify(commandRouter, never()).hasCommand("sessions");
+        verify(messageHandler, never()).accept(any());
+    }
+
+    @Test
+    void shouldCreateNewTelegramSessionOnNewCommand() throws Exception {
+        when(telegramSessionService.createAndActivateConversation("100")).thenReturn("conv-new");
+        when(preferencesService.getMessage("command.new.done")).thenReturn("Conversation reset");
+        when(telegramClient.execute(any(SendMessage.class)))
+                .thenReturn(mock(org.telegram.telegrambots.meta.api.objects.message.Message.class));
+
+        Update update = createTextUpdate(123L, 100L, "/new");
+        adapter.consume(update);
+
+        verify(telegramSessionService).createAndActivateConversation("100");
+        verify(telegramClient, timeout(2000)).execute(any(SendMessage.class));
+        verify(commandRouter, never()).hasCommand("new");
+        verify(messageHandler, never()).accept(any());
+    }
+
+    @Test
     void shouldHandleCommandWithBotMention() throws Exception {
         when(commandRouter.hasCommand(COMMAND_HELP)).thenReturn(true);
 
@@ -195,10 +229,12 @@ class TelegramAdapterHandleMessageTest {
 
         Message msg = captor.getValue();
         assertEquals("Hello world", msg.getContent());
-        assertEquals("100", msg.getChatId());
+        assertEquals("conv-active", msg.getChatId());
         assertEquals("123", msg.getSenderId());
         assertEquals("user", msg.getRole());
         assertEquals("telegram", msg.getChannelType());
+        assertEquals("100", msg.getMetadata().get(ContextAttributes.TRANSPORT_CHAT_ID));
+        assertEquals("conv-active", msg.getMetadata().get(ContextAttributes.CONVERSATION_KEY));
     }
 
     // ===== Event publishing =====

@@ -26,14 +26,17 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.TurnOutcome;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.model.TurnMemoryEvent;
+import me.golemcore.bot.domain.service.MemoryScopeSupport;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * System for persisting structured turn-level memory events (order=50).
@@ -89,14 +92,19 @@ public class MemoryPersistSystem implements AgentSystem {
 
         // Persist structured memory event (Memory V2)
         try {
-            TurnMemoryEvent event = TurnMemoryEvent.builder()
-                    .timestamp(Instant.now())
-                    .userText(lastUserMessage.getContent())
-                    .assistantText(assistantContent)
-                    .activeSkill(context.getActiveSkill() != null ? context.getActiveSkill().getName() : null)
-                    .toolOutputs(extractToolOutputs(context))
-                    .build();
-            memoryComponent.persistTurnMemory(event);
+            List<String> scopes = resolvePersistScopes(context);
+            List<String> toolOutputs = extractToolOutputs(context);
+            for (String scope : scopes) {
+                TurnMemoryEvent event = TurnMemoryEvent.builder()
+                        .timestamp(Instant.now())
+                        .userText(lastUserMessage.getContent())
+                        .assistantText(assistantContent)
+                        .activeSkill(context.getActiveSkill() != null ? context.getActiveSkill().getName() : null)
+                        .scope(scope)
+                        .toolOutputs(toolOutputs)
+                        .build();
+                memoryComponent.persistTurnMemory(event);
+            }
         } catch (Exception e) {
             log.warn("Failed to persist structured memory event", e);
         }
@@ -151,5 +159,36 @@ public class MemoryPersistSystem implements AgentSystem {
             }
         }
         return outputs;
+    }
+
+    private List<String> resolvePersistScopes(AgentContext context) {
+        String runKind = context.getAttribute(ContextAttributes.AUTO_RUN_KIND);
+        String goalId = context.getAttribute(ContextAttributes.AUTO_GOAL_ID);
+        String taskId = context.getAttribute(ContextAttributes.AUTO_TASK_ID);
+
+        String sessionScope = MemoryScopeSupport.resolveScopeFromSessionOrGlobal(context.getSession());
+        if (runKind == null || runKind.isBlank()) {
+            return List.of(sessionScope);
+        }
+
+        Set<String> scopes = new LinkedHashSet<>();
+        String taskScope = MemoryScopeSupport.buildTaskScopeOrGlobal(taskId);
+        if (!MemoryScopeSupport.GLOBAL_SCOPE.equals(taskScope)) {
+            scopes.add(taskScope);
+        }
+
+        if ("GOAL_RUN".equalsIgnoreCase(runKind)) {
+            String channelType = context.getAttribute(ContextAttributes.SESSION_IDENTITY_CHANNEL);
+            String conversationKey = context.getAttribute(ContextAttributes.SESSION_IDENTITY_CONVERSATION);
+            String goalScope = MemoryScopeSupport.buildGoalScopeOrGlobal(channelType, conversationKey, goalId);
+            if (!MemoryScopeSupport.GLOBAL_SCOPE.equals(goalScope)) {
+                scopes.add(goalScope);
+            }
+        }
+
+        if (scopes.isEmpty()) {
+            scopes.add(sessionScope);
+        }
+        return new ArrayList<>(scopes);
     }
 }

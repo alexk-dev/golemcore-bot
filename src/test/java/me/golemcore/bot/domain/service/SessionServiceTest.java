@@ -474,6 +474,42 @@ class SessionServiceTest {
     }
 
     @Test
+    void listByChannelTypeReturnsOnlyMatchingSessions() {
+        when(storagePort.getObject(SESSIONS_DIR, "web:web-chat.pb"))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
+        when(storagePort.getObject(SESSIONS_DIR, "telegram:tg-chat.pb"))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
+
+        service.getOrCreate("web", "web-chat");
+        service.getOrCreate("telegram", "tg-chat");
+
+        List<AgentSession> webSessions = service.listByChannelType("web");
+
+        assertEquals(1, webSessions.size());
+        assertEquals("web:web-chat", webSessions.get(0).getId());
+    }
+
+    @Test
+    void listByChannelTypeAndTransportReturnsOnlyOwnedSessions() {
+        when(storagePort.getObject(SESSIONS_DIR, "telegram:conv-1.pb"))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
+        when(storagePort.getObject(SESSIONS_DIR, "telegram:conv-2.pb"))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
+
+        AgentSession conv1 = service.getOrCreate("telegram", "conv-1");
+        AgentSession conv2 = service.getOrCreate("telegram", "conv-2");
+        SessionIdentitySupport.bindTransportAndConversation(conv1, "100", "conv-1");
+        SessionIdentitySupport.bindTransportAndConversation(conv2, "200", "conv-2");
+        service.save(conv1);
+        service.save(conv2);
+
+        List<AgentSession> owned = service.listByChannelTypeAndTransportChatId("telegram", "100");
+
+        assertEquals(1, owned.size());
+        assertEquals("telegram:conv-1", owned.get(0).getId());
+    }
+
+    @Test
     void migrateLegacySessionsAtStartupConvertsJsonToProtobuf() throws Exception {
         AgentSession legacy = AgentSession.builder()
                 .id("telegram:777")

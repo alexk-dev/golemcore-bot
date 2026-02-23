@@ -38,6 +38,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Predicate;
 
 /**
  * Service for managing agent conversation sessions including message history
@@ -223,13 +224,51 @@ public class SessionService implements SessionPort {
     @Override
     public List<AgentSession> listAll() {
         // Merge cached sessions with any on-disk sessions not yet loaded
+        hydrateCacheFromStorage(path -> true);
+        return sessionCache.values().stream()
+                .filter(java.util.Objects::nonNull)
+                .toList();
+    }
+
+    @Override
+    public List<AgentSession> listByChannelType(String channelType) {
+        if (StringValueSupport.isBlank(channelType)) {
+            return List.of();
+        }
+        String normalizedChannel = channelType.trim();
+        hydrateCacheFromStorage(path -> isStoredFileForChannel(path, normalizedChannel));
+        return sessionCache.values().stream()
+                .filter(java.util.Objects::nonNull)
+                .filter(session -> normalizedChannel.equals(session.getChannelType()))
+                .toList();
+    }
+
+    @Override
+    public List<AgentSession> listByChannelTypeAndTransportChatId(String channelType, String transportChatId) {
+        if (StringValueSupport.isBlank(channelType)) {
+            return List.of();
+        }
+        if (StringValueSupport.isBlank(transportChatId)) {
+            return listByChannelType(channelType);
+        }
+
+        String normalizedTransportChatId = transportChatId.trim();
+        return listByChannelType(channelType).stream()
+                .filter(session -> SessionIdentitySupport.belongsToTransport(session, normalizedTransportChatId))
+                .toList();
+    }
+
+    private void hydrateCacheFromStorage(Predicate<String> pathFilter) {
         try {
             List<String> files = storagePort.listObjects(SESSIONS_DIR, "").join();
             for (String file : files) {
+                if (!pathFilter.test(file)) {
+                    continue;
+                }
                 Optional<AgentSession> loaded = loadFromStoredFile(file);
                 if (loaded.isPresent()) {
                     AgentSession session = loaded.get();
-                    if (session.getId() != null && !session.getId().isBlank()) {
+                    if (!StringValueSupport.isBlank(session.getId())) {
                         sessionCache.putIfAbsent(session.getId(), session);
                     }
                 }
@@ -237,9 +276,30 @@ public class SessionService implements SessionPort {
         } catch (Exception e) { // NOSONAR
             log.warn("Failed to scan sessions directory: {}", e.getMessage());
         }
-        return sessionCache.values().stream()
-                .filter(java.util.Objects::nonNull)
-                .toList();
+    }
+
+    private boolean isStoredFileForChannel(String path, String channelType) {
+        if (StringValueSupport.isBlank(path) || StringValueSupport.isBlank(channelType)) {
+            return false;
+        }
+
+        String normalizedPath = path;
+        int slashIndex = Math.max(normalizedPath.lastIndexOf(PATH_SEPARATOR), normalizedPath.lastIndexOf('\\'));
+        String fileName = slashIndex >= 0 ? normalizedPath.substring(slashIndex + 1) : normalizedPath;
+        if (!fileName.endsWith(PROTO_EXTENSION) && !fileName.endsWith(JSON_EXTENSION)) {
+            return false;
+        }
+        int extensionIndex = fileName.lastIndexOf('.');
+        if (extensionIndex <= 0) {
+            return false;
+        }
+
+        String sessionId = fileName.substring(0, extensionIndex);
+        int separatorIndex = sessionId.indexOf(SESSION_ID_SEPARATOR);
+        if (separatorIndex <= 0) {
+            return false;
+        }
+        return channelType.equals(sessionId.substring(0, separatorIndex));
     }
 
     private Optional<AgentSession> load(String sessionId) {

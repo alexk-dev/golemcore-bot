@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.0.2</version>
+        <version>4.0.3</version>
         <relativePath/>
     </parent>
     <groupId>me.golemcore</groupId>
@@ -25,9 +25,9 @@
 
     <properties>
         <java.version>25</java.version>
-        <feign.version>13.8</feign.version>
+        <feign.version>13.9</feign.version>
         <okhttp.version>5.3.2</okhttp.version>
-        <telegram.version>9.3.0</telegram.version>
+        <telegram.version>9.4.0</telegram.version>
         <langchain4j.version>1.11.0</langchain4j.version>
         <playwright.version>1.49.0</playwright.version>
         <jjwt.version>0.13.0</jjwt.version>
@@ -278,7 +278,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.5.4</version>
+                <version>3.5.5</version>
                 <configuration>
                     <forkCount>2</forkCount>
                     <reuseForks>true</reuseForks>
@@ -308,7 +308,7 @@
             <plugin>
                 <groupId>io.github.git-commit-id</groupId>
                 <artifactId>git-commit-id-maven-plugin</artifactId>
-                <version>9.0.1</version>
+                <version>9.0.2</version>
                 <executions>
                     <execution>
                         <goals>
@@ -396,7 +396,7 @@
                 <version>2.0.0</version>
                 <configuration>
                     <workingDirectory>dashboard</workingDirectory>
-                    <nodeVersion>v20.11.0</nodeVersion>
+                    <nodeVersion>v20.19.0</nodeVersion>
                 </configuration>
                 <executions>
                     <execution>

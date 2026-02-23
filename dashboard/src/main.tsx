@@ -6,6 +6,7 @@ import { Toaster } from 'react-hot-toast';
 import App from './App';
 import 'bootswatch/dist/zephyr/bootstrap.min.css';
 import './styles/custom.scss';
+import './styles/ide.scss';
 
 const queryClient = new QueryClient({
   defaultOptions: {
