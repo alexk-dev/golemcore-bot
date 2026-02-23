@@ -23,7 +23,7 @@ import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.plugin.api.PluginContext;
 import me.golemcore.bot.plugin.builtin.AbstractPlugin;
 import me.golemcore.bot.port.outbound.VoicePort;
-import me.golemcore.bot.tools.VoiceResponseTool;
+import me.golemcore.bot.plugin.builtin.voice.tool.VoiceResponseTool;
 
 /**
  * Built-in plugin for ElevenLabs STT/TTS integration.

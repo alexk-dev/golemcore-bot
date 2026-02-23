@@ -18,13 +18,13 @@ package me.golemcore.bot.plugin.builtin.browser;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.adapter.outbound.browser.PlaywrightAdapter;
+import me.golemcore.bot.plugin.builtin.browser.adapter.PlaywrightAdapter;
 import me.golemcore.bot.domain.component.BrowserComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.plugin.api.PluginContext;
 import me.golemcore.bot.plugin.builtin.AbstractPlugin;
 import me.golemcore.bot.port.outbound.BrowserPort;
-import me.golemcore.bot.tools.BrowserTool;
+import me.golemcore.bot.plugin.builtin.browser.tool.BrowserTool;
 
 /**
  * Built-in plugin for headless browsing.

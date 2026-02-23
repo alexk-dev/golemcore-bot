@@ -18,7 +18,7 @@ package me.golemcore.bot.plugin.builtin.rag;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.adapter.outbound.rag.LightRagAdapter;
+import me.golemcore.bot.plugin.builtin.rag.adapter.LightRagAdapter;
 import me.golemcore.bot.plugin.api.PluginContext;
 import me.golemcore.bot.plugin.builtin.AbstractPlugin;
 import me.golemcore.bot.port.outbound.RagPort;

@@ -18,8 +18,8 @@ package me.golemcore.bot.plugin.builtin.webhooks;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.adapter.inbound.webhook.WebhookChannelAdapter;
-import me.golemcore.bot.adapter.inbound.webhook.WebhookController;
+import me.golemcore.bot.plugin.builtin.webhooks.inbound.WebhookChannelAdapter;
+import me.golemcore.bot.plugin.builtin.webhooks.inbound.WebhookController;
 import me.golemcore.bot.plugin.api.PluginContext;
 import me.golemcore.bot.plugin.builtin.AbstractPlugin;
 import me.golemcore.bot.port.inbound.ChannelPort;

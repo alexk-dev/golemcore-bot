@@ -21,8 +21,8 @@ package me.golemcore.bot.plugin.builtin.email;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.plugin.api.PluginContext;
 import me.golemcore.bot.plugin.builtin.AbstractPlugin;
-import me.golemcore.bot.tools.ImapTool;
-import me.golemcore.bot.tools.SmtpTool;
+import me.golemcore.bot.plugin.builtin.email.tool.ImapTool;
+import me.golemcore.bot.plugin.builtin.email.tool.SmtpTool;
 
 /**
  * Built-in plugin for email operations (IMAP + SMTP).

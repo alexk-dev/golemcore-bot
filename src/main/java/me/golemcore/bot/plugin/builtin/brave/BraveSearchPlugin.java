@@ -21,7 +21,7 @@ package me.golemcore.bot.plugin.builtin.brave;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.plugin.api.PluginContext;
 import me.golemcore.bot.plugin.builtin.AbstractPlugin;
-import me.golemcore.bot.tools.BraveSearchTool;
+import me.golemcore.bot.plugin.builtin.brave.tool.BraveSearchTool;
 
 /**
  * Built-in plugin for Brave Search tool integration.
