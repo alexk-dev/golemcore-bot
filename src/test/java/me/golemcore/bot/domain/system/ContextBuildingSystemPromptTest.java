@@ -7,6 +7,7 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.MemoryPack;
+import me.golemcore.bot.domain.model.MemoryQuery;
 import me.golemcore.bot.domain.model.McpConfig;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.Plan;
@@ -277,6 +278,31 @@ class ContextBuildingSystemPromptTest {
         assertNotNull(diagnostics);
         assertTrue(diagnostics instanceof Map<?, ?>);
         assertTrue(ctx.getMemoryContext().contains("Semantic Memory"));
+    }
+
+    @Test
+    void buildsMemoryQueryWithSessionScope() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(memoryComponent.buildMemoryPack(any())).thenReturn(MemoryPack.builder()
+                .renderedContext("")
+                .build());
+
+        AgentSession session = AgentSession.builder()
+                .id("web:conv12345")
+                .channelType("web")
+                .chatId("conv12345")
+                .metadata(new HashMap<>(Map.of(ContextAttributes.CONVERSATION_KEY, "conv12345")))
+                .build();
+        AgentContext ctx = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>(List.of(
+                        Message.builder().role("user").content("Hello").timestamp(Instant.now()).build())))
+                .build();
+
+        system.process(ctx);
+
+        verify(memoryComponent).buildMemoryPack(argThat((MemoryQuery query) -> query != null
+                && "session:web:conv12345".equals(query.getScope())));
     }
 
     // ===== Active skill injection =====

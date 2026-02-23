@@ -53,6 +53,16 @@ docker run -d \
 
 ## Built-in Tools
 
+### Dashboard IDE API vs `filesystem` Tool
+
+The dashboard embedded IDE uses direct authenticated HTTP endpoints under `/api/files`.
+This API is separate from the `filesystem` tool used by the agent tool loop.
+
+- Dashboard IDE API (`/api/files`) is deterministic UI/backend integration.
+- `filesystem` tool is an LLM-callable tool with tool-loop semantics.
+
+Both are sandboxed to the configured filesystem workspace root.
+
 ### `filesystem`
 
 Sandboxed file operations (read/write/list/create/delete/send) under the tool workspace.
@@ -101,6 +111,16 @@ Switch model tier mid-conversation (`balanced`, `smart`, `coding`, `deep`).
 ### `goal_management`
 
 Auto Mode goal/task/diary management.
+
+### `plan_get` / `plan_set_content`
+
+Plan-work tools for canonical plan drafting (SSOT).
+
+- Advertised only when plan mode is active for the current session.
+- `plan_get` returns the current canonical Markdown plan draft.
+- `plan_set_content` accepts full Markdown in `plan_markdown` (optional `title`) and requests finalization.
+- Persistence/finalization is handled by `PlanFinalizationSystem`; `plan_set_content` is a deterministic control signal.
+- Finalizing a draft makes the plan `READY`, while plan work remains active until `/plan done` or `/plan off`.
 
 ### `memory`
 

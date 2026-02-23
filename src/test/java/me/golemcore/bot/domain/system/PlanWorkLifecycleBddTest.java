@@ -10,11 +10,13 @@ import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.Plan;
+import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import me.golemcore.bot.domain.service.SkillTemplateEngine;
 import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -82,10 +84,12 @@ class PlanWorkLifecycleBddTest {
                 Clock.fixed(NOW, ZoneOffset.UTC));
 
         // /plan on (activate plan work + create empty plan)
-        planService.activatePlanMode(CHAT_ID, MODEL_TIER);
-        String planId = planService.getActivePlanId();
+        SessionIdentity sessionIdentity = SessionIdentitySupport.resolveSessionIdentity("telegram", CHAT_ID);
+        assertNotNull(sessionIdentity);
+        planService.activatePlanMode(sessionIdentity, CHAT_ID, MODEL_TIER);
+        String planId = planService.getActivePlanId(sessionIdentity);
         assertNotNull(planId);
-        assertTrue(planService.isPlanModeActive());
+        assertTrue(planService.isPlanModeActive(sessionIdentity));
 
         // And a minimal context builder to verify tool advertisement
         ContextBuildingSystem contextBuildingSystem = buildContextBuildingSystem(planService, properties);
@@ -168,11 +172,11 @@ class PlanWorkLifecycleBddTest {
         assertEquals(Plan.PlanStatus.READY, plan.get().getStatus());
         assertEquals("My plan", plan.get().getTitle());
         assertEquals("# Plan\n\n1) Do X\n2) Do Y\n", plan.get().getMarkdown());
-        assertTrue(planService.isPlanModeActive());
+        assertTrue(planService.isPlanModeActive(sessionIdentity));
 
         // WHEN: /plan done (deactivate plan work)
-        planService.deactivatePlanMode();
-        assertFalse(planService.isPlanModeActive());
+        planService.deactivatePlanMode(sessionIdentity);
+        assertFalse(planService.isPlanModeActive(sessionIdentity));
 
         // THEN: tools are no longer advertised, but plan stays READY
         contextBuildingSystem.process(context);
