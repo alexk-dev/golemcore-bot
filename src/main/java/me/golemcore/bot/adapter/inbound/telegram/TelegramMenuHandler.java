@@ -19,11 +19,15 @@
 package me.golemcore.bot.adapter.inbound.telegram;
 
 import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.SessionIdentitySupport;
+import me.golemcore.bot.domain.service.TelegramSessionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.i18n.MessageService;
@@ -40,6 +44,8 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKe
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -74,8 +80,13 @@ public class TelegramMenuHandler {
     private static final String TIER_DEEP = "deep";
     private static final String ACTION_FORCE = "force";
     private static final String ACTION_YES = "yes";
+    private static final String ACTION_NEW = "new";
+    private static final String ACTION_BACK = "back";
     private static final String HTML_BOLD_OPEN = "<b>";
     private static final String HTML_BOLD_CLOSE_NL = "</b>\n\n";
+    private static final int RECENT_SESSIONS_LIMIT = 5;
+    private static final int SESSION_TITLE_MAX_LEN = 22;
+    private static final int SESSION_INDEX_CACHE_MAX_ENTRIES = 1024;
     private static final Set<String> VALID_TIERS = Set.of(TIER_BALANCED, TIER_SMART, TIER_CODING, TIER_DEEP);
 
     private final BotProperties properties;
@@ -84,10 +95,13 @@ public class TelegramMenuHandler {
     private final ModelSelectionService modelSelectionService;
     private final AutoModeService autoModeService;
     private final PlanService planService;
+    private final TelegramSessionService telegramSessionService;
     private final MessageService messageService;
     private final ObjectProvider<CommandPort> commandRouter;
 
     private final AtomicReference<TelegramClient> telegramClient = new AtomicReference<>();
+    private final Map<String, List<String>> sessionIndexCache = Collections
+            .synchronizedMap(new SessionIndexCache(SESSION_INDEX_CACHE_MAX_ENTRIES));
 
     public TelegramMenuHandler(
             BotProperties properties,
@@ -96,6 +110,7 @@ public class TelegramMenuHandler {
             ModelSelectionService modelSelectionService,
             AutoModeService autoModeService,
             PlanService planService,
+            TelegramSessionService telegramSessionService,
             MessageService messageService,
             ObjectProvider<CommandPort> commandRouter) {
         this.properties = properties;
@@ -104,8 +119,24 @@ public class TelegramMenuHandler {
         this.modelSelectionService = modelSelectionService;
         this.autoModeService = autoModeService;
         this.planService = planService;
+        this.telegramSessionService = telegramSessionService;
         this.messageService = messageService;
         this.commandRouter = commandRouter;
+    }
+
+    private static final class SessionIndexCache extends LinkedHashMap<String, List<String>> {
+        private static final long serialVersionUID = 1L;
+
+        private final int maxEntries;
+
+        private SessionIndexCache(int maxEntries) {
+            this.maxEntries = maxEntries;
+        }
+
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, List<String>> eldest) {
+            return size() > maxEntries;
+        }
     }
 
     /**
@@ -147,14 +178,37 @@ public class TelegramMenuHandler {
         try {
             SendMessage message = SendMessage.builder()
                     .chatId(chatId)
-                    .text(buildMainMenuText())
+                    .text(buildMainMenuText(chatId))
                     .parseMode("HTML")
-                    .replyMarkup(buildMainMenuKeyboard())
+                    .replyMarkup(buildMainMenuKeyboard(chatId))
                     .build();
             client.execute(message);
             log.debug("[Menu] Sent main menu to chat: {}", chatId);
         } catch (Exception e) {
             log.error("[Menu] Failed to send main menu", e);
+        }
+    }
+
+    /**
+     * Send sessions menu as a standalone message. Called from /sessions command.
+     */
+    void sendSessionsMenu(String chatId) {
+        TelegramClient client = getOrCreateClient();
+        if (client == null) {
+            log.warn("[Menu] TelegramClient not available");
+            return;
+        }
+        try {
+            SendMessage message = SendMessage.builder()
+                    .chatId(chatId)
+                    .text(buildSessionsMenuText(chatId))
+                    .parseMode("HTML")
+                    .replyMarkup(buildSessionsMenuKeyboard(chatId))
+                    .build();
+            client.execute(message);
+            log.debug("[Menu] Sent sessions menu to chat: {}", chatId);
+        } catch (Exception e) {
+            log.error("[Menu] Failed to send sessions menu", e);
         }
     }
 
@@ -189,6 +243,9 @@ public class TelegramMenuHandler {
         case "new":
             handleNewChatCallback(chatId, messageId, action);
             break;
+        case "sessions":
+            handleSessionsCallback(chatId, messageId, action);
+            break;
         case "status", "skills", "tools", "help", "compact":
             executeAndSendSeparate(chatId, section);
             break;
@@ -209,7 +266,7 @@ public class TelegramMenuHandler {
 
     // ==================== Menu screens ====================
 
-    private String buildMainMenuText() {
+    private String buildMainMenuText(String chatId) {
         UserPreferences prefs = preferencesService.getPreferences();
         String tier = prefs.getModelTier() != null ? prefs.getModelTier() : TIER_BALANCED;
         ModelSelectionService.ModelSelection selection = modelSelectionService.resolveForTier(tier);
@@ -230,7 +287,7 @@ public class TelegramMenuHandler {
         return sb.toString();
     }
 
-    private InlineKeyboardMarkup buildMainMenuKeyboard() {
+    private InlineKeyboardMarkup buildMainMenuKeyboard(String chatId) {
         List<InlineKeyboardRow> rows = new ArrayList<>();
 
         rows.add(row(
@@ -244,6 +301,7 @@ public class TelegramMenuHandler {
 
         rows.add(row(
                 button(msg("menu.btn.new"), "menu:new"),
+                button(msg("menu.btn.sessions"), "menu:sessions"),
                 button(msg("menu.btn.compact"), "menu:compact")));
 
         if (autoModeService.isFeatureEnabled()) {
@@ -252,7 +310,8 @@ public class TelegramMenuHandler {
         }
 
         if (planService.isFeatureEnabled()) {
-            String planStatus = planService.isPlanModeActive() ? ON : OFF;
+            SessionIdentity sessionIdentity = resolveTelegramSessionIdentity(chatId);
+            String planStatus = planService.isPlanModeActive(sessionIdentity) ? ON : OFF;
             rows.add(row(button(msg("menu.btn.plan", planStatus), "menu:plan")));
         }
 
@@ -356,10 +415,64 @@ public class TelegramMenuHandler {
         return InlineKeyboardMarkup.builder().keyboard(rows).build();
     }
 
+    private String buildSessionsMenuText(String chatId) {
+        String activeConversationKey = telegramSessionService.resolveActiveConversationKey(chatId);
+        List<AgentSession> recentSessions = telegramSessionService.listRecentSessions(chatId, RECENT_SESSIONS_LIMIT);
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(HTML_BOLD_OPEN).append(msg("menu.sessions.title")).append(HTML_BOLD_CLOSE_NL);
+        sb.append(msg("menu.sessions.current", escapeHtml(shortConversationKey(activeConversationKey))));
+
+        if (recentSessions.isEmpty()) {
+            sb.append("\n\n").append(msg("menu.sessions.empty"));
+            return sb.toString();
+        }
+
+        sb.append("\n\n");
+        for (int index = 0; index < recentSessions.size(); index++) {
+            AgentSession session = recentSessions.get(index);
+            String conversationKey = SessionIdentitySupport.resolveConversationKey(session);
+            String prefix = conversationKey.equals(activeConversationKey) ? "✅ " : "";
+            sb.append(index + 1)
+                    .append(". ")
+                    .append(prefix)
+                    .append(escapeHtml(resolveSessionTitle(session)))
+                    .append("\n");
+        }
+        return sb.toString().trim();
+    }
+
+    private InlineKeyboardMarkup buildSessionsMenuKeyboard(String chatId) {
+        String activeConversationKey = telegramSessionService.resolveActiveConversationKey(chatId);
+        List<AgentSession> recentSessions = telegramSessionService.listRecentSessions(chatId, RECENT_SESSIONS_LIMIT);
+
+        List<String> indexToConversation = new ArrayList<>();
+        List<InlineKeyboardRow> rows = new ArrayList<>();
+
+        for (AgentSession session : recentSessions) {
+            String conversationKey = SessionIdentitySupport.resolveConversationKey(session);
+            if (conversationKey == null || conversationKey.isBlank()) {
+                continue;
+            }
+            int nextIndex = indexToConversation.size();
+            indexToConversation.add(conversationKey);
+            String label = buildSwitchButtonLabel(session, conversationKey.equals(activeConversationKey));
+            rows.add(row(button(label, "menu:sessions:sw:" + nextIndex)));
+        }
+
+        sessionIndexCache.put(chatId, List.copyOf(indexToConversation));
+
+        rows.add(row(
+                button(msg("menu.sessions.new"), "menu:sessions:new"),
+                button(msg("menu.btn.back"), "menu:sessions:back")));
+
+        return InlineKeyboardMarkup.builder().keyboard(rows).build();
+    }
+
     // ==================== Callback handlers ====================
 
     private void updateToMainMenu(String chatId, Integer messageId) {
-        editMessage(chatId, messageId, buildMainMenuText(), buildMainMenuKeyboard());
+        editMessage(chatId, messageId, buildMainMenuText(chatId), buildMainMenuKeyboard(chatId));
     }
 
     private void handleTierCallback(String chatId, Integer messageId, String action) {
@@ -403,21 +516,42 @@ public class TelegramMenuHandler {
         }
 
         if (ACTION_YES.equals(action)) {
-            String sessionId = CHANNEL_TYPE + ":" + chatId;
-            CommandPort router = commandRouter.getIfAvailable();
-            if (router != null) {
-                try {
-                    router.execute("new", List.of(), Map.of(
-                            "sessionId", sessionId,
-                            "chatId", chatId,
-                            "channelType", CHANNEL_TYPE)).join();
-                } catch (Exception e) {
-                    log.error("[Menu] Failed to execute /new", e);
-                }
-            }
+            telegramSessionService.createAndActivateConversation(chatId);
         }
         // Both yes (after reset) and cancel → back to main menu
         updateToMainMenu(chatId, messageId);
+    }
+
+    private void handleSessionsCallback(String chatId, Integer messageId, String action) {
+        if (action == null) {
+            editMessage(chatId, messageId, buildSessionsMenuText(chatId), buildSessionsMenuKeyboard(chatId));
+            return;
+        }
+
+        if (ACTION_NEW.equals(action)) {
+            telegramSessionService.createAndActivateConversation(chatId);
+            editMessage(chatId, messageId, buildSessionsMenuText(chatId), buildSessionsMenuKeyboard(chatId));
+            return;
+        }
+
+        if (ACTION_BACK.equals(action)) {
+            sessionIndexCache.remove(chatId);
+            updateToMainMenu(chatId, messageId);
+            return;
+        }
+
+        Integer switchIndex = parseSwitchIndex(action);
+        if (switchIndex != null) {
+            List<String> recentIndex = sessionIndexCache.get(chatId);
+            if (recentIndex != null && switchIndex >= 0 && switchIndex < recentIndex.size()) {
+                String conversationKey = recentIndex.get(switchIndex);
+                telegramSessionService.activateConversation(chatId, conversationKey);
+            }
+            editMessage(chatId, messageId, buildSessionsMenuText(chatId), buildSessionsMenuKeyboard(chatId));
+            return;
+        }
+
+        editMessage(chatId, messageId, buildSessionsMenuText(chatId), buildSessionsMenuKeyboard(chatId));
     }
 
     private void executeAndSendSeparate(String chatId, String command) {
@@ -425,11 +559,15 @@ public class TelegramMenuHandler {
         if (router == null) {
             return;
         }
-        String sessionId = CHANNEL_TYPE + ":" + chatId;
+        String activeConversationKey = telegramSessionService.resolveActiveConversationKey(chatId);
+        String sessionId = CHANNEL_TYPE + ":" + activeConversationKey;
         try {
             CommandPort.CommandResult result = router.execute(command, List.of(), Map.of(
                     "sessionId", sessionId,
-                    "chatId", chatId,
+                    "chatId", activeConversationKey,
+                    "sessionChatId", activeConversationKey,
+                    "transportChatId", chatId,
+                    "conversationKey", activeConversationKey,
                     "channelType", CHANNEL_TYPE)).join();
             sendSeparateMessage(chatId, result.output());
         } catch (Exception e) {
@@ -453,10 +591,11 @@ public class TelegramMenuHandler {
         if (!planService.isFeatureEnabled()) {
             return;
         }
-        if (planService.isPlanModeActive()) {
-            planService.deactivatePlanMode();
+        SessionIdentity sessionIdentity = resolveTelegramSessionIdentity(chatId);
+        if (planService.isPlanModeActive(sessionIdentity)) {
+            planService.deactivatePlanMode(sessionIdentity);
         } else {
-            planService.activatePlanMode(chatId, null);
+            planService.activatePlanMode(sessionIdentity, chatId, null);
         }
         updateToMainMenu(chatId, messageId);
     }
@@ -535,6 +674,83 @@ public class TelegramMenuHandler {
         } catch (Exception e) {
             log.error("[Menu] Failed to send separate message", e);
         }
+    }
+
+    private Integer parseSwitchIndex(String action) {
+        if (action == null || !action.startsWith("sw:")) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(action.substring("sw:".length()));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private String buildSwitchButtonLabel(AgentSession session, boolean active) {
+        String title = truncate(resolveSessionTitle(session), SESSION_TITLE_MAX_LEN);
+        if (active) {
+            return "✅ " + title;
+        }
+        return title;
+    }
+
+    private String resolveSessionTitle(AgentSession session) {
+        if (session == null || session.getMessages() == null || session.getMessages().isEmpty()) {
+            return msg(
+                    "menu.sessions.fallback",
+                    shortConversationKey(SessionIdentitySupport.resolveConversationKey(session)));
+        }
+
+        for (me.golemcore.bot.domain.model.Message message : session.getMessages()) {
+            if (message == null || !"user".equals(message.getRole())) {
+                continue;
+            }
+            if (message.getContent() != null && !message.getContent().isBlank()) {
+                return message.getContent().trim();
+            }
+        }
+        return msg(
+                "menu.sessions.fallback",
+                shortConversationKey(SessionIdentitySupport.resolveConversationKey(session)));
+    }
+
+    private SessionIdentity resolveTelegramSessionIdentity(String chatId) {
+        if (chatId == null || chatId.isBlank()) {
+            return null;
+        }
+        String activeConversationKey = telegramSessionService.resolveActiveConversationKey(chatId);
+        return SessionIdentitySupport.resolveSessionIdentity(CHANNEL_TYPE, activeConversationKey);
+    }
+
+    private String shortConversationKey(String conversationKey) {
+        if (conversationKey == null || conversationKey.isBlank()) {
+            return "-";
+        }
+        if (conversationKey.length() <= 12) {
+            return conversationKey;
+        }
+        return conversationKey.substring(0, 12);
+    }
+
+    private String truncate(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) {
+            return value;
+        }
+        if (maxLength <= 3) {
+            return value.substring(0, maxLength);
+        }
+        return value.substring(0, maxLength - 3) + "...";
+    }
+
+    private String escapeHtml(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;");
     }
 
     private String msg(String key, Object... args) {

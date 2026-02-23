@@ -23,6 +23,9 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Retrieval parameters for building a memory pack in prompt context.
  */
@@ -34,6 +37,12 @@ public class MemoryQuery {
 
     private String queryText;
     private String activeSkill;
+
+    @Builder.Default
+    private String scope = "global";
+
+    @Builder.Default
+    private List<String> scopeChain = new ArrayList<>();
 
     @Builder.Default
     private Integer softPromptBudgetTokens = 1800;

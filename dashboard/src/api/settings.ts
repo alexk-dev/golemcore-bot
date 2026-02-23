@@ -42,6 +42,33 @@ function normalizeLlmApiType(value: unknown): SupportedLlmApiType | null {
 
 type UnknownRecord = Record<string, unknown>;
 
+function toShellEnvironmentVariables(value: unknown): ShellEnvironmentVariable[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const normalized: ShellEnvironmentVariable[] = [];
+  value.forEach((entry) => {
+    if (entry == null || typeof entry !== 'object') {
+      return;
+    }
+    const record = entry as UnknownRecord;
+    const nameRaw = record.name;
+    const valueRaw = record.value;
+    if (typeof nameRaw !== 'string') {
+      return;
+    }
+    const name = nameRaw.trim();
+    if (name.length === 0) {
+      return;
+    }
+    normalized.push({
+      name,
+      value: typeof valueRaw === 'string' ? valueRaw : '',
+    });
+  });
+  return normalized;
+}
+
 interface RuntimeConfigUiRecord extends UnknownRecord {
   telegram?: UnknownRecord;
   llm?: {
@@ -84,6 +111,7 @@ function toUiRuntimeConfig(data: RuntimeConfigUiRecord): RuntimeConfig {
     const smtp = cfg.tools.smtp;
     cfg.tools = {
       ...cfg.tools,
+      shellEnvironmentVariables: toShellEnvironmentVariables(cfg.tools.shellEnvironmentVariables),
       braveSearchApiKey: scrubSecret(),
       braveSearchApiKeyPresent: hasSecretValue(cfg.tools.braveSearchApiKey),
       imap: imap
@@ -352,8 +380,14 @@ export interface ToolsConfig {
   skillTransitionEnabled: boolean | null;
   tierEnabled: boolean | null;
   goalManagementEnabled: boolean | null;
+  shellEnvironmentVariables: ShellEnvironmentVariable[];
   imap: ImapConfig;
   smtp: SmtpConfig;
+}
+
+export interface ShellEnvironmentVariable {
+  name: string;
+  value: string;
 }
 
 export interface ImapConfig {

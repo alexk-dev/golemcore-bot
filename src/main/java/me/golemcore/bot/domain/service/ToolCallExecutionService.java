@@ -110,7 +110,7 @@ public class ToolCallExecutionService {
     }
 
     private boolean requestConfirmation(AgentContext context, Message.ToolCall toolCall) {
-        String chatId = context.getSession().getChatId();
+        String chatId = SessionIdentitySupport.resolveTransportChatId(context.getSession());
         String description = confirmationPolicy.describeAction(toolCall);
 
         log.info("[Tools] Requesting confirmation for '{}': {}", toolCall.getName(), description);
@@ -202,7 +202,7 @@ public class ToolCallExecutionService {
         String content = "Executing tool: " + toolCall.getName() + "\n" + description;
 
         try {
-            String chatId = context.getSession().getChatId();
+            String chatId = SessionIdentitySupport.resolveTransportChatId(context.getSession());
             ChannelPort channel = getChannelPort(context.getSession().getChannelType());
             if (channel != null) {
                 channel.sendMessage(chatId, content);

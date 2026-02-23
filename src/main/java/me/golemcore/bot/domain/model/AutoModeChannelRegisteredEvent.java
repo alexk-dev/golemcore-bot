@@ -11,4 +11,6 @@ package me.golemcore.bot.domain.model;
  *
  * @since 1.0
  */
-public record AutoModeChannelRegisteredEvent(String channelType,String chatId){}
+public record AutoModeChannelRegisteredEvent(String channelType,String sessionChatId,String transportChatId){
+
+public AutoModeChannelRegisteredEvent(String channelType,String chatId){this(channelType,chatId,chatId);}}

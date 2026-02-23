@@ -5,6 +5,7 @@ Get GolemCore Bot running quickly (Docker or JAR) and configure it via the web d
 ## Prerequisites
 
 - 🐳 Docker (recommended) OR ☕ Java 25+ with Maven 3.x
+- 🧩 Optional for local dashboard frontend development: Node.js 20.19+ and npm 10+
 
 ## Method 1: Docker (Recommended)
 
@@ -45,6 +46,13 @@ Why the extra Docker flags?
 - On first start, the bot prints a temporary admin password in logs.
 
 See: [Dashboard Guide](DASHBOARD.md)
+
+Useful routes after login:
+
+- Chat: `http://localhost:8080/dashboard/chat`
+- Embedded IDE: `http://localhost:8080/dashboard/ide`
+- Sessions: `http://localhost:8080/dashboard/sessions`
+- Logs: `http://localhost:8080/dashboard/logs`
 
 ### 4. Configure LLM Providers
 
@@ -90,6 +98,18 @@ java -jar target/golemcore-bot-0.1.0-SNAPSHOT.jar
 ```
 
 Then open the dashboard at `http://localhost:8080/dashboard` and configure providers.
+
+## Optional: Run Dashboard Frontend Locally
+
+Use this mode when you work on dashboard UI code.
+
+```bash
+cd dashboard
+npm install
+npm run dev
+```
+
+Vite runs with API proxying to `http://localhost:8080` (backend should be running).
 
 ## Next Steps
 
