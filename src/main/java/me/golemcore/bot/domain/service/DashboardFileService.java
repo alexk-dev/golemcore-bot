@@ -244,15 +244,16 @@ public class DashboardFileService {
                     .filter(path -> !Files.isSymbolicLink(path))
                     .sorted(Comparator
                             .comparing((Path p) -> !Files.isDirectory(p, LinkOption.NOFOLLOW_LINKS))
-                            .thenComparing(p -> p.getFileName().toString().toLowerCase()))
+                            .thenComparing(p -> requireFileName(p).toLowerCase()))
                     .toList();
 
             List<DashboardFileNode> nodes = new ArrayList<>();
             for (Path path : sorted) {
+                String nodeName = requireFileName(path);
                 if (Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
                     nodes.add(DashboardFileNode.builder()
                             .path(toRelativePath(path))
-                            .name(path.getFileName().toString())
+                            .name(nodeName)
                             .type("directory")
                             .children(buildChildren(path))
                             .build());
@@ -260,7 +261,7 @@ public class DashboardFileService {
                     long size = Files.size(path);
                     nodes.add(DashboardFileNode.builder()
                             .path(toRelativePath(path))
-                            .name(path.getFileName().toString())
+                            .name(nodeName)
                             .type("file")
                             .size(size)
                             .children(List.of())
@@ -272,6 +273,14 @@ public class DashboardFileService {
         } catch (IOException e) {
             throw new IllegalStateException("Failed to list directory", e);
         }
+    }
+
+    private String requireFileName(Path path) {
+        Path fileName = path.getFileName();
+        if (fileName == null) {
+            throw new IllegalStateException("Path has no file name: " + path);
+        }
+        return fileName.toString();
     }
 
     private Path resolveSafePath(String relativePath) {
