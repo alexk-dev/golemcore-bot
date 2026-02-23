@@ -1,4 +1,4 @@
-package me.golemcore.bot.security;
+package me.golemcore.bot.plugin.builtin.security;
 
 /*
  * Copyright 2026 Aleksei Kuleshov
@@ -20,6 +20,7 @@ package me.golemcore.bot.security;
 
 import me.golemcore.bot.domain.component.SanitizerComponent;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.security.InputSanitizer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 

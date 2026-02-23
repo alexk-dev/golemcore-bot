@@ -29,9 +29,10 @@ import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.i18n.MessageService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.TelegramSessionService;
+import me.golemcore.bot.adapter.inbound.command.TelegramCommandPort;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.inbound.CommandPort;
-import me.golemcore.bot.security.AllowlistValidator;
+import me.golemcore.bot.plugin.builtin.security.AllowlistValidator;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
@@ -122,7 +123,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
     private final TelegramBotsLongPollingApplication botsApplication;
     private final UserPreferencesService preferencesService;
     private final MessageService messageService;
-    private final ObjectProvider<CommandPort> commandRouter;
+    private final ObjectProvider<TelegramCommandPort> commandRouter;
     private final TelegramVoiceHandler voiceHandler;
     private final TelegramMenuHandler menuHandler;
     private final TelegramSessionService telegramSessionService;
@@ -406,7 +407,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
                 }
 
                 // Route to CommandRouter
-                CommandPort router = commandRouter.getIfAvailable();
+                TelegramCommandPort router = commandRouter.getIfAvailable();
                 if (router != null && router.hasCommand(cmd, CHANNEL_TYPE)) {
                     List<String> args = parts.length > 1
                             ? Arrays.asList(parts[1].split("\\s+"))

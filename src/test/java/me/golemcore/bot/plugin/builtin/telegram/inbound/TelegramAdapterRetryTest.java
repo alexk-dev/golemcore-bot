@@ -1,11 +1,12 @@
 package me.golemcore.bot.plugin.builtin.telegram.inbound;
 
+import me.golemcore.bot.adapter.inbound.command.TelegramCommandPort;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.TelegramSessionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.i18n.MessageService;
 import me.golemcore.bot.port.inbound.CommandPort;
-import me.golemcore.bot.security.AllowlistValidator;
+import me.golemcore.bot.plugin.builtin.security.AllowlistValidator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
@@ -61,7 +62,7 @@ class TelegramAdapterRetryTest {
                 mock(TelegramBotsLongPollingApplication.class),
                 mock(UserPreferencesService.class),
                 mock(MessageService.class),
-                new TestObjectProvider<>(mock(CommandPort.class)),
+                new TestObjectProvider<>(mock(TelegramCommandPort.class)),
                 mock(TelegramVoiceHandler.class),
                 mock(TelegramMenuHandler.class),
                 telegramSessionService);

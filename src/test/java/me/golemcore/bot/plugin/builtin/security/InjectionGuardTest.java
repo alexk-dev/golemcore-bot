@@ -1,4 +1,4 @@
-package me.golemcore.bot.security;
+package me.golemcore.bot.plugin.builtin.security;
 
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import org.junit.jupiter.api.BeforeEach;

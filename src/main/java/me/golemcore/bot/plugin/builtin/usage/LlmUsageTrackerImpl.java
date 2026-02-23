@@ -1,4 +1,4 @@
-package me.golemcore.bot.usage;
+package me.golemcore.bot.plugin.builtin.usage;
 
 /*
  * Copyright 2026 Aleksei Kuleshov

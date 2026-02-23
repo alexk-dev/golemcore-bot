@@ -1,5 +1,6 @@
 package me.golemcore.bot.plugin.builtin.telegram.inbound;
 
+import me.golemcore.bot.adapter.inbound.command.TelegramCommandPort;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.model.UserPreferences;
@@ -53,7 +54,7 @@ class TelegramMenuHandlerTest {
     private AutoModeService autoModeService;
     private PlanService planService;
     private TelegramSessionService telegramSessionService;
-    private CommandPort commandRouter;
+    private TelegramCommandPort commandRouter;
 
     @BeforeEach
     void setUp() {
@@ -73,7 +74,7 @@ class TelegramMenuHandlerTest {
         planService = mock(PlanService.class);
         telegramSessionService = mock(TelegramSessionService.class);
         MessageService messageService = mock(MessageService.class);
-        commandRouter = mock(CommandPort.class);
+        commandRouter = mock(TelegramCommandPort.class);
         telegramClient = mock(TelegramClient.class);
 
         handler = new TelegramMenuHandler(

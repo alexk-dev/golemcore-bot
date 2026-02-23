@@ -1,4 +1,4 @@
-package me.golemcore.bot.security;
+package me.golemcore.bot.plugin.builtin.security;
 
 /*
  * Copyright 2026 Aleksei Kuleshov

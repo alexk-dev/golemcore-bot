@@ -1,5 +1,6 @@
 package me.golemcore.bot.plugin.builtin.telegram.inbound;
 
+import me.golemcore.bot.adapter.inbound.command.TelegramCommandPort;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -7,7 +8,7 @@ import me.golemcore.bot.domain.service.TelegramSessionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.i18n.MessageService;
 import me.golemcore.bot.port.inbound.CommandPort;
-import me.golemcore.bot.security.AllowlistValidator;
+import me.golemcore.bot.plugin.builtin.security.AllowlistValidator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -39,7 +40,7 @@ class TelegramAdapterHandleMessageTest {
     private TelegramAdapter adapter;
     private TelegramClient telegramClient;
     private AllowlistValidator allowlistValidator;
-    private CommandPort commandRouter;
+    private TelegramCommandPort commandRouter;
     private UserPreferencesService preferencesService;
     private MessageService messageService;
     private ApplicationEventPublisher eventPublisher;
@@ -55,7 +56,7 @@ class TelegramAdapterHandleMessageTest {
 
         eventPublisher = mock(ApplicationEventPublisher.class);
         telegramClient = mock(TelegramClient.class);
-        commandRouter = mock(CommandPort.class);
+        commandRouter = mock(TelegramCommandPort.class);
         preferencesService = mock(UserPreferencesService.class);
         messageService = mock(MessageService.class);
         menuHandler = mock(TelegramMenuHandler.class);

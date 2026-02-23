@@ -21,9 +21,6 @@ package me.golemcore.bot.plugin.builtin.security;
 import me.golemcore.bot.domain.component.SanitizerComponent;
 import me.golemcore.bot.plugin.api.PluginContext;
 import me.golemcore.bot.plugin.builtin.AbstractPlugin;
-import me.golemcore.bot.security.AllowlistValidator;
-import me.golemcore.bot.security.DefaultSanitizerComponent;
-import me.golemcore.bot.security.InjectionGuard;
 
 /**
  * Built-in plugin for security policies (sanitization, threat detection and

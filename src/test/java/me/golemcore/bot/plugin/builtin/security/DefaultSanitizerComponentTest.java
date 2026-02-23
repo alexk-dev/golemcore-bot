@@ -1,7 +1,8 @@
-package me.golemcore.bot.security;
+package me.golemcore.bot.plugin.builtin.security;
 
 import me.golemcore.bot.domain.component.SanitizerComponent.SanitizationResult;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.security.InputSanitizer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;

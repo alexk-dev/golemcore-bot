@@ -21,7 +21,6 @@ package me.golemcore.bot.plugin.builtin.usage;
 import me.golemcore.bot.plugin.api.PluginContext;
 import me.golemcore.bot.plugin.builtin.AbstractPlugin;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
-import me.golemcore.bot.usage.LlmUsageTrackerImpl;
 
 /**
  * Built-in plugin for LLM usage tracking.

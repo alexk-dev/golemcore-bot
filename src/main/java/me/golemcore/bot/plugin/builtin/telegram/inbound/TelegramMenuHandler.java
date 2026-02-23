@@ -29,6 +29,7 @@ import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import me.golemcore.bot.domain.service.TelegramSessionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.adapter.inbound.command.TelegramCommandPort;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.i18n.MessageService;
 import me.golemcore.bot.port.inbound.CommandPort;
@@ -97,7 +98,7 @@ public class TelegramMenuHandler {
     private final PlanService planService;
     private final TelegramSessionService telegramSessionService;
     private final MessageService messageService;
-    private final ObjectProvider<CommandPort> commandRouter;
+    private final ObjectProvider<TelegramCommandPort> commandRouter;
 
     private final AtomicReference<TelegramClient> telegramClient = new AtomicReference<>();
     private final Map<String, List<String>> sessionIndexCache = Collections
@@ -112,7 +113,7 @@ public class TelegramMenuHandler {
             PlanService planService,
             TelegramSessionService telegramSessionService,
             MessageService messageService,
-            ObjectProvider<CommandPort> commandRouter) {
+            ObjectProvider<TelegramCommandPort> commandRouter) {
         this.properties = properties;
         this.runtimeConfigService = runtimeConfigService;
         this.preferencesService = preferencesService;
@@ -555,7 +556,7 @@ public class TelegramMenuHandler {
     }
 
     private void executeAndSendSeparate(String chatId, String command) {
-        CommandPort router = commandRouter.getIfAvailable();
+        TelegramCommandPort router = commandRouter.getIfAvailable();
         if (router == null) {
             return;
         }

@@ -19,8 +19,6 @@ package me.golemcore.bot.plugin.builtin.security;
  */
 
 import me.golemcore.bot.domain.component.SanitizerComponent;
-import me.golemcore.bot.security.AllowlistValidator;
-import me.golemcore.bot.security.InjectionGuard;
 
 import java.util.List;
 
