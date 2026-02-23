@@ -23,10 +23,12 @@ import me.golemcore.bot.domain.model.PlanApprovalCallbackEvent;
 import me.golemcore.bot.domain.model.TelegramRestartEvent;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AudioFormat;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.i18n.MessageService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.TelegramSessionService;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.inbound.CommandPort;
 import me.golemcore.bot.security.AllowlistValidator;
@@ -60,6 +62,7 @@ import java.net.URI;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -122,6 +125,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
     private final ObjectProvider<CommandPort> commandRouter;
     private final TelegramVoiceHandler voiceHandler;
     private final TelegramMenuHandler menuHandler;
+    private final TelegramSessionService telegramSessionService;
 
     private TelegramClient telegramClient;
     private volatile Consumer<Message> messageHandler;
@@ -271,7 +275,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
     }
 
     private void handleCallback(Update update) {
-        var callback = update.getCallbackQuery();
+        org.telegram.telegrambots.meta.api.objects.CallbackQuery callback = update.getCallbackQuery();
         if (callback.getMessage() == null) {
             log.warn("Callback query without associated message, ignoring");
             return;
@@ -360,13 +364,20 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
             return;
         }
 
+        String activeConversationKey = telegramSessionService.resolveActiveConversationKey(chatId);
+
         Message.MessageBuilder messageBuilder = Message.builder()
                 .id(telegramMessage.getMessageId().toString())
                 .channelType(CHANNEL_TYPE)
-                .chatId(chatId)
+                .chatId(activeConversationKey)
                 .senderId(userId)
                 .role("user")
                 .timestamp(Instant.now());
+
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put(ContextAttributes.TRANSPORT_CHAT_ID, chatId);
+        metadata.put(ContextAttributes.CONVERSATION_KEY, activeConversationKey);
+        messageBuilder.metadata(metadata);
 
         // Handle text messages
         if (telegramMessage.hasText()) {
@@ -383,19 +394,33 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
                     return;
                 }
 
+                if ("sessions".equals(cmd)) {
+                    menuHandler.sendSessionsMenu(chatId);
+                    return;
+                }
+
+                if ("new".equals(cmd)) {
+                    telegramSessionService.createAndActivateConversation(chatId);
+                    sendMessage(chatId, preferencesService.getMessage("command.new.done"));
+                    return;
+                }
+
                 // Route to CommandRouter
                 CommandPort router = commandRouter.getIfAvailable();
                 if (router != null && router.hasCommand(cmd)) {
                     List<String> args = parts.length > 1
-                            ? Arrays.asList(parts[1].split("\s+"))
+                            ? Arrays.asList(parts[1].split("\\s+"))
                             : List.of();
-                    String sessionId = CHANNEL_TYPE + ":" + chatId;
+                    String sessionId = CHANNEL_TYPE + ":" + activeConversationKey;
                     Map<String, Object> ctx = Map.<String, Object>of(
                             "sessionId", sessionId,
-                            "chatId", chatId,
+                            "chatId", activeConversationKey,
+                            "sessionChatId", activeConversationKey,
+                            "transportChatId", chatId,
+                            "conversationKey", activeConversationKey,
                             "channelType", CHANNEL_TYPE);
                     try {
-                        var result = router.execute(cmd, args, ctx).join();
+                        CommandPort.CommandResult result = router.execute(cmd, args, ctx).join();
                         sendMessage(chatId, result.output());
                     } catch (Exception e) {
                         log.error("Command execution failed: /{}", cmd, e);

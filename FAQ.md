@@ -151,15 +151,17 @@ export SKILL_MATCHER_ENABLED=true
 
 ### What is "plan mode"?
 
-**Plan mode** = review-before-execute workflow for multi-step operations.
+**Plan mode** = session-scoped review-before-execute workflow with a canonical Markdown plan draft (SSOT).
 
 **How it works:**
 1. User enables plan mode: `/plan on smart`
 2. User sends a request (e.g., "Refactor the auth module")
-3. LLM proposes tool calls — but they are **intercepted, not executed**
-4. LLM responds with a numbered plan summary
-5. User clicks **Approve** or **Cancel** via Telegram inline buttons
-6. Approved plans execute step-by-step with status tracking
+3. During plan work, the draft is managed via `plan_get` / `plan_set_content` tools
+4. `plan_set_content` persists the canonical draft and marks the plan as `READY`
+5. User approves (`/plan approve` or Telegram inline approval), then execution starts step-by-step
+6. Plan work stays active until `/plan done` or `/plan off` (the saved plan remains in history)
+
+**Scope:** plan mode is tied to the current session identity (channel + conversation key), not globally across all chats.
 
 **Enable:**
 ```bash
@@ -171,7 +173,7 @@ export PLAN_MODE_ENABLED=true
 - Complex refactoring workflows
 - Any operation where you want to see the plan before it runs
 
-**Commands:** `/plan on [tier]`, `/plan off`, `/plan approve`, `/plan cancel`, `/plan resume`, `/plan status`, `/plans`
+**Commands:** `/plan on [tier]`, `/plan off`, `/plan done`, `/plan approve`, `/plan cancel`, `/plan resume`, `/plan status`, `/plans`
 
 ### What is "auto mode"?
 
