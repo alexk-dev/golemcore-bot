@@ -12,6 +12,7 @@ import okio.Buffer;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -25,8 +26,8 @@ public final class OkHttpMockEngine implements Interceptor {
 
     private static final String DEFAULT_CONTENT_TYPE = "application/json";
 
-    private final ConcurrentLinkedQueue<PlannedResult> plannedResults = new ConcurrentLinkedQueue<>();
-    private final ConcurrentLinkedQueue<CapturedRequest> capturedRequests = new ConcurrentLinkedQueue<>();
+    private final Queue<PlannedResult> plannedResults = new ConcurrentLinkedQueue<>();
+    private final Queue<CapturedRequest> capturedRequests = new ConcurrentLinkedQueue<>();
     private final AtomicInteger requestCount = new AtomicInteger();
 
     public void enqueueJson(int code, String body) {
@@ -108,9 +109,10 @@ public final class OkHttpMockEngine implements Interceptor {
         if (requestBody == null) {
             return "";
         }
-        Buffer buffer = new Buffer();
-        requestBody.writeTo(buffer);
-        return buffer.readString(StandardCharsets.UTF_8);
+        try (Buffer buffer = new Buffer()) {
+            requestBody.writeTo(buffer);
+            return buffer.readString(StandardCharsets.UTF_8);
+        }
     }
 
     private record PlannedResult(int code, byte[] body, String contentType, IOException failure) {
@@ -125,11 +127,11 @@ public final class OkHttpMockEngine implements Interceptor {
 
     public static final class CapturedRequest {
         private final Request request;
-        private final String body;
+        private final String requestBody;
 
-        private CapturedRequest(Request request, String body) {
+        private CapturedRequest(Request request, String requestBody) {
             this.request = request;
-            this.body = body;
+            this.requestBody = requestBody;
         }
 
         public String method() {
@@ -150,7 +152,7 @@ public final class OkHttpMockEngine implements Interceptor {
         }
 
         public String body() {
-            return body;
+            return requestBody;
         }
     }
 }

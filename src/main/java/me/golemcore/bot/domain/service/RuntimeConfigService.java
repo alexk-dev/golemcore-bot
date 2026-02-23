@@ -1209,7 +1209,7 @@ public class RuntimeConfigService {
             cfg.setLlm(RuntimeConfig.LlmConfig.builder().build());
         }
         if (cfg.getLlm().getProviders() == null) {
-            cfg.getLlm().setProviders(new java.util.LinkedHashMap<>());
+            cfg.getLlm().setProviders(new LinkedHashMap<>());
         }
         if (cfg.getMemory() == null) {
             cfg.setMemory(new RuntimeConfig.MemoryConfig());
