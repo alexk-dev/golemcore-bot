@@ -394,4 +394,42 @@ class ShellToolTest {
         assertTrue(result.isSuccess());
         assertTrue(result.getOutput().contains("runtime-value"));
     }
+
+    @Test
+    @DisabledOnOs(OS.WINDOWS)
+    void shouldInjectRuntimeEnvironmentVariableWithEmptyValue() throws Exception {
+        when(runtimeConfigService.getShellEnvironmentVariables()).thenReturn(Map.of("EMPTY_VAR", ""));
+
+        ToolResult result = tool.execute(Map.of(COMMAND, "env | grep '^EMPTY_VAR='")).get();
+
+        assertTrue(result.isSuccess());
+        assertTrue(result.getOutput().contains("EMPTY_VAR="));
+    }
+
+    @Test
+    @DisabledOnOs(OS.WINDOWS)
+    void shouldIgnoreBlankRuntimeEnvironmentVariableName() throws Exception {
+        when(runtimeConfigService.getShellEnvironmentVariables())
+                .thenReturn(Map.of("", "ignored", "VISIBLE_VAR", "visible-value"));
+
+        ToolResult result = tool.execute(Map.of(COMMAND, "printf '%s' \"$VISIBLE_VAR\"")).get();
+
+        assertTrue(result.isSuccess());
+        assertTrue(result.getOutput().contains("visible-value"));
+    }
+
+    @Test
+    @DisabledOnOs(OS.WINDOWS)
+    void shouldNotOverrideReservedHomeAndPwdFromRuntimeEnvironmentVariables() throws Exception {
+        when(runtimeConfigService.getShellEnvironmentVariables())
+                .thenReturn(Map.of("HOME", "/tmp/hacked-home", "PWD", "/tmp/hacked-pwd"));
+
+        ToolResult homeResult = tool.execute(Map.of(COMMAND, "printf '%s' \"$HOME\"")).get();
+        ToolResult pwdResult = tool.execute(Map.of(COMMAND, "printf '%s' \"$PWD\"")).get();
+
+        assertTrue(homeResult.isSuccess());
+        assertTrue(pwdResult.isSuccess());
+        assertEquals(tempDir.toString(), homeResult.getOutput().trim());
+        assertEquals(tempDir.toString(), pwdResult.getOutput().trim());
+    }
 }

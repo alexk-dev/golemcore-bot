@@ -120,6 +120,7 @@ public class ShellTool implements ToolComponent {
     private static final Set<String> DEFAULT_ALLOWED_ENV_VARS = Set.of(
             "PATH", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TMPDIR",
             "TZ", "SHELL", "USER", "LOGNAME");
+    private static final Set<String> RESERVED_RUNTIME_ENV_VARS = Set.of("HOME", "PWD");
 
     private final Path workspaceRoot;
     private final InjectionGuard injectionGuard;
@@ -346,6 +347,9 @@ public class ShellTool implements ToolComponent {
         for (Map.Entry<String, String> entry : runtimeEnv.entrySet()) {
             String key = entry.getKey();
             if (key == null || key.isBlank()) {
+                continue;
+            }
+            if (RESERVED_RUNTIME_ENV_VARS.contains(key)) {
                 continue;
             }
             String value = entry.getValue() != null ? entry.getValue() : "";

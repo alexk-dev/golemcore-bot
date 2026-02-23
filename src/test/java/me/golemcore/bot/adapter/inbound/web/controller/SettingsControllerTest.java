@@ -660,6 +660,224 @@ class SettingsControllerTest {
     }
 
     @Test
+    void shouldRejectDuplicateShellEnvironmentVariableWhenUpdatingRuntimeConfig() {
+        RuntimeConfig current = RuntimeConfig.builder().build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .tools(RuntimeConfig.ToolsConfig.builder()
+                        .shellEnvironmentVariables(new ArrayList<>(List.of(
+                                RuntimeConfig.ShellEnvironmentVariable.builder().name("API_TOKEN").value("v1").build(),
+                                RuntimeConfig.ShellEnvironmentVariable.builder().name("API_TOKEN").value("v2").build())))
+                        .build())
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateRuntimeConfig(incoming));
+        assertTrue(error.getMessage().contains("duplicate name"));
+    }
+
+    @Test
+    void shouldAllowRuntimeConfigUpdateWhenToolsIsNull() {
+        RuntimeConfig current = RuntimeConfig.builder().build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder().build();
+        incoming.setTools(null);
+
+        StepVerifier.create(controller.updateRuntimeConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldGetShellEnvironmentVariablesFromRuntimeConfigForApi() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .tools(RuntimeConfig.ToolsConfig.builder()
+                        .shellEnvironmentVariables(new ArrayList<>(List.of(
+                                RuntimeConfig.ShellEnvironmentVariable.builder()
+                                        .name("API_TOKEN")
+                                        .value("abc123")
+                                        .build())))
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(runtimeConfig);
+
+        StepVerifier.create(controller.getShellEnvironmentVariables())
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    List<RuntimeConfig.ShellEnvironmentVariable> body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals(1, body.size());
+                    assertEquals("API_TOKEN", body.get(0).getName());
+                    assertEquals("abc123", body.get(0).getValue());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldReturnEmptyShellEnvironmentVariablesWhenToolsMissingInApiConfig() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder().build();
+        runtimeConfig.setTools(null);
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(runtimeConfig);
+
+        StepVerifier.create(controller.getShellEnvironmentVariables())
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    List<RuntimeConfig.ShellEnvironmentVariable> body = response.getBody();
+                    assertNotNull(body);
+                    assertTrue(body.isEmpty());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldNormalizeShellEnvironmentVariableNameAndNullValueOnCreate() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .tools(RuntimeConfig.ToolsConfig.builder()
+                        .shellEnvironmentVariables(new ArrayList<>())
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.ShellEnvironmentVariable variable = RuntimeConfig.ShellEnvironmentVariable.builder()
+                .name("  API_TOKEN  ")
+                .value(null)
+                .build();
+
+        StepVerifier.create(controller.createShellEnvironmentVariable(variable))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        RuntimeConfig.ShellEnvironmentVariable stored = runtimeConfig.getTools().getShellEnvironmentVariables().get(0);
+        assertEquals("API_TOKEN", stored.getName());
+        assertEquals("", stored.getValue());
+    }
+
+    @Test
+    void shouldRejectNullShellEnvironmentVariablePayload() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .tools(RuntimeConfig.ToolsConfig.builder()
+                        .shellEnvironmentVariables(new ArrayList<>())
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.createShellEnvironmentVariable(null));
+        assertTrue(error.getMessage().contains("item is required"));
+    }
+
+    @Test
+    void shouldRejectTooLongShellEnvironmentVariableName() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .tools(RuntimeConfig.ToolsConfig.builder()
+                        .shellEnvironmentVariables(new ArrayList<>())
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        String tooLongName = "A".repeat(129);
+        RuntimeConfig.ShellEnvironmentVariable variable = RuntimeConfig.ShellEnvironmentVariable.builder()
+                .name(tooLongName)
+                .value("value")
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.createShellEnvironmentVariable(variable));
+        assertTrue(error.getMessage().contains("at most 128"));
+    }
+
+    @Test
+    void shouldRejectTooLongShellEnvironmentVariableValue() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .tools(RuntimeConfig.ToolsConfig.builder()
+                        .shellEnvironmentVariables(new ArrayList<>())
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        String tooLongValue = "a".repeat(8193);
+        RuntimeConfig.ShellEnvironmentVariable variable = RuntimeConfig.ShellEnvironmentVariable.builder()
+                .name("API_TOKEN")
+                .value(tooLongValue)
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.createShellEnvironmentVariable(variable));
+        assertTrue(error.getMessage().contains("at most 8192"));
+    }
+
+    @Test
+    void shouldUsePathVariableNameWhenUpdatingShellEnvironmentVariableWithBlankBodyName() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .tools(RuntimeConfig.ToolsConfig.builder()
+                        .shellEnvironmentVariables(new ArrayList<>(List.of(
+                                RuntimeConfig.ShellEnvironmentVariable.builder()
+                                        .name("API_TOKEN")
+                                        .value("old-value")
+                                        .build())))
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.ShellEnvironmentVariable update = RuntimeConfig.ShellEnvironmentVariable.builder()
+                .name("   ")
+                .value("new-value")
+                .build();
+
+        StepVerifier.create(controller.updateShellEnvironmentVariable("API_TOKEN", update))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        RuntimeConfig.ShellEnvironmentVariable stored = runtimeConfig.getTools().getShellEnvironmentVariables().get(0);
+        assertEquals("API_TOKEN", stored.getName());
+        assertEquals("new-value", stored.getValue());
+    }
+
+    @Test
+    void shouldRejectShellEnvironmentVariableRenameCollisionOnUpdate() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .tools(RuntimeConfig.ToolsConfig.builder()
+                        .shellEnvironmentVariables(new ArrayList<>(List.of(
+                                RuntimeConfig.ShellEnvironmentVariable.builder().name("FIRST").value("a").build(),
+                                RuntimeConfig.ShellEnvironmentVariable.builder().name("SECOND").value("b").build())))
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.ShellEnvironmentVariable update = RuntimeConfig.ShellEnvironmentVariable.builder()
+                .name("SECOND")
+                .value("updated")
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateShellEnvironmentVariable("FIRST", update));
+        assertTrue(error.getMessage().contains("duplicate name"));
+    }
+
+    @Test
+    void shouldReturnNotFoundWhenUpdatingMissingShellEnvironmentVariable() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .tools(RuntimeConfig.ToolsConfig.builder()
+                        .shellEnvironmentVariables(new ArrayList<>())
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.ShellEnvironmentVariable update = RuntimeConfig.ShellEnvironmentVariable.builder()
+                .name("MISSING")
+                .value("value")
+                .build();
+
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> controller.updateShellEnvironmentVariable("MISSING", update));
+        assertEquals(HttpStatus.NOT_FOUND, error.getStatusCode());
+    }
+
+    @Test
     void shouldUpdateMemoryConfigWhenValid() {
         RuntimeConfig runtimeConfig = RuntimeConfig.builder()
                 .memory(RuntimeConfig.MemoryConfig.builder().build())

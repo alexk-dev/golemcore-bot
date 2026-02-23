@@ -300,6 +300,62 @@ class RuntimeConfigServiceTest {
     }
 
     @Test
+    void shouldNormalizeShellEnvironmentVariablesByTrimmingAndDroppingInvalidEntries() throws Exception {
+        persistedSections.put("tools.json", """
+                {
+                  "shellEnvironmentVariables": [
+                    { "name": "  API_TOKEN  ", "value": "value-1" },
+                    { "name": "   ", "value": "ignored" },
+                    null,
+                    { "name": "SECOND_VAR", "value": null }
+                  ]
+                }
+                """);
+
+        RuntimeConfig config = service.getRuntimeConfig();
+        Map<String, String> environmentVariables = service.getShellEnvironmentVariables();
+
+        assertEquals(2, config.getTools().getShellEnvironmentVariables().size());
+        assertEquals("API_TOKEN", config.getTools().getShellEnvironmentVariables().get(0).getName());
+        assertEquals("SECOND_VAR", config.getTools().getShellEnvironmentVariables().get(1).getName());
+        assertEquals("value-1", environmentVariables.get("API_TOKEN"));
+        assertEquals("", environmentVariables.get("SECOND_VAR"));
+    }
+
+    @Test
+    void shouldUseLastValueForDuplicateShellEnvironmentVariablesAfterNormalization() throws Exception {
+        persistedSections.put("tools.json", """
+                {
+                  "shellEnvironmentVariables": [
+                    { "name": "API_TOKEN", "value": "old" },
+                    { "name": " API_TOKEN ", "value": "new" }
+                  ]
+                }
+                """);
+
+        RuntimeConfig config = service.getRuntimeConfig();
+        Map<String, String> environmentVariables = service.getShellEnvironmentVariables();
+
+        assertEquals(1, config.getTools().getShellEnvironmentVariables().size());
+        assertEquals("API_TOKEN", config.getTools().getShellEnvironmentVariables().get(0).getName());
+        assertEquals("new", config.getTools().getShellEnvironmentVariables().get(0).getValue());
+        assertEquals("new", environmentVariables.get("API_TOKEN"));
+    }
+
+    @Test
+    void shouldInitializeToolsWhenNullDuringRuntimeConfigUpdate() {
+        RuntimeConfig newConfig = RuntimeConfig.builder().build();
+        newConfig.setTools(null);
+
+        service.updateRuntimeConfig(newConfig);
+
+        RuntimeConfig updated = service.getRuntimeConfig();
+        assertNotNull(updated.getTools());
+        assertNotNull(updated.getTools().getShellEnvironmentVariables());
+        assertTrue(updated.getTools().getShellEnvironmentVariables().isEmpty());
+    }
+
+    @Test
     void shouldReturnDefaultRagSettings() {
         assertFalse(service.isRagEnabled());
         assertEquals("http://localhost:9621", service.getRagUrl());
