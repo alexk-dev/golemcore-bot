@@ -84,6 +84,22 @@ class ImapToolTest {
         assertTrue(tool.isEnabled());
     }
 
+    @Test
+    void shouldUseLatestRuntimeConfigForEnabledCheck() {
+        BotProperties.ImapToolProperties initialConfig = new BotProperties.ImapToolProperties();
+        BotProperties.ImapToolProperties updatedConfig = new BotProperties.ImapToolProperties();
+        updatedConfig.setEnabled(true);
+        updatedConfig.setHost(IMAP_HOST);
+        updatedConfig.setUsername(USERNAME);
+        updatedConfig.setPassword(PASSWORD);
+        when(runtimeConfigService.getResolvedImapConfig()).thenReturn(initialConfig, updatedConfig);
+
+        ImapTool tool = new ImapTool(runtimeConfigService);
+
+        assertFalse(tool.isEnabled());
+        assertTrue(tool.isEnabled());
+    }
+
     // ==================== Parameter validation ====================
 
     @Test

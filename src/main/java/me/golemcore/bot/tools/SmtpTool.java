@@ -83,16 +83,15 @@ public class SmtpTool implements ToolComponent {
     static final Pattern EMAIL_PATTERN = Pattern.compile(
             "^[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}$");
 
-    private final BotProperties.SmtpToolProperties config;
-    private final MailSecurity security;
+    private final RuntimeConfigService runtimeConfigService;
 
     public SmtpTool(RuntimeConfigService runtimeConfigService) {
-        this.config = runtimeConfigService.getResolvedSmtpConfig();
-        this.security = MailSecurity.fromString(config.getSecurity());
+        this.runtimeConfigService = runtimeConfigService;
     }
 
     @Override
     public boolean isEnabled() {
+        BotProperties.SmtpToolProperties config = getResolvedConfig();
         return config.isEnabled()
                 && config.getHost() != null && !config.getHost().isBlank()
                 && config.getUsername() != null && !config.getUsername().isBlank();
@@ -174,6 +173,8 @@ public class SmtpTool implements ToolComponent {
     }
 
     private ToolResult sendEmail(Map<String, Object> params, boolean isReply) throws MessagingException {
+        BotProperties.SmtpToolProperties config = getResolvedConfig();
+        MailSecurity security = MailSecurity.fromString(config.getSecurity());
         String to = (String) params.get(PARAM_TO);
         String subject = (String) params.get(PARAM_SUBJECT);
         String body = (String) params.get(PARAM_BODY);
@@ -282,6 +283,7 @@ public class SmtpTool implements ToolComponent {
         if (message == null) {
             return "Unknown error";
         }
+        BotProperties.SmtpToolProperties config = getResolvedConfig();
         String sanitized = message;
         if (config.getUsername() != null && !config.getUsername().isBlank()) {
             sanitized = sanitized.replace(config.getUsername(), "***");
@@ -290,6 +292,10 @@ public class SmtpTool implements ToolComponent {
             sanitized = sanitized.replace(config.getPassword(), "***");
         }
         return sanitized;
+    }
+
+    private BotProperties.SmtpToolProperties getResolvedConfig() {
+        return runtimeConfigService.getResolvedSmtpConfig();
     }
 
     protected void deliver(MimeMessage message) throws MessagingException {
