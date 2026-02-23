@@ -6,7 +6,7 @@
 [![Java](https://img.shields.io/badge/Java-25+-orange.svg)](https://www.oracle.com/java/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0.2-brightgreen.svg)](https://spring.io/projects/spring-boot)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-1451%20passing-success.svg)](https://github.com/alexk-dev/golemcore-bot/actions)
+[![Tests](https://img.shields.io/badge/tests-passing-success.svg)](https://github.com/alexk-dev/golemcore-bot/actions)
 
 ---
 

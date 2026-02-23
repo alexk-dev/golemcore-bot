@@ -155,9 +155,20 @@ public class RuntimeConfig {
         private Boolean tierEnabled;
         private Boolean goalManagementEnabled;
         @Builder.Default
+        private List<ShellEnvironmentVariable> shellEnvironmentVariables = new ArrayList<>();
+        @Builder.Default
         private ImapConfig imap = new ImapConfig();
         @Builder.Default
         private SmtpConfig smtp = new SmtpConfig();
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class ShellEnvironmentVariable {
+        private String name;
+        private String value;
     }
 
     @Data

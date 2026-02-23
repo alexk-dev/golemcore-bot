@@ -74,6 +74,8 @@ class RuntimeConfigServiceTest {
         assertNotNull(config.getModelRouter());
         assertNotNull(config.getLlm());
         assertNotNull(config.getTools());
+        assertNotNull(config.getTools().getShellEnvironmentVariables());
+        assertTrue(config.getTools().getShellEnvironmentVariables().isEmpty());
     }
 
     @Test
@@ -258,6 +260,99 @@ class RuntimeConfigServiceTest {
         assertTrue(service.isGoalManagementEnabled());
         assertTrue(service.isBrowserEnabled());
         assertTrue(service.isDynamicTierEnabled());
+    }
+
+    @Test
+    void shouldReturnEmptyShellEnvironmentVariablesByDefault() {
+        assertTrue(service.getShellEnvironmentVariables().isEmpty());
+    }
+
+    @Test
+    void shouldReturnConfiguredShellEnvironmentVariables() throws Exception {
+        RuntimeConfig.ToolsConfig tools = RuntimeConfig.ToolsConfig.builder()
+                .shellEnvironmentVariables(List.of(
+                        RuntimeConfig.ShellEnvironmentVariable.builder()
+                                .name("TEST_API_KEY")
+                                .value("value-1")
+                                .build(),
+                        RuntimeConfig.ShellEnvironmentVariable.builder()
+                                .name("ANOTHER_VAR")
+                                .value("value-2")
+                                .build()))
+                .build();
+        persistedSections.put("tools.json", objectMapper.writeValueAsString(tools));
+
+        Map<String, String> environmentVariables = service.getShellEnvironmentVariables();
+
+        assertEquals(2, environmentVariables.size());
+        assertEquals("value-1", environmentVariables.get("TEST_API_KEY"));
+        assertEquals("value-2", environmentVariables.get("ANOTHER_VAR"));
+    }
+
+    @Test
+    void shouldNormalizeNullShellEnvironmentVariablesList() throws Exception {
+        persistedSections.put("tools.json", "{\"shellEnvironmentVariables\":null}");
+
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        assertNotNull(config.getTools().getShellEnvironmentVariables());
+        assertTrue(config.getTools().getShellEnvironmentVariables().isEmpty());
+    }
+
+    @Test
+    void shouldNormalizeShellEnvironmentVariablesByTrimmingAndDroppingInvalidEntries() throws Exception {
+        persistedSections.put("tools.json", """
+                {
+                  "shellEnvironmentVariables": [
+                    { "name": "  API_TOKEN  ", "value": "value-1" },
+                    { "name": "   ", "value": "ignored" },
+                    null,
+                    { "name": "SECOND_VAR", "value": null }
+                  ]
+                }
+                """);
+
+        RuntimeConfig config = service.getRuntimeConfig();
+        Map<String, String> environmentVariables = service.getShellEnvironmentVariables();
+
+        assertEquals(2, config.getTools().getShellEnvironmentVariables().size());
+        assertEquals("API_TOKEN", config.getTools().getShellEnvironmentVariables().get(0).getName());
+        assertEquals("SECOND_VAR", config.getTools().getShellEnvironmentVariables().get(1).getName());
+        assertEquals("value-1", environmentVariables.get("API_TOKEN"));
+        assertEquals("", environmentVariables.get("SECOND_VAR"));
+    }
+
+    @Test
+    void shouldUseLastValueForDuplicateShellEnvironmentVariablesAfterNormalization() throws Exception {
+        persistedSections.put("tools.json", """
+                {
+                  "shellEnvironmentVariables": [
+                    { "name": "API_TOKEN", "value": "old" },
+                    { "name": " API_TOKEN ", "value": "new" }
+                  ]
+                }
+                """);
+
+        RuntimeConfig config = service.getRuntimeConfig();
+        Map<String, String> environmentVariables = service.getShellEnvironmentVariables();
+
+        assertEquals(1, config.getTools().getShellEnvironmentVariables().size());
+        assertEquals("API_TOKEN", config.getTools().getShellEnvironmentVariables().get(0).getName());
+        assertEquals("new", config.getTools().getShellEnvironmentVariables().get(0).getValue());
+        assertEquals("new", environmentVariables.get("API_TOKEN"));
+    }
+
+    @Test
+    void shouldInitializeToolsWhenNullDuringRuntimeConfigUpdate() {
+        RuntimeConfig newConfig = RuntimeConfig.builder().build();
+        newConfig.setTools(null);
+
+        service.updateRuntimeConfig(newConfig);
+
+        RuntimeConfig updated = service.getRuntimeConfig();
+        assertNotNull(updated.getTools());
+        assertNotNull(updated.getTools().getShellEnvironmentVariables());
+        assertTrue(updated.getTools().getShellEnvironmentVariables().isEmpty());
     }
 
     @Test
