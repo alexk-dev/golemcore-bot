@@ -107,16 +107,15 @@ public class ImapTool implements ToolComponent {
     private static final String NO_SUBJECT = "(no subject)";
     private static final String UNKNOWN_DATE = "unknown";
 
-    private final BotProperties.ImapToolProperties config;
-    private final MailSecurity security;
+    private final RuntimeConfigService runtimeConfigService;
 
     public ImapTool(RuntimeConfigService runtimeConfigService) {
-        this.config = runtimeConfigService.getResolvedImapConfig();
-        this.security = MailSecurity.fromString(config.getSecurity());
+        this.runtimeConfigService = runtimeConfigService;
     }
 
     @Override
     public boolean isEnabled() {
+        BotProperties.ImapToolProperties config = getResolvedConfig();
         return config.isEnabled()
                 && config.getHost() != null && !config.getHost().isBlank()
                 && config.getUsername() != null && !config.getUsername().isBlank();
@@ -203,6 +202,8 @@ public class ImapTool implements ToolComponent {
     }
 
     Store connectStore() throws MessagingException {
+        BotProperties.ImapToolProperties config = getResolvedConfig();
+        MailSecurity security = MailSecurity.fromString(config.getSecurity());
         Session session = MailSessionFactory.createImapSession(
                 config.getHost(), config.getPort(),
                 config.getUsername(), config.getPassword(),
@@ -255,6 +256,7 @@ public class ImapTool implements ToolComponent {
     private ToolResult listMessages(Map<String, Object> params) throws MessagingException {
         String folderName = getStringParam(params, PARAM_FOLDER, DEFAULT_FOLDER);
         int offset = getIntParam(params, PARAM_OFFSET, 0);
+        BotProperties.ImapToolProperties config = getResolvedConfig();
         int limit = getIntParam(params, PARAM_LIMIT, config.getDefaultMessageLimit());
 
         try (Store store = connectStore()) {
@@ -355,6 +357,7 @@ public class ImapTool implements ToolComponent {
     }
 
     private ToolResult buildFullMessage(Message msg, long uid) throws MessagingException, IOException {
+        BotProperties.ImapToolProperties config = getResolvedConfig();
         String msgFrom = formatAddress(msg.getFrom());
         String to = formatAddresses(msg.getRecipients(Message.RecipientType.TO));
         String cc = formatAddresses(msg.getRecipients(Message.RecipientType.CC));
@@ -407,6 +410,7 @@ public class ImapTool implements ToolComponent {
 
     private ToolResult searchMessages(Map<String, Object> params) throws MessagingException {
         String folderName = getStringParam(params, PARAM_FOLDER, DEFAULT_FOLDER);
+        BotProperties.ImapToolProperties config = getResolvedConfig();
         int limit = getIntParam(params, PARAM_LIMIT, config.getDefaultMessageLimit());
 
         List<SearchTerm> terms = new ArrayList<>();
@@ -618,6 +622,7 @@ public class ImapTool implements ToolComponent {
         if (message == null) {
             return "Unknown error";
         }
+        BotProperties.ImapToolProperties config = getResolvedConfig();
         String sanitized = message;
         if (config.getUsername() != null && !config.getUsername().isBlank()) {
             sanitized = sanitized.replace(config.getUsername(), "***");
@@ -626,6 +631,10 @@ public class ImapTool implements ToolComponent {
             sanitized = sanitized.replace(config.getPassword(), "***");
         }
         return sanitized;
+    }
+
+    private BotProperties.ImapToolProperties getResolvedConfig() {
+        return runtimeConfigService.getResolvedImapConfig();
     }
 
     private record BodyContent(String text, List<Map<String, String>> attachments) {
