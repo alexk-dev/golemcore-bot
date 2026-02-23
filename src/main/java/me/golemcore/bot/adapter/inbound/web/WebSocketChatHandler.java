@@ -125,7 +125,7 @@ public class WebSocketChatHandler implements WebSocketHandler {
         webChannelAdapter.bindConnectionToChatId(connectionId, sessionId);
 
         CommandPort router = commandRouter.getIfAvailable();
-        if (router == null || !router.hasCommand(cmd)) {
+        if (router == null || !router.hasCommand(cmd, CHANNEL_TYPE)) {
             return false;
         }
 

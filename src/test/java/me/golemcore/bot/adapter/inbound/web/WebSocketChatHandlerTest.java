@@ -239,7 +239,7 @@ class WebSocketChatHandlerTest {
     void shouldRouteSlashCommandToCommandRouter() {
         CommandPort commandRouter = mock(CommandPort.class);
         when(commandRouterProvider.getIfAvailable()).thenReturn(commandRouter);
-        when(commandRouter.hasCommand("status")).thenReturn(true);
+        when(commandRouter.hasCommand("status", "web")).thenReturn(true);
         when(commandRouter.execute(eq("status"), anyList(), anyMap()))
                 .thenReturn(CompletableFuture.completedFuture(
                         CommandPort.CommandResult.success("Bot status: OK")));
@@ -268,7 +268,7 @@ class WebSocketChatHandlerTest {
     void shouldBindSessionForFirstCommandAndRouteResponseToSameChat() {
         CommandPort commandRouter = mock(CommandPort.class);
         when(commandRouterProvider.getIfAvailable()).thenReturn(commandRouter);
-        when(commandRouter.hasCommand("status")).thenReturn(true);
+        when(commandRouter.hasCommand("status", "web")).thenReturn(true);
         when(commandRouter.execute(eq("status"), anyList(), anyMap()))
                 .thenReturn(CompletableFuture.completedFuture(
                         CommandPort.CommandResult.success("Bot status: OK")));
@@ -304,7 +304,7 @@ class WebSocketChatHandlerTest {
     void shouldPassConsistentSessionConversationContextForCommandExecution() {
         CommandPort commandRouter = mock(CommandPort.class);
         when(commandRouterProvider.getIfAvailable()).thenReturn(commandRouter);
-        when(commandRouter.hasCommand("status")).thenReturn(true);
+        when(commandRouter.hasCommand("status", "web")).thenReturn(true);
         when(commandRouter.execute(eq("status"), anyList(), anyMap()))
                 .thenReturn(CompletableFuture.completedFuture(
                         CommandPort.CommandResult.success("Bot status: OK")));
@@ -342,7 +342,7 @@ class WebSocketChatHandlerTest {
     void shouldPassCommandArgumentsCorrectly() {
         CommandPort commandRouter = mock(CommandPort.class);
         when(commandRouterProvider.getIfAvailable()).thenReturn(commandRouter);
-        when(commandRouter.hasCommand("tier")).thenReturn(true);
+        when(commandRouter.hasCommand("tier", "web")).thenReturn(true);
         when(commandRouter.execute(eq("tier"), anyList(), anyMap()))
                 .thenReturn(CompletableFuture.completedFuture(
                         CommandPort.CommandResult.success("Tier set to smart")));
@@ -370,7 +370,7 @@ class WebSocketChatHandlerTest {
     void shouldFallThroughWhenCommandNotRegistered() {
         CommandPort commandRouter = mock(CommandPort.class);
         when(commandRouterProvider.getIfAvailable()).thenReturn(commandRouter);
-        when(commandRouter.hasCommand("unknown")).thenReturn(false);
+        when(commandRouter.hasCommand("unknown", "web")).thenReturn(false);
 
         handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider,
                 pointerService);
@@ -395,7 +395,7 @@ class WebSocketChatHandlerTest {
     void shouldHandleCommandExecutionFailure() {
         CommandPort commandRouter = mock(CommandPort.class);
         when(commandRouterProvider.getIfAvailable()).thenReturn(commandRouter);
-        when(commandRouter.hasCommand("broken")).thenReturn(true);
+        when(commandRouter.hasCommand("broken", "web")).thenReturn(true);
         when(commandRouter.execute(eq("broken"), anyList(), anyMap()))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("boom")));
 

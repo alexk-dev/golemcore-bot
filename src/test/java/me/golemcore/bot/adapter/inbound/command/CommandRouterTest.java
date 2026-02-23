@@ -206,6 +206,8 @@ class CommandRouterTest {
         assertTrue(router.hasCommand("stop"));
         assertFalse(router.hasCommand("unknown"));
         assertFalse(router.hasCommand("settings"));
+        assertTrue(router.hasCommand("sessions", "telegram"));
+        assertFalse(router.hasCommand("sessions", "web"));
     }
 
     @Test
@@ -388,7 +390,7 @@ class CommandRouterTest {
     void helpCommand() throws Exception {
         CommandPort.CommandResult result = router.execute("help", List.of(), CTX).get();
         assertTrue(result.success());
-        assertTrue(result.output().contains("command.help.text"));
+        assertTrue(result.output().contains("command.help.header"));
     }
 
     @Test
@@ -406,8 +408,8 @@ class CommandRouterTest {
                 "chatId", "abc");
 
         CommandPort.CommandResult result = router.execute("sessions", List.of(), webCtx).get();
-        assertTrue(result.success());
-        assertTrue(result.output().contains("command.sessions.not-available"));
+        assertFalse(result.success());
+        assertTrue(result.output().contains("command.unknown"));
     }
 
     @Test

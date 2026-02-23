@@ -18,8 +18,8 @@ package me.golemcore.bot.plugin.builtin.telegram;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.adapter.inbound.telegram.TelegramAdapter;
-import me.golemcore.bot.adapter.outbound.confirmation.TelegramConfirmationAdapter;
+import me.golemcore.bot.plugin.builtin.telegram.inbound.TelegramAdapter;
+import me.golemcore.bot.plugin.builtin.telegram.outbound.TelegramConfirmationAdapter;
 import me.golemcore.bot.plugin.api.PluginContext;
 import me.golemcore.bot.plugin.builtin.AbstractPlugin;
 import me.golemcore.bot.port.inbound.ChannelPort;

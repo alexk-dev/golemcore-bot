@@ -63,6 +63,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -118,6 +119,8 @@ public class CommandRouter implements CommandPort {
     private static final String SUBCMD_REASONING = "reasoning";
     private static final String ERR_PROVIDER_NOT_CONFIGURED = "provider.not.configured";
     private static final String ERR_NO_REASONING = "no.reasoning";
+    private static final String CHANNEL_TELEGRAM = "telegram";
+    private static final String CHANNEL_WEB = "web";
 
     private final SkillComponent skillComponent;
     private final ToolCatalogPort pluginToolCatalog;
@@ -141,7 +144,14 @@ public class CommandRouter implements CommandPort {
             "tier", "model", "sessions", "auto", "goals", CMD_GOAL, "diary", "tasks", "schedule",
             CMD_PLAN, CMD_PLANS, "stop");
 
-    private static final java.util.Set<String> VALID_TIERS = java.util.Set.of(
+    private static final Set<String> KNOWN_COMMAND_SET = Set.copyOf(KNOWN_COMMANDS);
+    private static final Set<String> TELEGRAM_COMMANDS = Set.copyOf(KNOWN_COMMANDS);
+    private static final Set<String> WEB_COMMANDS = Set.of(
+            "skills", "tools", CMD_STATUS, "new", SUBCMD_RESET, "compact", CMD_HELP,
+            "tier", "model", "auto", "goals", CMD_GOAL, "diary", "tasks", "schedule",
+            CMD_PLAN, CMD_PLANS, "stop");
+
+    private static final Set<String> VALID_TIERS = Set.of(
             "balanced", "smart", "coding", "deep");
 
     public CommandRouter(
@@ -195,6 +205,9 @@ public class CommandRouter implements CommandPort {
                     : null;
             String autoSessionChatId = explicitSessionRouting ? sessionChatId : transportChatId;
             log.debug("Executing command: /{} (session={})", command, sessionId);
+            if (!hasCommand(command, channelType)) {
+                return CommandResult.failure(msg("command.unknown", command));
+            }
 
             return switch (command) {
             case "skills" -> handleSkills();
@@ -203,7 +216,7 @@ public class CommandRouter implements CommandPort {
             case "new" -> handleNew();
             case "reset" -> handleReset(sessionId, sessionIdentity);
             case "compact" -> handleCompact(sessionId, args);
-            case CMD_HELP -> handleHelp();
+            case CMD_HELP -> handleHelp(channelType);
             case "tier" -> handleTier(args);
             case "model" -> handleModel(args);
             case "sessions" -> handleSessions(channelType);
@@ -236,11 +249,21 @@ public class CommandRouter implements CommandPort {
 
     @Override
     public boolean hasCommand(String command) {
-        return KNOWN_COMMANDS.contains(command);
+        return KNOWN_COMMAND_SET.contains(command);
+    }
+
+    @Override
+    public boolean hasCommand(String command, String channelType) {
+        return resolveAllowedCommands(channelType).contains(command);
     }
 
     @Override
     public List<CommandDefinition> listCommands() {
+        return listCommands(CHANNEL_TELEGRAM);
+    }
+
+    @Override
+    public List<CommandDefinition> listCommands(String channelType) {
         List<CommandDefinition> commands = new ArrayList<>(List.of(
                 new CommandDefinition("skills", "List available skills", "/skills"),
                 new CommandDefinition("tools", "List enabled tools", "/tools"),
@@ -267,7 +290,20 @@ public class CommandRouter implements CommandPort {
                     "/plan [on|off|done|status|approve|cancel|resume]"));
             commands.add(new CommandDefinition(CMD_PLANS, "List plans", "/plans"));
         }
-        return commands;
+        Set<String> allowedCommands = resolveAllowedCommands(channelType);
+        return commands.stream()
+                .filter(command -> allowedCommands.contains(command.name()))
+                .toList();
+    }
+
+    private Set<String> resolveAllowedCommands(String channelType) {
+        if (CHANNEL_WEB.equals(channelType)) {
+            return WEB_COMMANDS;
+        }
+        if (CHANNEL_TELEGRAM.equals(channelType)) {
+            return TELEGRAM_COMMANDS;
+        }
+        return KNOWN_COMMAND_SET;
     }
 
     private CommandResult handleStop(String channelType, String chatId) {
@@ -482,12 +518,18 @@ public class CommandRouter implements CommandPort {
         return CommandResult.success(msg(resultKey, removed, keepLast));
     }
 
-    private CommandResult handleHelp() {
-        return CommandResult.success(msg("command.help.text"));
+    private CommandResult handleHelp(String channelType) {
+        List<CommandDefinition> commands = listCommands(channelType);
+        StringBuilder sb = new StringBuilder();
+        sb.append(msg("command.help.header")).append("\n");
+        for (CommandDefinition command : commands) {
+            sb.append(command.usage()).append(" - ").append(command.description()).append("\n");
+        }
+        return CommandResult.success(sb.toString().trim());
     }
 
     private CommandResult handleSessions(String channelType) {
-        if (!"telegram".equals(channelType)) {
+        if (!CHANNEL_TELEGRAM.equals(channelType)) {
             return CommandResult.success(msg("command.sessions.not-available"));
         }
         return CommandResult.success(msg("command.sessions.use-menu"));

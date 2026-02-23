@@ -18,7 +18,7 @@ package me.golemcore.bot.plugin.builtin.whisper;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.adapter.outbound.voice.WhisperCompatibleSttAdapter;
+import me.golemcore.bot.plugin.builtin.whisper.adapter.WhisperCompatibleSttAdapter;
 import me.golemcore.bot.plugin.api.PluginContext;
 import me.golemcore.bot.plugin.builtin.AbstractPlugin;
 

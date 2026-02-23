@@ -18,7 +18,7 @@ package me.golemcore.bot.plugin.builtin.voice;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.adapter.outbound.voice.ElevenLabsAdapter;
+import me.golemcore.bot.plugin.builtin.voice.adapter.ElevenLabsAdapter;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.plugin.api.PluginContext;
 import me.golemcore.bot.plugin.builtin.AbstractPlugin;

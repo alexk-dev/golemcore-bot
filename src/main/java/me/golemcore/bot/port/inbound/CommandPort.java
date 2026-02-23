@@ -48,9 +48,23 @@ public interface CommandPort {
     boolean hasCommand(String command);
 
     /**
+     * Checks if a command is available for the given channel.
+     */
+    default boolean hasCommand(String command, String channelType) {
+        return hasCommand(command);
+    }
+
+    /**
      * Returns a list of all available commands with their definitions.
      */
     List<CommandDefinition> listCommands();
+
+    /**
+     * Returns commands available for the given channel.
+     */
+    default List<CommandDefinition> listCommands(String channelType) {
+        return listCommands();
+    }
 
     /**
      * Represents the result of a command execution including success status and output message.
