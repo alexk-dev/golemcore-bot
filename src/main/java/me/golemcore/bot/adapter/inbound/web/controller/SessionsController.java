@@ -13,6 +13,7 @@ import me.golemcore.bot.domain.service.ActiveSessionPointerService;
 import me.golemcore.bot.domain.service.ConversationKeyValidator;
 import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.service.TelemetrySupport;
 import me.golemcore.bot.port.outbound.SessionPort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -110,8 +111,10 @@ public class SessionsController {
             }
 
             log.info(
-                    "[SessionMetrics] metric=sessions.active.pointer.stale.count channel={} pointerKey={} staleConversation={}",
-                    channel, pointerKey, currentConversation);
+                    "[SessionMetrics] metric=sessions.active.pointer.stale.count channel={} transportHash={} staleConversation={}",
+                    channel,
+                    TelemetrySupport.shortHash(resolveTelemetryTransport(channel, clientInstanceId, transportChatId)),
+                    currentConversation);
             String repairedConversation = resolveOrCreateConversationKey(channel, transportChatId, currentConversation);
             pointerService.setActiveConversationKey(pointerKey, repairedConversation);
             if (CHANNEL_TELEGRAM.equals(channel)) {
@@ -125,8 +128,8 @@ public class SessionsController {
                     REPAIRED_SOURCE)));
         }
 
-        log.info("[SessionMetrics] metric=sessions.active.pointer.miss.count channel={} pointerKey={}", channel,
-                pointerKey);
+        log.info("[SessionMetrics] metric=sessions.active.pointer.miss.count channel={} transportHash={}", channel,
+                TelemetrySupport.shortHash(resolveTelemetryTransport(channel, clientInstanceId, transportChatId)));
         String fallbackConversation = resolveOrCreateConversationKey(channel, transportChatId, null);
         pointerService.setActiveConversationKey(pointerKey, fallbackConversation);
         if (CHANNEL_TELEGRAM.equals(channel)) {
@@ -154,8 +157,13 @@ public class SessionsController {
         String pointerKey = resolvePointerKey(channel, request.getClientInstanceId(), request.getTransportChatId(),
                 principal);
         pointerService.setActiveConversationKey(pointerKey, conversationKey);
-        log.info("[SessionMetrics] metric=sessions.switch.count channel={} pointerKey={} conversationKey={}",
-                channel, pointerKey, conversationKey);
+        log.info("[SessionMetrics] metric=sessions.switch.count channel={} transportHash={} conversationKey={}",
+                channel,
+                TelemetrySupport.shortHash(resolveTelemetryTransport(
+                        channel,
+                        request.getClientInstanceId(),
+                        request.getTransportChatId())),
+                conversationKey);
         if (CHANNEL_TELEGRAM.equals(channel)) {
             ensureTelegramSessionBinding(request.getTransportChatId(), conversationKey);
         }
@@ -183,7 +191,10 @@ public class SessionsController {
 
         AgentSession session = sessionPort.getOrCreate(channel, conversationKey);
         sessionPort.save(session);
-        log.info("[SessionMetrics] metric=sessions.create.count channel={} conversationKey={}", channel,
+        log.info("[SessionMetrics] metric=sessions.create.count channel={} transportHash={} conversationKey={}",
+                channel,
+                TelemetrySupport
+                        .shortHash(resolveTelemetryTransport(channel, normalizedRequest.getClientInstanceId(), null)),
                 conversationKey);
 
         boolean shouldActivate = normalizedRequest.getActivate() == null || normalizedRequest.getActivate();
@@ -563,5 +574,12 @@ public class SessionsController {
             return value.substring(0, maxLength);
         }
         return value.substring(0, maxLength - 3) + "...";
+    }
+
+    private String resolveTelemetryTransport(String channel, String clientInstanceId, String transportChatId) {
+        if (CHANNEL_TELEGRAM.equals(channel)) {
+            return transportChatId;
+        }
+        return clientInstanceId;
     }
 }

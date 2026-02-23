@@ -55,11 +55,11 @@ public class TelegramSessionService {
                 return candidate;
             }
             log.info(
-                    "[SessionMetrics] metric=sessions.active.pointer.stale.count channel=telegram pointerKey={} staleConversation={}",
-                    pointerKey, candidate);
+                    "[SessionMetrics] metric=sessions.active.pointer.stale.count channel=telegram transportHash={} staleConversation={}",
+                    TelemetrySupport.shortHash(transportChatId), candidate);
         } else {
-            log.info("[SessionMetrics] metric=sessions.active.pointer.miss.count channel=telegram pointerKey={}",
-                    pointerKey);
+            log.info("[SessionMetrics] metric=sessions.active.pointer.miss.count channel=telegram transportHash={}",
+                    TelemetrySupport.shortHash(transportChatId));
         }
 
         String fallbackConversation = findLatestConversationKey(transportChatId)
@@ -73,7 +73,8 @@ public class TelegramSessionService {
         validateTransportChatId(transportChatId);
         String conversationKey = UUID.randomUUID().toString();
         activateConversation(transportChatId, conversationKey);
-        log.info("[SessionMetrics] metric=sessions.create.count channel=telegram conversationKey={}", conversationKey);
+        log.info("[SessionMetrics] metric=sessions.create.count channel=telegram transportHash={} conversationKey={}",
+                TelemetrySupport.shortHash(transportChatId), conversationKey);
         return conversationKey;
     }
 
@@ -85,8 +86,8 @@ public class TelegramSessionService {
         String pointerKey = pointerService.buildTelegramPointerKey(transportChatId);
         pointerService.setActiveConversationKey(pointerKey, normalizedConversationKey);
         log.info(
-                "[SessionMetrics] metric=sessions.switch.count channel=telegram pointerKey={} conversationKey={}",
-                pointerKey, normalizedConversationKey);
+                "[SessionMetrics] metric=sessions.switch.count channel=telegram transportHash={} conversationKey={}",
+                TelemetrySupport.shortHash(transportChatId), normalizedConversationKey);
         bindSessionToTransport(transportChatId, normalizedConversationKey);
     }
 
