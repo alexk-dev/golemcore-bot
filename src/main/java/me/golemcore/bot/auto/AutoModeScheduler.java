@@ -19,8 +19,10 @@ package me.golemcore.bot.auto;
  */
 
 import me.golemcore.bot.domain.loop.AgentLoop;
+import me.golemcore.bot.domain.model.AutoRunKind;
 import me.golemcore.bot.domain.model.AutoModeChannelRegisteredEvent;
 import me.golemcore.bot.domain.model.AutoTask;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ScheduleEntry;
@@ -36,9 +38,11 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
@@ -159,13 +163,18 @@ public class AutoModeScheduler {
      * Register channel info for milestone notifications.
      */
     public void registerChannel(String channelType, String chatId) {
-        channelInfo = new ChannelInfo(channelType, chatId);
-        log.debug("[AutoScheduler] Registered channel: {}:{}", channelType, chatId);
+        registerChannel(channelType, chatId, chatId);
+    }
+
+    public void registerChannel(String channelType, String sessionChatId, String transportChatId) {
+        channelInfo = new ChannelInfo(channelType, sessionChatId, transportChatId);
+        log.debug("[AutoScheduler] Registered channel: {} session={} transport={}",
+                channelType, sessionChatId, transportChatId);
     }
 
     @EventListener
     public void onChannelRegistered(AutoModeChannelRegisteredEvent event) {
-        registerChannel(event.channelType(), event.chatId());
+        registerChannel(event.channelType(), event.sessionChatId(), event.transportChatId());
     }
 
     /**
@@ -189,7 +198,7 @@ public class AutoModeScheduler {
         }
 
         try {
-            channel.sendMessage(info.chatId(), "\uD83E\uDD16 " + text).get(10, TimeUnit.SECONDS);
+            channel.sendMessage(info.transportChatId(), "\uD83E\uDD16 " + text).get(10, TimeUnit.SECONDS);
             log.info("[AutoScheduler] Sent milestone notification: {}", text);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -234,25 +243,40 @@ public class AutoModeScheduler {
 
     private void processSchedule(ScheduleEntry schedule, int timeoutMinutes) {
         try {
-            String messageContent = buildMessageForSchedule(schedule);
-            if (messageContent == null) {
+            ScheduleMessage scheduleMessage = buildMessageForSchedule(schedule);
+            if (scheduleMessage == null) {
                 log.debug("[AutoScheduler] No action for schedule {}", schedule.getId());
                 return;
             }
 
-            log.info("[AutoScheduler] Processing schedule {}: {}", schedule.getId(), messageContent);
+            log.info("[AutoScheduler] Processing schedule {}: {}", schedule.getId(), scheduleMessage.content());
 
             ChannelInfo info = channelInfo;
-            String chatId = info != null ? info.chatId() : "auto";
+            String sessionChatId = info != null ? info.sessionChatId() : "auto";
+            String transportChatId = info != null ? info.transportChatId() : sessionChatId;
             String channelType = info != null ? info.channelType() : "auto";
+            String runId = UUID.randomUUID().toString();
+
+            Map<String, Object> metadata = new LinkedHashMap<>();
+            metadata.put("auto.mode", true);
+            metadata.put(ContextAttributes.AUTO_RUN_KIND, scheduleMessage.runKind().name());
+            metadata.put(ContextAttributes.AUTO_RUN_ID, runId);
+            metadata.put(ContextAttributes.CONVERSATION_KEY, sessionChatId);
+            metadata.put(ContextAttributes.TRANSPORT_CHAT_ID, transportChatId);
+            if (scheduleMessage.goalId() != null && !scheduleMessage.goalId().isBlank()) {
+                metadata.put(ContextAttributes.AUTO_GOAL_ID, scheduleMessage.goalId());
+            }
+            if (scheduleMessage.taskId() != null && !scheduleMessage.taskId().isBlank()) {
+                metadata.put(ContextAttributes.AUTO_TASK_ID, scheduleMessage.taskId());
+            }
 
             Message syntheticMessage = Message.builder()
                     .role("user")
-                    .content(messageContent)
+                    .content(scheduleMessage.content())
                     .channelType(channelType)
-                    .chatId(chatId)
+                    .chatId(sessionChatId)
                     .senderId("auto")
-                    .metadata(Map.of("auto.mode", true))
+                    .metadata(metadata)
                     .timestamp(Instant.now())
                     .build();
 
@@ -267,7 +291,7 @@ public class AutoModeScheduler {
         }
     }
 
-    private String buildMessageForSchedule(ScheduleEntry schedule) {
+    private ScheduleMessage buildMessageForSchedule(ScheduleEntry schedule) {
         if (schedule.getType() == ScheduleEntry.ScheduleType.GOAL) {
             return buildGoalMessage(schedule.getTargetId());
         } else if (schedule.getType() == ScheduleEntry.ScheduleType.TASK) {
@@ -276,7 +300,7 @@ public class AutoModeScheduler {
         return null;
     }
 
-    private String buildGoalMessage(String goalId) {
+    private ScheduleMessage buildGoalMessage(String goalId) {
         Optional<Goal> goalOpt = autoModeService.getGoal(goalId);
         if (goalOpt.isEmpty()) {
             log.warn("[AutoScheduler] Goal not found for schedule: {}", goalId);
@@ -294,20 +318,29 @@ public class AutoModeScheduler {
                 .min(java.util.Comparator.comparingInt(AutoTask::getOrder));
 
         if (nextTask.isPresent()) {
-            return "[AUTO] Continue working on task: " + nextTask.get().getTitle()
-                    + " (goal: " + goal.getTitle() + ", goal_id: " + goalId + ")";
+            AutoTask task = nextTask.get();
+            return new ScheduleMessage(
+                    "[AUTO] Continue working on task: " + task.getTitle()
+                            + " (goal: " + goal.getTitle() + ", goal_id: " + goalId + ")",
+                    AutoRunKind.GOAL_RUN,
+                    goalId,
+                    task.getId());
         }
 
         if (goal.getTasks().isEmpty()) {
-            return "[AUTO] Plan tasks for goal: " + goal.getTitle()
-                    + " (goal_id: " + goalId + ")";
+            return new ScheduleMessage(
+                    "[AUTO] Plan tasks for goal: " + goal.getTitle()
+                            + " (goal_id: " + goalId + ")",
+                    AutoRunKind.GOAL_RUN,
+                    goalId,
+                    goalId);
         }
 
         log.debug("[AutoScheduler] All tasks for goal {} are done, skipping", goalId);
         return null;
     }
 
-    private String buildTaskMessage(String taskId) {
+    private ScheduleMessage buildTaskMessage(String taskId) {
         Optional<Goal> goalOpt = autoModeService.findGoalForTask(taskId);
         if (goalOpt.isEmpty()) {
             log.warn("[AutoScheduler] Task not found: {}", taskId);
@@ -330,10 +363,17 @@ public class AutoModeScheduler {
             return null;
         }
 
-        return "[AUTO] Work on task: " + task.getTitle()
-                + " (goal: " + goal.getTitle() + ", task_id: " + taskId + ")";
+        return new ScheduleMessage(
+                "[AUTO] Work on task: " + task.getTitle()
+                        + " (goal: " + goal.getTitle() + ", task_id: " + taskId + ")",
+                AutoRunKind.GOAL_RUN,
+                goal.getId(),
+                taskId);
     }
 
-    public record ChannelInfo(String channelType, String chatId) {
+    public record ChannelInfo(String channelType, String sessionChatId, String transportChatId) {
+    }
+
+    private record ScheduleMessage(String content, AutoRunKind runKind, String goalId, String taskId) {
     }
 }

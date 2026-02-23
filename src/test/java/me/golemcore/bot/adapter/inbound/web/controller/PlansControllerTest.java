@@ -1,6 +1,7 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
 import me.golemcore.bot.domain.model.Plan;
+import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.service.PlanExecutionService;
 import me.golemcore.bot.domain.service.PlanService;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -103,14 +105,14 @@ class PlansControllerTest {
     @Test
     void enablePlanModeShouldActivateWhenNotActive() {
         when(planService.isFeatureEnabled()).thenReturn(true);
-        when(planService.isPlanModeActive()).thenReturn(false, true);
-        when(planService.getPlans()).thenReturn(List.of());
+        when(planService.isPlanModeActive(any(SessionIdentity.class))).thenReturn(false, true);
+        when(planService.getPlans(any(SessionIdentity.class))).thenReturn(List.of());
 
         StepVerifier.create(controller.enablePlanMode(new PlansController.PlanModeOnRequest("chat-1", "smart")))
                 .assertNext(resp -> assertEquals(HttpStatus.OK, resp.getStatusCode()))
                 .verifyComplete();
 
-        verify(planService).activatePlanMode("chat-1", "smart");
+        verify(planService).activatePlanMode(any(SessionIdentity.class), eq("chat-1"), eq("smart"));
     }
 
     @Test

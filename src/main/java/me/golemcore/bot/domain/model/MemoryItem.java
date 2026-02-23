@@ -51,6 +51,9 @@ public class MemoryItem {
     private String content;
 
     @Builder.Default
+    private String scope = "global";
+
+    @Builder.Default
     private List<String> tags = new ArrayList<>();
 
     private String source;

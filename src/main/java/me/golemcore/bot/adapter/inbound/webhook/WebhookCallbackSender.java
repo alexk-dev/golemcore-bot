@@ -44,7 +44,15 @@ public class WebhookCallbackSender {
     private final WebClient webClient;
 
     public WebhookCallbackSender() {
-        this.webClient = WebClient.builder()
+        this(createDefaultWebClient());
+    }
+
+    WebhookCallbackSender(WebClient webClient) {
+        this.webClient = webClient;
+    }
+
+    private static WebClient createDefaultWebClient() {
+        return WebClient.builder()
                 .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(256 * 1024))
                 .build();
     }
