@@ -47,11 +47,33 @@ export function useSyncContentToTabs({
 export interface UseGlobalIdeShortcutsOptions {
   onSave: () => void;
   onQuickOpen: () => void;
+  onCloseActiveTab: () => void;
+  onActivatePreviousTab: () => void;
+  onActivateNextTab: () => void;
 }
 
-export function useGlobalIdeShortcuts({ onSave, onQuickOpen }: UseGlobalIdeShortcutsOptions): void {
+function isEditableElement(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  if (target.isContentEditable) {
+    return true;
+  }
+
+  const tagName = target.tagName.toLowerCase();
+  return tagName === 'input' || tagName === 'textarea' || tagName === 'select';
+}
+
+export function useGlobalIdeShortcuts({
+  onSave,
+  onQuickOpen,
+  onCloseActiveTab,
+  onActivatePreviousTab,
+  onActivateNextTab,
+}: UseGlobalIdeShortcutsOptions): void {
   useEffect(() => {
-    // Register global save/quick-open shortcuts for editor workflow.
+    // Register global save/quick-open/tab shortcuts for editor workflow.
     const onKeyDown = (event: KeyboardEvent): void => {
       const key = event.key.toLowerCase();
       const withPrimaryModifier = event.ctrlKey || event.metaKey;
@@ -65,23 +87,48 @@ export function useGlobalIdeShortcuts({ onSave, onQuickOpen }: UseGlobalIdeShort
       if (withPrimaryModifier && key === 'p') {
         event.preventDefault();
         onQuickOpen();
+        return;
       }
+
+      if (withPrimaryModifier && key === 'w') {
+        event.preventDefault();
+        onCloseActiveTab();
+        return;
+      }
+
+      const isTabNavigationShortcut = event.altKey && (key === 'arrowleft' || key === 'arrowright');
+      if (!isTabNavigationShortcut) {
+        return;
+      }
+
+      if (isEditableElement(event.target)) {
+        return;
+      }
+
+      event.preventDefault();
+      if (key === 'arrowleft') {
+        onActivatePreviousTab();
+        return;
+      }
+
+      onActivateNextTab();
     };
 
     window.addEventListener('keydown', onKeyDown);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [onQuickOpen, onSave]);
+  }, [onActivateNextTab, onActivatePreviousTab, onCloseActiveTab, onQuickOpen, onSave]);
 }
 
-export function useBeforeUnloadGuard(isEnabled: boolean): void {
+export function useBeforeUnloadGuard(hasDirtyTabs: boolean): void {
   useEffect(() => {
-    // Warn before browser tab close/reload when user has unsaved changes.
+    // Warn user before browser refresh/close when there are unsaved tabs.
     const onBeforeUnload = (event: BeforeUnloadEvent): void => {
-      if (!isEnabled) {
+      if (!hasDirtyTabs) {
         return;
       }
+
       event.preventDefault();
     };
 
@@ -89,5 +136,5 @@ export function useBeforeUnloadGuard(isEnabled: boolean): void {
     return () => {
       window.removeEventListener('beforeunload', onBeforeUnload);
     };
-  }, [isEnabled]);
+  }, [hasDirtyTabs]);
 }

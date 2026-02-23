@@ -1,8 +1,17 @@
 import { useCallback, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { useFileContent, useFileTree, useSaveFileContent } from './useFiles';
+import {
+  useCreateFileContent,
+  useDeleteFilePath,
+  useFileContent,
+  useFileTree,
+  useRenameFilePath,
+  useSaveFileContent,
+} from './useFiles';
+import { useIdeCloseWorkflow } from './useIdeCloseWorkflow';
 import { useIdeQuickOpen, type QuickOpenItem } from './useIdeQuickOpen';
 import { useBeforeUnloadGuard, useGlobalIdeShortcuts, useSyncContentToTabs } from './useIdeLifecycle';
+import { useIdeTreeActions, type TreeActionState } from './useIdeTreeActions';
 import { useResizableSidebar } from './useResizableSidebar';
 import { type IdeTabState, useIdeStore } from '../store/ideStore';
 
@@ -13,6 +22,7 @@ export interface UseIdeWorkspaceResult {
   activePath: string | null;
   activeTab: IdeTabState | null;
   closeCandidate: IdeTabState | null;
+  treeAction: TreeActionState | null;
   treeQuery: ReturnType<typeof useFileTree>;
   contentQuery: ReturnType<typeof useFileContent>;
   saveMutation: ReturnType<typeof useSaveFileContent>;
@@ -21,6 +31,7 @@ export interface UseIdeWorkspaceResult {
   dirtyPaths: Set<string>;
   canSaveActiveTab: boolean;
   isCloseWithSavePending: boolean;
+  isTreeActionPending: boolean;
   isFileOpening: boolean;
   hasFileLoadError: boolean;
   treeSearchQuery: string;
@@ -38,6 +49,7 @@ export interface UseIdeWorkspaceResult {
   setTreeSearchQuery: (value: string) => void;
   refreshTree: () => void;
   saveActiveTab: () => void;
+  requestCloseActiveTab: () => void;
   requestCloseTab: (path: string) => void;
   cancelCloseCandidate: () => void;
   closeCandidateWithoutSaving: () => void;
@@ -48,10 +60,18 @@ export interface UseIdeWorkspaceResult {
   closeQuickOpen: () => void;
   updateQuickOpenQuery: (value: string) => void;
   openFileFromQuickOpen: (path: string) => void;
+  toggleQuickOpenPinned: (path: string) => void;
   setEditorCursor: (line: number, column: number) => void;
   startSidebarResize: (clientX: number) => void;
   increaseSidebarWidth: () => void;
   decreaseSidebarWidth: () => void;
+  requestCreateFromTree: (targetPath: string) => void;
+  requestRenameFromTree: (targetPath: string) => void;
+  requestDeleteFromTree: (targetPath: string) => void;
+  cancelTreeAction: () => void;
+  submitCreateFromTree: (targetPath: string, nextPath: string) => void;
+  submitRenameFromTree: (sourcePath: string, targetPath: string) => void;
+  submitDeleteFromTree: (targetPath: string) => void;
 }
 
 function findTabByPath(tabs: IdeTabState[], path: string | null): IdeTabState | null {
@@ -97,23 +117,36 @@ function resolveLanguage(filePath: string | null): string {
   return aliases[extension] ?? (extension.length > 0 ? extension : 'plain');
 }
 
+function getFilename(path: string): string {
+  const parts = path.split('/');
+  return parts[parts.length - 1] ?? path;
+}
+
 export function useIdeWorkspace(): UseIdeWorkspaceResult {
-  const [closeCandidatePath, setCloseCandidatePath] = useState<string | null>(null);
-  const [isCloseWithSavePending, setIsCloseWithSavePending] = useState<boolean>(false);
   const [activeLine, setActiveLine] = useState<number>(1);
   const [activeColumn, setActiveColumn] = useState<number>(1);
 
   const openedTabs = useIdeStore((state) => state.openedTabs);
   const activePath = useIdeStore((state) => state.activePath);
+  const recentPaths = useIdeStore((state) => state.recentPaths);
+  const pinnedPathList = useIdeStore((state) => state.pinnedPaths);
   const setActivePath = useIdeStore((state) => state.setActivePath);
   const upsertTab = useIdeStore((state) => state.upsertTab);
   const closeTab = useIdeStore((state) => state.closeTab);
+  const closeTabsByPrefix = useIdeStore((state) => state.closeTabsByPrefix);
+  const renamePathReferences = useIdeStore((state) => state.renamePathReferences);
   const updateTabContent = useIdeStore((state) => state.updateTabContent);
   const markSaved = useIdeStore((state) => state.markSaved);
+  const togglePinnedPath = useIdeStore((state) => state.togglePinnedPath);
+  const activatePreviousTab = useIdeStore((state) => state.activatePreviousTab);
+  const activateNextTab = useIdeStore((state) => state.activateNextTab);
 
   const treeQuery = useFileTree('');
   const contentQuery = useFileContent(activePath ?? '');
+  const createMutation = useCreateFileContent();
   const saveMutation = useSaveFileContent();
+  const renameMutation = useRenameFilePath();
+  const deleteMutation = useDeleteFilePath();
 
   const sidebar = useResizableSidebar({
     initialWidth: 320,
@@ -123,18 +156,21 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
     cssVariableName: SIDEBAR_WIDTH_CSS_VARIABLE,
   });
 
-  const quickOpen = useIdeQuickOpen(treeQuery.data, setActivePath);
+  const quickOpen = useIdeQuickOpen(
+    treeQuery.data,
+    setActivePath,
+    recentPaths,
+    pinnedPathList,
+    togglePinnedPath,
+  );
 
   const activeTab = useMemo(() => findTabByPath(openedTabs, activePath), [openedTabs, activePath]);
-  const closeCandidate = useMemo(() => findTabByPath(openedTabs, closeCandidatePath), [openedTabs, closeCandidatePath]);
 
   const hasDirtyTabs = useMemo(() => openedTabs.some((tab) => tab.isDirty), [openedTabs]);
   const dirtyTabsCount = useMemo(() => openedTabs.filter((tab) => tab.isDirty).length, [openedTabs]);
   const dirtyPaths = useMemo(() => {
     return new Set(openedTabs.filter((tab) => tab.isDirty).map((tab) => tab.path));
   }, [openedTabs]);
-
-  const canSaveActiveTab = activeTab != null && activeTab.isDirty && !saveMutation.isPending && !isCloseWithSavePending;
 
   const activeLanguage = useMemo(() => resolveLanguage(activeTab?.path ?? null), [activeTab?.path]);
   const activeFileSize = useMemo(() => {
@@ -164,6 +200,18 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
     }
   }, [markSaved, saveMutation]);
 
+  const closeWorkflow = useIdeCloseWorkflow({
+    openedTabs,
+    activePath,
+    closeTab,
+    saveTab,
+  });
+
+  const canSaveActiveTab = activeTab != null
+    && activeTab.isDirty
+    && !saveMutation.isPending
+    && !closeWorkflow.isCloseWithSavePending;
+
   const saveActiveTab = useCallback((): void => {
     if (activeTab == null || !canSaveActiveTab) {
       return;
@@ -171,49 +219,30 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
     void saveTab(activeTab);
   }, [activeTab, canSaveActiveTab, saveTab]);
 
-  const requestCloseTab = useCallback((path: string): void => {
-    const tab = findTabByPath(openedTabs, path);
-    if (tab == null) {
-      return;
-    }
-
-    if (tab.isDirty) {
-      setCloseCandidatePath(path);
-      return;
-    }
-
-    closeTab(path);
-  }, [closeTab, openedTabs]);
-
-  const cancelCloseCandidate = useCallback((): void => {
-    setCloseCandidatePath(null);
-  }, []);
-
-  const closeCandidateWithoutSaving = useCallback((): void => {
-    if (closeCandidatePath != null) {
-      closeTab(closeCandidatePath);
-    }
-    setCloseCandidatePath(null);
-  }, [closeCandidatePath, closeTab]);
-
-  const saveAndCloseCandidate = useCallback((): void => {
-    if (closeCandidate == null) {
-      return;
-    }
-
-    void (async () => {
-      setIsCloseWithSavePending(true);
-      const isSaved = await saveTab(closeCandidate);
-      setIsCloseWithSavePending(false);
-
-      if (!isSaved) {
-        return;
-      }
-
-      closeTab(closeCandidate.path);
-      setCloseCandidatePath(null);
-    })();
-  }, [closeCandidate, closeTab, saveTab]);
+  const treeActions = useIdeTreeActions({
+    activePath,
+    isCreatePending: createMutation.isPending,
+    isRenamePending: renameMutation.isPending,
+    isDeletePending: deleteMutation.isPending,
+    onCreateFile: async (path: string) => createMutation.mutateAsync({ path, content: '' }),
+    onRenamePath: async (sourcePath: string, targetPath: string) => {
+      await renameMutation.mutateAsync({ sourcePath, targetPath });
+    },
+    onDeletePath: async (path: string) => {
+      await deleteMutation.mutateAsync({ path });
+    },
+    onTabCreated: (path: string, content: string) => {
+      upsertTab({
+        path,
+        title: getFilename(path),
+        content,
+        savedContent: content,
+        isDirty: false,
+      });
+    },
+    onPathRenamed: renamePathReferences,
+    onPathDeleted: closeTabsByPrefix,
+  });
 
   const refreshTree = useCallback((): void => {
     void treeQuery.refetch();
@@ -244,6 +273,9 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
   useGlobalIdeShortcuts({
     onSave: saveActiveTab,
     onQuickOpen: quickOpen.openQuickOpen,
+    onCloseActiveTab: closeWorkflow.requestCloseActiveTab,
+    onActivatePreviousTab: activatePreviousTab,
+    onActivateNextTab: activateNextTab,
   });
 
   useBeforeUnloadGuard(hasDirtyTabs);
@@ -255,7 +287,8 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
     openedTabs,
     activePath,
     activeTab,
-    closeCandidate,
+    closeCandidate: closeWorkflow.closeCandidate,
+    treeAction: treeActions.treeAction,
     treeQuery,
     contentQuery,
     saveMutation,
@@ -263,7 +296,8 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
     dirtyTabsCount,
     dirtyPaths,
     canSaveActiveTab,
-    isCloseWithSavePending,
+    isCloseWithSavePending: closeWorkflow.isCloseWithSavePending,
+    isTreeActionPending: treeActions.isTreeActionPending,
     isFileOpening,
     hasFileLoadError,
     treeSearchQuery: quickOpen.treeSearchQuery,
@@ -281,19 +315,28 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
     setTreeSearchQuery: quickOpen.setTreeSearchQuery,
     refreshTree,
     saveActiveTab,
-    requestCloseTab,
-    cancelCloseCandidate,
-    closeCandidateWithoutSaving,
-    saveAndCloseCandidate,
+    requestCloseActiveTab: closeWorkflow.requestCloseActiveTab,
+    requestCloseTab: closeWorkflow.requestCloseTab,
+    cancelCloseCandidate: closeWorkflow.cancelCloseCandidate,
+    closeCandidateWithoutSaving: closeWorkflow.closeCandidateWithoutSaving,
+    saveAndCloseCandidate: closeWorkflow.saveAndCloseCandidate,
     retryLoadContent,
     updateActiveTabContent,
     openQuickOpen: quickOpen.openQuickOpen,
     closeQuickOpen: quickOpen.closeQuickOpen,
     updateQuickOpenQuery: quickOpen.updateQuickOpenQuery,
     openFileFromQuickOpen: quickOpen.openFileFromQuickOpen,
+    toggleQuickOpenPinned: quickOpen.toggleQuickOpenPinned,
     setEditorCursor,
     startSidebarResize: sidebar.startResize,
     increaseSidebarWidth: sidebar.increase,
     decreaseSidebarWidth: sidebar.decrease,
+    requestCreateFromTree: treeActions.requestCreateFromTree,
+    requestRenameFromTree: treeActions.requestRenameFromTree,
+    requestDeleteFromTree: treeActions.requestDeleteFromTree,
+    cancelTreeAction: treeActions.cancelTreeAction,
+    submitCreateFromTree: treeActions.submitCreateFromTree,
+    submitRenameFromTree: treeActions.submitRenameFromTree,
+    submitDeleteFromTree: treeActions.submitDeleteFromTree,
   };
 }

@@ -2,13 +2,18 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 
 import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.adapter.inbound.web.dto.FileContentResponse;
+import me.golemcore.bot.adapter.inbound.web.dto.FileCreateRequest;
+import me.golemcore.bot.adapter.inbound.web.dto.FileRenameRequest;
+import me.golemcore.bot.adapter.inbound.web.dto.FileRenameResponse;
 import me.golemcore.bot.adapter.inbound.web.dto.FileSaveRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.FileTreeNodeDto;
 import me.golemcore.bot.domain.model.DashboardFileContent;
 import me.golemcore.bot.domain.model.DashboardFileNode;
 import me.golemcore.bot.domain.service.DashboardFileService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -47,11 +52,45 @@ public class FilesController {
         }
     }
 
+    @PostMapping("/content")
+    public Mono<ResponseEntity<FileContentResponse>> createContent(@RequestBody FileCreateRequest request) {
+        try {
+            DashboardFileContent created = dashboardFileService.createContent(request.getPath(), request.getContent());
+            return Mono.just(ResponseEntity.ok(toContentDto(created)));
+        } catch (IllegalArgumentException e) {
+            return Mono.just(ResponseEntity.badRequest().build());
+        }
+    }
+
     @PutMapping("/content")
     public Mono<ResponseEntity<FileContentResponse>> saveContent(@RequestBody FileSaveRequest request) {
         try {
             DashboardFileContent saved = dashboardFileService.saveContent(request.getPath(), request.getContent());
             return Mono.just(ResponseEntity.ok(toContentDto(saved)));
+        } catch (IllegalArgumentException e) {
+            return Mono.just(ResponseEntity.badRequest().build());
+        }
+    }
+
+    @PostMapping("/rename")
+    public Mono<ResponseEntity<FileRenameResponse>> renamePath(@RequestBody FileRenameRequest request) {
+        try {
+            dashboardFileService.renamePath(request.getSourcePath(), request.getTargetPath());
+            FileRenameResponse payload = FileRenameResponse.builder()
+                    .sourcePath(request.getSourcePath())
+                    .targetPath(request.getTargetPath())
+                    .build();
+            return Mono.just(ResponseEntity.ok(payload));
+        } catch (IllegalArgumentException e) {
+            return Mono.just(ResponseEntity.badRequest().build());
+        }
+    }
+
+    @DeleteMapping
+    public Mono<ResponseEntity<Void>> deletePath(@RequestParam String path) {
+        try {
+            dashboardFileService.deletePath(path);
+            return Mono.just(ResponseEntity.noContent().build());
         } catch (IllegalArgumentException e) {
             return Mono.just(ResponseEntity.badRequest().build());
         }

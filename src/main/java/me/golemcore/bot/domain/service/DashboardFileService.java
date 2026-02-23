@@ -11,11 +11,13 @@ import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.nio.charset.MalformedInputException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -94,6 +96,40 @@ public class DashboardFileService {
         }
     }
 
+    public DashboardFileContent createContent(String relativePath, String content) {
+        if (relativePath == null || relativePath.isBlank()) {
+            throw new IllegalArgumentException("Path is required");
+        }
+
+        String value = content == null ? "" : content;
+        Path path = resolveSafePath(relativePath);
+
+        if (Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IllegalArgumentException("Path already exists: " + relativePath);
+        }
+
+        try {
+            Path parent = path.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            Files.writeString(path, value, StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE_NEW,
+                    StandardOpenOption.WRITE);
+
+            long size = Files.size(path);
+            String updatedAt = Instant.now().toString();
+            return DashboardFileContent.builder()
+                    .path(toRelativePath(path))
+                    .content(value)
+                    .size(size)
+                    .updatedAt(updatedAt)
+                    .build();
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to create file", e);
+        }
+    }
+
     public DashboardFileContent saveContent(String relativePath, String content) {
         if (relativePath == null || relativePath.isBlank()) {
             throw new IllegalArgumentException("Path is required");
@@ -123,6 +159,82 @@ public class DashboardFileService {
                     .build();
         } catch (IOException e) {
             throw new IllegalStateException("Failed to save file", e);
+        }
+    }
+
+    public void renamePath(String sourceRelativePath, String targetRelativePath) {
+        if (sourceRelativePath == null || sourceRelativePath.isBlank()) {
+            throw new IllegalArgumentException("Source path is required");
+        }
+        if (targetRelativePath == null || targetRelativePath.isBlank()) {
+            throw new IllegalArgumentException("Target path is required");
+        }
+
+        Path sourcePath = resolveSafePath(sourceRelativePath);
+        Path targetPath = resolveSafePath(targetRelativePath);
+
+        if (sourcePath.equals(workspaceRoot) || targetPath.equals(workspaceRoot)) {
+            throw new IllegalArgumentException("Workspace root cannot be renamed");
+        }
+        if (!Files.exists(sourcePath, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IllegalArgumentException("Source path not found: " + sourceRelativePath);
+        }
+        if (Files.exists(targetPath, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IllegalArgumentException("Target path already exists: " + targetRelativePath);
+        }
+
+        try {
+            Path targetParent = targetPath.getParent();
+            if (targetParent != null) {
+                Files.createDirectories(targetParent);
+            }
+            movePath(sourcePath, targetPath);
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to rename path", e);
+        }
+    }
+
+    public void deletePath(String relativePath) {
+        if (relativePath == null || relativePath.isBlank()) {
+            throw new IllegalArgumentException("Path is required");
+        }
+
+        Path path = resolveSafePath(relativePath);
+        if (path.equals(workspaceRoot)) {
+            throw new IllegalArgumentException("Workspace root cannot be deleted");
+        }
+        if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IllegalArgumentException("Path not found: " + relativePath);
+        }
+
+        try {
+            if (Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
+                deleteDirectoryRecursively(path);
+                return;
+            }
+            Files.delete(path);
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to delete path", e);
+        }
+    }
+
+    private void movePath(Path sourcePath, Path targetPath) throws IOException {
+        try {
+            Files.move(sourcePath, targetPath, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException ignored) {
+            Files.move(sourcePath, targetPath);
+        }
+    }
+
+    private void deleteDirectoryRecursively(Path path) throws IOException {
+        try (Stream<Path> walk = Files.walk(path)) {
+            List<Path> paths = walk.sorted(Comparator.reverseOrder()).toList();
+            for (Path current : paths) {
+                if (current.equals(workspaceRoot)) {
+                    continue;
+                }
+                Files.delete(current);
+            }
         }
     }
 

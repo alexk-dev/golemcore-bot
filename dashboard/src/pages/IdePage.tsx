@@ -6,6 +6,7 @@ import { EditorTabs } from '../components/ide/EditorTabs';
 import { FileTreePanel } from '../components/ide/FileTreePanel';
 import { IdeHeader } from '../components/ide/IdeHeader';
 import { QuickOpenModal } from '../components/ide/QuickOpenModal';
+import { TreeActionModal } from '../components/ide/TreeActionModal';
 import { UnsavedChangesModal } from '../components/ide/UnsavedChangesModal';
 import { useIdeWorkspace } from '../hooks/useIdeWorkspace';
 
@@ -45,6 +46,9 @@ export default function IdePage(): ReactElement {
                 dirtyPaths={ide.dirtyPaths}
                 searchQuery={ide.debouncedTreeSearchQuery}
                 onOpenFile={ide.setActivePath}
+                onRequestCreate={ide.requestCreateFromTree}
+                onRequestRename={ide.requestRenameFromTree}
+                onRequestDelete={ide.requestDeleteFromTree}
               />
             )}
           </Card.Body>
@@ -108,6 +112,7 @@ export default function IdePage(): ReactElement {
         onClose={ide.closeQuickOpen}
         onQueryChange={ide.updateQuickOpenQuery}
         onPick={ide.openFileFromQuickOpen}
+        onTogglePinned={ide.toggleQuickOpenPinned}
       />
 
       <UnsavedChangesModal
@@ -117,6 +122,15 @@ export default function IdePage(): ReactElement {
         onCancel={ide.cancelCloseCandidate}
         onCloseWithoutSaving={ide.closeCandidateWithoutSaving}
         onSaveAndClose={ide.saveAndCloseCandidate}
+      />
+
+      <TreeActionModal
+        action={ide.treeAction}
+        isProcessing={ide.isTreeActionPending}
+        onCancel={ide.cancelTreeAction}
+        onCreate={ide.submitCreateFromTree}
+        onRename={ide.submitRenameFromTree}
+        onDelete={ide.submitDeleteFromTree}
       />
     </div>
   );

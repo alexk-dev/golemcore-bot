@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactElement } from 'react';
-import { Form, InputGroup, ListGroup, Modal } from 'react-bootstrap';
-import { FiSearch } from 'react-icons/fi';
+import { Button, Form, InputGroup, ListGroup, Modal } from 'react-bootstrap';
+import { FiSearch, FiStar } from 'react-icons/fi';
 import type { QuickOpenItem } from '../../hooks/useIdeQuickOpen';
 
 export interface QuickOpenModalProps {
@@ -10,6 +10,7 @@ export interface QuickOpenModalProps {
   onClose: () => void;
   onQueryChange: (value: string) => void;
   onPick: (path: string) => void;
+  onTogglePinned: (path: string) => void;
 }
 
 function clampIndex(nextIndex: number, max: number): number {
@@ -32,6 +33,7 @@ export function QuickOpenModal({
   onClose,
   onQueryChange,
   onPick,
+  onTogglePinned,
 }: QuickOpenModalProps): ReactElement {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [activeIndex, setActiveIndex] = useState<number>(0);
@@ -88,6 +90,12 @@ export function QuickOpenModal({
     if (event.key === 'Escape') {
       event.preventDefault();
       onClose();
+      return;
+    }
+
+    if ((event.key === ' ' || event.key === 'Spacebar') && activeItem != null) {
+      event.preventDefault();
+      onTogglePinned(activeItem.path);
     }
   };
 
@@ -112,7 +120,7 @@ export function QuickOpenModal({
             />
           </InputGroup>
           <div className="small text-body-secondary mt-2">
-            ↑ ↓ navigate · Enter open · Esc close
+            ↑ ↓ navigate · Enter open · Space pin · Esc close
           </div>
         </div>
 
@@ -133,7 +141,28 @@ export function QuickOpenModal({
                   onClick={() => onPick(item.path)}
                   title={item.path}
                 >
-                  <div className="fw-medium">{item.title}</div>
+                  <div className="d-flex align-items-center justify-content-between gap-2">
+                    <div className="fw-medium d-flex align-items-center gap-2">
+                      {item.isPinned && <FiStar size={12} className="text-warning" />}
+                      {item.title}
+                    </div>
+                    <div className="d-flex align-items-center gap-2">
+                      {item.isRecent && <span className="badge text-bg-secondary">recent</span>}
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="p-0 ide-quick-open-pin"
+                        aria-label={item.isPinned ? `Unpin ${item.title}` : `Pin ${item.title}`}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          onTogglePinned(item.path);
+                        }}
+                      >
+                        <FiStar size={13} className={item.isPinned ? 'text-warning' : 'text-body-secondary'} />
+                      </Button>
+                    </div>
+                  </div>
                   <div className="small text-body-secondary text-truncate">{item.path}</div>
                 </ListGroup.Item>
               );

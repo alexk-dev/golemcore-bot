@@ -46,6 +46,7 @@
 .ide-tree-panel {
   width: 100%;
   min-height: 0;
+  position: relative;
 }
 
 .ide-tree-node {
@@ -83,6 +84,40 @@
   height: 8px;
   border-radius: 999px;
   background: var(--bs-warning);
+}
+
+.ide-tree-context-menu {
+  position: fixed;
+  z-index: 2000;
+  min-width: 160px;
+  background: var(--bs-body-bg);
+  border: 1px solid var(--bs-border-color);
+  box-shadow: 0 0.4rem 1rem rgba(0, 0, 0, 0.16);
+  border-radius: 0.4rem;
+  padding: 0.35rem;
+}
+
+.ide-tree-context-item {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--bs-body-color);
+  text-align: left;
+  font-size: 0.87rem;
+  border-radius: 0.3rem;
+  padding: 0.38rem 0.5rem;
+}
+
+.ide-tree-context-item:hover {
+  background: rgba(var(--bs-primary-rgb), 0.12);
+}
+
+.ide-tree-context-item.danger {
+  color: var(--bs-danger-text-emphasis);
+}
+
+.ide-tree-context-item.danger:hover {
+  background: rgba(var(--bs-danger-rgb), 0.12);
 }
 
 .ide-tabs {
@@ -172,6 +207,14 @@
 .ide-quick-open-list {
   max-height: 360px;
   overflow-y: auto;
+}
+
+.ide-quick-open-pin {
+  line-height: 1;
+}
+
+.ide-quick-open-pin:hover {
+  text-decoration: none;
 }
 
 @media (max-width: 991.98px) {
