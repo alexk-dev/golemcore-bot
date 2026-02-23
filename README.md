@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/alexk-dev/golemcore-bot/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/alexk-dev/golemcore-bot/actions/workflows/docker-publish.yml)
 [![Java](https://img.shields.io/badge/Java-25+-orange.svg)](https://www.oracle.com/java/)
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0.2-brightgreen.svg)](https://spring.io/projects/spring-boot)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0-brightgreen.svg)](https://spring.io/projects/spring-boot)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-passing-success.svg)](https://github.com/alexk-dev/golemcore-bot/actions)
 
@@ -39,12 +39,9 @@ If you want the deep-dive: start with **[Skills](docs/SKILLS.md)** and **[Model 
 ### Docker (recommended)
 
 ```bash
-# Clone
-git clone https://github.com/alexk-dev/golemcore-bot.git
-cd golemcore-bot
-
-# Build image with Jib (no Docker daemon needed)
-./mvnw compile jib:dockerBuild
+# Pull published image
+docker pull ghcr.io/alexk-dev/golemcore-bot:latest
+# Optional: pin a specific version tag instead of latest, e.g. :0.10.0
 
 # Run (persist workspace + sandbox)
 docker run -d \
@@ -57,7 +54,7 @@ docker run -d \
   -v golemcore-bot-sandbox:/app/sandbox \
   -p 8080:8080 \
   --restart unless-stopped \
-  golemcore-bot:latest
+  ghcr.io/alexk-dev/golemcore-bot:latest
 
 docker logs -f golemcore-bot
 
