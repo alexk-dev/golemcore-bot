@@ -66,13 +66,29 @@
 .ide-tab {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
   border: 1px solid var(--bs-border-color);
   background: var(--bs-body-bg);
   color: var(--bs-body-color);
   border-radius: 0.5rem;
-  padding: 0.2rem 0.35rem 0.2rem 0.6rem;
+  padding: 0;
   white-space: nowrap;
+}
+
+.ide-tab-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: none;
+  background: transparent;
+  color: inherit;
+  padding: 0.2rem 0.35rem 0.2rem 0.6rem;
+}
+
+.ide-tab-main:focus-visible,
+.ide-tab-close:focus-visible {
+  outline: 2px solid var(--bs-primary);
+  outline-offset: 1px;
+  border-radius: 0.35rem;
 }
 
 .ide-tab.active {
@@ -91,12 +107,17 @@
 
 .ide-tab-close {
   --bs-btn-padding-y: 0;
-  --bs-btn-padding-x: 0.2rem;
+  --bs-btn-padding-x: 0.35rem;
   color: var(--bs-secondary-color);
 }
 
 .ide-tab-close:hover {
   color: var(--bs-emphasis-color);
+}
+
+.ide-statusbar {
+  background: var(--bs-tertiary-bg);
+  min-height: 34px;
 }
 
 .ide-editor {

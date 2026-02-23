@@ -1,6 +1,8 @@
-import type { ReactElement } from 'react';
+import { type ReactElement, useMemo } from 'react';
 import CodeMirror, { type Extension } from '@uiw/react-codemirror';
+import { EditorView } from '@codemirror/view';
 import { loadLanguage } from '@uiw/codemirror-extensions-langs';
+import { useThemeStore } from '../../store/themeStore';
 
 export interface CodeEditorProps {
   filePath: string | null;
@@ -92,17 +94,32 @@ function resolveLanguageName(path: string | null): LanguageKey | null {
 }
 
 export function CodeEditor({ filePath, value, onChange }: CodeEditorProps): ReactElement {
-  const languageName = resolveLanguageName(filePath);
-  const loadedLanguage = languageName == null ? null : loadLanguage(languageName);
-  const extensions: Extension[] = loadedLanguage == null ? [] : [loadedLanguage];
+  const theme = useThemeStore((state) => state.theme);
+
+  const extensions = useMemo((): Extension[] => {
+    const languageName = resolveLanguageName(filePath);
+    const loadedLanguage = languageName == null ? null : loadLanguage(languageName);
+    const result: Extension[] = [EditorView.lineWrapping];
+
+    if (loadedLanguage != null) {
+      result.push(loadedLanguage);
+    }
+
+    return result;
+  }, [filePath]);
 
   return (
-    <div className="ide-editor h-100">
+    <div className="ide-editor h-100" id="ide-editor-panel" role="tabpanel" aria-label="Code editor">
       <CodeMirror
         value={value}
         height="100%"
-        theme="dark"
-        basicSetup
+        theme={theme === 'dark' ? 'dark' : 'light'}
+        basicSetup={{
+          lineNumbers: true,
+          highlightActiveLine: true,
+          foldGutter: true,
+          autocompletion: true,
+        }}
         extensions={extensions}
         onChange={onChange}
       />

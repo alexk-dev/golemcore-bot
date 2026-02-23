@@ -57,14 +57,22 @@ export function FileTreePanel({ nodes, selectedPath, onOpenFile }: FileTreePanel
   const handleActivate = (node: NodeApi<ArboristFileNode>): void => {
     if (node.data.kind === 'file') {
       onOpenFile(node.data.path);
+      return;
     }
+
+    if (node.isOpen) {
+      node.close();
+      return;
+    }
+
+    node.open();
   };
 
   return (
-    <div className="ide-tree-panel h-100" ref={ref}>
+    <div className="ide-tree-panel h-100" ref={ref} aria-label="Project files">
       <Tree<ArboristFileNode>
         data={mappedNodes}
-        width={size.width}
+        width={Math.max(220, size.width)}
         height={Math.max(180, size.height)}
         rowHeight={30}
         indent={18}
