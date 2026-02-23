@@ -1,20 +1,26 @@
 import type { ReactElement } from 'react';
-import { Button } from 'react-bootstrap';
 import { FiInfo } from 'react-icons/fi';
 
 export interface EditorStatusBarProps {
   activePath: string | null;
+  line: number;
+  column: number;
 }
 
-export function EditorStatusBar({ activePath }: EditorStatusBarProps): ReactElement {
+export function EditorStatusBar({ activePath, line, column }: EditorStatusBarProps): ReactElement {
   return (
     <div className="ide-statusbar d-flex align-items-center justify-content-between px-3 py-2 border-bottom small">
       <div className="text-truncate pe-2" title={activePath ?? ''}>
         {activePath ?? 'No file selected'}
       </div>
-      <div className="text-body-secondary d-flex align-items-center gap-2">
-        <FiInfo size={14} />
-        <span>Use Ctrl/Cmd + S to save</span>
+      <div className="text-body-secondary d-flex align-items-center gap-3">
+        <span>
+          Ln {line}, Col {column}
+        </span>
+        <span className="d-flex align-items-center gap-1">
+          <FiInfo size={14} />
+          <span>Ctrl/Cmd + S save · Ctrl/Cmd + P quick open</span>
+        </span>
       </div>
     </div>
   );
@@ -48,9 +54,9 @@ export function EditorContentState({
     return (
       <div className="alert alert-danger m-3 d-flex align-items-center justify-content-between gap-3" role="alert">
         <span>Failed to load file content.</span>
-        <Button size="sm" variant="outline-danger" onClick={onRetry}>
+        <button type="button" className="btn btn-sm btn-outline-danger" onClick={onRetry}>
           Retry
-        </Button>
+        </button>
       </div>
     );
   }

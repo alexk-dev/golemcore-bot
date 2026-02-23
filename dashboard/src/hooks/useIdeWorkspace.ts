@@ -1,7 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useFileContent, useFileTree, useSaveFileContent } from './useFiles';
-import { createNewTab, type IdeTabState, useIdeStore } from '../store/ideStore';
+import { useIdeQuickOpen, type QuickOpenItem } from './useIdeQuickOpen';
+import { useBeforeUnloadGuard, useGlobalIdeShortcuts, useSyncContentToTabs } from './useIdeLifecycle';
+import { useResizableSidebar } from './useResizableSidebar';
+import { type IdeTabState, useIdeStore } from '../store/ideStore';
+
+const SIDEBAR_WIDTH_CSS_VARIABLE = '--ide-sidebar-width';
 
 export interface UseIdeWorkspaceResult {
   openedTabs: IdeTabState[];
@@ -13,11 +18,19 @@ export interface UseIdeWorkspaceResult {
   saveMutation: ReturnType<typeof useSaveFileContent>;
   hasDirtyTabs: boolean;
   dirtyTabsCount: number;
+  dirtyPaths: Set<string>;
   canSaveActiveTab: boolean;
   isCloseWithSavePending: boolean;
   isFileOpening: boolean;
   hasFileLoadError: boolean;
+  searchQuery: string;
+  isQuickOpenVisible: boolean;
+  quickOpenItems: QuickOpenItem[];
+  activeLine: number;
+  activeColumn: number;
+  sidebarWidth: number;
   setActivePath: (path: string | null) => void;
+  setSearchQuery: (value: string) => void;
   refreshTree: () => void;
   saveActiveTab: () => void;
   requestCloseTab: (path: string) => void;
@@ -26,6 +39,13 @@ export interface UseIdeWorkspaceResult {
   saveAndCloseCandidate: () => void;
   retryLoadContent: () => void;
   updateActiveTabContent: (nextValue: string) => void;
+  openQuickOpen: () => void;
+  closeQuickOpen: () => void;
+  openFileFromQuickOpen: (path: string) => void;
+  setEditorCursor: (line: number, column: number) => void;
+  startSidebarResize: (clientX: number) => void;
+  increaseSidebarWidth: () => void;
+  decreaseSidebarWidth: () => void;
 }
 
 function findTabByPath(tabs: IdeTabState[], path: string | null): IdeTabState | null {
@@ -38,6 +58,8 @@ function findTabByPath(tabs: IdeTabState[], path: string | null): IdeTabState | 
 export function useIdeWorkspace(): UseIdeWorkspaceResult {
   const [closeCandidatePath, setCloseCandidatePath] = useState<string | null>(null);
   const [isCloseWithSavePending, setIsCloseWithSavePending] = useState<boolean>(false);
+  const [activeLine, setActiveLine] = useState<number>(1);
+  const [activeColumn, setActiveColumn] = useState<number>(1);
 
   const openedTabs = useIdeStore((state) => state.openedTabs);
   const activePath = useIdeStore((state) => state.activePath);
@@ -51,11 +73,24 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
   const contentQuery = useFileContent(activePath ?? '');
   const saveMutation = useSaveFileContent();
 
+  const sidebar = useResizableSidebar({
+    initialWidth: 320,
+    minWidth: 240,
+    maxWidth: 520,
+    storageKey: 'ide.sidebar.width',
+    cssVariableName: SIDEBAR_WIDTH_CSS_VARIABLE,
+  });
+
+  const quickOpen = useIdeQuickOpen(treeQuery.data, setActivePath);
+
   const activeTab = useMemo(() => findTabByPath(openedTabs, activePath), [openedTabs, activePath]);
   const closeCandidate = useMemo(() => findTabByPath(openedTabs, closeCandidatePath), [openedTabs, closeCandidatePath]);
 
   const hasDirtyTabs = useMemo(() => openedTabs.some((tab) => tab.isDirty), [openedTabs]);
   const dirtyTabsCount = useMemo(() => openedTabs.filter((tab) => tab.isDirty).length, [openedTabs]);
+  const dirtyPaths = useMemo(() => {
+    return new Set(openedTabs.filter((tab) => tab.isDirty).map((tab) => tab.path));
+  }, [openedTabs]);
 
   const canSaveActiveTab = activeTab != null && activeTab.isDirty && !saveMutation.isPending && !isCloseWithSavePending;
 
@@ -137,60 +172,23 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
     updateTabContent(activeTab.path, nextValue);
   }, [activeTab, updateTabContent]);
 
-  useEffect(() => {
-    // Synchronize loaded API content into tab state when file becomes active.
-    const payload = contentQuery.data;
-    if (payload == null) {
-      return;
-    }
+  const setEditorCursor = useCallback((line: number, column: number): void => {
+    setActiveLine(line);
+    setActiveColumn(column);
+  }, []);
 
-    const existing = findTabByPath(openedTabs, payload.path);
-    if (existing == null) {
-      upsertTab(createNewTab(payload.path, payload.content));
-      return;
-    }
+  useSyncContentToTabs({
+    contentData: contentQuery.data,
+    openedTabs,
+    upsertTab,
+  });
 
-    if (!existing.isDirty && existing.savedContent !== payload.content) {
-      upsertTab({
-        ...existing,
-        content: payload.content,
-        savedContent: payload.content,
-        isDirty: false,
-      });
-    }
-  }, [contentQuery.data, openedTabs, upsertTab]);
+  useGlobalIdeShortcuts({
+    onSave: saveActiveTab,
+    onQuickOpen: quickOpen.openQuickOpen,
+  });
 
-  useEffect(() => {
-    // Register global save shortcut for editor workflow.
-    const onKeyDown = (event: KeyboardEvent): void => {
-      const isSaveCombo = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's';
-      if (!isSaveCombo) {
-        return;
-      }
-      event.preventDefault();
-      saveActiveTab();
-    };
-
-    window.addEventListener('keydown', onKeyDown);
-    return () => {
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  }, [saveActiveTab]);
-
-  useEffect(() => {
-    // Warn before browser tab close/reload when user has unsaved changes.
-    const onBeforeUnload = (event: BeforeUnloadEvent): void => {
-      if (!hasDirtyTabs) {
-        return;
-      }
-      event.preventDefault();
-    };
-
-    window.addEventListener('beforeunload', onBeforeUnload);
-    return () => {
-      window.removeEventListener('beforeunload', onBeforeUnload);
-    };
-  }, [hasDirtyTabs]);
+  useBeforeUnloadGuard(hasDirtyTabs);
 
   const isFileOpening = activePath != null && activeTab == null && contentQuery.isLoading;
   const hasFileLoadError = activePath != null && activeTab == null && contentQuery.isError;
@@ -205,11 +203,19 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
     saveMutation,
     hasDirtyTabs,
     dirtyTabsCount,
+    dirtyPaths,
     canSaveActiveTab,
     isCloseWithSavePending,
     isFileOpening,
     hasFileLoadError,
+    searchQuery: quickOpen.searchQuery,
+    isQuickOpenVisible: quickOpen.isQuickOpenVisible,
+    quickOpenItems: quickOpen.quickOpenItems,
+    activeLine,
+    activeColumn,
+    sidebarWidth: sidebar.width,
     setActivePath,
+    setSearchQuery: quickOpen.setSearchQuery,
     refreshTree,
     saveActiveTab,
     requestCloseTab,
@@ -218,5 +224,12 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
     saveAndCloseCandidate,
     retryLoadContent,
     updateActiveTabContent,
+    openQuickOpen: quickOpen.openQuickOpen,
+    closeQuickOpen: quickOpen.closeQuickOpen,
+    openFileFromQuickOpen: quickOpen.openFileFromQuickOpen,
+    setEditorCursor,
+    startSidebarResize: sidebar.startResize,
+    increaseSidebarWidth: sidebar.increase,
+    decreaseSidebarWidth: sidebar.decrease,
   };
 }

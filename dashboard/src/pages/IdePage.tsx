@@ -5,6 +5,7 @@ import { EditorContentState, EditorStatusBar } from '../components/ide/EditorSta
 import { EditorTabs } from '../components/ide/EditorTabs';
 import { FileTreePanel } from '../components/ide/FileTreePanel';
 import { IdeHeader } from '../components/ide/IdeHeader';
+import { QuickOpenModal } from '../components/ide/QuickOpenModal';
 import { UnsavedChangesModal } from '../components/ide/UnsavedChangesModal';
 import { useIdeWorkspace } from '../hooks/useIdeWorkspace';
 
@@ -19,8 +20,13 @@ export default function IdePage(): ReactElement {
         isRefreshingTree={ide.treeQuery.isFetching}
         canSaveActiveTab={ide.canSaveActiveTab}
         isSaving={ide.saveMutation.isPending}
+        searchQuery={ide.searchQuery}
+        onSearchQueryChange={ide.setSearchQuery}
         onRefreshTree={ide.refreshTree}
         onSaveActiveTab={ide.saveActiveTab}
+        onOpenQuickOpen={ide.openQuickOpen}
+        onIncreaseSidebarWidth={ide.increaseSidebarWidth}
+        onDecreaseSidebarWidth={ide.decreaseSidebarWidth}
       />
 
       <div className="ide-layout flex-grow-1 d-flex overflow-hidden">
@@ -36,11 +42,27 @@ export default function IdePage(): ReactElement {
               <FileTreePanel
                 nodes={ide.treeQuery.data ?? []}
                 selectedPath={ide.activePath}
+                dirtyPaths={ide.dirtyPaths}
+                searchQuery={ide.searchQuery}
                 onOpenFile={ide.setActivePath}
               />
             )}
           </Card.Body>
         </Card>
+
+        <div
+          className="ide-sidebar-resizer"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize file explorer"
+          aria-valuemin={240}
+          aria-valuemax={520}
+          aria-valuenow={ide.sidebarWidth}
+          onMouseDown={(event) => {
+            event.preventDefault();
+            ide.startSidebarResize(event.clientX);
+          }}
+        />
 
         <Card className="ide-editor-card h-100">
           <Card.Body className="p-0 d-flex flex-column h-100 overflow-hidden">
@@ -50,7 +72,11 @@ export default function IdePage(): ReactElement {
               onSelectTab={ide.setActivePath}
               onCloseTab={ide.requestCloseTab}
             />
-            <EditorStatusBar activePath={ide.activeTab?.path ?? null} />
+            <EditorStatusBar
+              activePath={ide.activeTab?.path ?? null}
+              line={ide.activeLine}
+              column={ide.activeColumn}
+            />
 
             <div className="flex-grow-1 overflow-hidden">
               <EditorContentState
@@ -63,12 +89,22 @@ export default function IdePage(): ReactElement {
                   filePath={ide.activeTab?.path ?? null}
                   value={ide.activeTab?.content ?? ''}
                   onChange={ide.updateActiveTabContent}
+                  onCursorChange={ide.setEditorCursor}
+                  showMinimap
                 />
               </EditorContentState>
             </div>
           </Card.Body>
         </Card>
       </div>
+
+      <QuickOpenModal
+        show={ide.isQuickOpenVisible}
+        query={ide.searchQuery}
+        items={ide.quickOpenItems}
+        onClose={ide.closeQuickOpen}
+        onPick={ide.openFileFromQuickOpen}
+      />
 
       <UnsavedChangesModal
         show={ide.closeCandidate != null}

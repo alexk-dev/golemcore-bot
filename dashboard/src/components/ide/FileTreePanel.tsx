@@ -7,6 +7,8 @@ import { useElementSize } from '../../hooks/useElementSize';
 export interface FileTreePanelProps {
   nodes: FileTreeNode[];
   selectedPath: string | null;
+  dirtyPaths: Set<string>;
+  searchQuery: string;
   onOpenFile: (path: string) => void;
 }
 
@@ -15,17 +17,19 @@ interface ArboristFileNode {
   name: string;
   kind: 'file' | 'directory';
   path: string;
+  isDirty: boolean;
   children?: ArboristFileNode[];
 }
 
-function mapNodes(inputNodes: FileTreeNode[]): ArboristFileNode[] {
+function mapNodes(inputNodes: FileTreeNode[], dirtyPaths: Set<string>): ArboristFileNode[] {
   return inputNodes.map((node) => {
-    const children = mapNodes(node.children);
+    const children = mapNodes(node.children, dirtyPaths);
     const mappedNode: ArboristFileNode = {
       id: node.path,
       name: node.name,
       kind: node.type,
       path: node.path,
+      isDirty: node.type === 'file' && dirtyPaths.has(node.path),
     };
     if (children.length > 0) {
       mappedNode.children = children;
@@ -46,12 +50,23 @@ function FileTreeNodeRenderer({ node, style, dragHandle }: NodeRendererProps<Arb
       </span>
       <span className="ide-tree-icon" aria-hidden>{icon}</span>
       <span className="ide-tree-name text-truncate">{node.data.name}</span>
+      {node.data.isDirty && <span className="ide-tree-dirty-dot" aria-label="Unsaved changes" title="Unsaved changes" />}
     </div>
   );
 }
 
-export function FileTreePanel({ nodes, selectedPath, onOpenFile }: FileTreePanelProps): ReactElement {
-  const mappedNodes = mapNodes(nodes);
+function searchMatch(node: NodeApi<ArboristFileNode>, searchTerm: string): boolean {
+  return node.data.name.toLowerCase().includes(searchTerm.toLowerCase());
+}
+
+export function FileTreePanel({
+  nodes,
+  selectedPath,
+  dirtyPaths,
+  searchQuery,
+  onOpenFile,
+}: FileTreePanelProps): ReactElement {
+  const mappedNodes = mapNodes(nodes, dirtyPaths);
   const { ref, size } = useElementSize();
 
   const handleActivate = (node: NodeApi<ArboristFileNode>): void => {
@@ -81,6 +96,8 @@ export function FileTreePanel({ nodes, selectedPath, onOpenFile }: FileTreePanel
         onActivate={handleActivate}
         disableDrag
         disableEdit
+        searchTerm={searchQuery}
+        searchMatch={searchMatch}
       >
         {FileTreeNodeRenderer}
       </Tree>
