@@ -120,4 +120,14 @@
         <Bug pattern="DM_EXIT" />
         <Class name="me.golemcore.bot.domain.service.JvmExitService" />
     </Match>
+    <!--
+        ToolCallExecutionService includes a compatibility constructor used by
+        tests/mocks to bridge old signatures while runtime wiring is plugin-based.
+        SpotBugs flags CT_CONSTRUCTOR_THROW on this constructor, but the path is
+        non-runtime, guarded with fallbacks, and not exposed to untrusted subclassing.
+    -->
+    <Match>
+        <Bug pattern="CT_CONSTRUCTOR_THROW" />
+        <Class name="me.golemcore.bot.domain.service.ToolCallExecutionService" />
+    </Match>
 </FindBugsFilter>

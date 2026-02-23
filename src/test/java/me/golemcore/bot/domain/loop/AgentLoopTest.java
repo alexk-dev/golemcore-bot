@@ -38,6 +38,7 @@ import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.system.AgentSystem;
 import me.golemcore.bot.domain.system.ResponseRoutingSystem;
+import me.golemcore.bot.plugin.context.PluginChannelCatalog;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.RateLimitPort;
@@ -134,7 +135,7 @@ class AgentLoopTest {
                 sessionPort,
                 rateLimitPort,
                 List.of(verifier),
-                List.of(channel),
+                PluginChannelCatalog.forTesting(List.of(channel)),
                 mockRuntimeConfigService(2),
                 preferencesService,
                 llmPort,
@@ -181,7 +182,7 @@ class AgentLoopTest {
                 sessionPort,
                 rateLimitPort,
                 List.of(),
-                List.of(channel),
+                PluginChannelCatalog.forTesting(List.of(channel)),
                 mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
@@ -231,7 +232,7 @@ class AgentLoopTest {
                 sessionPort,
                 rateLimitPort,
                 List.of(),
-                List.of(channel),
+                PluginChannelCatalog.forTesting(List.of(channel)),
                 mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
@@ -311,9 +312,9 @@ class AgentLoopTest {
                 sessionPort,
                 rateLimitPort,
                 List.of(system,
-                        new ResponseRoutingSystem(List.of(channel), preferencesService,
+                        new ResponseRoutingSystem(PluginChannelCatalog.forTesting(List.of(channel)), preferencesService,
                                 mock(VoiceResponseHandler.class))),
-                List.of(channel),
+                PluginChannelCatalog.forTesting(List.of(channel)),
                 mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
@@ -400,7 +401,7 @@ class AgentLoopTest {
                 sessionPort,
                 rateLimitPort,
                 List.of(disabledSystem),
-                List.of(channel),
+                PluginChannelCatalog.forTesting(List.of(channel)),
                 mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
@@ -504,7 +505,7 @@ class AgentLoopTest {
                 sessionPort,
                 rateLimitPort,
                 List.of(throwingSystem, inspectorSystem),
-                List.of(channel),
+                PluginChannelCatalog.forTesting(List.of(channel)),
                 mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
@@ -547,7 +548,7 @@ class AgentLoopTest {
                 sessionPort,
                 rateLimitPort,
                 List.of(),
-                List.of(channel),
+                PluginChannelCatalog.forTesting(List.of(channel)),
                 mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
@@ -616,13 +617,14 @@ class AgentLoopTest {
         };
 
         ResponseRoutingSystem routingSystem = new ResponseRoutingSystem(
-                List.of(channel), preferencesService, mock(VoiceResponseHandler.class));
+                PluginChannelCatalog.forTesting(List.of(channel)), preferencesService,
+                mock(VoiceResponseHandler.class));
 
         AgentLoop loop = new AgentLoop(
                 sessionPort,
                 rateLimitPort,
                 List.of(failureSystem, routingSystem),
-                List.of(channel),
+                PluginChannelCatalog.forTesting(List.of(channel)),
                 mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
@@ -700,13 +702,14 @@ class AgentLoopTest {
         };
 
         ResponseRoutingSystem routingSystem = new ResponseRoutingSystem(
-                List.of(channel), preferencesService, mock(VoiceResponseHandler.class));
+                PluginChannelCatalog.forTesting(List.of(channel)), preferencesService,
+                mock(VoiceResponseHandler.class));
 
         AgentLoop loop = new AgentLoop(
                 sessionPort,
                 rateLimitPort,
                 List.of(nullMessagesSystem, routingSystem),
-                List.of(channel),
+                PluginChannelCatalog.forTesting(List.of(channel)),
                 mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
@@ -760,7 +763,7 @@ class AgentLoopTest {
                 sessionPort,
                 rateLimitPort,
                 List.of(),
-                List.of(channel),
+                PluginChannelCatalog.forTesting(List.of(channel)),
                 mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
@@ -845,13 +848,14 @@ class AgentLoopTest {
         };
 
         ResponseRoutingSystem routingSystem = new ResponseRoutingSystem(
-                List.of(channel), preferencesService, mock(VoiceResponseHandler.class));
+                PluginChannelCatalog.forTesting(List.of(channel)), preferencesService,
+                mock(VoiceResponseHandler.class));
 
         AgentLoop loop = new AgentLoop(
                 sessionPort,
                 rateLimitPort,
                 List.of(turnOutcomeSystem, routingSystem),
-                List.of(channel),
+                PluginChannelCatalog.forTesting(List.of(channel)),
                 mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
@@ -890,7 +894,7 @@ class AgentLoopTest {
         when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
 
         AgentLoop loop = new AgentLoop(
-                sessionPort, rateLimitPort, List.of(), List.of(channel),
+                sessionPort, rateLimitPort, List.of(), PluginChannelCatalog.forTesting(List.of(channel)),
                 mockRuntimeConfigService(1), preferencesService, llmPort, clock);
 
         Message inbound = Message.builder()
@@ -929,7 +933,7 @@ class AgentLoopTest {
         when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         AgentLoop loop = new AgentLoop(
-                sessionPort, rateLimitPort, List.of(), List.of(channel),
+                sessionPort, rateLimitPort, List.of(), PluginChannelCatalog.forTesting(List.of(channel)),
                 mockRuntimeConfigService(1), preferencesService, llmPort, clock);
 
         Map<String, Object> meta = new HashMap<>();
@@ -969,10 +973,11 @@ class AgentLoopTest {
         when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         ResponseRoutingSystem routing = new ResponseRoutingSystem(
-                List.of(channel), preferencesService, mock(VoiceResponseHandler.class));
+                PluginChannelCatalog.forTesting(List.of(channel)), preferencesService,
+                mock(VoiceResponseHandler.class));
 
         AgentLoop loop = new AgentLoop(
-                sessionPort, rateLimitPort, List.of(routing), List.of(channel),
+                sessionPort, rateLimitPort, List.of(routing), PluginChannelCatalog.forTesting(List.of(channel)),
                 mockRuntimeConfigService(1), preferencesService, llmPort, clock);
 
         Map<String, Object> meta = new HashMap<>();
@@ -1036,10 +1041,12 @@ class AgentLoopTest {
         };
 
         ResponseRoutingSystem routing = new ResponseRoutingSystem(
-                List.of(channel), preferencesService, mock(VoiceResponseHandler.class));
+                PluginChannelCatalog.forTesting(List.of(channel)), preferencesService,
+                mock(VoiceResponseHandler.class));
 
         AgentLoop loop = new AgentLoop(
-                sessionPort, rateLimitPort, List.of(alwaysTransition, routing), List.of(channel),
+                sessionPort, rateLimitPort, List.of(alwaysTransition, routing),
+                PluginChannelCatalog.forTesting(List.of(channel)),
                 mockRuntimeConfigService(1), preferencesService, llmPort, clock);
 
         Message inbound = Message.builder()
@@ -1103,10 +1110,12 @@ class AgentLoopTest {
         };
 
         ResponseRoutingSystem routing = new ResponseRoutingSystem(
-                List.of(channel), preferencesService, mock(VoiceResponseHandler.class));
+                PluginChannelCatalog.forTesting(List.of(channel)), preferencesService,
+                mock(VoiceResponseHandler.class));
 
         AgentLoop loop = new AgentLoop(
-                sessionPort, rateLimitPort, List.of(errorSystem, routing), List.of(channel),
+                sessionPort, rateLimitPort, List.of(errorSystem, routing),
+                PluginChannelCatalog.forTesting(List.of(channel)),
                 mockRuntimeConfigService(1), preferencesService, llmPort, clock);
 
         Message inbound = Message.builder()

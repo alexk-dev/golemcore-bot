@@ -23,6 +23,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.stream.Stream;
 
 @Service
@@ -244,7 +245,7 @@ public class DashboardFileService {
                     .filter(path -> !Files.isSymbolicLink(path))
                     .sorted(Comparator
                             .comparing((Path p) -> !Files.isDirectory(p, LinkOption.NOFOLLOW_LINKS))
-                            .thenComparing(p -> requireFileName(p).toLowerCase()))
+                            .thenComparing(p -> requireFileName(p).toLowerCase(Locale.ROOT)))
                     .toList();
 
             List<DashboardFileNode> nodes = new ArrayList<>();

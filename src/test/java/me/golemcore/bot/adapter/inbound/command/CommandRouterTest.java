@@ -25,6 +25,8 @@ import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.domain.service.SessionRunCoordinator;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.plugin.context.PluginPortResolver;
+import me.golemcore.bot.plugin.context.PluginToolCatalog;
 import me.golemcore.bot.port.inbound.CommandPort;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
@@ -156,9 +158,9 @@ class CommandRouterTest {
 
         router = new CommandRouter(
                 skillComponent,
-                List.of(tool1, tool2, tool3),
+                PluginToolCatalog.forTesting(List.of(tool1, tool2, tool3)),
+                PluginPortResolver.forTesting(null, null, usageTracker, null, null),
                 sessionService,
-                usageTracker,
                 preferencesService,
                 compactionService,
                 autoModeService,

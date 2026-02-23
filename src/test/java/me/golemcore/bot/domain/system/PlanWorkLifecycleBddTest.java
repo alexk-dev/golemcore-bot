@@ -28,6 +28,8 @@ import me.golemcore.bot.domain.system.toolloop.ToolLoopTurnResult;
 import me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder;
 import me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker;
 import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.plugin.context.PluginPortResolver;
+import me.golemcore.bot.plugin.context.PluginToolCatalog;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.McpPort;
 import me.golemcore.bot.port.outbound.RagPort;
@@ -209,11 +211,12 @@ class PlanWorkLifecycleBddTest {
         return new ContextBuildingSystem(
                 memoryComponent,
                 skillComponent,
-                List.of(new PlanSetContentTool(planService), new PlanGetTool(planService)),
+                PluginToolCatalog
+                        .forTesting(List.of(new PlanSetContentTool(planService), new PlanGetTool(planService))),
                 templateEngine,
                 mcpPort,
                 toolCallExecutionService,
-                ragPort,
+                PluginPortResolver.forTesting(ragPort, null, null, null, null),
                 properties,
                 autoModeService,
                 planService,

@@ -2,6 +2,7 @@ package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.model.AudioFormat;
 import me.golemcore.bot.domain.service.VoiceResponseHandler.VoiceSendResult;
+import me.golemcore.bot.plugin.context.PluginPortResolver;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.VoicePort;
 import org.junit.jupiter.api.BeforeEach;
@@ -37,7 +38,9 @@ class VoiceResponseHandlerTest {
         when(channel.sendMessage(anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
-        handler = new VoiceResponseHandler(voicePort, runtimeConfigService);
+        handler = new VoiceResponseHandler(
+                PluginPortResolver.forTesting(null, voicePort, null, null, null),
+                runtimeConfigService);
     }
 
     // ===== trySendVoice =====

@@ -43,6 +43,8 @@ import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import me.golemcore.bot.domain.service.SessionRunCoordinator;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.plugin.context.PluginPortResolver;
+import me.golemcore.bot.plugin.context.PluginToolCatalog;
 import me.golemcore.bot.port.inbound.CommandPort;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
@@ -118,9 +120,9 @@ public class CommandRouter implements CommandPort {
     private static final String ERR_NO_REASONING = "no.reasoning";
 
     private final SkillComponent skillComponent;
-    private final List<ToolComponent> toolComponents;
+    private final PluginToolCatalog pluginToolCatalog;
+    private final PluginPortResolver pluginPortResolver;
     private final SessionPort sessionService;
-    private final UsageTrackingPort usageTracker;
     private final UserPreferencesService preferencesService;
     private final CompactionService compactionService;
     private final AutoModeService autoModeService;
@@ -144,9 +146,9 @@ public class CommandRouter implements CommandPort {
 
     public CommandRouter(
             SkillComponent skillComponent,
-            List<ToolComponent> toolComponents,
+            PluginToolCatalog pluginToolCatalog,
+            PluginPortResolver pluginPortResolver,
             SessionPort sessionService,
-            UsageTrackingPort usageTracker,
             UserPreferencesService preferencesService,
             CompactionService compactionService,
             AutoModeService autoModeService,
@@ -160,9 +162,9 @@ public class CommandRouter implements CommandPort {
             RuntimeConfigService runtimeConfigService,
             ObjectProvider<BuildProperties> buildPropertiesProvider) {
         this.skillComponent = skillComponent;
-        this.toolComponents = toolComponents;
+        this.pluginToolCatalog = pluginToolCatalog;
+        this.pluginPortResolver = pluginPortResolver;
         this.sessionService = sessionService;
-        this.usageTracker = usageTracker;
         this.preferencesService = preferencesService;
         this.compactionService = compactionService;
         this.autoModeService = autoModeService;
@@ -301,7 +303,7 @@ public class CommandRouter implements CommandPort {
     }
 
     private CommandResult handleTools() {
-        List<ToolComponent> enabledTools = toolComponents.stream()
+        List<ToolComponent> enabledTools = pluginToolCatalog.getAllTools().stream()
                 .filter(ToolComponent::isEnabled)
                 .toList();
 
@@ -340,6 +342,7 @@ public class CommandRouter implements CommandPort {
         sb.append(msg("command.status.messages", messageCount)).append(DOUBLE_NEWLINE);
 
         try {
+            UsageTrackingPort usageTracker = pluginPortResolver.requireUsageTrackingPort();
             Map<String, UsageStats> statsByModel = usageTracker.getStatsByModel(Duration.ofHours(24));
             if (statsByModel == null || statsByModel.isEmpty()) {
                 sb.append(msg("command.status.usage.empty"));

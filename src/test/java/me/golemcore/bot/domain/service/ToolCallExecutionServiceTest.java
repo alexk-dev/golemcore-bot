@@ -9,12 +9,14 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.plugin.context.PluginChannelCatalog;
+import me.golemcore.bot.plugin.context.PluginPortResolver;
+import me.golemcore.bot.plugin.context.PluginToolCatalog;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.ConfirmationPort;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.ObjectProvider;
 
 import java.util.ArrayList;
 import java.util.Base64;
@@ -67,16 +69,12 @@ class ToolCallExecutionServiceTest {
         when(confirmationPolicy.requiresConfirmation(any())).thenReturn(false);
         when(confirmationPolicy.isEnabled()).thenReturn(true);
 
-        @SuppressWarnings("unchecked")
-        ObjectProvider<List<ChannelPort>> channelPortsProvider = mock(ObjectProvider.class);
-        when(channelPortsProvider.getIfAvailable()).thenReturn(List.of(channelPort));
-
         service = new ToolCallExecutionService(
-                List.of(toolComponent),
+                PluginToolCatalog.forTesting(List.of(toolComponent)),
                 confirmationPolicy,
-                confirmationPort,
+                PluginPortResolver.forTesting(null, null, null, null, confirmationPort),
                 properties,
-                channelPortsProvider);
+                PluginChannelCatalog.forTesting(List.of(channelPort)));
     }
 
     @AfterEach

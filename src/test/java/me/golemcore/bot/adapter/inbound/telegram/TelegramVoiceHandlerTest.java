@@ -3,6 +3,7 @@ package me.golemcore.bot.adapter.inbound.telegram;
 import me.golemcore.bot.domain.model.AudioFormat;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.plugin.context.PluginPortResolver;
 import me.golemcore.bot.port.outbound.VoicePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,7 +28,9 @@ class TelegramVoiceHandlerTest {
         runtimeConfigService = mock(RuntimeConfigService.class);
         when(runtimeConfigService.isVoiceEnabled()).thenReturn(true);
 
-        handler = new TelegramVoiceHandler(voicePort, runtimeConfigService);
+        handler = new TelegramVoiceHandler(
+                PluginPortResolver.forTesting(null, voicePort, null, null, null),
+                runtimeConfigService);
     }
 
     // ===== handleIncomingVoice =====

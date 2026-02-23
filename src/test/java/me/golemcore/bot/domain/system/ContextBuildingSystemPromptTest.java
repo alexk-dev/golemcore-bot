@@ -24,6 +24,8 @@ import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.WorkspaceInstructionService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.plugin.context.PluginPortResolver;
+import me.golemcore.bot.plugin.context.PluginToolCatalog;
 import me.golemcore.bot.port.outbound.McpPort;
 import me.golemcore.bot.port.outbound.RagPort;
 import org.junit.jupiter.api.BeforeEach;
@@ -95,11 +97,11 @@ class ContextBuildingSystemPromptTest {
         system = new ContextBuildingSystem(
                 memoryComponent,
                 skillComponent,
-                List.of(),
+                PluginToolCatalog.forTesting(List.of()),
                 templateEngine,
                 mcpPort,
                 toolCallExecutionService,
-                ragPort,
+                PluginPortResolver.forTesting(ragPort, null, null, null, null),
                 properties,
                 autoModeService,
                 planService,
@@ -219,11 +221,11 @@ class ContextBuildingSystemPromptTest {
         system = new ContextBuildingSystem(
                 memoryComponent,
                 skillComponent,
-                List.of(tool),
+                PluginToolCatalog.forTesting(List.of(tool)),
                 templateEngine,
                 mcpPort,
                 toolCallExecutionService,
-                ragPort,
+                PluginPortResolver.forTesting(ragPort, null, null, null, null),
                 properties,
                 autoModeService,
                 planService,

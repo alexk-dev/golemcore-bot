@@ -9,6 +9,7 @@ import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
+import me.golemcore.bot.plugin.context.PluginChannelCatalog;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.tools.GoalManagementTool;
 import org.junit.jupiter.api.BeforeEach;
@@ -70,7 +71,7 @@ class AutoModeSchedulerTest {
 
         scheduler = new AutoModeScheduler(
                 autoModeService, scheduleService, agentLoop, runtimeConfigService,
-                goalManagementTool, List.of(channelPort));
+                goalManagementTool, PluginChannelCatalog.forTesting(List.of(channelPort)));
     }
 
     @Test
@@ -493,7 +494,7 @@ class AutoModeSchedulerTest {
     void shutdownDoesNotThrowWhenNotInitialized() {
         AutoModeScheduler freshScheduler = new AutoModeScheduler(
                 autoModeService, scheduleService, agentLoop, runtimeConfigService,
-                goalManagementTool, List.of(channelPort));
+                goalManagementTool, PluginChannelCatalog.forTesting(List.of(channelPort)));
 
         assertDoesNotThrow(freshScheduler::shutdown);
     }
@@ -507,7 +508,7 @@ class AutoModeSchedulerTest {
 
         AutoModeScheduler newScheduler = new AutoModeScheduler(
                 autoModeService, scheduleService, agentLoop, runtimeConfigService,
-                goalManagementTool, List.of(channelPort));
+                goalManagementTool, PluginChannelCatalog.forTesting(List.of(channelPort)));
 
         newScheduler.init();
 
@@ -522,7 +523,7 @@ class AutoModeSchedulerTest {
 
         AutoModeScheduler newScheduler = new AutoModeScheduler(
                 autoModeService, scheduleService, agentLoop, runtimeConfigService,
-                goalManagementTool, List.of(channelPort));
+                goalManagementTool, PluginChannelCatalog.forTesting(List.of(channelPort)));
 
         newScheduler.init();
 
@@ -538,7 +539,7 @@ class AutoModeSchedulerTest {
 
         AutoModeScheduler newScheduler = new AutoModeScheduler(
                 autoModeService, scheduleService, agentLoop, runtimeConfigService,
-                goalManagementTool, List.of(channelPort));
+                goalManagementTool, PluginChannelCatalog.forTesting(List.of(channelPort)));
 
         newScheduler.init();
 

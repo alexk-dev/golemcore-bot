@@ -2,6 +2,7 @@ package me.golemcore.bot.domain.system;
 
 import me.golemcore.bot.domain.model.*;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.plugin.context.PluginPortResolver;
 import me.golemcore.bot.port.outbound.RagPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -32,7 +33,9 @@ class RagIndexingSystemTest {
         when(runtimeConfigService.isRagEnabled()).thenReturn(true);
         when(runtimeConfigService.getRagIndexMinLength()).thenReturn(50);
 
-        system = new RagIndexingSystem(ragPort, runtimeConfigService);
+        system = new RagIndexingSystem(
+                PluginPortResolver.forTesting(ragPort, null, null, null, null),
+                runtimeConfigService);
     }
 
     @Test

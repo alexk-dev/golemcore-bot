@@ -28,6 +28,7 @@ import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.system.AgentSystem;
 import me.golemcore.bot.domain.system.ResponseRoutingSystem;
+import me.golemcore.bot.plugin.context.PluginChannelCatalog;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.RateLimitPort;
@@ -124,13 +125,13 @@ class AgentLoopRoutingBddTest {
         // Use a real ResponseRoutingSystem so AgentLoop's instanceof check works.
         VoiceResponseHandler voiceHandler = mock(VoiceResponseHandler.class);
         ResponseRoutingSystem routing = new ResponseRoutingSystem(
-                List.of(channel), preferencesService, voiceHandler);
+                PluginChannelCatalog.forTesting(List.of(channel)), preferencesService, voiceHandler);
 
         AgentLoop loop = new AgentLoop(
                 sessionPort,
                 rateLimitPort,
                 List.of(requester, routing),
-                List.of(channel),
+                PluginChannelCatalog.forTesting(List.of(channel)),
                 mockRuntimeConfigService(2),
                 preferencesService,
                 llmPort,

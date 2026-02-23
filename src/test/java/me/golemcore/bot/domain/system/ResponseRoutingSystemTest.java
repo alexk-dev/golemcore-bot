@@ -12,6 +12,7 @@ import me.golemcore.bot.domain.model.TurnOutcome;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.service.VoiceResponseHandler.VoiceSendResult;
+import me.golemcore.bot.plugin.context.PluginChannelCatalog;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -68,7 +69,10 @@ class ResponseRoutingSystemTest {
         voiceHandler = mock(VoiceResponseHandler.class);
         when(voiceHandler.isAvailable()).thenReturn(false);
 
-        system = new ResponseRoutingSystem(List.of(channelPort), preferencesService, voiceHandler);
+        system = new ResponseRoutingSystem(
+                PluginChannelCatalog.forTesting(List.of(channelPort)),
+                preferencesService,
+                voiceHandler);
     }
 
     private AgentContext createContext() {
