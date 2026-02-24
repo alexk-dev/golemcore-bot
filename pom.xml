@@ -196,6 +196,17 @@
             <groupId>com.microsoft.playwright</groupId>
             <artifactId>playwright</artifactId>
             <version>${playwright.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.microsoft.playwright</groupId>
+                    <artifactId>driver-bundle</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>com.microsoft.playwright</groupId>
+            <artifactId>driver</artifactId>
+            <version>${playwright.version}</version>
         </dependency>
 
         <!-- Jakarta Mail (IMAP + SMTP with STARTTLS) -->

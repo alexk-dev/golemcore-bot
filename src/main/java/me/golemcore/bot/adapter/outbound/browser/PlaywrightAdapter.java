@@ -29,6 +29,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -69,6 +70,7 @@ import java.util.concurrent.CompletableFuture;
 public class PlaywrightAdapter implements BrowserPort, BrowserComponent {
 
     private final RuntimeConfigService runtimeConfigService;
+    private final PlaywrightDriverBundleService playwrightDriverBundleService;
 
     private Playwright playwright;
     private Browser browser;
@@ -84,6 +86,8 @@ public class PlaywrightAdapter implements BrowserPort, BrowserComponent {
         Playwright pw = null;
         Browser br = null;
         try {
+            Path driverDir = playwrightDriverBundleService.ensureDriverReady();
+            log.debug("Using Playwright driver directory: {}", driverDir);
             pw = Playwright.create();
             BrowserType.LaunchOptions launchOptions = new BrowserType.LaunchOptions()
                     .setHeadless(runtimeConfigService.isBrowserHeadless());
