@@ -20,6 +20,7 @@ package me.golemcore.bot.plugin.builtin.brave;
 
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.plugin.api.PluginContext;
+import me.golemcore.bot.plugin.api.settings.PluginSettingsSectionSchema;
 import me.golemcore.bot.plugin.builtin.AbstractPlugin;
 import me.golemcore.bot.plugin.builtin.brave.tool.BraveSearchTool;
 
@@ -42,5 +43,7 @@ public final class BraveSearchPlugin extends AbstractPlugin {
         resetContributions();
         BraveSearchTool braveSearchTool = context.requireService(BraveSearchTool.class);
         addContribution("tool.brave_search", ToolComponent.class, braveSearchTool);
+        addContribution("settings.schema.tool-brave", PluginSettingsSectionSchema.class,
+                BravePluginSettingsSchema.create());
     }
 }

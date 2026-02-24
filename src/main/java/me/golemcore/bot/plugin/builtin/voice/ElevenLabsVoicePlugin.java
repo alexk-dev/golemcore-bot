@@ -21,6 +21,7 @@ package me.golemcore.bot.plugin.builtin.voice;
 import me.golemcore.bot.plugin.builtin.voice.adapter.ElevenLabsAdapter;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.plugin.api.PluginContext;
+import me.golemcore.bot.plugin.api.settings.PluginSettingsSectionSchema;
 import me.golemcore.bot.plugin.builtin.AbstractPlugin;
 import me.golemcore.bot.port.outbound.VoicePort;
 import me.golemcore.bot.plugin.builtin.voice.tool.VoiceResponseTool;
@@ -48,5 +49,13 @@ public final class ElevenLabsVoicePlugin extends AbstractPlugin {
 
         addContribution("port.voice", VoicePort.class, elevenLabsAdapter);
         addContribution("tool.send_voice", ToolComponent.class, voiceResponseTool);
+        addContribution(
+                "settings.schema.tool-voice",
+                PluginSettingsSectionSchema.class,
+                VoiceRoutingPluginSettingsSchema.create());
+        addContribution(
+                "settings.schema.voice-elevenlabs",
+                PluginSettingsSectionSchema.class,
+                ElevenLabsPluginSettingsSchema.create());
     }
 }

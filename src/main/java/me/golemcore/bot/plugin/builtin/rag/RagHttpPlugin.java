@@ -20,6 +20,7 @@ package me.golemcore.bot.plugin.builtin.rag;
 
 import me.golemcore.bot.plugin.builtin.rag.adapter.LightRagAdapter;
 import me.golemcore.bot.plugin.api.PluginContext;
+import me.golemcore.bot.plugin.api.settings.PluginSettingsSectionSchema;
 import me.golemcore.bot.plugin.builtin.AbstractPlugin;
 import me.golemcore.bot.port.outbound.RagPort;
 
@@ -42,5 +43,6 @@ public final class RagHttpPlugin extends AbstractPlugin {
         resetContributions();
         LightRagAdapter lightRagAdapter = context.requireService(LightRagAdapter.class);
         addContribution("port.rag", RagPort.class, lightRagAdapter);
+        addContribution("settings.schema.rag", PluginSettingsSectionSchema.class, RagPluginSettingsSchema.create());
     }
 }

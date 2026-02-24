@@ -19,6 +19,7 @@ package me.golemcore.bot.plugin.builtin.usage;
  */
 
 import me.golemcore.bot.plugin.api.PluginContext;
+import me.golemcore.bot.plugin.api.settings.PluginSettingsSectionSchema;
 import me.golemcore.bot.plugin.builtin.AbstractPlugin;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
 
@@ -41,5 +42,6 @@ public final class UsageTrackerPlugin extends AbstractPlugin {
         resetContributions();
         LlmUsageTrackerImpl usageTracker = context.requireService(LlmUsageTrackerImpl.class);
         addContribution("port.usageTracking", UsageTrackingPort.class, usageTracker);
+        addContribution("settings.schema.usage", PluginSettingsSectionSchema.class, UsagePluginSettingsSchema.create());
     }
 }

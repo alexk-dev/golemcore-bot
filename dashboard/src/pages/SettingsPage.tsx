@@ -6,26 +6,22 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   useSettings, useRuntimeConfig,
 } from '../hooks/useSettings';
+import { usePluginSettingsSchemas } from '../hooks/usePlugins';
 import { useMe } from '../hooks/useAuth';
 import { useQueryClient } from '@tanstack/react-query';
 import GeneralTab from './settings/GeneralTab';
 import WebhooksTab from './settings/WebhooksTab';
 import { AdvancedTab } from './settings/AdvancedTab';
 import ToolsTab from './settings/ToolsTab';
-import TelegramTab from './settings/TelegramTab';
 import ModelsTab from './settings/ModelsTab';
 import LlmProvidersTab from './settings/LlmProvidersTab';
-import VoiceTab from './settings/VoiceTab';
-import WhisperTab from './settings/WhisperTab';
-import VoiceRoutingTab from './settings/VoiceRoutingTab';
 import MemoryTab from './settings/MemoryTab';
 import SkillsTab from './settings/SkillsTab';
 import TurnTab from './settings/TurnTab';
-import UsageTab from './settings/UsageTab';
-import RagTab from './settings/RagTab';
 import McpTab from './settings/McpTab';
 import AutoModeTab from './settings/AutoModeTab';
 import { UpdatesTab } from './settings/UpdatesTab';
+import { PluginSettingsPanel } from '../components/settings/PluginSettingsPanel';
 import {
   SETTINGS_BLOCKS,
   SETTINGS_SECTIONS,
@@ -39,6 +35,7 @@ export default function SettingsPage(): ReactElement {
   const { section } = useParams<{ section?: string }>();
   const { data: settings, isLoading: settingsLoading } = useSettings();
   const { data: rc, isLoading: rcLoading } = useRuntimeConfig();
+  const { data: pluginSchemas, isLoading: schemasLoading } = usePluginSettingsSchemas();
   const { data: me } = useMe();
   const qc = useQueryClient();
 
@@ -47,8 +44,11 @@ export default function SettingsPage(): ReactElement {
   const sectionMeta = selectedSection != null
     ? SETTINGS_SECTIONS.find((s) => s.key === selectedSection) ?? null
     : null;
+  const selectedPluginSchema = selectedSection != null
+    ? pluginSchemas?.find((schema) => schema.sectionKey === selectedSection) ?? null
+    : null;
 
-  if (settingsLoading || rcLoading) {
+  if (settingsLoading || rcLoading || schemasLoading) {
     return (
       <div>
         <div className="page-header">
@@ -127,27 +127,21 @@ export default function SettingsPage(): ReactElement {
         </Button>
       </div>
 
+      {selectedPluginSchema != null && rc != null && (
+        <PluginSettingsPanel schema={selectedPluginSchema} runtimeConfig={rc} />
+      )}
+
       {selectedSection === 'general' && <GeneralTab settings={settings} me={me} qc={qc} />}
-      {selectedSection === 'telegram' && rc != null && <TelegramTab config={rc.telegram} voiceConfig={rc.voice} />}
       {selectedSection === 'models' && rc != null && <ModelsTab config={rc.modelRouter} llmConfig={rc.llm} />}
       {selectedSection === 'llm-providers' && rc != null && <LlmProvidersTab config={rc.llm} modelRouter={rc.modelRouter} />}
 
-      {selectedSection === 'tool-browser' && rc != null && <ToolsTab config={rc.tools} mode="browser" />}
-      {selectedSection === 'tool-brave' && rc != null && <ToolsTab config={rc.tools} mode="brave" />}
       {selectedSection === 'tool-filesystem' && rc != null && <ToolsTab config={rc.tools} mode="filesystem" />}
       {selectedSection === 'tool-shell' && rc != null && <ToolsTab config={rc.tools} mode="shell" />}
-      {selectedSection === 'tool-email' && rc != null && <ToolsTab config={rc.tools} mode="email" />}
       {selectedSection === 'tool-automation' && rc != null && <ToolsTab config={rc.tools} mode="automation" />}
       {selectedSection === 'tool-goals' && rc != null && <ToolsTab config={rc.tools} mode="goals" />}
-      {selectedSection === 'tool-voice' && rc != null && <VoiceRoutingTab config={rc.voice} />}
-
-      {selectedSection === 'voice-elevenlabs' && rc != null && <VoiceTab config={rc.voice} />}
-      {selectedSection === 'voice-whisper' && rc != null && <WhisperTab config={rc.voice} />}
       {selectedSection === 'memory' && rc != null && <MemoryTab config={rc.memory} />}
       {selectedSection === 'skills' && rc != null && <SkillsTab config={rc.skills} />}
       {selectedSection === 'turn' && rc != null && <TurnTab config={rc.turn} />}
-      {selectedSection === 'usage' && rc != null && <UsageTab config={rc.usage} />}
-      {selectedSection === 'rag' && rc != null && <RagTab config={rc.rag} />}
       {selectedSection === 'mcp' && rc != null && <McpTab config={rc.mcp} />}
       {selectedSection === 'webhooks' && <WebhooksTab />}
       {selectedSection === 'auto' && rc != null && <AutoModeTab config={rc.autoMode} />}
@@ -155,9 +149,6 @@ export default function SettingsPage(): ReactElement {
 
       {selectedSection === 'advanced-rate-limit' && rc != null && (
         <AdvancedTab rateLimit={rc.rateLimit} security={rc.security} compaction={rc.compaction} mode="rateLimit" />
-      )}
-      {selectedSection === 'advanced-security' && rc != null && (
-        <AdvancedTab rateLimit={rc.rateLimit} security={rc.security} compaction={rc.compaction} mode="security" />
       )}
       {selectedSection === 'advanced-compaction' && rc != null && (
         <AdvancedTab rateLimit={rc.rateLimit} security={rc.security} compaction={rc.compaction} mode="compaction" />

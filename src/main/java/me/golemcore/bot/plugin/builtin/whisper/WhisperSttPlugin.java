@@ -20,6 +20,7 @@ package me.golemcore.bot.plugin.builtin.whisper;
 
 import me.golemcore.bot.plugin.builtin.whisper.adapter.WhisperAdapter;
 import me.golemcore.bot.plugin.api.PluginContext;
+import me.golemcore.bot.plugin.api.settings.PluginSettingsSectionSchema;
 import me.golemcore.bot.plugin.builtin.AbstractPlugin;
 
 /**
@@ -41,5 +42,9 @@ public final class WhisperSttPlugin extends AbstractPlugin {
         WhisperAdapter sttAdapter = context.requireService(WhisperAdapter.class);
         WhisperSttProviderAdapter providerAdapter = new WhisperSttProviderAdapter(sttAdapter);
         addContribution("stt.whisper", SttProvider.class, providerAdapter);
+        addContribution(
+                "settings.schema.voice-whisper",
+                PluginSettingsSectionSchema.class,
+                WhisperPluginSettingsSchema.create());
     }
 }

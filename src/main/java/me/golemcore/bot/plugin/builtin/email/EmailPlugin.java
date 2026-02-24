@@ -20,6 +20,7 @@ package me.golemcore.bot.plugin.builtin.email;
 
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.plugin.api.PluginContext;
+import me.golemcore.bot.plugin.api.settings.PluginSettingsSectionSchema;
 import me.golemcore.bot.plugin.builtin.AbstractPlugin;
 import me.golemcore.bot.plugin.builtin.email.tool.ImapTool;
 import me.golemcore.bot.plugin.builtin.email.tool.SmtpTool;
@@ -46,5 +47,7 @@ public final class EmailPlugin extends AbstractPlugin {
 
         addContribution("tool.imap", ToolComponent.class, imapTool);
         addContribution("tool.smtp", ToolComponent.class, smtpTool);
+        addContribution("settings.schema.tool-email", PluginSettingsSectionSchema.class,
+                EmailPluginSettingsSchema.create());
     }
 }

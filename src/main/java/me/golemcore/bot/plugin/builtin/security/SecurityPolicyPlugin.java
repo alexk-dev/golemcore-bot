@@ -20,6 +20,7 @@ package me.golemcore.bot.plugin.builtin.security;
 
 import me.golemcore.bot.domain.component.SanitizerComponent;
 import me.golemcore.bot.plugin.api.PluginContext;
+import me.golemcore.bot.plugin.api.settings.PluginSettingsSectionSchema;
 import me.golemcore.bot.plugin.builtin.AbstractPlugin;
 
 /**
@@ -48,5 +49,9 @@ public final class SecurityPolicyPlugin extends AbstractPlugin {
 
         addContribution("security.policy", SecurityPolicyProvider.class, securityPolicyProvider);
         addContribution("component.sanitizer", SanitizerComponent.class, sanitizerComponent);
+        addContribution(
+                "settings.schema.advanced-security",
+                PluginSettingsSectionSchema.class,
+                SecurityPluginSettingsSchema.create());
     }
 }

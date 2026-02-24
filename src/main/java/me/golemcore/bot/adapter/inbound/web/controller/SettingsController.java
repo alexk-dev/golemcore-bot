@@ -13,6 +13,8 @@ import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.plugin.api.settings.PluginSettingsSectionSchema;
+import me.golemcore.bot.plugin.context.PluginRegistryService;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -71,6 +73,7 @@ public class SettingsController {
     private final RuntimeConfigService runtimeConfigService;
     private final MemoryPresetService memoryPresetService;
     private final ApplicationEventPublisher eventPublisher;
+    private final PluginRegistryService pluginRegistryService;
 
     @GetMapping
     public Mono<ResponseEntity<SettingsResponse>> getSettings() {
@@ -126,6 +129,15 @@ public class SettingsController {
                 .map(m -> new ModelDto(m.id(), m.displayName(), m.hasReasoning(), m.reasoningLevels()))
                 .toList()));
         return Mono.just(ResponseEntity.ok(result));
+    }
+
+    @GetMapping("/plugins/schemas")
+    public Mono<ResponseEntity<List<PluginSettingsSectionSchema>>> getPluginSchemas() {
+        List<PluginSettingsSectionSchema> schemas = pluginRegistryService
+                .listContributions(PluginSettingsSectionSchema.class).stream()
+                .sorted((left, right) -> left.sectionKey().compareTo(right.sectionKey()))
+                .toList();
+        return Mono.just(ResponseEntity.ok(schemas));
     }
 
     @PutMapping("/tier-overrides")

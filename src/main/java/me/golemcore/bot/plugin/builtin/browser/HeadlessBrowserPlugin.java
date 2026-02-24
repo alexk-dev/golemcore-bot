@@ -22,6 +22,7 @@ import me.golemcore.bot.plugin.builtin.browser.adapter.PlaywrightAdapter;
 import me.golemcore.bot.domain.component.BrowserComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.plugin.api.PluginContext;
+import me.golemcore.bot.plugin.api.settings.PluginSettingsSectionSchema;
 import me.golemcore.bot.plugin.builtin.AbstractPlugin;
 import me.golemcore.bot.port.outbound.BrowserPort;
 import me.golemcore.bot.plugin.builtin.browser.tool.BrowserTool;
@@ -50,5 +51,9 @@ public final class HeadlessBrowserPlugin extends AbstractPlugin {
         addContribution("tool.browse", ToolComponent.class, browserTool);
         addContribution("port.browser", BrowserPort.class, playwrightAdapter);
         addContribution("component.browser", BrowserComponent.class, playwrightAdapter);
+        addContribution(
+                "settings.schema.tool-browser",
+                PluginSettingsSectionSchema.class,
+                BrowserPluginSettingsSchema.create());
     }
 }

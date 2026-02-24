@@ -21,6 +21,7 @@ package me.golemcore.bot.plugin.builtin.telegram;
 import me.golemcore.bot.plugin.builtin.telegram.inbound.TelegramAdapter;
 import me.golemcore.bot.plugin.builtin.telegram.outbound.TelegramConfirmationAdapter;
 import me.golemcore.bot.plugin.api.PluginContext;
+import me.golemcore.bot.plugin.api.settings.PluginSettingsSectionSchema;
 import me.golemcore.bot.plugin.builtin.AbstractPlugin;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.ConfirmationPort;
@@ -48,5 +49,7 @@ public final class TelegramApiPlugin extends AbstractPlugin {
 
         addContribution("channel.telegram", ChannelPort.class, telegramAdapter);
         addContribution("port.confirmation.telegram", ConfirmationPort.class, telegramConfirmationAdapter);
+        addContribution("settings.schema.telegram", PluginSettingsSectionSchema.class,
+                TelegramPluginSettingsSchema.create());
     }
 }
