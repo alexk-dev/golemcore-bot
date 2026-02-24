@@ -110,16 +110,12 @@ public class AutoModeScheduler {
 
     @PostConstruct
     public void init() {
-        if (!runtimeConfigService.isAutoModeEnabled()) {
-            log.info("[AutoScheduler] Auto mode disabled");
-            return;
-        }
-
         goalManagementTool.setMilestoneCallback(event -> sendMilestoneNotification(event.message()));
 
         autoModeService.loadState();
 
-        if (runtimeConfigService.isAutoStartEnabled() && !autoModeService.isAutoModeEnabled()) {
+        boolean featureEnabled = runtimeConfigService.isAutoModeEnabled();
+        if (featureEnabled && runtimeConfigService.isAutoStartEnabled() && !autoModeService.isAutoModeEnabled()) {
             autoModeService.enableAutoMode();
             log.info("[AutoScheduler] Auto-started auto mode");
         }
@@ -138,6 +134,9 @@ public class AutoModeScheduler {
                 TimeUnit.SECONDS);
 
         log.info("[AutoScheduler] Started with tick interval: {}s", tickIntervalSeconds);
+        if (!featureEnabled) {
+            log.info("[AutoScheduler] Auto mode feature disabled in runtime config; scheduler is idle");
+        }
     }
 
     @PreDestroy
@@ -210,6 +209,10 @@ public class AutoModeScheduler {
 
     void tick() {
         try {
+            if (!runtimeConfigService.isAutoModeEnabled()) {
+                return;
+            }
+
             if (!autoModeService.isAutoModeEnabled()) {
                 return;
             }

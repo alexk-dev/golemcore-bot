@@ -546,4 +546,60 @@ class AutoModeSchedulerTest {
 
         newScheduler.shutdown();
     }
+
+    @Test
+    void shouldInitializeSchedulerEvenWhenFeatureDisabledAtStartup() {
+        when(runtimeConfigService.isAutoModeEnabled()).thenReturn(false);
+
+        AutoModeScheduler newScheduler = new AutoModeScheduler(
+                autoModeService, scheduleService, agentLoop, runtimeConfigService,
+                goalManagementTool, List.of(channelPort));
+
+        newScheduler.init();
+
+        verify(autoModeService).loadState();
+        verify(autoModeService, never()).enableAutoMode();
+
+        newScheduler.shutdown();
+    }
+
+    @Test
+    void tickShouldSkipWhenRuntimeFeatureDisabled() {
+        when(runtimeConfigService.isAutoModeEnabled()).thenReturn(false);
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+
+        scheduler.tick();
+
+        verify(scheduleService, never()).getDueSchedules();
+        verify(agentLoop, never()).processMessage(any(Message.class));
+    }
+
+    @Test
+    void shouldApplyRuntimeFeatureToggleImmediatelyBetweenTicks() {
+        when(runtimeConfigService.isAutoModeEnabled()).thenReturn(false, true);
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>())
+                .createdAt(Instant.now())
+                .build();
+        when(autoModeService.getGoal(GOAL_ID)).thenReturn(Optional.of(goal));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-goal-toggle")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId(GOAL_ID)
+                .cronExpression(TEST_CRON)
+                .enabled(true)
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        scheduler.tick();
+        scheduler.tick();
+
+        verify(agentLoop, org.mockito.Mockito.times(1)).processMessage(any(Message.class));
+    }
 }
