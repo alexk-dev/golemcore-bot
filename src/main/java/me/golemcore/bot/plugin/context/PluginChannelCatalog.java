@@ -35,8 +35,7 @@ import java.util.Map;
 public class PluginChannelCatalog implements ChannelCatalogPort {
 
     private static final Map<String, String> MANAGED_CHANNELS = Map.of(
-            "telegram", "channel.telegram",
-            "webhook", "channel.webhooks");
+            "telegram", "channel.telegram");
 
     private final PluginRegistryService pluginRegistryService;
     private final List<ChannelPort> springChannels;

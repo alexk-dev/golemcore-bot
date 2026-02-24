@@ -16,9 +16,9 @@
  * Contact: alex@kuleshov.tech
  */
 
-package me.golemcore.bot.plugin.builtin.webhooks.inbound;
+package me.golemcore.bot.adapter.inbound.webhook;
 
-import me.golemcore.bot.plugin.builtin.webhooks.inbound.dto.CallbackPayload;
+import me.golemcore.bot.adapter.inbound.webhook.dto.CallbackPayload;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import lombok.RequiredArgsConstructor;

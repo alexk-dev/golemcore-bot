@@ -1,4 +1,4 @@
-package me.golemcore.bot.plugin.builtin.webhooks.inbound;
+package me.golemcore.bot.adapter.inbound.webhook;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

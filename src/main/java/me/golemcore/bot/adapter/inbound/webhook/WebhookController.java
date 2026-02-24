@@ -16,11 +16,11 @@
  * Contact: alex@kuleshov.tech
  */
 
-package me.golemcore.bot.plugin.builtin.webhooks.inbound;
+package me.golemcore.bot.adapter.inbound.webhook;
 
-import me.golemcore.bot.plugin.builtin.webhooks.inbound.dto.AgentRequest;
-import me.golemcore.bot.plugin.builtin.webhooks.inbound.dto.WakeRequest;
-import me.golemcore.bot.plugin.builtin.webhooks.inbound.dto.WebhookResponse;
+import me.golemcore.bot.adapter.inbound.webhook.dto.AgentRequest;
+import me.golemcore.bot.adapter.inbound.webhook.dto.WakeRequest;
+import me.golemcore.bot.adapter.inbound.webhook.dto.WebhookResponse;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.UserPreferences;

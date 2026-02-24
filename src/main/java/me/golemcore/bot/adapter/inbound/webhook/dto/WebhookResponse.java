@@ -16,7 +16,7 @@
  * Contact: alex@kuleshov.tech
  */
 
-package me.golemcore.bot.plugin.builtin.webhooks.inbound.dto;
+package me.golemcore.bot.adapter.inbound.webhook.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;

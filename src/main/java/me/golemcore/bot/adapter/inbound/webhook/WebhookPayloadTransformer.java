@@ -16,7 +16,7 @@
  * Contact: alex@kuleshov.tech
  */
 
-package me.golemcore.bot.plugin.builtin.webhooks.inbound;
+package me.golemcore.bot.adapter.inbound.webhook;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;

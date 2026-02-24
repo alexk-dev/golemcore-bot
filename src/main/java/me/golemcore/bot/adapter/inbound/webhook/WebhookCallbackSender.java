@@ -16,9 +16,9 @@
  * Contact: alex@kuleshov.tech
  */
 
-package me.golemcore.bot.plugin.builtin.webhooks.inbound;
+package me.golemcore.bot.adapter.inbound.webhook;
 
-import me.golemcore.bot.plugin.builtin.webhooks.inbound.dto.CallbackPayload;
+import me.golemcore.bot.adapter.inbound.webhook.dto.CallbackPayload;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
