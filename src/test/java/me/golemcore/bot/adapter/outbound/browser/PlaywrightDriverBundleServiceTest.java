@@ -22,6 +22,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.Principal;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.List;
@@ -39,6 +40,7 @@ import javax.net.ssl.SSLSession;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SuppressWarnings("PMD.CloseResource")
@@ -135,6 +137,42 @@ class PlaywrightDriverBundleServiceTest {
         assertFalse(Files.isSameFile(oldBundle, newBundle));
     }
 
+    @Test
+    void shouldRejectArchiveWithPathTraversalEntry(@TempDir Path tempDir) {
+        BotProperties properties = new BotProperties();
+        properties.getUpdate().setUpdatesPath(tempDir.toString());
+
+        StubHttpClient httpClient = new StubHttpClient();
+        httpClient.enqueueBinaryResponse(200, createPathTraversalBundleJar(PLATFORM));
+
+        TestablePlaywrightDriverBundleService service = new TestablePlaywrightDriverBundleService(
+                properties,
+                httpClient,
+                "1.51.0",
+                PLATFORM);
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class, service::ensureDriverReady);
+        assertTrue(exception.getMessage().contains("escapes target directory"));
+    }
+
+    @Test
+    void shouldRejectArchiveWithSuspiciousCompressionRatio(@TempDir Path tempDir) {
+        BotProperties properties = new BotProperties();
+        properties.getUpdate().setUpdatesPath(tempDir.toString());
+
+        StubHttpClient httpClient = new StubHttpClient();
+        httpClient.enqueueBinaryResponse(200, createSuspiciousCompressionBundleJar(PLATFORM));
+
+        TestablePlaywrightDriverBundleService service = new TestablePlaywrightDriverBundleService(
+                properties,
+                httpClient,
+                "1.52.0",
+                PLATFORM);
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class, service::ensureDriverReady);
+        assertTrue(exception.getMessage().contains("suspicious compression ratio"));
+    }
+
     private static byte[] createBundleJar(String platform) throws IOException {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         try (JarOutputStream jar = new JarOutputStream(output)) {
@@ -145,11 +183,42 @@ class PlaywrightDriverBundleServiceTest {
         return output.toByteArray();
     }
 
+    private static byte[] createPathTraversalBundleJar(String platform) {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        try (JarOutputStream jar = new JarOutputStream(output)) {
+            addJarEntryUnchecked(jar, "driver/" + platform + "/../../escape.txt",
+                    "bad".getBytes(StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to build path traversal bundle jar", e);
+        }
+        return output.toByteArray();
+    }
+
+    private static byte[] createSuspiciousCompressionBundleJar(String platform) {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        try (JarOutputStream jar = new JarOutputStream(output)) {
+            byte[] payload = new byte[2 * 1024 * 1024];
+            Arrays.fill(payload, (byte) 0);
+            addJarEntryUnchecked(jar, "driver/" + platform + "/package/payload.bin", payload);
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to build suspicious compression bundle jar", e);
+        }
+        return output.toByteArray();
+    }
+
     private static void addJarEntry(JarOutputStream jar, String name, byte[] content) throws IOException {
         JarEntry entry = new JarEntry(name);
         jar.putNextEntry(entry);
         jar.write(content);
         jar.closeEntry();
+    }
+
+    private static void addJarEntryUnchecked(JarOutputStream jar, String name, byte[] content) {
+        try {
+            addJarEntry(jar, name, content);
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to add test jar entry: " + name, e);
+        }
     }
 
     private static final class TestablePlaywrightDriverBundleService extends PlaywrightDriverBundleService {

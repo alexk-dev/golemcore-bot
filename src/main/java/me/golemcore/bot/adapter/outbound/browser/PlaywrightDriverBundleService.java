@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -48,6 +49,12 @@ public class PlaywrightDriverBundleService {
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(20);
     private static final Duration DOWNLOAD_TIMEOUT = Duration.ofMinutes(5);
     private static final int DOWNLOAD_BUFFER_SIZE = 8192;
+    // Security limits for archive extraction (zip-slip/zip-bomb hardening).
+    private static final long MAX_BUNDLE_JAR_SIZE_BYTES = 512L * 1024L * 1024L;
+    private static final int MAX_ARCHIVE_ENTRY_COUNT = 20_000;
+    private static final long MAX_ENTRY_SIZE_BYTES = 256L * 1024L * 1024L;
+    private static final long MAX_TOTAL_EXTRACTED_BYTES = 512L * 1024L * 1024L;
+    private static final long MAX_COMPRESSION_RATIO = 100L;
     private static final Pattern SAFE_VERSION_PATTERN = Pattern.compile("^[0-9A-Za-z._-]+$");
     private static final Pattern SEMVER_PATTERN = Pattern
             .compile("^(\\d++)\\.(\\d++)\\.(\\d++)(?:-([0-9A-Za-z.-]++))?$");
@@ -278,6 +285,8 @@ public class PlaywrightDriverBundleService {
             return;
         }
 
+        validateBundleJarFile(bundleJar);
+
         Path parent = installDir.getParent();
         if (parent == null) {
             throw new IllegalStateException("Failed to resolve install directory parent");
@@ -289,11 +298,17 @@ public class PlaywrightDriverBundleService {
         deleteRecursivelyQuietly(tempDir);
 
         boolean extracted = false;
+        int scannedEntries = 0;
+        long totalExtractedBytes = 0L;
         try {
             Files.createDirectories(tempDir);
             try (JarFile jarFile = new JarFile(bundleJar.toFile())) {
                 java.util.Enumeration<JarEntry> entries = jarFile.entries();
                 while (entries.hasMoreElements()) {
+                    scannedEntries++;
+                    if (scannedEntries > MAX_ARCHIVE_ENTRY_COUNT) {
+                        throw new IllegalStateException("Playwright bundle contains too many archive entries");
+                    }
                     JarEntry entry = entries.nextElement();
                     String entryName = entry.getName();
                     if (!entryName.startsWith(prefix)) {
@@ -315,13 +330,13 @@ public class PlaywrightDriverBundleService {
                         continue;
                     }
 
+                    validateEntryMetadata(entry);
                     Path targetParent = targetPath.getParent();
                     if (targetParent != null) {
                         Files.createDirectories(targetParent);
                     }
-                    try (InputStream input = jarFile.getInputStream(entry)) {
-                        Files.copy(input, targetPath, StandardCopyOption.REPLACE_EXISTING);
-                    }
+                    long writtenBytes = copyEntryWithLimits(jarFile, entry, targetPath, totalExtractedBytes);
+                    totalExtractedBytes += writtenBytes;
                 }
             }
 
@@ -338,6 +353,73 @@ public class PlaywrightDriverBundleService {
             deleteRecursivelyQuietly(tempDir);
             throw e;
         }
+    }
+
+    private void validateBundleJarFile(Path bundleJar) {
+        if (!Files.isRegularFile(bundleJar)) {
+            throw new IllegalStateException("Playwright bundle is not a regular file: " + bundleJar);
+        }
+        try {
+            long bundleSize = Files.size(bundleJar);
+            if (bundleSize <= 0L) {
+                throw new IllegalStateException("Playwright bundle file is empty: " + bundleJar);
+            }
+            if (bundleSize > MAX_BUNDLE_JAR_SIZE_BYTES) {
+                throw new IllegalStateException("Playwright bundle file is too large: " + bundleSize + " bytes");
+            }
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to inspect Playwright bundle file: " + bundleJar, e);
+        }
+    }
+
+    private void validateEntryMetadata(JarEntry entry) {
+        long declaredSize = entry.getSize();
+        if (declaredSize > MAX_ENTRY_SIZE_BYTES) {
+            throw new IllegalStateException("Playwright bundle entry exceeds size limit: " + entry.getName());
+        }
+
+        long compressedSize = entry.getCompressedSize();
+        if (declaredSize > 0L && compressedSize > 0L) {
+            long ratio = declaredSize / compressedSize;
+            if (ratio > MAX_COMPRESSION_RATIO) {
+                throw new IllegalStateException(
+                        "Playwright bundle entry has suspicious compression ratio: " + entry.getName());
+            }
+        }
+    }
+
+    private long copyEntryWithLimits(JarFile jarFile, JarEntry entry, Path targetPath, long extractedSoFar)
+            throws IOException {
+        long written = 0L;
+        try (InputStream input = jarFile.getInputStream(entry);
+                OutputStream output = Files.newOutputStream(
+                        targetPath,
+                        StandardOpenOption.CREATE,
+                        StandardOpenOption.TRUNCATE_EXISTING,
+                        StandardOpenOption.WRITE)) {
+            byte[] buffer = new byte[DOWNLOAD_BUFFER_SIZE];
+            while (true) {
+                int read = input.read(buffer);
+                if (read == -1) {
+                    break;
+                }
+                written += read;
+                if (written > MAX_ENTRY_SIZE_BYTES) {
+                    throw new IllegalStateException("Playwright bundle entry exceeds size limit while extracting: "
+                            + entry.getName());
+                }
+                if (extractedSoFar + written > MAX_TOTAL_EXTRACTED_BYTES) {
+                    throw new IllegalStateException("Playwright bundle extraction exceeds total size limit");
+                }
+                output.write(buffer, 0, read);
+            }
+        }
+
+        long declaredSize = entry.getSize();
+        if (declaredSize >= 0L && declaredSize != written) {
+            throw new IllegalStateException("Playwright bundle entry size mismatch: " + entry.getName());
+        }
+        return written;
     }
 
     private void ensureNodeExecutable(Path driverDir) {
