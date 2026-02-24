@@ -7,7 +7,6 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.Authenticator;
 import java.net.CookieHandler;
 import java.net.ProxySelector;
@@ -20,7 +19,6 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.Principal;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.ArrayDeque;
@@ -62,7 +60,7 @@ class PlaywrightDriverBundleServiceTest {
         StubHttpClient httpClient = new StubHttpClient();
         httpClient.enqueueBinaryResponse(200, createBundleJar(PLATFORM));
 
-        TestablePlaywrightDriverBundleService service = new TestablePlaywrightDriverBundleService(
+        StubDriverBundleService service = new StubDriverBundleService(
                 properties,
                 httpClient,
                 "1.49.0",
@@ -96,7 +94,7 @@ class PlaywrightDriverBundleServiceTest {
         Files.writeString(installed.resolve("node"), "#!/usr/bin/env node", StandardCharsets.UTF_8);
 
         StubHttpClient httpClient = new StubHttpClient();
-        TestablePlaywrightDriverBundleService service = new TestablePlaywrightDriverBundleService(
+        StubDriverBundleService service = new StubDriverBundleService(
                 properties,
                 httpClient,
                 "1.49.0",
@@ -123,7 +121,7 @@ class PlaywrightDriverBundleServiceTest {
         StubHttpClient httpClient = new StubHttpClient();
         httpClient.enqueueBinaryResponse(200, createBundleJar(PLATFORM));
 
-        TestablePlaywrightDriverBundleService service = new TestablePlaywrightDriverBundleService(
+        StubDriverBundleService service = new StubDriverBundleService(
                 properties,
                 httpClient,
                 "1.50.0",
@@ -145,7 +143,7 @@ class PlaywrightDriverBundleServiceTest {
         StubHttpClient httpClient = new StubHttpClient();
         httpClient.enqueueBinaryResponse(200, createPathTraversalBundleJar(PLATFORM));
 
-        TestablePlaywrightDriverBundleService service = new TestablePlaywrightDriverBundleService(
+        StubDriverBundleService service = new StubDriverBundleService(
                 properties,
                 httpClient,
                 "1.51.0",
@@ -163,7 +161,7 @@ class PlaywrightDriverBundleServiceTest {
         StubHttpClient httpClient = new StubHttpClient();
         httpClient.enqueueBinaryResponse(200, createSuspiciousCompressionBundleJar(PLATFORM));
 
-        TestablePlaywrightDriverBundleService service = new TestablePlaywrightDriverBundleService(
+        StubDriverBundleService service = new StubDriverBundleService(
                 properties,
                 httpClient,
                 "1.52.0",
@@ -221,13 +219,13 @@ class PlaywrightDriverBundleServiceTest {
         }
     }
 
-    private static final class TestablePlaywrightDriverBundleService extends PlaywrightDriverBundleService {
+    private static final class StubDriverBundleService extends PlaywrightDriverBundleService {
 
         private final StubHttpClient stubHttpClient;
         private final String playwrightVersion;
         private final String platform;
 
-        private TestablePlaywrightDriverBundleService(
+        private StubDriverBundleService(
                 BotProperties botProperties,
                 StubHttpClient stubHttpClient,
                 String playwrightVersion,

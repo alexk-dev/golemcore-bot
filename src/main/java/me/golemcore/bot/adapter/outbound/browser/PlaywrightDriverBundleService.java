@@ -259,7 +259,7 @@ public class PlaywrightDriverBundleService {
 
         try (InputStream input = response.body()) {
             byte[] buffer = new byte[DOWNLOAD_BUFFER_SIZE];
-            try (java.io.OutputStream output = Files.newOutputStream(
+            try (OutputStream output = Files.newOutputStream(
                     tempPath,
                     StandardOpenOption.CREATE,
                     StandardOpenOption.TRUNCATE_EXISTING,
@@ -294,7 +294,11 @@ public class PlaywrightDriverBundleService {
         ensureDirectoryWritable(parent);
 
         String prefix = "driver/" + platform + "/";
-        Path tempDir = installDir.resolveSibling(installDir.getFileName().toString() + ".tmp");
+        Path installDirFileName = installDir.getFileName();
+        if (installDirFileName == null) {
+            throw new IllegalStateException("Failed to resolve install directory name");
+        }
+        Path tempDir = installDir.resolveSibling(installDirFileName.toString() + ".tmp");
         deleteRecursivelyQuietly(tempDir);
 
         boolean extracted = false;
