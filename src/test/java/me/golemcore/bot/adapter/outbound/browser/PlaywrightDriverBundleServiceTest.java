@@ -171,6 +171,167 @@ class PlaywrightDriverBundleServiceTest {
         assertTrue(exception.getMessage().contains("suspicious compression ratio"));
     }
 
+    @Test
+    void shouldUsePreconfiguredDriverDirWithoutDownload(@TempDir Path tempDir) throws Exception {
+        BotProperties properties = new BotProperties();
+        properties.getUpdate().setUpdatesPath(tempDir.toString());
+
+        Path preconfiguredDir = tempDir.resolve("external-driver");
+        Files.createDirectories(preconfiguredDir.resolve("package"));
+        Files.writeString(preconfiguredDir.resolve("package").resolve("cli.js"), "console.log('ok');",
+                StandardCharsets.UTF_8);
+        Files.writeString(preconfiguredDir.resolve("node"), "#!/usr/bin/env node", StandardCharsets.UTF_8);
+        System.setProperty(PROPERTY_PLAYWRIGHT_CLI_DIR, preconfiguredDir.toString());
+
+        StubHttpClient httpClient = new StubHttpClient();
+        StubDriverBundleService service = new StubDriverBundleService(
+                properties,
+                httpClient,
+                "1.53.0",
+                PLATFORM);
+
+        Path resolved = service.ensureDriverReady();
+
+        assertEquals(preconfiguredDir.toAbsolutePath().normalize(), resolved);
+        assertTrue(httpClient.getRequestedUris().isEmpty());
+    }
+
+    @Test
+    void shouldIgnoreBrokenPreconfiguredDriverDirAndInstallManaged(@TempDir Path tempDir) throws Exception {
+        BotProperties properties = new BotProperties();
+        properties.getUpdate().setUpdatesPath(tempDir.toString());
+
+        Path brokenPreconfiguredDir = tempDir.resolve("broken-driver");
+        Files.createDirectories(brokenPreconfiguredDir);
+        System.setProperty(PROPERTY_PLAYWRIGHT_CLI_DIR, brokenPreconfiguredDir.toString());
+
+        StubHttpClient httpClient = new StubHttpClient();
+        httpClient.enqueueBinaryResponse(200, createBundleJar(PLATFORM));
+
+        StubDriverBundleService service = new StubDriverBundleService(
+                properties,
+                httpClient,
+                "1.54.0",
+                PLATFORM);
+
+        Path resolved = service.ensureDriverReady();
+
+        Path expectedManagedDir = tempDir.resolve("playwright-driver")
+                .resolve("installs")
+                .resolve("1.54.0")
+                .resolve(PLATFORM);
+        assertEquals(expectedManagedDir, resolved);
+        assertEquals(expectedManagedDir.toString(), System.getProperty(PROPERTY_PLAYWRIGHT_CLI_DIR));
+        assertEquals(1, httpClient.getRequestedUris().size());
+    }
+
+    @Test
+    void shouldFallbackToSecondaryMavenRepositoryWhenPrimaryFails(@TempDir Path tempDir) throws Exception {
+        BotProperties properties = new BotProperties();
+        properties.getUpdate().setUpdatesPath(tempDir.toString());
+
+        StubHttpClient httpClient = new StubHttpClient();
+        httpClient.enqueueBinaryResponse(404, new byte[0]);
+        httpClient.enqueueBinaryResponse(200, createBundleJar(PLATFORM));
+
+        StubDriverBundleService service = new StubDriverBundleService(
+                properties,
+                httpClient,
+                "1.55.0",
+                PLATFORM);
+
+        Path resolved = service.ensureDriverReady();
+
+        assertTrue(Files.exists(resolved.resolve("package").resolve("cli.js")));
+        assertEquals(2, httpClient.getRequestedUris().size());
+        assertEquals(
+                URI.create(
+                        "https://repo.maven.apache.org/maven2/com/microsoft/playwright/driver-bundle/1.55.0/driver-bundle-1.55.0.jar"),
+                httpClient.getRequestedUris().get(0));
+        assertEquals(
+                URI.create(
+                        "https://repo1.maven.org/maven2/com/microsoft/playwright/driver-bundle/1.55.0/driver-bundle-1.55.0.jar"),
+                httpClient.getRequestedUris().get(1));
+    }
+
+    @Test
+    void shouldRejectBundleWithoutCurrentPlatformAndCleanupTempDirectory(@TempDir Path tempDir) throws Exception {
+        BotProperties properties = new BotProperties();
+        properties.getUpdate().setUpdatesPath(tempDir.toString());
+
+        StubHttpClient httpClient = new StubHttpClient();
+        httpClient.enqueueBinaryResponse(200, createBundleJar("linux"));
+
+        StubDriverBundleService service = new StubDriverBundleService(
+                properties,
+                httpClient,
+                "1.56.0",
+                PLATFORM);
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class, service::ensureDriverReady);
+        assertTrue(exception.getMessage().contains("is not present in Playwright bundle"));
+
+        Path tempInstallDir = tempDir.resolve("playwright-driver")
+                .resolve("installs")
+                .resolve("1.56.0")
+                .resolve(PLATFORM + ".tmp");
+        assertFalse(Files.exists(tempInstallDir));
+    }
+
+    @Test
+    void shouldRejectBundlePathWhenBundleIsDirectory(@TempDir Path tempDir) throws Exception {
+        BotProperties properties = new BotProperties();
+        properties.getUpdate().setUpdatesPath(tempDir.toString());
+
+        Path bundlePath = tempDir.resolve("playwright-driver")
+                .resolve("bundles")
+                .resolve("driver-bundle-1.57.0.jar");
+        Files.createDirectories(bundlePath);
+
+        StubHttpClient httpClient = new StubHttpClient();
+        StubDriverBundleService service = new StubDriverBundleService(
+                properties,
+                httpClient,
+                "1.57.0",
+                PLATFORM);
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class, service::ensureDriverReady);
+        assertTrue(exception.getMessage().contains("not a regular file"));
+        assertTrue(httpClient.getRequestedUris().isEmpty());
+    }
+
+    @Test
+    void shouldReplaceCorruptedInstallDirectory(@TempDir Path tempDir) throws Exception {
+        BotProperties properties = new BotProperties();
+        properties.getUpdate().setUpdatesPath(tempDir.toString());
+
+        Path installDir = tempDir.resolve("playwright-driver")
+                .resolve("installs")
+                .resolve("1.58.0")
+                .resolve(PLATFORM);
+        Files.createDirectories(installDir.resolve("package"));
+        Files.writeString(installDir.resolve("package").resolve("cli.js"), "console.log('stale');",
+                StandardCharsets.UTF_8);
+        Files.writeString(installDir.resolve("stale.txt"), "stale", StandardCharsets.UTF_8);
+
+        StubHttpClient httpClient = new StubHttpClient();
+        httpClient.enqueueBinaryResponse(200, createBundleJar(PLATFORM));
+
+        StubDriverBundleService service = new StubDriverBundleService(
+                properties,
+                httpClient,
+                "1.58.0",
+                PLATFORM);
+
+        Path resolved = service.ensureDriverReady();
+
+        assertEquals(installDir, resolved);
+        assertTrue(Files.exists(installDir.resolve("node")));
+        assertTrue(Files.exists(installDir.resolve("package").resolve("cli.js")));
+        assertFalse(Files.exists(installDir.resolve("stale.txt")));
+        assertEquals(1, httpClient.getRequestedUris().size());
+    }
+
     private static byte[] createBundleJar(String platform) throws IOException {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         try (JarOutputStream jar = new JarOutputStream(output)) {
