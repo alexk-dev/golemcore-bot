@@ -280,6 +280,7 @@ public class PlaywrightDriverBundleService {
         moveAtomically(tempPath, targetBundlePath);
     }
 
+    @SuppressWarnings("java:S5042")
     private void extractBundleForPlatform(Path bundleJar, String platform, Path installDir) {
         if (isDriverDirectoryReady(installDir)) {
             return;
@@ -376,6 +377,7 @@ public class PlaywrightDriverBundleService {
         }
     }
 
+    @SuppressWarnings("java:S5042")
     private void validateEntryMetadata(JarEntry entry) {
         long declaredSize = entry.getSize();
         if (declaredSize > MAX_ENTRY_SIZE_BYTES) {
