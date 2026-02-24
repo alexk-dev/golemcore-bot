@@ -43,7 +43,6 @@ import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import me.golemcore.bot.domain.service.SessionRunCoordinator;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
-import me.golemcore.bot.port.outbound.CorePortResolver;
 import me.golemcore.bot.port.outbound.ToolCatalogPort;
 import me.golemcore.bot.port.inbound.CommandPort;
 import me.golemcore.bot.port.outbound.SessionPort;
@@ -124,7 +123,7 @@ public class CommandRouter implements CommandPort {
 
     private final SkillComponent skillComponent;
     private final ToolCatalogPort pluginToolCatalog;
-    private final CorePortResolver pluginPortResolver;
+    private final UsageTrackingPort usageTrackingPort;
     private final SessionPort sessionService;
     private final UserPreferencesService preferencesService;
     private final CompactionService compactionService;
@@ -157,7 +156,7 @@ public class CommandRouter implements CommandPort {
     public CommandRouter(
             SkillComponent skillComponent,
             ToolCatalogPort pluginToolCatalog,
-            CorePortResolver pluginPortResolver,
+            UsageTrackingPort usageTrackingPort,
             SessionPort sessionService,
             UserPreferencesService preferencesService,
             CompactionService compactionService,
@@ -173,7 +172,7 @@ public class CommandRouter implements CommandPort {
             ObjectProvider<BuildProperties> buildPropertiesProvider) {
         this.skillComponent = skillComponent;
         this.pluginToolCatalog = pluginToolCatalog;
-        this.pluginPortResolver = pluginPortResolver;
+        this.usageTrackingPort = usageTrackingPort;
         this.sessionService = sessionService;
         this.preferencesService = preferencesService;
         this.compactionService = compactionService;
@@ -378,8 +377,7 @@ public class CommandRouter implements CommandPort {
         sb.append(msg("command.status.messages", messageCount)).append(DOUBLE_NEWLINE);
 
         try {
-            UsageTrackingPort usageTracker = pluginPortResolver.requireUsageTrackingPort();
-            Map<String, UsageStats> statsByModel = usageTracker.getStatsByModel(Duration.ofHours(24));
+            Map<String, UsageStats> statsByModel = usageTrackingPort.getStatsByModel(Duration.ofHours(24));
             if (statsByModel == null || statsByModel.isEmpty()) {
                 sb.append(msg("command.status.usage.empty"));
             } else {

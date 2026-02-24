@@ -10,7 +10,6 @@ import {
   useUpdateRag,
   useUpdateTelegram,
   useUpdateTools,
-  useUpdateUsage,
   useUpdateVoice,
 } from '../../hooks/useSettings';
 import { extractErrorMessage } from '../../utils/extractErrorMessage';
@@ -39,7 +38,6 @@ type KnownPluginSectionKey =
   | 'tool-voice'
   | 'voice-elevenlabs'
   | 'voice-whisper'
-  | 'usage'
   | 'rag'
   | 'advanced-security';
 
@@ -52,7 +50,6 @@ function isKnownPluginSectionKey(sectionKey: string): sectionKey is KnownPluginS
     'tool-voice',
     'voice-elevenlabs',
     'voice-whisper',
-    'usage',
     'rag',
     'advanced-security',
   ].includes(sectionKey);
@@ -298,14 +295,12 @@ export function PluginSettingsPanel({ schema, runtimeConfig }: PluginSettingsPan
   const updateTelegram = useUpdateTelegram();
   const updateTools = useUpdateTools();
   const updateVoice = useUpdateVoice();
-  const updateUsage = useUpdateUsage();
   const updateRag = useUpdateRag();
   const updateAdvanced = useUpdateAdvanced();
 
   const isSaving = updateTelegram.isPending
     || updateTools.isPending
     || updateVoice.isPending
-    || updateUsage.isPending
     || updateRag.isPending
     || updateAdvanced.isPending;
 
@@ -350,9 +345,6 @@ export function PluginSettingsPanel({ schema, runtimeConfig }: PluginSettingsPan
         case 'voice-elevenlabs':
         case 'voice-whisper':
           await updateVoice.mutateAsync(nextRuntimeConfig.voice);
-          break;
-        case 'usage':
-          await updateUsage.mutateAsync(nextRuntimeConfig.usage);
           break;
         case 'rag':
           await updateRag.mutateAsync(nextRuntimeConfig.rag);

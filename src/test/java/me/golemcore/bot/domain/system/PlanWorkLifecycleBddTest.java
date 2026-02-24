@@ -216,7 +216,7 @@ class PlanWorkLifecycleBddTest {
                 templateEngine,
                 mcpPort,
                 toolCallExecutionService,
-                PluginPortResolver.forTesting(ragPort, null, null, null, null),
+                PluginPortResolver.forTesting(ragPort, null, null, null),
                 properties,
                 autoModeService,
                 planService,

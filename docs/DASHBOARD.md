@@ -70,7 +70,7 @@ Plugin-related settings sections in `/dashboard/settings` are schema-driven:
 - Dashboard fetches schemas from `GET /api/settings/plugins/schemas`.
 - Generic renderer builds form controls from schema field definitions.
 
-Non-plugin settings sections can still use classic page components.
+Non-plugin settings sections can still use classic page components. `Usage` is intentionally non-plugin and is configured via its own settings tab while analytics are shown on `/dashboard/analytics`.
 
 ## Sessions and Active Conversation
 

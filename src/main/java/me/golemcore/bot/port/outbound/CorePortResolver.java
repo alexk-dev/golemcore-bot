@@ -29,8 +29,6 @@ public interface CorePortResolver {
 
     VoicePort requireVoicePort();
 
-    UsageTrackingPort requireUsageTrackingPort();
-
     SanitizerComponent requireSanitizerComponent();
 
     ConfirmationPort requireConfirmationPort();

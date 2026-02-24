@@ -29,7 +29,7 @@ class TelegramVoiceHandlerTest {
         when(runtimeConfigService.isVoiceEnabled()).thenReturn(true);
 
         handler = new TelegramVoiceHandler(
-                PluginPortResolver.forTesting(null, voicePort, null, null, null),
+                PluginPortResolver.forTesting(null, voicePort, null, null),
                 runtimeConfigService);
     }
 

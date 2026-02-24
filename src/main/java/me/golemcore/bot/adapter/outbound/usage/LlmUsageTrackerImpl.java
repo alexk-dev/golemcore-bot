@@ -1,4 +1,4 @@
-package me.golemcore.bot.plugin.builtin.usage;
+package me.golemcore.bot.adapter.outbound.usage;
 
 /*
  * Copyright 2026 Aleksei Kuleshov
@@ -49,7 +49,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
- * Default implementation of {@link LlmUsageTracker} with persistence to JSONL
+ * Default implementation of {@link UsageTrackingPort} with persistence to JSONL
  * files.
  *
  * <p>

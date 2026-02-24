@@ -39,7 +39,7 @@ class VoiceResponseHandlerTest {
                 .thenReturn(CompletableFuture.completedFuture(null));
 
         handler = new VoiceResponseHandler(
-                PluginPortResolver.forTesting(null, voicePort, null, null, null),
+                PluginPortResolver.forTesting(null, voicePort, null, null),
                 runtimeConfigService);
     }
 

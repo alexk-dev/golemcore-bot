@@ -22,7 +22,6 @@ import me.golemcore.bot.domain.component.SanitizerComponent;
 import me.golemcore.bot.port.outbound.ConfirmationPort;
 import me.golemcore.bot.port.outbound.CorePortResolver;
 import me.golemcore.bot.port.outbound.RagPort;
-import me.golemcore.bot.port.outbound.UsageTrackingPort;
 import me.golemcore.bot.port.outbound.VoicePort;
 import org.springframework.stereotype.Component;
 
@@ -34,7 +33,6 @@ public class PluginPortResolver implements CorePortResolver {
 
     private static final String CONTRIBUTION_RAG = "port.rag";
     private static final String CONTRIBUTION_VOICE = "port.voice";
-    private static final String CONTRIBUTION_USAGE = "port.usageTracking";
     private static final String CONTRIBUTION_SANITIZER = "component.sanitizer";
     private static final String CONTRIBUTION_CONFIRMATION = "port.confirmation.telegram";
 
@@ -45,7 +43,7 @@ public class PluginPortResolver implements CorePortResolver {
     }
 
     public static PluginPortResolver forTesting(RagPort ragPort, VoicePort voicePort,
-            UsageTrackingPort usageTrackingPort, SanitizerComponent sanitizerComponent,
+            SanitizerComponent sanitizerComponent,
             ConfirmationPort confirmationPort) {
         return new PluginPortResolver(null) {
             @Override
@@ -56,11 +54,6 @@ public class PluginPortResolver implements CorePortResolver {
             @Override
             public VoicePort requireVoicePort() {
                 return requireOverridePort(voicePort, CONTRIBUTION_VOICE, VoicePort.class);
-            }
-
-            @Override
-            public UsageTrackingPort requireUsageTrackingPort() {
-                return requireOverridePort(usageTrackingPort, CONTRIBUTION_USAGE, UsageTrackingPort.class);
             }
 
             @Override
@@ -83,11 +76,6 @@ public class PluginPortResolver implements CorePortResolver {
     @Override
     public VoicePort requireVoicePort() {
         return requireContribution(CONTRIBUTION_VOICE, VoicePort.class);
-    }
-
-    @Override
-    public UsageTrackingPort requireUsageTrackingPort() {
-        return requireContribution(CONTRIBUTION_USAGE, UsageTrackingPort.class);
     }
 
     @Override

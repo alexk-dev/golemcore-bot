@@ -34,7 +34,7 @@ class RagIndexingSystemTest {
         when(runtimeConfigService.getRagIndexMinLength()).thenReturn(50);
 
         system = new RagIndexingSystem(
-                PluginPortResolver.forTesting(ragPort, null, null, null, null),
+                PluginPortResolver.forTesting(ragPort, null, null, null),
                 runtimeConfigService);
     }
 

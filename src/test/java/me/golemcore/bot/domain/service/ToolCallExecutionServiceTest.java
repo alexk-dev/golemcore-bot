@@ -72,7 +72,7 @@ class ToolCallExecutionServiceTest {
         service = new ToolCallExecutionService(
                 PluginToolCatalog.forTesting(List.of(toolComponent)),
                 confirmationPolicy,
-                PluginPortResolver.forTesting(null, null, null, null, confirmationPort),
+                PluginPortResolver.forTesting(null, null, null, confirmationPort),
                 properties,
                 PluginChannelCatalog.forTesting(List.of(channelPort)));
     }

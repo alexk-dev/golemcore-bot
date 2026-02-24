@@ -33,7 +33,7 @@ class InputSanitizationSystemTest {
     void setUp() {
         sanitizerComponent = mock(SanitizerComponent.class);
         system = new InputSanitizationSystem(
-                PluginPortResolver.forTesting(null, null, null, sanitizerComponent, null));
+                PluginPortResolver.forTesting(null, null, sanitizerComponent, null));
     }
 
     private AgentContext contextWith(List<Message> messages) {

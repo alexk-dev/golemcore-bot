@@ -25,7 +25,6 @@ import me.golemcore.bot.plugin.builtin.email.EmailPlugin;
 import me.golemcore.bot.plugin.builtin.rag.RagHttpPlugin;
 import me.golemcore.bot.plugin.builtin.security.SecurityPolicyPlugin;
 import me.golemcore.bot.plugin.builtin.telegram.TelegramApiPlugin;
-import me.golemcore.bot.plugin.builtin.usage.UsageTrackerPlugin;
 import me.golemcore.bot.plugin.builtin.voice.ElevenLabsVoicePlugin;
 import me.golemcore.bot.plugin.builtin.whisper.WhisperSttPlugin;
 
@@ -43,7 +42,6 @@ public final class BuiltinPluginCatalog {
                 new ElevenLabsVoicePlugin(),
                 new WhisperSttPlugin(),
                 new RagHttpPlugin(),
-                new UsageTrackerPlugin(),
                 new EmailPlugin(),
                 new SecurityPolicyPlugin(),
                 new TelegramApiPlugin());

@@ -97,7 +97,6 @@ From `PluginPortResolver`:
 
 - `port.rag` (`RagPort`)
 - `port.voice` (`VoicePort`)
-- `port.usageTracking` (`UsageTrackingPort`)
 - `component.sanitizer` (`SanitizerComponent`)
 - `port.confirmation.telegram` (`ConfirmationPort`)
 
@@ -160,7 +159,6 @@ Current built-in plugins:
 - `elevenlabs-voice-plugin`
 - `whisper-stt-plugin`
 - `rag-http-plugin`
-- `usage-tracker-plugin`
 - `email-plugin`
 - `security-policy-plugin`
 - `telegram-api-plugin`
@@ -174,11 +172,10 @@ Current plugin-driven UI sections:
 - `tool-voice`
 - `voice-elevenlabs`
 - `voice-whisper`
-- `usage`
 - `rag`
 - `advanced-security`
 
-Note: webhooks are currently not plugin-managed and are not part of this schema flow.
+Note: `usage` is not plugin-managed. Usage tracking is a built-in core module with its own settings section and analytics screen in sidebar. Webhooks are also not plugin-managed and are not part of this schema flow.
 
 ## Minimal Plugin Example (with UI schema)
 

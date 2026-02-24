@@ -4,7 +4,6 @@ import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.adapter.inbound.web.dto.UsageStatsResponse;
 import me.golemcore.bot.domain.model.UsageMetric;
 import me.golemcore.bot.domain.model.UsageStats;
-import me.golemcore.bot.port.outbound.CorePortResolver;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,12 +25,11 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class UsageController {
 
-    private final CorePortResolver pluginPortResolver;
+    private final UsageTrackingPort usageTrackingPort;
 
     @GetMapping("/stats")
     public Mono<ResponseEntity<UsageStatsResponse>> getStats(
             @RequestParam(defaultValue = "24h") String period) {
-        UsageTrackingPort usageTrackingPort = pluginPortResolver.requireUsageTrackingPort();
         Duration duration = parsePeriod(period);
         Map<String, UsageStats> allStats = usageTrackingPort.getAllStats(duration);
 
@@ -66,7 +64,6 @@ public class UsageController {
     @GetMapping("/by-model")
     public Mono<ResponseEntity<Map<String, UsageStatsResponse.ModelUsage>>> getByModel(
             @RequestParam(defaultValue = "24h") String period) {
-        UsageTrackingPort usageTrackingPort = pluginPortResolver.requireUsageTrackingPort();
         Duration duration = parsePeriod(period);
         Map<String, UsageStats> statsByModel = usageTrackingPort.getStatsByModel(duration);
 
@@ -85,7 +82,6 @@ public class UsageController {
 
     @GetMapping("/export")
     public Mono<ResponseEntity<List<UsageMetric>>> exportMetrics() {
-        UsageTrackingPort usageTrackingPort = pluginPortResolver.requireUsageTrackingPort();
         List<UsageMetric> metrics = usageTrackingPort.exportMetrics();
         return Mono.just(ResponseEntity.ok(metrics));
     }

@@ -18,6 +18,7 @@ import LlmProvidersTab from './settings/LlmProvidersTab';
 import MemoryTab from './settings/MemoryTab';
 import SkillsTab from './settings/SkillsTab';
 import TurnTab from './settings/TurnTab';
+import UsageTab from './settings/UsageTab';
 import McpTab from './settings/McpTab';
 import AutoModeTab from './settings/AutoModeTab';
 import { UpdatesTab } from './settings/UpdatesTab';
@@ -142,6 +143,7 @@ export default function SettingsPage(): ReactElement {
       {selectedSection === 'memory' && rc != null && <MemoryTab config={rc.memory} />}
       {selectedSection === 'skills' && rc != null && <SkillsTab config={rc.skills} />}
       {selectedSection === 'turn' && rc != null && <TurnTab config={rc.turn} />}
+      {selectedSection === 'usage' && rc != null && <UsageTab config={rc.usage} />}
       {selectedSection === 'mcp' && rc != null && <McpTab config={rc.mcp} />}
       {selectedSection === 'webhooks' && <WebhooksTab />}
       {selectedSection === 'auto' && rc != null && <AutoModeTab config={rc.autoMode} />}

@@ -1,4 +1,4 @@
-package me.golemcore.bot.plugin.builtin.usage;
+package me.golemcore.bot.adapter.outbound.usage;
 
 import me.golemcore.bot.domain.model.LlmUsage;
 import me.golemcore.bot.domain.model.UsageMetric;

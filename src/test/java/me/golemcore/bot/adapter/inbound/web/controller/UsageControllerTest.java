@@ -2,7 +2,6 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 
 import me.golemcore.bot.adapter.inbound.web.dto.UsageStatsResponse;
 import me.golemcore.bot.domain.model.UsageStats;
-import me.golemcore.bot.plugin.context.PluginPortResolver;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,7 +28,7 @@ class UsageControllerTest {
     @BeforeEach
     void setUp() {
         usageTrackingPort = mock(UsageTrackingPort.class);
-        controller = new UsageController(PluginPortResolver.forTesting(null, null, usageTrackingPort, null, null));
+        controller = new UsageController(usageTrackingPort);
     }
 
     @Test
