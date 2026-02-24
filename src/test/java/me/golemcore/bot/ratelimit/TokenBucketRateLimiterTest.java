@@ -6,6 +6,9 @@ import me.golemcore.bot.domain.service.RuntimeConfigService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -18,14 +21,23 @@ class TokenBucketRateLimiterTest {
 
     private RuntimeConfigService runtimeConfigService;
     private TokenBucketRateLimiter rateLimiter;
+    private AtomicBoolean rateLimitEnabled;
+    private AtomicInteger userRequestsPerMinute;
+    private AtomicInteger channelMessagesPerSecond;
+    private AtomicInteger llmRequestsPerMinute;
 
     @BeforeEach
     void setUp() {
         runtimeConfigService = mock(RuntimeConfigService.class);
-        when(runtimeConfigService.isRateLimitEnabled()).thenReturn(true);
-        when(runtimeConfigService.getUserRequestsPerMinute()).thenReturn(5);
-        when(runtimeConfigService.getChannelMessagesPerSecond()).thenReturn(10);
-        when(runtimeConfigService.getLlmRequestsPerMinute()).thenReturn(20);
+        rateLimitEnabled = new AtomicBoolean(true);
+        userRequestsPerMinute = new AtomicInteger(5);
+        channelMessagesPerSecond = new AtomicInteger(10);
+        llmRequestsPerMinute = new AtomicInteger(20);
+        when(runtimeConfigService.isRateLimitEnabled()).thenAnswer(invocation -> rateLimitEnabled.get());
+        when(runtimeConfigService.getUserRequestsPerMinute()).thenAnswer(invocation -> userRequestsPerMinute.get());
+        when(runtimeConfigService.getChannelMessagesPerSecond())
+                .thenAnswer(invocation -> channelMessagesPerSecond.get());
+        when(runtimeConfigService.getLlmRequestsPerMinute()).thenAnswer(invocation -> llmRequestsPerMinute.get());
 
         rateLimiter = new TokenBucketRateLimiter(runtimeConfigService);
     }
@@ -199,5 +211,35 @@ class TokenBucketRateLimiterTest {
         RateLimitResult second = rateLimiter.tryConsume();
 
         assertTrue(first.getRemainingTokens() > second.getRemainingTokens());
+    }
+
+    @Test
+    void shouldApplyUpdatedGlobalLimitImmediatelyForExistingBucket() {
+        assertTrue(rateLimiter.tryConsume().isAllowed());
+
+        userRequestsPerMinute.set(1);
+
+        assertTrue(rateLimiter.tryConsume().isAllowed());
+        assertFalse(rateLimiter.tryConsume().isAllowed());
+    }
+
+    @Test
+    void shouldApplyUpdatedChannelLimitImmediatelyForExistingBucket() {
+        assertTrue(rateLimiter.tryConsumeChannel(CHANNEL_TELEGRAM).isAllowed());
+
+        channelMessagesPerSecond.set(1);
+
+        assertTrue(rateLimiter.tryConsumeChannel(CHANNEL_TELEGRAM).isAllowed());
+        assertFalse(rateLimiter.tryConsumeChannel(CHANNEL_TELEGRAM).isAllowed());
+    }
+
+    @Test
+    void shouldApplyUpdatedLlmLimitImmediatelyForExistingBucket() {
+        assertTrue(rateLimiter.tryConsumeLlm(PROVIDER_OPENAI).isAllowed());
+
+        llmRequestsPerMinute.set(1);
+
+        assertTrue(rateLimiter.tryConsumeLlm(PROVIDER_OPENAI).isAllowed());
+        assertFalse(rateLimiter.tryConsumeLlm(PROVIDER_OPENAI).isAllowed());
     }
 }

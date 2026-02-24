@@ -60,7 +60,7 @@ public class TokenBucketRateLimiter implements RateLimitPort {
 
     private final RuntimeConfigService runtimeConfigService;
 
-    private final Map<String, TokenBucket> buckets = new ConcurrentHashMap<>();
+    private final Map<String, ConfiguredBucket> buckets = new ConcurrentHashMap<>();
 
     @Override
     public RateLimitResult tryConsume() {
@@ -69,10 +69,8 @@ public class TokenBucketRateLimiter implements RateLimitPort {
         }
 
         String key = "user:global";
-        TokenBucket bucket = buckets.computeIfAbsent(key, k -> {
-            int requestsPerMinute = runtimeConfigService.getUserRequestsPerMinute();
-            return new TokenBucket(requestsPerMinute, Duration.ofMinutes(1));
-        });
+        int requestsPerMinute = runtimeConfigService.getUserRequestsPerMinute();
+        TokenBucket bucket = resolveBucket(key, requestsPerMinute, Duration.ofMinutes(1));
 
         RateLimitResult result = bucket.tryConsume();
         if (!result.isAllowed()) {
@@ -88,10 +86,8 @@ public class TokenBucketRateLimiter implements RateLimitPort {
         }
 
         String key = "channel:" + channelType;
-        TokenBucket bucket = buckets.computeIfAbsent(key, k -> {
-            int messagesPerSecond = runtimeConfigService.getChannelMessagesPerSecond();
-            return new TokenBucket(messagesPerSecond, Duration.ofSeconds(1));
-        });
+        int messagesPerSecond = runtimeConfigService.getChannelMessagesPerSecond();
+        TokenBucket bucket = resolveBucket(key, messagesPerSecond, Duration.ofSeconds(1));
 
         return bucket.tryConsume();
     }
@@ -103,20 +99,32 @@ public class TokenBucketRateLimiter implements RateLimitPort {
         }
 
         String key = "llm:" + providerId;
-        TokenBucket bucket = buckets.computeIfAbsent(key, k -> {
-            int requestsPerMinute = runtimeConfigService.getLlmRequestsPerMinute();
-            return new TokenBucket(requestsPerMinute, Duration.ofMinutes(1));
-        });
+        int requestsPerMinute = runtimeConfigService.getLlmRequestsPerMinute();
+        TokenBucket bucket = resolveBucket(key, requestsPerMinute, Duration.ofMinutes(1));
 
         return bucket.tryConsume();
     }
 
     @Override
     public BucketState getBucketState(String key) {
-        TokenBucket bucket = buckets.get(key);
-        if (bucket == null) {
+        ConfiguredBucket configuredBucket = buckets.get(key);
+        if (configuredBucket == null) {
             return null;
         }
-        return bucket.getState(key);
+        return configuredBucket.bucket().getState(key);
+    }
+
+    private TokenBucket resolveBucket(String key, int capacity, Duration refillPeriod) {
+        ConfiguredBucket configured = buckets.compute(key, (bucketKey, existing) -> {
+            if (existing == null || existing.capacity() != capacity
+                    || !existing.refillPeriod().equals(refillPeriod)) {
+                return new ConfiguredBucket(new TokenBucket(capacity, refillPeriod), capacity, refillPeriod);
+            }
+            return existing;
+        });
+        return configured.bucket();
+    }
+
+    private record ConfiguredBucket(TokenBucket bucket, int capacity, Duration refillPeriod) {
     }
 }
