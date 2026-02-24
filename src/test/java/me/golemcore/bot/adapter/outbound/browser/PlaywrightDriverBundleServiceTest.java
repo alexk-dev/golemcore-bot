@@ -7,6 +7,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.net.Authenticator;
 import java.net.CookieHandler;
 import java.net.ProxySelector;
@@ -332,12 +334,208 @@ class PlaywrightDriverBundleServiceTest {
         assertEquals(1, httpClient.getRequestedUris().size());
     }
 
+    @Test
+    void shouldFailWhenExtractedDriverIsIncomplete(@TempDir Path tempDir) {
+        BotProperties properties = new BotProperties();
+        properties.getUpdate().setUpdatesPath(tempDir.toString());
+
+        StubHttpClient httpClient = new StubHttpClient();
+        httpClient.enqueueBinaryResponse(200, createCliOnlyBundleJar(PLATFORM));
+
+        StubDriverBundleService service = new StubDriverBundleService(
+                properties,
+                httpClient,
+                "1.59.0",
+                PLATFORM);
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class, service::ensureDriverReady);
+        assertTrue(exception.getMessage().contains("installation is incomplete"));
+    }
+
+    @Test
+    void shouldResolveRealPlaywrightVersionFromClasspath(@TempDir Path tempDir) {
+        BotProperties properties = new BotProperties();
+        properties.getUpdate().setUpdatesPath(tempDir.toString());
+
+        PlatformProbeDriverService service = new PlatformProbeDriverService(properties);
+        String version = service.resolvePlaywrightVersion();
+
+        assertTrue(version.matches("[0-9]+\\.[0-9]+\\.[0-9]+.*"));
+    }
+
+    @Test
+    void shouldResolvePlatformClassifierBranches(@TempDir Path tempDir) {
+        BotProperties properties = new BotProperties();
+        properties.getUpdate().setUpdatesPath(tempDir.toString());
+        PlatformProbeDriverService service = new PlatformProbeDriverService(properties);
+
+        String originalOsName = System.getProperty("os.name");
+        String originalOsArch = System.getProperty("os.arch");
+        try {
+            System.setProperty("os.name", "Linux");
+            System.setProperty("os.arch", "amd64");
+            assertEquals("linux", service.resolvePlatformClassifier());
+
+            System.setProperty("os.name", "Linux");
+            System.setProperty("os.arch", "aarch64");
+            assertEquals("linux-arm64", service.resolvePlatformClassifier());
+
+            System.setProperty("os.name", "Mac OS X");
+            System.setProperty("os.arch", "arm64");
+            assertEquals("mac-arm64", service.resolvePlatformClassifier());
+
+            System.setProperty("os.name", "Windows 11");
+            System.setProperty("os.arch", "x86_64");
+            assertEquals("win32_x64", service.resolvePlatformClassifier());
+        } finally {
+            restoreSystemProperty("os.name", originalOsName);
+            restoreSystemProperty("os.arch", originalOsArch);
+        }
+    }
+
+    @Test
+    void shouldRejectUnsupportedPlatformClassifier(@TempDir Path tempDir) {
+        BotProperties properties = new BotProperties();
+        properties.getUpdate().setUpdatesPath(tempDir.toString());
+        PlatformProbeDriverService service = new PlatformProbeDriverService(properties);
+
+        String originalOsName = System.getProperty("os.name");
+        String originalOsArch = System.getProperty("os.arch");
+        try {
+            System.setProperty("os.name", "Windows 11");
+            System.setProperty("os.arch", "arm64");
+            IllegalStateException unsupportedWindowsArch = assertThrows(
+                    IllegalStateException.class, service::resolvePlatformClassifier);
+            assertTrue(unsupportedWindowsArch.getMessage().contains("Unsupported Windows architecture"));
+
+            System.setProperty("os.name", "Solaris");
+            System.setProperty("os.arch", "x86_64");
+            IllegalStateException unsupportedOs = assertThrows(
+                    IllegalStateException.class, service::resolvePlatformClassifier);
+            assertTrue(unsupportedOs.getMessage().contains("Unsupported OS for Playwright driver"));
+        } finally {
+            restoreSystemProperty("os.name", originalOsName);
+            restoreSystemProperty("os.arch", originalOsArch);
+        }
+    }
+
+    @Test
+    void shouldFailAfterAllRepositoryDownloadAttempts(@TempDir Path tempDir) {
+        BotProperties properties = new BotProperties();
+        properties.getUpdate().setUpdatesPath(tempDir.toString());
+
+        StubHttpClient httpClient = new StubHttpClient();
+        httpClient.enqueueBinaryResponse(404, new byte[0]);
+        httpClient.enqueueBinaryResponse(404, new byte[0]);
+
+        StubDriverBundleService service = new StubDriverBundleService(
+                properties,
+                httpClient,
+                "1.60.0",
+                PLATFORM);
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class, service::ensureDriverReady);
+        assertTrue(exception.getMessage().contains("Failed to download Playwright driver bundle"));
+        assertEquals(2, httpClient.getRequestedUris().size());
+    }
+
+    @Test
+    void shouldValidateVersionNormalizationAndComparisonViaPrivateMethods(@TempDir Path tempDir) {
+        BotProperties properties = new BotProperties();
+        properties.getUpdate().setUpdatesPath(tempDir.toString());
+        PlatformProbeDriverService service = new PlatformProbeDriverService(properties);
+
+        assertEquals("1.2.3", invokePrivate(service, "normalizeVersion", new Class<?>[] { String.class }, "v1.2.3"));
+
+        IllegalStateException invalidVersion = assertThrows(
+                IllegalStateException.class,
+                () -> invokePrivate(service, "normalizeVersion", new Class<?>[] { String.class }, "../1.2.3"));
+        assertTrue(invalidVersion.getMessage().contains("prohibited characters"));
+
+        int semverComparison = (Integer) invokePrivate(
+                service,
+                "compareVersions",
+                new Class<?>[] { String.class, String.class },
+                "1.2.3",
+                "1.2.3-alpha");
+        assertTrue(semverComparison > 0);
+
+        int lexicalFallback = (Integer) invokePrivate(
+                service,
+                "compareVersions",
+                new Class<?>[] { String.class, String.class },
+                "foo",
+                "bar");
+        assertTrue(lexicalFallback > 0);
+    }
+
+    @Test
+    void shouldRejectUnsafeBundleUrisViaPrivateValidation(@TempDir Path tempDir) {
+        BotProperties properties = new BotProperties();
+        properties.getUpdate().setUpdatesPath(tempDir.toString());
+        PlatformProbeDriverService service = new PlatformProbeDriverService(properties);
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> invokePrivate(
+                        service,
+                        "requireTrustedMavenUri",
+                        new Class<?>[] { URI.class },
+                        URI.create("http://repo.maven.apache.org/maven2/a.jar")));
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> invokePrivate(
+                        service,
+                        "requireTrustedMavenUri",
+                        new Class<?>[] { URI.class },
+                        URI.create("https://repo.maven.apache.org:444/maven2/a.jar")));
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> invokePrivate(
+                        service,
+                        "requireTrustedMavenUri",
+                        new Class<?>[] { URI.class },
+                        URI.create("https://evil.example/maven2/a.jar")));
+    }
+
+    @Test
+    void shouldRejectBundleFileValidationForEmptyFile(@TempDir Path tempDir) throws Exception {
+        BotProperties properties = new BotProperties();
+        properties.getUpdate().setUpdatesPath(tempDir.toString());
+        PlatformProbeDriverService service = new PlatformProbeDriverService(properties);
+
+        Path emptyBundle = tempDir.resolve("empty.jar");
+        Files.createFile(emptyBundle);
+
+        IllegalStateException exception = assertThrows(
+                IllegalStateException.class,
+                () -> invokePrivate(
+                        service,
+                        "validateBundleJarFile",
+                        new Class<?>[] { Path.class },
+                        emptyBundle));
+        assertTrue(exception.getMessage().contains("is empty"));
+    }
+
     private static byte[] createBundleJar(String platform) throws IOException {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         try (JarOutputStream jar = new JarOutputStream(output)) {
             addJarEntry(jar, "driver/" + platform + "/package/cli.js",
                     "console.log('ok');".getBytes(StandardCharsets.UTF_8));
             addJarEntry(jar, "driver/" + platform + "/node", "#!/usr/bin/env node".getBytes(StandardCharsets.UTF_8));
+        }
+        return output.toByteArray();
+    }
+
+    private static byte[] createCliOnlyBundleJar(String platform) {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        try (JarOutputStream jar = new JarOutputStream(output)) {
+            addJarEntryUnchecked(jar, "driver/" + platform + "/package/cli.js",
+                    "console.log('ok');".getBytes(StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to build cli-only bundle jar", e);
         }
         return output.toByteArray();
     }
@@ -377,6 +575,42 @@ class PlaywrightDriverBundleServiceTest {
             addJarEntry(jar, name, content);
         } catch (IOException e) {
             throw new IllegalStateException("Failed to add test jar entry: " + name, e);
+        }
+    }
+
+    @SuppressWarnings("PMD.AvoidAccessibilityAlteration")
+    private static Object invokePrivate(
+            Object target,
+            String methodName,
+            Class<?>[] parameterTypes,
+            Object... args) {
+        try {
+            Method method = PlaywrightDriverBundleService.class.getDeclaredMethod(methodName, parameterTypes);
+            method.setAccessible(true);
+            return method.invoke(target, args);
+        } catch (InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new IllegalStateException("Private invocation failed: " + methodName, cause);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Failed to invoke private method: " + methodName, e);
+        }
+    }
+
+    private static void restoreSystemProperty(String name, String value) {
+        if (value == null) {
+            System.clearProperty(name);
+            return;
+        }
+        System.setProperty(name, value);
+    }
+
+    private static final class PlatformProbeDriverService extends PlaywrightDriverBundleService {
+
+        private PlatformProbeDriverService(BotProperties botProperties) {
+            super(botProperties);
         }
     }
 
