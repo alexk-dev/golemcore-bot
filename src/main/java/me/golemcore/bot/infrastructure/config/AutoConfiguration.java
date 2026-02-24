@@ -33,8 +33,10 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import me.golemcore.bot.adapter.outbound.browser.PlaywrightDriverBundleService;
 
 import java.time.Clock;
+import java.nio.file.Path;
 import java.util.List;
 
 /**
@@ -63,6 +65,7 @@ public class AutoConfiguration {
     private final BotProperties properties;
     private final List<ChannelPort> channelPorts;
     private final RuntimeConfigService runtimeConfigService;
+    private final PlaywrightDriverBundleService playwrightDriverBundleService;
     private final ObjectProvider<BuildProperties> buildPropertiesProvider;
     private final ObjectProvider<GitProperties> gitPropertiesProvider;
 
@@ -90,6 +93,7 @@ public class AutoConfiguration {
         log.info("Balanced Model: {}", runtimeConfigService.getBalancedModel());
         log.info("LLM Provider: {}", properties.getLlm().getProvider());
         log.info("Storage Path: {}", properties.getStorage().getLocal().getBasePath());
+        preparePlaywrightDriver();
 
         // Auto-start enabled channels
         for (ChannelPort channel : channelPorts) {
@@ -106,6 +110,20 @@ public class AutoConfiguration {
         }
 
         log.info("Java AI Bot started successfully");
+    }
+
+    private void preparePlaywrightDriver() {
+        if (!runtimeConfigService.isBrowserEnabled()) {
+            log.info("Browser tool disabled, skipping Playwright driver preparation");
+            return;
+        }
+
+        try {
+            Path driverDir = playwrightDriverBundleService.ensureDriverReady();
+            log.info("Playwright driver ready at {}", driverDir);
+        } catch (RuntimeException e) {
+            log.warn("Playwright driver preparation failed: {}", e.getMessage());
+        }
     }
 
     private boolean isChannelEnabled(String channelType) {
