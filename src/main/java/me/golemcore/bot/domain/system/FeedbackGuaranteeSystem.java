@@ -100,9 +100,14 @@ public class FeedbackGuaranteeSystem implements AgentSystem {
     }
 
     private String classifyFallbackReason(AgentContext context) {
+        String llmErrorCode = context.getAttribute(ContextAttributes.LLM_ERROR_CODE);
+        if (llmErrorCode != null && !llmErrorCode.isBlank()) {
+            return llmErrorCode;
+        }
+
         String llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
         if (llmError != null && !llmError.isBlank()) {
-            return "llm_error_without_outgoing_response";
+            return LlmErrorClassifier.classifyFromDiagnostic(llmError);
         }
 
         LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
@@ -111,13 +116,13 @@ public class FeedbackGuaranteeSystem implements AgentSystem {
                 return "tool_calls_without_final_answer";
             }
             if (response.getContent() == null || response.getContent().isBlank()) {
-                return "empty_llm_response_content";
+                return LlmErrorClassifier.classifyEmptyFinalResponse(response);
             }
             return "llm_response_present_but_not_routed";
         }
 
         if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.FINAL_ANSWER_READY))) {
-            return "final_answer_ready_without_llm_response";
+            return LlmErrorClassifier.NO_ASSISTANT_MESSAGE;
         }
         if (!context.getFailures().isEmpty()) {
             return "pipeline_failures_without_outgoing_response";

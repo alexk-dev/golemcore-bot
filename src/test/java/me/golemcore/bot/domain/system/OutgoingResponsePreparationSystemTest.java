@@ -157,6 +157,9 @@ class OutgoingResponsePreparationSystemTest {
         assertNotNull(outgoing);
         assertEquals(ERROR_MESSAGE, outgoing.getText());
         assertFalse(outgoing.isVoiceRequested());
+        assertEquals(LlmErrorClassifier.UNKNOWN, result.getAttribute(ContextAttributes.LLM_ERROR_CODE));
+        String normalized = result.getAttribute(ContextAttributes.LLM_ERROR);
+        assertTrue(normalized.startsWith("[" + LlmErrorClassifier.UNKNOWN + "]"));
     }
 
     @Test
@@ -237,6 +240,8 @@ class OutgoingResponsePreparationSystemTest {
         String llmError = result.getAttribute(ContextAttributes.LLM_ERROR);
         assertNotNull(llmError);
         assertTrue(llmError.contains("empty final LLM response"));
+        assertEquals(LlmErrorClassifier.NO_ASSISTANT_MESSAGE,
+                result.getAttribute(ContextAttributes.LLM_ERROR_CODE));
         assertFalse(result.getFailures().isEmpty());
         assertEquals(me.golemcore.bot.domain.model.FailureKind.VALIDATION, result.getFailures().get(0).kind());
     }
@@ -257,8 +262,24 @@ class OutgoingResponsePreparationSystemTest {
         String llmError = result.getAttribute(ContextAttributes.LLM_ERROR);
         assertNotNull(llmError);
         assertTrue(llmError.contains("empty final LLM response"));
+        assertEquals(LlmErrorClassifier.EMPTY_ASSISTANT_CONTENT,
+                result.getAttribute(ContextAttributes.LLM_ERROR_CODE));
         assertFalse(result.getFailures().isEmpty());
         assertEquals(me.golemcore.bot.domain.model.FailureKind.VALIDATION, result.getFailures().get(0).kind());
+    }
+
+    @Test
+    void shouldKeepEmbeddedLlmErrorCodeWithoutParsingFreeText() {
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.LLM_ERROR, LlmErrorClassifier.withCode(
+                LlmErrorClassifier.STREAM_PARSE_CONTENT_BLOCK_NOT_FOUND,
+                "Error streaming, falling back to non-streaming mode: Content block not found"));
+        when(preferencesService.getMessage("system.error.llm")).thenReturn(ERROR_MESSAGE);
+
+        AgentContext result = system.process(context);
+
+        assertEquals(LlmErrorClassifier.STREAM_PARSE_CONTENT_BLOCK_NOT_FOUND,
+                result.getAttribute(ContextAttributes.LLM_ERROR_CODE));
     }
 
     @Test

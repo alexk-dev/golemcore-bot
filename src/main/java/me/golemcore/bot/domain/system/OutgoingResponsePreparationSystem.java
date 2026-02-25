@@ -101,6 +101,9 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
         // Error path: convert LLM_ERROR into a user-facing OutgoingResponse.
         String llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
         if (llmError != null) {
+            String reasonCode = resolveLlmErrorCode(context, llmError);
+            context.setAttribute(ContextAttributes.LLM_ERROR_CODE, reasonCode);
+            context.setAttribute(ContextAttributes.LLM_ERROR, LlmErrorClassifier.withCode(reasonCode, llmError));
             String errorMessage = preferencesService.getMessage("system.error.llm");
             setOutgoingResponse(context, OutgoingResponse.textOnly(errorMessage));
             return context;
@@ -181,15 +184,17 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
     }
 
     private AgentContext classifyEmptyFinalResponse(AgentContext context, LlmResponse response) {
+        String reasonCode = LlmErrorClassifier.classifyEmptyFinalResponse(response);
         String model = context.getAttribute(ContextAttributes.LLM_MODEL);
         String finishReason = response != null ? response.getFinishReason() : null;
-        String diagnostic = String.format(
+        String diagnostic = LlmErrorClassifier.withCode(reasonCode, String.format(
                 "empty final LLM response (model=%s, finishReason=%s)",
                 model != null ? model : "unknown",
-                finishReason != null ? finishReason : "unknown");
+                finishReason != null ? finishReason : "unknown"));
 
         log.warn("[ResponsePrep] {}", diagnostic);
         context.setAttribute(ContextAttributes.LLM_ERROR, diagnostic);
+        context.setAttribute(ContextAttributes.LLM_ERROR_CODE, reasonCode);
         context.addFailure(new FailureEvent(
                 FailureSource.LLM,
                 getName(),
@@ -200,6 +205,14 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
         String errorMessage = preferencesService.getMessage("system.error.llm");
         setOutgoingResponse(context, OutgoingResponse.textOnly(errorMessage));
         return context;
+    }
+
+    private String resolveLlmErrorCode(AgentContext context, String llmError) {
+        String existing = context.getAttribute(ContextAttributes.LLM_ERROR_CODE);
+        if (existing != null && !existing.isBlank()) {
+            return existing;
+        }
+        return LlmErrorClassifier.classifyFromDiagnostic(llmError);
     }
 
     private void setOutgoingResponse(AgentContext context, OutgoingResponse outgoing) {
