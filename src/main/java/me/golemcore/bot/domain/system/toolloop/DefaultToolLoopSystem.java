@@ -304,7 +304,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         String reasonCode = LlmErrorClassifier.classifyFromThrowable(throwable);
         Throwable rootCause = findRootCause(throwable);
         String model = context.getAttribute(ContextAttributes.LLM_MODEL);
-        String errorType = rootCause != null && rootCause.getClass() != null
+        String errorType = rootCause != null
                 ? rootCause.getClass().getName()
                 : "unknown";
         String errorMessage = rootCause != null && rootCause.getMessage() != null
