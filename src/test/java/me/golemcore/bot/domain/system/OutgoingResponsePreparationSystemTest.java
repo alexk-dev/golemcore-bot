@@ -163,6 +163,34 @@ class OutgoingResponsePreparationSystemTest {
     }
 
     @Test
+    void shouldPreferExistingLlmErrorCodeOverEmbeddedDiagnosticCode() {
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.LLM_ERROR_CODE, LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT);
+        context.setAttribute(ContextAttributes.LLM_ERROR, LlmErrorClassifier.withCode(
+                LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, "provider timeout"));
+        when(preferencesService.getMessage("system.error.llm")).thenReturn(ERROR_MESSAGE);
+
+        AgentContext result = system.process(context);
+
+        assertEquals(LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT,
+                result.getAttribute(ContextAttributes.LLM_ERROR_CODE));
+        String normalized = result.getAttribute(ContextAttributes.LLM_ERROR);
+        assertTrue(normalized.startsWith("[" + LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT + "]"));
+    }
+
+    @Test
+    void shouldNormalizeBlankLlmErrorAsUnknownCode() {
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.LLM_ERROR, "");
+        when(preferencesService.getMessage("system.error.llm")).thenReturn(ERROR_MESSAGE);
+
+        AgentContext result = system.process(context);
+
+        assertEquals(LlmErrorClassifier.UNKNOWN, result.getAttribute(ContextAttributes.LLM_ERROR_CODE));
+        assertEquals("[" + LlmErrorClassifier.UNKNOWN + "]", result.getAttribute(ContextAttributes.LLM_ERROR));
+    }
+
+    @Test
     void shouldPrioritizeLlmErrorOverLlmResponse() {
         AgentContext context = buildContext();
         context.setAttribute(ContextAttributes.LLM_ERROR, LLM_ERROR_VALUE);
