@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
 permissions:
   contents: write
   actions: write
@@ -30,15 +34,21 @@ jobs:
           git-user-email: 'github-actions[bot]@users.noreply.github.com'
 
       - name: Validate release outcome
-        if: steps.release.outcome == 'failure' && !contains(steps.release.outputs.stdout, 'No conventional commit found to bump current version.')
+        if: steps.release.outcome == 'failure'
         run: |
+          RELEASE_STDOUT_LOWER="$(echo "${{ steps.release.outputs.stdout }}" | tr '[:upper:]' '[:lower:]')"
+          if [[ "${RELEASE_STDOUT_LOWER}" == *"no conventional commit"* ]]; then
+            echo "No releasable conventional commits found. Skipping release."
+            exit 0
+          fi
+
           echo "Cocogitto failed with unexpected error:"
           echo "${{ steps.release.outputs.stdout }}"
           exit 1
 
-      - name: Push tag
+      - name: Push release commit and tag
         if: steps.release.outputs.version != ''
-        run: git push origin "${{ steps.release.outputs.version }}"
+        run: git push origin HEAD:main "${{ steps.release.outputs.version }}"
 
       - name: Set up JDK 25
         if: steps.release.outputs.version != ''
