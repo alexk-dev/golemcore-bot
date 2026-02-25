@@ -21,12 +21,20 @@ jobs:
 
       - name: Cocogitto release
         id: release
+        continue-on-error: true
         uses: cocogitto/cocogitto-action@9a9fe03b31c47444290c0d7f9b1ee1b44ee13f20 # v4.1.0
         with:
-          command: release
-          args: --check-latest-tag-only
+          command: bump
+          args: --auto
           git-user: 'github-actions[bot]'
           git-user-email: 'github-actions[bot]@users.noreply.github.com'
+
+      - name: Validate release outcome
+        if: steps.release.outcome == 'failure' && !contains(steps.release.outputs.stdout, 'No conventional commit found to bump current version.')
+        run: |
+          echo "Cocogitto failed with unexpected error:"
+          echo "${{ steps.release.outputs.stdout }}"
+          exit 1
 
       - name: Push tag
         if: steps.release.outputs.version != ''
