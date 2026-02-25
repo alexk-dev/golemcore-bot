@@ -3,6 +3,9 @@ package me.golemcore.bot.domain.system.toolloop;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Attachment;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.FailureEvent;
+import me.golemcore.bot.domain.model.FailureKind;
+import me.golemcore.bot.domain.model.FailureSource;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
@@ -36,6 +39,7 @@ import me.golemcore.bot.infrastructure.config.BotProperties;
 public class DefaultToolLoopSystem implements ToolLoopSystem {
 
     private static final Logger log = LoggerFactory.getLogger(DefaultToolLoopSystem.class);
+    private static final int EMPTY_FINAL_RESPONSE_MAX_RETRIES = 2;
 
     private final LlmPort llmPort;
     private final ToolExecutorPort toolExecutor;
@@ -120,6 +124,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
 
         int llmCalls = 0;
         int toolExecutions = 0;
+        int emptyFinalResponseRetries = 0;
         List<Attachment> accumulatedAttachments = new ArrayList<>();
 
         int maxLlmCalls = resolveMaxLlmCalls();
@@ -143,7 +148,18 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             }
 
             // 2) Final answer (no tool calls)
-            if (response == null || !response.hasToolCalls()) {
+            boolean hasToolCalls = response != null && response.hasToolCalls();
+            if (!hasToolCalls) {
+                if (isEmptyFinalResponse(response, context)) {
+                    if (emptyFinalResponseRetries < EMPTY_FINAL_RESPONSE_MAX_RETRIES) {
+                        emptyFinalResponseRetries++;
+                        log.warn("[ToolLoop] Empty final LLM response (retry {}/{}), retrying",
+                                emptyFinalResponseRetries, EMPTY_FINAL_RESPONSE_MAX_RETRIES);
+                        continue;
+                    }
+                    return failEmptyFinalResponse(context, response, llmCalls, toolExecutions);
+                }
+
                 // History append of final answer is currently owned by ResponseRoutingSystem
                 // in legacy flow. For ToolLoop flow we append here to preserve raw history.
                 if (response != null) {
@@ -235,6 +251,42 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         return stopTurn(context, last, pending,
                 buildStopReasonMessage(stopReason, maxLlmCalls, maxToolExecutions), llmCalls, toolExecutions);
 
+    }
+
+    private boolean isEmptyFinalResponse(LlmResponse response, AgentContext context) {
+        if (context.isVoiceRequested()) {
+            return false;
+        }
+        String voiceText = context.getVoiceText();
+        if (voiceText != null && !voiceText.isBlank()) {
+            return false;
+        }
+        if (response == null) {
+            return true;
+        }
+        return response.getContent() == null || response.getContent().isBlank();
+    }
+
+    private ToolLoopTurnResult failEmptyFinalResponse(AgentContext context, LlmResponse response,
+            int llmCalls, int toolExecutions) {
+        String model = context.getAttribute(ContextAttributes.LLM_MODEL);
+        String finishReason = response != null ? response.getFinishReason() : null;
+        String diagnostic = String.format(
+                "LLM returned empty final response after %d attempt(s) (model=%s, finishReason=%s)",
+                llmCalls,
+                model != null ? model : "unknown",
+                finishReason != null ? finishReason : "unknown");
+
+        log.error("[ToolLoop] {}", diagnostic);
+        context.setAttribute(ContextAttributes.LLM_ERROR, diagnostic);
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, false);
+        context.addFailure(new FailureEvent(
+                FailureSource.LLM,
+                "DefaultToolLoopSystem",
+                FailureKind.VALIDATION,
+                diagnostic,
+                clock.instant()));
+        return new ToolLoopTurnResult(context, false, llmCalls, toolExecutions);
     }
 
     private int resolveMaxLlmCalls() {

@@ -32,9 +32,12 @@ import java.util.concurrent.CompletableFuture;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -146,16 +149,49 @@ class DefaultToolLoopSystemTest {
     }
 
     @Test
-    void shouldHandleNullLlmResponse() {
+    void shouldRetryTwiceAndFailWhenLlmResponseIsAlwaysNull() {
         AgentContext context = buildContext();
 
         when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(null));
 
         ToolLoopTurnResult result = system.processTurn(context);
 
+        assertFalse(result.finalAnswerReady());
+        assertEquals(3, result.llmCalls());
+        assertNotNull(context.getAttribute(ContextAttributes.LLM_ERROR));
+        verify(historyWriter, never()).appendFinalAssistantAnswer(any(), any(), any());
+        verify(llmPort, times(3)).chat(any());
+    }
+
+    @Test
+    void shouldRecoverFromEmptyFinalResponsesWithinRetryBudget() {
+        AgentContext context = buildContext();
+
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.completedFuture(finalResponse("")))
+                .thenReturn(CompletableFuture.completedFuture(finalResponse("   ")))
+                .thenReturn(CompletableFuture.completedFuture(finalResponse("Recovered answer")));
+
+        ToolLoopTurnResult result = system.processTurn(context);
+
+        assertTrue(result.finalAnswerReady());
+        assertEquals(3, result.llmCalls());
+        assertNull(context.getAttribute(ContextAttributes.LLM_ERROR));
+        verify(historyWriter).appendFinalAssistantAnswer(any(), any(), eq("Recovered answer"));
+    }
+
+    @Test
+    void shouldNotRetryWhenVoiceOnlyResponseIsPresent() {
+        AgentContext context = buildContext();
+        context.setVoiceText("voice response");
+
+        when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(finalResponse(null)));
+
+        ToolLoopTurnResult result = system.processTurn(context);
+
         assertTrue(result.finalAnswerReady());
         assertEquals(1, result.llmCalls());
-        verify(historyWriter, never()).appendFinalAssistantAnswer(any(), any(), any());
+        verify(llmPort, times(1)).chat(any());
     }
 
     // ==================== Tool execution ====================

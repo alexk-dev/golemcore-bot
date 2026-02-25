@@ -104,6 +104,14 @@ class OutgoingResponsePreparationSystemTest {
     }
 
     @Test
+    void shouldProcessWhenFinalAnswerReadyWithoutLlmResponse() {
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
+
+        assertTrue(system.shouldProcess(context));
+    }
+
+    @Test
     void shouldNotProcessWhenOutgoingResponseAlreadyPresentDespiteLlmError() {
         AgentContext context = buildContext();
         context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly("pre-set"));
@@ -213,6 +221,62 @@ class OutgoingResponsePreparationSystemTest {
         AgentContext result = system.process(context);
 
         assertNull(result.getAttribute(ContextAttributes.OUTGOING_RESPONSE));
+    }
+
+    @Test
+    void shouldConvertMissingFinalLlmResponseToLlmErrorFeedback() {
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
+        when(preferencesService.getMessage("system.error.llm")).thenReturn(ERROR_MESSAGE);
+
+        AgentContext result = system.process(context);
+
+        OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        assertNotNull(outgoing);
+        assertEquals(ERROR_MESSAGE, outgoing.getText());
+        String llmError = result.getAttribute(ContextAttributes.LLM_ERROR);
+        assertNotNull(llmError);
+        assertTrue(llmError.contains("empty final LLM response"));
+        assertFalse(result.getFailures().isEmpty());
+        assertEquals(me.golemcore.bot.domain.model.FailureKind.VALIDATION, result.getFailures().get(0).kind());
+    }
+
+    @Test
+    void shouldConvertBlankFinalLlmResponseToLlmErrorFeedback() {
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE,
+                LlmResponse.builder().content("   ").finishReason("stop").build());
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
+        when(preferencesService.getMessage("system.error.llm")).thenReturn(ERROR_MESSAGE);
+
+        AgentContext result = system.process(context);
+
+        OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        assertNotNull(outgoing);
+        assertEquals(ERROR_MESSAGE, outgoing.getText());
+        String llmError = result.getAttribute(ContextAttributes.LLM_ERROR);
+        assertNotNull(llmError);
+        assertTrue(llmError.contains("empty final LLM response"));
+        assertFalse(result.getFailures().isEmpty());
+        assertEquals(me.golemcore.bot.domain.model.FailureKind.VALIDATION, result.getFailures().get(0).kind());
+    }
+
+    @Test
+    void shouldKeepVoiceOnlyResponseWhenFinalAnswerReadyAndVoicePresent() {
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE,
+                LlmResponse.builder().content("").build());
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
+        context.setVoiceText("voice content");
+
+        AgentContext result = system.process(context);
+
+        OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        assertNotNull(outgoing);
+        assertNull(outgoing.getText());
+        assertTrue(outgoing.isVoiceRequested());
+        assertEquals("voice content", outgoing.getVoiceText());
+        assertNull(result.getAttribute(ContextAttributes.LLM_ERROR));
     }
 
     // ── process: voice prefix detection ──
