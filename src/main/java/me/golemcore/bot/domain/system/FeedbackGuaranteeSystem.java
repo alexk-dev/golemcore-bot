@@ -20,6 +20,7 @@ package me.golemcore.bot.domain.system;
 
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -83,7 +84,9 @@ public class FeedbackGuaranteeSystem implements AgentSystem {
         }
 
         String message = preferencesService.getMessage("system.error.generic.feedback");
-        log.info("[FeedbackGuarantee] Producing fallback OutgoingResponse (no response prepared upstream)");
+        String reasonCode = classifyFallbackReason(context);
+        log.warn("[FeedbackGuarantee] Producing fallback OutgoingResponse (reason={}, failures={})",
+                reasonCode, context.getFailures().size());
         context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly(message));
         return context;
     }
@@ -94,5 +97,36 @@ public class FeedbackGuaranteeSystem implements AgentSystem {
         }
         Message last = context.getMessages().get(context.getMessages().size() - 1);
         return last.getMetadata() != null && Boolean.TRUE.equals(last.getMetadata().get("auto.mode"));
+    }
+
+    private String classifyFallbackReason(AgentContext context) {
+        String llmErrorCode = context.getAttribute(ContextAttributes.LLM_ERROR_CODE);
+        if (llmErrorCode != null && !llmErrorCode.isBlank()) {
+            return llmErrorCode;
+        }
+
+        String llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
+        if (llmError != null && !llmError.isBlank()) {
+            return LlmErrorClassifier.classifyFromDiagnostic(llmError);
+        }
+
+        LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
+        if (response != null) {
+            if (response.hasToolCalls()) {
+                return "tool_calls_without_final_answer";
+            }
+            if (response.getContent() == null || response.getContent().isBlank()) {
+                return LlmErrorClassifier.classifyEmptyFinalResponse(response);
+            }
+            return "llm_response_present_but_not_routed";
+        }
+
+        if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.FINAL_ANSWER_READY))) {
+            return LlmErrorClassifier.NO_ASSISTANT_MESSAGE;
+        }
+        if (!context.getFailures().isEmpty()) {
+            return "pipeline_failures_without_outgoing_response";
+        }
+        return "missing_outgoing_response";
     }
 }

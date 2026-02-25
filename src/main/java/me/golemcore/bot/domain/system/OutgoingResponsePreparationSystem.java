@@ -20,6 +20,9 @@ package me.golemcore.bot.domain.system;
 
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.FailureEvent;
+import me.golemcore.bot.domain.model.FailureKind;
+import me.golemcore.bot.domain.model.FailureSource;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.LlmUsage;
 import me.golemcore.bot.domain.model.Message;
@@ -32,6 +35,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -81,7 +85,10 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
         }
 
         LlmResponse llmResponse = context.getAttribute(ContextAttributes.LLM_RESPONSE);
-        return llmResponse != null;
+        if (llmResponse != null) {
+            return true;
+        }
+        return Boolean.TRUE.equals(context.getAttribute(ContextAttributes.FINAL_ANSWER_READY));
     }
 
     @Override
@@ -94,13 +101,20 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
         // Error path: convert LLM_ERROR into a user-facing OutgoingResponse.
         String llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
         if (llmError != null) {
+            String reasonCode = resolveLlmErrorCode(context, llmError);
+            context.setAttribute(ContextAttributes.LLM_ERROR_CODE, reasonCode);
+            context.setAttribute(ContextAttributes.LLM_ERROR, LlmErrorClassifier.withCode(reasonCode, llmError));
             String errorMessage = preferencesService.getMessage("system.error.llm");
             setOutgoingResponse(context, OutgoingResponse.textOnly(errorMessage));
             return context;
         }
 
         LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
+        boolean finalAnswerReady = Boolean.TRUE.equals(context.getAttribute(ContextAttributes.FINAL_ANSWER_READY));
         if (response == null) {
+            if (finalAnswerReady) {
+                return classifyEmptyFinalResponse(context, null);
+            }
             return context;
         }
         String text = response.getContent();
@@ -153,6 +167,9 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
         }
 
         if (!hasText && !hasVoice) {
+            if (finalAnswerReady) {
+                return classifyEmptyFinalResponse(context, response);
+            }
             return context;
         }
 
@@ -164,6 +181,38 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
 
         setOutgoingResponse(context, outgoing);
         return context;
+    }
+
+    private AgentContext classifyEmptyFinalResponse(AgentContext context, LlmResponse response) {
+        String reasonCode = LlmErrorClassifier.classifyEmptyFinalResponse(response);
+        String model = context.getAttribute(ContextAttributes.LLM_MODEL);
+        String finishReason = response != null ? response.getFinishReason() : null;
+        String diagnostic = LlmErrorClassifier.withCode(reasonCode, String.format(
+                "empty final LLM response (model=%s, finishReason=%s)",
+                model != null ? model : "unknown",
+                finishReason != null ? finishReason : "unknown"));
+
+        log.warn("[ResponsePrep] {}", diagnostic);
+        context.setAttribute(ContextAttributes.LLM_ERROR, diagnostic);
+        context.setAttribute(ContextAttributes.LLM_ERROR_CODE, reasonCode);
+        context.addFailure(new FailureEvent(
+                FailureSource.LLM,
+                getName(),
+                FailureKind.VALIDATION,
+                diagnostic,
+                Instant.now()));
+
+        String errorMessage = preferencesService.getMessage("system.error.llm");
+        setOutgoingResponse(context, OutgoingResponse.textOnly(errorMessage));
+        return context;
+    }
+
+    private String resolveLlmErrorCode(AgentContext context, String llmError) {
+        String existing = context.getAttribute(ContextAttributes.LLM_ERROR_CODE);
+        if (existing != null && !existing.isBlank()) {
+            return existing;
+        }
+        return LlmErrorClassifier.classifyFromDiagnostic(llmError);
     }
 
     private void setOutgoingResponse(AgentContext context, OutgoingResponse outgoing) {

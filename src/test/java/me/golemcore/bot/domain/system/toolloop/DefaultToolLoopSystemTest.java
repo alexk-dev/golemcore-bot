@@ -11,10 +11,13 @@ import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
+import me.golemcore.bot.domain.system.LlmErrorClassifier;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationView;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.LlmPort;
+import dev.langchain4j.exception.RateLimitException;
+import dev.langchain4j.exception.TimeoutException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
@@ -28,13 +31,17 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -146,16 +153,122 @@ class DefaultToolLoopSystemTest {
     }
 
     @Test
-    void shouldHandleNullLlmResponse() {
+    void shouldRetryTwiceAndFailWhenLlmResponseIsAlwaysNull() {
         AgentContext context = buildContext();
 
         when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(null));
 
         ToolLoopTurnResult result = system.processTurn(context);
 
+        assertFalse(result.finalAnswerReady());
+        assertEquals(3, result.llmCalls());
+        assertNotNull(context.getAttribute(ContextAttributes.LLM_ERROR));
+        assertEquals(LlmErrorClassifier.NO_ASSISTANT_MESSAGE,
+                context.getAttribute(ContextAttributes.LLM_ERROR_CODE));
+        verify(historyWriter, never()).appendFinalAssistantAnswer(any(), any(), any());
+        verify(llmPort, times(3)).chat(any());
+    }
+
+    @Test
+    void shouldRecoverFromEmptyFinalResponsesWithinRetryBudget() {
+        AgentContext context = buildContext();
+
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.completedFuture(finalResponse("")))
+                .thenReturn(CompletableFuture.completedFuture(finalResponse("   ")))
+                .thenReturn(CompletableFuture.completedFuture(finalResponse("Recovered answer")));
+
+        ToolLoopTurnResult result = system.processTurn(context);
+
+        assertTrue(result.finalAnswerReady());
+        assertEquals(3, result.llmCalls());
+        assertNull(context.getAttribute(ContextAttributes.LLM_ERROR));
+        verify(historyWriter).appendFinalAssistantAnswer(any(), any(), eq("Recovered answer"));
+    }
+
+    @Test
+    void shouldSetLangchainErrorCodeWhenLlmCallThrows() {
+        AgentContext context = buildContext();
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.failedFuture(new TimeoutException("request timed out")));
+
+        ToolLoopTurnResult result = system.processTurn(context);
+
+        assertFalse(result.finalAnswerReady());
+        assertEquals(1, result.llmCalls());
+        assertEquals(LlmErrorClassifier.LANGCHAIN4J_TIMEOUT,
+                context.getAttribute(ContextAttributes.LLM_ERROR_CODE));
+        String llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
+        assertNotNull(llmError);
+        assertTrue(llmError.startsWith("[" + LlmErrorClassifier.LANGCHAIN4J_TIMEOUT + "]"));
+        assertFalse(context.getFailures().isEmpty());
+        assertEquals(me.golemcore.bot.domain.model.FailureKind.EXCEPTION, context.getFailures().get(0).kind());
+    }
+
+    @Test
+    void shouldClassifyNestedRateLimitCauseWhenLlmCallThrows() {
+        AgentContext context = buildContext();
+        Throwable nested = new CompletionException(new RuntimeException("wrapper",
+                new RateLimitException("too many requests")));
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.failedFuture(nested));
+
+        ToolLoopTurnResult result = system.processTurn(context);
+
+        assertFalse(result.finalAnswerReady());
+        assertEquals(1, result.llmCalls());
+        assertEquals(LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT,
+                context.getAttribute(ContextAttributes.LLM_ERROR_CODE));
+        String llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
+        assertNotNull(llmError);
+        assertTrue(llmError.contains("RateLimitException"));
+    }
+
+    @Test
+    void shouldPreferEmbeddedErrorCodeFromThrowableMessage() {
+        AgentContext context = buildContext();
+        String explicitCode = "llm.synthetic.explicit";
+        Throwable throwable = new RuntimeException("[" + explicitCode + "] synthetic failure",
+                new TimeoutException("request timed out"));
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.failedFuture(throwable));
+
+        ToolLoopTurnResult result = system.processTurn(context);
+
+        assertFalse(result.finalAnswerReady());
+        assertEquals(explicitCode, context.getAttribute(ContextAttributes.LLM_ERROR_CODE));
+        String llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
+        assertNotNull(llmError);
+        assertTrue(llmError.startsWith("[" + explicitCode + "]"));
+    }
+
+    @Test
+    void shouldUsePlaceholderWhenRootCauseMessageIsMissing() {
+        AgentContext context = buildContext();
+        Throwable throwable = new RuntimeException(new RuntimeException((String) null));
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.failedFuture(throwable));
+
+        ToolLoopTurnResult result = system.processTurn(context);
+
+        assertFalse(result.finalAnswerReady());
+        String llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
+        assertNotNull(llmError);
+        assertTrue(llmError.contains("message=n/a"));
+    }
+
+    @Test
+    void shouldNotRetryWhenVoiceOnlyResponseIsPresent() {
+        AgentContext context = buildContext();
+        context.setVoiceText("voice response");
+
+        when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(finalResponse(null)));
+
+        ToolLoopTurnResult result = system.processTurn(context);
+
         assertTrue(result.finalAnswerReady());
         assertEquals(1, result.llmCalls());
-        verify(historyWriter, never()).appendFinalAssistantAnswer(any(), any(), any());
+        verify(llmPort, times(1)).chat(any());
     }
 
     // ==================== Tool execution ====================

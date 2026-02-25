@@ -104,6 +104,14 @@ class OutgoingResponsePreparationSystemTest {
     }
 
     @Test
+    void shouldProcessWhenFinalAnswerReadyWithoutLlmResponse() {
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
+
+        assertTrue(system.shouldProcess(context));
+    }
+
+    @Test
     void shouldNotProcessWhenOutgoingResponseAlreadyPresentDespiteLlmError() {
         AgentContext context = buildContext();
         context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly("pre-set"));
@@ -149,6 +157,37 @@ class OutgoingResponsePreparationSystemTest {
         assertNotNull(outgoing);
         assertEquals(ERROR_MESSAGE, outgoing.getText());
         assertFalse(outgoing.isVoiceRequested());
+        assertEquals(LlmErrorClassifier.UNKNOWN, result.getAttribute(ContextAttributes.LLM_ERROR_CODE));
+        String normalized = result.getAttribute(ContextAttributes.LLM_ERROR);
+        assertTrue(normalized.startsWith("[" + LlmErrorClassifier.UNKNOWN + "]"));
+    }
+
+    @Test
+    void shouldPreferExistingLlmErrorCodeOverEmbeddedDiagnosticCode() {
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.LLM_ERROR_CODE, LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT);
+        context.setAttribute(ContextAttributes.LLM_ERROR, LlmErrorClassifier.withCode(
+                LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, "provider timeout"));
+        when(preferencesService.getMessage("system.error.llm")).thenReturn(ERROR_MESSAGE);
+
+        AgentContext result = system.process(context);
+
+        assertEquals(LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT,
+                result.getAttribute(ContextAttributes.LLM_ERROR_CODE));
+        String normalized = result.getAttribute(ContextAttributes.LLM_ERROR);
+        assertTrue(normalized.startsWith("[" + LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT + "]"));
+    }
+
+    @Test
+    void shouldNormalizeBlankLlmErrorAsUnknownCode() {
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.LLM_ERROR, "");
+        when(preferencesService.getMessage("system.error.llm")).thenReturn(ERROR_MESSAGE);
+
+        AgentContext result = system.process(context);
+
+        assertEquals(LlmErrorClassifier.UNKNOWN, result.getAttribute(ContextAttributes.LLM_ERROR_CODE));
+        assertEquals("[" + LlmErrorClassifier.UNKNOWN + "]", result.getAttribute(ContextAttributes.LLM_ERROR));
     }
 
     @Test
@@ -213,6 +252,80 @@ class OutgoingResponsePreparationSystemTest {
         AgentContext result = system.process(context);
 
         assertNull(result.getAttribute(ContextAttributes.OUTGOING_RESPONSE));
+    }
+
+    @Test
+    void shouldConvertMissingFinalLlmResponseToLlmErrorFeedback() {
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
+        when(preferencesService.getMessage("system.error.llm")).thenReturn(ERROR_MESSAGE);
+
+        AgentContext result = system.process(context);
+
+        OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        assertNotNull(outgoing);
+        assertEquals(ERROR_MESSAGE, outgoing.getText());
+        String llmError = result.getAttribute(ContextAttributes.LLM_ERROR);
+        assertNotNull(llmError);
+        assertTrue(llmError.contains("empty final LLM response"));
+        assertEquals(LlmErrorClassifier.NO_ASSISTANT_MESSAGE,
+                result.getAttribute(ContextAttributes.LLM_ERROR_CODE));
+        assertFalse(result.getFailures().isEmpty());
+        assertEquals(me.golemcore.bot.domain.model.FailureKind.VALIDATION, result.getFailures().get(0).kind());
+    }
+
+    @Test
+    void shouldConvertBlankFinalLlmResponseToLlmErrorFeedback() {
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE,
+                LlmResponse.builder().content("   ").finishReason("stop").build());
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
+        when(preferencesService.getMessage("system.error.llm")).thenReturn(ERROR_MESSAGE);
+
+        AgentContext result = system.process(context);
+
+        OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        assertNotNull(outgoing);
+        assertEquals(ERROR_MESSAGE, outgoing.getText());
+        String llmError = result.getAttribute(ContextAttributes.LLM_ERROR);
+        assertNotNull(llmError);
+        assertTrue(llmError.contains("empty final LLM response"));
+        assertEquals(LlmErrorClassifier.EMPTY_ASSISTANT_CONTENT,
+                result.getAttribute(ContextAttributes.LLM_ERROR_CODE));
+        assertFalse(result.getFailures().isEmpty());
+        assertEquals(me.golemcore.bot.domain.model.FailureKind.VALIDATION, result.getFailures().get(0).kind());
+    }
+
+    @Test
+    void shouldKeepEmbeddedLlmErrorCodeWithoutParsingFreeText() {
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.LLM_ERROR, LlmErrorClassifier.withCode(
+                LlmErrorClassifier.STREAM_PARSE_CONTENT_BLOCK_NOT_FOUND,
+                "Error streaming, falling back to non-streaming mode: Content block not found"));
+        when(preferencesService.getMessage("system.error.llm")).thenReturn(ERROR_MESSAGE);
+
+        AgentContext result = system.process(context);
+
+        assertEquals(LlmErrorClassifier.STREAM_PARSE_CONTENT_BLOCK_NOT_FOUND,
+                result.getAttribute(ContextAttributes.LLM_ERROR_CODE));
+    }
+
+    @Test
+    void shouldKeepVoiceOnlyResponseWhenFinalAnswerReadyAndVoicePresent() {
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE,
+                LlmResponse.builder().content("").build());
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
+        context.setVoiceText("voice content");
+
+        AgentContext result = system.process(context);
+
+        OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        assertNotNull(outgoing);
+        assertNull(outgoing.getText());
+        assertTrue(outgoing.isVoiceRequested());
+        assertEquals("voice content", outgoing.getVoiceText());
+        assertNull(result.getAttribute(ContextAttributes.LLM_ERROR));
     }
 
     // ── process: voice prefix detection ──

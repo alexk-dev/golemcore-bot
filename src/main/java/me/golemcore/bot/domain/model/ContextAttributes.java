@@ -34,6 +34,9 @@ public final class ContextAttributes {
     /** String — LLM error message. */
     public static final String LLM_ERROR = "llm.error";
 
+    /** String — machine-readable LLM error classification code. */
+    public static final String LLM_ERROR_CODE = "llm.error.code";
+
     /** List<Message.ToolCall> ? last tool calls requested by the LLM. */
 
     /** Boolean ? final answer is ready and the turn can be finalized/routed. */

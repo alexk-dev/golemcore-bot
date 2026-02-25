@@ -3,6 +3,9 @@ package me.golemcore.bot.domain.system.toolloop;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Attachment;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.FailureEvent;
+import me.golemcore.bot.domain.model.FailureKind;
+import me.golemcore.bot.domain.model.FailureSource;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
@@ -12,6 +15,7 @@ import me.golemcore.bot.domain.model.TurnLimitReason;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.system.LlmErrorClassifier;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationView;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
 import me.golemcore.bot.port.outbound.LlmPort;
@@ -36,6 +40,7 @@ import me.golemcore.bot.infrastructure.config.BotProperties;
 public class DefaultToolLoopSystem implements ToolLoopSystem {
 
     private static final Logger log = LoggerFactory.getLogger(DefaultToolLoopSystem.class);
+    private static final int EMPTY_FINAL_RESPONSE_MAX_RETRIES = 2;
 
     private final LlmPort llmPort;
     private final ToolExecutorPort toolExecutor;
@@ -120,6 +125,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
 
         int llmCalls = 0;
         int toolExecutions = 0;
+        int emptyFinalResponseRetries = 0;
         List<Attachment> accumulatedAttachments = new ArrayList<>();
 
         int maxLlmCalls = resolveMaxLlmCalls();
@@ -133,8 +139,14 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
 
         while (llmCalls < maxLlmCalls && toolExecutions < maxToolExecutions && clock.instant().isBefore(deadline)) {
             // 1) LLM call
-            LlmResponse response = llmPort.chat(buildRequest(context)).join();
             llmCalls++;
+            LlmResponse response;
+            try {
+                response = llmPort.chat(buildRequest(context)).join();
+            } catch (RuntimeException e) {
+                return failLlmInvocation(context, e, llmCalls, toolExecutions);
+            }
+
             context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
             boolean compatFlatteningUsed = response != null && response.isCompatibilityFlatteningApplied();
             context.setAttribute(ContextAttributes.LLM_COMPAT_FLATTEN_FALLBACK_USED, compatFlatteningUsed);
@@ -143,7 +155,19 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             }
 
             // 2) Final answer (no tool calls)
-            if (response == null || !response.hasToolCalls()) {
+            boolean hasToolCalls = response != null && response.hasToolCalls();
+            if (!hasToolCalls) {
+                String emptyReasonCode = getEmptyFinalResponseCode(response, context);
+                if (emptyReasonCode != null) {
+                    if (emptyFinalResponseRetries < EMPTY_FINAL_RESPONSE_MAX_RETRIES) {
+                        emptyFinalResponseRetries++;
+                        log.warn("[ToolLoop] Empty final LLM response (code={}, retry {}/{}), retrying",
+                                emptyReasonCode, emptyFinalResponseRetries, EMPTY_FINAL_RESPONSE_MAX_RETRIES);
+                        continue;
+                    }
+                    return failEmptyFinalResponse(context, response, emptyReasonCode, llmCalls, toolExecutions);
+                }
+
                 // History append of final answer is currently owned by ResponseRoutingSystem
                 // in legacy flow. For ToolLoop flow we append here to preserve raw history.
                 if (response != null) {
@@ -235,6 +259,89 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         return stopTurn(context, last, pending,
                 buildStopReasonMessage(stopReason, maxLlmCalls, maxToolExecutions), llmCalls, toolExecutions);
 
+    }
+
+    private String getEmptyFinalResponseCode(LlmResponse response, AgentContext context) {
+        if (context.isVoiceRequested()) {
+            return null;
+        }
+        String voiceText = context.getVoiceText();
+        if (voiceText != null && !voiceText.isBlank()) {
+            return null;
+        }
+        String code = LlmErrorClassifier.classifyEmptyFinalResponse(response);
+        if (LlmErrorClassifier.UNKNOWN.equals(code)) {
+            return null;
+        }
+        return code;
+    }
+
+    private ToolLoopTurnResult failEmptyFinalResponse(AgentContext context, LlmResponse response, String reasonCode,
+            int llmCalls, int toolExecutions) {
+        String model = context.getAttribute(ContextAttributes.LLM_MODEL);
+        String finishReason = response != null ? response.getFinishReason() : null;
+        String diagnostic = LlmErrorClassifier.withCode(reasonCode, String.format(
+                "LLM returned empty final response after %d attempt(s) (model=%s, finishReason=%s)",
+                llmCalls,
+                model != null ? model : "unknown",
+                finishReason != null ? finishReason : "unknown"));
+
+        log.error("[ToolLoop] {}", diagnostic);
+        context.setAttribute(ContextAttributes.LLM_ERROR, diagnostic);
+        context.setAttribute(ContextAttributes.LLM_ERROR_CODE, reasonCode);
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, false);
+        context.addFailure(new FailureEvent(
+                FailureSource.LLM,
+                "DefaultToolLoopSystem",
+                FailureKind.VALIDATION,
+                diagnostic,
+                clock.instant()));
+        return new ToolLoopTurnResult(context, false, llmCalls, toolExecutions);
+    }
+
+    private ToolLoopTurnResult failLlmInvocation(AgentContext context, Throwable throwable, int llmCalls,
+            int toolExecutions) {
+        String reasonCode = LlmErrorClassifier.classifyFromThrowable(throwable);
+        Throwable rootCause = findRootCause(throwable);
+        String model = context.getAttribute(ContextAttributes.LLM_MODEL);
+        String errorType = rootCause != null
+                ? rootCause.getClass().getName()
+                : "unknown";
+        String errorMessage = rootCause != null && rootCause.getMessage() != null
+                ? rootCause.getMessage()
+                : "n/a";
+        String diagnostic = LlmErrorClassifier.withCode(reasonCode, String.format(
+                "LLM call failed after %d attempt(s) (model=%s, errorType=%s, message=%s)",
+                llmCalls,
+                model != null ? model : "unknown",
+                errorType,
+                errorMessage));
+
+        log.error("[ToolLoop] {}", diagnostic, throwable);
+        context.setAttribute(ContextAttributes.LLM_ERROR, diagnostic);
+        context.setAttribute(ContextAttributes.LLM_ERROR_CODE, reasonCode);
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, false);
+        context.addFailure(new FailureEvent(
+                FailureSource.LLM,
+                "DefaultToolLoopSystem",
+                FailureKind.EXCEPTION,
+                diagnostic,
+                clock.instant()));
+        return new ToolLoopTurnResult(context, false, llmCalls, toolExecutions);
+    }
+
+    private Throwable findRootCause(Throwable throwable) {
+        if (throwable == null) {
+            return null;
+        }
+
+        Throwable current = throwable;
+        int depth = 0;
+        while (current.getCause() != null && current.getCause() != current && depth < 32) {
+            current = current.getCause();
+            depth++;
+        }
+        return current;
     }
 
     private int resolveMaxLlmCalls() {
