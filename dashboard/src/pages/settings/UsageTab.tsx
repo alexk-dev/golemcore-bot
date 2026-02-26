@@ -11,6 +11,10 @@ function hasDiff<T>(current: T, initial: T): boolean {
   return JSON.stringify(current) !== JSON.stringify(initial);
 }
 
+function toEnabled(value: boolean | null | undefined): boolean {
+  return value ?? true;
+}
+
 interface UsageTabProps {
   config: UsageConfig;
 }
@@ -21,12 +25,13 @@ export default function UsageTab({ config }: UsageTabProps): ReactElement {
   const isDirty = useMemo(() => hasDiff(form, config), [form, config]);
 
   useEffect(() => {
+    // Sync local draft after config refresh from backend.
     setForm({ ...config });
   }, [config]);
 
   const handleSave = async (): Promise<void> => {
     await updateUsage.mutateAsync(form);
-    toast.success('Usage settings saved');
+    toast.success('Usage tracking settings saved');
   };
 
   return (
@@ -35,13 +40,19 @@ export default function UsageTab({ config }: UsageTabProps): ReactElement {
         <SettingsCardTitle title="Usage Tracking" />
         <Form.Check
           type="switch"
-          label={<>Enable Usage Tracking <HelpTip text="Enable collection of LLM request/token/latency metrics for Analytics." /></>}
-          checked={form.enabled ?? true}
-          onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
+          label={<>Enable Usage Tracking <HelpTip text="Track request counts, tokens, and latency for analytics." /></>}
+          checked={toEnabled(form.enabled)}
+          onChange={(event) => setForm({ ...form, enabled: event.target.checked })}
           className="mb-3"
         />
         <SettingsSaveBar>
-          <Button type="button" variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateUsage.isPending}>
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            onClick={() => { void handleSave(); }}
+            disabled={!isDirty || updateUsage.isPending}
+          >
             {updateUsage.isPending ? 'Saving...' : 'Save'}
           </Button>
           <SaveStateHint isDirty={isDirty} />

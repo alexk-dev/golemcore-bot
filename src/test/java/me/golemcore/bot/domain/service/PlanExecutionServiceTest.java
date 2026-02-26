@@ -6,6 +6,7 @@ import me.golemcore.bot.domain.model.PlanExecutionCompletedEvent;
 import me.golemcore.bot.domain.model.PlanStep;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.plugin.context.PluginToolCatalog;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -69,7 +70,7 @@ class PlanExecutionServiceTest {
 
         service = new PlanExecutionService(
                 planService,
-                List.of(filesystemTool, shellTool),
+                PluginToolCatalog.forTesting(List.of(filesystemTool, shellTool)),
                 eventPublisher,
                 properties);
     }

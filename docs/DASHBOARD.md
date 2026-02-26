@@ -52,6 +52,7 @@ Most bot settings are edited in the dashboard and persisted to:
 
 - `preferences/runtime-config.json`
 - API: `GET /api/settings/runtime`, `PUT /api/settings/runtime`
+- Plugin UI schemas API: `GET /api/settings/plugins/schemas`
 
 Typical first setup:
 
@@ -60,6 +61,16 @@ Typical first setup:
 3. Optionally enable Telegram (`telegram.enabled`, `telegram.token`).
 
 If startup setup is incomplete, chat remains available and dashboard shows a one-time session popup invitation to open `/dashboard/setup`.
+
+### Plugin Settings UI (Declarative)
+
+Plugin-related settings sections in `/dashboard/settings` are schema-driven:
+
+- Schemas are defined in backend plugins as `PluginSettingsSectionSchema` contributions.
+- Dashboard fetches schemas from `GET /api/settings/plugins/schemas`.
+- Generic renderer builds form controls from schema field definitions.
+
+Non-plugin settings sections can still use classic page components. `Usage` is intentionally non-plugin and is configured via its own settings tab while analytics are shown on `/dashboard/analytics`.
 
 ## Sessions and Active Conversation
 

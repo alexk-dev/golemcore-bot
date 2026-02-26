@@ -19,6 +19,7 @@ package me.golemcore.bot.domain.service;
  */
 
 import me.golemcore.bot.domain.model.AudioFormat;
+import me.golemcore.bot.port.outbound.CorePortResolver;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.VoicePort;
 import lombok.RequiredArgsConstructor;
@@ -41,7 +42,7 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 public class VoiceResponseHandler {
 
-    private final VoicePort voicePort;
+    private final CorePortResolver pluginPortResolver;
     private final RuntimeConfigService runtimeConfigService;
 
     /**
@@ -63,6 +64,7 @@ public class VoiceResponseHandler {
      * @return result indicating success, failure, or quota exceeded
      */
     public VoiceSendResult trySendVoice(ChannelPort channel, String chatId, String text) {
+        VoicePort voicePort = pluginPortResolver.requireVoicePort();
         if (!voicePort.isAvailable()) {
             log.debug("[Voice] Not available, skipping synthesis");
             return VoiceSendResult.FAILED;
@@ -130,6 +132,7 @@ public class VoiceResponseHandler {
     }
 
     public boolean isAvailable() {
+        VoicePort voicePort = pluginPortResolver.requireVoicePort();
         return voicePort.isAvailable();
     }
 }

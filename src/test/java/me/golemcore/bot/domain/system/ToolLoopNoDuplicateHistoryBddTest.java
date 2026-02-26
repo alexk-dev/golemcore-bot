@@ -7,14 +7,15 @@ import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
-import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.system.toolloop.DefaultHistoryWriter;
 import me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem;
 import me.golemcore.bot.domain.system.toolloop.ToolExecutionOutcome;
 import me.golemcore.bot.domain.system.toolloop.ToolExecutorPort;
 import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.plugin.context.PluginChannelCatalog;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import org.junit.jupiter.api.Test;
@@ -127,7 +128,10 @@ class ToolLoopNoDuplicateHistoryBddTest {
         VoiceResponseHandler voiceHandler = mock(VoiceResponseHandler.class);
         when(voiceHandler.isAvailable()).thenReturn(false);
 
-        ResponseRoutingSystem routing = new ResponseRoutingSystem(List.of(channel), preferences, voiceHandler);
+        ResponseRoutingSystem routing = new ResponseRoutingSystem(
+                PluginChannelCatalog.forTesting(List.of(channel)),
+                preferences,
+                voiceHandler);
 
         ctx.setAttribute(ContextAttributes.OUTGOING_RESPONSE,
                 me.golemcore.bot.domain.model.OutgoingResponse.textOnly(second.getContent()));

@@ -1,0 +1,153 @@
+package me.golemcore.bot.plugin.builtin.telegram.inbound;
+
+import me.golemcore.bot.adapter.inbound.command.TelegramCommandPort;
+import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.TelegramSessionService;
+import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.infrastructure.i18n.MessageService;
+import me.golemcore.bot.port.inbound.CommandPort;
+import me.golemcore.bot.plugin.builtin.security.AllowlistValidator;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.context.ApplicationEventPublisher;
+import org.telegram.telegrambots.longpolling.TelegramBotsLongPollingApplication;
+import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.telegrambots.meta.api.objects.Update;
+import org.telegram.telegrambots.meta.api.objects.User;
+import org.telegram.telegrambots.meta.generics.TelegramClient;
+
+import java.util.List;
+import java.util.function.Consumer;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+class TelegramAdapterAuthTest {
+
+    private static final String CHANNEL_TELEGRAM = "telegram";
+
+    private TelegramAdapter adapter;
+    private AllowlistValidator allowlistValidator;
+    private MessageService messageService;
+    private TelegramClient telegramClient;
+    private Consumer<Message> messageHandler;
+    private RuntimeConfigService runtimeConfigService;
+
+    @BeforeEach
+    @SuppressWarnings("unchecked")
+    void setUp() {
+        allowlistValidator = mock(AllowlistValidator.class);
+        messageService = mock(MessageService.class);
+        telegramClient = mock(TelegramClient.class);
+
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isTelegramEnabled()).thenReturn(true);
+        when(runtimeConfigService.getTelegramToken()).thenReturn("test-token");
+        when(runtimeConfigService.getTelegramAllowedUsers()).thenReturn(List.of());
+        RuntimeConfig.TelegramConfig telegramConfig = RuntimeConfig.TelegramConfig.builder()
+                .authMode("invite_only").build();
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder().telegram(telegramConfig).build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+        TelegramSessionService telegramSessionService = mock(TelegramSessionService.class);
+        when(telegramSessionService.resolveActiveConversationKey(anyString()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        adapter = new TelegramAdapter(
+                runtimeConfigService,
+                allowlistValidator,
+                mock(ApplicationEventPublisher.class),
+                mock(TelegramBotsLongPollingApplication.class),
+                mock(UserPreferencesService.class),
+                messageService,
+                new TestObjectProvider<>(mock(TelegramCommandPort.class)),
+                mock(TelegramVoiceHandler.class),
+                mock(TelegramMenuHandler.class),
+                telegramSessionService);
+        adapter.setTelegramClient(telegramClient);
+
+        messageHandler = mock(Consumer.class);
+        adapter.onMessage(messageHandler);
+    }
+
+    @Test
+    void unauthorizedUser_sendsInviteInvalidAndDoesNotProcess() throws Exception {
+        when(allowlistValidator.isAllowed(CHANNEL_TELEGRAM, "999")).thenReturn(false);
+        when(messageService.getMessage("telegram.invite.invalid")).thenReturn("Invalid invite code.");
+
+        Update update = createTextUpdate(999L, 100L, "Hello bot");
+
+        adapter.consume(update);
+
+        // Verify invite invalid message was sent (async — use timeout)
+        ArgumentCaptor<SendMessage> captor = ArgumentCaptor.forClass(SendMessage.class);
+        verify(telegramClient, timeout(2000)).execute(captor.capture());
+        assertEquals("100", captor.getValue().getChatId());
+        assertTrue(captor.getValue().getText().contains("Invalid invite code"));
+
+        // Verify message was NOT passed to handler (no LLM processing)
+        verify(messageHandler, never()).accept(any());
+    }
+
+    @Test
+    void authorizedUser_processesMessageNormally() {
+        when(allowlistValidator.isAllowed(CHANNEL_TELEGRAM, "123")).thenReturn(true);
+
+        Update update = createTextUpdate(123L, 100L, "Hello bot");
+
+        adapter.consume(update);
+
+        // Verify message WAS passed to handler
+        verify(messageHandler).accept(any(Message.class));
+    }
+
+    @Test
+    void unauthorizedUserAfterFirstInvite_sendsAccessDeniedAndDoesNotProcess() throws Exception {
+        when(runtimeConfigService.getTelegramAllowedUsers()).thenReturn(List.of("123"));
+        when(allowlistValidator.isAllowed(CHANNEL_TELEGRAM, "999")).thenReturn(false);
+        when(messageService.getMessage("security.unauthorized")).thenReturn("Access denied.");
+
+        Update update = createTextUpdate(999L, 100L, "SOMECODE123");
+
+        adapter.consume(update);
+
+        ArgumentCaptor<SendMessage> captor = ArgumentCaptor.forClass(SendMessage.class);
+        verify(telegramClient, timeout(2000)).execute(captor.capture());
+        assertEquals("100", captor.getValue().getChatId());
+        assertTrue(captor.getValue().getText().contains("Access denied"));
+        verify(messageHandler, never()).accept(any());
+    }
+
+    private Update createTextUpdate(long userId, long chatId, String text) {
+        User user = mock(User.class);
+        when(user.getId()).thenReturn(userId);
+
+        org.telegram.telegrambots.meta.api.objects.chat.Chat chat = mock(
+                org.telegram.telegrambots.meta.api.objects.chat.Chat.class);
+        when(chat.getId()).thenReturn(chatId);
+
+        org.telegram.telegrambots.meta.api.objects.message.Message telegramMsg = mock(
+                org.telegram.telegrambots.meta.api.objects.message.Message.class);
+        when(telegramMsg.getChatId()).thenReturn(chatId);
+        when(telegramMsg.getFrom()).thenReturn(user);
+        when(telegramMsg.getMessageId()).thenReturn(1);
+        when(telegramMsg.hasText()).thenReturn(true);
+        when(telegramMsg.getText()).thenReturn(text);
+
+        Update update = mock(Update.class);
+        when(update.hasMessage()).thenReturn(true);
+        when(update.hasCallbackQuery()).thenReturn(false);
+        when(update.getMessage()).thenReturn(telegramMsg);
+
+        return update;
+    }
+}

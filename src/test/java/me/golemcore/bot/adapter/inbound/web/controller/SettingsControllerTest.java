@@ -10,6 +10,11 @@ import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.plugin.api.settings.PluginSettingsFieldOption;
+import me.golemcore.bot.plugin.api.settings.PluginSettingsFieldSchema;
+import me.golemcore.bot.plugin.api.settings.PluginSettingsFieldType;
+import me.golemcore.bot.plugin.api.settings.PluginSettingsSectionSchema;
+import me.golemcore.bot.plugin.context.PluginRegistryService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -42,6 +47,7 @@ class SettingsControllerTest {
     private RuntimeConfigService runtimeConfigService;
     private MemoryPresetService memoryPresetService;
     private ApplicationEventPublisher eventPublisher;
+    private PluginRegistryService pluginRegistryService;
     private SettingsController controller;
 
     @BeforeEach
@@ -51,9 +57,11 @@ class SettingsControllerTest {
         runtimeConfigService = mock(RuntimeConfigService.class);
         memoryPresetService = mock(MemoryPresetService.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
+        pluginRegistryService = mock(PluginRegistryService.class);
         controller = new SettingsController(preferencesService, modelSelectionService, runtimeConfigService,
                 memoryPresetService,
-                eventPublisher);
+                eventPublisher,
+                pluginRegistryService);
         when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(RuntimeConfig.builder().build());
     }
 
@@ -93,6 +101,37 @@ class SettingsControllerTest {
                     assertNotNull(body);
                     assertNotNull(body.getTierOverrides());
                     assertEquals("gpt-4o", body.getTierOverrides().get("standard").getModel());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldGetPluginSchemas() {
+        PluginSettingsFieldSchema field = new PluginSettingsFieldSchema(
+                "telegram.enabled",
+                "Enabled",
+                "Enable Telegram channel integration.",
+                PluginSettingsFieldType.SWITCH,
+                null,
+                null,
+                null,
+                null,
+                List.of(new PluginSettingsFieldOption("true", "Enabled")));
+        PluginSettingsSectionSchema schema = new PluginSettingsSectionSchema(
+                "telegram-api-plugin",
+                "telegram",
+                "Telegram API Plugin",
+                "Telegram channel settings managed via plugin runtime.",
+                List.of(field));
+        when(pluginRegistryService.listContributions(PluginSettingsSectionSchema.class)).thenReturn(List.of(schema));
+
+        StepVerifier.create(controller.getPluginSchemas())
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    List<PluginSettingsSectionSchema> body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals(1, body.size());
+                    assertEquals("telegram", body.get(0).sectionKey());
                 })
                 .verifyComplete();
     }

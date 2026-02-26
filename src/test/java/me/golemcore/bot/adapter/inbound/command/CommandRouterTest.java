@@ -25,6 +25,7 @@ import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.domain.service.SessionRunCoordinator;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.plugin.context.PluginToolCatalog;
 import me.golemcore.bot.port.inbound.CommandPort;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
@@ -156,9 +157,9 @@ class CommandRouterTest {
 
         router = new CommandRouter(
                 skillComponent,
-                List.of(tool1, tool2, tool3),
-                sessionService,
+                PluginToolCatalog.forTesting(List.of(tool1, tool2, tool3)),
                 usageTracker,
+                sessionService,
                 preferencesService,
                 compactionService,
                 autoModeService,
@@ -204,6 +205,8 @@ class CommandRouterTest {
         assertTrue(router.hasCommand("stop"));
         assertFalse(router.hasCommand("unknown"));
         assertFalse(router.hasCommand("settings"));
+        assertTrue(router.hasCommand("sessions", "telegram"));
+        assertFalse(router.hasCommand("sessions", "web"));
     }
 
     @Test
@@ -386,7 +389,7 @@ class CommandRouterTest {
     void helpCommand() throws Exception {
         CommandPort.CommandResult result = router.execute("help", List.of(), CTX).get();
         assertTrue(result.success());
-        assertTrue(result.output().contains("command.help.text"));
+        assertTrue(result.output().contains("command.help.header"));
     }
 
     @Test
@@ -404,8 +407,8 @@ class CommandRouterTest {
                 "chatId", "abc");
 
         CommandPort.CommandResult result = router.execute("sessions", List.of(), webCtx).get();
-        assertTrue(result.success());
-        assertTrue(result.output().contains("command.sessions.not-available"));
+        assertFalse(result.success());
+        assertTrue(result.output().contains("command.unknown"));
     }
 
     @Test

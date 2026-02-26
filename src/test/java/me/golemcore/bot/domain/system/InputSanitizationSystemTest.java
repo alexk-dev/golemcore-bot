@@ -3,7 +3,9 @@ package me.golemcore.bot.domain.system;
 import me.golemcore.bot.domain.component.SanitizerComponent;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.plugin.context.PluginPortResolver;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -14,7 +16,6 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
-import me.golemcore.bot.domain.model.ContextAttributes;
 
 class InputSanitizationSystemTest {
 
@@ -31,7 +32,8 @@ class InputSanitizationSystemTest {
     @BeforeEach
     void setUp() {
         sanitizerComponent = mock(SanitizerComponent.class);
-        system = new InputSanitizationSystem(sanitizerComponent);
+        system = new InputSanitizationSystem(
+                PluginPortResolver.forTesting(null, null, sanitizerComponent, null));
     }
 
     private AgentContext contextWith(List<Message> messages) {

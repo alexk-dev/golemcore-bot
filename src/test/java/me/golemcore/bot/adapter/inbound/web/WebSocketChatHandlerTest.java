@@ -1,5 +1,6 @@
 package me.golemcore.bot.adapter.inbound.web;
 
+import me.golemcore.bot.adapter.inbound.command.WebCommandPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.adapter.inbound.web.security.JwtTokenProvider;
 import me.golemcore.bot.domain.loop.AgentLoop;
@@ -46,7 +47,7 @@ class WebSocketChatHandlerTest {
     private ApplicationEventPublisher eventPublisher;
     private ActiveSessionPointerService pointerService;
     @SuppressWarnings("unchecked")
-    private ObjectProvider<CommandPort> commandRouterProvider = mock(ObjectProvider.class);
+    private ObjectProvider<WebCommandPort> commandRouterProvider = mock(ObjectProvider.class);
     private WebSocketChatHandler handler;
 
     @BeforeEach
@@ -237,9 +238,9 @@ class WebSocketChatHandlerTest {
 
     @Test
     void shouldRouteSlashCommandToCommandRouter() {
-        CommandPort commandRouter = mock(CommandPort.class);
+        WebCommandPort commandRouter = mock(WebCommandPort.class);
         when(commandRouterProvider.getIfAvailable()).thenReturn(commandRouter);
-        when(commandRouter.hasCommand("status")).thenReturn(true);
+        when(commandRouter.hasCommand("status", "web")).thenReturn(true);
         when(commandRouter.execute(eq("status"), anyList(), anyMap()))
                 .thenReturn(CompletableFuture.completedFuture(
                         CommandPort.CommandResult.success("Bot status: OK")));
@@ -266,9 +267,9 @@ class WebSocketChatHandlerTest {
 
     @Test
     void shouldBindSessionForFirstCommandAndRouteResponseToSameChat() {
-        CommandPort commandRouter = mock(CommandPort.class);
+        WebCommandPort commandRouter = mock(WebCommandPort.class);
         when(commandRouterProvider.getIfAvailable()).thenReturn(commandRouter);
-        when(commandRouter.hasCommand("status")).thenReturn(true);
+        when(commandRouter.hasCommand("status", "web")).thenReturn(true);
         when(commandRouter.execute(eq("status"), anyList(), anyMap()))
                 .thenReturn(CompletableFuture.completedFuture(
                         CommandPort.CommandResult.success("Bot status: OK")));
@@ -302,9 +303,9 @@ class WebSocketChatHandlerTest {
 
     @Test
     void shouldPassConsistentSessionConversationContextForCommandExecution() {
-        CommandPort commandRouter = mock(CommandPort.class);
+        WebCommandPort commandRouter = mock(WebCommandPort.class);
         when(commandRouterProvider.getIfAvailable()).thenReturn(commandRouter);
-        when(commandRouter.hasCommand("status")).thenReturn(true);
+        when(commandRouter.hasCommand("status", "web")).thenReturn(true);
         when(commandRouter.execute(eq("status"), anyList(), anyMap()))
                 .thenReturn(CompletableFuture.completedFuture(
                         CommandPort.CommandResult.success("Bot status: OK")));
@@ -340,9 +341,9 @@ class WebSocketChatHandlerTest {
 
     @Test
     void shouldPassCommandArgumentsCorrectly() {
-        CommandPort commandRouter = mock(CommandPort.class);
+        WebCommandPort commandRouter = mock(WebCommandPort.class);
         when(commandRouterProvider.getIfAvailable()).thenReturn(commandRouter);
-        when(commandRouter.hasCommand("tier")).thenReturn(true);
+        when(commandRouter.hasCommand("tier", "web")).thenReturn(true);
         when(commandRouter.execute(eq("tier"), anyList(), anyMap()))
                 .thenReturn(CompletableFuture.completedFuture(
                         CommandPort.CommandResult.success("Tier set to smart")));
@@ -368,9 +369,9 @@ class WebSocketChatHandlerTest {
 
     @Test
     void shouldFallThroughWhenCommandNotRegistered() {
-        CommandPort commandRouter = mock(CommandPort.class);
+        WebCommandPort commandRouter = mock(WebCommandPort.class);
         when(commandRouterProvider.getIfAvailable()).thenReturn(commandRouter);
-        when(commandRouter.hasCommand("unknown")).thenReturn(false);
+        when(commandRouter.hasCommand("unknown", "web")).thenReturn(false);
 
         handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider,
                 pointerService);
@@ -393,9 +394,9 @@ class WebSocketChatHandlerTest {
 
     @Test
     void shouldHandleCommandExecutionFailure() {
-        CommandPort commandRouter = mock(CommandPort.class);
+        WebCommandPort commandRouter = mock(WebCommandPort.class);
         when(commandRouterProvider.getIfAvailable()).thenReturn(commandRouter);
-        when(commandRouter.hasCommand("broken")).thenReturn(true);
+        when(commandRouter.hasCommand("broken", "web")).thenReturn(true);
         when(commandRouter.execute(eq("broken"), anyList(), anyMap()))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("boom")));
 

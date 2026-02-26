@@ -6,6 +6,7 @@ import me.golemcore.bot.adapter.inbound.web.logstream.DashboardLogService;
 import me.golemcore.bot.domain.component.BrowserComponent;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.plugin.context.PluginChannelCatalog;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.BrowserPort;
 import me.golemcore.bot.port.outbound.StoragePort;
@@ -82,7 +83,7 @@ class SystemControllerTest {
         when(browserComponent.isAvailable()).thenReturn(true);
 
         controller = new SystemController(
-                List.of(telegramPort, webPort),
+                PluginChannelCatalog.forTesting(List.of(telegramPort, webPort)),
                 botProperties,
                 runtimeConfigService,
                 storagePort,

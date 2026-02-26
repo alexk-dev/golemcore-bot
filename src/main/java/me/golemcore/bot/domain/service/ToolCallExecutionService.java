@@ -9,9 +9,11 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.port.outbound.ChannelCatalogPort;
+import me.golemcore.bot.port.outbound.CorePortResolver;
+import me.golemcore.bot.port.outbound.ToolCatalogPort;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.ConfirmationPort;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
 import java.util.Base64;
@@ -21,7 +23,6 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Pure tool-call execution service: executes tools + confirmation gating +
@@ -39,25 +40,21 @@ public class ToolCallExecutionService {
 
     private final Map<String, ToolComponent> toolRegistry;
     private final ToolConfirmationPolicy confirmationPolicy;
-    private final ConfirmationPort confirmationPort;
+    private final CorePortResolver pluginPortResolver;
     private final BotProperties properties;
-    private final ObjectProvider<List<ChannelPort>> channelPortsProvider;
+    private final ChannelCatalogPort pluginChannelCatalog;
 
-    private final AtomicReference<Map<String, ChannelPort>> channelRegistry = new AtomicReference<>();
-
-    public ToolCallExecutionService(List<ToolComponent> toolComponents,
+    public ToolCallExecutionService(ToolCatalogPort pluginToolCatalog,
             ToolConfirmationPolicy confirmationPolicy,
-            ConfirmationPort confirmationPort,
+            CorePortResolver pluginPortResolver,
             BotProperties properties,
-            ObjectProvider<List<ChannelPort>> channelPortsProvider) {
+            ChannelCatalogPort pluginChannelCatalog) {
         this.toolRegistry = new ConcurrentHashMap<>();
-        for (ToolComponent tool : toolComponents) {
-            toolRegistry.put(tool.getToolName(), tool);
-        }
+        registerCatalogTools(pluginToolCatalog);
         this.confirmationPolicy = confirmationPolicy;
-        this.confirmationPort = confirmationPort;
+        this.pluginPortResolver = pluginPortResolver;
         this.properties = properties;
-        this.channelPortsProvider = channelPortsProvider;
+        this.pluginChannelCatalog = pluginChannelCatalog;
     }
 
     public ToolCallExecutionResult execute(AgentContext context, Message.ToolCall toolCall) {
@@ -106,10 +103,12 @@ public class ToolCallExecutionService {
     }
 
     private boolean requiresConfirmation(Message.ToolCall toolCall) {
+        ConfirmationPort confirmationPort = pluginPortResolver.requireConfirmationPort();
         return confirmationPolicy.requiresConfirmation(toolCall) && confirmationPort.isAvailable();
     }
 
     private boolean requestConfirmation(AgentContext context, Message.ToolCall toolCall) {
+        ConfirmationPort confirmationPort = pluginPortResolver.requireConfirmationPort();
         String chatId = SessionIdentitySupport.resolveTransportChatId(context.getSession());
         String description = confirmationPolicy.describeAction(toolCall);
 
@@ -216,22 +215,39 @@ public class ToolCallExecutionService {
         if (channelType == null) {
             return null;
         }
+        return pluginChannelCatalog.getChannel(channelType);
+    }
 
-        Map<String, ChannelPort> existing = channelRegistry.get();
-        if (existing != null) {
-            return existing.get(channelType);
+    private static String resolveToolName(ToolComponent tool) {
+        if (tool == null) {
+            return null;
         }
+        try {
+            String toolName = tool.getToolName();
+            if (toolName != null && !toolName.isBlank()) {
+                return toolName;
+            }
+            if (tool.getDefinition() != null
+                    && tool.getDefinition().getName() != null
+                    && !tool.getDefinition().getName().isBlank()) {
+                return tool.getDefinition().getName();
+            }
+            return null;
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+    }
 
-        Map<String, ChannelPort> resolved = new ConcurrentHashMap<>();
-        List<ChannelPort> ports = channelPortsProvider.getIfAvailable();
-        if (ports != null) {
-            for (ChannelPort port : ports) {
-                resolved.put(port.getChannelType(), port);
+    private void registerCatalogTools(ToolCatalogPort pluginToolCatalog) {
+        if (pluginToolCatalog == null) {
+            return;
+        }
+        for (ToolComponent tool : pluginToolCatalog.getAllTools()) {
+            String toolName = resolveToolName(tool);
+            if (toolName != null) {
+                toolRegistry.put(toolName, tool);
             }
         }
-
-        channelRegistry.compareAndSet(null, resolved);
-        return resolved.get(channelType);
     }
 
     /**

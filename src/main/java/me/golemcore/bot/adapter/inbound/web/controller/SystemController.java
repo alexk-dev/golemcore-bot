@@ -7,6 +7,7 @@ import me.golemcore.bot.adapter.inbound.web.logstream.DashboardLogService;
 import me.golemcore.bot.domain.component.BrowserComponent;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.port.outbound.ChannelCatalogPort;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.beans.factory.ObjectProvider;
@@ -35,7 +36,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class SystemController {
 
-    private final List<ChannelPort> channelPorts;
+    private final ChannelCatalogPort pluginChannelCatalog;
     private final BotProperties botProperties;
     private final RuntimeConfigService runtimeConfigService;
     private final StoragePort storagePort;
@@ -49,7 +50,7 @@ public class SystemController {
         long uptimeMs = ManagementFactory.getRuntimeMXBean().getUptime();
 
         Map<String, SystemHealthResponse.ChannelStatus> channels = new LinkedHashMap<>();
-        for (ChannelPort port : channelPorts) {
+        for (ChannelPort port : pluginChannelCatalog.getAllChannels()) {
             channels.put(port.getChannelType(), SystemHealthResponse.ChannelStatus.builder()
                     .type(port.getChannelType())
                     .running(port.isRunning())
@@ -86,7 +87,7 @@ public class SystemController {
 
     @GetMapping("/channels")
     public Mono<ResponseEntity<List<Map<String, Object>>>> getChannels() {
-        List<Map<String, Object>> result = channelPorts.stream()
+        List<Map<String, Object>> result = pluginChannelCatalog.getAllChannels().stream()
                 .map(port -> {
                     Map<String, Object> ch = new LinkedHashMap<>();
                     ch.put("type", port.getChannelType());

@@ -25,6 +25,7 @@ import me.golemcore.bot.domain.model.PlanExecutionCompletedEvent;
 import me.golemcore.bot.domain.model.PlanStep;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.port.outbound.ToolCatalogPort;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
@@ -53,7 +54,7 @@ public class PlanExecutionService {
     private final BotProperties properties;
 
     public PlanExecutionService(PlanService planService,
-            List<ToolComponent> toolComponents,
+            ToolCatalogPort pluginToolCatalog,
             ApplicationEventPublisher eventPublisher,
             BotProperties properties) {
         this.planService = planService;
@@ -61,7 +62,7 @@ public class PlanExecutionService {
         this.properties = properties;
 
         this.toolRegistry = new ConcurrentHashMap<>();
-        for (ToolComponent tool : toolComponents) {
+        for (ToolComponent tool : pluginToolCatalog.getAllTools()) {
             toolRegistry.put(tool.getToolName(), tool);
         }
     }

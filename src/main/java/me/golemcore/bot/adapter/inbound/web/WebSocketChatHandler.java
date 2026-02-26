@@ -3,6 +3,7 @@ package me.golemcore.bot.adapter.inbound.web;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.adapter.inbound.command.WebCommandPort;
 import me.golemcore.bot.adapter.inbound.web.security.JwtTokenProvider;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.ActiveSessionPointerService;
@@ -45,7 +46,7 @@ public class WebSocketChatHandler implements WebSocketHandler {
     private final JwtTokenProvider jwtTokenProvider;
     private final WebChannelAdapter webChannelAdapter;
     private final ObjectMapper objectMapper;
-    private final ObjectProvider<CommandPort> commandRouter;
+    private final ObjectProvider<WebCommandPort> commandRouter;
     private final ActiveSessionPointerService pointerService;
 
     @Override
@@ -124,8 +125,8 @@ public class WebSocketChatHandler implements WebSocketHandler {
         }
         webChannelAdapter.bindConnectionToChatId(connectionId, sessionId);
 
-        CommandPort router = commandRouter.getIfAvailable();
-        if (router == null || !router.hasCommand(cmd)) {
+        WebCommandPort router = commandRouter.getIfAvailable();
+        if (router == null || !router.hasCommand(cmd, CHANNEL_TYPE)) {
             return false;
         }
 

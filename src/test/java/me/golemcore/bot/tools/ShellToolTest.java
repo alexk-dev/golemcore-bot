@@ -3,7 +3,7 @@ package me.golemcore.bot.tools;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
-import me.golemcore.bot.security.InjectionGuard;
+import me.golemcore.bot.plugin.builtin.security.InjectionGuard;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledOnOs;

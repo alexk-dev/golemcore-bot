@@ -1,8 +1,9 @@
 package me.golemcore.bot.infrastructure.config;
 
-import me.golemcore.bot.adapter.outbound.browser.PlaywrightDriverBundleService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.ChannelCatalogPort;
+import me.golemcore.bot.plugin.builtin.browser.adapter.PlaywrightDriverBundleService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
@@ -22,6 +23,8 @@ import static org.mockito.Mockito.when;
 class AutoConfigurationTest {
 
     @Mock
+    private ChannelCatalogPort channelCatalogPort;
+    @Mock
     private RuntimeConfigService runtimeConfigService;
     @Mock
     private PlaywrightDriverBundleService playwrightDriverBundleService;
@@ -33,6 +36,7 @@ class AutoConfigurationTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
+        when(channelCatalogPort.getAllChannels()).thenReturn(List.of());
         when(runtimeConfigService.getBalancedModel()).thenReturn("openai/gpt-5.1");
         when(buildPropertiesProvider.getIfAvailable()).thenReturn(null);
         when(gitPropertiesProvider.getIfAvailable()).thenReturn(null);
@@ -46,7 +50,7 @@ class AutoConfigurationTest {
 
         AutoConfiguration autoConfiguration = new AutoConfiguration(
                 properties,
-                List.of(),
+                channelCatalogPort,
                 runtimeConfigService,
                 playwrightDriverBundleService,
                 buildPropertiesProvider,
@@ -64,7 +68,7 @@ class AutoConfigurationTest {
 
         AutoConfiguration autoConfiguration = new AutoConfiguration(
                 properties,
-                List.of(),
+                channelCatalogPort,
                 runtimeConfigService,
                 playwrightDriverBundleService,
                 buildPropertiesProvider,
@@ -83,7 +87,7 @@ class AutoConfigurationTest {
 
         AutoConfiguration autoConfiguration = new AutoConfiguration(
                 properties,
-                List.of(),
+                channelCatalogPort,
                 runtimeConfigService,
                 playwrightDriverBundleService,
                 buildPropertiesProvider,
@@ -102,11 +106,12 @@ class AutoConfigurationTest {
 
         ChannelPort channelPort = org.mockito.Mockito.mock(ChannelPort.class);
         when(channelPort.getChannelType()).thenReturn("webhook");
+        when(channelCatalogPort.getAllChannels()).thenReturn(List.of(channelPort));
         when(runtimeConfigService.isBrowserEnabled()).thenReturn(false);
 
         AutoConfiguration autoConfiguration = new AutoConfiguration(
                 properties,
-                List.of(channelPort),
+                channelCatalogPort,
                 runtimeConfigService,
                 playwrightDriverBundleService,
                 buildPropertiesProvider,

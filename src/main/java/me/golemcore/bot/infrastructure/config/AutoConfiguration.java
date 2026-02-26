@@ -19,6 +19,7 @@ package me.golemcore.bot.infrastructure.config;
  */
 
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.port.outbound.ChannelCatalogPort;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -33,11 +34,10 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import me.golemcore.bot.adapter.outbound.browser.PlaywrightDriverBundleService;
+import me.golemcore.bot.plugin.builtin.browser.adapter.PlaywrightDriverBundleService;
 
 import java.time.Clock;
 import java.nio.file.Path;
-import java.util.List;
 
 /**
  * Spring auto-configuration that initializes and starts the bot on application
@@ -63,7 +63,7 @@ import java.util.List;
 public class AutoConfiguration {
 
     private final BotProperties properties;
-    private final List<ChannelPort> channelPorts;
+    private final ChannelCatalogPort pluginChannelCatalog;
     private final RuntimeConfigService runtimeConfigService;
     private final PlaywrightDriverBundleService playwrightDriverBundleService;
     private final ObjectProvider<BuildProperties> buildPropertiesProvider;
@@ -96,7 +96,7 @@ public class AutoConfiguration {
         preparePlaywrightDriver();
 
         // Auto-start enabled channels
-        for (ChannelPort channel : channelPorts) {
+        for (ChannelPort channel : pluginChannelCatalog.getAllChannels()) {
             String channelType = channel.getChannelType();
 
             boolean enabled = "telegram".equals(channelType)

@@ -21,6 +21,7 @@ package me.golemcore.bot.domain.system;
 import me.golemcore.bot.domain.component.SanitizerComponent;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.port.outbound.CorePortResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -38,7 +39,7 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 @Slf4j
 public class InputSanitizationSystem implements AgentSystem {
 
-    private final SanitizerComponent sanitizerComponent;
+    private final CorePortResolver pluginPortResolver;
 
     @Override
     public String getName() {
@@ -68,6 +69,7 @@ public class InputSanitizationSystem implements AgentSystem {
         }
 
         // Check and sanitize
+        SanitizerComponent sanitizerComponent = pluginPortResolver.requireSanitizerComponent();
         SanitizerComponent.SanitizationResult result = sanitizerComponent.check(originalContent);
 
         if (!result.safe()) {

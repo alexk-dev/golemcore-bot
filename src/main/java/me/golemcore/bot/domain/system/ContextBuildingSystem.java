@@ -43,6 +43,8 @@ import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.WorkspaceInstructionService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.port.outbound.CorePortResolver;
+import me.golemcore.bot.port.outbound.ToolCatalogPort;
 import me.golemcore.bot.port.outbound.McpPort;
 import me.golemcore.bot.port.outbound.RagPort;
 import lombok.RequiredArgsConstructor;
@@ -73,11 +75,11 @@ public class ContextBuildingSystem implements AgentSystem {
 
     private final MemoryComponent memoryComponent;
     private final SkillComponent skillComponent;
-    private final List<ToolComponent> toolComponents;
+    private final ToolCatalogPort pluginToolCatalog;
     private final SkillTemplateEngine templateEngine;
     private final McpPort mcpPort;
     private final ToolCallExecutionService toolCallExecutionService;
-    private final RagPort ragPort;
+    private final CorePortResolver pluginPortResolver;
     private final BotProperties properties;
     private final AutoModeService autoModeService;
     private final PlanService planService;
@@ -168,7 +170,7 @@ public class ContextBuildingSystem implements AgentSystem {
                 skillsSummary != null ? skillsSummary.length() : 0);
 
         // Collect tool definitions (native + MCP)
-        List<ToolDefinition> tools = new ArrayList<>(toolComponents.stream()
+        List<ToolDefinition> tools = new ArrayList<>(pluginToolCatalog.getAllTools().stream()
                 .filter(ToolComponent::isEnabled)
                 .filter(tool -> isToolAdvertised(tool, planModeActive))
                 .map(ToolComponent::getDefinition)
@@ -202,6 +204,7 @@ public class ContextBuildingSystem implements AgentSystem {
         }
 
         // Retrieve RAG context if available
+        RagPort ragPort = pluginPortResolver.requireRagPort();
         if (ragPort.isAvailable()) {
             String userQuery = getLastUserMessageText(context);
             if (userQuery != null && !userQuery.isBlank()) {
