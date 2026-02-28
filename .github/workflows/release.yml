@@ -39,9 +39,17 @@ jobs:
             exit 0
           fi
 
+          if LAST_TAG_PARENT=$(git rev-parse "${LAST_TAG_COMMIT}^" 2>/dev/null); then
+            if git merge-base --is-ancestor "${LAST_TAG_PARENT}" HEAD; then
+              echo "Latest tag ${LAST_TAG} commit is not on main, but its parent is reachable."
+              echo "This is expected for tag-only release mode."
+              exit 0
+            fi
+          fi
+
           echo "::error::Latest tag ${LAST_TAG} (${LAST_TAG_COMMIT}) is not reachable from main (${GITHUB_SHA})."
           echo "::error::Release history is divergent."
-          echo "::error::Fix by force-moving the tag to a commit reachable from main (tag-only operation), then rerun release."
+          echo "::error::Fix by force-moving the tag to a commit reachable from main, or to a tag-only release commit whose parent is reachable from main; then rerun release."
           exit 1
 
       - name: Cocogitto release
