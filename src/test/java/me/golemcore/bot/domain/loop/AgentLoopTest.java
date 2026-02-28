@@ -1311,6 +1311,86 @@ class AgentLoopTest {
     }
 
     @Test
+    void shouldFallbackWhenOnlyAttachmentsPendingAndRoutingSystemMissing() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(eq("system.error.generic.feedback"))).thenReturn("Something went wrong");
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+
+        AgentSession session = AgentSession.builder()
+                .id("s1").channelType(CHANNEL_TYPE).chatId("1")
+                .messages(new ArrayList<>()).build();
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "1")).thenReturn(session);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+
+        AgentSystem attachmentsOnlySystem = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "attachmentsOnly";
+            }
+
+            @Override
+            public int getOrder() {
+                return 1;
+            }
+
+            @Override
+            public boolean shouldProcess(AgentContext context) {
+                return true;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                me.golemcore.bot.domain.model.Attachment attachment = me.golemcore.bot.domain.model.Attachment.builder()
+                        .type(me.golemcore.bot.domain.model.Attachment.Type.IMAGE)
+                        .data(new byte[] { 1, 2, 3 })
+                        .filename("img.png")
+                        .caption("img")
+                        .build();
+                context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.builder()
+                        .attachment(attachment)
+                        .build());
+                return context;
+            }
+        };
+
+        AgentLoop loop = new AgentLoop(
+                sessionPort,
+                rateLimitPort,
+                List.of(attachmentsOnlySystem),
+                List.of(channel),
+                mockRuntimeConfigService(1),
+                preferencesService,
+                llmPort,
+                clock);
+
+        Message inbound = Message.builder()
+                .role(ROLE_USER)
+                .content("send image")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .senderId("u1")
+                .timestamp(clock.instant())
+                .build();
+
+        loop.processMessage(inbound);
+
+        verify(preferencesService, atLeastOnce()).getMessage("system.error.generic.feedback");
+        verify(channel, never()).sendPhoto(any(), any(), any(), any());
+        verify(channel, never()).sendMessage(eq("1"), eq("Something went wrong"), any());
+    }
+
+    @Test
     void shouldFallbackToGenericFeedbackWhenLlmInterpretationTimesOut() {
         SessionPort sessionPort = mock(SessionPort.class);
         RateLimitPort rateLimitPort = mock(RateLimitPort.class);

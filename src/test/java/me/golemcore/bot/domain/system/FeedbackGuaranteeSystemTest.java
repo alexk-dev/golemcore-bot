@@ -21,6 +21,7 @@ package me.golemcore.bot.domain.system;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.SkillTransitionRequest;
@@ -168,6 +169,26 @@ class FeedbackGuaranteeSystemTest {
         OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
         assertNotNull(outgoing);
         assertEquals(customFallback, outgoing.getText());
+    }
+
+    @Test
+    void shouldProduceFallbackWhenLlmResponseExistsWithoutRouting() {
+        AgentContext context = buildContextWithMessages(List.of(
+                Message.builder()
+                        .role(ROLE_USER)
+                        .content(HELLO)
+                        .timestamp(Instant.now())
+                        .build()));
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, LlmResponse.builder()
+                .content("answer not routed")
+                .finishReason("stop")
+                .build());
+
+        AgentContext result = system.process(context);
+
+        OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        assertNotNull(outgoing);
+        assertEquals(FALLBACK_TEXT, outgoing.getText());
     }
 
     // ── process: defensive guards ──
