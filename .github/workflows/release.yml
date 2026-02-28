@@ -23,6 +23,25 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Preflight release tag ancestry
+        run: |
+          git fetch --tags --force
+          LAST_TAG=$(git tag --list 'v*' --sort=-version:refname | head -n 1)
+          if [[ -z "${LAST_TAG}" ]]; then
+            echo "No existing release tags found. Continuing."
+            exit 0
+          fi
+
+          LAST_TAG_COMMIT=$(git rev-list -n 1 "${LAST_TAG}")
+          if git merge-base --is-ancestor "${LAST_TAG_COMMIT}" HEAD; then
+            echo "Latest tag ${LAST_TAG} is reachable from main."
+            exit 0
+          fi
+
+          echo "::error::Latest tag ${LAST_TAG} (${LAST_TAG_COMMIT}) is not reachable from main (${GITHUB_SHA})."
+          echo "::error::Release history is divergent. Merge the release commit into main before bumping again."
+          exit 1
+
       - name: Cocogitto release
         id: release
         continue-on-error: true
@@ -40,6 +59,13 @@ jobs:
           if [[ "${RELEASE_STDOUT_LOWER}" == *"no conventional commit"* ]]; then
             echo "No releasable conventional commits found. Skipping release."
             exit 0
+          fi
+
+          if [[ "${RELEASE_STDOUT_LOWER}" == *"tag already exists"* ]]; then
+            echo "::error::Cocogitto tried to create an existing tag."
+            echo "::error::Most likely reason: release tag/main history divergence."
+            echo "${{ steps.release.outputs.stdout }}"
+            exit 1
           fi
 
           echo "Cocogitto failed with unexpected error:"
