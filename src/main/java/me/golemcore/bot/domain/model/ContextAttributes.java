@@ -45,6 +45,9 @@ public final class ContextAttributes {
     /** OutgoingResponse ? response to route to the user (transport contract). */
     public static final String OUTGOING_RESPONSE = "outgoing.response";
 
+    /** RoutingOutcome ? transport routing delivery result for the current turn. */
+    public static final String ROUTING_OUTCOME = "routing.outcome";
+
     /** Duration ? latency of the last LLM call (best-effort). */
     public static final String LLM_LATENCY = "llm.latency";
 

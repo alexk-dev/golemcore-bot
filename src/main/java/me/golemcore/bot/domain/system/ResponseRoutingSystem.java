@@ -142,7 +142,7 @@ public class ResponseRoutingSystem implements AgentSystem {
                     .build();
             context.setTurnOutcome(updated);
         }
-        context.setAttribute("routing.outcome", routingOutcome);
+        context.setAttribute(ContextAttributes.ROUTING_OUTCOME, routingOutcome);
     }
 
     // --- OutgoingResponse handlers ---

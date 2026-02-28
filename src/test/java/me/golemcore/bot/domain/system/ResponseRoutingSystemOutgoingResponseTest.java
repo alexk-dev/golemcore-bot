@@ -51,7 +51,7 @@ class ResponseRoutingSystemOutgoingResponseTest {
         system.process(context);
 
         verify(channel).sendMessage(eq(CHAT_ID), eq("hello"), any());
-        RoutingOutcome outcome1 = context.getAttribute("routing.outcome");
+        RoutingOutcome outcome1 = context.getAttribute(ContextAttributes.ROUTING_OUTCOME);
         assertThat(outcome1).isNotNull();
         assertThat(outcome1.isSentText()).isTrue();
     }
@@ -88,7 +88,7 @@ class ResponseRoutingSystemOutgoingResponseTest {
         system.process(context);
 
         verify(channel).sendMessage(eq(CHAT_ID), eq("from-outgoing"), any());
-        RoutingOutcome outcome2 = context.getAttribute("routing.outcome");
+        RoutingOutcome outcome2 = context.getAttribute(ContextAttributes.ROUTING_OUTCOME);
         assertThat(outcome2).isNotNull();
         assertThat(outcome2.isSentText()).isTrue();
     }
@@ -121,7 +121,7 @@ class ResponseRoutingSystemOutgoingResponseTest {
 
         system.process(context);
 
-        RoutingOutcome outcome = context.getAttribute("routing.outcome");
+        RoutingOutcome outcome = context.getAttribute(ContextAttributes.ROUTING_OUTCOME);
         assertThat(outcome).isNotNull();
         assertThat(outcome.isAttempted()).isTrue();
         assertThat(outcome.isSentText()).isTrue();

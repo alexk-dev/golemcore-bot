@@ -403,17 +403,19 @@ public class AgentLoop {
     }
 
     private void ensureFeedback(AgentContext context) {
-        // Check typed RoutingOutcome first, then fall back to attribute
         TurnOutcome outcome = context.getTurnOutcome();
-        if (outcome != null && outcome.getRoutingOutcome() != null && outcome.getRoutingOutcome().isSentText()) {
+        RoutingOutcome routingOutcome = outcome != null ? outcome.getRoutingOutcome() : null;
+        if (isDeliverySuccessful(routingOutcome)) {
             return;
         }
-        RoutingOutcome routingAttr = context.getAttribute("routing.outcome");
-        if (routingAttr != null && routingAttr.isSentText()) {
+
+        RoutingOutcome routingAttr = context.getAttribute(ContextAttributes.ROUTING_OUTCOME);
+        if (isDeliverySuccessful(routingAttr)) {
             return;
         }
 
         if (isAutoModeContext(context)) {
+            log.debug("[AgentLoop] Feedback guarantee skipped: auto mode context");
             return;
         }
 
@@ -427,8 +429,49 @@ public class AgentLoop {
 
         // Last resort: generic feedback.
         String generic = preferencesService.getMessage("system.error.generic.feedback");
-        log.info("[AgentLoop] Feedback guarantee: routing generic feedback");
+        OutgoingResponse outgoing = context.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        String llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
+        log.warn(
+                "[AgentLoop] Feedback guarantee fallback triggered: routing generic feedback "
+                        + "(turnRoutingOutcome={}, attributeRoutingOutcome={}, outgoingResponse={}, llmErrorPresent={}, failures={})",
+                describeRoutingOutcome(routingOutcome), describeRoutingOutcome(routingAttr),
+                describeOutgoingResponse(outgoing), llmError != null && !llmError.isBlank(),
+                context.getFailures().size());
         routeSyntheticAssistantResponse(context, generic, "stop");
+    }
+
+    private boolean isDeliverySuccessful(RoutingOutcome routingOutcome) {
+        if (routingOutcome == null) {
+            return false;
+        }
+        if (routingOutcome.isSentText()) {
+            return true;
+        }
+        if (routingOutcome.isSentVoice()) {
+            return true;
+        }
+        return routingOutcome.getSentAttachments() > 0;
+    }
+
+    private String describeRoutingOutcome(RoutingOutcome routingOutcome) {
+        if (routingOutcome == null) {
+            return "<null>";
+        }
+        return String.format("attempted=%s,sentText=%s,sentVoice=%s,sentAttachments=%d,error=%s",
+                routingOutcome.isAttempted(), routingOutcome.isSentText(), routingOutcome.isSentVoice(),
+                routingOutcome.getSentAttachments(), truncate(routingOutcome.getErrorMessage(), 160));
+    }
+
+    private String describeOutgoingResponse(OutgoingResponse outgoing) {
+        if (outgoing == null) {
+            return "<null>";
+        }
+
+        String text = outgoing.getText();
+        int textLength = text != null ? text.length() : 0;
+        int attachmentCount = outgoing.getAttachments() != null ? outgoing.getAttachments().size() : 0;
+        return String.format("textLength=%d,voiceRequested=%s,voiceTextPresent=%s,attachments=%d",
+                textLength, outgoing.isVoiceRequested(), outgoing.getVoiceText() != null, attachmentCount);
     }
 
     private boolean tryUnsentLlmResponse(AgentContext context) {
