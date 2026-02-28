@@ -204,6 +204,20 @@ class TelegramAdapterHandleMessageTest {
         verify(messageHandler, never()).accept(any());
     }
 
+    @Test
+    void shouldResendPersistentMenuAfterCommand() throws Exception {
+        when(commandRouter.hasCommand(COMMAND_HELP)).thenReturn(true);
+        when(commandRouter.execute(eq(COMMAND_HELP), eq(List.of()), any()))
+                .thenReturn(CompletableFuture.completedFuture(CommandPort.CommandResult.success("Help text")));
+        when(telegramClient.execute(any(SendMessage.class)))
+                .thenReturn(mock(org.telegram.telegrambots.meta.api.objects.message.Message.class));
+
+        adapter.consume(createTextUpdate(123L, 100L, "/menu"));
+        adapter.consume(createTextUpdate(123L, 100L, "/help"));
+
+        verify(menuHandler).resendPersistentMenuIfEnabled("100");
+    }
+
     // ===== Unknown command passthrough =====
 
     @Test
