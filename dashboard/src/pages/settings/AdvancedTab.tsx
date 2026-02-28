@@ -38,7 +38,7 @@ function RateLimitCard({ rl, setRl }: RateLimitCardProps): ReactElement {
           title="Rate Limiting"
           tip="Throttle user requests to prevent abuse and manage API costs"
         />
-        <Form.Check type="switch" label="Enable" checked={rl.enabled ?? true}
+        <Form.Check type="switch" label="Enable" checked={rl.enabled ?? false}
           onChange={(e) => setRl({ ...rl, enabled: e.target.checked })} className="mb-3" />
         <Form.Group className="mb-2">
           <Form.Label className="small fw-medium">

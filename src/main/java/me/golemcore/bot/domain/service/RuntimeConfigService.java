@@ -601,7 +601,7 @@ public class RuntimeConfigService {
 
     public boolean isAutoModeEnabled() {
         Boolean val = getRuntimeConfig().getAutoMode().getEnabled();
-        return val != null && val;
+        return val != null ? val : true;
     }
 
     public int getAutoTickIntervalSeconds() {
@@ -638,7 +638,7 @@ public class RuntimeConfigService {
 
     public boolean isRateLimitEnabled() {
         Boolean val = getRuntimeConfig().getRateLimit().getEnabled();
-        return val != null ? val : true;
+        return val != null ? val : false;
     }
 
     public int getUserRequestsPerMinute() {
