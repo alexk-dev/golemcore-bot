@@ -39,20 +39,9 @@ jobs:
             exit 0
           fi
 
-          echo "::warning::Latest tag ${LAST_TAG} (${LAST_TAG_COMMIT}) is not reachable from main (${GITHUB_SHA})."
-          echo "::warning::Trying to auto-restore ancestry with an ours-merge commit."
-
-          git config user.name 'github-actions[bot]'
-          git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git merge --no-ff -s ours "${LAST_TAG_COMMIT}" -m "chore(ci): reattach ${LAST_TAG} ancestry [skip ci]"
-          git push origin HEAD:main
-
-          if git merge-base --is-ancestor "${LAST_TAG_COMMIT}" HEAD; then
-            echo "Ancestry restored for ${LAST_TAG}."
-            exit 0
-          fi
-
-          echo "::error::Failed to restore ancestry for ${LAST_TAG}."
+          echo "::error::Latest tag ${LAST_TAG} (${LAST_TAG_COMMIT}) is not reachable from main (${GITHUB_SHA})."
+          echo "::error::Release history is divergent."
+          echo "::error::Fix by force-moving the tag to a commit reachable from main (tag-only operation), then rerun release."
           exit 1
 
       - name: Cocogitto release
@@ -85,9 +74,9 @@ jobs:
           echo "${{ steps.release.outputs.stdout }}"
           exit 1
 
-      - name: Push release commit and tag
+      - name: Push release tag only
         if: steps.release.outputs.version != ''
-        run: git push origin HEAD:main "${{ steps.release.outputs.version }}"
+        run: git push origin "${{ steps.release.outputs.version }}"
 
       - name: Set up JDK 25
         if: steps.release.outputs.version != ''
@@ -143,5 +132,5 @@ jobs:
         run: |
           echo "## Release ${{ steps.release.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Tag \`${{ steps.release.outputs.version }}\` created and pushed." >> $GITHUB_STEP_SUMMARY
+          echo "Tag \`${{ steps.release.outputs.version }}\` pushed (main push intentionally disabled by branch rules)." >> $GITHUB_STEP_SUMMARY
           echo "GitHub Release with \`bot-*.jar\` and \`sha256sums.txt\` was published." >> $GITHUB_STEP_SUMMARY
