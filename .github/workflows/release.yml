@@ -52,6 +52,30 @@ jobs:
           echo "::error::Fix by force-moving the tag to a commit reachable from main, or to a tag-only release commit whose parent is reachable from main; then rerun release."
           exit 1
 
+      - name: Normalize local tag-only release base
+        run: |
+          set -euo pipefail
+          LAST_TAG=$(git tag --list 'v*' --sort=-version:refname | head -n 1)
+          if [[ -z "${LAST_TAG}" ]]; then
+            echo "No existing release tags found. Skipping local normalization."
+            exit 0
+          fi
+
+          LAST_TAG_COMMIT=$(git rev-list -n 1 "${LAST_TAG}")
+          if git merge-base --is-ancestor "${LAST_TAG_COMMIT}" HEAD; then
+            echo "Latest tag ${LAST_TAG} is already reachable from main."
+            exit 0
+          fi
+
+          LAST_TAG_PARENT=$(git rev-parse "${LAST_TAG_COMMIT}^" 2>/dev/null || true)
+          if [[ -n "${LAST_TAG_PARENT}" ]] && git merge-base --is-ancestor "${LAST_TAG_PARENT}" HEAD; then
+            git tag -f "${LAST_TAG}" "${LAST_TAG_PARENT}"
+            echo "Retargeted local ${LAST_TAG} -> ${LAST_TAG_PARENT} for deterministic bump base."
+            exit 0
+          fi
+
+          echo "Latest tag ${LAST_TAG} is not in tag-only shape. Skipping local normalization."
+
       - name: Cocogitto release
         id: release
         continue-on-error: true
