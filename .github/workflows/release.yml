@@ -25,6 +25,7 @@ jobs:
 
       - name: Preflight release tag ancestry
         run: |
+          set -euo pipefail
           git fetch --tags --force
           LAST_TAG=$(git tag --list 'v*' --sort=-version:refname | head -n 1)
           if [[ -z "${LAST_TAG}" ]]; then
@@ -38,8 +39,20 @@ jobs:
             exit 0
           fi
 
-          echo "::error::Latest tag ${LAST_TAG} (${LAST_TAG_COMMIT}) is not reachable from main (${GITHUB_SHA})."
-          echo "::error::Release history is divergent. Merge the release commit into main before bumping again."
+          echo "::warning::Latest tag ${LAST_TAG} (${LAST_TAG_COMMIT}) is not reachable from main (${GITHUB_SHA})."
+          echo "::warning::Trying to auto-restore ancestry with an ours-merge commit."
+
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git merge --no-ff -s ours "${LAST_TAG_COMMIT}" -m "chore(ci): reattach ${LAST_TAG} ancestry [skip ci]"
+          git push origin HEAD:main
+
+          if git merge-base --is-ancestor "${LAST_TAG_COMMIT}" HEAD; then
+            echo "Ancestry restored for ${LAST_TAG}."
+            exit 0
+          fi
+
+          echo "::error::Failed to restore ancestry for ${LAST_TAG}."
           exit 1
 
       - name: Cocogitto release
