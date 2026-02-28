@@ -92,8 +92,18 @@ public class FeedbackGuaranteeSystem implements AgentSystem {
 
         String message = preferencesService.getMessage("system.error.generic.feedback");
         String reasonCode = classifyFallbackReason(context);
-        log.warn("[FeedbackGuarantee] Producing fallback OutgoingResponse (reason={}, failures={})",
-                reasonCode, context.getFailures().size());
+        LlmResponse llmResponse = context.getAttribute(ContextAttributes.LLM_RESPONSE);
+        String llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
+        String llmErrorCode = context.getAttribute(ContextAttributes.LLM_ERROR_CODE);
+        log.warn(
+                "[FeedbackGuarantee] Producing fallback OutgoingResponse "
+                        + "(reason={}, failures={}, llmErrorCode={}, llmErrorPresent={}, finalAnswerReady={}, llmResponse={})",
+                reasonCode,
+                context.getFailures().size(),
+                llmErrorCode,
+                llmError != null && !llmError.isBlank(),
+                Boolean.TRUE.equals(context.getAttribute(ContextAttributes.FINAL_ANSWER_READY)),
+                describeLlmResponse(llmResponse));
         context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly(message));
         return context;
     }
@@ -109,6 +119,20 @@ public class FeedbackGuaranteeSystem implements AgentSystem {
         }
         Message last = context.getMessages().get(context.getMessages().size() - 1);
         return last.getMetadata() != null && Boolean.TRUE.equals(last.getMetadata().get("auto.mode"));
+    }
+
+    private String describeLlmResponse(LlmResponse response) {
+        if (response == null) {
+            return "<null>";
+        }
+
+        String content = response.getContent();
+        int contentLength = content != null ? content.length() : 0;
+        String finishReason = response.getFinishReason();
+        return String.format("contentLength=%d,hasToolCalls=%s,finishReason=%s",
+                contentLength,
+                response.hasToolCalls(),
+                finishReason != null ? finishReason : "unknown");
     }
 
     private String classifyFallbackReason(AgentContext context) {

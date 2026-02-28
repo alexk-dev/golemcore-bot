@@ -40,7 +40,7 @@ class ResponseRoutingSystemTest {
     private static final String MSG_VOICE_QUOTA = "Voice quota exceeded!";
     private static final String CONTENT_RESPONSE = "response";
     private static final String VOICE_TEXT_CONTENT = "Voice text";
-    private static final String ATTR_ROUTING_OUTCOME = "routing.outcome";
+    private static final String ATTR_ROUTING_OUTCOME = ContextAttributes.ROUTING_OUTCOME;
     private static final String CONTENT_HELLO = "hello";
 
     private ResponseRoutingSystem system;

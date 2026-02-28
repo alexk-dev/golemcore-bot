@@ -955,6 +955,184 @@ class AgentLoopTest {
     }
 
     @Test
+    void shouldSkipFeedbackWhenTurnOutcomeReportsAttachmentDelivery() {
+        // Arrange
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn("generic fallback");
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .messages(new ArrayList<>())
+                .build();
+
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "1")).thenReturn(session);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+        when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        AgentSystem turnOutcomeSystem = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "turnOutcomeSetter";
+            }
+
+            @Override
+            public int getOrder() {
+                return 1;
+            }
+
+            @Override
+            public boolean shouldProcess(AgentContext context) {
+                return true;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                RoutingOutcome routingOutcome = RoutingOutcome.builder()
+                        .attempted(true)
+                        .sentText(false)
+                        .sentAttachments(1)
+                        .build();
+                TurnOutcome outcome = TurnOutcome.builder()
+                        .finishReason(FinishReason.SUCCESS)
+                        .routingOutcome(routingOutcome)
+                        .build();
+                context.setTurnOutcome(outcome);
+                return context;
+            }
+        };
+
+        ResponseRoutingSystem routingSystem = new ResponseRoutingSystem(
+                List.of(channel), preferencesService, mock(VoiceResponseHandler.class));
+
+        AgentLoop loop = new AgentLoop(
+                sessionPort,
+                rateLimitPort,
+                List.of(turnOutcomeSystem, routingSystem),
+                List.of(channel),
+                mockRuntimeConfigService(1),
+                preferencesService,
+                llmPort,
+                clock);
+
+        Message inbound = Message.builder()
+                .role(ROLE_USER)
+                .content("hi")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .senderId("u1")
+                .timestamp(clock.instant())
+                .build();
+
+        // Act
+        loop.processMessage(inbound);
+
+        // Assert
+        verify(channel, never()).sendMessage(eq("1"), eq("generic fallback"), any());
+    }
+
+    @Test
+    void shouldSkipFeedbackWhenRoutingOutcomeAttributeReportsVoiceDelivery() {
+        // Arrange
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn("generic fallback");
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .messages(new ArrayList<>())
+                .build();
+
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "1")).thenReturn(session);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+        when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        AgentSystem routingOutcomeAttributeSystem = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "routingOutcomeAttributeSetter";
+            }
+
+            @Override
+            public int getOrder() {
+                return 1;
+            }
+
+            @Override
+            public boolean shouldProcess(AgentContext context) {
+                return true;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                RoutingOutcome routingOutcome = RoutingOutcome.builder()
+                        .attempted(true)
+                        .sentText(false)
+                        .sentVoice(true)
+                        .build();
+                context.setAttribute(ContextAttributes.ROUTING_OUTCOME, routingOutcome);
+                return context;
+            }
+        };
+
+        ResponseRoutingSystem routingSystem = new ResponseRoutingSystem(
+                List.of(channel), preferencesService, mock(VoiceResponseHandler.class));
+
+        AgentLoop loop = new AgentLoop(
+                sessionPort,
+                rateLimitPort,
+                List.of(routingOutcomeAttributeSystem, routingSystem),
+                List.of(channel),
+                mockRuntimeConfigService(1),
+                preferencesService,
+                llmPort,
+                clock);
+
+        Message inbound = Message.builder()
+                .role(ROLE_USER)
+                .content("hi")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .senderId("u1")
+                .timestamp(clock.instant())
+                .build();
+
+        // Act
+        loop.processMessage(inbound);
+
+        // Assert
+        verify(channel, never()).sendMessage(eq("1"), eq("generic fallback"), any());
+    }
+
+    @Test
     void shouldNotifyUserWhenRateLimited() {
         SessionPort sessionPort = mock(SessionPort.class);
         RateLimitPort rateLimitPort = mock(RateLimitPort.class);
@@ -1130,6 +1308,86 @@ class AgentLoopTest {
         loop.processMessage(inbound);
 
         verify(channel, atLeastOnce()).sendMessage(eq("1"), eq("Limit reached (1)"), any());
+    }
+
+    @Test
+    void shouldFallbackWhenOnlyAttachmentsPendingAndRoutingSystemMissing() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(eq("system.error.generic.feedback"))).thenReturn("Something went wrong");
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+
+        AgentSession session = AgentSession.builder()
+                .id("s1").channelType(CHANNEL_TYPE).chatId("1")
+                .messages(new ArrayList<>()).build();
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "1")).thenReturn(session);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+
+        AgentSystem attachmentsOnlySystem = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "attachmentsOnly";
+            }
+
+            @Override
+            public int getOrder() {
+                return 1;
+            }
+
+            @Override
+            public boolean shouldProcess(AgentContext context) {
+                return true;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                me.golemcore.bot.domain.model.Attachment attachment = me.golemcore.bot.domain.model.Attachment.builder()
+                        .type(me.golemcore.bot.domain.model.Attachment.Type.IMAGE)
+                        .data(new byte[] { 1, 2, 3 })
+                        .filename("img.png")
+                        .caption("img")
+                        .build();
+                context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.builder()
+                        .attachment(attachment)
+                        .build());
+                return context;
+            }
+        };
+
+        AgentLoop loop = new AgentLoop(
+                sessionPort,
+                rateLimitPort,
+                List.of(attachmentsOnlySystem),
+                List.of(channel),
+                mockRuntimeConfigService(1),
+                preferencesService,
+                llmPort,
+                clock);
+
+        Message inbound = Message.builder()
+                .role(ROLE_USER)
+                .content("send image")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .senderId("u1")
+                .timestamp(clock.instant())
+                .build();
+
+        loop.processMessage(inbound);
+
+        verify(preferencesService, atLeastOnce()).getMessage("system.error.generic.feedback");
+        verify(channel, never()).sendPhoto(any(), any(), any(), any());
+        verify(channel, never()).sendMessage(eq("1"), eq("Something went wrong"), any());
     }
 
     @Test

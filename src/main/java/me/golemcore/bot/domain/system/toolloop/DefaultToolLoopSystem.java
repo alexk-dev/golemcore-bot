@@ -161,8 +161,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 if (emptyReasonCode != null) {
                     if (emptyFinalResponseRetries < EMPTY_FINAL_RESPONSE_MAX_RETRIES) {
                         emptyFinalResponseRetries++;
-                        log.warn("[ToolLoop] Empty final LLM response (code={}, retry {}/{}), retrying",
-                                emptyReasonCode, emptyFinalResponseRetries, EMPTY_FINAL_RESPONSE_MAX_RETRIES);
+                        logEmptyFinalResponseRetry(context, response, emptyReasonCode, emptyFinalResponseRetries);
                         continue;
                     }
                     return failEmptyFinalResponse(context, response, emptyReasonCode, llmCalls, toolExecutions);
@@ -297,6 +296,25 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 diagnostic,
                 clock.instant()));
         return new ToolLoopTurnResult(context, false, llmCalls, toolExecutions);
+    }
+
+    private void logEmptyFinalResponseRetry(AgentContext context, LlmResponse response, String reasonCode,
+            int retryAttempt) {
+        String model = context.getAttribute(ContextAttributes.LLM_MODEL);
+        String finishReason = response != null ? response.getFinishReason() : null;
+        String content = response != null ? response.getContent() : null;
+        int contentLength = content != null ? content.length() : 0;
+        boolean hasToolCalls = response != null && response.hasToolCalls();
+        log.warn(
+                "[ToolLoop] Empty final LLM response, scheduling retry "
+                        + "(code={}, retry={}/{}, model={}, finishReason={}, contentLength={}, hasToolCalls={})",
+                reasonCode,
+                retryAttempt,
+                EMPTY_FINAL_RESPONSE_MAX_RETRIES,
+                model != null ? model : "unknown",
+                finishReason != null ? finishReason : "unknown",
+                contentLength,
+                hasToolCalls);
     }
 
     private ToolLoopTurnResult failLlmInvocation(AgentContext context, Throwable throwable, int llmCalls,
