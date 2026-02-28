@@ -422,9 +422,11 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
                     try {
                         CommandPort.CommandResult result = router.execute(cmd, args, ctx).join();
                         sendMessage(chatId, result.output());
+                        menuHandler.resendPersistentMenuIfEnabled(chatId);
                     } catch (Exception e) {
                         log.error("Command execution failed: /{}", cmd, e);
                         sendMessage(chatId, "Command failed: " + e.getMessage());
+                        menuHandler.resendPersistentMenuIfEnabled(chatId);
                     }
                     return;
                 }

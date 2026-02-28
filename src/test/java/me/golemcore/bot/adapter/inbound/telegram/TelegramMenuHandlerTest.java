@@ -1,12 +1,14 @@
 package me.golemcore.bot.adapter.inbound.telegram;
 
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.domain.service.TelegramSessionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
@@ -52,6 +54,7 @@ class TelegramMenuHandlerTest {
     private ModelSelectionService modelSelectionService;
     private AutoModeService autoModeService;
     private PlanService planService;
+    private ScheduleService scheduleService;
     private TelegramSessionService telegramSessionService;
     private CommandPort commandRouter;
 
@@ -71,6 +74,7 @@ class TelegramMenuHandlerTest {
         modelSelectionService = mock(ModelSelectionService.class);
         autoModeService = mock(AutoModeService.class);
         planService = mock(PlanService.class);
+        scheduleService = mock(ScheduleService.class);
         telegramSessionService = mock(TelegramSessionService.class);
         MessageService messageService = mock(MessageService.class);
         commandRouter = mock(CommandPort.class);
@@ -83,6 +87,7 @@ class TelegramMenuHandlerTest {
                 modelSelectionService,
                 autoModeService,
                 planService,
+                scheduleService,
                 telegramSessionService,
                 messageService,
                 new TestObjectProvider<>(commandRouter));
@@ -105,6 +110,7 @@ class TelegramMenuHandlerTest {
                         .messages(List.of()).build(),
                 AgentSession.builder().id("telegram:conv-2").channelType("telegram").chatId("conv-2")
                         .messages(List.of()).build()));
+        when(scheduleService.getSchedules()).thenReturn(List.of());
     }
 
     // ==================== sendMainMenu ====================
@@ -471,6 +477,96 @@ class TelegramMenuHandlerTest {
 
         verify(planService).deactivatePlanMode(new SessionIdentity("telegram", "conv-1"));
         verify(telegramClient).execute(any(EditMessageText.class));
+    }
+
+    @Test
+    void shouldResendPersistentMenuWhenEnabled() throws Exception {
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        org.telegram.telegrambots.meta.api.objects.message.Message sentMessage = mock(
+                org.telegram.telegrambots.meta.api.objects.message.Message.class);
+        when(sentMessage.getMessageId()).thenReturn(77);
+        when(telegramClient.execute(any(SendMessage.class))).thenReturn(sentMessage);
+        when(telegramClient.execute(any(EditMessageText.class)))
+                .thenReturn(mock(Serializable.class));
+
+        handler.sendMainMenu(CHAT_ID);
+        handler.resendPersistentMenuIfEnabled(CHAT_ID);
+
+        verify(telegramClient, org.mockito.Mockito.times(1)).execute(any(SendMessage.class));
+        verify(telegramClient, org.mockito.Mockito.times(1)).execute(any(EditMessageText.class));
+    }
+
+    @Test
+    void shouldStopResendingMenuAfterClose() throws Exception {
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(telegramClient.execute(any(SendMessage.class)))
+                .thenReturn(mock(org.telegram.telegrambots.meta.api.objects.message.Message.class));
+        when(telegramClient.execute(any(DeleteMessage.class))).thenReturn(true);
+
+        handler.sendMainMenu(CHAT_ID);
+        handler.handleCallback(CHAT_ID, MSG_ID, "menu:close");
+        handler.resendPersistentMenuIfEnabled(CHAT_ID);
+
+        verify(telegramClient, org.mockito.Mockito.times(1)).execute(any(SendMessage.class));
+    }
+
+    @Test
+    void shouldShowPaginationButtonsInGoalsMenu() throws Exception {
+        Goal goal1 = Goal.builder().id("g1").title("Goal 1").tasks(List.of()).build();
+        Goal goal2 = Goal.builder().id("g2").title("Goal 2").tasks(List.of()).build();
+        Goal goal3 = Goal.builder().id("g3").title("Goal 3").tasks(List.of()).build();
+        Goal goal4 = Goal.builder().id("g4").title("Goal 4").tasks(List.of()).build();
+        Goal goal5 = Goal.builder().id("g5").title("Goal 5").tasks(List.of()).build();
+        Goal goal6 = Goal.builder().id("g6").title("Goal 6").tasks(List.of()).build();
+        Goal goal7 = Goal.builder().id("g7").title("Goal 7").tasks(List.of()).build();
+
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+        when(autoModeService.getGoals()).thenReturn(List.of(goal1, goal2, goal3, goal4, goal5, goal6, goal7));
+        when(telegramClient.execute(any(EditMessageText.class))).thenReturn(mock(Serializable.class));
+
+        handler.handleCallback(CHAT_ID, MSG_ID, "menu:autoMenu:goals");
+
+        ArgumentCaptor<EditMessageText> captor = ArgumentCaptor.forClass(EditMessageText.class);
+        verify(telegramClient).execute(captor.capture());
+        InlineKeyboardMarkup keyboard = captor.getValue().getReplyMarkup();
+        assertTrue(hasButtonWithCallback(keyboard, "menu:autoMenu:noop"));
+        assertTrue(hasButtonWithCallback(keyboard, "menu:autoMenu:goalsNext"));
+    }
+
+    @Test
+    void shouldRequireDeleteConfirmationForGoal() throws Exception {
+        Goal goal = Goal.builder().id("g1").title("Goal 1").tasks(List.of()).build();
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+        when(autoModeService.getGoals()).thenReturn(List.of(goal));
+        when(autoModeService.getGoal("g1")).thenReturn(java.util.Optional.of(goal));
+        when(telegramClient.execute(any(EditMessageText.class))).thenReturn(mock(Serializable.class));
+
+        handler.handleCallback(CHAT_ID, MSG_ID, "menu:autoMenu:goals");
+        handler.handleCallback(CHAT_ID, MSG_ID, "menu:autoMenu:goal:0");
+        handler.handleCallback(CHAT_ID, MSG_ID, "menu:autoMenu:goalDeleteConfirm:0");
+
+        verify(autoModeService, never()).deleteGoal(anyString());
+        handler.handleCallback(CHAT_ID, MSG_ID, "menu:autoMenu:goalDelete:0");
+        verify(autoModeService).deleteGoal("g1");
+    }
+
+    @Test
+    void shouldOpenAutoManagementMenu() throws Exception {
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+        when(telegramClient.execute(any(EditMessageText.class)))
+                .thenReturn(mock(Serializable.class));
+
+        handler.handleCallback(CHAT_ID, MSG_ID, "menu:autoMenu");
+
+        ArgumentCaptor<EditMessageText> captor = ArgumentCaptor.forClass(EditMessageText.class);
+        verify(telegramClient).execute(captor.capture());
+        InlineKeyboardMarkup keyboard = captor.getValue().getReplyMarkup();
+        assertTrue(hasButtonWithCallback(keyboard, "menu:autoMenu:goals"));
+        assertTrue(hasButtonWithCallback(keyboard, "menu:autoMenu:tasks"));
+        assertTrue(hasButtonWithCallback(keyboard, "menu:autoMenu:schedules"));
     }
 
     // ==================== Non-menu callback ====================

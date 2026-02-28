@@ -20,12 +20,16 @@ package me.golemcore.bot.adapter.inbound.telegram;
 
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.AutoTask;
+import me.golemcore.bot.domain.model.Goal;
+import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import me.golemcore.bot.domain.service.TelegramSessionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -38,17 +42,22 @@ import org.telegram.telegrambots.client.okhttp.OkHttpTelegramClient;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessage;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
+import org.telegram.telegrambots.meta.api.objects.message.Message;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -87,6 +96,12 @@ public class TelegramMenuHandler {
     private static final int RECENT_SESSIONS_LIMIT = 5;
     private static final int SESSION_TITLE_MAX_LEN = 22;
     private static final int SESSION_INDEX_CACHE_MAX_ENTRIES = 1024;
+    private static final int MAX_GOAL_BUTTONS = 6;
+    private static final int MAX_TASK_BUTTONS = 8;
+    private static final int MAX_SCHEDULE_BUTTONS = 8;
+    private static final int MAX_TELEGRAM_CALLBACK_DATA_LENGTH = 64;
+    private static final DateTimeFormatter SCHEDULE_TIME_FORMAT = DateTimeFormatter.ofPattern("MM-dd HH:mm")
+            .withZone(ZoneOffset.UTC);
     private static final Set<String> VALID_TIERS = Set.of(TIER_BALANCED, TIER_SMART, TIER_CODING, TIER_DEEP);
 
     private final BotProperties properties;
@@ -95,6 +110,7 @@ public class TelegramMenuHandler {
     private final ModelSelectionService modelSelectionService;
     private final AutoModeService autoModeService;
     private final PlanService planService;
+    private final ScheduleService scheduleService;
     private final TelegramSessionService telegramSessionService;
     private final MessageService messageService;
     private final ObjectProvider<CommandPort> commandRouter;
@@ -102,6 +118,14 @@ public class TelegramMenuHandler {
     private final AtomicReference<TelegramClient> telegramClient = new AtomicReference<>();
     private final Map<String, List<String>> sessionIndexCache = Collections
             .synchronizedMap(new SessionIndexCache(SESSION_INDEX_CACHE_MAX_ENTRIES));
+    private final Map<String, List<String>> goalIndexCache = new ConcurrentHashMap<>();
+    private final Map<String, List<String>> taskIndexCache = new ConcurrentHashMap<>();
+    private final Map<String, List<String>> scheduleIndexCache = new ConcurrentHashMap<>();
+    private final Map<String, Integer> goalPageByChat = new ConcurrentHashMap<>();
+    private final Map<String, Integer> taskPageByChat = new ConcurrentHashMap<>();
+    private final Map<String, Integer> schedulePageByChat = new ConcurrentHashMap<>();
+    private final Map<String, Boolean> persistentMenuByChat = new ConcurrentHashMap<>();
+    private final Map<String, Integer> persistentMenuMessageIdByChat = new ConcurrentHashMap<>();
 
     public TelegramMenuHandler(
             BotProperties properties,
@@ -110,6 +134,7 @@ public class TelegramMenuHandler {
             ModelSelectionService modelSelectionService,
             AutoModeService autoModeService,
             PlanService planService,
+            ScheduleService scheduleService,
             TelegramSessionService telegramSessionService,
             MessageService messageService,
             ObjectProvider<CommandPort> commandRouter) {
@@ -119,6 +144,7 @@ public class TelegramMenuHandler {
         this.modelSelectionService = modelSelectionService;
         this.autoModeService = autoModeService;
         this.planService = planService;
+        this.scheduleService = scheduleService;
         this.telegramSessionService = telegramSessionService;
         this.messageService = messageService;
         this.commandRouter = commandRouter;
@@ -136,6 +162,16 @@ public class TelegramMenuHandler {
         @Override
         protected boolean removeEldestEntry(Map.Entry<String, List<String>> eldest) {
             return size() > maxEntries;
+        }
+    }
+
+    private static final class TaskContext {
+        private final Goal goal;
+        private final AutoTask task;
+
+        private TaskContext(Goal goal, AutoTask task) {
+            this.goal = goal;
+            this.task = task;
         }
     }
 
@@ -182,7 +218,11 @@ public class TelegramMenuHandler {
                     .parseMode("HTML")
                     .replyMarkup(buildMainMenuKeyboard(chatId))
                     .build();
-            client.execute(message);
+            Message sentMessage = client.execute(message);
+            persistentMenuByChat.put(chatId, true);
+            if (sentMessage != null && sentMessage.getMessageId() != null) {
+                persistentMenuMessageIdByChat.put(chatId, sentMessage.getMessageId());
+            }
             log.debug("[Menu] Sent main menu to chat: {}", chatId);
         } catch (Exception e) {
             log.error("[Menu] Failed to send main menu", e);
@@ -213,11 +253,42 @@ public class TelegramMenuHandler {
     }
 
     /**
+     * Re-send the main menu after command execution when persistent menu mode is
+     * enabled for this chat.
+     */
+    void resendPersistentMenuIfEnabled(String chatId) {
+        if (!isPersistentMenuEnabled(chatId)) {
+            return;
+        }
+
+        Integer messageId = persistentMenuMessageIdByChat.get(chatId);
+        if (messageId != null) {
+            boolean updated = editMessage(chatId, messageId, buildMainMenuText(chatId), buildMainMenuKeyboard(chatId));
+            if (updated) {
+                return;
+            }
+            log.warn("[Menu] Failed to refresh persistent menu via edit, sending a new menu message. chatId={}",
+                    chatId);
+        }
+
+        sendMainMenu(chatId);
+    }
+
+    private boolean isPersistentMenuEnabled(String chatId) {
+        return Boolean.TRUE.equals(persistentMenuByChat.get(chatId));
+    }
+
+    /**
      * Handle a menu:* callback query. Returns true if the callback was handled.
      */
     boolean handleCallback(String chatId, Integer messageId, String data) {
         if (!data.startsWith(CALLBACK_PREFIX)) {
             return false;
+        }
+
+        if (messageId != null) {
+            persistentMenuByChat.put(chatId, true);
+            persistentMenuMessageIdByChat.put(chatId, messageId);
         }
 
         String payload = data.substring(CALLBACK_PREFIX.length());
@@ -233,6 +304,9 @@ public class TelegramMenuHandler {
         switch (section) {
         case "main":
             updateToMainMenu(chatId, messageId);
+            break;
+        case "autoMenu":
+            handleAutoMenuCallback(chatId, messageId, action);
             break;
         case "tier":
             handleTierCallback(chatId, messageId, action);
@@ -318,6 +392,10 @@ public class TelegramMenuHandler {
         rows.add(row(
                 button(msg("menu.btn.help"), "menu:help"),
                 button(msg("menu.btn.close"), "menu:close")));
+
+        if (autoModeService.isFeatureEnabled()) {
+            rows.add(row(button(msg("menu.btn.auto.manage"), "menu:autoMenu")));
+        }
 
         return InlineKeyboardMarkup.builder().keyboard(rows).build();
     }
@@ -469,6 +547,915 @@ public class TelegramMenuHandler {
         return InlineKeyboardMarkup.builder().keyboard(rows).build();
     }
 
+    // ==================== Auto mode menu ====================
+
+    private void handleAutoMenuCallback(String chatId, Integer messageId, String action) {
+        if (!autoModeService.isFeatureEnabled()) {
+            updateToMainMenu(chatId, messageId);
+            return;
+        }
+
+        if (action == null || action.isBlank() || "refresh".equals(action)) {
+            updateToAutoMenu(chatId, messageId);
+            return;
+        }
+
+        if ("noop".equals(action)) {
+            return;
+        }
+
+        if (ACTION_BACK.equals(action)) {
+            clearAutoMenuCaches(chatId);
+            updateToMainMenu(chatId, messageId);
+            return;
+        }
+
+        if ("goals".equals(action)) {
+            goalPageByChat.put(chatId, 0);
+            updateToAutoGoalsMenu(chatId, messageId);
+            return;
+        }
+
+        if ("tasks".equals(action)) {
+            taskPageByChat.put(chatId, 0);
+            updateToAutoTasksMenu(chatId, messageId);
+            return;
+        }
+
+        if ("schedules".equals(action)) {
+            schedulePageByChat.put(chatId, 0);
+            updateToAutoSchedulesMenu(chatId, messageId);
+            return;
+        }
+
+        if ("goalsPrev".equals(action)) {
+            adjustPage(goalPageByChat, chatId, -1);
+            updateToAutoGoalsMenu(chatId, messageId);
+            return;
+        }
+
+        if ("goalsNext".equals(action)) {
+            adjustPage(goalPageByChat, chatId, 1);
+            updateToAutoGoalsMenu(chatId, messageId);
+            return;
+        }
+
+        if ("tasksPrev".equals(action)) {
+            adjustPage(taskPageByChat, chatId, -1);
+            updateToAutoTasksMenu(chatId, messageId);
+            return;
+        }
+
+        if ("tasksNext".equals(action)) {
+            adjustPage(taskPageByChat, chatId, 1);
+            updateToAutoTasksMenu(chatId, messageId);
+            return;
+        }
+
+        if ("schedulesPrev".equals(action)) {
+            adjustPage(schedulePageByChat, chatId, -1);
+            updateToAutoSchedulesMenu(chatId, messageId);
+            return;
+        }
+
+        if ("schedulesNext".equals(action)) {
+            adjustPage(schedulePageByChat, chatId, 1);
+            updateToAutoSchedulesMenu(chatId, messageId);
+            return;
+        }
+
+        if ("createGoal".equals(action)) {
+            sendSeparateMessage(chatId, msg("menu.auto.create-goal.hint"));
+            updateToAutoGoalsMenu(chatId, messageId);
+            return;
+        }
+
+        Integer goalDetailIndex = parseIndexAction(action, "goal:");
+        if (goalDetailIndex != null) {
+            showGoalDetail(chatId, messageId, goalDetailIndex);
+            return;
+        }
+
+        Integer goalDoneIndex = parseIndexAction(action, "goalDone:");
+        if (goalDoneIndex != null) {
+            handleGoalComplete(chatId, messageId, goalDoneIndex);
+            return;
+        }
+
+        Integer goalDeleteConfirmIndex = parseIndexAction(action, "goalDeleteConfirm:");
+        if (goalDeleteConfirmIndex != null) {
+            showGoalDeleteConfirm(chatId, messageId, goalDeleteConfirmIndex);
+            return;
+        }
+
+        Integer goalDeleteIndex = parseIndexAction(action, "goalDelete:");
+        if (goalDeleteIndex != null) {
+            handleGoalDelete(chatId, messageId, goalDeleteIndex);
+            return;
+        }
+
+        Integer goalDailyIndex = parseIndexAction(action, "goalDaily:");
+        if (goalDailyIndex != null) {
+            handleGoalDailySchedule(chatId, messageId, goalDailyIndex);
+            return;
+        }
+
+        Integer taskDetailIndex = parseIndexAction(action, "task:");
+        if (taskDetailIndex != null) {
+            showTaskDetail(chatId, messageId, taskDetailIndex);
+            return;
+        }
+
+        Integer taskDeleteConfirmIndex = parseIndexAction(action, "taskDeleteConfirm:");
+        if (taskDeleteConfirmIndex != null) {
+            showTaskDeleteConfirm(chatId, messageId, taskDeleteConfirmIndex);
+            return;
+        }
+
+        Integer taskDeleteIndex = parseIndexAction(action, "taskDelete:");
+        if (taskDeleteIndex != null) {
+            handleTaskDelete(chatId, messageId, taskDeleteIndex);
+            return;
+        }
+
+        Integer taskDailyIndex = parseIndexAction(action, "taskDaily:");
+        if (taskDailyIndex != null) {
+            handleTaskDailySchedule(chatId, messageId, taskDailyIndex);
+            return;
+        }
+
+        if (action.startsWith("taskSet:")) {
+            handleTaskStatusUpdate(chatId, messageId, action);
+            return;
+        }
+
+        Integer scheduleDeleteConfirmIndex = parseIndexAction(action, "scheduleDelConfirm:");
+        if (scheduleDeleteConfirmIndex != null) {
+            showScheduleDeleteConfirm(chatId, messageId, scheduleDeleteConfirmIndex);
+            return;
+        }
+
+        Integer scheduleDeleteIndex = parseIndexAction(action, "scheduleDel:");
+        if (scheduleDeleteIndex != null) {
+            handleScheduleDelete(chatId, messageId, scheduleDeleteIndex);
+            return;
+        }
+
+        updateToAutoMenu(chatId, messageId);
+    }
+
+    private void updateToAutoMenu(String chatId, Integer messageId) {
+        editMessage(chatId, messageId, buildAutoMenuText(), buildAutoMenuKeyboard());
+    }
+
+    private void updateToAutoGoalsMenu(String chatId, Integer messageId) {
+        editMessage(chatId, messageId, buildAutoGoalsText(chatId), buildAutoGoalsKeyboard(chatId));
+    }
+
+    private void updateToAutoTasksMenu(String chatId, Integer messageId) {
+        editMessage(chatId, messageId, buildAutoTasksText(chatId), buildAutoTasksKeyboard(chatId));
+    }
+
+    private void updateToAutoSchedulesMenu(String chatId, Integer messageId) {
+        editMessage(chatId, messageId, buildAutoSchedulesText(chatId), buildAutoSchedulesKeyboard(chatId));
+    }
+
+    private String buildAutoMenuText() {
+        List<Goal> goals = autoModeService.getGoals();
+        long activeGoals = goals.stream().filter(goal -> goal.getStatus() == Goal.GoalStatus.ACTIVE).count();
+        int totalTasks = goals.stream().mapToInt(goal -> goal.getTasks().size()).sum();
+        long pendingTasks = goals.stream()
+                .flatMap(goal -> goal.getTasks().stream())
+                .filter(task -> task.getStatus() == AutoTask.TaskStatus.PENDING
+                        || task.getStatus() == AutoTask.TaskStatus.IN_PROGRESS)
+                .count();
+        int schedules = scheduleService.getSchedules().size();
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(HTML_BOLD_OPEN).append(msg("menu.auto.title")).append(HTML_BOLD_CLOSE_NL);
+        sb.append(msg("menu.auto.status", autoModeService.isAutoModeEnabled() ? ON : OFF)).append("\n");
+        sb.append(msg("menu.auto.goals", activeGoals, goals.size())).append("\n");
+        sb.append(msg("menu.auto.tasks", pendingTasks, totalTasks)).append("\n");
+        sb.append(msg("menu.auto.schedules", schedules));
+        return sb.toString();
+    }
+
+    private InlineKeyboardMarkup buildAutoMenuKeyboard() {
+        List<InlineKeyboardRow> rows = new ArrayList<>();
+        rows.add(row(
+                button(msg("menu.auto.btn.goals"), "menu:autoMenu:goals"),
+                button(msg("menu.auto.btn.tasks"), "menu:autoMenu:tasks")));
+        rows.add(row(button(msg("menu.auto.btn.schedules"), "menu:autoMenu:schedules")));
+        rows.add(row(button(msg("menu.auto.btn.create-goal"), "menu:autoMenu:createGoal")));
+        rows.add(row(
+                button(msg("menu.auto.btn.refresh"), "menu:autoMenu:refresh"),
+                button(msg("menu.btn.back"), "menu:autoMenu:back")));
+        return InlineKeyboardMarkup.builder().keyboard(rows).build();
+    }
+
+    private String buildAutoGoalsText(String chatId) {
+        List<Goal> goals = autoModeService.getGoals();
+        if (goals.isEmpty()) {
+            goalIndexCache.remove(chatId);
+            goalPageByChat.remove(chatId);
+            return HTML_BOLD_OPEN + msg("menu.auto.goals.title") + HTML_BOLD_CLOSE_NL + msg("menu.auto.goals.empty");
+        }
+
+        int page = normalizePage(goalPageByChat, chatId, goals.size(), MAX_GOAL_BUTTONS);
+        int start = page * MAX_GOAL_BUTTONS;
+        int end = Math.min(start + MAX_GOAL_BUTTONS, goals.size());
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(HTML_BOLD_OPEN).append(msg("menu.auto.goals.title")).append(HTML_BOLD_CLOSE_NL);
+        sb.append(msg("menu.auto.page", page + 1, totalPages(goals.size(), MAX_GOAL_BUTTONS))).append("\n\n");
+
+        for (int index = start; index < end; index++) {
+            Goal goal = goals.get(index);
+            long completedTasks = goal.getCompletedTaskCount();
+            int totalTasks = goal.getTasks().size();
+            sb.append(index + 1)
+                    .append(". ")
+                    .append(goalStatusIcon(goal))
+                    .append(" ")
+                    .append(escapeHtml(truncate(goal.getTitle(), SESSION_TITLE_MAX_LEN + 8)))
+                    .append(" (")
+                    .append(completedTasks)
+                    .append("/")
+                    .append(totalTasks)
+                    .append(")")
+                    .append("\n");
+        }
+
+        return sb.toString().trim();
+    }
+
+    private InlineKeyboardMarkup buildAutoGoalsKeyboard(String chatId) {
+        List<Goal> goals = autoModeService.getGoals();
+        List<String> goalIds = new ArrayList<>();
+        List<InlineKeyboardRow> rows = new ArrayList<>();
+
+        int page = normalizePage(goalPageByChat, chatId, goals.size(), MAX_GOAL_BUTTONS);
+        int start = page * MAX_GOAL_BUTTONS;
+        int end = Math.min(start + MAX_GOAL_BUTTONS, goals.size());
+
+        for (int index = start; index < end; index++) {
+            Goal goal = goals.get(index);
+            goalIds.add(goal.getId());
+            int pageIndex = index - start;
+            String callbackData = "menu:autoMenu:goal:" + pageIndex;
+            String label = goalStatusIcon(goal) + " " + truncate(goal.getTitle(), 18);
+            rows.add(row(button(label, callbackData)));
+        }
+
+        goalIndexCache.put(chatId, List.copyOf(goalIds));
+        rows.add(buildPaginationRow(page, goals.size(), MAX_GOAL_BUTTONS, "menu:autoMenu:goalsPrev",
+                "menu:autoMenu:goalsNext"));
+        rows.add(row(button(msg("menu.auto.btn.create-goal"), "menu:autoMenu:createGoal")));
+        rows.add(row(button(msg("menu.auto.btn.refresh"), "menu:autoMenu:goals")));
+        rows.add(row(button(msg("menu.btn.back"), "menu:autoMenu:back")));
+
+        return InlineKeyboardMarkup.builder().keyboard(rows).build();
+    }
+
+    private void showGoalDetail(String chatId, Integer messageId, int goalIndex) {
+        Optional<Goal> goalOptional = resolveGoalByIndex(chatId, goalIndex);
+        if (goalOptional.isEmpty()) {
+            updateToAutoGoalsMenu(chatId, messageId);
+            return;
+        }
+
+        Goal goal = goalOptional.get();
+        editMessage(chatId, messageId, buildGoalDetailText(goal), buildGoalDetailKeyboard(goalIndex, goal));
+    }
+
+    private String buildGoalDetailText(Goal goal) {
+        long completedTasks = goal.getCompletedTaskCount();
+        int totalTasks = goal.getTasks().size();
+        int schedulesCount = scheduleService.findSchedulesForTarget(goal.getId()).size();
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(HTML_BOLD_OPEN)
+                .append(msg("menu.auto.goal.title", escapeHtml(goal.getTitle())))
+                .append(HTML_BOLD_CLOSE_NL);
+        sb.append(msg("menu.auto.goal.status", localizedGoalStatus(goal.getStatus()))).append("\n");
+        sb.append(msg("menu.auto.goal.tasks", completedTasks, totalTasks)).append("\n");
+        sb.append(msg("menu.auto.goal.schedules", schedulesCount)).append("\n");
+        sb.append(msg("menu.auto.goal.id", shortId(goal.getId())));
+
+        if (goal.getDescription() != null && !goal.getDescription().isBlank()) {
+            sb.append("\n\n").append(escapeHtml(goal.getDescription()));
+        }
+
+        return sb.toString();
+    }
+
+    private InlineKeyboardMarkup buildGoalDetailKeyboard(int goalIndex, Goal goal) {
+        List<InlineKeyboardRow> rows = new ArrayList<>();
+
+        if (goal.getStatus() == Goal.GoalStatus.ACTIVE) {
+            rows.add(row(button(msg("menu.auto.goal.btn.complete"), "menu:autoMenu:goalDone:" + goalIndex)));
+        }
+
+        rows.add(row(button(msg("menu.auto.goal.btn.schedule-daily"), "menu:autoMenu:goalDaily:" + goalIndex)));
+        rows.add(row(button(msg("menu.auto.goal.btn.delete.confirm"), "menu:autoMenu:goalDeleteConfirm:" + goalIndex)));
+        rows.add(row(button(msg("menu.btn.back"), "menu:autoMenu:goals")));
+
+        return InlineKeyboardMarkup.builder().keyboard(rows).build();
+    }
+
+    private void handleGoalComplete(String chatId, Integer messageId, int goalIndex) {
+        Optional<Goal> goalOptional = resolveGoalByIndex(chatId, goalIndex);
+        if (goalOptional.isEmpty()) {
+            updateToAutoGoalsMenu(chatId, messageId);
+            return;
+        }
+
+        Goal goal = goalOptional.get();
+        if (goal.getStatus() == Goal.GoalStatus.ACTIVE) {
+            try {
+                autoModeService.completeGoal(goal.getId());
+                sendSeparateMessage(chatId, msg("menu.auto.goal.done", escapeHtml(goal.getTitle())));
+            } catch (Exception e) {
+                log.warn("[Menu] Failed to complete goal {}", goal.getId(), e);
+            }
+        }
+
+        updateToAutoGoalsMenu(chatId, messageId);
+    }
+
+    private void showGoalDeleteConfirm(String chatId, Integer messageId, int goalIndex) {
+        Optional<Goal> goalOptional = resolveGoalByIndex(chatId, goalIndex);
+        if (goalOptional.isEmpty()) {
+            updateToAutoGoalsMenu(chatId, messageId);
+            return;
+        }
+
+        Goal goal = goalOptional.get();
+        String text = HTML_BOLD_OPEN + msg("menu.auto.confirm.title") + HTML_BOLD_CLOSE_NL
+                + msg("menu.auto.confirm.goal.delete", escapeHtml(truncate(goal.getTitle(), 30)));
+        InlineKeyboardMarkup keyboard = InlineKeyboardMarkup.builder().keyboard(List.of(
+                row(button(msg("menu.auto.confirm.yes"), "menu:autoMenu:goalDelete:" + goalIndex),
+                        button(msg("menu.auto.confirm.no"), "menu:autoMenu:goal:" + goalIndex))))
+                .build();
+        editMessage(chatId, messageId, text, keyboard);
+    }
+
+    private void handleGoalDelete(String chatId, Integer messageId, int goalIndex) {
+        Optional<Goal> goalOptional = resolveGoalByIndex(chatId, goalIndex);
+        if (goalOptional.isEmpty()) {
+            updateToAutoGoalsMenu(chatId, messageId);
+            return;
+        }
+
+        Goal goal = goalOptional.get();
+        try {
+            autoModeService.deleteGoal(goal.getId());
+            sendSeparateMessage(chatId, msg("menu.auto.goal.deleted", escapeHtml(goal.getTitle())));
+        } catch (Exception e) {
+            log.warn("[Menu] Failed to delete goal {}", goal.getId(), e);
+        }
+
+        updateToAutoGoalsMenu(chatId, messageId);
+    }
+
+    private void handleGoalDailySchedule(String chatId, Integer messageId, int goalIndex) {
+        Optional<Goal> goalOptional = resolveGoalByIndex(chatId, goalIndex);
+        if (goalOptional.isEmpty()) {
+            updateToAutoGoalsMenu(chatId, messageId);
+            return;
+        }
+
+        Goal goal = goalOptional.get();
+        try {
+            ScheduleEntry entry = scheduleService.createSchedule(
+                    ScheduleEntry.ScheduleType.GOAL,
+                    goal.getId(),
+                    "0 0 9 * * *",
+                    -1);
+            sendSeparateMessage(chatId, msg("menu.auto.schedule.created", entry.getId(), entry.getCronExpression()));
+        } catch (Exception e) {
+            log.warn("[Menu] Failed to create daily goal schedule for {}", goal.getId(), e);
+            sendSeparateMessage(chatId, msg("menu.auto.schedule.create-failed"));
+        }
+
+        showGoalDetail(chatId, messageId, goalIndex);
+    }
+
+    private String buildAutoTasksText(String chatId) {
+        List<TaskContext> contexts = buildTaskContexts();
+        if (contexts.isEmpty()) {
+            taskIndexCache.remove(chatId);
+            taskPageByChat.remove(chatId);
+            return HTML_BOLD_OPEN + msg("menu.auto.tasks.title") + HTML_BOLD_CLOSE_NL + msg("menu.auto.tasks.empty");
+        }
+
+        int page = normalizePage(taskPageByChat, chatId, contexts.size(), MAX_TASK_BUTTONS);
+        int start = page * MAX_TASK_BUTTONS;
+        int end = Math.min(start + MAX_TASK_BUTTONS, contexts.size());
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(HTML_BOLD_OPEN).append(msg("menu.auto.tasks.title")).append(HTML_BOLD_CLOSE_NL);
+        sb.append(msg("menu.auto.page", page + 1, totalPages(contexts.size(), MAX_TASK_BUTTONS))).append("\n\n");
+
+        for (int index = start; index < end; index++) {
+            TaskContext context = contexts.get(index);
+            sb.append(index + 1)
+                    .append(". ")
+                    .append(taskStatusIcon(context.task))
+                    .append(" ")
+                    .append(escapeHtml(truncate(context.task.getTitle(), 20)))
+                    .append(" \u2014 ")
+                    .append(escapeHtml(truncate(context.goal.getTitle(), 14)))
+                    .append("\n");
+        }
+
+        return sb.toString().trim();
+    }
+
+    private InlineKeyboardMarkup buildAutoTasksKeyboard(String chatId) {
+        List<TaskContext> contexts = buildTaskContexts();
+        List<String> taskKeys = new ArrayList<>();
+        List<InlineKeyboardRow> rows = new ArrayList<>();
+
+        int page = normalizePage(taskPageByChat, chatId, contexts.size(), MAX_TASK_BUTTONS);
+        int start = page * MAX_TASK_BUTTONS;
+        int end = Math.min(start + MAX_TASK_BUTTONS, contexts.size());
+
+        for (int index = start; index < end; index++) {
+            TaskContext context = contexts.get(index);
+            taskKeys.add(buildTaskKey(context.goal.getId(), context.task.getId()));
+            int pageIndex = index - start;
+            String label = taskStatusIcon(context.task) + " " + truncate(context.task.getTitle(), 18);
+            rows.add(row(button(label, "menu:autoMenu:task:" + pageIndex)));
+        }
+
+        taskIndexCache.put(chatId, List.copyOf(taskKeys));
+        rows.add(buildPaginationRow(page, contexts.size(), MAX_TASK_BUTTONS, "menu:autoMenu:tasksPrev",
+                "menu:autoMenu:tasksNext"));
+        rows.add(row(button(msg("menu.auto.btn.refresh"), "menu:autoMenu:tasks")));
+        rows.add(row(button(msg("menu.btn.back"), "menu:autoMenu:back")));
+
+        return InlineKeyboardMarkup.builder().keyboard(rows).build();
+    }
+
+    private void showTaskDetail(String chatId, Integer messageId, int taskIndex) {
+        Optional<TaskContext> contextOptional = resolveTaskContextByIndex(chatId, taskIndex);
+        if (contextOptional.isEmpty()) {
+            updateToAutoTasksMenu(chatId, messageId);
+            return;
+        }
+
+        TaskContext context = contextOptional.get();
+        editMessage(chatId, messageId, buildTaskDetailText(context), buildTaskDetailKeyboard(taskIndex));
+    }
+
+    private String buildTaskDetailText(TaskContext context) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(HTML_BOLD_OPEN)
+                .append(msg("menu.auto.task.title", escapeHtml(context.task.getTitle())))
+                .append(HTML_BOLD_CLOSE_NL);
+        sb.append(msg("menu.auto.task.goal", escapeHtml(context.goal.getTitle()))).append("\n");
+        sb.append(msg("menu.auto.task.status", localizedTaskStatus(context.task.getStatus()))).append("\n");
+        sb.append(msg("menu.auto.task.id", shortId(context.task.getId())));
+
+        if (context.task.getDescription() != null && !context.task.getDescription().isBlank()) {
+            sb.append("\n\n").append(escapeHtml(context.task.getDescription()));
+        }
+
+        if (context.task.getResult() != null && !context.task.getResult().isBlank()) {
+            sb.append("\n\n").append(msg("menu.auto.task.result", escapeHtml(context.task.getResult())));
+        }
+
+        return sb.toString();
+    }
+
+    private InlineKeyboardMarkup buildTaskDetailKeyboard(int taskIndex) {
+        List<InlineKeyboardRow> rows = new ArrayList<>();
+
+        rows.add(row(
+                button(msg("menu.auto.task.btn.in-progress"), "menu:autoMenu:taskSet:" + taskIndex + ":ip"),
+                button(msg("menu.auto.task.btn.done"), "menu:autoMenu:taskSet:" + taskIndex + ":done")));
+        rows.add(row(
+                button(msg("menu.auto.task.btn.failed"), "menu:autoMenu:taskSet:" + taskIndex + ":fail"),
+                button(msg("menu.auto.task.btn.skipped"), "menu:autoMenu:taskSet:" + taskIndex + ":skip")));
+        rows.add(row(button(msg("menu.auto.task.btn.pending"), "menu:autoMenu:taskSet:" + taskIndex + ":pending")));
+        rows.add(row(button(msg("menu.auto.task.btn.schedule-daily"), "menu:autoMenu:taskDaily:" + taskIndex)));
+        rows.add(row(button(msg("menu.auto.task.btn.delete.confirm"), "menu:autoMenu:taskDeleteConfirm:" + taskIndex)));
+        rows.add(row(button(msg("menu.btn.back"), "menu:autoMenu:tasks")));
+
+        return InlineKeyboardMarkup.builder().keyboard(rows).build();
+    }
+
+    private void handleTaskStatusUpdate(String chatId, Integer messageId, String action) {
+        String payload = action.substring("taskSet:".length());
+        int separatorIndex = payload.indexOf(':');
+        if (separatorIndex <= 0 || separatorIndex >= payload.length() - 1) {
+            showTaskUpdateFailure(chatId, messageId);
+            return;
+        }
+
+        String indexPart = payload.substring(0, separatorIndex);
+        String statusPart = payload.substring(separatorIndex + 1);
+
+        int taskIndex;
+        try {
+            taskIndex = Integer.parseInt(indexPart);
+        } catch (NumberFormatException e) {
+            showTaskUpdateFailure(chatId, messageId);
+            return;
+        }
+
+        Optional<TaskContext> contextOptional = resolveTaskContextByIndex(chatId, taskIndex);
+        if (contextOptional.isEmpty()) {
+            updateToAutoTasksMenu(chatId, messageId);
+            return;
+        }
+
+        Optional<AutoTask.TaskStatus> statusOptional = parseTaskStatus(statusPart);
+        if (statusOptional.isEmpty()) {
+            showTaskUpdateFailure(chatId, messageId);
+            return;
+        }
+
+        TaskContext context = contextOptional.get();
+        try {
+            autoModeService.updateTaskStatus(
+                    context.goal.getId(),
+                    context.task.getId(),
+                    statusOptional.get(),
+                    null);
+            sendSeparateMessage(chatId, msg("menu.auto.task.updated", escapeHtml(context.task.getTitle()),
+                    localizedTaskStatus(statusOptional.get())));
+        } catch (Exception e) {
+            log.warn("[Menu] Failed to update task {}", context.task.getId(), e);
+            sendSeparateMessage(chatId, msg("menu.auto.task.update-failed"));
+        }
+
+        showTaskDetail(chatId, messageId, taskIndex);
+    }
+
+    private void showTaskDeleteConfirm(String chatId, Integer messageId, int taskIndex) {
+        Optional<TaskContext> contextOptional = resolveTaskContextByIndex(chatId, taskIndex);
+        if (contextOptional.isEmpty()) {
+            updateToAutoTasksMenu(chatId, messageId);
+            return;
+        }
+
+        TaskContext context = contextOptional.get();
+        String text = HTML_BOLD_OPEN + msg("menu.auto.confirm.title") + HTML_BOLD_CLOSE_NL
+                + msg("menu.auto.confirm.task.delete", escapeHtml(truncate(context.task.getTitle(), 30)));
+        InlineKeyboardMarkup keyboard = InlineKeyboardMarkup.builder().keyboard(List.of(
+                row(button(msg("menu.auto.confirm.yes"), "menu:autoMenu:taskDelete:" + taskIndex),
+                        button(msg("menu.auto.confirm.no"), "menu:autoMenu:task:" + taskIndex))))
+                .build();
+        editMessage(chatId, messageId, text, keyboard);
+    }
+
+    private void handleTaskDelete(String chatId, Integer messageId, int taskIndex) {
+        Optional<TaskContext> contextOptional = resolveTaskContextByIndex(chatId, taskIndex);
+        if (contextOptional.isEmpty()) {
+            updateToAutoTasksMenu(chatId, messageId);
+            return;
+        }
+
+        TaskContext context = contextOptional.get();
+        try {
+            autoModeService.deleteTask(context.goal.getId(), context.task.getId());
+            sendSeparateMessage(chatId, msg("menu.auto.task.deleted", escapeHtml(context.task.getTitle())));
+        } catch (Exception e) {
+            log.warn("[Menu] Failed to delete task {}", context.task.getId(), e);
+            sendSeparateMessage(chatId, msg("menu.auto.task.delete-failed"));
+        }
+
+        updateToAutoTasksMenu(chatId, messageId);
+    }
+
+    private void handleTaskDailySchedule(String chatId, Integer messageId, int taskIndex) {
+        Optional<TaskContext> contextOptional = resolveTaskContextByIndex(chatId, taskIndex);
+        if (contextOptional.isEmpty()) {
+            updateToAutoTasksMenu(chatId, messageId);
+            return;
+        }
+
+        TaskContext context = contextOptional.get();
+        try {
+            ScheduleEntry entry = scheduleService.createSchedule(
+                    ScheduleEntry.ScheduleType.TASK,
+                    context.task.getId(),
+                    "0 0 9 * * *",
+                    -1);
+            sendSeparateMessage(chatId, msg("menu.auto.schedule.created", entry.getId(), entry.getCronExpression()));
+        } catch (Exception e) {
+            log.warn("[Menu] Failed to create daily task schedule for {}", context.task.getId(), e);
+            sendSeparateMessage(chatId, msg("menu.auto.schedule.create-failed"));
+        }
+
+        showTaskDetail(chatId, messageId, taskIndex);
+    }
+
+    private String buildAutoSchedulesText(String chatId) {
+        List<ScheduleEntry> schedules = scheduleService.getSchedules();
+        if (schedules.isEmpty()) {
+            scheduleIndexCache.remove(chatId);
+            schedulePageByChat.remove(chatId);
+            return HTML_BOLD_OPEN + msg("menu.auto.schedules.title") + HTML_BOLD_CLOSE_NL
+                    + msg("menu.auto.schedules.empty");
+        }
+
+        int page = normalizePage(schedulePageByChat, chatId, schedules.size(), MAX_SCHEDULE_BUTTONS);
+        int start = page * MAX_SCHEDULE_BUTTONS;
+        int end = Math.min(start + MAX_SCHEDULE_BUTTONS, schedules.size());
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(HTML_BOLD_OPEN).append(msg("menu.auto.schedules.title")).append(HTML_BOLD_CLOSE_NL);
+        sb.append(msg("menu.auto.page", page + 1, totalPages(schedules.size(), MAX_SCHEDULE_BUTTONS))).append("\n\n");
+
+        for (int index = start; index < end; index++) {
+            ScheduleEntry entry = schedules.get(index);
+            sb.append(index + 1)
+                    .append(". ")
+                    .append(entry.isEnabled() ? "\u2705" : "\u274C")
+                    .append(" ")
+                    .append(localizedScheduleType(entry.getType()))
+                    .append(" ")
+                    .append(shortId(entry.getTargetId()))
+                    .append(" \u2014 ")
+                    .append(escapeHtml(shortId(entry.getId())));
+            if (entry.getNextExecutionAt() != null) {
+                sb.append(" (").append(SCHEDULE_TIME_FORMAT.format(entry.getNextExecutionAt())).append(" UTC)");
+            }
+            sb.append("\n");
+        }
+
+        return sb.toString().trim();
+    }
+
+    private InlineKeyboardMarkup buildAutoSchedulesKeyboard(String chatId) {
+        List<ScheduleEntry> schedules = scheduleService.getSchedules();
+        List<String> scheduleIds = new ArrayList<>();
+        List<InlineKeyboardRow> rows = new ArrayList<>();
+
+        int page = normalizePage(schedulePageByChat, chatId, schedules.size(), MAX_SCHEDULE_BUTTONS);
+        int start = page * MAX_SCHEDULE_BUTTONS;
+        int end = Math.min(start + MAX_SCHEDULE_BUTTONS, schedules.size());
+
+        for (int index = start; index < end; index++) {
+            ScheduleEntry entry = schedules.get(index);
+            scheduleIds.add(entry.getId());
+            int pageIndex = index - start;
+            String label = "\uD83D\uDDD1 " + localizedScheduleType(entry.getType()) + " "
+                    + shortId(entry.getTargetId());
+            rows.add(row(button(label, "menu:autoMenu:scheduleDelConfirm:" + pageIndex)));
+        }
+
+        scheduleIndexCache.put(chatId, List.copyOf(scheduleIds));
+        rows.add(buildPaginationRow(page, schedules.size(), MAX_SCHEDULE_BUTTONS,
+                "menu:autoMenu:schedulesPrev", "menu:autoMenu:schedulesNext"));
+        rows.add(row(button(msg("menu.auto.btn.refresh"), "menu:autoMenu:schedules")));
+        rows.add(row(button(msg("menu.btn.back"), "menu:autoMenu:back")));
+
+        return InlineKeyboardMarkup.builder().keyboard(rows).build();
+    }
+
+    private void showScheduleDeleteConfirm(String chatId, Integer messageId, int scheduleIndex) {
+        Optional<String> scheduleIdOptional = resolveScheduleIdByIndex(chatId, scheduleIndex);
+        if (scheduleIdOptional.isEmpty()) {
+            updateToAutoSchedulesMenu(chatId, messageId);
+            return;
+        }
+
+        String scheduleId = scheduleIdOptional.get();
+        String text = HTML_BOLD_OPEN + msg("menu.auto.confirm.title") + HTML_BOLD_CLOSE_NL
+                + msg("menu.auto.confirm.schedule.delete", escapeHtml(shortId(scheduleId)));
+        InlineKeyboardMarkup keyboard = InlineKeyboardMarkup.builder().keyboard(List.of(
+                row(button(msg("menu.auto.confirm.yes"), "menu:autoMenu:scheduleDel:" + scheduleIndex),
+                        button(msg("menu.auto.confirm.no"), "menu:autoMenu:schedules"))))
+                .build();
+        editMessage(chatId, messageId, text, keyboard);
+    }
+
+    private void handleScheduleDelete(String chatId, Integer messageId, int scheduleIndex) {
+        Optional<String> scheduleIdOptional = resolveScheduleIdByIndex(chatId, scheduleIndex);
+        if (scheduleIdOptional.isEmpty()) {
+            updateToAutoSchedulesMenu(chatId, messageId);
+            return;
+        }
+
+        String scheduleId = scheduleIdOptional.get();
+        try {
+            scheduleService.deleteSchedule(scheduleId);
+            sendSeparateMessage(chatId, msg("menu.auto.schedule.deleted", shortId(scheduleId)));
+        } catch (Exception e) {
+            log.warn("[Menu] Failed to delete schedule {}", scheduleId, e);
+            sendSeparateMessage(chatId, msg("menu.auto.schedule.delete-failed"));
+        }
+
+        updateToAutoSchedulesMenu(chatId, messageId);
+    }
+
+    private List<TaskContext> buildTaskContexts() {
+        List<TaskContext> result = new ArrayList<>();
+        List<Goal> goals = autoModeService.getGoals();
+
+        for (Goal goal : goals) {
+            List<AutoTask> sortedTasks = goal.getTasks().stream()
+                    .sorted(java.util.Comparator.comparingInt(AutoTask::getOrder))
+                    .toList();
+            for (AutoTask task : sortedTasks) {
+                result.add(new TaskContext(goal, task));
+            }
+        }
+
+        return result;
+    }
+
+    private Optional<Goal> resolveGoalByIndex(String chatId, int index) {
+        List<String> goalIds = goalIndexCache.get(chatId);
+        if (goalIds == null || index < 0 || index >= goalIds.size()) {
+            return Optional.empty();
+        }
+        return autoModeService.getGoal(goalIds.get(index));
+    }
+
+    private Optional<TaskContext> resolveTaskContextByIndex(String chatId, int index) {
+        List<String> taskKeys = taskIndexCache.get(chatId);
+        if (taskKeys == null || index < 0 || index >= taskKeys.size()) {
+            return Optional.empty();
+        }
+
+        String taskKey = taskKeys.get(index);
+        int separatorIndex = taskKey.indexOf('|');
+        if (separatorIndex <= 0 || separatorIndex >= taskKey.length() - 1) {
+            return Optional.empty();
+        }
+
+        String goalId = taskKey.substring(0, separatorIndex);
+        String taskId = taskKey.substring(separatorIndex + 1);
+
+        Optional<Goal> goalOptional = autoModeService.getGoal(goalId);
+        if (goalOptional.isEmpty()) {
+            return Optional.empty();
+        }
+
+        Goal goal = goalOptional.get();
+        Optional<AutoTask> taskOptional = goal.getTasks().stream()
+                .filter(task -> taskId.equals(task.getId()))
+                .findFirst();
+        return taskOptional.map(autoTask -> new TaskContext(goal, autoTask));
+    }
+
+    private Optional<String> resolveScheduleIdByIndex(String chatId, int index) {
+        List<String> scheduleIds = scheduleIndexCache.get(chatId);
+        if (scheduleIds == null || index < 0 || index >= scheduleIds.size()) {
+            return Optional.empty();
+        }
+        return Optional.of(scheduleIds.get(index));
+    }
+
+    private String buildTaskKey(String goalId, String taskId) {
+        return goalId + "|" + taskId;
+    }
+
+    private int normalizePage(Map<String, Integer> pageByChat, String chatId, int totalItems, int pageSize) {
+        int totalPages = totalPages(totalItems, pageSize);
+        int current = pageByChat.getOrDefault(chatId, 0);
+        if (current < 0) {
+            current = 0;
+        }
+        if (current >= totalPages) {
+            current = Math.max(0, totalPages - 1);
+        }
+        pageByChat.put(chatId, current);
+        return current;
+    }
+
+    private int totalPages(int totalItems, int pageSize) {
+        if (totalItems <= 0) {
+            return 1;
+        }
+        return (totalItems + pageSize - 1) / pageSize;
+    }
+
+    private void adjustPage(Map<String, Integer> pageByChat, String chatId, int delta) {
+        int current = pageByChat.getOrDefault(chatId, 0);
+        pageByChat.put(chatId, Math.max(0, current + delta));
+    }
+
+    private InlineKeyboardRow buildPaginationRow(
+            int page,
+            int totalItems,
+            int pageSize,
+            String prevCallback,
+            String nextCallback) {
+        int totalPages = totalPages(totalItems, pageSize);
+        boolean hasPrev = page > 0;
+        boolean hasNext = page < totalPages - 1;
+
+        String prevLabel = hasPrev ? "◀" : "—";
+        String nextLabel = hasNext ? "▶" : "—";
+        String indicator = (page + 1) + "/" + totalPages;
+
+        return row(
+                button(prevLabel, hasPrev ? prevCallback : "menu:autoMenu:noop"),
+                button(indicator, "menu:autoMenu:noop"),
+                button(nextLabel, hasNext ? nextCallback : "menu:autoMenu:noop"));
+    }
+
+    private Integer parseIndexAction(String action, String prefix) {
+        if (action == null || !action.startsWith(prefix)) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(action.substring(prefix.length()));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private Optional<AutoTask.TaskStatus> parseTaskStatus(String rawStatus) {
+        if (rawStatus == null) {
+            return Optional.empty();
+        }
+
+        return switch (rawStatus) {
+        case "pending" -> Optional.of(AutoTask.TaskStatus.PENDING);
+        case "ip" -> Optional.of(AutoTask.TaskStatus.IN_PROGRESS);
+        case "done" -> Optional.of(AutoTask.TaskStatus.COMPLETED);
+        case "fail" -> Optional.of(AutoTask.TaskStatus.FAILED);
+        case "skip" -> Optional.of(AutoTask.TaskStatus.SKIPPED);
+        default -> Optional.empty();
+        };
+    }
+
+    private String goalStatusIcon(Goal goal) {
+        return switch (goal.getStatus()) {
+        case ACTIVE -> "\u25B6\uFE0F";
+        case COMPLETED -> "\u2705";
+        case PAUSED -> "\u23F8\uFE0F";
+        case CANCELLED -> "\u274C";
+        };
+    }
+
+    private String taskStatusIcon(AutoTask task) {
+        return switch (task.getStatus()) {
+        case PENDING -> "[ ]";
+        case IN_PROGRESS -> "[>]";
+        case COMPLETED -> "[x]";
+        case FAILED -> "[!]";
+        case SKIPPED -> "[-]";
+        };
+    }
+
+    private String shortId(String value) {
+        if (value == null || value.isBlank()) {
+            return "-";
+        }
+        if (value.length() <= 8) {
+            return value;
+        }
+        return value.substring(0, 8);
+    }
+
+    private void showTaskUpdateFailure(String chatId, Integer messageId) {
+        sendSeparateMessage(chatId, msg("menu.auto.task.update-failed"));
+        updateToAutoTasksMenu(chatId, messageId);
+    }
+
+    private String localizedGoalStatus(Goal.GoalStatus status) {
+        return switch (status) {
+        case ACTIVE -> msg("menu.auto.status.active");
+        case COMPLETED -> msg("menu.auto.status.completed");
+        case PAUSED -> msg("menu.auto.status.paused");
+        case CANCELLED -> msg("menu.auto.status.cancelled");
+        };
+    }
+
+    private String localizedTaskStatus(AutoTask.TaskStatus status) {
+        return switch (status) {
+        case PENDING -> msg("menu.auto.task.status.pending");
+        case IN_PROGRESS -> msg("menu.auto.task.status.in-progress");
+        case COMPLETED -> msg("menu.auto.task.status.completed");
+        case FAILED -> msg("menu.auto.task.status.failed");
+        case SKIPPED -> msg("menu.auto.task.status.skipped");
+        };
+    }
+
+    private String localizedScheduleType(ScheduleEntry.ScheduleType type) {
+        return switch (type) {
+        case GOAL -> msg("menu.auto.type.goal");
+        case TASK -> msg("menu.auto.type.task");
+        };
+    }
+
+    private void clearAutoMenuCaches(String chatId) {
+        goalIndexCache.remove(chatId);
+        taskIndexCache.remove(chatId);
+        scheduleIndexCache.remove(chatId);
+        goalPageByChat.remove(chatId);
+        taskPageByChat.remove(chatId);
+        schedulePageByChat.remove(chatId);
+    }
+
     // ==================== Callback handlers ====================
 
     private void updateToMainMenu(String chatId, Integer messageId) {
@@ -570,6 +1557,7 @@ public class TelegramMenuHandler {
                     "conversationKey", activeConversationKey,
                     "channelType", CHANNEL_TYPE)).join();
             sendSeparateMessage(chatId, result.output());
+            resendPersistentMenuIfEnabled(chatId);
         } catch (Exception e) {
             log.error("[Menu] Failed to execute /{}", command, e);
         }
@@ -601,6 +1589,10 @@ public class TelegramMenuHandler {
     }
 
     private void handleClose(String chatId, Integer messageId) {
+        persistentMenuByChat.put(chatId, false);
+        persistentMenuMessageIdByChat.remove(chatId);
+        clearAutoMenuCaches(chatId);
+        sessionIndexCache.remove(chatId);
         TelegramClient client = getOrCreateClient();
         if (client == null) {
             return;
@@ -629,9 +1621,13 @@ public class TelegramMenuHandler {
     // ==================== Helpers ====================
 
     private InlineKeyboardButton button(String text, String callbackData) {
+        String normalizedCallbackData = callbackData;
+        if (normalizedCallbackData != null && normalizedCallbackData.length() > MAX_TELEGRAM_CALLBACK_DATA_LENGTH) {
+            normalizedCallbackData = normalizedCallbackData.substring(0, MAX_TELEGRAM_CALLBACK_DATA_LENGTH);
+        }
         return InlineKeyboardButton.builder()
                 .text(text)
-                .callbackData(callbackData)
+                .callbackData(normalizedCallbackData)
                 .build();
     }
 
@@ -639,10 +1635,10 @@ public class TelegramMenuHandler {
         return new InlineKeyboardRow(buttons);
     }
 
-    private void editMessage(String chatId, Integer messageId, String text, InlineKeyboardMarkup keyboard) {
+    private boolean editMessage(String chatId, Integer messageId, String text, InlineKeyboardMarkup keyboard) {
         TelegramClient client = getOrCreateClient();
         if (client == null) {
-            return;
+            return false;
         }
         try {
             EditMessageText edit = EditMessageText.builder()
@@ -653,8 +1649,10 @@ public class TelegramMenuHandler {
                     .replyMarkup(keyboard)
                     .build();
             client.execute(edit);
+            return true;
         } catch (Exception e) {
             log.error("[Menu] Failed to edit message", e);
+            return false;
         }
     }
 

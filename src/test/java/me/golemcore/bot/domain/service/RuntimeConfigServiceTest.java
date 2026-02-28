@@ -174,11 +174,16 @@ class RuntimeConfigServiceTest {
 
     @Test
     void shouldReturnDefaultAutoModeSettings() {
-        assertFalse(service.isAutoModeEnabled());
+        assertTrue(service.isAutoModeEnabled());
         assertEquals(30, service.getAutoTickIntervalSeconds());
         assertEquals(10, service.getAutoTaskTimeLimitMinutes());
         assertEquals(3, service.getAutoMaxGoals());
         assertEquals("default", service.getAutoModelTier());
+    }
+
+    @Test
+    void shouldDisableRateLimitByDefault() {
+        assertFalse(service.isRateLimitEnabled());
     }
 
     @Test
