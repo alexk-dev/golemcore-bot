@@ -23,6 +23,7 @@ import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
+import me.golemcore.bot.domain.model.SkillTransitionRequest;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -67,6 +68,14 @@ class FeedbackGuaranteeSystemTest {
     void shouldNotProcessWhenOutgoingResponseAlreadyPresent() {
         AgentContext context = buildContext();
         context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly("ok"));
+
+        assertFalse(system.shouldProcess(context));
+    }
+
+    @Test
+    void shouldNotProcessWhenTransitionPending() {
+        AgentContext context = buildContext();
+        context.setSkillTransitionRequest(SkillTransitionRequest.pipeline("next"));
 
         assertFalse(system.shouldProcess(context));
     }
@@ -185,6 +194,17 @@ class FeedbackGuaranteeSystemTest {
                 .build();
 
         AgentContext context = buildContextWithMessages(List.of(autoMessage));
+
+        AgentContext result = system.process(context);
+
+        assertNull(result.getAttribute(ContextAttributes.OUTGOING_RESPONSE));
+        verify(preferencesService, never()).getMessage(FALLBACK_KEY);
+    }
+
+    @Test
+    void shouldNotProduceFallbackWhenTransitionPending() {
+        AgentContext context = buildContext();
+        context.setSkillTransitionRequest(SkillTransitionRequest.pipeline("next"));
 
         AgentContext result = system.process(context);
 

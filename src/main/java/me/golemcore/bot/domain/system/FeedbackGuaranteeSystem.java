@@ -23,6 +23,7 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
+import me.golemcore.bot.domain.model.SkillTransitionRequest;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -71,12 +72,18 @@ public class FeedbackGuaranteeSystem implements AgentSystem {
         if (context.getAttribute(ContextAttributes.OUTGOING_RESPONSE) != null) {
             return false;
         }
+        if (hasPendingTransition(context)) {
+            return false;
+        }
         return !isAutoModeContext(context);
     }
 
     @Override
     public AgentContext process(AgentContext context) {
         if (context.getAttribute(ContextAttributes.OUTGOING_RESPONSE) != null) {
+            return context;
+        }
+        if (hasPendingTransition(context)) {
             return context;
         }
         if (isAutoModeContext(context)) {
@@ -89,6 +96,11 @@ public class FeedbackGuaranteeSystem implements AgentSystem {
                 reasonCode, context.getFailures().size());
         context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly(message));
         return context;
+    }
+
+    private boolean hasPendingTransition(AgentContext context) {
+        SkillTransitionRequest transition = context.getSkillTransitionRequest();
+        return transition != null && transition.targetSkill() != null;
     }
 
     private boolean isAutoModeContext(AgentContext context) {

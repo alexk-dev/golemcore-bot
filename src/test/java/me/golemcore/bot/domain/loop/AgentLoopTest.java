@@ -123,8 +123,10 @@ class AgentLoopTest {
 
                 assertFalse(Boolean.TRUE.equals(context.getAttribute(ContextAttributes.FINAL_ANSWER_READY)),
                         "finalAnswerReady must be reset between iterations");
-                assertNull(context.getSkillTransitionRequest(),
-                        "skillTransitionRequest must be cleared between iterations");
+                SkillTransitionRequest transition = context.getSkillTransitionRequest();
+                assertNotNull(transition, "skillTransitionRequest must be preserved between iterations");
+                assertEquals("next", transition.targetSkill(),
+                        "skillTransitionRequest target must survive between iterations");
                 assertTrue(context.getToolResults().isEmpty(), "toolResults must be cleared between iterations");
                 return context;
             }
@@ -253,6 +255,84 @@ class AgentLoopTest {
 
         assertEquals("transport-42", session.getMetadata().get(ContextAttributes.TRANSPORT_CHAT_ID));
         assertEquals("conv-1", session.getMetadata().get(ContextAttributes.CONVERSATION_KEY));
+    }
+
+    @Test
+    void shouldNotSendGenericFallbackDuringSkillTransition() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .messages(new ArrayList<>())
+                .build();
+
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "1")).thenReturn(session);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+        when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        AgentSystem transitionSystem = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "transition";
+            }
+
+            @Override
+            public int getOrder() {
+                return 1;
+            }
+
+            @Override
+            public boolean shouldProcess(AgentContext context) {
+                return true;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                context.setSkillTransitionRequest(SkillTransitionRequest.pipeline("next"));
+                return context;
+            }
+        };
+
+        AgentLoop loop = new AgentLoop(
+                sessionPort,
+                rateLimitPort,
+                List.of(transitionSystem,
+                        new ResponseRoutingSystem(List.of(channel), preferencesService,
+                                mock(VoiceResponseHandler.class))),
+                List.of(channel),
+                mockRuntimeConfigService(1),
+                preferencesService,
+                llmPort,
+                clock);
+
+        Message inbound = Message.builder()
+                .role(ROLE_USER)
+                .content("pipeline")
+                .channelType(CHANNEL_TYPE)
+                .chatId("1")
+                .senderId("u1")
+                .timestamp(clock.instant())
+                .build();
+
+        loop.processMessage(inbound);
+
+        verify(channel, never()).sendMessage(eq("1"), eq(MSG_GENERIC), any());
     }
 
     @Test

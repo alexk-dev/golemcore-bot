@@ -358,7 +358,9 @@ public class AgentLoop {
 
             log.debug("Continuing to next iteration");
             context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, false);
-            context.clearSkillTransitionRequest(); // reset transition
+            // Keep transition request for ContextBuildingSystem in the next iteration.
+            // Clear transport contract from the previous iteration to avoid stale routing.
+            context.setOutgoingResponse(null);
             context.getToolResults().clear();
         }
 
