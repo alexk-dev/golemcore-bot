@@ -92,12 +92,25 @@ jobs:
     needs: [test]
 
     steps:
+      - name: Check Sonar token availability
+        id: sonar-token
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          if [[ -n "${SONAR_TOKEN}" ]]; then
+            echo "available=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "available=false" >> "${GITHUB_OUTPUT}"
+          fi
+
       - name: Checkout
+        if: steps.sonar-token.outputs.available == 'true'
         uses: actions/checkout@v6
         with:
           fetch-depth: 0  # full history for accurate blame
 
       - name: Set up JDK 25
+        if: steps.sonar-token.outputs.available == 'true'
         uses: actions/setup-java@v5
         with:
           java-version: '25'
@@ -105,11 +118,16 @@ jobs:
           cache: maven
 
       - name: Build, test and analyze
+        if: steps.sonar-token.outputs.available == 'true'
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: >
           ./mvnw clean verify sonar:sonar
           -DskipGitHooks=true
+
+      - name: Skip SonarCloud Analysis (missing SONAR_TOKEN)
+        if: steps.sonar-token.outputs.available != 'true'
+        run: echo "Skipping SonarCloud Analysis because SONAR_TOKEN is unavailable for this event."
 
   # ── Build per-arch app images via Jib ────────────────────────────────────
   build-app-images:
