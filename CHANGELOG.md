@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.12.1 - 2026-02-28
+#### Bug Fixes
+- (**ci**) push release tag without pushing main (#128) - (e5400ca) - GolemCore AI Agent #1
+- (**ci**) auto-reattach latest tag ancestry in release (#127) - (8c10ba9) - GolemCore AI Agent #1
+- (**ci**) restore main ancestry for v0.12.0 tag (#126) - (3cd27c4) - GolemCore AI Agent #1
+
+- - -
+
 ## v0.12.0 - 2026-02-25
 #### Features
 - (**browser**) fetch Playwright driver bundle from Maven at runtime (#117) - (2121f20) - Alex Kuleshov
