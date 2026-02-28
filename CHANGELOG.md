@@ -2,6 +2,15 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.12.2 - 2026-02-28
+#### Bug Fixes
+- (**ci**) normalize tag-only release base before bump (#131) - (c9598f8) - GolemCore AI Agent #1
+- (**ci**) unblock release after tag-only bumps and skip sonar without secret (#130) - (f270589) - GolemCore AI Agent #1
+#### Miscellaneous
+- (**deps**) bump rollup from 4.57.1 to 4.59.0 in /dashboard (#124) - (79cc35c) - dependabot[bot]
+
+- - -
+
 ## v0.12.0 - 2026-02-25
 #### Features
 - (**browser**) fetch Playwright driver bundle from Maven at runtime (#117) - (2121f20) - Alex Kuleshov
