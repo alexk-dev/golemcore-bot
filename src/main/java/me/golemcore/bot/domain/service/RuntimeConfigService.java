@@ -92,6 +92,9 @@ public class RuntimeConfigService {
     private static final int DEFAULT_TURN_MAX_LLM_CALLS = 200;
     private static final int DEFAULT_TURN_MAX_TOOL_EXECUTIONS = 500;
     private static final java.time.Duration DEFAULT_TURN_DEADLINE = java.time.Duration.ofHours(1);
+    private static final boolean DEFAULT_TURN_AUTO_RETRY_ENABLED = true;
+    private static final int DEFAULT_TURN_AUTO_RETRY_MAX_ATTEMPTS = 2;
+    private static final long DEFAULT_TURN_AUTO_RETRY_BASE_DELAY_MS = 600L;
     private static final int DEFAULT_IMAP_PORT = 993;
     private static final int DEFAULT_IMAP_CONNECT_TIMEOUT = 10000;
     private static final int DEFAULT_IMAP_READ_TIMEOUT = 30000;
@@ -752,6 +755,33 @@ public class RuntimeConfigService {
         }
     }
 
+    public boolean isTurnAutoRetryEnabled() {
+        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
+        if (turnConfig == null) {
+            return DEFAULT_TURN_AUTO_RETRY_ENABLED;
+        }
+        Boolean val = turnConfig.getAutoRetryEnabled();
+        return val != null ? val : DEFAULT_TURN_AUTO_RETRY_ENABLED;
+    }
+
+    public int getTurnAutoRetryMaxAttempts() {
+        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
+        if (turnConfig == null) {
+            return DEFAULT_TURN_AUTO_RETRY_MAX_ATTEMPTS;
+        }
+        Integer val = turnConfig.getAutoRetryMaxAttempts();
+        return val != null ? val : DEFAULT_TURN_AUTO_RETRY_MAX_ATTEMPTS;
+    }
+
+    public long getTurnAutoRetryBaseDelayMs() {
+        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
+        if (turnConfig == null) {
+            return DEFAULT_TURN_AUTO_RETRY_BASE_DELAY_MS;
+        }
+        Long val = turnConfig.getAutoRetryBaseDelayMs();
+        return val != null ? val : DEFAULT_TURN_AUTO_RETRY_BASE_DELAY_MS;
+    }
+
     // ==================== Memory ====================
 
     public boolean isMemoryEnabled() {
@@ -1214,8 +1244,20 @@ public class RuntimeConfigService {
         if (cfg.getMemory() == null) {
             cfg.setMemory(new RuntimeConfig.MemoryConfig());
         }
+        if (cfg.getTurn() == null) {
+            cfg.setTurn(new RuntimeConfig.TurnConfig());
+        }
         if (!Integer.valueOf(DEFAULT_MEMORY_VERSION).equals(cfg.getMemory().getVersion())) {
             cfg.getMemory().setVersion(DEFAULT_MEMORY_VERSION);
+        }
+        if (cfg.getTurn().getAutoRetryEnabled() == null) {
+            cfg.getTurn().setAutoRetryEnabled(DEFAULT_TURN_AUTO_RETRY_ENABLED);
+        }
+        if (cfg.getTurn().getAutoRetryMaxAttempts() == null) {
+            cfg.getTurn().setAutoRetryMaxAttempts(DEFAULT_TURN_AUTO_RETRY_MAX_ATTEMPTS);
+        }
+        if (cfg.getTurn().getAutoRetryBaseDelayMs() == null) {
+            cfg.getTurn().setAutoRetryBaseDelayMs(DEFAULT_TURN_AUTO_RETRY_BASE_DELAY_MS);
         }
         normalizeSecretFlags(cfg);
     }

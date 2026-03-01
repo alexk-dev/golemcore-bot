@@ -226,6 +226,53 @@ class RuntimeConfigServiceTest {
     }
 
     @Test
+    void shouldReturnDefaultTurnAutoRetrySettings() {
+        assertTrue(service.isTurnAutoRetryEnabled());
+        assertEquals(2, service.getTurnAutoRetryMaxAttempts());
+        assertEquals(600L, service.getTurnAutoRetryBaseDelayMs());
+    }
+
+    @Test
+    void shouldReturnConfiguredTurnAutoRetrySettings() throws Exception {
+        RuntimeConfig.TurnConfig turn = RuntimeConfig.TurnConfig.builder()
+                .autoRetryEnabled(false)
+                .autoRetryMaxAttempts(5)
+                .autoRetryBaseDelayMs(1500L)
+                .build();
+        persistedSections.put("turn.json", objectMapper.writeValueAsString(turn));
+
+        assertFalse(service.isTurnAutoRetryEnabled());
+        assertEquals(5, service.getTurnAutoRetryMaxAttempts());
+        assertEquals(1500L, service.getTurnAutoRetryBaseDelayMs());
+    }
+
+    @Test
+    void shouldNormalizeTurnAutoRetryDefaultsWhenStoredSectionMissingFields() {
+        persistedSections.put("turn.json", "{}");
+
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        assertNotNull(config.getTurn());
+        assertTrue(config.getTurn().getAutoRetryEnabled());
+        assertEquals(2, config.getTurn().getAutoRetryMaxAttempts());
+        assertEquals(600L, config.getTurn().getAutoRetryBaseDelayMs());
+    }
+
+    @Test
+    void shouldInitializeTurnWhenNullDuringRuntimeConfigUpdate() {
+        RuntimeConfig newConfig = RuntimeConfig.builder().build();
+        newConfig.setTurn(null);
+
+        service.updateRuntimeConfig(newConfig);
+
+        RuntimeConfig updated = service.getRuntimeConfig();
+        assertNotNull(updated.getTurn());
+        assertTrue(updated.getTurn().getAutoRetryEnabled());
+        assertEquals(2, updated.getTurn().getAutoRetryMaxAttempts());
+        assertEquals(600L, updated.getTurn().getAutoRetryBaseDelayMs());
+    }
+
+    @Test
     void shouldReturnDefaultTurnDeadlineOnInvalidFormat() throws Exception {
         RuntimeConfig.TurnConfig turn = RuntimeConfig.TurnConfig.builder()
                 .deadline("not-a-duration")

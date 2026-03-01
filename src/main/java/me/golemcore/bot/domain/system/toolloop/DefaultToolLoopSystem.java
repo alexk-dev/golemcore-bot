@@ -10,11 +10,14 @@ import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
+import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.TurnLimitReason;
+import me.golemcore.bot.domain.service.CompactionService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.RuntimeEventService;
 import me.golemcore.bot.domain.system.LlmErrorClassifier;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationView;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
@@ -25,6 +28,7 @@ import org.slf4j.LoggerFactory;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -52,6 +56,8 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
     @SuppressWarnings("PMD.UnusedPrivateField")
     private final PlanService planService;
     private final RuntimeConfigService runtimeConfigService;
+    private final CompactionService compactionService;
+    private final RuntimeEventService runtimeEventService;
     private final Clock clock;
 
     public DefaultToolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutor, HistoryWriter historyWriter,
@@ -74,6 +80,8 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         this.modelSelectionService = modelSelectionService;
         this.planService = planService;
         this.runtimeConfigService = null;
+        this.compactionService = null;
+        this.runtimeEventService = null;
         this.clock = clock;
     }
 
@@ -99,6 +107,8 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         this.modelSelectionService = modelSelectionService;
         this.planService = planService;
         this.runtimeConfigService = null;
+        this.compactionService = null;
+        this.runtimeEventService = null;
         this.clock = clock;
 
     }
@@ -107,6 +117,15 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             ConversationViewBuilder viewBuilder, BotProperties.TurnProperties turnSettings,
             BotProperties.ToolLoopProperties settings, ModelSelectionService modelSelectionService,
             PlanService planService, RuntimeConfigService runtimeConfigService, Clock clock) {
+        this(llmPort, toolExecutor, historyWriter, viewBuilder, turnSettings, settings,
+                modelSelectionService, planService, runtimeConfigService, null, null, clock);
+    }
+
+    public DefaultToolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutor, HistoryWriter historyWriter,
+            ConversationViewBuilder viewBuilder, BotProperties.TurnProperties turnSettings,
+            BotProperties.ToolLoopProperties settings, ModelSelectionService modelSelectionService,
+            PlanService planService, RuntimeConfigService runtimeConfigService, CompactionService compactionService,
+            RuntimeEventService runtimeEventService, Clock clock) {
         this.llmPort = llmPort;
         this.toolExecutor = toolExecutor;
         this.historyWriter = historyWriter;
@@ -116,16 +135,23 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         this.modelSelectionService = modelSelectionService;
         this.planService = planService;
         this.runtimeConfigService = runtimeConfigService;
+        this.compactionService = compactionService;
+        this.runtimeEventService = runtimeEventService;
         this.clock = clock;
     }
 
     @Override
     public ToolLoopTurnResult processTurn(AgentContext context) {
         ensureMessageLists(context);
+        emitRuntimeEvent(context, RuntimeEventType.TURN_STARTED, Map.of());
 
         int llmCalls = 0;
         int toolExecutions = 0;
         int emptyFinalResponseRetries = 0;
+        int retryAttempt = 0;
+        int maxRetries = resolveAutoRetryMaxAttempts();
+        long retryBaseDelayMs = resolveAutoRetryBaseDelayMs();
+        boolean retryEnabled = isAutoRetryEnabled();
         List<Attachment> accumulatedAttachments = new ArrayList<>();
 
         int maxLlmCalls = resolveMaxLlmCalls();
@@ -140,11 +166,35 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         while (llmCalls < maxLlmCalls && toolExecutions < maxToolExecutions && clock.instant().isBefore(deadline)) {
             // 1) LLM call
             llmCalls++;
+            emitRuntimeEvent(context, RuntimeEventType.LLM_STARTED, Map.of("attempt", llmCalls));
             LlmResponse response;
             try {
                 response = llmPort.chat(buildRequest(context)).join();
             } catch (RuntimeException e) {
+                String code = LlmErrorClassifier.classifyFromThrowable(e);
+                if (LlmErrorClassifier.isContextOverflowCode(code)
+                        && tryRecoverFromContextOverflow(context, llmCalls, retryAttempt)) {
+                    retryAttempt++;
+                    continue;
+                }
+
+                if (retryEnabled && LlmErrorClassifier.isTransientCode(code) && retryAttempt < maxRetries) {
+                    retryAttempt++;
+                    scheduleRetry(context, retryAttempt, maxRetries, retryBaseDelayMs, code);
+                    continue;
+                }
+
+                emitRuntimeEvent(context, RuntimeEventType.LLM_FINISHED,
+                        Map.of("attempt", llmCalls, "success", false, "code", code));
+                emitRuntimeEvent(context, RuntimeEventType.TURN_FAILED,
+                        Map.of("reason", "llm_error", "code", code));
                 return failLlmInvocation(context, e, llmCalls, toolExecutions);
+            }
+
+            if (retryAttempt > 0) {
+                emitRuntimeEvent(context, RuntimeEventType.RETRY_FINISHED,
+                        Map.of("attempt", retryAttempt, "success", true));
+                retryAttempt = 0;
             }
 
             context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
@@ -153,6 +203,9 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             if (compatFlatteningUsed) {
                 log.info("[ToolLoop] Compatibility fallback applied: flattened tool history for LLM request");
             }
+            emitRuntimeEvent(context, RuntimeEventType.LLM_FINISHED,
+                    Map.of("attempt", llmCalls, "success", true,
+                            "hasToolCalls", response != null && response.hasToolCalls()));
 
             // 2) Final answer (no tool calls)
             boolean hasToolCalls = response != null && response.hasToolCalls();
@@ -164,6 +217,8 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                         logEmptyFinalResponseRetry(context, response, emptyReasonCode, emptyFinalResponseRetries);
                         continue;
                     }
+                    emitRuntimeEvent(context, RuntimeEventType.TURN_FAILED,
+                            Map.of("reason", "empty_final_response", "code", emptyReasonCode));
                     return failEmptyFinalResponse(context, response, emptyReasonCode, llmCalls, toolExecutions);
                 }
 
@@ -175,6 +230,8 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
 
                 context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
                 applyAttachments(context, accumulatedAttachments);
+                emitRuntimeEvent(context, RuntimeEventType.TURN_FINISHED,
+                        Map.of("llmCalls", llmCalls, "toolExecutions", toolExecutions));
                 return new ToolLoopTurnResult(context, true, llmCalls, toolExecutions);
             }
 
@@ -183,6 +240,16 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
 
             // 4) Execute tools and append results
             for (Message.ToolCall tc : response.getToolCalls()) {
+                if (isInterruptRequested(context)) {
+                    clearInterruptFlag(context);
+                    applyAttachments(context, accumulatedAttachments);
+                    emitRuntimeEvent(context, RuntimeEventType.TURN_FINISHED,
+                            Map.of("reason", "user_interrupt", "llmCalls", llmCalls,
+                                    "toolExecutions", toolExecutions));
+                    return stopTurn(context, context.getAttribute(ContextAttributes.LLM_RESPONSE),
+                            response.getToolCalls(), "interrupted by user", llmCalls, toolExecutions);
+                }
+
                 if (me.golemcore.bot.tools.PlanSetContentTool.TOOL_NAME.equals(tc.getName())) {
                     // Control tool: do not execute; let PlanFinalizationSystem handle it.
                     context.setAttribute(ContextAttributes.PLAN_SET_CONTENT_REQUESTED, true);
@@ -205,6 +272,9 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                     continue;
                 }
 
+                emitRuntimeEvent(context, RuntimeEventType.TOOL_STARTED,
+                        Map.of("toolCallId", tc.getId(), "tool", tc.getName()));
+                Instant toolStarted = clock.instant();
                 ToolExecutionOutcome outcome;
                 try {
                     outcome = toolExecutor.execute(context, tc);
@@ -213,6 +283,12 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                             "Tool execution failed: " + e.getMessage());
                 }
                 toolExecutions++;
+                long toolDuration = java.time.Duration.between(toolStarted, clock.instant()).toMillis();
+                emitRuntimeEvent(context, RuntimeEventType.TOOL_FINISHED,
+                        Map.of("toolCallId", tc.getId(), "tool", tc.getName(),
+                                "success", outcome != null && outcome.toolResult() != null
+                                        && outcome.toolResult().isSuccess(),
+                                "durationMs", toolDuration));
 
                 if (outcome != null && outcome.attachment() != null) {
                     accumulatedAttachments.add(outcome.attachment());
@@ -228,17 +304,23 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
 
                         if (stopOnConfirmationDenied && kind == ToolFailureKind.CONFIRMATION_DENIED) {
                             applyAttachments(context, accumulatedAttachments);
+                            emitRuntimeEvent(context, RuntimeEventType.TURN_FINISHED,
+                                    Map.of("reason", "confirmation_denied"));
                             return stopTurn(context, context.getAttribute(ContextAttributes.LLM_RESPONSE),
                                     response.getToolCalls(), "confirmation denied", llmCalls, toolExecutions);
                         }
                         if (stopOnToolPolicyDenied && kind == ToolFailureKind.POLICY_DENIED) {
                             applyAttachments(context, accumulatedAttachments);
+                            emitRuntimeEvent(context, RuntimeEventType.TURN_FINISHED,
+                                    Map.of("reason", "tool_policy_denied"));
                             return stopTurn(context, context.getAttribute(ContextAttributes.LLM_RESPONSE),
                                     response.getToolCalls(), "tool denied by policy", llmCalls, toolExecutions);
                         }
                     }
                     if (stopOnToolFailure && outcome.toolResult() != null && !outcome.toolResult().isSuccess()) {
                         applyAttachments(context, accumulatedAttachments);
+                        emitRuntimeEvent(context, RuntimeEventType.TURN_FINISHED,
+                                Map.of("reason", "tool_failure", "tool", outcome.toolName()));
                         return stopTurn(context, context.getAttribute(ContextAttributes.LLM_RESPONSE),
                                 response.getToolCalls(),
                                 "tool failure (" + outcome.toolName() + ")", llmCalls, toolExecutions);
@@ -255,9 +337,103 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         applyAttachments(context, accumulatedAttachments);
         context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REACHED, true);
         context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REASON, stopReason);
+        emitRuntimeEvent(context, RuntimeEventType.TURN_FINISHED,
+                Map.of("reason", "limit", "limit", stopReason.name()));
         return stopTurn(context, last, pending,
                 buildStopReasonMessage(stopReason, maxLlmCalls, maxToolExecutions), llmCalls, toolExecutions);
 
+    }
+
+    private boolean isInterruptRequested(AgentContext context) {
+        Object contextFlag = context.getAttribute(ContextAttributes.TURN_INTERRUPT_REQUESTED);
+        if (Boolean.TRUE.equals(contextFlag)) {
+            return true;
+        }
+        Map<String, Object> metadata = context.getSession() != null ? context.getSession().getMetadata() : null;
+        return metadata != null && Boolean.TRUE.equals(metadata.get(ContextAttributes.TURN_INTERRUPT_REQUESTED));
+    }
+
+    private void clearInterruptFlag(AgentContext context) {
+        context.setAttribute(ContextAttributes.TURN_INTERRUPT_REQUESTED, false);
+        if (context.getSession() != null && context.getSession().getMetadata() != null) {
+            context.getSession().getMetadata().put(ContextAttributes.TURN_INTERRUPT_REQUESTED, false);
+        }
+    }
+
+    private int resolveAutoRetryMaxAttempts() {
+        if (runtimeConfigService == null) {
+            return 0;
+        }
+        return Math.max(0, runtimeConfigService.getTurnAutoRetryMaxAttempts());
+    }
+
+    private long resolveAutoRetryBaseDelayMs() {
+        if (runtimeConfigService == null) {
+            return 500L;
+        }
+        return Math.max(1L, runtimeConfigService.getTurnAutoRetryBaseDelayMs());
+    }
+
+    private boolean isAutoRetryEnabled() {
+        if (runtimeConfigService == null) {
+            return false;
+        }
+        return runtimeConfigService.isTurnAutoRetryEnabled();
+    }
+
+    private void scheduleRetry(AgentContext context, int attempt, int maxAttempts, long baseDelayMs, String code) {
+        long delayMs = (long) Math.min(3000, baseDelayMs * Math.pow(2, Math.max(0, attempt - 1)));
+        emitRuntimeEvent(context, RuntimeEventType.RETRY_STARTED,
+                Map.of("attempt", attempt, "maxAttempts", maxAttempts, "delayMs", delayMs, "code", code));
+        if (delayMs > 0) {
+            try {
+                Thread.sleep(delayMs);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    private boolean tryRecoverFromContextOverflow(AgentContext context, int llmCalls, int retryAttempt) {
+        if (compactionService == null || context.getSession() == null || context.getSession().getMessages() == null
+                || context.getSession().getMessages().isEmpty()) {
+            return false;
+        }
+
+        if (retryAttempt > 0) {
+            return false;
+        }
+
+        int keepLast = runtimeConfigService != null ? runtimeConfigService.getCompactionKeepLastMessages() : 20;
+        List<Message> sessionMessages = context.getSession().getMessages();
+        int total = sessionMessages.size();
+        if (total <= keepLast) {
+            return false;
+        }
+
+        int toRemove = total - keepLast;
+        List<Message> messagesToCompact = new ArrayList<>(sessionMessages.subList(0, toRemove));
+        emitRuntimeEvent(context, RuntimeEventType.COMPACTION_STARTED,
+                Map.of("llmCall", llmCalls, "messages", messagesToCompact.size(), "keepLast", keepLast));
+
+        String summary = compactionService.summarize(messagesToCompact);
+        if (summary == null || summary.isBlank()) {
+            return false;
+        }
+
+        Message summaryMessage = compactionService.createSummaryMessage(summary);
+        List<Message> keptMessages = Message
+                .flattenToolMessages(new ArrayList<>(sessionMessages.subList(toRemove, total)));
+        sessionMessages.clear();
+        sessionMessages.add(summaryMessage);
+        sessionMessages.addAll(keptMessages);
+        context.setMessages(new ArrayList<>(sessionMessages));
+        context.setAttribute(ContextAttributes.LLM_ERROR, null);
+        context.setAttribute(ContextAttributes.LLM_ERROR_CODE, null);
+
+        emitRuntimeEvent(context, RuntimeEventType.COMPACTION_FINISHED,
+                Map.of("summaryLength", summary.length(), "removed", toRemove, "kept", keepLast));
+        return true;
     }
 
     private String getEmptyFinalResponseCode(LlmResponse response, AgentContext context) {
@@ -458,6 +634,9 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         if (context.getSession() != null && context.getSession().getMessages() == null) {
             context.getSession().setMessages(new ArrayList<>());
         }
+        if (context.getSession() != null && context.getSession().getMetadata() == null) {
+            context.getSession().setMetadata(new LinkedHashMap<>());
+        }
     }
 
     private TurnLimitReason buildStopReason(int llmCalls, int maxLlmCalls, int toolExecutions, int maxToolExecutions,
@@ -524,5 +703,12 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             return new ModelSelectionService.ModelSelection(null, null);
         }
         return modelSelectionService.resolveForTier(tier);
+    }
+
+    private void emitRuntimeEvent(AgentContext context, RuntimeEventType type, Map<String, Object> payload) {
+        if (runtimeEventService == null || context == null) {
+            return;
+        }
+        runtimeEventService.emit(context, type, payload);
     }
 }

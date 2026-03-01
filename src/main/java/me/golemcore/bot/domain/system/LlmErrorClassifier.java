@@ -7,6 +7,7 @@ import java.lang.reflect.Method;
 import java.net.SocketTimeoutException;
 import java.net.http.HttpTimeoutException;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.TimeoutException;
@@ -24,6 +25,7 @@ public final class LlmErrorClassifier {
     public static final String EMPTY_ASSISTANT_CONTENT = "llm.empty_assistant_content";
     public static final String REQUEST_ABORTED = "llm.request.aborted";
     public static final String REQUEST_TIMEOUT = "llm.request.timeout";
+    public static final String CONTEXT_LENGTH_EXCEEDED = "llm.context.length_exceeded";
     public static final String LANGCHAIN4J_RATE_LIMIT = "llm.langchain4j.rate_limit";
     public static final String LANGCHAIN4J_TIMEOUT = "llm.langchain4j.timeout";
     public static final String LANGCHAIN4J_AUTHENTICATION = "llm.langchain4j.authentication";
@@ -102,6 +104,11 @@ public final class LlmErrorClassifier {
                 return byType;
             }
 
+            String byMessage = classifyFromMessage(current.getMessage());
+            if (!UNKNOWN.equals(byMessage)) {
+                return byMessage;
+            }
+
             current = current.getCause();
         }
         return UNKNOWN;
@@ -120,7 +127,8 @@ public final class LlmErrorClassifier {
         if (embedded != null && !embedded.isBlank()) {
             return embedded;
         }
-        return UNKNOWN;
+
+        return classifyFromMessage(diagnostic);
     }
 
     /**
@@ -155,6 +163,24 @@ public final class LlmErrorClassifier {
             return null;
         }
         return message.substring(1, end);
+    }
+
+    public static boolean isTransientCode(String code) {
+        if (code == null || code.isBlank()) {
+            return false;
+        }
+        return LANGCHAIN4J_RATE_LIMIT.equals(code)
+                || LANGCHAIN4J_TIMEOUT.equals(code)
+                || LANGCHAIN4J_INTERNAL_SERVER.equals(code)
+                || REQUEST_TIMEOUT.equals(code)
+                || LANGCHAIN4J_RETRIABLE.equals(code);
+    }
+
+    public static boolean isContextOverflowCode(String code) {
+        if (code == null || code.isBlank()) {
+            return false;
+        }
+        return CONTEXT_LENGTH_EXCEEDED.equals(code);
     }
 
     private static String classifyKnownThrowable(Throwable throwable) {
@@ -252,5 +278,22 @@ public final class LlmErrorClassifier {
             return null;
         }
         return null;
+    }
+
+    private static String classifyFromMessage(String message) {
+        if (message == null || message.isBlank()) {
+            return UNKNOWN;
+        }
+
+        String normalized = message.toLowerCase(Locale.ROOT);
+        if (normalized.contains("context length")
+                || normalized.contains("context window")
+                || normalized.contains("maximum context")
+                || normalized.contains("token limit exceeded")
+                || normalized.contains("prompt is too long")) {
+            return CONTEXT_LENGTH_EXCEEDED;
+        }
+
+        return UNKNOWN;
     }
 }

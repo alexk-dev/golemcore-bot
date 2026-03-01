@@ -22,9 +22,10 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Attachment;
 import me.golemcore.bot.domain.model.ContextAttributes;
-import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.RoutingOutcome;
+import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.SkillTransitionRequest;
 import me.golemcore.bot.domain.model.TurnOutcome;
 import me.golemcore.bot.domain.service.SessionIdentitySupport;
@@ -39,8 +40,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * System for routing final responses back to the originating channel (order=60,
@@ -122,8 +123,35 @@ public class ResponseRoutingSystem implements AgentSystem {
                 .errorMessage(errorMessage)
                 .build();
         recordRoutingOutcome(context, routingOutcome);
+        sendRuntimeEvents(context);
 
         return context;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void sendRuntimeEvents(AgentContext context) {
+        if (context == null || context.getSession() == null) {
+            return;
+        }
+
+        Object value = context.getAttribute(ContextAttributes.RUNTIME_EVENTS);
+        if (!(value instanceof List<?> events) || events.isEmpty()) {
+            return;
+        }
+
+        String channelType = context.getSession().getChannelType();
+        ChannelPort channelPort = channelRegistry.get(channelType);
+        if (channelPort == null) {
+            return;
+        }
+
+        String chatId = SessionIdentitySupport.resolveTransportChatId(context.getSession());
+        for (Object eventObject : events) {
+            if (!(eventObject instanceof RuntimeEvent runtimeEvent)) {
+                continue;
+            }
+            channelPort.sendRuntimeEvent(chatId, runtimeEvent);
+        }
     }
 
     private void recordRoutingOutcome(AgentContext context, RoutingOutcome routingOutcome) {
