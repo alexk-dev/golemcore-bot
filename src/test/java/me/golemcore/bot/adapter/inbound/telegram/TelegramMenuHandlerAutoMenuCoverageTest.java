@@ -3,6 +3,8 @@ package me.golemcore.bot.adapter.inbound.telegram;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.Goal;
+import me.golemcore.bot.domain.model.Plan;
+import me.golemcore.bot.domain.model.PlanStep;
 import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
@@ -127,6 +129,7 @@ class TelegramMenuHandlerAutoMenuCoverageTest {
         handler.setTelegramClient(telegramClient);
 
         stubAutoData();
+        stubPlanData();
     }
 
     @Test
@@ -141,6 +144,11 @@ class TelegramMenuHandlerAutoMenuCoverageTest {
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:goalDeleteConfirm:0");
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:goalDelete:0");
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:goalDaily:0");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:goalSchedule:0");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schFreq:daily");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schTime:0900");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schLimit:3");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schSave");
 
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:tasks");
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:tasksNext");
@@ -154,6 +162,13 @@ class TelegramMenuHandlerAutoMenuCoverageTest {
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:taskDeleteConfirm:0");
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:taskDelete:0");
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:taskDaily:0");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:taskSchedule:0");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schFreq:weekly");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schDay:1");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schDaysDone");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schTime:1200");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schLimit:0");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schSave");
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:taskSet:bad");
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:taskSet:0:unknown");
 
@@ -164,6 +179,8 @@ class TelegramMenuHandlerAutoMenuCoverageTest {
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:scheduleDel:0");
 
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:createGoal");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:createStandaloneTask");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schCancel");
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:refresh");
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:noop");
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:goal:99");
@@ -365,6 +382,12 @@ class TelegramMenuHandlerAutoMenuCoverageTest {
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:main");
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:auto");
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:plan");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:on");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:off");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:done");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:refresh");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:back");
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:unknown-section");
 
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:close");
@@ -543,6 +566,31 @@ class TelegramMenuHandlerAutoMenuCoverageTest {
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:goals");
 
         verify(telegramClient, atLeast(1)).execute(any(EditMessageText.class));
+    }
+
+    private void stubPlanData() {
+        me.golemcore.bot.domain.model.Plan plan = me.golemcore.bot.domain.model.Plan.builder()
+                .id("plan-1")
+                .title("Demo plan")
+                .status(me.golemcore.bot.domain.model.Plan.PlanStatus.READY)
+                .steps(List.of(
+                        me.golemcore.bot.domain.model.PlanStep.builder()
+                                .id("ps-1")
+                                .planId("plan-1")
+                                .toolName("goal_management")
+                                .order(1)
+                                .status(me.golemcore.bot.domain.model.PlanStep.StepStatus.PENDING)
+                                .build()))
+                .build();
+
+        when(planService.isFeatureEnabled()).thenReturn(true);
+        when(planService.isPlanModeActive(any())).thenReturn(false);
+        when(planService.getPlans(any())).thenReturn(List.of(plan));
+        when(planService.getPlans()).thenReturn(List.of(plan));
+        when(planService.getPlan(eq("plan-1"), any())).thenReturn(Optional.of(plan));
+        when(planService.getPlan("plan-1")).thenReturn(Optional.of(plan));
+        when(commandRouter.execute(eq("plan"), any(), any()))
+                .thenReturn(CompletableFuture.completedFuture(CommandPort.CommandResult.success("plan ok")));
     }
 
     private void stubAutoData() {
