@@ -29,7 +29,8 @@ class CompactionDetailsExtractorTest {
     void shouldExtractFilesystemAndToolStatistics() {
         List<Message.ToolCall> toolCalls = List.of(
                 toolCall("filesystem", Map.of("operation", "read_file", "path", "src/A.java")),
-                toolCall("filesystem", Map.of("operation", "write_file", "path", "src/B.java", "content", "line1\nline2")),
+                toolCall("filesystem",
+                        Map.of("operation", "write_file", "path", "src/B.java", "content", "line1\nline2")),
                 toolCall("filesystem", Map.of("operation", "delete", "path", "src/C.java")),
                 toolCall("filesystem", Map.of("operation", "create_directory", "path", "src/new")),
                 toolCall("shell", Map.of("command", "echo ok")));
