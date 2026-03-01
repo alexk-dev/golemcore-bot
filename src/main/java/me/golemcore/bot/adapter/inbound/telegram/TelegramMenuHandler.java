@@ -354,7 +354,8 @@ public class TelegramMenuHandler {
         }
 
         String normalized = text.trim();
-        if ("/cancel".equalsIgnoreCase(normalized) || "\u043e\u0442\u043c\u0435\u043d\u0430".equalsIgnoreCase(normalized)) {
+        if ("/cancel".equalsIgnoreCase(normalized)
+                || "\u043e\u0442\u043c\u0435\u043d\u0430".equalsIgnoreCase(normalized)) {
             pendingInputByChat.remove(chatId);
             scheduleDraftByChat.remove(chatId);
             sendSeparateMessage(chatId, msg("menu.input.cancelled"));
