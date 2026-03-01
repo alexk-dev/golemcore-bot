@@ -36,6 +36,8 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
@@ -130,6 +132,78 @@ class TelegramMenuHandlerAutoMenuCoverageTest {
 
         stubAutoData();
         stubPlanData();
+    }
+
+    @Test
+    void shouldHandlePlanMenuActionsAndScheduleWizardBranches() {
+        when(planService.isFeatureEnabled()).thenReturn(true);
+
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:detail:0");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:status:0");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:approve:0");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:cancel:0");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:resume:0");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:detail:99");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:status:99");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:approve:99");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:cancel:99");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:resume:99");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:prev");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:next");
+
+        verify(commandRouter, atLeast(4)).execute(eq("plan"), any(), any());
+
+        // Schedule wizard fallback/invalid branches
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:goalSchedule:99");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:taskSchedule:99");
+
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:goalSchedule:0");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schFreq:custom");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schDay:9");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schDaysDone");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schFreq:unknown");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schTime:abcd");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schBack");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schBack");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schBack");
+
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:goalSchedule:0");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schFreq:daily");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schTime:2400");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schTime:0900");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schLimit:bad");
+
+        when(scheduleService.createSchedule(any(), anyString(), anyString(), anyInt()))
+                .thenThrow(new IllegalStateException("schedule-save-fail"));
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schSave");
+
+        // Pending input paths + cancel
+        when(autoModeService.createGoal(anyString(), any())).thenReturn(Goal.builder()
+                .id("g-created")
+                .title("Goal from menu")
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>())
+                .build());
+        when(autoModeService.addStandaloneTask(anyString(), any())).thenReturn(AutoTask.builder()
+                .id("t-created")
+                .goalId("inbox")
+                .title("Task from menu")
+                .status(AutoTask.TaskStatus.PENDING)
+                .order(1)
+                .build());
+
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:createGoal");
+        assertTrue(handler.handlePendingInput(CHAT_ID, "/cancel"));
+
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:createGoal");
+        assertTrue(handler.handlePendingInput(CHAT_ID, "Goal from menu"));
+
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:createStandaloneTask");
+        assertTrue(handler.handlePendingInput(CHAT_ID, "Task from menu"));
+
+        assertFalse(handler.handlePendingInput(CHAT_ID, ""));
+        assertFalse(handler.handlePendingInput(CHAT_ID, "   "));
     }
 
     @Test
