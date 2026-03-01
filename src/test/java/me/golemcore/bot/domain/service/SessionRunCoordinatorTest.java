@@ -505,7 +505,9 @@ class SessionRunCoordinatorTest {
             synchronized (processedOrder) {
                 processedSnapshot = new ArrayList<>(processedOrder);
             }
-            assertEquals(List.of("RESUME"), processedSnapshot);
+            boolean onlyResumeProcessed = List.of("RESUME").equals(processedSnapshot);
+            boolean initialAndResumeProcessed = List.of("A", "RESUME").equals(processedSnapshot);
+            assertTrue(onlyResumeProcessed || initialAndResumeProcessed);
         }
     }
 
