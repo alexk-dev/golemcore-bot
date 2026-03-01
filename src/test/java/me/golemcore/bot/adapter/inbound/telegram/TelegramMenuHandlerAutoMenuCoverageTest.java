@@ -174,6 +174,13 @@ class TelegramMenuHandlerAutoMenuCoverageTest {
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schTime:0900");
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schLimit:bad");
 
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schTimeCustom");
+        assertTrue(handler.handlePendingInput(CHAT_ID, "09:45"));
+
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schLimitCustom");
+        assertTrue(handler.handlePendingInput(CHAT_ID, "7"));
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schSave");
+
         when(scheduleService.createSchedule(any(), anyString(), anyString(), anyInt()))
                 .thenThrow(new IllegalStateException("schedule-save-fail"));
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schSave");
@@ -593,6 +600,31 @@ class TelegramMenuHandlerAutoMenuCoverageTest {
                 .when(autoModeService)
                 .updateTaskStatus(eq("g1"), eq("t1"), eq(AutoTask.TaskStatus.COMPLETED), eq(null));
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:taskSet:0:done");
+    }
+
+    @Test
+    void shouldHandleCustomSchedulePendingInputValidation() {
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:goals");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:goalSchedule:0");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schFreq:daily");
+
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schTimeCustom");
+        assertTrue(handler.handlePendingInput(CHAT_ID, "bad-time"));
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schTimeCustom");
+        assertTrue(handler.handlePendingInput(CHAT_ID, "9:61"));
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schTimeCustom");
+        assertTrue(handler.handlePendingInput(CHAT_ID, "0930"));
+
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schLimitCustom");
+        assertTrue(handler.handlePendingInput(CHAT_ID, "-1"));
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schLimitCustom");
+        assertTrue(handler.handlePendingInput(CHAT_ID, "abc"));
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schLimitCustom");
+        assertTrue(handler.handlePendingInput(CHAT_ID, "0"));
+
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schSave");
+
+        verify(scheduleService, atLeast(1)).createSchedule(any(), anyString(), anyString(), anyInt());
     }
 
     @Test

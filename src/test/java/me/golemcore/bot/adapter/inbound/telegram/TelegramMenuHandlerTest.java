@@ -321,6 +321,36 @@ class TelegramMenuHandlerTest {
     }
 
     @Test
+    void shouldHandleCustomScheduleTimeAndLimitInput() throws Exception {
+        stubEdit();
+        Goal goal = Goal.builder()
+                .id("g1")
+                .title("Goal 1")
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(List.of())
+                .build();
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(autoModeService.getGoals()).thenReturn(List.of(goal));
+        when(autoModeService.getGoal("g1")).thenReturn(java.util.Optional.of(goal));
+        when(scheduleService.findSchedulesForTarget("g1")).thenReturn(List.of());
+
+        handler.handleCallback(CHAT_ID, MSG_ID, "menu:autoMenu:goals");
+        handler.handleCallback(CHAT_ID, MSG_ID, "menu:autoMenu:goalSchedule:0");
+        handler.handleCallback(CHAT_ID, MSG_ID, "menu:autoMenu:schFreq:daily");
+
+        handler.handleCallback(CHAT_ID, MSG_ID, "menu:autoMenu:schTimeCustom");
+        assertTrue(handler.handlePendingInput(CHAT_ID, "09:30"));
+
+        handler.handleCallback(CHAT_ID, MSG_ID, "menu:autoMenu:schLimitCustom");
+        assertTrue(handler.handlePendingInput(CHAT_ID, "6"));
+
+        handler.handleCallback(CHAT_ID, MSG_ID, "menu:autoMenu:schSave");
+
+        verify(scheduleService).createSchedule(eq(me.golemcore.bot.domain.model.ScheduleEntry.ScheduleType.GOAL),
+                eq("g1"), anyString(), eq(6));
+    }
+
+    @Test
     void shouldGoBackToMainFromSessionsMenu() throws Exception {
         stubEdit();
 
