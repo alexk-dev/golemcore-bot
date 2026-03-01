@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.14.0 - 2026-03-01
+#### Features
+- (**telegram**) add custom time and limit input in schedule wizard (#135) - (6f1cc30) - GolemCore AI Agent #1
+#### Miscellaneous
+- (**deps-dev**) bump minimatch from 3.1.2 to 3.1.5 in /dashboard (#129) - (ef0f375) - dependabot[bot]
+
+- - -
+
 ## v0.12.0 - 2026-02-25
 #### Features
 - (**browser**) fetch Playwright driver bundle from Maven at runtime (#117) - (2121f20) - Alex Kuleshov
