@@ -2019,13 +2019,16 @@ public class TelegramMenuHandler {
         try {
             int hour = Integer.parseInt(hhmm.substring(0, 2));
             int minute = Integer.parseInt(hhmm.substring(2, 4));
-            if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
-                throw new IllegalArgumentException("Invalid time");
+            boolean validHour = hour >= 0 && hour <= 23;
+            boolean validMinute = minute >= 0 && minute <= 59;
+            if (validHour && validMinute) {
+                draft.hour = hour;
+                draft.minute = minute;
+                draft.step = ScheduleWizardStep.LIMIT;
+            } else {
+                sendSeparateMessage(chatId, msg("menu.auto.schedule.time.invalid"));
             }
-            draft.hour = hour;
-            draft.minute = minute;
-            draft.step = ScheduleWizardStep.LIMIT;
-        } catch (Exception e) {
+        } catch (NumberFormatException e) {
             sendSeparateMessage(chatId, msg("menu.auto.schedule.time.invalid"));
         }
 
