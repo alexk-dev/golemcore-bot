@@ -263,6 +263,11 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
         int maxContextTokens = modelSelectionService.resolveMaxInputTokens(effectiveTier);
         hints.put("maxContextTokens", maxContextTokens);
 
+        Object fileChanges = context.getAttribute(ContextAttributes.TURN_FILE_CHANGES);
+        if (fileChanges != null) {
+            hints.put("fileChanges", fileChanges);
+        }
+
         return hints;
     }
 

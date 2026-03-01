@@ -150,4 +150,10 @@ public final class ContextAttributes {
     /** String ? active auto task identifier for the turn. */
     public static final String AUTO_TASK_ID = "auto.task.id";
 
+    /** Map<String,Object> ? latest structured compaction details. */
+    public static final String COMPACTION_LAST_DETAILS = "compaction.last.details";
+
+    /** List<Map<String,Object>> ? per-turn edited file stats for UI hints. */
+    public static final String TURN_FILE_CHANGES = "turn.file.changes";
+
 }
