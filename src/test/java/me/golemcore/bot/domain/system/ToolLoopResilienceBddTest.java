@@ -211,7 +211,7 @@ class ToolLoopResilienceBddTest {
         assertFalse(Boolean.TRUE.equals(session.getMetadata().get(ContextAttributes.TURN_INTERRUPT_REQUESTED)));
         assertTrue(session.getMessages().stream().anyMatch(message -> "assistant".equals(message.getRole())
                 && message.getContent() != null
-                && message.getContent().contains("Stopped")));
+                && message.getContent().contains("Stopped as requested.")));
     }
 
     private DefaultToolLoopSystem buildSystem(LlmPort llmPort, RuntimeConfigService runtimeConfigService,
