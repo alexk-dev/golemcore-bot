@@ -8,6 +8,7 @@ import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -284,6 +285,9 @@ class RuntimeConfigServiceTest {
         assertTrue(service.isTurnAutoRetryEnabled());
         assertEquals(2, service.getTurnAutoRetryMaxAttempts());
         assertEquals(600L, service.getTurnAutoRetryBaseDelayMs());
+        assertTrue(service.isTurnQueueSteeringEnabled());
+        assertEquals("one-at-a-time", service.getTurnQueueSteeringMode());
+        assertEquals("one-at-a-time", service.getTurnQueueFollowUpMode());
     }
 
     @Test
@@ -292,12 +296,18 @@ class RuntimeConfigServiceTest {
                 .autoRetryEnabled(false)
                 .autoRetryMaxAttempts(5)
                 .autoRetryBaseDelayMs(1500L)
+                .queueSteeringEnabled(false)
+                .queueSteeringMode("all")
+                .queueFollowUpMode("single")
                 .build();
         persistedSections.put("turn.json", objectMapper.writeValueAsString(turn));
 
         assertFalse(service.isTurnAutoRetryEnabled());
         assertEquals(5, service.getTurnAutoRetryMaxAttempts());
         assertEquals(1500L, service.getTurnAutoRetryBaseDelayMs());
+        assertFalse(service.isTurnQueueSteeringEnabled());
+        assertEquals("all", service.getTurnQueueSteeringMode());
+        assertEquals("one-at-a-time", service.getTurnQueueFollowUpMode());
     }
 
     @Test
@@ -310,6 +320,9 @@ class RuntimeConfigServiceTest {
         assertTrue(config.getTurn().getAutoRetryEnabled());
         assertEquals(2, config.getTurn().getAutoRetryMaxAttempts());
         assertEquals(600L, config.getTurn().getAutoRetryBaseDelayMs());
+        assertTrue(config.getTurn().getQueueSteeringEnabled());
+        assertEquals("one-at-a-time", config.getTurn().getQueueSteeringMode());
+        assertEquals("one-at-a-time", config.getTurn().getQueueFollowUpMode());
     }
 
     @Test
@@ -324,6 +337,23 @@ class RuntimeConfigServiceTest {
         assertTrue(updated.getTurn().getAutoRetryEnabled());
         assertEquals(2, updated.getTurn().getAutoRetryMaxAttempts());
         assertEquals(600L, updated.getTurn().getAutoRetryBaseDelayMs());
+        assertTrue(updated.getTurn().getQueueSteeringEnabled());
+        assertEquals("one-at-a-time", updated.getTurn().getQueueSteeringMode());
+        assertEquals("one-at-a-time", updated.getTurn().getQueueFollowUpMode());
+    }
+
+    @Test
+    void shouldNormalizeTurnQueueModeAliasesAndFallbackToDefault() throws Exception {
+        RuntimeConfig.TurnConfig turn = RuntimeConfig.TurnConfig.builder()
+                .queueSteeringMode("one_at_a_time")
+                .queueFollowUpMode("unexpected")
+                .build();
+        persistedSections.put("turn.json", objectMapper.writeValueAsString(turn));
+
+        assertEquals("one-at-a-time", service.getTurnQueueSteeringMode());
+        assertEquals("one-at-a-time", service.getTurnQueueFollowUpMode());
+        assertEquals("one-at-a-time", service.getRuntimeConfig().getTurn().getQueueSteeringMode());
+        assertEquals("one-at-a-time", service.getRuntimeConfig().getTurn().getQueueFollowUpMode());
     }
 
     @Test
