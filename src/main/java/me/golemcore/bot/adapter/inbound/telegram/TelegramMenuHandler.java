@@ -197,7 +197,7 @@ public class TelegramMenuHandler {
     }
 
     private enum PendingInputType {
-        CREATE_GOAL, CREATE_STANDALONE_TASK
+        CREATE_GOAL, CREATE_STANDALONE_TASK, SCHEDULE_CUSTOM_TIME, SCHEDULE_CUSTOM_LIMIT
     }
 
     private static final class PendingInputState {
@@ -205,6 +205,16 @@ public class TelegramMenuHandler {
 
         private PendingInputState(PendingInputType type) {
             this.type = type;
+        }
+    }
+
+    private static final class TimeValue {
+        private final int hour;
+        private final int minute;
+
+        private TimeValue(int hour, int minute) {
+            this.hour = hour;
+            this.minute = minute;
         }
     }
 
@@ -367,9 +377,10 @@ public class TelegramMenuHandler {
         if (pendingInputState == null) {
             return false;
         }
-        pendingInputByChat.remove(chatId);
 
-        if (pendingInputState.type == PendingInputType.CREATE_GOAL) {
+        switch (pendingInputState.type) {
+        case CREATE_GOAL:
+            pendingInputByChat.remove(chatId);
             try {
                 Goal goal = autoModeService.createGoal(normalized, null);
                 sendSeparateMessage(chatId, msg("menu.auto.goal.created", escapeHtml(goal.getTitle())));
@@ -379,9 +390,8 @@ public class TelegramMenuHandler {
             }
             resendPersistentMenuIfEnabled(chatId);
             return true;
-        }
-
-        if (pendingInputState.type == PendingInputType.CREATE_STANDALONE_TASK) {
+        case CREATE_STANDALONE_TASK:
+            pendingInputByChat.remove(chatId);
             try {
                 AutoTask task = autoModeService.addStandaloneTask(normalized, null);
                 sendSeparateMessage(chatId, msg("menu.auto.task.created.standalone", escapeHtml(task.getTitle())));
@@ -391,9 +401,14 @@ public class TelegramMenuHandler {
             }
             resendPersistentMenuIfEnabled(chatId);
             return true;
+        case SCHEDULE_CUSTOM_TIME:
+            return handlePendingScheduleCustomTime(chatId, normalized);
+        case SCHEDULE_CUSTOM_LIMIT:
+            return handlePendingScheduleCustomLimit(chatId, normalized);
+        default:
+            pendingInputByChat.remove(chatId);
+            return false;
         }
-
-        return false;
     }
 
     private boolean isPersistentMenuEnabled(String chatId) {
@@ -801,8 +816,22 @@ public class TelegramMenuHandler {
             return;
         }
 
+        if ("schTimeCustom".equals(action)) {
+            startScheduleCustomTimeInput(chatId);
+            sendSeparateMessage(chatId, msg("menu.auto.schedule.time.custom.prompt"));
+            renderScheduleWizardByChat(chatId, messageId);
+            return;
+        }
+
         if (action.startsWith("schLimit:")) {
             handleScheduleWizardLimit(chatId, messageId, action.substring("schLimit:".length()));
+            return;
+        }
+
+        if ("schLimitCustom".equals(action)) {
+            startScheduleCustomLimitInput(chatId);
+            sendSeparateMessage(chatId, msg("menu.auto.schedule.limit.custom.prompt"));
+            renderScheduleWizardByChat(chatId, messageId);
             return;
         }
 
@@ -2011,27 +2040,17 @@ public class TelegramMenuHandler {
             return;
         }
 
-        if (hhmm == null || hhmm.length() != 4) {
+        Optional<TimeValue> parsedTime = parseTimeValue(hhmm);
+        if (parsedTime.isEmpty()) {
+            sendSeparateMessage(chatId, msg("menu.auto.schedule.time.invalid"));
             renderScheduleWizard(chatId, messageId, draft);
             return;
         }
 
-        try {
-            int hour = Integer.parseInt(hhmm.substring(0, 2));
-            int minute = Integer.parseInt(hhmm.substring(2, 4));
-            boolean validHour = hour >= 0 && hour <= 23;
-            boolean validMinute = minute >= 0 && minute <= 59;
-            if (validHour && validMinute) {
-                draft.hour = hour;
-                draft.minute = minute;
-                draft.step = ScheduleWizardStep.LIMIT;
-            } else {
-                sendSeparateMessage(chatId, msg("menu.auto.schedule.time.invalid"));
-            }
-        } catch (NumberFormatException e) {
-            sendSeparateMessage(chatId, msg("menu.auto.schedule.time.invalid"));
-        }
-
+        TimeValue timeValue = parsedTime.get();
+        draft.hour = timeValue.hour;
+        draft.minute = timeValue.minute;
+        draft.step = ScheduleWizardStep.LIMIT;
         renderScheduleWizard(chatId, messageId, draft);
     }
 
@@ -2042,14 +2061,15 @@ public class TelegramMenuHandler {
             return;
         }
 
-        try {
-            int parsed = Integer.parseInt(value);
-            draft.maxExecutions = parsed <= 0 ? -1 : parsed;
-            draft.step = ScheduleWizardStep.CONFIRM;
-        } catch (NumberFormatException e) {
+        Optional<Integer> parsedLimit = parseLimitValue(value);
+        if (parsedLimit.isEmpty()) {
             sendSeparateMessage(chatId, msg("menu.auto.schedule.limit.invalid"));
+            renderScheduleWizard(chatId, messageId, draft);
+            return;
         }
 
+        draft.maxExecutions = parsedLimit.get();
+        draft.step = ScheduleWizardStep.CONFIRM;
         renderScheduleWizard(chatId, messageId, draft);
     }
 
@@ -2073,6 +2093,137 @@ public class TelegramMenuHandler {
             sendSeparateMessage(chatId, msg("menu.auto.schedule.create-failed"));
             renderScheduleWizard(chatId, messageId, draft);
         }
+    }
+
+    private boolean handlePendingScheduleCustomTime(String chatId, String normalized) {
+        PendingInputState pendingInputState = pendingInputByChat.get(chatId);
+        if (pendingInputState == null || pendingInputState.type != PendingInputType.SCHEDULE_CUSTOM_TIME) {
+            return false;
+        }
+
+        ScheduleDraft draft = scheduleDraftByChat.get(chatId);
+        if (draft == null) {
+            pendingInputByChat.remove(chatId);
+            resendPersistentMenuIfEnabled(chatId);
+            return true;
+        }
+
+        Optional<TimeValue> parsedTime = parseTimeValue(normalized);
+        if (parsedTime.isEmpty()) {
+            sendSeparateMessage(chatId, msg("menu.auto.schedule.time.invalid"));
+            return true;
+        }
+
+        pendingInputByChat.remove(chatId);
+        TimeValue timeValue = parsedTime.get();
+        draft.hour = timeValue.hour;
+        draft.minute = timeValue.minute;
+        draft.step = ScheduleWizardStep.LIMIT;
+        sendSeparateMessage(chatId, msg("menu.auto.schedule.time.updated",
+                String.format(Locale.ROOT, "%02d:%02d", draft.hour, draft.minute)));
+        return true;
+    }
+
+    private boolean handlePendingScheduleCustomLimit(String chatId, String normalized) {
+        PendingInputState pendingInputState = pendingInputByChat.get(chatId);
+        if (pendingInputState == null || pendingInputState.type != PendingInputType.SCHEDULE_CUSTOM_LIMIT) {
+            return false;
+        }
+
+        ScheduleDraft draft = scheduleDraftByChat.get(chatId);
+        if (draft == null) {
+            pendingInputByChat.remove(chatId);
+            resendPersistentMenuIfEnabled(chatId);
+            return true;
+        }
+
+        Optional<Integer> parsedLimit = parseLimitValue(normalized);
+        if (parsedLimit.isEmpty()) {
+            sendSeparateMessage(chatId, msg("menu.auto.schedule.limit.invalid"));
+            return true;
+        }
+
+        pendingInputByChat.remove(chatId);
+        draft.maxExecutions = parsedLimit.get();
+        draft.step = ScheduleWizardStep.CONFIRM;
+        sendSeparateMessage(chatId, msg("menu.auto.schedule.limit.updated",
+                draft.maxExecutions > 0 ? String.valueOf(draft.maxExecutions)
+                        : msg("menu.auto.schedule.limit.unlimited")));
+        return true;
+    }
+
+    private Optional<TimeValue> parseTimeValue(String hhmm) {
+        if (hhmm == null) {
+            return Optional.empty();
+        }
+
+        String normalized = hhmm.trim();
+        if (normalized.isBlank()) {
+            return Optional.empty();
+        }
+
+        if (normalized.matches("\\d{4}")) {
+            int hour = Integer.parseInt(normalized.substring(0, 2));
+            int minute = Integer.parseInt(normalized.substring(2, 4));
+            return toTimeValue(hour, minute);
+        }
+
+        String[] parts = normalized.split(":");
+        if (parts.length != 2) {
+            return Optional.empty();
+        }
+
+        try {
+            int hour = Integer.parseInt(parts[0]);
+            int minute = Integer.parseInt(parts[1]);
+            return toTimeValue(hour, minute);
+        } catch (NumberFormatException e) {
+            return Optional.empty();
+        }
+    }
+
+    private Optional<TimeValue> toTimeValue(int hour, int minute) {
+        boolean validHour = hour >= 0 && hour <= 23;
+        boolean validMinute = minute >= 0 && minute <= 59;
+        if (!validHour || !validMinute) {
+            return Optional.empty();
+        }
+        return Optional.of(new TimeValue(hour, minute));
+    }
+
+    private Optional<Integer> parseLimitValue(String value) {
+        if (value == null || value.isBlank()) {
+            return Optional.empty();
+        }
+
+        try {
+            int parsed = Integer.parseInt(value.trim());
+            if (parsed < 0) {
+                return Optional.empty();
+            }
+            if (parsed == 0) {
+                return Optional.of(-1);
+            }
+            return Optional.of(parsed);
+        } catch (NumberFormatException e) {
+            return Optional.empty();
+        }
+    }
+
+    private void startScheduleCustomTimeInput(String chatId) {
+        pendingInputByChat.put(chatId, new PendingInputState(PendingInputType.SCHEDULE_CUSTOM_TIME));
+    }
+
+    private void startScheduleCustomLimitInput(String chatId) {
+        pendingInputByChat.put(chatId, new PendingInputState(PendingInputType.SCHEDULE_CUSTOM_LIMIT));
+    }
+
+    private void renderScheduleWizardByChat(String chatId, Integer messageId) {
+        ScheduleDraft draft = scheduleDraftByChat.get(chatId);
+        if (draft == null) {
+            return;
+        }
+        renderScheduleWizard(chatId, messageId, draft);
     }
 
     private void cancelScheduleWizard(String chatId, Integer messageId) {
@@ -2144,6 +2295,7 @@ public class TelegramMenuHandler {
                     button("12:00", "menu:autoMenu:schTime:1200")));
             rows.add(row(button("18:00", "menu:autoMenu:schTime:1800"),
                     button("21:00", "menu:autoMenu:schTime:2100")));
+            rows.add(row(button(msg("menu.auto.schedule.wizard.time.custom"), "menu:autoMenu:schTimeCustom")));
         }
 
         if (draft.step == ScheduleWizardStep.LIMIT) {
@@ -2152,6 +2304,7 @@ public class TelegramMenuHandler {
                     button("5", "menu:autoMenu:schLimit:5")));
             rows.add(row(button("10", "menu:autoMenu:schLimit:10"),
                     button(msg("menu.auto.schedule.wizard.limit.infinite"), "menu:autoMenu:schLimit:0")));
+            rows.add(row(button(msg("menu.auto.schedule.wizard.limit.custom"), "menu:autoMenu:schLimitCustom")));
         }
 
         if (draft.step == ScheduleWizardStep.CONFIRM) {
