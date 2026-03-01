@@ -24,6 +24,7 @@ import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.port.outbound.SessionPort;
 import org.springframework.stereotype.Service;
 
@@ -55,9 +56,12 @@ import java.util.concurrent.Future;
 @Slf4j
 public class SessionRunCoordinator {
 
+    private static final int MAX_QUEUED_MESSAGES_PER_SESSION = 100;
+
     private final SessionPort sessionPort;
     private final AgentLoop agentLoop;
     private final ExecutorService sessionRunExecutor;
+    private final RuntimeEventService runtimeEventService;
 
     private final Map<SessionKey, SessionRunner> runners = new ConcurrentHashMap<>();
 
@@ -69,8 +73,15 @@ public class SessionRunCoordinator {
 
     public void requestStop(String channelType, String chatId) {
         SessionKey key = new SessionKey(channelType, chatId);
-        SessionRunner runner = runners.computeIfAbsent(key, SessionRunner::new);
-        runner.requestStop();
+        SessionRunner runner = runners.get(key);
+        if (runner != null) {
+            runner.requestStop();
+            return;
+        }
+
+        markInterruptRequested(key);
+        publishStopRequestedEvent(key);
+        log.info("[Stop] stop requested while no active runner: channel={}, chatId={}", channelType, chatId);
     }
 
     private final class SessionRunner {
@@ -96,6 +107,16 @@ public class SessionRunCoordinator {
                 }
 
                 if (isRunning()) {
+                    if (queuedMessages.size() >= MAX_QUEUED_MESSAGES_PER_SESSION) {
+                        queuedMessages.removeFirst();
+                        queuedMessages.addLast(inbound);
+                        log.warn(
+                                "[SessionRunCoordinator] queue limit reached ({}), dropped oldest message: channel={}, chatId={}",
+                                MAX_QUEUED_MESSAGES_PER_SESSION,
+                                key.channelType(),
+                                key.chatId());
+                        return;
+                    }
                     queuedMessages.addLast(inbound);
                     return;
                 }
@@ -105,15 +126,26 @@ public class SessionRunCoordinator {
         }
 
         void requestStop() {
+            Future<?> taskToCancel;
+            boolean shouldPause;
             synchronized (lock) {
-                pausedAfterStop = true;
-                markInterruptRequested(key);
-                if (runningTask != null) {
-                    boolean cancelled = runningTask.cancel(true);
-                    log.info("[Stop] cancel requested (cancelled={})", cancelled);
-                } else {
-                    log.info("[Stop] stop requested while idle");
-                }
+                shouldPause = isRunning() || !queuedMessages.isEmpty();
+                pausedAfterStop = shouldPause;
+                taskToCancel = runningTask;
+            }
+
+            markInterruptRequested(key);
+            publishStopRequestedEvent(key);
+
+            if (taskToCancel != null) {
+                boolean cancelled = taskToCancel.cancel(true);
+                log.info("[Stop] cancel requested (cancelled={})", cancelled);
+            } else {
+                log.info("[Stop] stop requested while idle");
+            }
+
+            if (!shouldPause) {
+                evictIfIdle();
             }
         }
 
@@ -141,17 +173,29 @@ public class SessionRunCoordinator {
                     }
                     agentLoop.processMessage(inbound);
                 } catch (Exception e) { // NOSONAR - must not kill executor thread
-                    log.error("[SessionRunCoordinator] run failed: channel={}, chatId={}: {}",
-                            inbound.getChannelType(), inbound.getChatId(), e.getMessage(), e);
+                    handleRunFailure(inbound, e);
                 } finally {
                     onRunComplete();
                 }
             });
         }
 
+        private void handleRunFailure(Message inbound, Exception e) {
+            if (e instanceof InterruptedException || Thread.currentThread().isInterrupted()) {
+                Thread.currentThread().interrupt();
+                log.info("[SessionRunCoordinator] run interrupted: channel={}, chatId={}",
+                        inbound.getChannelType(), inbound.getChatId());
+                return;
+            }
+
+            log.error("[SessionRunCoordinator] run failed: channel={}, chatId={}: {}",
+                    inbound.getChannelType(), inbound.getChatId(), e.getMessage(), e);
+        }
+
         private void onRunComplete() {
             Message next = null;
             synchronized (lock) {
+                runningTask = null;
                 if (pausedAfterStop) {
                     return;
                 }
@@ -161,6 +205,24 @@ public class SessionRunCoordinator {
             }
             if (next != null) {
                 startRun(next, new ArrayDeque<>());
+                return;
+            }
+            evictIfIdle();
+        }
+
+        private void evictIfIdle() {
+            if (isEvictable()) {
+                boolean removed = runners.remove(key, this);
+                if (removed) {
+                    log.debug("[SessionRunCoordinator] evicted idle runner: channel={}, chatId={}",
+                            key.channelType(), key.chatId());
+                }
+            }
+        }
+
+        private boolean isEvictable() {
+            synchronized (lock) {
+                return !pausedAfterStop && !isRunning() && queuedMessages.isEmpty();
             }
         }
 
@@ -211,6 +273,15 @@ public class SessionRunCoordinator {
         }
         metadata.remove(ContextAttributes.TURN_INTERRUPT_REQUESTED);
         sessionPort.save(session);
+    }
+
+    private void publishStopRequestedEvent(SessionKey key) {
+        AgentSession session = sessionPort.getOrCreate(key.channelType(), key.chatId());
+        if (session == null) {
+            return;
+        }
+        runtimeEventService.emitForSession(session, RuntimeEventType.TURN_INTERRUPT_REQUESTED,
+                Map.of("source", "command.stop"));
     }
 
     private record SessionKey(String channelType, String chatId) {
