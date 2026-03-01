@@ -1,31 +1,33 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { Badge, Nav } from 'react-bootstrap';
 import {
-  FiMessageSquare,
-  FiBarChart2,
-  FiSettings,
-  FiFileText,
-  FiZap,
-  FiList,
   FiActivity,
+  FiBarChart2,
+  FiCalendar,
+  FiCode,
+  FiFileText,
+  FiList,
+  FiMessageSquare,
+  FiSettings,
   FiTerminal,
   FiX,
-  FiCode,
+  FiZap,
 } from 'react-icons/fi';
 import type { SessionSummary } from '../../api/sessions';
-import { useSidebarStore } from '../../store/sidebarStore';
 import { useChatSessionStore } from '../../store/chatSessionStore';
+import { useSidebarStore } from '../../store/sidebarStore';
 import { useActiveSession, useCreateSession, useRecentSessions } from '../../hooks/useSessions';
 import { useSystemHealth, useSystemUpdateStatus } from '../../hooks/useSystem';
-import { createUuid } from '../../utils/uuid';
 import { isLegacyCompatibleConversationKey, normalizeConversationKey } from '../../utils/conversationKey';
 import { getSidebarUpdateBadge } from '../../utils/systemUpdateUi';
+import { createUuid } from '../../utils/uuid';
 
 const RECENT_SESSIONS_LIMIT = 5;
 
 const links = [
   { to: '/', icon: <FiMessageSquare size={20} />, label: 'Chat' },
   { to: '/sessions', icon: <FiList size={20} />, label: 'Sessions' },
+  { to: '/scheduler', icon: <FiCalendar size={20} />, label: 'Scheduler' },
   { to: '/analytics', icon: <FiBarChart2 size={20} />, label: 'Analytics' },
   { to: '/prompts', icon: <FiFileText size={20} />, label: 'Prompts' },
   { to: '/skills', icon: <FiZap size={20} />, label: 'Skills' },
