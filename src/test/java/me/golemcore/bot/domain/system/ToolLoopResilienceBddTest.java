@@ -211,7 +211,7 @@ class ToolLoopResilienceBddTest {
         assertFalse(Boolean.TRUE.equals(session.getMetadata().get(ContextAttributes.TURN_INTERRUPT_REQUESTED)));
         assertTrue(session.getMessages().stream().anyMatch(message -> "assistant".equals(message.getRole())
                 && message.getContent() != null
-                && message.getContent().contains("interrupted by user")));
+                && message.getContent().contains("Stopped")));
     }
 
     private DefaultToolLoopSystem buildSystem(LlmPort llmPort, RuntimeConfigService runtimeConfigService,
@@ -221,7 +221,7 @@ class ToolLoopResilienceBddTest {
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
         when(modelSelectionService.resolveForTier(any()))
                 .thenReturn(new ModelSelectionService.ModelSelection(null, null));
-        RuntimeEventService runtimeEventService = new RuntimeEventService(Clock.fixed(NOW, ZoneOffset.UTC));
+        RuntimeEventService runtimeEventService = new RuntimeEventService(Clock.fixed(NOW, ZoneOffset.UTC), List.of());
 
         return new DefaultToolLoopSystem(
                 llmPort,
