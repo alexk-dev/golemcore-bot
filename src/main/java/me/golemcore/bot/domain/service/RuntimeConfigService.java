@@ -76,6 +76,10 @@ public class RuntimeConfigService {
     private static final String DEFAULT_AUTO_MODEL_TIER = "default";
     private static final int DEFAULT_AUTO_COMPACT_MAX_TOKENS = 50000;
     private static final int DEFAULT_AUTO_COMPACT_KEEP_LAST = 20;
+    private static final boolean DEFAULT_COMPACTION_PRESERVE_TURN_BOUNDARIES = true;
+    private static final boolean DEFAULT_COMPACTION_DETAILS_ENABLED = true;
+    private static final int DEFAULT_COMPACTION_DETAILS_MAX_ITEMS = 50;
+    private static final int DEFAULT_COMPACTION_SUMMARY_TIMEOUT_MS = 15000;
     private static final int DEFAULT_MEMORY_SOFT_PROMPT_BUDGET_TOKENS = 1800;
     private static final int DEFAULT_MEMORY_MAX_PROMPT_BUDGET_TOKENS = 3500;
     private static final int DEFAULT_MEMORY_VERSION = 2;
@@ -723,6 +727,26 @@ public class RuntimeConfigService {
         return val != null ? val : DEFAULT_AUTO_COMPACT_KEEP_LAST;
     }
 
+    public boolean isCompactionPreserveTurnBoundariesEnabled() {
+        Boolean val = getRuntimeConfig().getCompaction().getPreserveTurnBoundaries();
+        return val != null ? val : DEFAULT_COMPACTION_PRESERVE_TURN_BOUNDARIES;
+    }
+
+    public boolean isCompactionDetailsEnabled() {
+        Boolean val = getRuntimeConfig().getCompaction().getDetailsEnabled();
+        return val != null ? val : DEFAULT_COMPACTION_DETAILS_ENABLED;
+    }
+
+    public int getCompactionDetailsMaxItemsPerCategory() {
+        Integer val = getRuntimeConfig().getCompaction().getDetailsMaxItemsPerCategory();
+        return val != null ? val : DEFAULT_COMPACTION_DETAILS_MAX_ITEMS;
+    }
+
+    public int getCompactionSummaryTimeoutMs() {
+        Integer val = getRuntimeConfig().getCompaction().getSummaryTimeoutMs();
+        return val != null ? val : DEFAULT_COMPACTION_SUMMARY_TIMEOUT_MS;
+    }
+
     // ==================== Turn Budget ====================
 
     public int getTurnMaxLlmCalls() {
@@ -1243,6 +1267,21 @@ public class RuntimeConfigService {
         }
         if (cfg.getMemory() == null) {
             cfg.setMemory(new RuntimeConfig.MemoryConfig());
+        }
+        if (cfg.getCompaction() == null) {
+            cfg.setCompaction(new RuntimeConfig.CompactionConfig());
+        }
+        if (cfg.getCompaction().getPreserveTurnBoundaries() == null) {
+            cfg.getCompaction().setPreserveTurnBoundaries(DEFAULT_COMPACTION_PRESERVE_TURN_BOUNDARIES);
+        }
+        if (cfg.getCompaction().getDetailsEnabled() == null) {
+            cfg.getCompaction().setDetailsEnabled(DEFAULT_COMPACTION_DETAILS_ENABLED);
+        }
+        if (cfg.getCompaction().getDetailsMaxItemsPerCategory() == null) {
+            cfg.getCompaction().setDetailsMaxItemsPerCategory(DEFAULT_COMPACTION_DETAILS_MAX_ITEMS);
+        }
+        if (cfg.getCompaction().getSummaryTimeoutMs() == null) {
+            cfg.getCompaction().setSummaryTimeoutMs(DEFAULT_COMPACTION_SUMMARY_TIMEOUT_MS);
         }
         if (cfg.getTurn() == null) {
             cfg.setTurn(new RuntimeConfig.TurnConfig());

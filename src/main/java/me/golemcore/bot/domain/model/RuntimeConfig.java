@@ -277,6 +277,14 @@ public class RuntimeConfig {
         private Boolean enabled;
         private Integer maxContextTokens;
         private Integer keepLastMessages;
+        @Builder.Default
+        private Boolean preserveTurnBoundaries = true;
+        @Builder.Default
+        private Boolean detailsEnabled = true;
+        @Builder.Default
+        private Integer detailsMaxItemsPerCategory = 50;
+        @Builder.Default
+        private Integer summaryTimeoutMs = 15000;
     }
 
     @Data

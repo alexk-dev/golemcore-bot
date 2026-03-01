@@ -191,6 +191,60 @@ class RuntimeConfigServiceTest {
         assertTrue(service.isCompactionEnabled());
         assertEquals(50000, service.getCompactionMaxContextTokens());
         assertEquals(20, service.getCompactionKeepLastMessages());
+        assertTrue(service.isCompactionPreserveTurnBoundariesEnabled());
+        assertTrue(service.isCompactionDetailsEnabled());
+        assertEquals(50, service.getCompactionDetailsMaxItemsPerCategory());
+        assertEquals(15000, service.getCompactionSummaryTimeoutMs());
+    }
+
+    @Test
+    void shouldReturnConfiguredAdvancedCompactionSettings() throws Exception {
+        RuntimeConfig.CompactionConfig compaction = RuntimeConfig.CompactionConfig.builder()
+                .enabled(true)
+                .maxContextTokens(12345)
+                .keepLastMessages(7)
+                .preserveTurnBoundaries(false)
+                .detailsEnabled(false)
+                .detailsMaxItemsPerCategory(12)
+                .summaryTimeoutMs(3000)
+                .build();
+        persistedSections.put("compaction.json", objectMapper.writeValueAsString(compaction));
+
+        assertFalse(service.isCompactionPreserveTurnBoundariesEnabled());
+        assertFalse(service.isCompactionDetailsEnabled());
+        assertEquals(12, service.getCompactionDetailsMaxItemsPerCategory());
+        assertEquals(3000, service.getCompactionSummaryTimeoutMs());
+    }
+
+    @Test
+    void shouldNormalizeAdvancedCompactionDefaultsWhenStoredSectionMissingFields() {
+        persistedSections.put("compaction.json", "{}");
+
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        assertNotNull(config.getCompaction());
+        assertTrue(config.getCompaction().getPreserveTurnBoundaries());
+        assertTrue(config.getCompaction().getDetailsEnabled());
+        assertEquals(50, config.getCompaction().getDetailsMaxItemsPerCategory());
+        assertEquals(15000, config.getCompaction().getSummaryTimeoutMs());
+    }
+
+    @Test
+    void shouldInitializeCompactionAdvancedDefaultsWhenNullDuringRuntimeConfigUpdate() {
+        RuntimeConfig newConfig = RuntimeConfig.builder().build();
+        newConfig.setCompaction(new RuntimeConfig.CompactionConfig());
+        newConfig.getCompaction().setPreserveTurnBoundaries(null);
+        newConfig.getCompaction().setDetailsEnabled(null);
+        newConfig.getCompaction().setDetailsMaxItemsPerCategory(null);
+        newConfig.getCompaction().setSummaryTimeoutMs(null);
+
+        service.updateRuntimeConfig(newConfig);
+
+        RuntimeConfig updated = service.getRuntimeConfig();
+        assertTrue(updated.getCompaction().getPreserveTurnBoundaries());
+        assertTrue(updated.getCompaction().getDetailsEnabled());
+        assertEquals(50, updated.getCompaction().getDetailsMaxItemsPerCategory());
+        assertEquals(15000, updated.getCompaction().getSummaryTimeoutMs());
     }
 
     @Test

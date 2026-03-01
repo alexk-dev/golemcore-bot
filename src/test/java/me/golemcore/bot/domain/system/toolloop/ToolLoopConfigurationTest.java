@@ -1,6 +1,6 @@
 package me.golemcore.bot.domain.system.toolloop;
 
-import me.golemcore.bot.domain.service.CompactionService;
+import me.golemcore.bot.domain.service.CompactionOrchestrationService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -61,7 +61,7 @@ class ToolLoopConfigurationTest {
         PlanService planService = mock(PlanService.class);
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         UsageTrackingPort usageTrackingPort = mock(UsageTrackingPort.class);
-        CompactionService compactionService = mock(CompactionService.class);
+        CompactionOrchestrationService compactionOrchestrationService = mock(CompactionOrchestrationService.class);
         RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
 
         ToolLoopSystem system = configuration.toolLoopSystem(
@@ -74,7 +74,7 @@ class ToolLoopConfigurationTest {
                 planService,
                 runtimeConfigService,
                 usageTrackingPort,
-                compactionService,
+                compactionOrchestrationService,
                 runtimeEventService);
 
         assertNotNull(system);

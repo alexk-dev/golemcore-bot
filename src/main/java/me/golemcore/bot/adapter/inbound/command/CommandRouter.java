@@ -22,6 +22,8 @@ import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.AutoModeChannelRegisteredEvent;
 import me.golemcore.bot.domain.model.AutoTask;
+import me.golemcore.bot.domain.model.CompactionReason;
+import me.golemcore.bot.domain.model.CompactionResult;
 import me.golemcore.bot.domain.model.DiaryEntry;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.Message;
@@ -33,7 +35,7 @@ import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.UsageStats;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
-import me.golemcore.bot.domain.service.CompactionService;
+import me.golemcore.bot.domain.service.CompactionOrchestrationService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanExecutionService;
 import me.golemcore.bot.domain.service.PlanService;
@@ -122,7 +124,7 @@ public class CommandRouter implements CommandPort {
     private final SessionPort sessionService;
     private final UsageTrackingPort usageTracker;
     private final UserPreferencesService preferencesService;
-    private final CompactionService compactionService;
+    private final CompactionOrchestrationService compactionOrchestrationService;
     private final AutoModeService autoModeService;
     private final ModelSelectionService modelSelectionService;
     private final PlanService planService;
@@ -148,7 +150,7 @@ public class CommandRouter implements CommandPort {
             SessionPort sessionService,
             UsageTrackingPort usageTracker,
             UserPreferencesService preferencesService,
-            CompactionService compactionService,
+            CompactionOrchestrationService compactionOrchestrationService,
             AutoModeService autoModeService,
             ModelSelectionService modelSelectionService,
             PlanService planService,
@@ -164,7 +166,7 @@ public class CommandRouter implements CommandPort {
         this.sessionService = sessionService;
         this.usageTracker = usageTracker;
         this.preferencesService = preferencesService;
-        this.compactionService = compactionService;
+        this.compactionOrchestrationService = compactionOrchestrationService;
         this.autoModeService = autoModeService;
         this.modelSelectionService = modelSelectionService;
         this.planService = planService;
@@ -453,30 +455,24 @@ public class CommandRouter implements CommandPort {
             }
         }
 
-        List<Message> toSummarize = sessionService.getMessagesToCompact(sessionId, keepLast);
-        if (toSummarize.isEmpty()) {
+        CompactionResult result = compactionOrchestrationService.compact(
+                sessionId,
+                CompactionReason.MANUAL_COMMAND,
+                keepLast);
+
+        if (result.removed() <= 0) {
             int count = sessionService.getMessageCount(sessionId);
             return CommandResult.success(msg("command.compact.nothing", count));
         }
 
-        String summary = compactionService.summarize(toSummarize);
-        int removed;
-        if (summary != null) {
-            Message summaryMsg = compactionService.createSummaryMessage(summary);
-            removed = sessionService.compactWithSummary(sessionId, keepLast, summaryMsg);
-            log.info("[Compact] Summarized {} messages for session {}", removed, sessionId);
+        if (result.usedSummary()) {
+            log.info("[Compact] Summarized {} messages for session {}", result.removed(), sessionId);
         } else {
-            removed = sessionService.compactMessages(sessionId, keepLast);
-            log.info("[Compact] Truncated {} messages (no LLM) for session {}", removed, sessionId);
+            log.info("[Compact] Truncated {} messages (no LLM) for session {}", result.removed(), sessionId);
         }
 
-        if (removed <= 0) {
-            int count = sessionService.getMessageCount(sessionId);
-            return CommandResult.success(msg("command.compact.nothing", count));
-        }
-
-        String resultKey = summary != null ? "command.compact.done.summary" : "command.compact.done";
-        return CommandResult.success(msg(resultKey, removed, keepLast));
+        String resultKey = result.usedSummary() ? "command.compact.done.summary" : "command.compact.done";
+        return CommandResult.success(msg(resultKey, result.removed(), keepLast));
     }
 
     private CommandResult handleHelp() {
@@ -724,10 +720,10 @@ public class CommandRouter implements CommandPort {
             long completed = goal.getCompletedTaskCount();
             int total = goal.getTasks().size();
             String statusIcon = switch (goal.getStatus()) {
-            case ACTIVE -> "\u25B6\uFE0F";
-            case COMPLETED -> "\u2705";
-            case PAUSED -> "\u23F8\uFE0F";
-            case CANCELLED -> "\u274C";
+            case ACTIVE -> "▶️";
+            case COMPLETED -> "✅";
+            case PAUSED -> "⏸️";
+            case CANCELLED -> "❌";
             };
             sb.append(String.format("%s **%s** [%s] (%d/%d tasks)%n",
                     statusIcon, goal.getTitle(), goal.getStatus(), completed, total));
@@ -1009,13 +1005,13 @@ public class CommandRouter implements CommandPort {
             long completed = plan.getCompletedStepCount();
             int total = plan.getSteps().size();
             String statusIcon = switch (plan.getStatus()) {
-            case COLLECTING -> "\u270D\uFE0F";
-            case READY -> "\u23F3";
-            case APPROVED -> "\u2705";
-            case EXECUTING -> "\u25B6\uFE0F";
-            case COMPLETED -> "\u2705";
-            case PARTIALLY_COMPLETED -> "\u26A0\uFE0F";
-            case CANCELLED -> "\u274C";
+            case COLLECTING -> "✍️";
+            case READY -> "⏳";
+            case APPROVED -> "✅";
+            case EXECUTING -> "▶️";
+            case COMPLETED -> "✅";
+            case PARTIALLY_COMPLETED -> "⚠️";
+            case CANCELLED -> "❌";
             };
             sb.append(String.format("%s `%s` [%s] (%d/%d steps)%n",
                     statusIcon, plan.getId().substring(0, 8), plan.getStatus(), completed, total));
@@ -1184,7 +1180,7 @@ public class CommandRouter implements CommandPort {
                 .withZone(ZoneOffset.UTC);
 
         for (ScheduleEntry entry : schedules) {
-            String enabledIcon = entry.isEnabled() ? "\u2705" : "\u274C";
+            String enabledIcon = entry.isEnabled() ? "✅" : "❌";
             sb.append(String.format("%s `%s` [%s] -> %s%n",
                     enabledIcon, entry.getId(), entry.getType(), entry.getTargetId()));
             sb.append("  Cron: `").append(entry.getCronExpression()).append("`");

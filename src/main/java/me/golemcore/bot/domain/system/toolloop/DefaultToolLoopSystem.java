@@ -2,6 +2,8 @@ package me.golemcore.bot.domain.system.toolloop;
 
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Attachment;
+import me.golemcore.bot.domain.model.CompactionReason;
+import me.golemcore.bot.domain.model.CompactionResult;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.FailureEvent;
 import me.golemcore.bot.domain.model.FailureKind;
@@ -13,7 +15,7 @@ import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.TurnLimitReason;
-import me.golemcore.bot.domain.service.CompactionService;
+import me.golemcore.bot.domain.service.CompactionOrchestrationService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -56,7 +58,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
     @SuppressWarnings("PMD.UnusedPrivateField")
     private final PlanService planService;
     private final RuntimeConfigService runtimeConfigService;
-    private final CompactionService compactionService;
+    private final CompactionOrchestrationService compactionOrchestrationService;
     private final RuntimeEventService runtimeEventService;
     private final Clock clock;
 
@@ -80,7 +82,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         this.modelSelectionService = modelSelectionService;
         this.planService = planService;
         this.runtimeConfigService = null;
-        this.compactionService = null;
+        this.compactionOrchestrationService = null;
         this.runtimeEventService = null;
         this.clock = clock;
     }
@@ -107,7 +109,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         this.modelSelectionService = modelSelectionService;
         this.planService = planService;
         this.runtimeConfigService = null;
-        this.compactionService = null;
+        this.compactionOrchestrationService = null;
         this.runtimeEventService = null;
         this.clock = clock;
 
@@ -124,7 +126,8 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
     public DefaultToolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutor, HistoryWriter historyWriter,
             ConversationViewBuilder viewBuilder, BotProperties.TurnProperties turnSettings,
             BotProperties.ToolLoopProperties settings, ModelSelectionService modelSelectionService,
-            PlanService planService, RuntimeConfigService runtimeConfigService, CompactionService compactionService,
+            PlanService planService, RuntimeConfigService runtimeConfigService,
+            CompactionOrchestrationService compactionOrchestrationService,
             RuntimeEventService runtimeEventService, Clock clock) {
         this.llmPort = llmPort;
         this.toolExecutor = toolExecutor;
@@ -135,7 +138,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         this.modelSelectionService = modelSelectionService;
         this.planService = planService;
         this.runtimeConfigService = runtimeConfigService;
-        this.compactionService = compactionService;
+        this.compactionOrchestrationService = compactionOrchestrationService;
         this.runtimeEventService = runtimeEventService;
         this.clock = clock;
     }
@@ -153,6 +156,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         long retryBaseDelayMs = resolveAutoRetryBaseDelayMs();
         boolean retryEnabled = isAutoRetryEnabled();
         List<Attachment> accumulatedAttachments = new ArrayList<>();
+        List<Map<String, Object>> turnFileChanges = new ArrayList<>();
 
         int maxLlmCalls = resolveMaxLlmCalls();
         int maxToolExecutions = resolveMaxToolExecutions();
@@ -289,6 +293,10 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                                 "success", outcome != null && outcome.toolResult() != null
                                         && outcome.toolResult().isSuccess(),
                                 "durationMs", toolDuration));
+                captureFileChanges(tc, turnFileChanges);
+                if (!turnFileChanges.isEmpty()) {
+                    context.setAttribute(ContextAttributes.TURN_FILE_CHANGES, new ArrayList<>(turnFileChanges));
+                }
 
                 if (outcome != null && outcome.attachment() != null) {
                     accumulatedAttachments.add(outcome.attachment());
@@ -395,7 +403,8 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
     }
 
     private boolean tryRecoverFromContextOverflow(AgentContext context, int llmCalls, int retryAttempt) {
-        if (compactionService == null || context.getSession() == null || context.getSession().getMessages() == null
+        if (compactionOrchestrationService == null || context.getSession() == null
+                || context.getSession().getMessages() == null
                 || context.getSession().getMessages().isEmpty()) {
             return false;
         }
@@ -411,29 +420,119 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             return false;
         }
 
-        int toRemove = total - keepLast;
-        List<Message> messagesToCompact = new ArrayList<>(sessionMessages.subList(0, toRemove));
         emitRuntimeEvent(context, RuntimeEventType.COMPACTION_STARTED,
-                Map.of("llmCall", llmCalls, "messages", messagesToCompact.size(), "keepLast", keepLast));
+                Map.of("llmCall", llmCalls,
+                        "messages", total - keepLast,
+                        "keepLast", keepLast,
+                        "reason", CompactionReason.CONTEXT_OVERFLOW_RECOVERY.name(),
+                        "rawCutIndex", Math.max(0, total - keepLast),
+                        "adjustedCutIndex", Math.max(0, total - keepLast),
+                        "splitTurnDetected", false,
+                        "toCompactCount", Math.max(0, total - keepLast)));
 
-        String summary = compactionService.summarize(messagesToCompact);
-        if (summary == null || summary.isBlank()) {
+        CompactionResult compactionResult = compactionOrchestrationService.compact(
+                context.getSession().getId(),
+                CompactionReason.CONTEXT_OVERFLOW_RECOVERY,
+                keepLast);
+
+        if (compactionResult.removed() <= 0 || !compactionResult.usedSummary()) {
             return false;
         }
 
-        Message summaryMessage = compactionService.createSummaryMessage(summary);
-        List<Message> keptMessages = Message
-                .flattenToolMessages(new ArrayList<>(sessionMessages.subList(toRemove, total)));
-        sessionMessages.clear();
-        sessionMessages.add(summaryMessage);
-        sessionMessages.addAll(keptMessages);
-        context.setMessages(new ArrayList<>(sessionMessages));
+        context.setMessages(new ArrayList<>(context.getSession().getMessages()));
         context.setAttribute(ContextAttributes.LLM_ERROR, null);
         context.setAttribute(ContextAttributes.LLM_ERROR_CODE, null);
+        if (compactionResult.details() != null) {
+            context.setAttribute(ContextAttributes.COMPACTION_LAST_DETAILS, compactionResult.details());
+            context.setAttribute(ContextAttributes.TURN_FILE_CHANGES, compactionResult.details().fileChanges());
+        }
 
         emitRuntimeEvent(context, RuntimeEventType.COMPACTION_FINISHED,
-                Map.of("summaryLength", summary.length(), "removed", toRemove, "kept", keepLast));
+                Map.of("summaryLength",
+                        compactionResult.details() != null ? compactionResult.details().summaryLength() : 0,
+                        "removed", compactionResult.removed(),
+                        "kept", keepLast,
+                        "splitTurnDetected", compactionResult.details() != null
+                                && compactionResult.details().splitTurnDetected(),
+                        "usedSummary", compactionResult.usedSummary(),
+                        "reason", CompactionReason.CONTEXT_OVERFLOW_RECOVERY.name(),
+                        "toolCount", compactionResult.details() != null ? compactionResult.details().toolCount() : 0,
+                        "readFilesCount", compactionResult.details() != null
+                                ? compactionResult.details().readFilesCount()
+                                : 0,
+                        "modifiedFilesCount", compactionResult.details() != null
+                                ? compactionResult.details().modifiedFilesCount()
+                                : 0,
+                        "durationMs",
+                        compactionResult.details() != null ? compactionResult.details().durationMs() : 0));
         return true;
+    }
+
+    private void captureFileChanges(Message.ToolCall toolCall, List<Map<String, Object>> turnFileChanges) {
+        if (toolCall == null || turnFileChanges == null) {
+            return;
+        }
+        if (!"filesystem".equals(toolCall.getName())) {
+            return;
+        }
+        if (toolCall.getArguments() == null || toolCall.getArguments().isEmpty()) {
+            return;
+        }
+
+        Object operationObject = toolCall.getArguments().get("operation");
+        Object pathObject = toolCall.getArguments().get("path");
+        if (!(operationObject instanceof String operation) || !(pathObject instanceof String path) || path.isBlank()) {
+            return;
+        }
+
+        boolean edited = "write_file".equals(operation)
+                || "append".equals(operation)
+                || "delete".equals(operation)
+                || "create_directory".equals(operation);
+        if (!edited) {
+            return;
+        }
+
+        int addedLines = 0;
+        int removedLines = 0;
+        boolean deleted = false;
+        if ("write_file".equals(operation) || "append".equals(operation)) {
+            Object contentObject = toolCall.getArguments().get("content");
+            if (contentObject instanceof String content && !content.isBlank()) {
+                addedLines = content.split("\\R", -1).length;
+            }
+        }
+        if ("delete".equals(operation)) {
+            deleted = true;
+            removedLines = 1;
+        }
+
+        Map<String, Object> stat = new LinkedHashMap<>();
+        stat.put("path", path);
+        stat.put("addedLines", addedLines);
+        stat.put("removedLines", removedLines);
+        stat.put("deleted", deleted);
+
+        for (Map<String, Object> existing : turnFileChanges) {
+            Object existingPath = existing.get("path");
+            if (existingPath instanceof String && path.equals(existingPath)) {
+                int existingAdded = readInt(existing.get("addedLines"));
+                int existingRemoved = readInt(existing.get("removedLines"));
+                existing.put("addedLines", existingAdded + addedLines);
+                existing.put("removedLines", existingRemoved + removedLines);
+                existing.put("deleted", Boolean.TRUE.equals(existing.get("deleted")) || deleted);
+                return;
+            }
+        }
+
+        turnFileChanges.add(stat);
+    }
+
+    private int readInt(Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        return 0;
     }
 
     private String getEmptyFinalResponseCode(LlmResponse response, AgentContext context) {

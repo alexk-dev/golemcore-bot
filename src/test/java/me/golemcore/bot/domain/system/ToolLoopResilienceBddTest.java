@@ -2,6 +2,8 @@ package me.golemcore.bot.domain.system;
 
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.CompactionReason;
+import me.golemcore.bot.domain.model.CompactionResult;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
@@ -9,7 +11,7 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.domain.model.ToolResult;
-import me.golemcore.bot.domain.service.CompactionService;
+import me.golemcore.bot.domain.service.CompactionOrchestrationService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.RuntimeEventService;
@@ -139,12 +141,27 @@ class ToolLoopResilienceBddTest {
         when(runtimeConfigService.isTurnAutoRetryEnabled()).thenReturn(false);
         when(runtimeConfigService.getCompactionKeepLastMessages()).thenReturn(2);
 
-        CompactionService compactionService = mock(CompactionService.class);
-        when(compactionService.summarize(any())).thenReturn("summary");
-        when(compactionService.createSummaryMessage("summary"))
-                .thenReturn(Message.builder().role("system").content("[Conversation summary]\nsummary").build());
+        CompactionOrchestrationService compactionOrchestrationService = mock(CompactionOrchestrationService.class);
+        when(compactionOrchestrationService.compact("s2", CompactionReason.CONTEXT_OVERFLOW_RECOVERY, 2))
+                .thenAnswer(invocation -> {
+                    Message summary = Message.builder()
+                            .role("system")
+                            .content("[Conversation summary]\nsummary")
+                            .timestamp(NOW)
+                            .build();
+                    List<Message> compacted = new ArrayList<>();
+                    compacted.add(summary);
+                    compacted.addAll(session.getMessages().subList(6, 8));
+                    session.getMessages().clear();
+                    session.getMessages().addAll(compacted);
+                    return CompactionResult.builder()
+                            .removed(6)
+                            .usedSummary(true)
+                            .summaryMessage(summary)
+                            .build();
+                });
 
-        DefaultToolLoopSystem system = buildSystem(llmPort, runtimeConfigService, compactionService,
+        DefaultToolLoopSystem system = buildSystem(llmPort, runtimeConfigService, compactionOrchestrationService,
                 mock(ToolExecutorPort.class));
 
         ToolLoopTurnResult result = system.processTurn(context);
@@ -213,7 +230,7 @@ class ToolLoopResilienceBddTest {
     }
 
     private DefaultToolLoopSystem buildSystem(LlmPort llmPort, RuntimeConfigService runtimeConfigService,
-            CompactionService compactionService, ToolExecutorPort toolExecutor) {
+            CompactionOrchestrationService compactionOrchestrationService, ToolExecutorPort toolExecutor) {
         BotProperties.TurnProperties turnProperties = new BotProperties.TurnProperties();
         BotProperties.ToolLoopProperties toolLoopProperties = new BotProperties.ToolLoopProperties();
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
@@ -231,7 +248,7 @@ class ToolLoopResilienceBddTest {
                 modelSelectionService,
                 null,
                 runtimeConfigService,
-                compactionService,
+                compactionOrchestrationService,
                 runtimeEventService,
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
