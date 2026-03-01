@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.service.StringValueSupport;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import org.springframework.context.ApplicationEventPublisher;
@@ -106,6 +107,18 @@ public class WebChannelAdapter implements ChannelPort {
     public CompletableFuture<Void> sendVoice(String chatId, byte[] voiceData) {
         // Voice not supported over WebSocket — fallback handled upstream
         return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
+    public CompletableFuture<Void> sendRuntimeEvent(String chatId, RuntimeEvent event) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put(KEY_TYPE, VALUE_SYSTEM_EVENT);
+        payload.put("eventType", "runtime_event");
+        payload.put("runtimeEventType", event.type().name());
+        payload.put("runtimeEventTimestamp", event.timestamp().toString());
+        payload.put("runtimeEventPayload", event.payload());
+        payload.put(KEY_SESSION_ID, chatId);
+        return sendJsonToChat(chatId, payload);
     }
 
     @Override

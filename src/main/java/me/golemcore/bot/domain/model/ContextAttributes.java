@@ -110,6 +110,16 @@ public final class ContextAttributes {
      */
     public static final String TOOL_LOOP_LIMIT_REASON = "toolloop.limit.reason";
 
+    /**
+     * List<RuntimeEvent> — runtime execution events for the current turn.
+     */
+    public static final String RUNTIME_EVENTS = "runtime.events";
+
+    /**
+     * Boolean — stop tool execution between tool calls for current turn.
+     */
+    public static final String TURN_INTERRUPT_REQUESTED = "turn.interrupt.requested";
+
     /** WebSocketSession — reference to WebSocket session for streaming. */
     public static final String WEB_STREAM_SINK = "web.stream.sink";
 

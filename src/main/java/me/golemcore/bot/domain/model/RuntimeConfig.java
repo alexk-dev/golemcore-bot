@@ -290,6 +290,12 @@ public class RuntimeConfig {
         private Integer maxToolExecutions = 500;
         @Builder.Default
         private String deadline = "PT1H";
+        @Builder.Default
+        private Boolean autoRetryEnabled = true;
+        @Builder.Default
+        private Integer autoRetryMaxAttempts = 2;
+        @Builder.Default
+        private Long autoRetryBaseDelayMs = 600L;
     }
 
     @Data

@@ -22,12 +22,14 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.port.outbound.SessionPort;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -61,23 +63,28 @@ public class SessionRunCoordinator {
 
     public void enqueue(Message inbound) {
         SessionKey key = new SessionKey(inbound.getChannelType(), inbound.getChatId());
-        SessionRunner runner = runners.computeIfAbsent(key, k -> new SessionRunner());
+        SessionRunner runner = runners.computeIfAbsent(key, SessionRunner::new);
         runner.enqueue(inbound);
     }
 
     public void requestStop(String channelType, String chatId) {
         SessionKey key = new SessionKey(channelType, chatId);
-        SessionRunner runner = runners.computeIfAbsent(key, k -> new SessionRunner());
+        SessionRunner runner = runners.computeIfAbsent(key, SessionRunner::new);
         runner.requestStop();
     }
 
     private final class SessionRunner {
 
+        private final SessionKey key;
         private final Object lock = new Object();
         private final Deque<Message> queuedMessages = new ArrayDeque<>();
 
         private boolean pausedAfterStop = false;
         private Future<?> runningTask;
+
+        private SessionRunner(SessionKey key) {
+            this.key = key;
+        }
 
         void enqueue(Message inbound) {
             Objects.requireNonNull(inbound, "inbound");
@@ -100,6 +107,7 @@ public class SessionRunCoordinator {
         void requestStop() {
             synchronized (lock) {
                 pausedAfterStop = true;
+                markInterruptRequested(key);
                 if (runningTask != null) {
                     boolean cancelled = runningTask.cancel(true);
                     log.info("[Stop] cancel requested (cancelled={})", cancelled);
@@ -124,11 +132,12 @@ public class SessionRunCoordinator {
         }
 
         private void startRun(Message inbound, Deque<Message> prefix) {
-            SessionKey key = new SessionKey(inbound.getChannelType(), inbound.getChatId());
+            SessionKey runKey = new SessionKey(inbound.getChannelType(), inbound.getChatId());
             runningTask = sessionRunExecutor.submit(() -> {
                 try {
+                    clearInterruptRequested(runKey);
                     if (!prefix.isEmpty()) {
-                        flushQueuedMessages(key, prefix);
+                        flushQueuedMessages(runKey, prefix);
                     }
                     agentLoop.processMessage(inbound);
                 } catch (Exception e) { // NOSONAR - must not kill executor thread
@@ -155,8 +164,12 @@ public class SessionRunCoordinator {
             }
         }
 
-        private void flushQueuedMessages(SessionKey key, Deque<Message> prefix) {
-            AgentSession session = sessionPort.getOrCreate(key.channelType(), key.chatId());
+        private void flushQueuedMessages(SessionKey runKey, Deque<Message> prefix) {
+            AgentSession session = sessionPort.getOrCreate(runKey.channelType(), runKey.chatId());
+            if (session == null) {
+                return;
+            }
+
             int before = session.getMessages().size();
             for (Message m : prefix) {
                 session.addMessage(m);
@@ -169,6 +182,35 @@ public class SessionRunCoordinator {
             log.info("[SessionRunCoordinator] flushed {} queued messages ({} -> {})",
                     prefix.size(), before, session.getMessages().size());
         }
+    }
+
+    private void markInterruptRequested(SessionKey key) {
+        AgentSession session = sessionPort.getOrCreate(key.channelType(), key.chatId());
+        if (session == null) {
+            return;
+        }
+
+        Map<String, Object> metadata = session.getMetadata();
+        if (metadata == null) {
+            metadata = new LinkedHashMap<>();
+            session.setMetadata(metadata);
+        }
+        metadata.put(ContextAttributes.TURN_INTERRUPT_REQUESTED, true);
+        sessionPort.save(session);
+    }
+
+    private void clearInterruptRequested(SessionKey key) {
+        AgentSession session = sessionPort.getOrCreate(key.channelType(), key.chatId());
+        if (session == null) {
+            return;
+        }
+
+        Map<String, Object> metadata = session.getMetadata();
+        if (metadata == null || !metadata.containsKey(ContextAttributes.TURN_INTERRUPT_REQUESTED)) {
+            return;
+        }
+        metadata.remove(ContextAttributes.TURN_INTERRUPT_REQUESTED);
+        sessionPort.save(session);
     }
 
     private record SessionKey(String channelType, String chatId) {
