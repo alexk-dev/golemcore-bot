@@ -567,6 +567,24 @@ class TelegramMenuHandlerTest {
         assertTrue(hasButtonWithCallback(keyboard, "menu:autoMenu:goals"));
         assertTrue(hasButtonWithCallback(keyboard, "menu:autoMenu:tasks"));
         assertTrue(hasButtonWithCallback(keyboard, "menu:autoMenu:schedules"));
+        assertTrue(hasButtonWithCallback(keyboard, "menu:autoMenu:createStandaloneTask"));
+    }
+
+    @Test
+    void shouldShowPlanManagementButtonWhenPlanFeatureEnabled() throws Exception {
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(planService.isFeatureEnabled()).thenReturn(true);
+        when(planService.isPlanModeActive(new SessionIdentity("telegram", "conv-1"))).thenReturn(false);
+        when(telegramClient.execute(any(SendMessage.class)))
+                .thenReturn(mock(org.telegram.telegrambots.meta.api.objects.message.Message.class));
+
+        handler.sendMainMenu(CHAT_ID);
+
+        ArgumentCaptor<SendMessage> captor = ArgumentCaptor.forClass(SendMessage.class);
+        verify(telegramClient).execute(captor.capture());
+        InlineKeyboardMarkup keyboard = (InlineKeyboardMarkup) captor.getValue().getReplyMarkup();
+
+        assertTrue(hasButtonWithCallback(keyboard, "menu:planMenu"));
     }
 
     // ==================== Non-menu callback ====================

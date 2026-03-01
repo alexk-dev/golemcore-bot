@@ -3,6 +3,8 @@ package me.golemcore.bot.adapter.inbound.telegram;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.Goal;
+import me.golemcore.bot.domain.model.Plan;
+import me.golemcore.bot.domain.model.PlanStep;
 import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
@@ -34,6 +36,8 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
@@ -127,6 +131,79 @@ class TelegramMenuHandlerAutoMenuCoverageTest {
         handler.setTelegramClient(telegramClient);
 
         stubAutoData();
+        stubPlanData();
+    }
+
+    @Test
+    void shouldHandlePlanMenuActionsAndScheduleWizardBranches() {
+        when(planService.isFeatureEnabled()).thenReturn(true);
+
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:detail:0");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:status:0");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:approve:0");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:cancel:0");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:resume:0");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:detail:99");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:status:99");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:approve:99");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:cancel:99");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:resume:99");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:prev");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:next");
+
+        verify(commandRouter, atLeast(4)).execute(eq("plan"), any(), any());
+
+        // Schedule wizard fallback/invalid branches
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:goalSchedule:99");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:taskSchedule:99");
+
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:goalSchedule:0");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schFreq:custom");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schDay:9");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schDaysDone");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schFreq:unknown");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schTime:abcd");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schBack");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schBack");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schBack");
+
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:goalSchedule:0");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schFreq:daily");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schTime:2400");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schTime:0900");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schLimit:bad");
+
+        when(scheduleService.createSchedule(any(), anyString(), anyString(), anyInt()))
+                .thenThrow(new IllegalStateException("schedule-save-fail"));
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schSave");
+
+        // Pending input paths + cancel
+        when(autoModeService.createGoal(anyString(), any())).thenReturn(Goal.builder()
+                .id("g-created")
+                .title("Goal from menu")
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>())
+                .build());
+        when(autoModeService.addStandaloneTask(anyString(), any())).thenReturn(AutoTask.builder()
+                .id("t-created")
+                .goalId("inbox")
+                .title("Task from menu")
+                .status(AutoTask.TaskStatus.PENDING)
+                .order(1)
+                .build());
+
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:createGoal");
+        assertTrue(handler.handlePendingInput(CHAT_ID, "/cancel"));
+
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:createGoal");
+        assertTrue(handler.handlePendingInput(CHAT_ID, "Goal from menu"));
+
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:createStandaloneTask");
+        assertTrue(handler.handlePendingInput(CHAT_ID, "Task from menu"));
+
+        assertFalse(handler.handlePendingInput(CHAT_ID, ""));
+        assertFalse(handler.handlePendingInput(CHAT_ID, "   "));
     }
 
     @Test
@@ -141,6 +218,11 @@ class TelegramMenuHandlerAutoMenuCoverageTest {
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:goalDeleteConfirm:0");
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:goalDelete:0");
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:goalDaily:0");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:goalSchedule:0");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schFreq:daily");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schTime:0900");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schLimit:3");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schSave");
 
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:tasks");
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:tasksNext");
@@ -154,6 +236,13 @@ class TelegramMenuHandlerAutoMenuCoverageTest {
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:taskDeleteConfirm:0");
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:taskDelete:0");
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:taskDaily:0");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:taskSchedule:0");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schFreq:weekly");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schDay:1");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schDaysDone");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schTime:1200");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schLimit:0");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schSave");
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:taskSet:bad");
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:taskSet:0:unknown");
 
@@ -164,6 +253,8 @@ class TelegramMenuHandlerAutoMenuCoverageTest {
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:scheduleDel:0");
 
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:createGoal");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:createStandaloneTask");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:schCancel");
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:refresh");
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:noop");
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:goal:99");
@@ -365,6 +456,12 @@ class TelegramMenuHandlerAutoMenuCoverageTest {
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:main");
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:auto");
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:plan");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:on");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:off");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:done");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:refresh");
+        handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:planMenu:back");
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:unknown-section");
 
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:close");
@@ -543,6 +640,31 @@ class TelegramMenuHandlerAutoMenuCoverageTest {
         handler.handleCallback(CHAT_ID, MESSAGE_ID, "menu:autoMenu:goals");
 
         verify(telegramClient, atLeast(1)).execute(any(EditMessageText.class));
+    }
+
+    private void stubPlanData() {
+        me.golemcore.bot.domain.model.Plan plan = me.golemcore.bot.domain.model.Plan.builder()
+                .id("plan-1")
+                .title("Demo plan")
+                .status(me.golemcore.bot.domain.model.Plan.PlanStatus.READY)
+                .steps(List.of(
+                        me.golemcore.bot.domain.model.PlanStep.builder()
+                                .id("ps-1")
+                                .planId("plan-1")
+                                .toolName("goal_management")
+                                .order(1)
+                                .status(me.golemcore.bot.domain.model.PlanStep.StepStatus.PENDING)
+                                .build()))
+                .build();
+
+        when(planService.isFeatureEnabled()).thenReturn(true);
+        when(planService.isPlanModeActive(any())).thenReturn(false);
+        when(planService.getPlans(any())).thenReturn(List.of(plan));
+        when(planService.getPlans()).thenReturn(List.of(plan));
+        when(planService.getPlan(eq("plan-1"), any())).thenReturn(Optional.of(plan));
+        when(planService.getPlan("plan-1")).thenReturn(Optional.of(plan));
+        when(commandRouter.execute(eq("plan"), any(), any()))
+                .thenReturn(CompletableFuture.completedFuture(CommandPort.CommandResult.success("plan ok")));
     }
 
     private void stubAutoData() {

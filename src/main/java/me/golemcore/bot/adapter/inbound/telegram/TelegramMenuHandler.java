@@ -20,6 +20,8 @@ package me.golemcore.bot.adapter.inbound.telegram;
 
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.Plan;
+import me.golemcore.bot.domain.model.PlanStep;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.ScheduleEntry;
@@ -37,6 +39,7 @@ import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.i18n.MessageService;
 import me.golemcore.bot.port.inbound.CommandPort;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.scheduling.support.CronExpression;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.client.okhttp.OkHttpTelegramClient;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
@@ -52,8 +55,11 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -99,10 +105,13 @@ public class TelegramMenuHandler {
     private static final int MAX_GOAL_BUTTONS = 6;
     private static final int MAX_TASK_BUTTONS = 8;
     private static final int MAX_SCHEDULE_BUTTONS = 8;
+    private static final int MAX_PLAN_BUTTONS = 6;
     private static final int MAX_TELEGRAM_CALLBACK_DATA_LENGTH = 64;
+    private static final String DEFAULT_DAILY_CRON = "0 0 9 * * *";
     private static final DateTimeFormatter SCHEDULE_TIME_FORMAT = DateTimeFormatter.ofPattern("MM-dd HH:mm")
             .withZone(ZoneOffset.UTC);
     private static final Set<String> VALID_TIERS = Set.of(TIER_BALANCED, TIER_SMART, TIER_CODING, TIER_DEEP);
+    private static final Set<Integer> WEEKDAY_SET = Set.of(1, 2, 3, 4, 5, 6, 7);
 
     private final BotProperties properties;
     private final RuntimeConfigService runtimeConfigService;
@@ -124,8 +133,12 @@ public class TelegramMenuHandler {
     private final Map<String, Integer> goalPageByChat = new ConcurrentHashMap<>();
     private final Map<String, Integer> taskPageByChat = new ConcurrentHashMap<>();
     private final Map<String, Integer> schedulePageByChat = new ConcurrentHashMap<>();
+    private final Map<String, Integer> planPageByChat = new ConcurrentHashMap<>();
+    private final Map<String, List<String>> planIndexCache = new ConcurrentHashMap<>();
     private final Map<String, Boolean> persistentMenuByChat = new ConcurrentHashMap<>();
     private final Map<String, Integer> persistentMenuMessageIdByChat = new ConcurrentHashMap<>();
+    private final Map<String, PendingInputState> pendingInputByChat = new ConcurrentHashMap<>();
+    private final Map<String, ScheduleDraft> scheduleDraftByChat = new ConcurrentHashMap<>();
 
     public TelegramMenuHandler(
             BotProperties properties,
@@ -172,6 +185,67 @@ public class TelegramMenuHandler {
         private TaskContext(Goal goal, AutoTask task) {
             this.goal = goal;
             this.task = task;
+        }
+    }
+
+    private static final class PlanContext {
+        private final Plan plan;
+
+        private PlanContext(Plan plan) {
+            this.plan = plan;
+        }
+    }
+
+    private enum PendingInputType {
+        CREATE_GOAL, CREATE_STANDALONE_TASK
+    }
+
+    private static final class PendingInputState {
+        private final PendingInputType type;
+
+        private PendingInputState(PendingInputType type) {
+            this.type = type;
+        }
+    }
+
+    private enum ScheduleWizardStep {
+        FREQUENCY, DAYS, TIME, LIMIT, CONFIRM
+    }
+
+    private enum ScheduleFrequency {
+        DAILY, WEEKDAYS, WEEKLY, CUSTOM_DAYS
+    }
+
+    private enum ScheduleReturnTarget {
+        GOAL_DETAIL, TASK_DETAIL, SCHEDULES_LIST
+    }
+
+    private static final class ScheduleDraft {
+        private ScheduleEntry.ScheduleType type;
+        private String targetId;
+        private String targetLabel;
+        private ScheduleFrequency frequency;
+        private Set<Integer> days;
+        private int hour;
+        private int minute;
+        private int maxExecutions;
+        private ScheduleWizardStep step;
+        private ScheduleReturnTarget returnTarget;
+        private int returnIndex;
+
+        private ScheduleDraft(ScheduleEntry.ScheduleType type, String targetId, String targetLabel,
+                ScheduleReturnTarget returnTarget, int returnIndex) {
+            this.type = type;
+            this.targetId = targetId;
+            this.targetLabel = targetLabel;
+            this.returnTarget = returnTarget;
+            this.returnIndex = returnIndex;
+            this.frequency = ScheduleFrequency.DAILY;
+            this.days = new HashSet<>(Set.of(1, 2, 3, 4, 5));
+            this.hour = 9;
+            this.minute = 0;
+            this.maxExecutions = -1;
+            this.step = ScheduleWizardStep.FREQUENCY;
         }
     }
 
@@ -274,6 +348,54 @@ public class TelegramMenuHandler {
         sendMainMenu(chatId);
     }
 
+    boolean handlePendingInput(String chatId, String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+
+        String normalized = text.trim();
+        if ("/cancel".equalsIgnoreCase(normalized)
+                || "\u043e\u0442\u043c\u0435\u043d\u0430".equalsIgnoreCase(normalized)) {
+            pendingInputByChat.remove(chatId);
+            scheduleDraftByChat.remove(chatId);
+            sendSeparateMessage(chatId, msg("menu.input.cancelled"));
+            resendPersistentMenuIfEnabled(chatId);
+            return true;
+        }
+
+        PendingInputState pendingInputState = pendingInputByChat.get(chatId);
+        if (pendingInputState == null) {
+            return false;
+        }
+        pendingInputByChat.remove(chatId);
+
+        if (pendingInputState.type == PendingInputType.CREATE_GOAL) {
+            try {
+                Goal goal = autoModeService.createGoal(normalized, null);
+                sendSeparateMessage(chatId, msg("menu.auto.goal.created", escapeHtml(goal.getTitle())));
+            } catch (Exception e) {
+                log.warn("[Menu] Failed to create goal from menu input", e);
+                sendSeparateMessage(chatId, msg("menu.auto.goal.create-failed"));
+            }
+            resendPersistentMenuIfEnabled(chatId);
+            return true;
+        }
+
+        if (pendingInputState.type == PendingInputType.CREATE_STANDALONE_TASK) {
+            try {
+                AutoTask task = autoModeService.addStandaloneTask(normalized, null);
+                sendSeparateMessage(chatId, msg("menu.auto.task.created.standalone", escapeHtml(task.getTitle())));
+            } catch (Exception e) {
+                log.warn("[Menu] Failed to create standalone task from menu input", e);
+                sendSeparateMessage(chatId, msg("menu.auto.task.create-failed"));
+            }
+            resendPersistentMenuIfEnabled(chatId);
+            return true;
+        }
+
+        return false;
+    }
+
     private boolean isPersistentMenuEnabled(String chatId) {
         return Boolean.TRUE.equals(persistentMenuByChat.get(chatId));
     }
@@ -307,6 +429,9 @@ public class TelegramMenuHandler {
             break;
         case "autoMenu":
             handleAutoMenuCallback(chatId, messageId, action);
+            break;
+        case "planMenu":
+            handlePlanMenuCallback(chatId, messageId, action);
             break;
         case "tier":
             handleTierCallback(chatId, messageId, action);
@@ -389,13 +514,20 @@ public class TelegramMenuHandler {
             rows.add(row(button(msg("menu.btn.plan", planStatus), "menu:plan")));
         }
 
+        if (autoModeService.isFeatureEnabled() || planService.isFeatureEnabled()) {
+            List<InlineKeyboardButton> manageButtons = new ArrayList<>();
+            if (autoModeService.isFeatureEnabled()) {
+                manageButtons.add(button(msg("menu.btn.auto.manage"), "menu:autoMenu"));
+            }
+            if (planService.isFeatureEnabled()) {
+                manageButtons.add(button(msg("menu.btn.plan.manage"), "menu:planMenu"));
+            }
+            rows.add(new InlineKeyboardRow(manageButtons));
+        }
+
         rows.add(row(
                 button(msg("menu.btn.help"), "menu:help"),
                 button(msg("menu.btn.close"), "menu:close")));
-
-        if (autoModeService.isFeatureEnabled()) {
-            rows.add(row(button(msg("menu.btn.auto.manage"), "menu:autoMenu")));
-        }
 
         return InlineKeyboardMarkup.builder().keyboard(rows).build();
     }
@@ -625,8 +757,57 @@ public class TelegramMenuHandler {
         }
 
         if ("createGoal".equals(action)) {
+            pendingInputByChat.put(chatId, new PendingInputState(PendingInputType.CREATE_GOAL));
             sendSeparateMessage(chatId, msg("menu.auto.create-goal.hint"));
             updateToAutoGoalsMenu(chatId, messageId);
+            return;
+        }
+
+        if ("createStandaloneTask".equals(action)) {
+            pendingInputByChat.put(chatId, new PendingInputState(PendingInputType.CREATE_STANDALONE_TASK));
+            sendSeparateMessage(chatId, msg("menu.auto.create-task.hint"));
+            updateToAutoTasksMenu(chatId, messageId);
+            return;
+        }
+
+        if ("schCancel".equals(action)) {
+            cancelScheduleWizard(chatId, messageId);
+            return;
+        }
+
+        if ("schBack".equals(action)) {
+            handleScheduleWizardBack(chatId, messageId);
+            return;
+        }
+
+        if (action.startsWith("schFreq:")) {
+            handleScheduleWizardFrequency(chatId, messageId, action.substring("schFreq:".length()));
+            return;
+        }
+
+        Integer dayToggle = parseIndexAction(action, "schDay:");
+        if (dayToggle != null) {
+            handleScheduleWizardToggleDay(chatId, messageId, dayToggle);
+            return;
+        }
+
+        if ("schDaysDone".equals(action)) {
+            handleScheduleWizardDaysDone(chatId, messageId);
+            return;
+        }
+
+        if (action.startsWith("schTime:")) {
+            handleScheduleWizardTime(chatId, messageId, action.substring("schTime:".length()));
+            return;
+        }
+
+        if (action.startsWith("schLimit:")) {
+            handleScheduleWizardLimit(chatId, messageId, action.substring("schLimit:".length()));
+            return;
+        }
+
+        if ("schSave".equals(action)) {
+            handleScheduleWizardSave(chatId, messageId);
             return;
         }
 
@@ -660,6 +841,12 @@ public class TelegramMenuHandler {
             return;
         }
 
+        Integer goalScheduleIndex = parseIndexAction(action, "goalSchedule:");
+        if (goalScheduleIndex != null) {
+            startGoalScheduleWizard(chatId, messageId, goalScheduleIndex);
+            return;
+        }
+
         Integer taskDetailIndex = parseIndexAction(action, "task:");
         if (taskDetailIndex != null) {
             showTaskDetail(chatId, messageId, taskDetailIndex);
@@ -681,6 +868,12 @@ public class TelegramMenuHandler {
         Integer taskDailyIndex = parseIndexAction(action, "taskDaily:");
         if (taskDailyIndex != null) {
             handleTaskDailySchedule(chatId, messageId, taskDailyIndex);
+            return;
+        }
+
+        Integer taskScheduleIndex = parseIndexAction(action, "taskSchedule:");
+        if (taskScheduleIndex != null) {
+            startTaskScheduleWizard(chatId, messageId, taskScheduleIndex);
             return;
         }
 
@@ -721,7 +914,7 @@ public class TelegramMenuHandler {
     }
 
     private String buildAutoMenuText() {
-        List<Goal> goals = autoModeService.getGoals();
+        List<Goal> goals = getDisplayGoals();
         long activeGoals = goals.stream().filter(goal -> goal.getStatus() == Goal.GoalStatus.ACTIVE).count();
         int totalTasks = goals.stream().mapToInt(goal -> goal.getTasks().size()).sum();
         long pendingTasks = goals.stream()
@@ -746,7 +939,9 @@ public class TelegramMenuHandler {
                 button(msg("menu.auto.btn.goals"), "menu:autoMenu:goals"),
                 button(msg("menu.auto.btn.tasks"), "menu:autoMenu:tasks")));
         rows.add(row(button(msg("menu.auto.btn.schedules"), "menu:autoMenu:schedules")));
-        rows.add(row(button(msg("menu.auto.btn.create-goal"), "menu:autoMenu:createGoal")));
+        rows.add(row(
+                button(msg("menu.auto.btn.create-goal"), "menu:autoMenu:createGoal"),
+                button(msg("menu.auto.btn.create-task"), "menu:autoMenu:createStandaloneTask")));
         rows.add(row(
                 button(msg("menu.auto.btn.refresh"), "menu:autoMenu:refresh"),
                 button(msg("menu.btn.back"), "menu:autoMenu:back")));
@@ -754,7 +949,7 @@ public class TelegramMenuHandler {
     }
 
     private String buildAutoGoalsText(String chatId) {
-        List<Goal> goals = autoModeService.getGoals();
+        List<Goal> goals = getDisplayGoals();
         if (goals.isEmpty()) {
             goalIndexCache.remove(chatId);
             goalPageByChat.remove(chatId);
@@ -790,7 +985,7 @@ public class TelegramMenuHandler {
     }
 
     private InlineKeyboardMarkup buildAutoGoalsKeyboard(String chatId) {
-        List<Goal> goals = autoModeService.getGoals();
+        List<Goal> goals = getDisplayGoals();
         List<String> goalIds = new ArrayList<>();
         List<InlineKeyboardRow> rows = new ArrayList<>();
 
@@ -831,7 +1026,7 @@ public class TelegramMenuHandler {
     private String buildGoalDetailText(Goal goal) {
         long completedTasks = goal.getCompletedTaskCount();
         int totalTasks = goal.getTasks().size();
-        int schedulesCount = scheduleService.findSchedulesForTarget(goal.getId()).size();
+        List<ScheduleEntry> schedules = scheduleService.findSchedulesForTarget(goal.getId());
 
         StringBuilder sb = new StringBuilder();
         sb.append(HTML_BOLD_OPEN)
@@ -839,11 +1034,21 @@ public class TelegramMenuHandler {
                 .append(HTML_BOLD_CLOSE_NL);
         sb.append(msg("menu.auto.goal.status", localizedGoalStatus(goal.getStatus()))).append("\n");
         sb.append(msg("menu.auto.goal.tasks", completedTasks, totalTasks)).append("\n");
-        sb.append(msg("menu.auto.goal.schedules", schedulesCount)).append("\n");
+        sb.append(msg("menu.auto.goal.schedules", schedules.size())).append("\n");
         sb.append(msg("menu.auto.goal.id", shortId(goal.getId())));
 
         if (goal.getDescription() != null && !goal.getDescription().isBlank()) {
             sb.append("\n\n").append(escapeHtml(goal.getDescription()));
+        }
+
+        if (!schedules.isEmpty()) {
+            sb.append("\n\n").append(msg("menu.auto.schedule.preview.title"));
+            int previewCount = Math.min(3, schedules.size());
+            for (int index = 0; index < previewCount; index++) {
+                sb.append("\n")
+                        .append("? ")
+                        .append(formatScheduleSummary(schedules.get(index), goal.getTitle()));
+            }
         }
 
         return sb.toString();
@@ -856,7 +1061,9 @@ public class TelegramMenuHandler {
             rows.add(row(button(msg("menu.auto.goal.btn.complete"), "menu:autoMenu:goalDone:" + goalIndex)));
         }
 
-        rows.add(row(button(msg("menu.auto.goal.btn.schedule-daily"), "menu:autoMenu:goalDaily:" + goalIndex)));
+        rows.add(row(
+                button(msg("menu.auto.goal.btn.schedule-daily"), "menu:autoMenu:goalDaily:" + goalIndex),
+                button(msg("menu.auto.goal.btn.schedule-custom"), "menu:autoMenu:goalSchedule:" + goalIndex)));
         rows.add(row(button(msg("menu.auto.goal.btn.delete.confirm"), "menu:autoMenu:goalDeleteConfirm:" + goalIndex)));
         rows.add(row(button(msg("menu.btn.back"), "menu:autoMenu:goals")));
 
@@ -930,9 +1137,10 @@ public class TelegramMenuHandler {
             ScheduleEntry entry = scheduleService.createSchedule(
                     ScheduleEntry.ScheduleType.GOAL,
                     goal.getId(),
-                    "0 0 9 * * *",
+                    DEFAULT_DAILY_CRON,
                     -1);
-            sendSeparateMessage(chatId, msg("menu.auto.schedule.created", entry.getId(), entry.getCronExpression()));
+            sendSeparateMessage(chatId, msg("menu.auto.schedule.created", entry.getId(), entry.getCronExpression(),
+                    describeScheduleLimit(entry)));
         } catch (Exception e) {
             log.warn("[Menu] Failed to create daily goal schedule for {}", goal.getId(), e);
             sendSeparateMessage(chatId, msg("menu.auto.schedule.create-failed"));
@@ -965,7 +1173,7 @@ public class TelegramMenuHandler {
                     .append(" ")
                     .append(escapeHtml(truncate(context.task.getTitle(), 20)))
                     .append(" \u2014 ")
-                    .append(escapeHtml(truncate(context.goal.getTitle(), 14)))
+                    .append(escapeHtml(truncate(renderTaskGroupTitle(context.goal), 14)))
                     .append("\n");
         }
 
@@ -992,6 +1200,7 @@ public class TelegramMenuHandler {
         taskIndexCache.put(chatId, List.copyOf(taskKeys));
         rows.add(buildPaginationRow(page, contexts.size(), MAX_TASK_BUTTONS, "menu:autoMenu:tasksPrev",
                 "menu:autoMenu:tasksNext"));
+        rows.add(row(button(msg("menu.auto.btn.create-task"), "menu:autoMenu:createStandaloneTask")));
         rows.add(row(button(msg("menu.auto.btn.refresh"), "menu:autoMenu:tasks")));
         rows.add(row(button(msg("menu.btn.back"), "menu:autoMenu:back")));
 
@@ -1010,12 +1219,15 @@ public class TelegramMenuHandler {
     }
 
     private String buildTaskDetailText(TaskContext context) {
+        List<ScheduleEntry> schedules = scheduleService.findSchedulesForTarget(context.task.getId());
+
         StringBuilder sb = new StringBuilder();
         sb.append(HTML_BOLD_OPEN)
                 .append(msg("menu.auto.task.title", escapeHtml(context.task.getTitle())))
                 .append(HTML_BOLD_CLOSE_NL);
-        sb.append(msg("menu.auto.task.goal", escapeHtml(context.goal.getTitle()))).append("\n");
+        sb.append(msg("menu.auto.task.goal", escapeHtml(renderTaskGroupTitle(context.goal)))).append("\n");
         sb.append(msg("menu.auto.task.status", localizedTaskStatus(context.task.getStatus()))).append("\n");
+        sb.append(msg("menu.auto.task.schedules", schedules.size())).append("\n");
         sb.append(msg("menu.auto.task.id", shortId(context.task.getId())));
 
         if (context.task.getDescription() != null && !context.task.getDescription().isBlank()) {
@@ -1024,6 +1236,16 @@ public class TelegramMenuHandler {
 
         if (context.task.getResult() != null && !context.task.getResult().isBlank()) {
             sb.append("\n\n").append(msg("menu.auto.task.result", escapeHtml(context.task.getResult())));
+        }
+
+        if (!schedules.isEmpty()) {
+            sb.append("\n\n").append(msg("menu.auto.schedule.preview.title"));
+            int previewCount = Math.min(3, schedules.size());
+            for (int index = 0; index < previewCount; index++) {
+                sb.append("\n")
+                        .append("? ")
+                        .append(formatScheduleSummary(schedules.get(index), context.task.getTitle()));
+            }
         }
 
         return sb.toString();
@@ -1039,7 +1261,9 @@ public class TelegramMenuHandler {
                 button(msg("menu.auto.task.btn.failed"), "menu:autoMenu:taskSet:" + taskIndex + ":fail"),
                 button(msg("menu.auto.task.btn.skipped"), "menu:autoMenu:taskSet:" + taskIndex + ":skip")));
         rows.add(row(button(msg("menu.auto.task.btn.pending"), "menu:autoMenu:taskSet:" + taskIndex + ":pending")));
-        rows.add(row(button(msg("menu.auto.task.btn.schedule-daily"), "menu:autoMenu:taskDaily:" + taskIndex)));
+        rows.add(row(
+                button(msg("menu.auto.task.btn.schedule-daily"), "menu:autoMenu:taskDaily:" + taskIndex),
+                button(msg("menu.auto.task.btn.schedule-custom"), "menu:autoMenu:taskSchedule:" + taskIndex)));
         rows.add(row(button(msg("menu.auto.task.btn.delete.confirm"), "menu:autoMenu:taskDeleteConfirm:" + taskIndex)));
         rows.add(row(button(msg("menu.btn.back"), "menu:autoMenu:tasks")));
 
@@ -1142,9 +1366,10 @@ public class TelegramMenuHandler {
             ScheduleEntry entry = scheduleService.createSchedule(
                     ScheduleEntry.ScheduleType.TASK,
                     context.task.getId(),
-                    "0 0 9 * * *",
+                    DEFAULT_DAILY_CRON,
                     -1);
-            sendSeparateMessage(chatId, msg("menu.auto.schedule.created", entry.getId(), entry.getCronExpression()));
+            sendSeparateMessage(chatId, msg("menu.auto.schedule.created", entry.getId(), entry.getCronExpression(),
+                    describeScheduleLimit(entry)));
         } catch (Exception e) {
             log.warn("[Menu] Failed to create daily task schedule for {}", context.task.getId(), e);
             sendSeparateMessage(chatId, msg("menu.auto.schedule.create-failed"));
@@ -1174,15 +1399,11 @@ public class TelegramMenuHandler {
             ScheduleEntry entry = schedules.get(index);
             sb.append(index + 1)
                     .append(". ")
-                    .append(entry.isEnabled() ? "\u2705" : "\u274C")
-                    .append(" ")
-                    .append(localizedScheduleType(entry.getType()))
-                    .append(" ")
-                    .append(shortId(entry.getTargetId()))
-                    .append(" \u2014 ")
-                    .append(escapeHtml(shortId(entry.getId())));
+                    .append(formatScheduleSummary(entry, resolveScheduleTargetLabel(entry)));
             if (entry.getNextExecutionAt() != null) {
-                sb.append(" (").append(SCHEDULE_TIME_FORMAT.format(entry.getNextExecutionAt())).append(" UTC)");
+                sb.append(" ")
+                        .append(msg("menu.auto.schedule.next-short",
+                                SCHEDULE_TIME_FORMAT.format(entry.getNextExecutionAt())));
             }
             sb.append("\n");
         }
@@ -1203,8 +1424,7 @@ public class TelegramMenuHandler {
             ScheduleEntry entry = schedules.get(index);
             scheduleIds.add(entry.getId());
             int pageIndex = index - start;
-            String label = "\uD83D\uDDD1 " + localizedScheduleType(entry.getType()) + " "
-                    + shortId(entry.getTargetId());
+            String label = "DEL " + truncate(resolveScheduleTargetLabel(entry), 18);
             rows.add(row(button(label, "menu:autoMenu:scheduleDelConfirm:" + pageIndex)));
         }
 
@@ -1226,7 +1446,7 @@ public class TelegramMenuHandler {
 
         String scheduleId = scheduleIdOptional.get();
         String text = HTML_BOLD_OPEN + msg("menu.auto.confirm.title") + HTML_BOLD_CLOSE_NL
-                + msg("menu.auto.confirm.schedule.delete", escapeHtml(shortId(scheduleId)));
+                + msg("menu.auto.confirm.schedule.delete", escapeHtml(resolveScheduleLabelById(scheduleId)));
         InlineKeyboardMarkup keyboard = InlineKeyboardMarkup.builder().keyboard(List.of(
                 row(button(msg("menu.auto.confirm.yes"), "menu:autoMenu:scheduleDel:" + scheduleIndex),
                         button(msg("menu.auto.confirm.no"), "menu:autoMenu:schedules"))))
@@ -1244,7 +1464,7 @@ public class TelegramMenuHandler {
         String scheduleId = scheduleIdOptional.get();
         try {
             scheduleService.deleteSchedule(scheduleId);
-            sendSeparateMessage(chatId, msg("menu.auto.schedule.deleted", shortId(scheduleId)));
+            sendSeparateMessage(chatId, msg("menu.auto.schedule.deleted", resolveScheduleLabelById(scheduleId)));
         } catch (Exception e) {
             log.warn("[Menu] Failed to delete schedule {}", scheduleId, e);
             sendSeparateMessage(chatId, msg("menu.auto.schedule.delete-failed"));
@@ -1258,8 +1478,11 @@ public class TelegramMenuHandler {
         List<Goal> goals = autoModeService.getGoals();
 
         for (Goal goal : goals) {
+            if (autoModeService.isInboxGoal(goal) && goal.getTasks().isEmpty()) {
+                continue;
+            }
             List<AutoTask> sortedTasks = goal.getTasks().stream()
-                    .sorted(java.util.Comparator.comparingInt(AutoTask::getOrder))
+                    .sorted(Comparator.comparingInt(AutoTask::getOrder))
                     .toList();
             for (AutoTask task : sortedTasks) {
                 result.add(new TaskContext(goal, task));
@@ -1372,6 +1595,718 @@ public class TelegramMenuHandler {
         }
     }
 
+    private void handlePlanMenuCallback(String chatId, Integer messageId, String action) {
+        if (!planService.isFeatureEnabled()) {
+            updateToMainMenu(chatId, messageId);
+            return;
+        }
+
+        if (action == null || action.isBlank() || "refresh".equals(action)) {
+            updateToPlanMenu(chatId, messageId);
+            return;
+        }
+
+        if (ACTION_BACK.equals(action)) {
+            planPageByChat.remove(chatId);
+            planIndexCache.remove(chatId);
+            updateToMainMenu(chatId, messageId);
+            return;
+        }
+
+        if ("on".equals(action)) {
+            executePlanCommand(chatId, List.of("on"));
+            updateToPlanMenu(chatId, messageId);
+            return;
+        }
+
+        if ("off".equals(action)) {
+            executePlanCommand(chatId, List.of("off"));
+            updateToPlanMenu(chatId, messageId);
+            return;
+        }
+
+        if ("done".equals(action)) {
+            executePlanCommand(chatId, List.of("done"));
+            updateToPlanMenu(chatId, messageId);
+            return;
+        }
+
+        if ("prev".equals(action)) {
+            adjustPage(planPageByChat, chatId, -1);
+            updateToPlanMenu(chatId, messageId);
+            return;
+        }
+
+        if ("next".equals(action)) {
+            adjustPage(planPageByChat, chatId, 1);
+            updateToPlanMenu(chatId, messageId);
+            return;
+        }
+
+        Integer detailIndex = parseIndexAction(action, "detail:");
+        if (detailIndex != null) {
+            showPlanDetail(chatId, messageId, detailIndex);
+            return;
+        }
+
+        Integer approveIndex = parseIndexAction(action, "approve:");
+        if (approveIndex != null) {
+            resolvePlanByIndex(chatId, approveIndex)
+                    .ifPresent(planContext -> executePlanCommand(chatId, List.of("approve", planContext.plan.getId())));
+            showPlanDetail(chatId, messageId, approveIndex);
+            return;
+        }
+
+        Integer cancelIndex = parseIndexAction(action, "cancel:");
+        if (cancelIndex != null) {
+            resolvePlanByIndex(chatId, cancelIndex)
+                    .ifPresent(planContext -> executePlanCommand(chatId, List.of("cancel", planContext.plan.getId())));
+            showPlanDetail(chatId, messageId, cancelIndex);
+            return;
+        }
+
+        Integer resumeIndex = parseIndexAction(action, "resume:");
+        if (resumeIndex != null) {
+            resolvePlanByIndex(chatId, resumeIndex)
+                    .ifPresent(planContext -> executePlanCommand(chatId, List.of("resume", planContext.plan.getId())));
+            showPlanDetail(chatId, messageId, resumeIndex);
+            return;
+        }
+
+        Integer statusIndex = parseIndexAction(action, "status:");
+        if (statusIndex != null) {
+            resolvePlanByIndex(chatId, statusIndex)
+                    .ifPresent(planContext -> executePlanCommand(chatId, List.of("status", planContext.plan.getId())));
+            showPlanDetail(chatId, messageId, statusIndex);
+            return;
+        }
+
+        updateToPlanMenu(chatId, messageId);
+    }
+
+    private void updateToPlanMenu(String chatId, Integer messageId) {
+        editMessage(chatId, messageId, buildPlanMenuText(chatId), buildPlanMenuKeyboard(chatId));
+    }
+
+    private String buildPlanMenuText(String chatId) {
+        SessionIdentity sessionIdentity = resolveTelegramSessionIdentity(chatId);
+        List<Plan> plans = getSessionPlans(sessionIdentity);
+        boolean planModeOn = planService.isPlanModeActive(sessionIdentity);
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(HTML_BOLD_OPEN).append(msg("menu.plan.title")).append(HTML_BOLD_CLOSE_NL);
+        sb.append(msg("menu.plan.status", planModeOn ? ON : OFF));
+
+        if (plans.isEmpty()) {
+            sb.append("\n\n").append(msg("menu.plan.empty"));
+            return sb.toString();
+        }
+
+        int page = normalizePage(planPageByChat, chatId, plans.size(), MAX_PLAN_BUTTONS);
+        int start = page * MAX_PLAN_BUTTONS;
+        int end = Math.min(start + MAX_PLAN_BUTTONS, plans.size());
+
+        sb.append("\n").append(msg("menu.auto.page", page + 1, totalPages(plans.size(), MAX_PLAN_BUTTONS)))
+                .append("\n\n");
+        for (int index = start; index < end; index++) {
+            Plan plan = plans.get(index);
+            String title = plan.getTitle() != null && !plan.getTitle().isBlank()
+                    ? escapeHtml(truncate(plan.getTitle(), 26))
+                    : msg("menu.plan.untitled");
+            sb.append(index + 1)
+                    .append(". ")
+                    .append(shortId(plan.getId()))
+                    .append(" [")
+                    .append(plan.getStatus())
+                    .append("] ")
+                    .append(title)
+                    .append("\n");
+        }
+
+        return sb.toString().trim();
+    }
+
+    private InlineKeyboardMarkup buildPlanMenuKeyboard(String chatId) {
+        SessionIdentity sessionIdentity = resolveTelegramSessionIdentity(chatId);
+        List<Plan> plans = getSessionPlans(sessionIdentity);
+        List<String> planIds = new ArrayList<>();
+        List<InlineKeyboardRow> rows = new ArrayList<>();
+
+        rows.add(row(
+                button(msg("menu.plan.btn.on"), "menu:planMenu:on"),
+                button(msg("menu.plan.btn.off"), "menu:planMenu:off"),
+                button(msg("menu.plan.btn.done"), "menu:planMenu:done")));
+
+        int page = normalizePage(planPageByChat, chatId, plans.size(), MAX_PLAN_BUTTONS);
+        int start = page * MAX_PLAN_BUTTONS;
+        int end = Math.min(start + MAX_PLAN_BUTTONS, plans.size());
+
+        for (int index = start; index < end; index++) {
+            Plan plan = plans.get(index);
+            planIds.add(plan.getId());
+            int pageIndex = index - start;
+            String title = plan.getTitle() != null && !plan.getTitle().isBlank()
+                    ? truncate(plan.getTitle(), 20)
+                    : msg("menu.plan.untitled");
+            rows.add(row(button(shortId(plan.getId()) + " " + title, "menu:planMenu:detail:" + pageIndex)));
+        }
+
+        planIndexCache.put(chatId, List.copyOf(planIds));
+
+        rows.add(buildPaginationRow(page, plans.size(), MAX_PLAN_BUTTONS, "menu:planMenu:prev", "menu:planMenu:next"));
+        rows.add(row(button(msg("menu.auto.btn.refresh"), "menu:planMenu:refresh")));
+        rows.add(row(button(msg("menu.btn.back"), "menu:planMenu:back")));
+
+        return InlineKeyboardMarkup.builder().keyboard(rows).build();
+    }
+
+    private void showPlanDetail(String chatId, Integer messageId, int planIndex) {
+        Optional<PlanContext> planContextOptional = resolvePlanByIndex(chatId, planIndex);
+        if (planContextOptional.isEmpty()) {
+            updateToPlanMenu(chatId, messageId);
+            return;
+        }
+
+        Plan plan = planContextOptional.get().plan;
+        StringBuilder sb = new StringBuilder();
+        sb.append(HTML_BOLD_OPEN).append(msg("menu.plan.detail.title", shortId(plan.getId())))
+                .append(HTML_BOLD_CLOSE_NL);
+        sb.append(msg("menu.plan.detail.status", plan.getStatus())).append("\n");
+        sb.append(msg("menu.plan.detail.steps", plan.getCompletedStepCount(), plan.getSteps().size())).append("\n");
+        if (plan.getModelTier() != null && !plan.getModelTier().isBlank()) {
+            sb.append(msg("menu.plan.detail.tier", plan.getModelTier())).append("\n");
+        }
+        if (plan.getTitle() != null && !plan.getTitle().isBlank()) {
+            sb.append(msg("menu.plan.detail.name", escapeHtml(plan.getTitle()))).append("\n");
+        }
+
+        List<PlanStep> sortedSteps = plan.getSteps().stream()
+                .sorted(Comparator.comparingInt(PlanStep::getOrder))
+                .limit(5)
+                .toList();
+        if (!sortedSteps.isEmpty()) {
+            sb.append("\n").append(msg("menu.plan.detail.steps.preview"));
+            for (PlanStep planStep : sortedSteps) {
+                sb.append("\n")
+                        .append("- ")
+                        .append(planStep.getToolName())
+                        .append(" [")
+                        .append(planStep.getStatus())
+                        .append("]");
+            }
+        }
+
+        InlineKeyboardMarkup keyboard = InlineKeyboardMarkup.builder().keyboard(List.of(
+                row(button(msg("menu.plan.btn.approve"), "menu:planMenu:approve:" + planIndex),
+                        button(msg("menu.plan.btn.cancel"), "menu:planMenu:cancel:" + planIndex)),
+                row(button(msg("menu.plan.btn.resume"), "menu:planMenu:resume:" + planIndex),
+                        button(msg("menu.plan.btn.status"), "menu:planMenu:status:" + planIndex)),
+                row(button(msg("menu.btn.back"), "menu:planMenu:refresh")))).build();
+
+        editMessage(chatId, messageId, sb.toString(), keyboard);
+    }
+
+    private List<Plan> getSessionPlans(SessionIdentity sessionIdentity) {
+        if (sessionIdentity == null) {
+            return planService.getPlans();
+        }
+        List<Plan> plans = planService.getPlans(sessionIdentity);
+        if (!plans.isEmpty()) {
+            return plans;
+        }
+        return planService.getPlans();
+    }
+
+    private Optional<PlanContext> resolvePlanByIndex(String chatId, int index) {
+        List<String> planIds = planIndexCache.get(chatId);
+        if (planIds == null || index < 0 || index >= planIds.size()) {
+            return Optional.empty();
+        }
+
+        String planId = planIds.get(index);
+        SessionIdentity sessionIdentity = resolveTelegramSessionIdentity(chatId);
+        Optional<Plan> sessionPlan = planService.getPlan(planId, sessionIdentity);
+        if (sessionPlan.isPresent()) {
+            return Optional.of(new PlanContext(sessionPlan.get()));
+        }
+        return planService.getPlan(planId).map(PlanContext::new);
+    }
+
+    private void executePlanCommand(String chatId, List<String> args) {
+        CommandPort router = commandRouter.getIfAvailable();
+        if (router == null) {
+            return;
+        }
+
+        String activeConversationKey = telegramSessionService.resolveActiveConversationKey(chatId);
+        String sessionId = CHANNEL_TYPE + ":" + activeConversationKey;
+        try {
+            CommandPort.CommandResult result = router.execute("plan", args, Map.of(
+                    "sessionId", sessionId,
+                    "chatId", activeConversationKey,
+                    "sessionChatId", activeConversationKey,
+                    "transportChatId", chatId,
+                    "conversationKey", activeConversationKey,
+                    "channelType", CHANNEL_TYPE)).join();
+            sendSeparateMessage(chatId, result.output());
+        } catch (Exception e) {
+            log.error("[Menu] Failed to execute /plan {}", args, e);
+        }
+    }
+
+    private void startGoalScheduleWizard(String chatId, Integer messageId, int goalIndex) {
+        Optional<Goal> goalOptional = resolveGoalByIndex(chatId, goalIndex);
+        if (goalOptional.isEmpty()) {
+            updateToAutoGoalsMenu(chatId, messageId);
+            return;
+        }
+
+        Goal goal = goalOptional.get();
+        ScheduleDraft draft = new ScheduleDraft(
+                ScheduleEntry.ScheduleType.GOAL,
+                goal.getId(),
+                goal.getTitle(),
+                ScheduleReturnTarget.GOAL_DETAIL,
+                goalIndex);
+        scheduleDraftByChat.put(chatId, draft);
+        renderScheduleWizard(chatId, messageId, draft);
+    }
+
+    private void startTaskScheduleWizard(String chatId, Integer messageId, int taskIndex) {
+        Optional<TaskContext> contextOptional = resolveTaskContextByIndex(chatId, taskIndex);
+        if (contextOptional.isEmpty()) {
+            updateToAutoTasksMenu(chatId, messageId);
+            return;
+        }
+
+        TaskContext context = contextOptional.get();
+        ScheduleDraft draft = new ScheduleDraft(
+                ScheduleEntry.ScheduleType.TASK,
+                context.task.getId(),
+                context.task.getTitle(),
+                ScheduleReturnTarget.TASK_DETAIL,
+                taskIndex);
+        scheduleDraftByChat.put(chatId, draft);
+        renderScheduleWizard(chatId, messageId, draft);
+    }
+
+    private void handleScheduleWizardBack(String chatId, Integer messageId) {
+        ScheduleDraft draft = scheduleDraftByChat.get(chatId);
+        if (draft == null) {
+            updateToAutoMenu(chatId, messageId);
+            return;
+        }
+
+        switch (draft.step) {
+        case CONFIRM:
+            draft.step = ScheduleWizardStep.LIMIT;
+            break;
+        case LIMIT:
+            draft.step = ScheduleWizardStep.TIME;
+            break;
+        case TIME:
+            if (draft.frequency == ScheduleFrequency.DAILY || draft.frequency == ScheduleFrequency.WEEKDAYS) {
+                draft.step = ScheduleWizardStep.FREQUENCY;
+            } else {
+                draft.step = ScheduleWizardStep.DAYS;
+            }
+            break;
+        case DAYS:
+            draft.step = ScheduleWizardStep.FREQUENCY;
+            break;
+        case FREQUENCY:
+            cancelScheduleWizard(chatId, messageId);
+            return;
+        default:
+            draft.step = ScheduleWizardStep.FREQUENCY;
+            break;
+        }
+
+        renderScheduleWizard(chatId, messageId, draft);
+    }
+
+    private void handleScheduleWizardFrequency(String chatId, Integer messageId, String value) {
+        ScheduleDraft draft = scheduleDraftByChat.get(chatId);
+        if (draft == null) {
+            updateToAutoMenu(chatId, messageId);
+            return;
+        }
+
+        if ("daily".equals(value)) {
+            draft.frequency = ScheduleFrequency.DAILY;
+            draft.step = ScheduleWizardStep.TIME;
+            renderScheduleWizard(chatId, messageId, draft);
+            return;
+        }
+
+        if ("weekdays".equals(value)) {
+            draft.frequency = ScheduleFrequency.WEEKDAYS;
+            draft.step = ScheduleWizardStep.TIME;
+            renderScheduleWizard(chatId, messageId, draft);
+            return;
+        }
+
+        if ("weekly".equals(value)) {
+            draft.frequency = ScheduleFrequency.WEEKLY;
+            draft.days = new HashSet<>(Set.of(1));
+            draft.step = ScheduleWizardStep.DAYS;
+            renderScheduleWizard(chatId, messageId, draft);
+            return;
+        }
+
+        if ("custom".equals(value)) {
+            draft.frequency = ScheduleFrequency.CUSTOM_DAYS;
+            if (draft.days == null || draft.days.isEmpty()) {
+                draft.days = new HashSet<>(Set.of(1));
+            }
+            draft.step = ScheduleWizardStep.DAYS;
+            renderScheduleWizard(chatId, messageId, draft);
+            return;
+        }
+
+        renderScheduleWizard(chatId, messageId, draft);
+    }
+
+    private void handleScheduleWizardToggleDay(String chatId, Integer messageId, int day) {
+        ScheduleDraft draft = scheduleDraftByChat.get(chatId);
+        if (draft == null) {
+            updateToAutoMenu(chatId, messageId);
+            return;
+        }
+        if (!WEEKDAY_SET.contains(day)) {
+            renderScheduleWizard(chatId, messageId, draft);
+            return;
+        }
+
+        if (draft.days.contains(day)) {
+            draft.days.remove(day);
+        } else {
+            draft.days.add(day);
+        }
+
+        renderScheduleWizard(chatId, messageId, draft);
+    }
+
+    private void handleScheduleWizardDaysDone(String chatId, Integer messageId) {
+        ScheduleDraft draft = scheduleDraftByChat.get(chatId);
+        if (draft == null) {
+            updateToAutoMenu(chatId, messageId);
+            return;
+        }
+
+        if (draft.days == null || draft.days.isEmpty()) {
+            sendSeparateMessage(chatId, msg("menu.auto.schedule.days.required"));
+            renderScheduleWizard(chatId, messageId, draft);
+            return;
+        }
+
+        draft.step = ScheduleWizardStep.TIME;
+        renderScheduleWizard(chatId, messageId, draft);
+    }
+
+    private void handleScheduleWizardTime(String chatId, Integer messageId, String hhmm) {
+        ScheduleDraft draft = scheduleDraftByChat.get(chatId);
+        if (draft == null) {
+            updateToAutoMenu(chatId, messageId);
+            return;
+        }
+
+        if (hhmm == null || hhmm.length() != 4) {
+            renderScheduleWizard(chatId, messageId, draft);
+            return;
+        }
+
+        try {
+            int hour = Integer.parseInt(hhmm.substring(0, 2));
+            int minute = Integer.parseInt(hhmm.substring(2, 4));
+            boolean validHour = hour >= 0 && hour <= 23;
+            boolean validMinute = minute >= 0 && minute <= 59;
+            if (validHour && validMinute) {
+                draft.hour = hour;
+                draft.minute = minute;
+                draft.step = ScheduleWizardStep.LIMIT;
+            } else {
+                sendSeparateMessage(chatId, msg("menu.auto.schedule.time.invalid"));
+            }
+        } catch (NumberFormatException e) {
+            sendSeparateMessage(chatId, msg("menu.auto.schedule.time.invalid"));
+        }
+
+        renderScheduleWizard(chatId, messageId, draft);
+    }
+
+    private void handleScheduleWizardLimit(String chatId, Integer messageId, String value) {
+        ScheduleDraft draft = scheduleDraftByChat.get(chatId);
+        if (draft == null) {
+            updateToAutoMenu(chatId, messageId);
+            return;
+        }
+
+        try {
+            int parsed = Integer.parseInt(value);
+            draft.maxExecutions = parsed <= 0 ? -1 : parsed;
+            draft.step = ScheduleWizardStep.CONFIRM;
+        } catch (NumberFormatException e) {
+            sendSeparateMessage(chatId, msg("menu.auto.schedule.limit.invalid"));
+        }
+
+        renderScheduleWizard(chatId, messageId, draft);
+    }
+
+    private void handleScheduleWizardSave(String chatId, Integer messageId) {
+        ScheduleDraft draft = scheduleDraftByChat.get(chatId);
+        if (draft == null) {
+            updateToAutoMenu(chatId, messageId);
+            return;
+        }
+
+        try {
+            String cron = buildCronFromDraft(draft);
+            ScheduleEntry entry = scheduleService.createSchedule(draft.type, draft.targetId, cron, draft.maxExecutions);
+            sendSeparateMessage(chatId,
+                    msg("menu.auto.schedule.created", entry.getId(), entry.getCronExpression(),
+                            describeScheduleLimit(entry)));
+            scheduleDraftByChat.remove(chatId);
+            returnToScheduleTarget(chatId, messageId, draft);
+        } catch (Exception e) {
+            log.warn("[Menu] Failed to save schedule from wizard", e);
+            sendSeparateMessage(chatId, msg("menu.auto.schedule.create-failed"));
+            renderScheduleWizard(chatId, messageId, draft);
+        }
+    }
+
+    private void cancelScheduleWizard(String chatId, Integer messageId) {
+        ScheduleDraft draft = scheduleDraftByChat.remove(chatId);
+        if (draft == null) {
+            updateToAutoMenu(chatId, messageId);
+            return;
+        }
+        returnToScheduleTarget(chatId, messageId, draft);
+    }
+
+    private void renderScheduleWizard(String chatId, Integer messageId, ScheduleDraft draft) {
+        editMessage(chatId, messageId, buildScheduleWizardText(draft), buildScheduleWizardKeyboard(draft));
+    }
+
+    private String buildScheduleWizardText(ScheduleDraft draft) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(HTML_BOLD_OPEN).append(msg("menu.auto.schedule.wizard.title")).append(HTML_BOLD_CLOSE_NL);
+        sb.append(msg("menu.auto.schedule.wizard.target", localizedScheduleType(draft.type),
+                escapeHtml(draft.targetLabel)))
+                .append("\n");
+        sb.append(msg("menu.auto.schedule.wizard.step", draft.step)).append("\n");
+        sb.append(msg("menu.auto.schedule.wizard.frequency", draft.frequency)).append("\n");
+        sb.append(msg("menu.auto.schedule.wizard.time",
+                String.format(Locale.ROOT, "%02d:%02d", draft.hour, draft.minute)))
+                .append("\n");
+        sb.append(msg("menu.auto.schedule.wizard.days", formatDaySet(draft.days))).append("\n");
+
+        if (draft.maxExecutions > 0) {
+            sb.append(msg("menu.auto.schedule.wizard.limit", draft.maxExecutions)).append("\n");
+        } else {
+            sb.append(msg("menu.auto.schedule.wizard.limit.unlimited")).append("\n");
+        }
+
+        try {
+            sb.append("\n").append(msg("menu.auto.schedule.wizard.cron", buildCronFromDraft(draft)));
+        } catch (Exception e) {
+            sb.append("\n").append(msg("menu.auto.schedule.wizard.cron.pending"));
+        }
+
+        return sb.toString();
+    }
+
+    private InlineKeyboardMarkup buildScheduleWizardKeyboard(ScheduleDraft draft) {
+        List<InlineKeyboardRow> rows = new ArrayList<>();
+
+        if (draft.step == ScheduleWizardStep.FREQUENCY) {
+            rows.add(row(
+                    button(msg("menu.auto.schedule.wizard.freq.daily"), "menu:autoMenu:schFreq:daily"),
+                    button(msg("menu.auto.schedule.wizard.freq.weekdays"), "menu:autoMenu:schFreq:weekdays")));
+            rows.add(row(
+                    button(msg("menu.auto.schedule.wizard.freq.weekly"), "menu:autoMenu:schFreq:weekly"),
+                    button(msg("menu.auto.schedule.wizard.freq.custom"), "menu:autoMenu:schFreq:custom")));
+        }
+
+        if (draft.step == ScheduleWizardStep.DAYS) {
+            rows.add(row(button(dayToggleLabel(draft, 1), "menu:autoMenu:schDay:1"),
+                    button(dayToggleLabel(draft, 2), "menu:autoMenu:schDay:2"),
+                    button(dayToggleLabel(draft, 3), "menu:autoMenu:schDay:3")));
+            rows.add(row(button(dayToggleLabel(draft, 4), "menu:autoMenu:schDay:4"),
+                    button(dayToggleLabel(draft, 5), "menu:autoMenu:schDay:5"),
+                    button(dayToggleLabel(draft, 6), "menu:autoMenu:schDay:6")));
+            rows.add(row(button(dayToggleLabel(draft, 7), "menu:autoMenu:schDay:7")));
+            rows.add(row(button(msg("menu.auto.schedule.wizard.days.done"), "menu:autoMenu:schDaysDone")));
+        }
+
+        if (draft.step == ScheduleWizardStep.TIME) {
+            rows.add(row(button("09:00", "menu:autoMenu:schTime:0900"),
+                    button("12:00", "menu:autoMenu:schTime:1200")));
+            rows.add(row(button("18:00", "menu:autoMenu:schTime:1800"),
+                    button("21:00", "menu:autoMenu:schTime:2100")));
+        }
+
+        if (draft.step == ScheduleWizardStep.LIMIT) {
+            rows.add(row(button("1", "menu:autoMenu:schLimit:1"),
+                    button("3", "menu:autoMenu:schLimit:3"),
+                    button("5", "menu:autoMenu:schLimit:5")));
+            rows.add(row(button("10", "menu:autoMenu:schLimit:10"),
+                    button(msg("menu.auto.schedule.wizard.limit.infinite"), "menu:autoMenu:schLimit:0")));
+        }
+
+        if (draft.step == ScheduleWizardStep.CONFIRM) {
+            rows.add(row(button(msg("menu.auto.schedule.wizard.save"), "menu:autoMenu:schSave")));
+        }
+
+        rows.add(row(
+                button(msg("menu.btn.back"), "menu:autoMenu:schBack"),
+                button(msg("menu.auto.confirm.no"), "menu:autoMenu:schCancel")));
+
+        return InlineKeyboardMarkup.builder().keyboard(rows).build();
+    }
+
+    private String formatDaySet(Set<Integer> days) {
+        if (days == null || days.isEmpty()) {
+            return "-";
+        }
+        List<Integer> sortedDays = days.stream().sorted().toList();
+        StringBuilder sb = new StringBuilder();
+        for (int index = 0; index < sortedDays.size(); index++) {
+            if (index > 0) {
+                sb.append(", ");
+            }
+            sb.append(dayShortName(sortedDays.get(index)));
+        }
+        return sb.toString();
+    }
+
+    private void returnToScheduleTarget(String chatId, Integer messageId, ScheduleDraft draft) {
+        if (draft.returnTarget == ScheduleReturnTarget.GOAL_DETAIL) {
+            showGoalDetail(chatId, messageId, draft.returnIndex);
+            return;
+        }
+        if (draft.returnTarget == ScheduleReturnTarget.TASK_DETAIL) {
+            showTaskDetail(chatId, messageId, draft.returnIndex);
+            return;
+        }
+        updateToAutoSchedulesMenu(chatId, messageId);
+    }
+
+    private String buildCronFromDraft(ScheduleDraft draft) {
+        if (draft.frequency == ScheduleFrequency.DAILY) {
+            return String.format(Locale.ROOT, "0 %d %d * * *", draft.minute, draft.hour);
+        }
+        if (draft.frequency == ScheduleFrequency.WEEKDAYS) {
+            return String.format(Locale.ROOT, "0 %d %d * * MON-FRI", draft.minute, draft.hour);
+        }
+
+        if (draft.days == null || draft.days.isEmpty()) {
+            throw new IllegalArgumentException("No days selected");
+        }
+
+        List<Integer> days = draft.days.stream().sorted().toList();
+        String dayExpr = days.stream()
+                .map(this::dayToCronName)
+                .reduce((first, second) -> first + "," + second)
+                .orElse("MON");
+        String cron = String.format(Locale.ROOT, "0 %d %d * * %s", draft.minute, draft.hour, dayExpr);
+        CronExpression.parse(cron);
+        return cron;
+    }
+
+    private String dayToCronName(int day) {
+        return switch (day) {
+        case 1 -> "MON";
+        case 2 -> "TUE";
+        case 3 -> "WED";
+        case 4 -> "THU";
+        case 5 -> "FRI";
+        case 6 -> "SAT";
+        case 7 -> "SUN";
+        default -> "MON";
+        };
+    }
+
+    private String dayShortName(int day) {
+        return switch (day) {
+        case 1 -> "Mon";
+        case 2 -> "Tue";
+        case 3 -> "Wed";
+        case 4 -> "Thu";
+        case 5 -> "Fri";
+        case 6 -> "Sat";
+        case 7 -> "Sun";
+        default -> "?";
+        };
+    }
+
+    private String dayToggleLabel(ScheduleDraft draft, int day) {
+        String checked = draft.days.contains(day) ? "[x] " : "[ ] ";
+        return checked + dayShortName(day);
+    }
+
+    private List<Goal> getDisplayGoals() {
+        List<Goal> goals = autoModeService.getGoals();
+        return goals.stream()
+                .filter(goal -> !autoModeService.isInboxGoal(goal))
+                .toList();
+    }
+
+    private String renderTaskGroupTitle(Goal goal) {
+        if (autoModeService.isInboxGoal(goal)) {
+            return msg("menu.auto.inbox.title");
+        }
+        return goal.getTitle();
+    }
+
+    private String resolveScheduleTargetLabel(ScheduleEntry entry) {
+        if (entry == null) {
+            return "-";
+        }
+        if (entry.getType() == ScheduleEntry.ScheduleType.GOAL) {
+            return autoModeService.getGoal(entry.getTargetId())
+                    .map(Goal::getTitle)
+                    .orElse(shortId(entry.getTargetId()));
+        }
+        Optional<Goal> goalOptional = autoModeService.findGoalForTask(entry.getTargetId());
+        if (goalOptional.isEmpty()) {
+            return shortId(entry.getTargetId());
+        }
+        Goal goal = goalOptional.get();
+        return goal.getTasks().stream()
+                .filter(task -> entry.getTargetId().equals(task.getId()))
+                .map(AutoTask::getTitle)
+                .findFirst()
+                .orElse(shortId(entry.getTargetId()));
+    }
+
+    private String resolveScheduleLabelById(String scheduleId) {
+        if (scheduleId == null || scheduleId.isBlank()) {
+            return "-";
+        }
+        return scheduleService.findSchedule(scheduleId)
+                .map(scheduleEntry -> resolveScheduleTargetLabel(scheduleEntry) + " (" + shortId(scheduleId) + ")")
+                .orElse(shortId(scheduleId));
+    }
+
+    private String describeScheduleLimit(ScheduleEntry entry) {
+        if (entry == null || entry.getMaxExecutions() <= 0) {
+            return msg("menu.auto.schedule.limit.unlimited");
+        }
+        return msg("menu.auto.schedule.limit.value", entry.getExecutionCount(), entry.getMaxExecutions());
+    }
+
+    private String formatScheduleSummary(ScheduleEntry entry, String targetLabel) {
+        String status = entry.isEnabled() ? "ON" : "OFF";
+        String limit = describeScheduleLimit(entry);
+        return msg("menu.auto.schedule.summary",
+                status,
+                localizedScheduleType(entry.getType()),
+                escapeHtml(truncate(targetLabel, 16)),
+                entry.getCronExpression(),
+                limit);
+    }
+
     private Optional<AutoTask.TaskStatus> parseTaskStatus(String rawStatus) {
         if (rawStatus == null) {
             return Optional.empty();
@@ -1454,6 +2389,10 @@ public class TelegramMenuHandler {
         goalPageByChat.remove(chatId);
         taskPageByChat.remove(chatId);
         schedulePageByChat.remove(chatId);
+        planIndexCache.remove(chatId);
+        planPageByChat.remove(chatId);
+        scheduleDraftByChat.remove(chatId);
+        pendingInputByChat.remove(chatId);
     }
 
     // ==================== Callback handlers ====================

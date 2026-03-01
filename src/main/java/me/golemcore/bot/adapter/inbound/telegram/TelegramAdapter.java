@@ -383,6 +383,10 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
         if (telegramMessage.hasText()) {
             String text = telegramMessage.getText();
 
+            if (menuHandler.handlePendingInput(chatId, text)) {
+                return;
+            }
+
             // Handle commands
             if (text.startsWith("/")) {
                 String[] parts = text.split("\\s+", 2);
@@ -402,6 +406,7 @@ public class TelegramAdapter implements ChannelPort, LongPollingSingleThreadUpda
                 if ("new".equals(cmd)) {
                     telegramSessionService.createAndActivateConversation(chatId);
                     sendMessage(chatId, preferencesService.getMessage("command.new.done"));
+                    menuHandler.resendPersistentMenuIfEnabled(chatId);
                     return;
                 }
 

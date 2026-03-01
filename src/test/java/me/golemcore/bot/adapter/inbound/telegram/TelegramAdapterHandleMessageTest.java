@@ -165,6 +165,7 @@ class TelegramAdapterHandleMessageTest {
 
         verify(telegramSessionService).createAndActivateConversation("100");
         verify(telegramClient, timeout(2000)).execute(any(SendMessage.class));
+        verify(menuHandler).resendPersistentMenuIfEnabled("100");
         verify(commandRouter, never()).hasCommand("new");
         verify(messageHandler, never()).accept(any());
     }
@@ -216,6 +217,18 @@ class TelegramAdapterHandleMessageTest {
         adapter.consume(createTextUpdate(123L, 100L, "/help"));
 
         verify(menuHandler).resendPersistentMenuIfEnabled("100");
+    }
+
+    @Test
+    void shouldHandlePendingMenuInputBeforeCommandRouting() {
+        when(menuHandler.handlePendingInput("100", "goal text")).thenReturn(true);
+
+        Update update = createTextUpdate(123L, 100L, "goal text");
+        adapter.consume(update);
+
+        verify(menuHandler).handlePendingInput("100", "goal text");
+        verify(commandRouter, never()).hasCommand(anyString());
+        verify(messageHandler, never()).accept(any());
     }
 
     // ===== Unknown command passthrough =====
