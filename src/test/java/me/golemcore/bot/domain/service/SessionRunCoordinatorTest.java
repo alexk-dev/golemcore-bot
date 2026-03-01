@@ -313,6 +313,203 @@ class SessionRunCoordinatorTest {
     }
 
     @Test
+    void shouldProcessMixedBurstWithSteeringPriorityWhenQueueModesAll() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "all", "all");
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService);
+
+            Message a = user("A");
+            Message f1 = user("F1");
+            Message s1 = steering("S1");
+            Message f2 = user("F2");
+            Message s2 = steering("S2");
+            Message f3 = user("F3");
+
+            Gate gateA = new Gate();
+            List<String> processedOrder = new ArrayList<>();
+            CountDownLatch queuedProcessed = new CountDownLatch(2);
+
+            org.mockito.Mockito.doAnswer(invocation -> {
+                Message inbound = invocation.getArgument(0);
+                if ("A".equals(inbound.getContent())) {
+                    gateA.await();
+                }
+                synchronized (processedOrder) {
+                    processedOrder.add(inbound.getContent());
+                }
+                if (!"A".equals(inbound.getContent())) {
+                    queuedProcessed.countDown();
+                }
+                return null;
+            }).when(agentLoop).processMessage(any(Message.class));
+
+            coordinator.enqueue(a);
+            gateA.awaitStarted();
+
+            coordinator.enqueue(f1);
+            coordinator.enqueue(s1);
+            coordinator.enqueue(f2);
+            coordinator.enqueue(s2);
+            coordinator.enqueue(f3);
+
+            gateA.release();
+
+            assertTrue(queuedProcessed.await(2, TimeUnit.SECONDS));
+            assertTrue(waitForRunnerCount(coordinator, 0, 2, TimeUnit.SECONDS));
+
+            List<String> orderSnapshot;
+            synchronized (processedOrder) {
+                orderSnapshot = new ArrayList<>(processedOrder);
+            }
+
+            assertEquals(List.of("A", "S1\n\nS2", "F1\n\nF2\n\nF3"), orderSnapshot);
+        }
+    }
+
+    @Test
+    void shouldKeepLatestPerQueueKindInBurstWhenModesOneAtATime() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService);
+
+            Message a = user("A");
+            Message f1 = user("F1");
+            Message s1 = steering("S1");
+            Message f2 = user("F2");
+            Message s2 = steering("S2");
+            Message f3 = user("F3");
+
+            Gate gateA = new Gate();
+            List<String> processedOrder = new ArrayList<>();
+            CountDownLatch queuedProcessed = new CountDownLatch(2);
+
+            org.mockito.Mockito.doAnswer(invocation -> {
+                Message inbound = invocation.getArgument(0);
+                if ("A".equals(inbound.getContent())) {
+                    gateA.await();
+                }
+                synchronized (processedOrder) {
+                    processedOrder.add(inbound.getContent());
+                }
+                if (!"A".equals(inbound.getContent())) {
+                    queuedProcessed.countDown();
+                }
+                return null;
+            }).when(agentLoop).processMessage(any(Message.class));
+
+            coordinator.enqueue(a);
+            gateA.awaitStarted();
+
+            coordinator.enqueue(f1);
+            coordinator.enqueue(s1);
+            coordinator.enqueue(f2);
+            coordinator.enqueue(s2);
+            coordinator.enqueue(f3);
+
+            gateA.release();
+
+            assertTrue(queuedProcessed.await(2, TimeUnit.SECONDS));
+            assertTrue(waitForRunnerCount(coordinator, 0, 2, TimeUnit.SECONDS));
+
+            List<String> orderSnapshot;
+            synchronized (processedOrder) {
+                orderSnapshot = new ArrayList<>(processedOrder);
+            }
+
+            assertEquals(List.of("A", "S2", "F3"), orderSnapshot);
+        }
+    }
+
+    @Test
+    void shouldFlushMixedQueuedMessagesChronologicallyAfterStop() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "all", "all");
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService);
+
+            AgentSession session = AgentSession.builder()
+                    .id("s-burst-stop")
+                    .channelType(CHANNEL_TYPE)
+                    .chatId(CHAT_ID)
+                    .messages(new ArrayList<>())
+                    .build();
+            when(sessionPort.getOrCreate(CHANNEL_TYPE, CHAT_ID)).thenReturn(session);
+
+            Message a = userAt("A", Instant.parse("2026-01-01T00:00:00Z"));
+            Message f1 = userAt("F1", Instant.parse("2026-01-01T00:00:01Z"));
+            Message s1 = steeringAt("S1", Instant.parse("2026-01-01T00:00:02Z"));
+            Message f2 = userAt("F2", Instant.parse("2026-01-01T00:00:03Z"));
+            Message s2 = steeringAt("S2", Instant.parse("2026-01-01T00:00:04Z"));
+            Message resume = userAt("RESUME", Instant.parse("2026-01-01T00:00:10Z"));
+
+            Gate gateA = new Gate();
+            List<String> processedOrder = new ArrayList<>();
+            CountDownLatch resumeProcessed = new CountDownLatch(1);
+
+            org.mockito.Mockito.doAnswer(invocation -> {
+                Message inbound = invocation.getArgument(0);
+                if ("A".equals(inbound.getContent())) {
+                    gateA.await();
+                }
+                synchronized (processedOrder) {
+                    processedOrder.add(inbound.getContent());
+                }
+                if ("RESUME".equals(inbound.getContent())) {
+                    resumeProcessed.countDown();
+                }
+                return null;
+            }).when(agentLoop).processMessage(any(Message.class));
+
+            coordinator.enqueue(a);
+            gateA.awaitStarted();
+
+            coordinator.enqueue(f1);
+            coordinator.enqueue(s1);
+            coordinator.enqueue(f2);
+            coordinator.enqueue(s2);
+
+            coordinator.requestStop(CHANNEL_TYPE, CHAT_ID);
+            coordinator.enqueue(resume);
+            gateA.release();
+
+            assertTrue(resumeProcessed.await(2, TimeUnit.SECONDS));
+            assertTrue(waitForRunnerCount(coordinator, 0, 2, TimeUnit.SECONDS));
+
+            List<String> contents = session.getMessages().stream().map(Message::getContent).toList();
+            assertEquals(List.of("F1", "S1", "F2", "S2"), contents);
+
+            List<String> queueKinds = session.getMessages().stream()
+                    .map(message -> (String) message.getMetadata().get(ContextAttributes.TURN_QUEUE_KIND))
+                    .toList();
+            assertEquals(List.of(
+                    ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP,
+                    ContextAttributes.TURN_QUEUE_KIND_STEERING,
+                    ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP,
+                    ContextAttributes.TURN_QUEUE_KIND_STEERING), queueKinds);
+
+            List<String> processedSnapshot;
+            synchronized (processedOrder) {
+                processedSnapshot = new ArrayList<>(processedOrder);
+            }
+            assertEquals(List.of("RESUME"), processedSnapshot);
+        }
+    }
+
+    @Test
     void shouldHandleExceptionInProcessMessage() throws Exception {
         SessionPort sessionPort = mock(SessionPort.class);
         AgentLoop agentLoop = mock(AgentLoop.class);
@@ -421,23 +618,35 @@ class SessionRunCoordinatorTest {
     }
 
     private static Message steering(String content) {
+        return steeringAt(content, Instant.EPOCH);
+    }
+
+    private static Message steeringAt(String content, Instant timestamp) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put(ContextAttributes.TURN_QUEUE_KIND, ContextAttributes.TURN_QUEUE_KIND_STEERING);
-        return user(content, metadata);
+        return user(content, metadata, timestamp);
     }
 
     private static Message user(String content) {
-        return user(content, null);
+        return userAt(content, Instant.EPOCH);
+    }
+
+    private static Message userAt(String content, Instant timestamp) {
+        return user(content, null, timestamp);
     }
 
     private static Message user(String content, Map<String, Object> metadata) {
+        return user(content, metadata, Instant.EPOCH);
+    }
+
+    private static Message user(String content, Map<String, Object> metadata, Instant timestamp) {
         return Message.builder()
                 .role("user")
                 .content(content)
                 .channelType(CHANNEL_TYPE)
                 .chatId(CHAT_ID)
                 .senderId("u1")
-                .timestamp(Instant.EPOCH)
+                .timestamp(timestamp)
                 .metadata(metadata)
                 .build();
     }
