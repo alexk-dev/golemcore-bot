@@ -2147,3 +2147,9 @@ textarea:focus-visible,
     max-height: 42vh;
   }
 }
+
+.scheduler-day-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.45rem;
+}
