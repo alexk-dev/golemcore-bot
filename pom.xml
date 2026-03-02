@@ -25,7 +25,7 @@
 
     <properties>
         <java.version>25</java.version>
-        <feign.version>13.9</feign.version>
+        <feign.version>13.9.2</feign.version>
         <okhttp.version>5.3.2</okhttp.version>
         <telegram.version>9.4.0</telegram.version>
         <langchain4j.version>1.11.0</langchain4j.version>
