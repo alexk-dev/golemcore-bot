@@ -304,6 +304,12 @@ public class RuntimeConfig {
         private Integer autoRetryMaxAttempts = 2;
         @Builder.Default
         private Long autoRetryBaseDelayMs = 600L;
+        @Builder.Default
+        private Boolean queueSteeringEnabled = true;
+        @Builder.Default
+        private String queueSteeringMode = "one-at-a-time";
+        @Builder.Default
+        private String queueFollowUpMode = "one-at-a-time";
     }
 
     @Data

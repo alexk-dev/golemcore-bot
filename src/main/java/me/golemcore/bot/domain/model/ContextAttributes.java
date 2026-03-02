@@ -120,6 +120,15 @@ public final class ContextAttributes {
      */
     public static final String TURN_INTERRUPT_REQUESTED = "turn.interrupt.requested";
 
+    /** String — queue kind for inbound message while a turn is running. */
+    public static final String TURN_QUEUE_KIND = "turn.queue.kind";
+
+    /** String value for {@link #TURN_QUEUE_KIND}: prioritize as steering input. */
+    public static final String TURN_QUEUE_KIND_STEERING = "steering";
+
+    /** String value for {@link #TURN_QUEUE_KIND}: process as regular follow-up. */
+    public static final String TURN_QUEUE_KIND_FOLLOW_UP = "follow_up";
+
     /** WebSocketSession — reference to WebSocket session for streaming. */
     public static final String WEB_STREAM_SINK = "web.stream.sink";
 

@@ -28,9 +28,13 @@ import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.port.outbound.SessionPort;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Deque;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -62,6 +66,7 @@ public class SessionRunCoordinator {
     private final AgentLoop agentLoop;
     private final ExecutorService sessionRunExecutor;
     private final RuntimeEventService runtimeEventService;
+    private final RuntimeConfigService runtimeConfigService;
 
     private final Map<SessionKey, SessionRunner> runners = new ConcurrentHashMap<>();
 
@@ -88,7 +93,8 @@ public class SessionRunCoordinator {
 
         private final SessionKey key;
         private final Object lock = new Object();
-        private final Deque<Message> queuedMessages = new ArrayDeque<>();
+        private final Deque<Message> queuedSteeringMessages = new ArrayDeque<>();
+        private final Deque<Message> queuedFollowUpMessages = new ArrayDeque<>();
 
         private boolean pausedAfterStop = false;
         private Future<?> runningTask;
@@ -100,6 +106,7 @@ public class SessionRunCoordinator {
         void enqueue(Message inbound) {
             Objects.requireNonNull(inbound, "inbound");
 
+            String queueKind = resolveQueueKind(inbound);
             synchronized (lock) {
                 if (pausedAfterStop) {
                     resumeWithInbound(inbound);
@@ -107,21 +114,16 @@ public class SessionRunCoordinator {
                 }
 
                 if (isRunning()) {
-                    if (queuedMessages.size() >= MAX_QUEUED_MESSAGES_PER_SESSION) {
-                        queuedMessages.removeFirst();
-                        queuedMessages.addLast(inbound);
-                        log.warn(
-                                "[SessionRunCoordinator] queue limit reached ({}), dropped oldest message: channel={}, chatId={}",
-                                MAX_QUEUED_MESSAGES_PER_SESSION,
-                                key.channelType(),
-                                key.chatId());
-                        return;
+                    if (ContextAttributes.TURN_QUEUE_KIND_STEERING.equals(queueKind)) {
+                        enqueueSteering(inbound);
+                    } else {
+                        enqueueFollowUp(inbound);
                     }
-                    queuedMessages.addLast(inbound);
                     return;
                 }
             }
 
+            markQueueKind(inbound, queueKind);
             startRun(inbound, new ArrayDeque<>());
         }
 
@@ -129,7 +131,7 @@ public class SessionRunCoordinator {
             Future<?> taskToCancel;
             boolean shouldPause;
             synchronized (lock) {
-                shouldPause = isRunning() || !queuedMessages.isEmpty();
+                shouldPause = isRunning() || !queuedSteeringMessages.isEmpty() || !queuedFollowUpMessages.isEmpty();
                 pausedAfterStop = shouldPause;
                 taskToCancel = runningTask;
             }
@@ -153,10 +155,31 @@ public class SessionRunCoordinator {
             Deque<Message> prefix;
             synchronized (lock) {
                 pausedAfterStop = false;
-                prefix = new ArrayDeque<>(queuedMessages);
-                queuedMessages.clear();
+                prefix = drainQueuedPrefixLocked();
             }
+            markQueueKind(inbound, ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP);
             startRun(inbound, prefix);
+        }
+
+        private Deque<Message> drainQueuedPrefixLocked() {
+            List<Message> queued = new ArrayList<>();
+            while (!queuedFollowUpMessages.isEmpty()) {
+                Message followUp = queuedFollowUpMessages.removeFirst();
+                markQueueKind(followUp, ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP);
+                queued.add(followUp);
+            }
+            while (!queuedSteeringMessages.isEmpty()) {
+                Message steering = queuedSteeringMessages.removeFirst();
+                markQueueKind(steering, ContextAttributes.TURN_QUEUE_KIND_STEERING);
+                queued.add(steering);
+            }
+
+            queued.sort(Comparator.comparing(this::resolveTimestamp));
+            return new ArrayDeque<>(queued);
+        }
+
+        private Instant resolveTimestamp(Message message) {
+            return message != null && message.getTimestamp() != null ? message.getTimestamp() : Instant.EPOCH;
         }
 
         private boolean isRunning() {
@@ -193,21 +216,132 @@ public class SessionRunCoordinator {
         }
 
         private void onRunComplete() {
-            Message next = null;
+            Message next;
             synchronized (lock) {
                 runningTask = null;
                 if (pausedAfterStop) {
                     return;
                 }
-                if (!queuedMessages.isEmpty()) {
-                    next = queuedMessages.removeFirst();
-                }
+                next = dequeueNextLocked();
             }
             if (next != null) {
                 startRun(next, new ArrayDeque<>());
                 return;
             }
             evictIfIdle();
+        }
+
+        private Message dequeueNextLocked() {
+            if (!queuedSteeringMessages.isEmpty()) {
+                if (isQueueModeAll(runtimeConfigService.getTurnQueueSteeringMode())) {
+                    Message mergedSteering = mergeQueuedMessages(queuedSteeringMessages,
+                            ContextAttributes.TURN_QUEUE_KIND_STEERING);
+                    markQueueKind(mergedSteering, ContextAttributes.TURN_QUEUE_KIND_STEERING);
+                    return mergedSteering;
+                }
+                Message nextSteering = queuedSteeringMessages.removeFirst();
+                markQueueKind(nextSteering, ContextAttributes.TURN_QUEUE_KIND_STEERING);
+                return nextSteering;
+            }
+            if (!queuedFollowUpMessages.isEmpty()) {
+                if (isQueueModeAll(runtimeConfigService.getTurnQueueFollowUpMode())) {
+                    Message mergedFollowUp = mergeQueuedMessages(queuedFollowUpMessages,
+                            ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP);
+                    markQueueKind(mergedFollowUp, ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP);
+                    return mergedFollowUp;
+                }
+                Message nextFollowUp = queuedFollowUpMessages.removeFirst();
+                markQueueKind(nextFollowUp, ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP);
+                return nextFollowUp;
+            }
+            return null;
+        }
+
+        private void enqueueSteering(Message inbound) {
+            if (isQueueModeAll(runtimeConfigService.getTurnQueueSteeringMode())) {
+                enqueueWithBound(queuedSteeringMessages, inbound, "steering");
+                return;
+            }
+
+            queuedSteeringMessages.clear();
+            queuedSteeringMessages.addLast(inbound);
+            log.debug("[SessionRunCoordinator] steering queue mode one-at-a-time: replaced pending steering messages");
+        }
+
+        private void enqueueFollowUp(Message inbound) {
+            if (isQueueModeAll(runtimeConfigService.getTurnQueueFollowUpMode())) {
+                enqueueWithBound(queuedFollowUpMessages, inbound, "follow-up");
+                return;
+            }
+
+            if (queuedFollowUpMessages.isEmpty()) {
+                queuedFollowUpMessages.addLast(inbound);
+            } else {
+                queuedFollowUpMessages.removeFirst();
+                queuedFollowUpMessages.addLast(inbound);
+                log.debug(
+                        "[SessionRunCoordinator] follow-up queue mode one-at-a-time: replaced pending follow-up message");
+            }
+        }
+
+        private void enqueueWithBound(Deque<Message> queue, Message inbound, String queueLabel) {
+            if (queue.size() >= MAX_QUEUED_MESSAGES_PER_SESSION) {
+                queue.removeFirst();
+                log.warn(
+                        "[SessionRunCoordinator] {} queue limit reached ({}), dropped oldest message: channel={}, chatId={}",
+                        queueLabel,
+                        MAX_QUEUED_MESSAGES_PER_SESSION,
+                        key.channelType(),
+                        key.chatId());
+            }
+            queue.addLast(inbound);
+        }
+
+        private Message mergeQueuedMessages(Deque<Message> queue, String queueKind) {
+            Message first = queue.removeFirst();
+            StringBuilder builder = new StringBuilder();
+            appendMergedChunk(builder, first.getContent());
+            while (!queue.isEmpty()) {
+                Message next = queue.removeFirst();
+                appendMergedChunk(builder, next.getContent());
+            }
+            Message merged = Message.builder()
+                    .id(first.getId())
+                    .role(first.getRole())
+                    .content(builder.toString())
+                    .channelType(first.getChannelType())
+                    .chatId(first.getChatId())
+                    .senderId(first.getSenderId())
+                    .timestamp(first.getTimestamp())
+                    .metadata(first.getMetadata() != null ? new LinkedHashMap<>(first.getMetadata()) : null)
+                    .build();
+            markQueueKind(merged, queueKind);
+            return merged;
+        }
+
+        private void appendMergedChunk(StringBuilder builder, String chunk) {
+            if (chunk == null || chunk.isBlank()) {
+                return;
+            }
+            if (builder.length() > 0) {
+                builder.append("\n\n");
+            }
+            builder.append(chunk.trim());
+        }
+
+        private void markQueueKind(Message message, String queueKind) {
+            if (message == null) {
+                return;
+            }
+            Map<String, Object> metadata = message.getMetadata() != null
+                    ? new LinkedHashMap<>(message.getMetadata())
+                    : new LinkedHashMap<>();
+            metadata.put(ContextAttributes.TURN_QUEUE_KIND, queueKind);
+            message.setMetadata(metadata);
+        }
+
+        private boolean isQueueModeAll(String mode) {
+            return "all".equals(mode);
         }
 
         private void evictIfIdle() {
@@ -222,19 +356,24 @@ public class SessionRunCoordinator {
 
         private boolean isEvictable() {
             synchronized (lock) {
-                return !pausedAfterStop && !isRunning() && queuedMessages.isEmpty();
+                return !pausedAfterStop && !isRunning() && queuedSteeringMessages.isEmpty()
+                        && queuedFollowUpMessages.isEmpty();
             }
         }
 
         private void flushQueuedMessages(SessionKey runKey, Deque<Message> prefix) {
+            if (prefix == null || prefix.isEmpty()) {
+                return;
+            }
+
             AgentSession session = sessionPort.getOrCreate(runKey.channelType(), runKey.chatId());
             if (session == null) {
                 return;
             }
 
             int before = session.getMessages().size();
-            for (Message m : prefix) {
-                session.addMessage(m);
+            for (Message message : prefix) {
+                session.addMessage(message);
             }
             try {
                 sessionPort.save(session);
@@ -244,6 +383,28 @@ public class SessionRunCoordinator {
             log.info("[SessionRunCoordinator] flushed {} queued messages ({} -> {})",
                     prefix.size(), before, session.getMessages().size());
         }
+    }
+
+    private String resolveQueueKind(Message inbound) {
+        if (!runtimeConfigService.isTurnQueueSteeringEnabled()) {
+            return ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP;
+        }
+        if (inbound == null || inbound.getMetadata() == null) {
+            return ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP;
+        }
+
+        Object explicit = inbound.getMetadata().get(ContextAttributes.TURN_QUEUE_KIND);
+        if (explicit instanceof String explicitKind) {
+            String normalized = explicitKind.trim().toLowerCase();
+            if (ContextAttributes.TURN_QUEUE_KIND_STEERING.equals(normalized)) {
+                return ContextAttributes.TURN_QUEUE_KIND_STEERING;
+            }
+            if (ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP.equals(normalized)) {
+                return ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP;
+            }
+        }
+
+        return ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP;
     }
 
     private void markInterruptRequested(SessionKey key) {

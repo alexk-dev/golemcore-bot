@@ -55,6 +55,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check changed files English-only policy
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+        run: python3 .github/scripts/check-only-english.py
 
       - name: Set up JDK 25
         uses: actions/setup-java@v5

@@ -1,5 +1,23 @@
 package me.golemcore.bot.domain.service;
 
+/*
+ * Copyright 2026 Aleksei Kuleshov
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * Contact: alex@kuleshov.tech
+ */
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.extern.slf4j.Slf4j;
@@ -99,6 +117,9 @@ public class RuntimeConfigService {
     private static final boolean DEFAULT_TURN_AUTO_RETRY_ENABLED = true;
     private static final int DEFAULT_TURN_AUTO_RETRY_MAX_ATTEMPTS = 2;
     private static final long DEFAULT_TURN_AUTO_RETRY_BASE_DELAY_MS = 600L;
+    private static final boolean DEFAULT_TURN_QUEUE_STEERING_ENABLED = true;
+    private static final String DEFAULT_TURN_QUEUE_STEERING_MODE = "one-at-a-time";
+    private static final String DEFAULT_TURN_QUEUE_FOLLOW_UP_MODE = "one-at-a-time";
     private static final int DEFAULT_IMAP_PORT = 993;
     private static final int DEFAULT_IMAP_CONNECT_TIMEOUT = 10000;
     private static final int DEFAULT_IMAP_READ_TIMEOUT = 30000;
@@ -806,6 +827,48 @@ public class RuntimeConfigService {
         return val != null ? val : DEFAULT_TURN_AUTO_RETRY_BASE_DELAY_MS;
     }
 
+    public boolean isTurnQueueSteeringEnabled() {
+        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
+        if (turnConfig == null) {
+            return DEFAULT_TURN_QUEUE_STEERING_ENABLED;
+        }
+        Boolean val = turnConfig.getQueueSteeringEnabled();
+        return val != null ? val : DEFAULT_TURN_QUEUE_STEERING_ENABLED;
+    }
+
+    public String getTurnQueueSteeringMode() {
+        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
+        if (turnConfig == null || turnConfig.getQueueSteeringMode() == null
+                || turnConfig.getQueueSteeringMode().isBlank()) {
+            return DEFAULT_TURN_QUEUE_STEERING_MODE;
+        }
+        return normalizeQueueMode(turnConfig.getQueueSteeringMode());
+    }
+
+    public String getTurnQueueFollowUpMode() {
+        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
+        if (turnConfig == null || turnConfig.getQueueFollowUpMode() == null
+                || turnConfig.getQueueFollowUpMode().isBlank()) {
+            return DEFAULT_TURN_QUEUE_FOLLOW_UP_MODE;
+        }
+        return normalizeQueueMode(turnConfig.getQueueFollowUpMode());
+    }
+
+    private String normalizeQueueMode(String mode) {
+        if (mode == null || mode.isBlank()) {
+            return DEFAULT_TURN_QUEUE_STEERING_MODE;
+        }
+        String normalized = mode.trim().toLowerCase(Locale.ROOT);
+        if ("all".equals(normalized)) {
+            return "all";
+        }
+        if ("one-at-a-time".equals(normalized) || "one_at_a_time".equals(normalized)
+                || "one-at-time".equals(normalized) || "single".equals(normalized)) {
+            return "one-at-a-time";
+        }
+        return DEFAULT_TURN_QUEUE_STEERING_MODE;
+    }
+
     // ==================== Memory ====================
 
     public boolean isMemoryEnabled() {
@@ -1297,6 +1360,19 @@ public class RuntimeConfigService {
         }
         if (cfg.getTurn().getAutoRetryBaseDelayMs() == null) {
             cfg.getTurn().setAutoRetryBaseDelayMs(DEFAULT_TURN_AUTO_RETRY_BASE_DELAY_MS);
+        }
+        if (cfg.getTurn().getQueueSteeringEnabled() == null) {
+            cfg.getTurn().setQueueSteeringEnabled(DEFAULT_TURN_QUEUE_STEERING_ENABLED);
+        }
+        if (cfg.getTurn().getQueueSteeringMode() == null || cfg.getTurn().getQueueSteeringMode().isBlank()) {
+            cfg.getTurn().setQueueSteeringMode(DEFAULT_TURN_QUEUE_STEERING_MODE);
+        } else {
+            cfg.getTurn().setQueueSteeringMode(normalizeQueueMode(cfg.getTurn().getQueueSteeringMode()));
+        }
+        if (cfg.getTurn().getQueueFollowUpMode() == null || cfg.getTurn().getQueueFollowUpMode().isBlank()) {
+            cfg.getTurn().setQueueFollowUpMode(DEFAULT_TURN_QUEUE_FOLLOW_UP_MODE);
+        } else {
+            cfg.getTurn().setQueueFollowUpMode(normalizeQueueMode(cfg.getTurn().getQueueFollowUpMode()));
         }
         normalizeSecretFlags(cfg);
     }
