@@ -87,11 +87,14 @@ jobs:
           git-user-email: 'github-actions[bot]@users.noreply.github.com'
 
       - name: Validate release outcome
+        id: release-validation
         if: steps.release.outcome == 'failure'
         run: |
           RELEASE_STDOUT_LOWER="$(echo "${{ steps.release.outputs.stdout }}" | tr '[:upper:]' '[:lower:]')"
           if [[ "${RELEASE_STDOUT_LOWER}" == *"no conventional commit"* ]]; then
             echo "No releasable conventional commits found. Skipping release."
+            echo "should-release=false" >> "${GITHUB_OUTPUT}"
+            echo "reason=no_releasable_commits" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
 
@@ -106,12 +109,55 @@ jobs:
           echo "${{ steps.release.outputs.stdout }}"
           exit 1
 
-      - name: Push release tag only
-        if: steps.release.outputs.version != ''
-        run: git push origin "${{ steps.release.outputs.version }}"
+      - name: Resolve release execution flag
+        id: release-flag
+        run: |
+          RELEASE_STDOUT_LOWER="$(echo "${{ steps.release.outputs.stdout }}" | tr '[:upper:]' '[:lower:]')"
+
+          if [[ "${{ steps.release-validation.outputs.should-release }}" == "false" ]]; then
+            echo "should-release=false" >> "${GITHUB_OUTPUT}"
+            echo "reason=${{ steps.release-validation.outputs.reason }}" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          if [[ "${RELEASE_STDOUT_LOWER}" == *"no conventional commit"* ]]; then
+            echo "No releasable conventional commits found (success path). Skipping release."
+            echo "should-release=false" >> "${GITHUB_OUTPUT}"
+            echo "reason=no_releasable_commits" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          if [[ "${{ steps.release.outputs.version }}" == "" ]]; then
+            echo "No release version output from cocogitto. Skipping release."
+            echo "should-release=false" >> "${GITHUB_OUTPUT}"
+            echo "reason=missing_version_output" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          echo "should-release=true" >> "${GITHUB_OUTPUT}"
+          echo "reason=ready" >> "${GITHUB_OUTPUT}"
+
+      - name: Push release tag if missing on remote
+        id: tag-push
+        if: steps.release-flag.outputs.should-release == 'true'
+        run: |
+          set -euo pipefail
+          RELEASE_TAG="${{ steps.release.outputs.version }}"
+
+          if git ls-remote --tags origin "refs/tags/${RELEASE_TAG}" | grep -q .; then
+            echo "Release tag ${RELEASE_TAG} already exists on origin."
+            echo "Skipping publish steps for this run."
+            echo "should-release=false" >> "${GITHUB_OUTPUT}"
+            echo "reason=tag_already_exists" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          git push origin "${RELEASE_TAG}"
+          echo "should-release=true" >> "${GITHUB_OUTPUT}"
+          echo "reason=tag_pushed" >> "${GITHUB_OUTPUT}"
 
       - name: Set up JDK 25
-        if: steps.release.outputs.version != ''
+        if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
         uses: actions/setup-java@v5
         with:
           java-version: '25'
@@ -119,11 +165,11 @@ jobs:
           cache: maven
 
       - name: Build release JAR
-        if: steps.release.outputs.version != ''
+        if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
         run: ./mvnw clean package -DskipTests -DskipGitHooks=true
 
       - name: Prepare release assets
-        if: steps.release.outputs.version != ''
+        if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
         id: assets
         run: |
           JAR_PATH=$(find target -maxdepth 1 -type f -name 'bot-*.jar' ! -name '*.jar.original' | sort | head -n 1)
@@ -138,7 +184,7 @@ jobs:
           echo "sha-file=${SHA_FILE}" >> "${GITHUB_OUTPUT}"
 
       - name: Create or update GitHub Release
-        if: steps.release.outputs.version != ''
+        if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ steps.release.outputs.version }}
@@ -154,15 +200,30 @@ jobs:
           fi
 
       - name: Trigger Docker publish for release tag
-        if: steps.release.outputs.version != ''
+        if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh workflow run docker-publish.yml --ref "${{ steps.release.outputs.version }}"
 
       - name: Summary
-        if: steps.release.outputs.version != ''
+        if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
         run: |
           echo "## Release ${{ steps.release.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Tag \`${{ steps.release.outputs.version }}\` pushed (main push intentionally disabled by branch rules)." >> $GITHUB_STEP_SUMMARY
           echo "GitHub Release with \`bot-*.jar\` and \`sha256sums.txt\` was published." >> $GITHUB_STEP_SUMMARY
+
+      - name: Summary (no release)
+        if: steps.release-flag.outputs.should-release != 'true' || steps.tag-push.outputs.should-release != 'true'
+        run: |
+          RELEASE_REASON="${{ steps.tag-push.outputs.reason }}"
+          if [[ -z "${RELEASE_REASON}" ]]; then
+            RELEASE_REASON="${{ steps.release-flag.outputs.reason }}"
+          fi
+          if [[ -z "${RELEASE_REASON}" ]]; then
+            RELEASE_REASON="not_applicable"
+          fi
+
+          echo "## No release" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Release flow skipped safely. Reason: \`${RELEASE_REASON}\`." >> $GITHUB_STEP_SUMMARY
