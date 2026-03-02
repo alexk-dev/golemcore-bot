@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Fail CI if changed files contain Cyrillic characters.
+"""Fail CI if changed files contain non-English alphabetic letters.
+
+Policy:
+- Allowed: English letters (A-Z, a-z), digits, whitespace, and special symbols.
+- Forbidden: Any alphabetic character outside the English alphabet.
 
 Scope is intentionally limited to files changed in the PR (or push range),
 so existing repository content is not blocked retroactively.
@@ -8,13 +12,11 @@ so existing repository content is not blocked retroactively.
 from __future__ import annotations
 
 import os
-import re
 import subprocess
 import sys
 from pathlib import Path
 from typing import List
 
-CYRILLIC_PATTERN = re.compile(r"[\u0400-\u04FF]")
 TEXT_EXTENSIONS = {
     ".java",
     ".kt",
@@ -81,6 +83,14 @@ def list_changed_files(diff_range: str) -> List[Path]:
     return changed_paths
 
 
+def find_non_english_letters(text: str) -> List[str]:
+    invalid_chars = []
+    for character in text:
+        if character.isalpha() and not ("A" <= character <= "Z" or "a" <= character <= "z"):
+            invalid_chars.append(character)
+    return invalid_chars
+
+
 def scan_file(path: Path) -> List[str]:
     violations = []
     try:
@@ -89,11 +99,15 @@ def scan_file(path: Path) -> List[str]:
         return violations
 
     for index, line in enumerate(lines, start=1):
-        if CYRILLIC_PATTERN.search(line):
+        invalid_chars = find_non_english_letters(line)
+        if invalid_chars:
             preview = line.strip()
             if len(preview) > 180:
                 preview = preview[:177] + "..."
-            violations.append(f"{path}:{index}: {preview}")
+            unique_chars = sorted(set(invalid_chars))
+            violations.append(
+                f"{path}:{index}: non-English letters={''.join(unique_chars)!r}; line={preview}"
+            )
 
     return violations
 
@@ -111,13 +125,16 @@ def main() -> int:
         all_violations.extend(scan_file(file_path))
 
     if all_violations:
-        print("Cyrillic characters detected in changed files:")
+        print("Non-English alphabetic letters detected in changed files:")
         for violation in all_violations:
             print(f"- {violation}")
-        print("Use English for PR descriptions, code comments, logs, and user-facing text in changed files.")
+        print(
+            "Policy violation: use only English alphabet letters in text/comments/messages; "
+            "digits, whitespace, and special symbols are allowed."
+        )
         return 1
 
-    print("No Cyrillic characters detected in changed files.")
+    print("Only English letters (plus symbols) detected in changed files.")
     return 0
 
 
