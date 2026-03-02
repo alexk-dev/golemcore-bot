@@ -2,6 +2,15 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.18.1 - 2026-03-02
+#### Bug Fixes
+- (**ci**) skip no-op release when tag already exists (#143) - (c667a43) - GolemCore AI Agent #1
+#### Miscellaneous
+- (**deps**) bump feign.version from 13.9 to 13.9.2 (#141) - (a0d10eb) - dependabot[bot]
+- (**deps**) bump com.google.protobuf:protobuf-java from 4.33.5 to 4.34.0 (#142) - (a7c1b64) - dependabot[bot]
+
+- - -
+
 ## v0.12.0 - 2026-02-25
 #### Features
 - (**browser**) fetch Playwright driver bundle from Maven at runtime (#117) - (2121f20) - Alex Kuleshov
