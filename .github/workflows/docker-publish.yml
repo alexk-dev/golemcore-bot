@@ -84,14 +84,14 @@ jobs:
 
       - name: Upload PMD report
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: pmd-report
           path: target/pmd.xml
 
       - name: Upload SpotBugs report
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: spotbugs-report
           path: target/spotbugsXml.xml
