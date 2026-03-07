@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -97,9 +96,8 @@ class RuntimeConfigServiceTest {
         RuntimeConfig second = service.getRuntimeConfig();
 
         assertEquals(first, second);
-        // First call loads all 15 sections, second call returns cached
-        // Verify getText was called for section loading (15 sections on first load)
-        verify(storagePort, atLeast(15)).getText(anyString(), anyString());
+        // First call loads all 14 sections, second call returns cached
+        verify(storagePort, atLeast(14)).getText(anyString(), anyString());
     }
 
     @Test
@@ -199,8 +197,8 @@ class RuntimeConfigServiceTest {
 
     @Test
     void shouldReturnDefaultVoiceProvidersWhenNotConfigured() {
-        assertEquals("elevenlabs", service.getSttProvider());
-        assertEquals("elevenlabs", service.getTtsProvider());
+        assertEquals("golemcore/elevenlabs", service.getSttProvider());
+        assertEquals("golemcore/elevenlabs", service.getTtsProvider());
         assertEquals("", service.getWhisperSttUrl());
         assertEquals("", service.getWhisperSttApiKey());
         assertFalse(service.isWhisperSttConfigured());
@@ -258,7 +256,6 @@ class RuntimeConfigServiceTest {
         assertTrue(service.isSkillTransitionEnabled());
         assertTrue(service.isTierToolEnabled());
         assertTrue(service.isGoalManagementEnabled());
-        assertTrue(service.isBrowserEnabled());
         assertTrue(service.isDynamicTierEnabled());
     }
 
@@ -297,6 +294,26 @@ class RuntimeConfigServiceTest {
 
         assertNotNull(config.getTools().getShellEnvironmentVariables());
         assertTrue(config.getTools().getShellEnvironmentVariables().isEmpty());
+    }
+
+    @Test
+    void shouldIgnoreLegacyPluginOwnedToolFieldsWhenLoadingToolsSection() {
+        persistedSections.put("tools.json", """
+                {
+                  "browserEnabled": true,
+                  "braveSearchEnabled": true,
+                  "imap": { "enabled": true, "host": "imap.example.com" },
+                  "shellEnvironmentVariables": [
+                    { "name": "API_TOKEN", "value": "secret" }
+                  ]
+                }
+                """);
+
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        assertEquals(1, config.getTools().getShellEnvironmentVariables().size());
+        assertEquals("API_TOKEN", config.getTools().getShellEnvironmentVariables().getFirst().getName());
+        assertEquals("secret", config.getTools().getShellEnvironmentVariables().getFirst().getValue());
     }
 
     @Test
@@ -353,24 +370,6 @@ class RuntimeConfigServiceTest {
         assertNotNull(updated.getTools());
         assertNotNull(updated.getTools().getShellEnvironmentVariables());
         assertTrue(updated.getTools().getShellEnvironmentVariables().isEmpty());
-    }
-
-    @Test
-    void shouldReturnDefaultRagSettings() {
-        assertFalse(service.isRagEnabled());
-        assertEquals("http://localhost:9621", service.getRagUrl());
-        assertEquals("hybrid", service.getRagQueryMode());
-        assertEquals(10, service.getRagTimeoutSeconds());
-        assertEquals(50, service.getRagIndexMinLength());
-    }
-
-    @Test
-    void shouldReturnDefaultBrowserSettings() {
-        assertEquals("brave", service.getBrowserApiProvider());
-        assertEquals("playwright", service.getBrowserType());
-        assertEquals(30000, service.getBrowserTimeoutMs());
-        assertTrue(service.isBrowserHeadless());
-        assertNotNull(service.getBrowserUserAgent());
     }
 
     // ==================== Telegram ====================
@@ -434,16 +433,6 @@ class RuntimeConfigServiceTest {
                 .build();
         persistedSections.put("voice.json", objectMapper.writeValueAsString(voice));
 
-        RuntimeConfig.RagConfig rag = RuntimeConfig.RagConfig.builder()
-                .apiKey(Secret.of("rag-key-secret"))
-                .build();
-        persistedSections.put("rag.json", objectMapper.writeValueAsString(rag));
-
-        RuntimeConfig.ToolsConfig tools = RuntimeConfig.ToolsConfig.builder()
-                .braveSearchApiKey(Secret.of("brave-key-secret"))
-                .build();
-        persistedSections.put("tools.json", objectMapper.writeValueAsString(tools));
-
         Map<String, RuntimeConfig.LlmProviderConfig> providers = new LinkedHashMap<>();
         providers.put("openai", RuntimeConfig.LlmProviderConfig.builder()
                 .apiKey(Secret.of("openai-secret"))
@@ -461,8 +450,6 @@ class RuntimeConfigServiceTest {
         assertTrue(redacted.getVoice().getApiKey().getPresent());
         assertNull(redacted.getVoice().getWhisperSttApiKey().getValue());
         assertTrue(redacted.getVoice().getWhisperSttApiKey().getPresent());
-        assertNull(redacted.getRag().getApiKey().getValue());
-        assertNull(redacted.getTools().getBraveSearchApiKey().getValue());
         assertNull(redacted.getLlm().getProviders().get("openai").getApiKey().getValue());
         assertTrue(redacted.getLlm().getProviders().get("openai").getApiKey().getPresent());
     }
@@ -489,8 +476,7 @@ class RuntimeConfigServiceTest {
 
         service.updateRuntimeConfig(newConfig);
 
-        // Verify all 15 sections were persisted
-        verify(storagePort, times(15)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
+        verify(storagePort, times(14)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
 
         RuntimeConfig updated = service.getRuntimeConfig();
         assertEquals("custom/model", updated.getModelRouter().getBalancedModel());
@@ -583,8 +569,7 @@ class RuntimeConfigServiceTest {
         assertEquals(20, code.getCode().length());
         assertFalse(code.isUsed());
         assertNotNull(code.getCreatedAt());
-        // Verify that persist was called (15 sections + 15 initial defaults on load)
-        verify(storagePort, atLeast(15)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
+        verify(storagePort, atLeast(14)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
     }
 
     @Test
@@ -665,6 +650,22 @@ class RuntimeConfigServiceTest {
     }
 
     @Test
+    void shouldGenerateInviteCodeWhenInviteCodesListIsImmutable() {
+        service.getRuntimeConfig().getTelegram().setInviteCodes(List.of(RuntimeConfig.InviteCode.builder()
+                .code("EXISTINGINVITECODE01")
+                .used(false)
+                .createdAt(java.time.Instant.now())
+                .build()));
+
+        RuntimeConfig.InviteCode generated = service.generateInviteCode();
+
+        assertNotNull(generated);
+        assertEquals(2, service.getRuntimeConfig().getTelegram().getInviteCodes().size());
+        assertTrue(service.getRuntimeConfig().getTelegram().getInviteCodes().stream()
+                .anyMatch(inviteCode -> generated.getCode().equals(inviteCode.getCode())));
+    }
+
+    @Test
     void shouldRemoveTelegramAllowedUser() {
         RuntimeConfig.InviteCode code = service.generateInviteCode();
         service.redeemInviteCode(code.getCode(), "user1");
@@ -729,65 +730,6 @@ class RuntimeConfigServiceTest {
         assertFalse(redeemed);
     }
 
-    // ==================== IMAP / SMTP Resolved Config ====================
-
-    @Test
-    void shouldResolveImapConfigWithDefaults() {
-        BotProperties.ImapToolProperties resolved = service.getResolvedImapConfig();
-
-        assertFalse(resolved.isEnabled());
-        assertEquals("", resolved.getHost());
-        assertEquals(993, resolved.getPort());
-        assertEquals("", resolved.getUsername());
-        assertEquals("", resolved.getPassword());
-        assertEquals("ssl", resolved.getSecurity());
-        assertEquals(10000, resolved.getConnectTimeout());
-        assertEquals(30000, resolved.getReadTimeout());
-        assertEquals(50000, resolved.getMaxBodyLength());
-        assertEquals(20, resolved.getDefaultMessageLimit());
-    }
-
-    @Test
-    void shouldResolveSmtpConfigWithDefaults() {
-        BotProperties.SmtpToolProperties resolved = service.getResolvedSmtpConfig();
-
-        assertFalse(resolved.isEnabled());
-        assertEquals("", resolved.getHost());
-        assertEquals(587, resolved.getPort());
-        assertEquals("", resolved.getUsername());
-        assertEquals("", resolved.getPassword());
-        assertEquals("starttls", resolved.getSecurity());
-        assertEquals(10000, resolved.getConnectTimeout());
-        assertEquals(30000, resolved.getReadTimeout());
-    }
-
-    @Test
-    void shouldResolveImapConfigWithCustomValues() throws Exception {
-        RuntimeConfig.ImapConfig imap = RuntimeConfig.ImapConfig.builder()
-                .enabled(true)
-                .host("imap.example.com")
-                .port(143)
-                .username("user@example.com")
-                .password(Secret.of("pass"))
-                .security("starttls")
-                .maxBodyLength(10000)
-                .build();
-        RuntimeConfig.ToolsConfig tools = RuntimeConfig.ToolsConfig.builder()
-                .imap(imap)
-                .build();
-        persistedSections.put("tools.json", objectMapper.writeValueAsString(tools));
-
-        BotProperties.ImapToolProperties resolved = service.getResolvedImapConfig();
-
-        assertTrue(resolved.isEnabled());
-        assertEquals("imap.example.com", resolved.getHost());
-        assertEquals(143, resolved.getPort());
-        assertEquals("user@example.com", resolved.getUsername());
-        assertEquals("pass", resolved.getPassword());
-        assertEquals("starttls", resolved.getSecurity());
-        assertEquals(10000, resolved.getMaxBodyLength());
-    }
-
     // ==================== Telegram Auth Mode ====================
 
     @Test
@@ -820,8 +762,8 @@ class RuntimeConfigServiceTest {
                 .build();
         persistedSections.put("voice.json", objectMapper.writeValueAsString(voice));
 
-        assertEquals("whisper", service.getSttProvider());
-        assertEquals("elevenlabs", service.getTtsProvider());
+        assertEquals("golemcore/whisper", service.getSttProvider());
+        assertEquals("golemcore/elevenlabs", service.getTtsProvider());
         assertEquals("http://localhost:5092", service.getWhisperSttUrl());
         assertEquals("whisper-secret", service.getWhisperSttApiKey());
         assertTrue(service.isWhisperSttConfigured());
@@ -836,14 +778,6 @@ class RuntimeConfigServiceTest {
         persistedSections.put("voice.json", objectMapper.writeValueAsString(voice));
 
         assertFalse(service.isWhisperSttConfigured());
-    }
-
-    // ==================== Brave Search ====================
-
-    @Test
-    void shouldDetectBraveSearchDisabledByDefault() {
-        assertFalse(service.isBraveSearchEnabled());
-        assertEquals("", service.getBraveSearchApiKey());
     }
 
     // ==================== Usage ====================
@@ -870,7 +804,6 @@ class RuntimeConfigServiceTest {
         assertTrue(RuntimeConfigService.isValidConfigSection("memory"));
         assertTrue(RuntimeConfigService.isValidConfigSection("skills"));
         assertTrue(RuntimeConfigService.isValidConfigSection("usage"));
-        assertTrue(RuntimeConfigService.isValidConfigSection("rag"));
         assertTrue(RuntimeConfigService.isValidConfigSection("mcp"));
     }
 

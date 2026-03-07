@@ -10,11 +10,13 @@ import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.plugin.runtime.SttProviderRegistry;
+import me.golemcore.bot.plugin.runtime.TtsProviderRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.springframework.context.ApplicationEventPublisher;
+import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -41,7 +43,6 @@ class SettingsControllerTest {
     private ModelSelectionService modelSelectionService;
     private RuntimeConfigService runtimeConfigService;
     private MemoryPresetService memoryPresetService;
-    private ApplicationEventPublisher eventPublisher;
     private SettingsController controller;
 
     @BeforeEach
@@ -50,10 +51,8 @@ class SettingsControllerTest {
         modelSelectionService = mock(ModelSelectionService.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
         memoryPresetService = mock(MemoryPresetService.class);
-        eventPublisher = mock(ApplicationEventPublisher.class);
         controller = new SettingsController(preferencesService, modelSelectionService, runtimeConfigService,
-                memoryPresetService,
-                eventPublisher);
+                memoryPresetService, new SttProviderRegistry(), new TtsProviderRegistry());
         when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(RuntimeConfig.builder().build());
     }
 
@@ -172,57 +171,6 @@ class SettingsControllerTest {
     }
 
     @Test
-    void shouldAllowInviteOnlyTelegramConfigWithRegisteredUsers() {
-        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
-                .telegram(RuntimeConfig.TelegramConfig.builder()
-                        .authMode("invite_only")
-                        .allowedUsers(List.of("1001"))
-                        .token(Secret.of("saved-token"))
-                        .build())
-                .build();
-        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
-        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(runtimeConfig);
-
-        RuntimeConfig.TelegramConfig incoming = RuntimeConfig.TelegramConfig.builder()
-                .enabled(true)
-                .authMode("user")
-                .allowedUsers(List.of("1001"))
-                .inviteCodes(List.of())
-                .build();
-
-        StepVerifier.create(controller.updateTelegramConfig(incoming))
-                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
-                .verifyComplete();
-
-        verify(runtimeConfigService).updateRuntimeConfig(runtimeConfig);
-        assertEquals(List.of("1001"), runtimeConfig.getTelegram().getAllowedUsers());
-        assertEquals("invite_only", runtimeConfig.getTelegram().getAuthMode());
-        assertEquals("saved-token", Secret.valueOrEmpty(runtimeConfig.getTelegram().getToken()));
-    }
-
-    @Test
-    void shouldRejectTelegramConfigWithMultipleAllowedUsers() {
-        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
-                .telegram(RuntimeConfig.TelegramConfig.builder()
-                        .authMode("invite_only")
-                        .token(Secret.of("saved-token"))
-                        .build())
-                .build();
-        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
-
-        RuntimeConfig.TelegramConfig incoming = RuntimeConfig.TelegramConfig.builder()
-                .enabled(true)
-                .authMode("invite_only")
-                .allowedUsers(List.of("1001", "1002"))
-                .inviteCodes(List.of())
-                .build();
-
-        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                () -> controller.updateTelegramConfig(incoming));
-        assertTrue(error.getMessage().contains("supports only one invited user"));
-    }
-
-    @Test
     void shouldRejectRuntimeConfigWithMultipleTelegramAllowedUsers() {
         RuntimeConfig runtimeConfig = RuntimeConfig.builder().build();
         when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
@@ -237,31 +185,6 @@ class SettingsControllerTest {
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> controller.updateRuntimeConfig(incoming));
         assertTrue(error.getMessage().contains("supports only one invited user"));
-    }
-
-    @Test
-    void shouldRemoveTelegramAllowedUser() {
-        when(runtimeConfigService.removeTelegramAllowedUser("123")).thenReturn(true);
-
-        StepVerifier.create(controller.removeTelegramAllowedUser("123"))
-                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
-                .verifyComplete();
-    }
-
-    @Test
-    void shouldRejectNonNumericTelegramAllowedUserId() {
-        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                () -> controller.removeTelegramAllowedUser("abc"));
-        assertTrue(error.getMessage().contains("telegram.userId must be numeric"));
-    }
-
-    @Test
-    void shouldReturnNotFoundWhenRemovingMissingTelegramAllowedUser() {
-        when(runtimeConfigService.removeTelegramAllowedUser("123")).thenReturn(false);
-
-        ResponseStatusException error = assertThrows(ResponseStatusException.class,
-                () -> controller.removeTelegramAllowedUser("123"));
-        assertEquals(HttpStatus.NOT_FOUND, error.getStatusCode());
     }
 
     @Test
@@ -1023,7 +946,7 @@ class SettingsControllerTest {
 
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> controller.updateVoiceConfig(incoming));
-        assertTrue(error.getMessage().contains("voice.ttsProvider must be 'elevenlabs'"));
+        assertTrue(error.getMessage().contains("voice.ttsProvider must resolve to a loaded TTS provider"));
     }
 
     @Test
@@ -1049,8 +972,8 @@ class SettingsControllerTest {
 
         RuntimeConfig.VoiceConfig saved = runtimeConfig.getVoice();
         assertEquals("whisper-secret", saved.getWhisperSttApiKey().getValue());
-        assertEquals("whisper", saved.getSttProvider());
-        assertEquals("elevenlabs", saved.getTtsProvider());
+        assertEquals("golemcore/whisper", saved.getSttProvider());
+        assertEquals("golemcore/elevenlabs", saved.getTtsProvider());
         verify(runtimeConfigService).updateRuntimeConfig(runtimeConfig);
     }
 
@@ -1074,8 +997,8 @@ class SettingsControllerTest {
                 .verifyComplete();
 
         RuntimeConfig.VoiceConfig saved = runtimeConfig.getVoice();
-        assertEquals("whisper", saved.getSttProvider());
-        assertEquals("elevenlabs", saved.getTtsProvider());
+        assertEquals("golemcore/whisper", saved.getSttProvider());
+        assertEquals("golemcore/elevenlabs", saved.getTtsProvider());
     }
 
     @Test
@@ -1092,7 +1015,7 @@ class SettingsControllerTest {
 
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> controller.updateVoiceConfig(incoming));
-        assertTrue(error.getMessage().contains("voice.sttProvider must be one of"));
+        assertTrue(error.getMessage().contains("voice.sttProvider must resolve to a loaded STT provider"));
     }
 
     @Test
@@ -1134,13 +1057,22 @@ class SettingsControllerTest {
 
         RuntimeConfig.VoiceConfig saved = runtimeConfig.getVoice();
         assertNull(saved.getWhisperSttUrl());
-        assertEquals("elevenlabs", saved.getSttProvider());
-        assertEquals("elevenlabs", saved.getTtsProvider());
+        assertEquals("golemcore/elevenlabs", saved.getSttProvider());
+        assertEquals("golemcore/elevenlabs", saved.getTtsProvider());
     }
 
     @Test
     void shouldPreserveWhisperApiKeyDuringRuntimeUpdateWhenNotProvided() {
         RuntimeConfig current = RuntimeConfig.builder()
+                .modelRouter(RuntimeConfig.ModelRouterConfig.builder()
+                        .balancedModel("openai/gpt-5.1")
+                        .build())
+                .llm(RuntimeConfig.LlmConfig.builder()
+                        .providers(new LinkedHashMap<>(Map.of(
+                                "openai", RuntimeConfig.LlmProviderConfig.builder()
+                                        .apiKey(Secret.of("openai-secret"))
+                                        .build())))
+                        .build())
                 .voice(RuntimeConfig.VoiceConfig.builder()
                         .sttProvider("whisper")
                         .ttsProvider("elevenlabs")
@@ -1161,8 +1093,12 @@ class SettingsControllerTest {
                 .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
                 .verifyComplete();
 
-        assertEquals("whisper-secret", incoming.getVoice().getWhisperSttApiKey().getValue());
-        verify(runtimeConfigService).updateRuntimeConfig(incoming);
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        RuntimeConfig saved = captor.getValue();
+        assertEquals("whisper-secret", saved.getVoice().getWhisperSttApiKey().getValue());
+        assertEquals("openai/gpt-5.1", saved.getModelRouter().getBalancedModel());
+        assertEquals("openai-secret", saved.getLlm().getProviders().get("openai").getApiKey().getValue());
     }
 
     @Test
@@ -1181,6 +1117,6 @@ class SettingsControllerTest {
 
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> controller.updateRuntimeConfig(incoming));
-        assertTrue(error.getMessage().contains("voice.ttsProvider must be 'elevenlabs'"));
+        assertTrue(error.getMessage().contains("voice.ttsProvider must resolve to a loaded TTS provider"));
     }
 }

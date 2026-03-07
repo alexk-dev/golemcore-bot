@@ -28,7 +28,7 @@ import java.util.concurrent.CompletableFuture;
  * Component representing an executable tool that can be invoked by the LLM.
  * Tools expose their JSON Schema definition to the LLM via function calling,
  * and implement the execution logic. Examples include FileSystemTool,
- * ShellTool, BrowserTool, and dynamically registered MCP tools.
+ * ShellTool, and dynamically registered plugin or MCP tools.
  */
 public interface ToolComponent extends Component {
 

@@ -87,6 +87,7 @@ class ContextBuildingSystemPromptTest {
                 .renderedContext("")
                 .build());
         when(skillComponent.getSkillsSummary()).thenReturn("");
+        when(toolCallExecutionService.listTools()).thenReturn(List.of());
         when(ragPort.isAvailable()).thenReturn(false);
         when(workspaceInstructionService.getWorkspaceInstructionsContext()).thenReturn("");
         when(userPreferencesService.getPreferences())
@@ -95,7 +96,6 @@ class ContextBuildingSystemPromptTest {
         system = new ContextBuildingSystem(
                 memoryComponent,
                 skillComponent,
-                List.of(),
                 templateEngine,
                 mcpPort,
                 toolCallExecutionService,
@@ -215,11 +215,11 @@ class ContextBuildingSystemPromptTest {
                 .description("A test tool")
                 .inputSchema(Map.of("type", "object"))
                 .build());
+        when(toolCallExecutionService.listTools()).thenReturn(List.of(tool));
 
         system = new ContextBuildingSystem(
                 memoryComponent,
                 skillComponent,
-                List.of(tool),
                 templateEngine,
                 mcpPort,
                 toolCallExecutionService,
@@ -372,8 +372,7 @@ class ContextBuildingSystemPromptTest {
     void injectsRagContextWhenAvailable() {
         when(promptSectionService.isEnabled()).thenReturn(false);
         when(ragPort.isAvailable()).thenReturn(true);
-        when(runtimeConfigService.getRagQueryMode()).thenReturn("hybrid");
-        when(ragPort.query(anyString(), anyString()))
+        when(ragPort.query(anyString()))
                 .thenReturn(CompletableFuture.completedFuture("User discussed Java projects last week."));
 
         AgentContext ctx = createContext();
@@ -393,7 +392,7 @@ class ContextBuildingSystemPromptTest {
         system.process(ctx);
 
         assertFalse(ctx.getSystemPrompt().contains("# Relevant Memory"));
-        verify(ragPort, never()).query(anyString(), anyString());
+        verify(ragPort, never()).query(anyString());
     }
 
     // ===== MCP tools =====
@@ -710,8 +709,7 @@ class ContextBuildingSystemPromptTest {
     void ragQueryExceptionDoesNotBreakPipeline() {
         when(promptSectionService.isEnabled()).thenReturn(false);
         when(ragPort.isAvailable()).thenReturn(true);
-        when(runtimeConfigService.getRagQueryMode()).thenReturn("hybrid");
-        when(ragPort.query(anyString(), anyString()))
+        when(ragPort.query(anyString()))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("RAG timeout")));
 
         AgentContext ctx = createContext();
@@ -725,8 +723,7 @@ class ContextBuildingSystemPromptTest {
     void ragSkippedWhenBlankResult() {
         when(promptSectionService.isEnabled()).thenReturn(false);
         when(ragPort.isAvailable()).thenReturn(true);
-        when(runtimeConfigService.getRagQueryMode()).thenReturn("hybrid");
-        when(ragPort.query(anyString(), anyString()))
+        when(ragPort.query(anyString()))
                 .thenReturn(CompletableFuture.completedFuture("   "));
 
         AgentContext ctx = createContext();
@@ -747,7 +744,7 @@ class ContextBuildingSystemPromptTest {
                 .build();
         system.process(ctx);
 
-        verify(ragPort, never()).query(anyString(), anyString());
+        verify(ragPort, never()).query(anyString());
     }
 
     @Test
@@ -761,7 +758,7 @@ class ContextBuildingSystemPromptTest {
                 .build();
         system.process(ctx);
 
-        verify(ragPort, never()).query(anyString(), anyString());
+        verify(ragPort, never()).query(anyString());
     }
 
     // ===== Skill template variable rendering =====

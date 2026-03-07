@@ -29,6 +29,7 @@ import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
+import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.tools.GoalManagementTool;
 import jakarta.annotation.PostConstruct;
@@ -44,7 +45,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -86,7 +86,7 @@ public class AutoModeScheduler {
     private final AgentLoop agentLoop;
     private final RuntimeConfigService runtimeConfigService;
     private final GoalManagementTool goalManagementTool;
-    private final Map<String, ChannelPort> channelRegistry = new ConcurrentHashMap<>();
+    private final ChannelRegistry channelRegistry;
     private final AtomicBoolean executing = new AtomicBoolean(false);
 
     // Single channel info for milestone notifications
@@ -97,15 +97,13 @@ public class AutoModeScheduler {
 
     public AutoModeScheduler(AutoModeService autoModeService, ScheduleService scheduleService,
             AgentLoop agentLoop, RuntimeConfigService runtimeConfigService,
-            GoalManagementTool goalManagementTool, List<ChannelPort> channelPorts) {
+            GoalManagementTool goalManagementTool, ChannelRegistry channelRegistry) {
         this.autoModeService = autoModeService;
         this.scheduleService = scheduleService;
         this.agentLoop = agentLoop;
         this.runtimeConfigService = runtimeConfigService;
         this.goalManagementTool = goalManagementTool;
-        for (ChannelPort port : channelPorts) {
-            channelRegistry.put(port.getChannelType(), port);
-        }
+        this.channelRegistry = channelRegistry;
     }
 
     @PostConstruct
@@ -191,7 +189,7 @@ public class AutoModeScheduler {
             return;
         }
 
-        ChannelPort channel = channelRegistry.get(info.channelType());
+        ChannelPort channel = channelRegistry.get(info.channelType()).orElse(null);
         if (channel == null) {
             log.warn("[AutoScheduler] Channel '{}' not found for notification", info.channelType());
             return;

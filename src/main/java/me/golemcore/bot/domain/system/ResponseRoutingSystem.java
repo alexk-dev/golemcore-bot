@@ -31,12 +31,11 @@ import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.service.VoiceResponseHandler.VoiceSendResult;
+import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
@@ -52,18 +51,18 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 public class ResponseRoutingSystem implements AgentSystem {
 
-    private final Map<String, ChannelPort> channelRegistry = new ConcurrentHashMap<>();
+    private final ChannelRegistry channelRegistry;
+    private final java.util.Map<String, ChannelPort> overrides = new ConcurrentHashMap<>();
     private final UserPreferencesService preferencesService;
     private final VoiceResponseHandler voiceHandler;
 
-    public ResponseRoutingSystem(List<ChannelPort> channelPorts, UserPreferencesService preferencesService,
+    public ResponseRoutingSystem(ChannelRegistry channelRegistry, UserPreferencesService preferencesService,
             VoiceResponseHandler voiceHandler) {
+        this.channelRegistry = channelRegistry;
         this.preferencesService = preferencesService;
         this.voiceHandler = voiceHandler;
-        for (ChannelPort port : channelPorts) {
-            channelRegistry.put(port.getChannelType(), port);
-        }
-        log.info("Registered {} channels: {}", channelRegistry.size(), channelRegistry.keySet());
+        log.info("Registered {} channels: {}", channelRegistry.getAll().size(),
+                channelRegistry.getAll().stream().map(ChannelPort::getChannelType).toList());
     }
 
     @Override
@@ -250,7 +249,10 @@ public class ResponseRoutingSystem implements AgentSystem {
     // --- Channel resolution ---
 
     private ChannelPort resolveChannel(AgentSession session) {
-        ChannelPort channel = channelRegistry.get(session.getChannelType());
+        ChannelPort channel = overrides.get(session.getChannelType());
+        if (channel == null) {
+            channel = channelRegistry.get(session.getChannelType()).orElse(null);
+        }
         if (channel == null) {
             log.warn("[Response] No channel registered for type: {}", session.getChannelType());
         }
@@ -291,7 +293,7 @@ public class ResponseRoutingSystem implements AgentSystem {
     }
 
     public void registerChannel(ChannelPort channel) {
-        channelRegistry.put(channel.getChannelType(), channel);
+        overrides.put(channel.getChannelType(), channel);
     }
 
     private boolean isAutoModeMessage(AgentContext context) {

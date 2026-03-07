@@ -4,7 +4,6 @@ import {
   type SystemUpdateActionResponse,
   type SystemUpdateStatusResponse,
   checkSystemUpdate,
-  getBrowserHealth,
   getSystemDiagnostics,
   getSystemHealth,
   getSystemUpdateStatus,
@@ -51,8 +50,4 @@ export function useUpdateSystemNow(): UseMutationResult<SystemUpdateActionRespon
       void qc.invalidateQueries({ queryKey: ['system', 'health'] });
     },
   });
-}
-
-export function useBrowserHealthPing(): UseMutationResult<Awaited<ReturnType<typeof getBrowserHealth>>, unknown, void> {
-  return useMutation({ mutationFn: () => getBrowserHealth() });
 }

@@ -5,6 +5,7 @@ import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.RoutingOutcome;
+import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import org.junit.jupiter.api.Test;
@@ -35,7 +36,8 @@ class ResponseRoutingSystemOutgoingResponseTest {
         UserPreferencesService preferences = mock(UserPreferencesService.class);
         when(preferences.getMessage(any())).thenReturn("error");
 
-        ResponseRoutingSystem system = new ResponseRoutingSystem(java.util.List.of(channel), preferences, voiceHandler);
+        ResponseRoutingSystem system = new ResponseRoutingSystem(new ChannelRegistry(java.util.List.of(channel)),
+                preferences, voiceHandler);
         system.registerChannel(channel);
 
         AgentSession session = AgentSession.builder()
@@ -70,7 +72,8 @@ class ResponseRoutingSystemOutgoingResponseTest {
         UserPreferencesService preferences = mock(UserPreferencesService.class);
         when(preferences.getMessage(any())).thenReturn("error");
 
-        ResponseRoutingSystem system = new ResponseRoutingSystem(java.util.List.of(channel), preferences, voiceHandler);
+        ResponseRoutingSystem system = new ResponseRoutingSystem(new ChannelRegistry(java.util.List.of(channel)),
+                preferences, voiceHandler);
         system.registerChannel(channel);
 
         AgentSession session = AgentSession.builder()
@@ -107,7 +110,8 @@ class ResponseRoutingSystemOutgoingResponseTest {
         UserPreferencesService preferences = mock(UserPreferencesService.class);
         when(preferences.getMessage(any())).thenReturn("error");
 
-        ResponseRoutingSystem system = new ResponseRoutingSystem(java.util.List.of(channel), preferences, voiceHandler);
+        ResponseRoutingSystem system = new ResponseRoutingSystem(new ChannelRegistry(java.util.List.of(channel)),
+                preferences, voiceHandler);
 
         AgentSession session = AgentSession.builder()
                 .channelType(CHANNEL_TYPE)

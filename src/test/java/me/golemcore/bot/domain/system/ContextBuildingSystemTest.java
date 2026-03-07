@@ -51,11 +51,11 @@ class ContextBuildingSystemTest {
 
         PlanSetContentTool planFinalizeTool = new PlanSetContentTool(planService);
         PlanGetTool planGetTool = new PlanGetTool(planService);
+        when(toolCallExecutionService.listTools()).thenReturn(List.of(planFinalizeTool, planGetTool));
 
         ContextBuildingSystem system = new ContextBuildingSystem(
                 memoryComponent,
                 skillComponent,
-                List.of(planFinalizeTool, planGetTool),
                 templateEngine,
                 mcpPort,
                 toolCallExecutionService,

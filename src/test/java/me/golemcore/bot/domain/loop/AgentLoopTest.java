@@ -38,6 +38,7 @@ import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.system.AgentSystem;
 import me.golemcore.bot.domain.system.ResponseRoutingSystem;
+import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.RateLimitPort;
@@ -130,7 +131,7 @@ class AgentLoopTest {
             }
         };
 
-        AgentLoop loop = new AgentLoop(
+        AgentLoop loop = createLoop(
                 sessionPort,
                 rateLimitPort,
                 List.of(verifier),
@@ -177,7 +178,7 @@ class AgentLoopTest {
         ChannelPort channel = mock(ChannelPort.class);
         when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
 
-        AgentLoop loop = new AgentLoop(
+        AgentLoop loop = createLoop(
                 sessionPort,
                 rateLimitPort,
                 List.of(),
@@ -227,7 +228,7 @@ class AgentLoopTest {
         ChannelPort channel = mock(ChannelPort.class);
         when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
 
-        AgentLoop loop = new AgentLoop(
+        AgentLoop loop = createLoop(
                 sessionPort,
                 rateLimitPort,
                 List.of(),
@@ -307,11 +308,11 @@ class AgentLoopTest {
             }
         };
 
-        AgentLoop loop = new AgentLoop(
+        AgentLoop loop = createLoop(
                 sessionPort,
                 rateLimitPort,
                 List.of(system,
-                        new ResponseRoutingSystem(List.of(channel), preferencesService,
+                        new ResponseRoutingSystem(new ChannelRegistry(List.of(channel)), preferencesService,
                                 mock(VoiceResponseHandler.class))),
                 List.of(channel),
                 mockRuntimeConfigService(1),
@@ -396,7 +397,7 @@ class AgentLoopTest {
             }
         };
 
-        AgentLoop loop = new AgentLoop(
+        AgentLoop loop = createLoop(
                 sessionPort,
                 rateLimitPort,
                 List.of(disabledSystem),
@@ -500,7 +501,7 @@ class AgentLoopTest {
             }
         };
 
-        AgentLoop loop = new AgentLoop(
+        AgentLoop loop = createLoop(
                 sessionPort,
                 rateLimitPort,
                 List.of(throwingSystem, inspectorSystem),
@@ -543,7 +544,7 @@ class AgentLoopTest {
         ChannelPort channel = mock(ChannelPort.class);
         when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
 
-        AgentLoop loop = new AgentLoop(
+        AgentLoop loop = createLoop(
                 sessionPort,
                 rateLimitPort,
                 List.of(),
@@ -616,9 +617,9 @@ class AgentLoopTest {
         };
 
         ResponseRoutingSystem routingSystem = new ResponseRoutingSystem(
-                List.of(channel), preferencesService, mock(VoiceResponseHandler.class));
+                new ChannelRegistry(List.of(channel)), preferencesService, mock(VoiceResponseHandler.class));
 
-        AgentLoop loop = new AgentLoop(
+        AgentLoop loop = createLoop(
                 sessionPort,
                 rateLimitPort,
                 List.of(failureSystem, routingSystem),
@@ -700,9 +701,9 @@ class AgentLoopTest {
         };
 
         ResponseRoutingSystem routingSystem = new ResponseRoutingSystem(
-                List.of(channel), preferencesService, mock(VoiceResponseHandler.class));
+                new ChannelRegistry(List.of(channel)), preferencesService, mock(VoiceResponseHandler.class));
 
-        AgentLoop loop = new AgentLoop(
+        AgentLoop loop = createLoop(
                 sessionPort,
                 rateLimitPort,
                 List.of(nullMessagesSystem, routingSystem),
@@ -756,7 +757,7 @@ class AgentLoopTest {
         when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
         when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
-        AgentLoop loop = new AgentLoop(
+        AgentLoop loop = createLoop(
                 sessionPort,
                 rateLimitPort,
                 List.of(),
@@ -845,9 +846,9 @@ class AgentLoopTest {
         };
 
         ResponseRoutingSystem routingSystem = new ResponseRoutingSystem(
-                List.of(channel), preferencesService, mock(VoiceResponseHandler.class));
+                new ChannelRegistry(List.of(channel)), preferencesService, mock(VoiceResponseHandler.class));
 
-        AgentLoop loop = new AgentLoop(
+        AgentLoop loop = createLoop(
                 sessionPort,
                 rateLimitPort,
                 List.of(turnOutcomeSystem, routingSystem),
@@ -889,7 +890,7 @@ class AgentLoopTest {
         ChannelPort channel = mock(ChannelPort.class);
         when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
 
-        AgentLoop loop = new AgentLoop(
+        AgentLoop loop = createLoop(
                 sessionPort, rateLimitPort, List.of(), List.of(channel),
                 mockRuntimeConfigService(1), preferencesService, llmPort, clock);
 
@@ -928,7 +929,7 @@ class AgentLoopTest {
         when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
         when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
-        AgentLoop loop = new AgentLoop(
+        AgentLoop loop = createLoop(
                 sessionPort, rateLimitPort, List.of(), List.of(channel),
                 mockRuntimeConfigService(1), preferencesService, llmPort, clock);
 
@@ -969,9 +970,9 @@ class AgentLoopTest {
         when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         ResponseRoutingSystem routing = new ResponseRoutingSystem(
-                List.of(channel), preferencesService, mock(VoiceResponseHandler.class));
+                new ChannelRegistry(List.of(channel)), preferencesService, mock(VoiceResponseHandler.class));
 
-        AgentLoop loop = new AgentLoop(
+        AgentLoop loop = createLoop(
                 sessionPort, rateLimitPort, List.of(routing), List.of(channel),
                 mockRuntimeConfigService(1), preferencesService, llmPort, clock);
 
@@ -1036,9 +1037,9 @@ class AgentLoopTest {
         };
 
         ResponseRoutingSystem routing = new ResponseRoutingSystem(
-                List.of(channel), preferencesService, mock(VoiceResponseHandler.class));
+                new ChannelRegistry(List.of(channel)), preferencesService, mock(VoiceResponseHandler.class));
 
-        AgentLoop loop = new AgentLoop(
+        AgentLoop loop = createLoop(
                 sessionPort, rateLimitPort, List.of(alwaysTransition, routing), List.of(channel),
                 mockRuntimeConfigService(1), preferencesService, llmPort, clock);
 
@@ -1103,9 +1104,9 @@ class AgentLoopTest {
         };
 
         ResponseRoutingSystem routing = new ResponseRoutingSystem(
-                List.of(channel), preferencesService, mock(VoiceResponseHandler.class));
+                new ChannelRegistry(List.of(channel)), preferencesService, mock(VoiceResponseHandler.class));
 
-        AgentLoop loop = new AgentLoop(
+        AgentLoop loop = createLoop(
                 sessionPort, rateLimitPort, List.of(errorSystem, routing), List.of(channel),
                 mockRuntimeConfigService(1), preferencesService, llmPort, clock);
 
@@ -1118,6 +1119,26 @@ class AgentLoopTest {
 
         // LLM interpretation fails, falls through to generic feedback
         verify(channel, atLeastOnce()).sendMessage(eq("1"), eq("Something went wrong"), any());
+    }
+
+    private static AgentLoop createLoop(
+            SessionPort sessionPort,
+            RateLimitPort rateLimitPort,
+            List<AgentSystem> systems,
+            List<ChannelPort> channels,
+            RuntimeConfigService runtimeConfigService,
+            UserPreferencesService preferencesService,
+            LlmPort llmPort,
+            Clock clock) {
+        return new AgentLoop(
+                sessionPort,
+                rateLimitPort,
+                systems,
+                new ChannelRegistry(channels),
+                runtimeConfigService,
+                preferencesService,
+                llmPort,
+                clock);
     }
 
     private static RuntimeConfigService mockRuntimeConfigService(int maxLlmCalls) {

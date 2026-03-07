@@ -144,10 +144,8 @@ Bot: [Matches to "code-reviewer" skill]
 2. **Semantic search** — Embedding similarity
 3. **LLM classifier** — Accurate selection
 
-Enable:
-```bash
-export SKILL_MATCHER_ENABLED=true
-```
+Skill routing is active automatically when skills are present. There is no
+separate public toggle for it in the current runtime config.
 
 ### What is "plan mode"?
 
@@ -291,15 +289,16 @@ See: [docs/WEBHOOKS.md](docs/WEBHOOKS.md)
 
 ### Can it browse the web?
 
-**Yes** — via `BrowserTool`:
+**Yes** — via the official `golemcore/browser` plugin:
 
-Enable it in `preferences/runtime-config.json`:
+Configure it in Settings or in
+`preferences/plugins/golemcore/browser.json`:
 
 ```json
 {
-  "tools": {
-    "browserEnabled": true
-  }
+  "enabled": true,
+  "headless": true,
+  "timeoutMs": 30000
 }
 ```
 
@@ -632,19 +631,10 @@ Designed as a **single-user personal assistant**. One active conversation at a t
 
 **Yes:**
 
-```bash
-# Disable skill routing (faster)
-export SKILL_MATCHER_ENABLED=false
-
-# Disable RAG (faster)
-export RAG_ENABLED=false
-
-# Disable MCP (faster startup)
-export MCP_ENABLED=false
-
-# Lower max iterations (faster, less capable)
-export BOT_AGENT_MAX_ITERATIONS=10
-```
+- Disable MCP in Settings or set `mcp.enabled=false` in `preferences/runtime-config.json`.
+- Disable LightRAG in `preferences/plugins/golemcore/lightrag.json`.
+- Disable browser/search/mail/weather in their plugin settings if you do not use those integrations.
+- Lower `turn.maxLlmCalls` in `preferences/runtime-config.json` to reduce loop depth.
 
 ---
 

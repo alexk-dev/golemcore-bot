@@ -19,6 +19,9 @@ package me.golemcore.bot.infrastructure.config;
  */
 
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.LegacyPluginConfigurationMigrationService;
+import me.golemcore.bot.plugin.runtime.ChannelRegistry;
+import me.golemcore.bot.plugin.runtime.PluginManager;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -35,7 +38,6 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 import java.time.Clock;
-import java.util.List;
 
 /**
  * Spring auto-configuration that initializes and starts the bot on application
@@ -61,8 +63,10 @@ import java.util.List;
 public class AutoConfiguration {
 
     private final BotProperties properties;
-    private final List<ChannelPort> channelPorts;
+    private final ChannelRegistry channelRegistry;
     private final RuntimeConfigService runtimeConfigService;
+    private final LegacyPluginConfigurationMigrationService legacyPluginConfigurationMigrationService;
+    private final PluginManager pluginManager;
     private final ObjectProvider<BuildProperties> buildPropertiesProvider;
     private final ObjectProvider<GitProperties> gitPropertiesProvider;
 
@@ -91,8 +95,11 @@ public class AutoConfiguration {
         log.info("LLM Provider: {}", properties.getLlm().getProvider());
         log.info("Storage Path: {}", properties.getStorage().getLocal().getBasePath());
 
+        legacyPluginConfigurationMigrationService.migrateIfNeeded();
+        pluginManager.reloadAll();
+
         // Auto-start enabled channels
-        for (ChannelPort channel : channelPorts) {
+        for (ChannelPort channel : channelRegistry.getAll()) {
             String channelType = channel.getChannelType();
 
             boolean enabled = "telegram".equals(channelType)

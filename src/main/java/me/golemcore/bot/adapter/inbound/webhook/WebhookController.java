@@ -31,6 +31,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -213,7 +214,7 @@ public class WebhookController {
             }
 
             if (body.length > config.getMaxPayloadSize()) {
-                return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+                return ResponseEntity.status(HttpStatusCode.valueOf(413))
                         .body(WebhookResponse.error("Payload exceeds maximum size"));
             }
 

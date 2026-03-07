@@ -33,6 +33,7 @@ import me.golemcore.bot.domain.model.TurnOutcome;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.domain.system.AgentSystem;
 import me.golemcore.bot.domain.system.ResponseRoutingSystem;
@@ -52,7 +53,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.Executors;
@@ -79,7 +79,7 @@ public class AgentLoop {
     private final UserPreferencesService preferencesService;
     private final LlmPort llmPort;
     private final Clock clock;
-    private final Map<String, ChannelPort> channelRegistry = new ConcurrentHashMap<>();
+    private final ChannelRegistry channelRegistry;
     private final ScheduledExecutorService typingExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "typing-indicator");
         t.setDaemon(true);
@@ -103,19 +103,17 @@ public class AgentLoop {
 
     public AgentLoop(SessionPort sessionService, RateLimitPort rateLimiter,
             List<AgentSystem> systems,
-            List<ChannelPort> channelPorts, RuntimeConfigService runtimeConfigService,
+            ChannelRegistry channelRegistry, RuntimeConfigService runtimeConfigService,
             UserPreferencesService preferencesService,
             LlmPort llmPort, Clock clock) {
         this.sessionService = sessionService;
         this.rateLimiter = rateLimiter;
         this.systems = systems;
+        this.channelRegistry = channelRegistry;
         this.runtimeConfigService = runtimeConfigService;
         this.preferencesService = preferencesService;
         this.llmPort = llmPort;
         this.clock = clock;
-        for (ChannelPort port : channelPorts) {
-            channelRegistry.put(port.getChannelType(), port);
-        }
     }
 
     public void processMessage(Message message) {
@@ -155,7 +153,7 @@ public class AgentLoop {
         log.info("[AgentLoop] routingSystem resolved: {}",
                 routingSystem != null ? routingSystem.getClass().getName() : "<null>");
 
-        ChannelPort channel = channelRegistry.get(message.getChannelType());
+        ChannelPort channel = channelRegistry.get(message.getChannelType()).orElse(null);
         ScheduledFuture<?> typingTask = null;
         String typingChatId = resolveTransportChatId(message);
         if (channel != null && typingChatId != null && !typingChatId.isBlank()) {
@@ -248,7 +246,7 @@ public class AgentLoop {
             return;
         }
 
-        ChannelPort channel = channelRegistry.get(message.getChannelType());
+        ChannelPort channel = channelRegistry.get(message.getChannelType()).orElse(null);
         if (channel == null) {
             return;
         }
