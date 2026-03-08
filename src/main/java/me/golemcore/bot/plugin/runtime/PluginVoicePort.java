@@ -81,7 +81,7 @@ public class PluginVoicePort implements VoicePort {
 
     private String normalizeProviderId(String rawProviderId, boolean stt) {
         if (rawProviderId == null || rawProviderId.isBlank()) {
-            return stt ? DEFAULT_ELEVENLABS_PROVIDER : DEFAULT_ELEVENLABS_PROVIDER;
+            return DEFAULT_ELEVENLABS_PROVIDER;
         }
         String normalized = rawProviderId.trim().toLowerCase(Locale.ROOT);
         if (LEGACY_ELEVENLABS_PROVIDER.equals(normalized)) {

@@ -919,9 +919,6 @@ public class RuntimeConfigService {
     public boolean revokeInviteCode(String code) {
         RuntimeConfig cfg = getRuntimeConfig();
         List<RuntimeConfig.InviteCode> codes = ensureMutableInviteCodes(cfg.getTelegram());
-        if (codes == null) {
-            return false;
-        }
         boolean removed = codes.removeIf(ic -> ic.getCode().equals(code));
         if (removed) {
             persist(cfg);
@@ -936,9 +933,6 @@ public class RuntimeConfigService {
     public boolean redeemInviteCode(String code, String userId) {
         RuntimeConfig cfg = getRuntimeConfig();
         List<RuntimeConfig.InviteCode> codes = ensureMutableInviteCodes(cfg.getTelegram());
-        if (codes == null) {
-            return false;
-        }
 
         List<String> allowed = ensureMutableAllowedUsers(cfg.getTelegram());
         if (!allowed.isEmpty() && !allowed.contains(userId)) {
@@ -1015,7 +1009,7 @@ public class RuntimeConfigService {
 
     private int revokeActiveInviteCodes(RuntimeConfig.TelegramConfig telegramConfig) {
         List<RuntimeConfig.InviteCode> inviteCodes = ensureMutableInviteCodes(telegramConfig);
-        if (inviteCodes == null || inviteCodes.isEmpty()) {
+        if (inviteCodes.isEmpty()) {
             return 0;
         }
 

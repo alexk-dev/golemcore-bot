@@ -111,11 +111,19 @@ public class PluginMarketplaceService {
         }
 
         verifyChecksum(selection.artifactPath(), selection.versionMetadata().getChecksumSha256());
+        Path artifactFileName = selection.artifactPath().getFileName();
+        if (artifactFileName == null) {
+            throw new IllegalStateException("Artifact path has no file name: " + selection.artifactPath());
+        }
         Path destination = installDestination(normalizedPluginId, selection.versionMetadata().getVersion(),
-                selection.artifactPath().getFileName().toString());
+                artifactFileName.toString());
         String previouslyInstalledVersion = findInstalledVersion(normalizedPluginId);
         try {
-            Files.createDirectories(destination.getParent());
+            Path destinationParent = destination.getParent();
+            if (destinationParent == null) {
+                throw new IllegalStateException("Invalid plugin install destination: " + destination);
+            }
+            Files.createDirectories(destinationParent);
             Path tempFile = destination.resolveSibling(destination.getFileName() + ".tmp");
             Files.copy(selection.artifactPath(), tempFile, StandardCopyOption.REPLACE_EXISTING);
             Files.move(tempFile, destination, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);

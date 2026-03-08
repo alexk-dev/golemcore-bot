@@ -39,6 +39,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.ServiceConfigurationError;
 import java.util.ServiceLoader;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -81,7 +82,7 @@ public class PluginManager {
     private ScheduledExecutorService pollExecutor;
 
     @PostConstruct
-    public void startPolling() {
+    public synchronized void startPolling() {
         if (!botProperties.getPlugins().isEnabled() || !botProperties.getPlugins().isAutoReload()) {
             return;
         }
@@ -205,8 +206,10 @@ public class PluginManager {
 
     private LoadedPlugin loadPlugin(PluginArtifactCandidate candidate) {
         Path jarPath = candidate.jarPath();
+        ChildFirstPluginClassLoader classLoader = null;
+        AnnotationConfigApplicationContext pluginContext = null;
         try {
-            ChildFirstPluginClassLoader classLoader = new ChildFirstPluginClassLoader(
+            classLoader = new ChildFirstPluginClassLoader(
                     new URL[] { jarPath.toUri().toURL() },
                     applicationContext.getClassLoader());
             ServiceLoader<PluginBootstrap> loader = ServiceLoader.load(PluginBootstrap.class, classLoader);
@@ -216,7 +219,7 @@ public class PluginManager {
             validateDescriptor(descriptor);
             validateCompatibility(descriptor);
 
-            AnnotationConfigApplicationContext pluginContext = new AnnotationConfigApplicationContext();
+            pluginContext = new AnnotationConfigApplicationContext();
             pluginContext.setClassLoader(classLoader);
             pluginContext.setParent(applicationContext);
             pluginContext.getBeanFactory().registerSingleton("pluginDescriptor", descriptor);
@@ -256,9 +259,33 @@ public class PluginManager {
             return new LoadedPlugin(descriptor, jarPath, classLoader, pluginContext,
                     channelPorts, confirmationPorts, List.copyOf(sttProviders),
                     List.copyOf(ttsProviders), List.copyOf(ragProviders), tools, List.copyOf(settingsContributors));
-        } catch (Exception ex) {
+        } catch (IOException | RuntimeException | ServiceConfigurationError | LinkageError ex) {
+            closeFailedPluginContext(jarPath, pluginContext);
+            closeFailedPluginClassLoader(jarPath, classLoader);
             log.error("[Plugins] Failed to load plugin from {}", jarPath, ex);
             return null;
+        }
+    }
+
+    private void closeFailedPluginContext(Path jarPath, AnnotationConfigApplicationContext pluginContext) {
+        if (pluginContext == null) {
+            return;
+        }
+        try {
+            pluginContext.close();
+        } catch (RuntimeException ex) {
+            log.warn("[Plugins] Failed to close incomplete child context for {}: {}", jarPath, ex.getMessage());
+        }
+    }
+
+    private void closeFailedPluginClassLoader(Path jarPath, ChildFirstPluginClassLoader classLoader) {
+        if (classLoader == null) {
+            return;
+        }
+        try {
+            classLoader.close();
+        } catch (IOException ex) {
+            log.warn("[Plugins] Failed to close incomplete classloader for {}: {}", jarPath, ex.getMessage());
         }
     }
 
