@@ -156,12 +156,6 @@ export default function PluginsMarketplaceTab(): ReactElement {
               </div>
             </Col>
           </Row>
-
-          {catalog.sourceDirectory != null && catalog.sourceDirectory.length > 0 && (
-            <div className="plugin-market-source small text-body-secondary mt-3">
-              Source: <span className="text-body">{catalog.sourceDirectory}</span>
-            </div>
-          )}
         </Card.Body>
       </Card>
 

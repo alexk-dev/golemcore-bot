@@ -729,7 +729,9 @@ export default function ChatWindow() {
                 title="Start a new chat session"
                 aria-label="Start a new chat session"
               >
-                <FiPlus aria-hidden="true" />
+                <span className="chat-toolbar-btn-icon" aria-hidden="true">
+                  <FiPlus size={14} />
+                </span>
                 <span>New chat</span>
               </button>
               <button
@@ -745,7 +747,9 @@ export default function ChatWindow() {
                 title={panelOpen ? 'Hide context panel' : 'Show context panel'}
                 aria-label={panelOpen ? 'Hide context panel' : 'Show context panel'}
               >
-                <FiLayout aria-hidden="true" />
+                <span className="chat-toolbar-btn-icon" aria-hidden="true">
+                  <FiLayout size={14} />
+                </span>
                 <span>{panelOpen ? 'Hide context' : 'Show context'}</span>
               </button>
             </div>

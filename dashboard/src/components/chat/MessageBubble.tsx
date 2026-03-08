@@ -1,6 +1,7 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useId, useState } from 'react';
+import { FiCpu, FiUser } from 'react-icons/fi';
 
 interface Props {
   role: string;
@@ -143,10 +144,18 @@ export default function MessageBubble({ role, content, model, tier, reasoning, c
       <div className="message-row message-row--assistant fade-in">
         <div className="message-bubble assistant">
           <div className="assistant-message-header">
+            <div className="assistant-message-meta">
+              <span className="assistant-message-avatar" aria-hidden="true">
+                <FiCpu size={13} />
+              </span>
+              <div className="assistant-message-title-group">
+                <span className="assistant-message-title">Assistant</span>
+                <small className="assistant-model-label">{formatModelLabel(model, reasoning)}</small>
+              </div>
+            </div>
             <span className={`badge assistant-tier-chip ${tierMeta?.className ?? 'text-bg-secondary'}`}>
               {tierMeta?.label ?? (tier ?? 'Unknown tier')}
             </span>
-            <small className="assistant-model-label">{formatModelLabel(model, reasoning)}</small>
           </div>
           {tools.map((t, i) => (
             <ToolCallCard key={`${t.tool}-${i}`} tool={t.tool} result={t.result} />
@@ -166,7 +175,15 @@ export default function MessageBubble({ role, content, model, tier, reasoning, c
   return (
     <div className="message-row message-row--user fade-in">
       <div className={`message-bubble user${clientStatus != null ? ` message-bubble--${clientStatus}` : ''}`}>
-        {renderUserContent(safeContent, leadingCommand)}
+        <div className="user-message-header">
+          <span className="user-message-pill">
+            <FiUser size={12} />
+            You
+          </span>
+        </div>
+        <div className="user-message-body">
+          {renderUserContent(safeContent, leadingCommand)}
+        </div>
         <UserDeliveryState clientStatus={clientStatus} onRetry={onRetry} />
       </div>
     </div>
