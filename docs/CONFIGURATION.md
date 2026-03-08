@@ -126,8 +126,8 @@ Core tool enablement flags are in `runtime-config.json` under `tools`:
 
 Official integrations that are loaded through the plugin runtime keep their
 own configuration under `preferences/plugins/<owner>/<plugin>.json`. This
-includes the first-party browser, Brave Search, weather, mail, and LightRAG
-modules.
+includes the first-party browser, Brave Search, Tavily Search, Firecrawl,
+Perplexity Sonar, weather, mail, and LightRAG modules.
 
 See: [Tools Guide](TOOLS.md)
 
@@ -154,6 +154,61 @@ docker run -d \
   --shm-size=256m \
   --cap-add=SYS_ADMIN \
   ...
+```
+
+### Tavily Search Tool
+
+The `tavily_search` tool is provided by the official
+`golemcore/tavily-search` plugin.
+
+Configuration lives in `preferences/plugins/golemcore/tavily-search.json`:
+
+```json
+{
+  "enabled": true,
+  "apiKey": "tvly-...",
+  "defaultMaxResults": 5,
+  "defaultTopic": "general",
+  "defaultSearchDepth": "basic",
+  "includeAnswer": true,
+  "includeRawContent": false
+}
+```
+
+### Firecrawl Tool
+
+The `firecrawl_scrape` tool is provided by the official `golemcore/firecrawl`
+plugin.
+
+Configuration lives in `preferences/plugins/golemcore/firecrawl.json`:
+
+```json
+{
+  "enabled": true,
+  "apiKey": "fc-...",
+  "defaultFormat": "markdown",
+  "onlyMainContent": true,
+  "maxAgeMs": 172800000,
+  "timeoutMs": 30000
+}
+```
+
+### Perplexity Sonar Tool
+
+The `perplexity_ask` tool is provided by the official
+`golemcore/perplexity-sonar` plugin and currently uses synchronous completions.
+
+Configuration lives in `preferences/plugins/golemcore/perplexity-sonar.json`:
+
+```json
+{
+  "enabled": true,
+  "apiKey": "pplx-...",
+  "defaultModel": "sonar",
+  "defaultSearchMode": "web",
+  "returnRelatedQuestions": false,
+  "returnImages": false
+}
 ```
 
 ### Security

@@ -1,6 +1,13 @@
 import { create } from 'zustand';
 import type { Goal } from '../api/goals';
 
+export interface FileChangeStat {
+  path: string;
+  addedLines: number;
+  removedLines: number;
+  deleted: boolean;
+}
+
 export interface TurnMetadata {
   model: string | null;
   tier: string | null;
@@ -10,6 +17,7 @@ export interface TurnMetadata {
   totalTokens: number | null;
   latencyMs: number | null;
   maxContextTokens: number | null;
+  fileChanges: FileChangeStat[];
 }
 
 interface ContextPanelState {
@@ -35,6 +43,7 @@ const emptyMetadata: TurnMetadata = {
   totalTokens: null,
   latencyMs: null,
   maxContextTokens: null,
+  fileChanges: [],
 };
 
 export const useContextPanelStore = create<ContextPanelState>()((set) => ({

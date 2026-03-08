@@ -487,6 +487,30 @@ class AutoModeServiceTest {
     }
 
     @Test
+    void shouldSupportInboxGoalAndStandaloneTaskFlow() throws Exception {
+        when(storagePort.getText(AUTO_DIR, GOALS_FILE))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        Goal inbox = service.getOrCreateInboxGoal();
+        assertNotNull(inbox);
+        assertEquals("inbox", inbox.getId());
+        assertTrue(service.isInboxGoal(inbox));
+        assertEquals("inbox", service.getInboxGoalId());
+
+        AutoTask task = service.addStandaloneTask("Inbox task", "From menu");
+        assertNotNull(task);
+        assertEquals("inbox", task.getGoalId());
+        assertEquals("Inbox task", task.getTitle());
+
+        Goal resolvedInbox = service.getOrCreateInboxGoal();
+        assertEquals("inbox", resolvedInbox.getId());
+        assertFalse(service.isInboxGoal(null));
+        assertFalse(service.isInboxGoal(Goal.builder().id("g-other").build()));
+
+        verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq(GOALS_FILE), anyString());
+    }
+
+    @Test
     void writeDiary_callsStoragePortAppendText() throws Exception {
         DiaryEntry entry = DiaryEntry.builder()
                 .timestamp(Instant.now())

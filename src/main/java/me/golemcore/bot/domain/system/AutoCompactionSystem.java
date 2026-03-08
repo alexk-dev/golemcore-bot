@@ -19,33 +19,34 @@ package me.golemcore.bot.domain.system;
  */
 
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.CompactionReason;
+import me.golemcore.bot.domain.model.CompactionResult;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
-import me.golemcore.bot.domain.service.CompactionService;
+import me.golemcore.bot.domain.service.CompactionOrchestrationService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.port.outbound.SessionPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
-import java.util.List;
+import java.util.Map;
 
 /**
  * System for automatic conversation history compaction when context size
  * exceeds thresholds (order=18). Runs before ContextBuildingSystem to ensure
  * manageable context window. Estimates token count from character length, uses
  * model's maxInputTokens from models.json (with 80% safety margin), and invokes
- * {@link CompactionService} for LLM-powered summarization with fallback to
- * simple truncation.
+ * {@link CompactionOrchestrationService} for split-safe compaction with
+ * structured details.
  */
 @Component
 @RequiredArgsConstructor
 @Slf4j
 public class AutoCompactionSystem implements AgentSystem {
 
-    private final SessionPort sessionService;
-    private final CompactionService compactionService;
+    private final CompactionOrchestrationService compactionOrchestrationService;
     private final RuntimeConfigService runtimeConfigService;
     private final ModelSelectionService modelSelectionService;
 
@@ -71,16 +72,13 @@ public class AutoCompactionSystem implements AgentSystem {
 
     @Override
     public AgentContext process(AgentContext context) {
-        List<Message> messages = context.getMessages();
+        java.util.List<Message> messages = context.getMessages();
 
         long totalChars = messages.stream()
                 .mapToLong(m -> m.getContent() != null ? m.getContent().length() : 0)
                 .sum();
         int estimatedTokens = (int) (totalChars / 3.5) + 8000;
 
-        // Use model's maxInputTokens from models.json if available, with 80% safety
-        // margin.
-        // Fall back to config's maxContextTokens.
         int threshold = resolveMaxTokens(context);
 
         if (estimatedTokens <= threshold) {
@@ -90,30 +88,21 @@ public class AutoCompactionSystem implements AgentSystem {
         log.info("[AutoCompact] Context too large: ~{} tokens (threshold {}), {} messages. Compacting...",
                 estimatedTokens, threshold, messages.size());
 
-        String sessionId = context.getSession().getId();
         int keepLast = runtimeConfigService.getCompactionKeepLastMessages();
+        CompactionResult result = compactionOrchestrationService.compact(
+                context.getSession().getId(),
+                CompactionReason.AUTO_THRESHOLD,
+                keepLast);
 
-        List<Message> messagesToCompact = sessionService.getMessagesToCompact(sessionId, keepLast);
-        if (messagesToCompact.isEmpty()) {
-            log.debug("[AutoCompact] No messages to compact (all within keepLast={})", keepLast);
-            return context;
+        if (result.details() != null) {
+            context.setAttribute(ContextAttributes.COMPACTION_LAST_DETAILS, toDetailsPayload(result));
         }
 
-        String summary = compactionService.summarize(messagesToCompact);
-
-        int removed;
-        if (summary != null) {
-            Message summaryMessage = compactionService.createSummaryMessage(summary);
-            removed = sessionService.compactWithSummary(sessionId, keepLast, summaryMessage);
-            log.info("[AutoCompact] Compacted with LLM summary: removed {} messages, kept {}", removed, keepLast);
-        } else {
-            removed = sessionService.compactMessages(sessionId, keepLast);
-            log.info("[AutoCompact] Compacted with simple truncation (LLM unavailable): removed {} messages, kept {}",
-                    removed, keepLast);
-        }
-
-        if (removed > 0) {
+        if (result.removed() > 0) {
             context.setMessages(new ArrayList<>(context.getSession().getMessages()));
+            log.info("[AutoCompact] Compacted: removed {}, usedSummary={}", result.removed(), result.usedSummary());
+        } else {
+            log.debug("[AutoCompact] No messages compacted");
         }
 
         return context;
@@ -133,5 +122,24 @@ public class AutoCompactionSystem implements AgentSystem {
             log.debug("[AutoCompact] Failed to resolve model max tokens, using config default", e);
         }
         return runtimeConfigService.getCompactionMaxContextTokens();
+    }
+
+    private Map<String, Object> toDetailsPayload(CompactionResult result) {
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("removed", result.removed());
+        payload.put("usedSummary", result.usedSummary());
+        if (result.details() != null) {
+            payload.put("reason", result.details().reason() != null ? result.details().reason().name() : null);
+            payload.put("summarizedCount", result.details().summarizedCount());
+            payload.put("keptCount", result.details().keptCount());
+            payload.put("splitTurnDetected", result.details().splitTurnDetected());
+            payload.put("summaryLength", result.details().summaryLength());
+            payload.put("durationMs", result.details().durationMs());
+            payload.put("toolCount", result.details().toolCount());
+            payload.put("readFilesCount", result.details().readFilesCount());
+            payload.put("modifiedFilesCount", result.details().modifiedFilesCount());
+            payload.put("fileChanges", result.details().fileChanges());
+        }
+        return payload;
     }
 }

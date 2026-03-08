@@ -51,6 +51,46 @@ interface CatalogBlockView {
   items: CatalogCardItem[];
 }
 
+interface CatalogBadgeMeta {
+  label: string;
+  variant: string;
+  meta: string;
+}
+
+function buildMarketplaceBadge(
+  pluginMarketplace: ReturnType<typeof usePluginMarketplace>['data'],
+): CatalogBadgeMeta | null {
+  if (pluginMarketplace == null) {
+    return null;
+  }
+
+  const installedCount = pluginMarketplace.items.filter((item) => item.installed).length;
+  const updatesCount = pluginMarketplace.items.filter((item) => item.updateAvailable).length;
+  const installedMeta = `${installedCount} installed plugin${installedCount === 1 ? '' : 's'}`;
+
+  if (!pluginMarketplace.available) {
+    return {
+      label: 'Unavailable',
+      variant: 'secondary',
+      meta: pluginMarketplace.message ?? 'Marketplace metadata is not available.',
+    };
+  }
+
+  if (updatesCount > 0) {
+    return {
+      label: `${updatesCount} update${updatesCount === 1 ? '' : 's'}`,
+      variant: 'warning',
+      meta: installedMeta,
+    };
+  }
+
+  return {
+    label: `${pluginMarketplace.items.length} plugins`,
+    variant: 'secondary',
+    meta: installedMeta,
+  };
+}
+
 // ==================== Main ====================
 
 export default function SettingsPage(): ReactElement {
@@ -62,6 +102,7 @@ export default function SettingsPage(): ReactElement {
   const { data: pluginMarketplace } = usePluginMarketplace();
   const { data: me } = useMe();
   const qc = useQueryClient();
+  const marketplaceBadge = buildMarketplaceBadge(pluginMarketplace);
 
   const staticSection = isSettingsSectionKey(section) ? section : null;
   const pluginSection = staticSection == null && section != null
@@ -89,34 +130,16 @@ export default function SettingsPage(): ReactElement {
           return [];
         }
 
-          const marketplaceInstalledCount = pluginMarketplace?.items.filter((item) => item.installed).length ?? 0;
-          const marketplaceUpdatesCount = pluginMarketplace?.items.filter((item) => item.updateAvailable).length ?? 0;
-          const marketplaceBadge = !pluginMarketplace?.available
-            ? { label: 'Unavailable', variant: 'secondary', meta: pluginMarketplace?.message ?? 'Marketplace metadata is not available.' }
-            : marketplaceUpdatesCount > 0
-              ? {
-                label: `${marketplaceUpdatesCount} update${marketplaceUpdatesCount === 1 ? '' : 's'}`,
-                variant: 'warning',
-                meta: `${marketplaceInstalledCount} installed plugin${marketplaceInstalledCount === 1 ? '' : 's'}`,
-              }
-              : pluginMarketplace != null
-                ? {
-                  label: `${pluginMarketplace.items.length} plugins`,
-                  variant: 'secondary',
-                  meta: `${marketplaceInstalledCount} installed plugin${marketplaceInstalledCount === 1 ? '' : 's'}`,
-                }
-                : null;
-
-          return {
-            key: entry.key,
-            routeKey: entry.key,
-            title: entry.title,
-            description: entry.description,
-            icon: entry.icon,
-            badgeLabel: entry.key === 'plugins-marketplace' ? marketplaceBadge?.label : undefined,
-            badgeVariant: entry.key === 'plugins-marketplace' ? marketplaceBadge?.variant : undefined,
-            metaText: entry.key === 'plugins-marketplace' ? marketplaceBadge?.meta : undefined,
-          };
+        return {
+          key: entry.key,
+          routeKey: entry.key,
+          title: entry.title,
+          description: entry.description,
+          icon: entry.icon,
+          badgeLabel: entry.key === 'plugins-marketplace' ? marketplaceBadge?.label : undefined,
+          badgeVariant: entry.key === 'plugins-marketplace' ? marketplaceBadge?.variant : undefined,
+          metaText: entry.key === 'plugins-marketplace' ? marketplaceBadge?.meta : undefined,
+        };
       });
       byKey.set(block.key, {
         key: block.key,

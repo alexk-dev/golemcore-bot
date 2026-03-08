@@ -7,6 +7,7 @@ import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -172,7 +173,7 @@ class RuntimeConfigServiceTest {
 
     @Test
     void shouldReturnDefaultAutoModeSettings() {
-        assertFalse(service.isAutoModeEnabled());
+        assertTrue(service.isAutoModeEnabled());
         assertEquals(30, service.getAutoTickIntervalSeconds());
         assertEquals(10, service.getAutoTaskTimeLimitMinutes());
         assertEquals(3, service.getAutoMaxGoals());
@@ -180,10 +181,69 @@ class RuntimeConfigServiceTest {
     }
 
     @Test
+    void shouldDisableRateLimitByDefault() {
+        assertFalse(service.isRateLimitEnabled());
+    }
+
+    @Test
     void shouldReturnDefaultCompactionSettings() {
         assertTrue(service.isCompactionEnabled());
         assertEquals(50000, service.getCompactionMaxContextTokens());
         assertEquals(20, service.getCompactionKeepLastMessages());
+        assertTrue(service.isCompactionPreserveTurnBoundariesEnabled());
+        assertTrue(service.isCompactionDetailsEnabled());
+        assertEquals(50, service.getCompactionDetailsMaxItemsPerCategory());
+        assertEquals(15000, service.getCompactionSummaryTimeoutMs());
+    }
+
+    @Test
+    void shouldReturnConfiguredAdvancedCompactionSettings() throws Exception {
+        RuntimeConfig.CompactionConfig compaction = RuntimeConfig.CompactionConfig.builder()
+                .enabled(true)
+                .maxContextTokens(12345)
+                .keepLastMessages(7)
+                .preserveTurnBoundaries(false)
+                .detailsEnabled(false)
+                .detailsMaxItemsPerCategory(12)
+                .summaryTimeoutMs(3000)
+                .build();
+        persistedSections.put("compaction.json", objectMapper.writeValueAsString(compaction));
+
+        assertFalse(service.isCompactionPreserveTurnBoundariesEnabled());
+        assertFalse(service.isCompactionDetailsEnabled());
+        assertEquals(12, service.getCompactionDetailsMaxItemsPerCategory());
+        assertEquals(3000, service.getCompactionSummaryTimeoutMs());
+    }
+
+    @Test
+    void shouldNormalizeAdvancedCompactionDefaultsWhenStoredSectionMissingFields() {
+        persistedSections.put("compaction.json", "{}");
+
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        assertNotNull(config.getCompaction());
+        assertTrue(config.getCompaction().getPreserveTurnBoundaries());
+        assertTrue(config.getCompaction().getDetailsEnabled());
+        assertEquals(50, config.getCompaction().getDetailsMaxItemsPerCategory());
+        assertEquals(15000, config.getCompaction().getSummaryTimeoutMs());
+    }
+
+    @Test
+    void shouldInitializeCompactionAdvancedDefaultsWhenNullDuringRuntimeConfigUpdate() {
+        RuntimeConfig newConfig = RuntimeConfig.builder().build();
+        newConfig.setCompaction(new RuntimeConfig.CompactionConfig());
+        newConfig.getCompaction().setPreserveTurnBoundaries(null);
+        newConfig.getCompaction().setDetailsEnabled(null);
+        newConfig.getCompaction().setDetailsMaxItemsPerCategory(null);
+        newConfig.getCompaction().setSummaryTimeoutMs(null);
+
+        service.updateRuntimeConfig(newConfig);
+
+        RuntimeConfig updated = service.getRuntimeConfig();
+        assertTrue(updated.getCompaction().getPreserveTurnBoundaries());
+        assertTrue(updated.getCompaction().getDetailsEnabled());
+        assertEquals(50, updated.getCompaction().getDetailsMaxItemsPerCategory());
+        assertEquals(15000, updated.getCompaction().getSummaryTimeoutMs());
     }
 
     @Test
@@ -216,6 +276,82 @@ class RuntimeConfigServiceTest {
         assertEquals(200, service.getTurnMaxLlmCalls());
         assertEquals(500, service.getTurnMaxToolExecutions());
         assertEquals(java.time.Duration.ofHours(1), service.getTurnDeadline());
+    }
+
+    @Test
+    void shouldReturnDefaultTurnAutoRetrySettings() {
+        assertTrue(service.isTurnAutoRetryEnabled());
+        assertEquals(2, service.getTurnAutoRetryMaxAttempts());
+        assertEquals(600L, service.getTurnAutoRetryBaseDelayMs());
+        assertTrue(service.isTurnQueueSteeringEnabled());
+        assertEquals("one-at-a-time", service.getTurnQueueSteeringMode());
+        assertEquals("one-at-a-time", service.getTurnQueueFollowUpMode());
+    }
+
+    @Test
+    void shouldReturnConfiguredTurnAutoRetrySettings() throws Exception {
+        RuntimeConfig.TurnConfig turn = RuntimeConfig.TurnConfig.builder()
+                .autoRetryEnabled(false)
+                .autoRetryMaxAttempts(5)
+                .autoRetryBaseDelayMs(1500L)
+                .queueSteeringEnabled(false)
+                .queueSteeringMode("all")
+                .queueFollowUpMode("single")
+                .build();
+        persistedSections.put("turn.json", objectMapper.writeValueAsString(turn));
+
+        assertFalse(service.isTurnAutoRetryEnabled());
+        assertEquals(5, service.getTurnAutoRetryMaxAttempts());
+        assertEquals(1500L, service.getTurnAutoRetryBaseDelayMs());
+        assertFalse(service.isTurnQueueSteeringEnabled());
+        assertEquals("all", service.getTurnQueueSteeringMode());
+        assertEquals("one-at-a-time", service.getTurnQueueFollowUpMode());
+    }
+
+    @Test
+    void shouldNormalizeTurnAutoRetryDefaultsWhenStoredSectionMissingFields() {
+        persistedSections.put("turn.json", "{}");
+
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        assertNotNull(config.getTurn());
+        assertTrue(config.getTurn().getAutoRetryEnabled());
+        assertEquals(2, config.getTurn().getAutoRetryMaxAttempts());
+        assertEquals(600L, config.getTurn().getAutoRetryBaseDelayMs());
+        assertTrue(config.getTurn().getQueueSteeringEnabled());
+        assertEquals("one-at-a-time", config.getTurn().getQueueSteeringMode());
+        assertEquals("one-at-a-time", config.getTurn().getQueueFollowUpMode());
+    }
+
+    @Test
+    void shouldInitializeTurnWhenNullDuringRuntimeConfigUpdate() {
+        RuntimeConfig newConfig = RuntimeConfig.builder().build();
+        newConfig.setTurn(null);
+
+        service.updateRuntimeConfig(newConfig);
+
+        RuntimeConfig updated = service.getRuntimeConfig();
+        assertNotNull(updated.getTurn());
+        assertTrue(updated.getTurn().getAutoRetryEnabled());
+        assertEquals(2, updated.getTurn().getAutoRetryMaxAttempts());
+        assertEquals(600L, updated.getTurn().getAutoRetryBaseDelayMs());
+        assertTrue(updated.getTurn().getQueueSteeringEnabled());
+        assertEquals("one-at-a-time", updated.getTurn().getQueueSteeringMode());
+        assertEquals("one-at-a-time", updated.getTurn().getQueueFollowUpMode());
+    }
+
+    @Test
+    void shouldNormalizeTurnQueueModeAliasesAndFallbackToDefault() throws Exception {
+        RuntimeConfig.TurnConfig turn = RuntimeConfig.TurnConfig.builder()
+                .queueSteeringMode("one_at_a_time")
+                .queueFollowUpMode("unexpected")
+                .build();
+        persistedSections.put("turn.json", objectMapper.writeValueAsString(turn));
+
+        assertEquals("one-at-a-time", service.getTurnQueueSteeringMode());
+        assertEquals("one-at-a-time", service.getTurnQueueFollowUpMode());
+        assertEquals("one-at-a-time", service.getRuntimeConfig().getTurn().getQueueSteeringMode());
+        assertEquals("one-at-a-time", service.getRuntimeConfig().getTurn().getQueueFollowUpMode());
     }
 
     @Test

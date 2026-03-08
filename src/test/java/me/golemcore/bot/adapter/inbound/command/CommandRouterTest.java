@@ -4,6 +4,8 @@ import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.AutoModeChannelRegisteredEvent;
 import me.golemcore.bot.domain.model.AutoTask;
+import me.golemcore.bot.domain.model.CompactionReason;
+import me.golemcore.bot.domain.model.CompactionResult;
 import me.golemcore.bot.domain.model.DiaryEntry;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.Message;
@@ -15,12 +17,12 @@ import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.UsageStats;
 import me.golemcore.bot.domain.model.UserPreferences;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.AutoModeService;
-import me.golemcore.bot.domain.service.CompactionService;
+import me.golemcore.bot.domain.service.CompactionOrchestrationService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanExecutionService;
 import me.golemcore.bot.domain.service.PlanService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.domain.service.SessionRunCoordinator;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -34,8 +36,6 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.info.BuildProperties;
 import org.springframework.context.ApplicationEventPublisher;
 
-import java.util.Properties;
-
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -45,10 +45,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Properties;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.RETURNS_DEFAULTS;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.anyString;
@@ -57,7 +59,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.RETURNS_DEFAULTS;
 
 @SuppressWarnings({ "PMD.AvoidDuplicateLiterals", "unchecked" })
 class CommandRouterTest {
@@ -93,7 +94,7 @@ class CommandRouterTest {
     private SessionPort sessionService;
     private UsageTrackingPort usageTracker;
     private UserPreferencesService preferencesService;
-    private CompactionService compactionService;
+    private CompactionOrchestrationService compactionService;
     private AutoModeService autoModeService;
     private ModelSelectionService modelSelectionService;
     private PlanService planService;
@@ -112,7 +113,7 @@ class CommandRouterTest {
         skillComponent = mock(SkillComponent.class);
         sessionService = mock(SessionPort.class);
         usageTracker = mock(UsageTrackingPort.class);
-        compactionService = mock(CompactionService.class);
+        compactionService = mock(CompactionOrchestrationService.class);
 
         // Default: pass through message key + args for easy assertion.
         preferencesService = mock(UserPreferencesService.class, inv -> {
@@ -123,8 +124,9 @@ class CommandRouterTest {
                     StringBuilder sb = new StringBuilder(key);
                     Object vararg = allArgs[1];
                     if (vararg instanceof Object[] arr) {
-                        for (Object a : arr)
+                        for (Object a : arr) {
                             sb.append(" ").append(a);
+                        }
                     } else {
                         for (int i = 1; i < allArgs.length; i++) {
                             sb.append(" ").append(allArgs[i]);
@@ -323,58 +325,42 @@ class CommandRouterTest {
 
     @Test
     void compactWithSummary() throws Exception {
-        List<Message> oldMessages = List.of(
-                Message.builder().role("user").content("Hello").timestamp(Instant.now()).build(),
-                Message.builder().role("assistant").content("Hi there!").timestamp(Instant.now()).build());
-        when(sessionService.getMessagesToCompact(SESSION_ID, 10)).thenReturn(oldMessages);
-
-        when(compactionService.summarize(oldMessages)).thenReturn("User greeted the bot.");
-        Message summaryMsg = Message.builder().role("system").content("[Conversation summary]\nUser greeted the bot.")
-                .build();
-        when(compactionService.createSummaryMessage("User greeted the bot.")).thenReturn(summaryMsg);
-        when(sessionService.compactWithSummary(SESSION_ID, 10, summaryMsg)).thenReturn(20);
+        when(compactionService.compact(SESSION_ID, CompactionReason.MANUAL_COMMAND, 10))
+                .thenReturn(CompactionResult.builder().removed(20).usedSummary(true).build());
 
         CommandPort.CommandResult result = router.execute(CMD_COMPACT, List.of(), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("20"));
         assertTrue(result.output().contains("command.compact.done.summary"));
-        verify(compactionService).summarize(oldMessages);
-        verify(sessionService).compactWithSummary(SESSION_ID, 10, summaryMsg);
+        verify(compactionService).compact(SESSION_ID, CompactionReason.MANUAL_COMMAND, 10);
     }
 
     @Test
     void compactFallbackWhenLlmUnavailable() throws Exception {
-        List<Message> oldMessages = List.of(
-                Message.builder().role("user").content("Hello").timestamp(Instant.now()).build());
-        when(sessionService.getMessagesToCompact(SESSION_ID, 10)).thenReturn(oldMessages);
-
-        when(compactionService.summarize(oldMessages)).thenReturn(null);
-        when(sessionService.compactMessages(SESSION_ID, 10)).thenReturn(15);
+        when(compactionService.compact(SESSION_ID, CompactionReason.MANUAL_COMMAND, 10))
+                .thenReturn(CompactionResult.builder().removed(15).usedSummary(false).build());
 
         CommandPort.CommandResult result = router.execute(CMD_COMPACT, List.of(), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("15"));
-        assertTrue(result.output().contains("command.compact.done "));
-        verify(sessionService).compactMessages(SESSION_ID, 10);
-        verify(sessionService, never()).compactWithSummary(anyString(), anyInt(), any());
+        assertTrue(result.output().contains("command.compact.done"));
+        verify(compactionService).compact(SESSION_ID, CompactionReason.MANUAL_COMMAND, 10);
     }
 
     @Test
     void compactCommandWithArg() throws Exception {
-        List<Message> oldMessages = List.of(
-                Message.builder().role("user").content("Hi").timestamp(Instant.now()).build());
-        when(sessionService.getMessagesToCompact(SESSION_ID, 5)).thenReturn(oldMessages);
-        when(compactionService.summarize(oldMessages)).thenReturn(null);
-        when(sessionService.compactMessages(SESSION_ID, 5)).thenReturn(15);
+        when(compactionService.compact(SESSION_ID, CompactionReason.MANUAL_COMMAND, 5))
+                .thenReturn(CompactionResult.builder().removed(15).usedSummary(false).build());
 
         CommandPort.CommandResult result = router.execute(CMD_COMPACT, List.of("5"), CTX).get();
         assertTrue(result.success());
-        verify(sessionService).compactMessages(SESSION_ID, 5);
+        verify(compactionService).compact(SESSION_ID, CompactionReason.MANUAL_COMMAND, 5);
     }
 
     @Test
     void compactCommandNothingToCompact() throws Exception {
-        when(sessionService.getMessagesToCompact(SESSION_ID, 10)).thenReturn(List.of());
+        when(compactionService.compact(SESSION_ID, CompactionReason.MANUAL_COMMAND, 10))
+                .thenReturn(CompactionResult.builder().removed(0).usedSummary(false).build());
         when(sessionService.getMessageCount(SESSION_ID)).thenReturn(5);
 
         CommandPort.CommandResult result = router.execute(CMD_COMPACT, List.of(), CTX).get();
@@ -618,30 +604,32 @@ class CommandRouterTest {
 
     @Test
     void compactClampsKeepToMinOne() throws Exception {
-        when(sessionService.getMessagesToCompact(SESSION_ID, 1)).thenReturn(List.of());
+        when(compactionService.compact(SESSION_ID, CompactionReason.MANUAL_COMMAND, 1))
+                .thenReturn(CompactionResult.builder().removed(0).usedSummary(false).build());
         when(sessionService.getMessageCount(SESSION_ID)).thenReturn(3);
 
         router.execute(CMD_COMPACT, List.of("0"), CTX).get();
-        verify(sessionService).getMessagesToCompact(SESSION_ID, 1);
+        verify(compactionService).compact(SESSION_ID, CompactionReason.MANUAL_COMMAND, 1);
     }
 
     @Test
     void compactClampsKeepToMax100() throws Exception {
-        when(sessionService.getMessagesToCompact(SESSION_ID, 100)).thenReturn(List.of());
+        when(compactionService.compact(SESSION_ID, CompactionReason.MANUAL_COMMAND, 100))
+                .thenReturn(CompactionResult.builder().removed(0).usedSummary(false).build());
         when(sessionService.getMessageCount(SESSION_ID)).thenReturn(3);
 
         router.execute(CMD_COMPACT, List.of("999"), CTX).get();
-        verify(sessionService).getMessagesToCompact(SESSION_ID, 100);
+        verify(compactionService).compact(SESSION_ID, CompactionReason.MANUAL_COMMAND, 100);
     }
 
     @Test
     void compactIgnoresNonNumericArg() throws Exception {
-        when(sessionService.getMessagesToCompact(SESSION_ID, 10)).thenReturn(List.of());
+        when(compactionService.compact(SESSION_ID, CompactionReason.MANUAL_COMMAND, 10))
+                .thenReturn(CompactionResult.builder().removed(0).usedSummary(false).build());
         when(sessionService.getMessageCount(SESSION_ID)).thenReturn(3);
 
         router.execute(CMD_COMPACT, List.of("abc"), CTX).get();
-        // Falls back to default 10
-        verify(sessionService).getMessagesToCompact(SESSION_ID, 10);
+        verify(compactionService).compact(SESSION_ID, CompactionReason.MANUAL_COMMAND, 10);
     }
 
     // ===== listCommands includes auto when enabled =====

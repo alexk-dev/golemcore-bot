@@ -229,6 +229,14 @@ public class RuntimeConfig {
         private Boolean enabled;
         private Integer maxContextTokens;
         private Integer keepLastMessages;
+        @Builder.Default
+        private Boolean preserveTurnBoundaries = true;
+        @Builder.Default
+        private Boolean detailsEnabled = true;
+        @Builder.Default
+        private Integer detailsMaxItemsPerCategory = 50;
+        @Builder.Default
+        private Integer summaryTimeoutMs = 15000;
     }
 
     @Data
@@ -242,6 +250,18 @@ public class RuntimeConfig {
         private Integer maxToolExecutions = 500;
         @Builder.Default
         private String deadline = "PT1H";
+        @Builder.Default
+        private Boolean autoRetryEnabled = true;
+        @Builder.Default
+        private Integer autoRetryMaxAttempts = 2;
+        @Builder.Default
+        private Long autoRetryBaseDelayMs = 600L;
+        @Builder.Default
+        private Boolean queueSteeringEnabled = true;
+        @Builder.Default
+        private String queueSteeringMode = "one-at-a-time";
+        @Builder.Default
+        private String queueFollowUpMode = "one-at-a-time";
     }
 
     @Data

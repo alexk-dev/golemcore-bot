@@ -41,7 +41,7 @@ export default function AutoModeTab({ config }: AutoModeTabProps): ReactElement 
           title="Auto Mode"
           tip="Autonomous mode where the bot works on goals independently, checking in periodically"
         />
-        <Form.Check type="switch" label="Enable Auto Mode" checked={form.enabled ?? false}
+        <Form.Check type="switch" label="Enable Auto Mode" checked={form.enabled ?? true}
           onChange={(e) => setForm({ ...form, enabled: e.target.checked })} className="mb-3" />
 
         <Row className="g-3 mb-3">

@@ -105,8 +105,8 @@ export default function VoiceRoutingTab({ config }: VoiceRoutingTabProps): React
 
   const selectedProviderRoutes = useMemo(() => {
     const entries = new Map<string, { id: string; label: string; routeKey: string }>();
-    const sttProvider = form.sttProvider != null ? String(form.sttProvider) : DEFAULT_STT_PROVIDER;
-    const ttsProvider = form.ttsProvider != null ? String(form.ttsProvider) : DEFAULT_TTS_PROVIDER;
+    const sttProvider = form.sttProvider ?? DEFAULT_STT_PROVIDER;
+    const ttsProvider = form.ttsProvider ?? DEFAULT_TTS_PROVIDER;
     [sttProvider, ttsProvider].forEach((providerId) => {
       const routeKey = routeByPluginId.get(providerId);
       if (routeKey != null) {

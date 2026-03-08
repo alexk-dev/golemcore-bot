@@ -13,6 +13,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  PLUGIN_API_REPO_REF: 5901f7b3926cdc6970b86d2f42241ed2ad82340c
 
 jobs:
   test:
@@ -38,6 +39,16 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
+      - name: Checkout plugin APIs
+        uses: actions/checkout@v6
+        with:
+          repository: alexk-dev/golemcore-plugins
+          ref: ${{ env.PLUGIN_API_REPO_REF }}
+          path: golemcore-plugins
+
+      - name: Install plugin API artifacts
+        run: mvn -B -ntp -f golemcore-plugins/pom.xml -pl extension-api,runtime-api -am install -DskipTests
+
       - name: Build and run tests
         run: ./mvnw clean verify -DskipGitHooks=true
 
@@ -55,6 +66,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check changed files English-only policy
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+        run: python3 .github/scripts/check-only-english.py
 
       - name: Set up JDK 25
         uses: actions/setup-java@v5
@@ -62,6 +83,16 @@ jobs:
           java-version: '25'
           distribution: 'temurin'
           cache: maven
+
+      - name: Checkout plugin APIs
+        uses: actions/checkout@v6
+        with:
+          repository: alexk-dev/golemcore-plugins
+          ref: ${{ env.PLUGIN_API_REPO_REF }}
+          path: golemcore-plugins
+
+      - name: Install plugin API artifacts
+        run: mvn -B -ntp -f golemcore-plugins/pom.xml -pl extension-api,runtime-api -am install -DskipTests
 
       - name: Check formatting
         run: ./mvnw formatter:validate -DskipGitHooks=true
@@ -92,24 +123,54 @@ jobs:
     needs: [test]
 
     steps:
+      - name: Check Sonar token availability
+        id: sonar-token
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          if [[ -n "${SONAR_TOKEN}" ]]; then
+            echo "available=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "available=false" >> "${GITHUB_OUTPUT}"
+          fi
+
       - name: Checkout
+        if: steps.sonar-token.outputs.available == 'true'
         uses: actions/checkout@v6
         with:
           fetch-depth: 0  # full history for accurate blame
 
       - name: Set up JDK 25
+        if: steps.sonar-token.outputs.available == 'true'
         uses: actions/setup-java@v5
         with:
           java-version: '25'
           distribution: 'temurin'
           cache: maven
 
+      - name: Checkout plugin APIs
+        if: steps.sonar-token.outputs.available == 'true'
+        uses: actions/checkout@v6
+        with:
+          repository: alexk-dev/golemcore-plugins
+          ref: ${{ env.PLUGIN_API_REPO_REF }}
+          path: golemcore-plugins
+
+      - name: Install plugin API artifacts
+        if: steps.sonar-token.outputs.available == 'true'
+        run: mvn -B -ntp -f golemcore-plugins/pom.xml -pl extension-api,runtime-api -am install -DskipTests
+
       - name: Build, test and analyze
+        if: steps.sonar-token.outputs.available == 'true'
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: >
           ./mvnw clean verify sonar:sonar
           -DskipGitHooks=true
+
+      - name: Skip SonarCloud Analysis (missing SONAR_TOKEN)
+        if: steps.sonar-token.outputs.available != 'true'
+        run: echo "Skipping SonarCloud Analysis because SONAR_TOKEN is unavailable for this event."
 
   # ── Build per-arch app images via Jib ────────────────────────────────────
   build-app-images:
@@ -136,6 +197,16 @@ jobs:
           java-version: '25'
           distribution: 'temurin'
           cache: maven
+
+      - name: Checkout plugin APIs
+        uses: actions/checkout@v6
+        with:
+          repository: alexk-dev/golemcore-plugins
+          ref: ${{ env.PLUGIN_API_REPO_REF }}
+          path: golemcore-plugins
+
+      - name: Install plugin API artifacts
+        run: mvn -B -ntp -f golemcore-plugins/pom.xml -pl extension-api,runtime-api -am install -DskipTests
 
       - name: Determine image tags
         id: tags

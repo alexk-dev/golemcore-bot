@@ -5,7 +5,7 @@ Built-in tools that the agent can call (via function/tool calling).
 ## Tool Safety Model
 
 - Core tool toggles live in `preferences/runtime-config.json` (dashboard: Settings).
-- Official integrations such as browser, Brave Search, weather, and mail are loaded through the plugin runtime and keep their own configuration under `preferences/plugins/<owner>/<plugin>.json`.
+- Official integrations such as browser, Brave Search, Tavily Search, Firecrawl, Perplexity Sonar, weather, and mail are loaded through the plugin runtime and keep their own configuration under `preferences/plugins/<owner>/<plugin>.json`.
 - File and shell access are sandboxed to the tool workspace (`bot.tools.*.workspace`).
 - Destructive actions may require user confirmation when tool confirmations are enabled.
 
@@ -35,6 +35,9 @@ Plugin-owned tool settings are stored separately, for example:
 
 - `preferences/plugins/golemcore/browser.json`
 - `preferences/plugins/golemcore/brave-search.json`
+- `preferences/plugins/golemcore/tavily-search.json`
+- `preferences/plugins/golemcore/firecrawl.json`
+- `preferences/plugins/golemcore/perplexity-sonar.json`
 - `preferences/plugins/golemcore/weather.json`
 - `preferences/plugins/golemcore/mail.json`
 
@@ -103,6 +106,27 @@ Web search via Brave Search API.
 
 Provided by the official `golemcore/brave-search` plugin.
 Configure it in Settings or `preferences/plugins/golemcore/brave-search.json`.
+
+### `tavily_search`
+
+Web search via Tavily Search API with optional answer synthesis and advanced retrieval depth.
+
+Provided by the official `golemcore/tavily-search` plugin.
+Configure it in Settings or `preferences/plugins/golemcore/tavily-search.json`.
+
+### `firecrawl_scrape`
+
+Remote webpage scraping via Firecrawl `/v2/scrape`.
+
+Provided by the official `golemcore/firecrawl` plugin.
+Configure it in Settings or `preferences/plugins/golemcore/firecrawl.json`.
+
+### `perplexity_ask`
+
+Grounded synchronous completions via Perplexity Sonar with selectable search model.
+
+Provided by the official `golemcore/perplexity-sonar` plugin.
+Configure it in Settings or `preferences/plugins/golemcore/perplexity-sonar.json`.
 
 ### `skill_management`
 

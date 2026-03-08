@@ -2,7 +2,6 @@ import { type ReactElement, useDeferredValue, useState } from 'react';
 import {
   Alert,
   Badge,
-  Button,
   Card,
   Col,
   Form,
@@ -12,25 +11,15 @@ import {
 } from 'react-bootstrap';
 import toast from 'react-hot-toast';
 import {
-  FiCheckCircle,
-  FiCloud,
-  FiCpu,
-  FiDownloadCloud,
-  FiGlobe,
-  FiMail,
-  FiMessageSquare,
-  FiMic,
   FiPackage,
   FiSearch,
-  FiSettings,
-  FiVolume2,
 } from 'react-icons/fi';
 import { useNavigate } from 'react-router-dom';
-import type { IconType } from 'react-icons';
 import type { PluginMarketplaceItem } from '../../api/plugins';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useInstallPluginFromMarketplace, usePluginMarketplace } from '../../hooks/usePlugins';
 import { extractErrorMessage } from '../../utils/extractErrorMessage';
+import { PluginMarketplaceCard } from './PluginMarketplaceCard';
 
 type MarketplaceFilter = 'all' | 'installed' | 'updates';
 
@@ -44,34 +33,6 @@ function matchesFilter(item: PluginMarketplaceItem, filter: MarketplaceFilter): 
   return true;
 }
 
-function pluginIcon(pluginId: string): IconType {
-  if (pluginId.endsWith('/browser')) {
-    return FiGlobe;
-  }
-  if (pluginId.endsWith('/brave-search')) {
-    return FiSearch;
-  }
-  if (pluginId.endsWith('/weather')) {
-    return FiCloud;
-  }
-  if (pluginId.endsWith('/mail')) {
-    return FiMail;
-  }
-  if (pluginId.endsWith('/telegram')) {
-    return FiMessageSquare;
-  }
-  if (pluginId.endsWith('/whisper')) {
-    return FiMic;
-  }
-  if (pluginId.endsWith('/elevenlabs')) {
-    return FiVolume2;
-  }
-  if (pluginId.endsWith('/lightrag')) {
-    return FiCpu;
-  }
-  return FiPackage;
-}
-
 function matchesSearch(item: PluginMarketplaceItem, query: string): boolean {
   if (query.length === 0) {
     return true;
@@ -79,61 +40,6 @@ function matchesSearch(item: PluginMarketplaceItem, query: string): boolean {
   return item.name.toLowerCase().includes(query)
     || item.id.toLowerCase().includes(query)
     || item.provider.toLowerCase().includes(query);
-}
-
-function installLabel(item: PluginMarketplaceItem, pendingPluginId: string | null): string {
-  if (pendingPluginId === item.id) {
-    return item.updateAvailable ? 'Updating...' : 'Installing...';
-  }
-  if (item.updateAvailable) {
-    return `Update to ${item.version}`;
-  }
-  if (item.installed) {
-    return 'Installed';
-  }
-  return 'Install';
-}
-
-function installVariant(item: PluginMarketplaceItem): string {
-  if (item.updateAvailable) {
-    return 'primary';
-  }
-  if (item.installed) {
-    return 'outline-primary';
-  }
-  return 'primary';
-}
-
-function compatibilityLabel(item: PluginMarketplaceItem): string {
-  if (!item.compatible) {
-    return 'Incompatible';
-  }
-  if (!item.artifactAvailable) {
-    return 'Artifact missing';
-  }
-  if (item.updateAvailable) {
-    return 'Update available';
-  }
-  if (item.loaded) {
-    return 'Loaded';
-  }
-  if (item.installed) {
-    return 'Installed';
-  }
-  return 'Available';
-}
-
-function compatibilityVariant(item: PluginMarketplaceItem): string {
-  if (!item.compatible || !item.artifactAvailable) {
-    return 'danger';
-  }
-  if (item.updateAvailable) {
-    return 'warning';
-  }
-  if (item.loaded) {
-    return 'success';
-  }
-  return 'secondary';
 }
 
 export default function PluginsMarketplaceTab(): ReactElement {
@@ -279,96 +185,17 @@ export default function PluginsMarketplaceTab(): ReactElement {
 
       {catalog.available && items.length > 0 && (
         <Row className="g-3">
-          {items.map((item) => {
-            const Icon = pluginIcon(item.id);
-            const canInstall = item.compatible && item.artifactAvailable && !installMutation.isPending;
-            const showOpenSettings = item.installed && item.settingsRouteKey != null;
-            return (
-              <Col key={item.id} md={6} xl={4}>
-                <Card className={`settings-card plugin-market-card h-100${item.updateAvailable ? ' is-update' : ''}${item.installed ? ' is-installed' : ''}`}>
-                  <Card.Body className="d-flex flex-column">
-                    <div className="plugin-market-card-head">
-                      <div className="plugin-market-icon-shell">
-                        <Icon size={20} />
-                      </div>
-                      <div className="min-w-0 flex-grow-1">
-                        <div className="plugin-market-title-row">
-                          <h3 className="h6 mb-0">{item.name}</h3>
-                          {item.official && <Badge bg="dark-subtle" text="dark">Official</Badge>}
-                        </div>
-                        <div className="plugin-market-plugin-id">{item.id}</div>
-                      </div>
-                    </div>
-
-                    <p className="text-body-secondary small mt-3 mb-3 plugin-market-description">
-                      {item.description ?? 'No description provided.'}
-                    </p>
-
-                    <div className="plugin-market-badges mb-3">
-                      <Badge bg={compatibilityVariant(item)}>{compatibilityLabel(item)}</Badge>
-                      <Badge bg="secondary">v{item.version}</Badge>
-                      {item.installedVersion != null && (
-                        <Badge bg="light" text="dark">Installed {item.installedVersion}</Badge>
-                      )}
-                    </div>
-
-                    <div className="plugin-market-meta small text-body-secondary mb-3">
-                      {item.engineVersion != null && (
-                        <div>Engine: <span className="text-body">{item.engineVersion}</span></div>
-                      )}
-                      {item.license != null && (
-                        <div>License: <span className="text-body">{item.license}</span></div>
-                      )}
-                      {item.maintainers.length > 0 && (
-                        <div>Maintainers: <span className="text-body">{item.maintainers.join(', ')}</span></div>
-                      )}
-                    </div>
-
-                    {!item.compatible && (
-                      <Alert variant="danger" className="small py-2 mb-3">
-                        This plugin version does not match the current engine compatibility range.
-                      </Alert>
-                    )}
-
-                    {item.compatible && !item.artifactAvailable && (
-                      <Alert variant="warning" className="small py-2 mb-3">
-                        Artifact is missing from the marketplace source, so installation is currently unavailable.
-                      </Alert>
-                    )}
-
-                    <div className="mt-auto d-flex flex-wrap gap-2">
-                      {showOpenSettings && (
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => navigate(`/settings/${item.settingsRouteKey}`)}
-                        >
-                          <FiSettings size={14} className="me-1" />
-                          Open settings
-                        </Button>
-                      )}
-
-                      <Button
-                        type="button"
-                        variant={installVariant(item)}
-                        size="sm"
-                        disabled={item.installed && !item.updateAvailable || !canInstall}
-                        onClick={() => { void handleInstall(item); }}
-                      >
-                        {pendingPluginId === item.id
-                          ? <Spinner size="sm" animation="border" className="me-1" />
-                          : item.installed && !item.updateAvailable
-                            ? <FiCheckCircle size={14} className="me-1" />
-                            : <FiDownloadCloud size={14} className="me-1" />}
-                        {installLabel(item, pendingPluginId)}
-                      </Button>
-                    </div>
-                  </Card.Body>
-                </Card>
-              </Col>
-            );
-          })}
+          {items.map((item) => (
+            <Col key={item.id} md={6} xl={4}>
+              <PluginMarketplaceCard
+                item={item}
+                isPending={installMutation.isPending}
+                pendingPluginId={pendingPluginId}
+                onInstall={(plugin) => { void handleInstall(plugin); }}
+                onOpenSettings={(routeKey) => navigate(`/settings/${routeKey}`)}
+              />
+            </Col>
+          ))}
         </Row>
       )}
     </div>

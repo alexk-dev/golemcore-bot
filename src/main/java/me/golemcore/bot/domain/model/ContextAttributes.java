@@ -34,6 +34,9 @@ public final class ContextAttributes {
     /** String — LLM error message. */
     public static final String LLM_ERROR = "llm.error";
 
+    /** String — machine-readable LLM error classification code. */
+    public static final String LLM_ERROR_CODE = "llm.error.code";
+
     /** List<Message.ToolCall> ? last tool calls requested by the LLM. */
 
     /** Boolean ? final answer is ready and the turn can be finalized/routed. */
@@ -41,6 +44,9 @@ public final class ContextAttributes {
 
     /** OutgoingResponse ? response to route to the user (transport contract). */
     public static final String OUTGOING_RESPONSE = "outgoing.response";
+
+    /** RoutingOutcome ? transport routing delivery result for the current turn. */
+    public static final String ROUTING_OUTCOME = "routing.outcome";
 
     /** Duration ? latency of the last LLM call (best-effort). */
     public static final String LLM_LATENCY = "llm.latency";
@@ -104,6 +110,25 @@ public final class ContextAttributes {
      */
     public static final String TOOL_LOOP_LIMIT_REASON = "toolloop.limit.reason";
 
+    /**
+     * List<RuntimeEvent> — runtime execution events for the current turn.
+     */
+    public static final String RUNTIME_EVENTS = "runtime.events";
+
+    /**
+     * Boolean — stop tool execution between tool calls for current turn.
+     */
+    public static final String TURN_INTERRUPT_REQUESTED = "turn.interrupt.requested";
+
+    /** String — queue kind for inbound message while a turn is running. */
+    public static final String TURN_QUEUE_KIND = "turn.queue.kind";
+
+    /** String value for {@link #TURN_QUEUE_KIND}: prioritize as steering input. */
+    public static final String TURN_QUEUE_KIND_STEERING = "steering";
+
+    /** String value for {@link #TURN_QUEUE_KIND}: process as regular follow-up. */
+    public static final String TURN_QUEUE_KIND_FOLLOW_UP = "follow_up";
+
     /** WebSocketSession — reference to WebSocket session for streaming. */
     public static final String WEB_STREAM_SINK = "web.stream.sink";
 
@@ -133,5 +158,11 @@ public final class ContextAttributes {
 
     /** String ? active auto task identifier for the turn. */
     public static final String AUTO_TASK_ID = "auto.task.id";
+
+    /** Map<String,Object> ? latest structured compaction details. */
+    public static final String COMPACTION_LAST_DETAILS = "compaction.last.details";
+
+    /** List<Map<String,Object>> ? per-turn edited file stats for UI hints. */
+    public static final String TURN_FILE_CHANGES = "turn.file.changes";
 
 }

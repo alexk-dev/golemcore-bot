@@ -54,6 +54,9 @@ public class AutoModeService {
 
     private static final String AUTO_DIR = "auto";
     private static final String GOAL_NOT_FOUND = "Goal not found: ";
+    private static final String INBOX_GOAL_ID = "inbox";
+    private static final String INBOX_GOAL_TITLE = "Inbox";
+    private static final String INBOX_GOAL_DESCRIPTION = "System container for standalone tasks";
     private static final int MAX_TASKS_PER_GOAL = 20;
     private static final TypeReference<List<Goal>> GOAL_LIST_TYPE_REF = new TypeReference<>() {
     };
@@ -166,6 +169,52 @@ public class AutoModeService {
         saveGoals(getGoals());
         log.info("[AutoMode] Added task '{}' to goal '{}'", title, goal.getTitle());
         return task;
+    }
+
+    /**
+     * Add a standalone task to the system Inbox goal.
+     */
+    public AutoTask addStandaloneTask(String title, String description) {
+        Goal inboxGoal = getOrCreateInboxGoal();
+        int nextOrder = inboxGoal.getTasks().stream()
+                .mapToInt(AutoTask::getOrder)
+                .max()
+                .orElse(0) + 1;
+        return addTask(inboxGoal.getId(), title, description, nextOrder);
+    }
+
+    public boolean isInboxGoal(Goal goal) {
+        if (goal == null || goal.getId() == null) {
+            return false;
+        }
+        return INBOX_GOAL_ID.equals(goal.getId());
+    }
+
+    public String getInboxGoalId() {
+        return INBOX_GOAL_ID;
+    }
+
+    public Goal getOrCreateInboxGoal() {
+        Optional<Goal> existing = getGoal(INBOX_GOAL_ID);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+
+        List<Goal> goals = getGoals();
+        Instant now = Instant.now();
+        Goal inboxGoal = Goal.builder()
+                .id(INBOX_GOAL_ID)
+                .title(INBOX_GOAL_TITLE)
+                .description(INBOX_GOAL_DESCRIPTION)
+                .status(Goal.GoalStatus.ACTIVE)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+
+        goals.add(inboxGoal);
+        saveGoals(goals);
+        log.info("[AutoMode] Created system inbox goal");
+        return inboxGoal;
     }
 
     public void updateTaskStatus(String goalId, String taskId,

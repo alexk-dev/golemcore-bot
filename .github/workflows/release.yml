@@ -4,9 +4,16 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
 permissions:
   contents: write
   actions: write
+
+env:
+  PLUGIN_API_REPO_REF: 5901f7b3926cdc6970b86d2f42241ed2ad82340c
 
 jobs:
   release:
@@ -19,33 +26,165 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Preflight release tag ancestry
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          LAST_TAG=$(git tag --list 'v*' --sort=-version:refname | head -n 1)
+          if [[ -z "${LAST_TAG}" ]]; then
+            echo "No existing release tags found. Continuing."
+            exit 0
+          fi
+
+          LAST_TAG_COMMIT=$(git rev-list -n 1 "${LAST_TAG}")
+          if git merge-base --is-ancestor "${LAST_TAG_COMMIT}" HEAD; then
+            echo "Latest tag ${LAST_TAG} is reachable from main."
+            exit 0
+          fi
+
+          if LAST_TAG_PARENT=$(git rev-parse "${LAST_TAG_COMMIT}^" 2>/dev/null); then
+            if git merge-base --is-ancestor "${LAST_TAG_PARENT}" HEAD; then
+              echo "Latest tag ${LAST_TAG} commit is not on main, but its parent is reachable."
+              echo "This is expected for tag-only release mode."
+              exit 0
+            fi
+          fi
+
+          echo "::error::Latest tag ${LAST_TAG} (${LAST_TAG_COMMIT}) is not reachable from main (${GITHUB_SHA})."
+          echo "::error::Release history is divergent."
+          echo "::error::Fix by force-moving the tag to a commit reachable from main, or to a tag-only release commit whose parent is reachable from main; then rerun release."
+          exit 1
+
+      - name: Normalize local tag-only release base
+        run: |
+          set -euo pipefail
+          LAST_TAG=$(git tag --list 'v*' --sort=-version:refname | head -n 1)
+          if [[ -z "${LAST_TAG}" ]]; then
+            echo "No existing release tags found. Skipping local normalization."
+            exit 0
+          fi
+
+          LAST_TAG_COMMIT=$(git rev-list -n 1 "${LAST_TAG}")
+          if git merge-base --is-ancestor "${LAST_TAG_COMMIT}" HEAD; then
+            echo "Latest tag ${LAST_TAG} is already reachable from main."
+            exit 0
+          fi
+
+          LAST_TAG_PARENT=$(git rev-parse "${LAST_TAG_COMMIT}^" 2>/dev/null || true)
+          if [[ -n "${LAST_TAG_PARENT}" ]] && git merge-base --is-ancestor "${LAST_TAG_PARENT}" HEAD; then
+            git tag -f "${LAST_TAG}" "${LAST_TAG_PARENT}"
+            echo "Retargeted local ${LAST_TAG} -> ${LAST_TAG_PARENT} for deterministic bump base."
+            exit 0
+          fi
+
+          echo "Latest tag ${LAST_TAG} is not in tag-only shape. Skipping local normalization."
+
       - name: Cocogitto release
         id: release
+        continue-on-error: true
         uses: cocogitto/cocogitto-action@9a9fe03b31c47444290c0d7f9b1ee1b44ee13f20 # v4.1.0
         with:
-          release: true
-          check-latest-tag-only: true
+          command: bump
+          args: --auto
           git-user: 'github-actions[bot]'
           git-user-email: 'github-actions[bot]@users.noreply.github.com'
 
-      - name: Push tag
-        if: steps.release.outputs.version != ''
-        run: git push origin "${{ steps.release.outputs.version }}"
+      - name: Validate release outcome
+        id: release-validation
+        if: steps.release.outcome == 'failure'
+        run: |
+          RELEASE_STDOUT_LOWER="$(echo "${{ steps.release.outputs.stdout }}" | tr '[:upper:]' '[:lower:]')"
+          if [[ "${RELEASE_STDOUT_LOWER}" == *"no conventional commit"* ]]; then
+            echo "No releasable conventional commits found. Skipping release."
+            echo "should-release=false" >> "${GITHUB_OUTPUT}"
+            echo "reason=no_releasable_commits" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          if [[ "${RELEASE_STDOUT_LOWER}" == *"tag already exists"* ]]; then
+            echo "::error::Cocogitto tried to create an existing tag."
+            echo "::error::Most likely reason: release tag/main history divergence."
+            echo "${{ steps.release.outputs.stdout }}"
+            exit 1
+          fi
+
+          echo "Cocogitto failed with unexpected error:"
+          echo "${{ steps.release.outputs.stdout }}"
+          exit 1
+
+      - name: Resolve release execution flag
+        id: release-flag
+        run: |
+          RELEASE_STDOUT_LOWER="$(echo "${{ steps.release.outputs.stdout }}" | tr '[:upper:]' '[:lower:]')"
+
+          if [[ "${{ steps.release-validation.outputs.should-release }}" == "false" ]]; then
+            echo "should-release=false" >> "${GITHUB_OUTPUT}"
+            echo "reason=${{ steps.release-validation.outputs.reason }}" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          if [[ "${RELEASE_STDOUT_LOWER}" == *"no conventional commit"* ]]; then
+            echo "No releasable conventional commits found (success path). Skipping release."
+            echo "should-release=false" >> "${GITHUB_OUTPUT}"
+            echo "reason=no_releasable_commits" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          if [[ "${{ steps.release.outputs.version }}" == "" ]]; then
+            echo "No release version output from cocogitto. Skipping release."
+            echo "should-release=false" >> "${GITHUB_OUTPUT}"
+            echo "reason=missing_version_output" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          echo "should-release=true" >> "${GITHUB_OUTPUT}"
+          echo "reason=ready" >> "${GITHUB_OUTPUT}"
+
+      - name: Push release tag if missing on remote
+        id: tag-push
+        if: steps.release-flag.outputs.should-release == 'true'
+        run: |
+          set -euo pipefail
+          RELEASE_TAG="${{ steps.release.outputs.version }}"
+
+          if git ls-remote --tags origin "refs/tags/${RELEASE_TAG}" | grep -q .; then
+            echo "Release tag ${RELEASE_TAG} already exists on origin."
+            echo "Skipping publish steps for this run."
+            echo "should-release=false" >> "${GITHUB_OUTPUT}"
+            echo "reason=tag_already_exists" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          git push origin "${RELEASE_TAG}"
+          echo "should-release=true" >> "${GITHUB_OUTPUT}"
+          echo "reason=tag_pushed" >> "${GITHUB_OUTPUT}"
 
       - name: Set up JDK 25
-        if: steps.release.outputs.version != ''
+        if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
         uses: actions/setup-java@v5
         with:
           java-version: '25'
           distribution: 'temurin'
           cache: maven
 
+      - name: Checkout plugin APIs
+        if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
+        uses: actions/checkout@v6
+        with:
+          repository: alexk-dev/golemcore-plugins
+          ref: ${{ env.PLUGIN_API_REPO_REF }}
+          path: golemcore-plugins
+
+      - name: Install plugin API artifacts
+        if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
+        run: mvn -B -ntp -f golemcore-plugins/pom.xml -pl extension-api,runtime-api -am install -DskipTests
+
       - name: Build release JAR
-        if: steps.release.outputs.version != ''
+        if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
         run: ./mvnw clean package -DskipTests -DskipGitHooks=true
 
       - name: Prepare release assets
-        if: steps.release.outputs.version != ''
+        if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
         id: assets
         run: |
           JAR_PATH=$(find target -maxdepth 1 -type f -name 'bot-*.jar' ! -name '*.jar.original' | sort | head -n 1)
@@ -60,7 +199,7 @@ jobs:
           echo "sha-file=${SHA_FILE}" >> "${GITHUB_OUTPUT}"
 
       - name: Create or update GitHub Release
-        if: steps.release.outputs.version != ''
+        if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ steps.release.outputs.version }}
@@ -76,15 +215,30 @@ jobs:
           fi
 
       - name: Trigger Docker publish for release tag
-        if: steps.release.outputs.version != ''
+        if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh workflow run docker-publish.yml --ref "${{ steps.release.outputs.version }}"
 
       - name: Summary
-        if: steps.release.outputs.version != ''
+        if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
         run: |
           echo "## Release ${{ steps.release.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Tag \`${{ steps.release.outputs.version }}\` created and pushed." >> $GITHUB_STEP_SUMMARY
+          echo "Tag \`${{ steps.release.outputs.version }}\` pushed (main push intentionally disabled by branch rules)." >> $GITHUB_STEP_SUMMARY
           echo "GitHub Release with \`bot-*.jar\` and \`sha256sums.txt\` was published." >> $GITHUB_STEP_SUMMARY
+
+      - name: Summary (no release)
+        if: steps.release-flag.outputs.should-release != 'true' || steps.tag-push.outputs.should-release != 'true'
+        run: |
+          RELEASE_REASON="${{ steps.tag-push.outputs.reason }}"
+          if [[ -z "${RELEASE_REASON}" ]]; then
+            RELEASE_REASON="${{ steps.release-flag.outputs.reason }}"
+          fi
+          if [[ -z "${RELEASE_REASON}" ]]; then
+            RELEASE_REASON="not_applicable"
+          fi
+
+          echo "## No release" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Release flow skipped safely. Reason: \`${RELEASE_REASON}\`." >> $GITHUB_STEP_SUMMARY
