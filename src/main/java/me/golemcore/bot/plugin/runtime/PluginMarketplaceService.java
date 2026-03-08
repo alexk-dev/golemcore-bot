@@ -14,11 +14,20 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HexFormat;
@@ -40,8 +49,12 @@ import java.util.stream.Stream;
 @Slf4j
 public class PluginMarketplaceService {
 
+    private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
     private static final ObjectMapper YAML_MAPPER = new ObjectMapper(new YAMLFactory());
     private static final String PLUGIN_MANIFEST_PATH = "META-INF/golemcore/plugin.yaml";
+    private static final String GITHUB_USER_AGENT = "golemcore-bot-marketplace";
+    private static final Duration METADATA_REQUEST_TIMEOUT = Duration.ofSeconds(30);
+    private static final Duration ARTIFACT_REQUEST_TIMEOUT = Duration.ofMinutes(5);
     private static final Map<String, String> DISPLAY_NAME_OVERRIDES = Map.of(
             "lightrag", "LightRAG",
             "elevenlabs", "ElevenLabs");
@@ -50,26 +63,45 @@ public class PluginMarketplaceService {
     private final ObjectProvider<BuildProperties> buildPropertiesProvider;
     private final PluginManager pluginManager;
     private final PluginSettingsRegistry pluginSettingsRegistry;
+    private final HttpClient httpClient = HttpClient.newBuilder()
+            .followRedirects(HttpClient.Redirect.NORMAL)
+            .build();
+    private final Object remoteCatalogLock = new Object();
+
+    private volatile RemoteCatalogCache remoteCatalogCache;
 
     public PluginMarketplaceCatalog getCatalog() {
         if (!botProperties.getPlugins().getMarketplace().isEnabled()) {
             return unavailable("Plugin marketplace is disabled by backend configuration.");
         }
 
-        Optional<Path> repositoryRoot = resolveRepositoryRoot();
-        if (repositoryRoot.isEmpty()) {
+        Optional<Path> repositoryRoot = resolveLocalRepositoryRoot();
+        if (isLocalRepositoryConfigured() && repositoryRoot.isEmpty()) {
             return unavailable(
                     "Marketplace repository was not found. Configure bot.plugins.marketplace.repository-directory.");
         }
 
-        Path repoRoot = repositoryRoot.get();
-        Path registryRoot = repoRoot.resolve("registry");
-        if (!Files.isDirectory(registryRoot)) {
-            return unavailable("Marketplace registry directory is missing under " + repoRoot);
+        String engineVersion = resolveEngineVersion();
+        Map<String, TrustedPluginRecord> trustedPlugins;
+        String sourceDirectory;
+        try {
+            if (repositoryRoot.isPresent()) {
+                Path repoRoot = repositoryRoot.get();
+                Path registryRoot = repoRoot.resolve("registry");
+                if (!Files.isDirectory(registryRoot)) {
+                    return unavailable("Marketplace registry directory is missing under " + repoRoot);
+                }
+                trustedPlugins = loadTrustedPlugins(repoRoot, engineVersion);
+                sourceDirectory = repoRoot.toString();
+            } else {
+                trustedPlugins = loadRemoteCatalogPlugins(engineVersion);
+                sourceDirectory = remoteRepositoryUrl().toString();
+            }
+        } catch (RuntimeException ex) {
+            log.warn("[Plugins] Failed to load marketplace catalog: {}", ex.getMessage());
+            return unavailable(buildMarketplaceLoadFailureMessage(repositoryRoot.isPresent()));
         }
 
-        String engineVersion = resolveEngineVersion();
-        Map<String, TrustedPluginRecord> trustedPlugins = loadTrustedPlugins(repoRoot, engineVersion);
         Map<String, PluginRuntimeInfo> loadedById = pluginManager.listPlugins().stream()
                 .collect(java.util.stream.Collectors.toMap(
                         PluginRuntimeInfo::getId,
@@ -86,7 +118,7 @@ public class PluginMarketplaceService {
         List<PluginMarketplaceItem> items = loadMarketplaceItems(trustedPlugins, loadedById, settingsRouteByPlugin);
         return PluginMarketplaceCatalog.builder()
                 .available(true)
-                .sourceDirectory(repoRoot.toString())
+                .sourceDirectory(sourceDirectory)
                 .items(items)
                 .build();
     }
@@ -102,11 +134,8 @@ public class PluginMarketplaceService {
             throw new IllegalStateException("Plugin marketplace is disabled");
         }
 
-        Path repoRoot = resolveRepositoryRoot()
-                .orElseThrow(() -> new IllegalStateException("Marketplace repository was not found"));
         String engineVersion = resolveEngineVersion();
-        Map<String, TrustedPluginRecord> trustedPlugins = loadTrustedPlugins(repoRoot, engineVersion);
-        TrustedPluginRecord trustedPlugin = trustedPlugins.get(normalizedPluginId);
+        TrustedPluginRecord trustedPlugin = loadTrustedPluginForInstall(requestedPlugin, engineVersion);
         if (trustedPlugin == null) {
             throw new IllegalArgumentException("Unknown plugin: " + normalizedPluginId);
         }
@@ -117,19 +146,15 @@ public class PluginMarketplaceService {
             throw new IllegalStateException("Plugin " + normalizedPluginId + " is not compatible with engine "
                     + engineVersion);
         }
-        if (!Files.isRegularFile(selectedVersion.artifactPath())) {
+        if (!selectedVersion.artifactReference().isAvailable()) {
             throw new IllegalStateException(
-                    "Artifact not found for " + normalizedPluginId + " at " + selectedVersion.artifactPath());
+                    "Artifact not found for " + normalizedPluginId + " at " + selectedVersion.artifactReference());
         }
 
-        verifyChecksum(selectedVersion.artifactPath(), selectedVersion.versionMetadata().getChecksumSha256());
-        Path artifactFileName = selectedVersion.artifactPath().getFileName();
-        if (artifactFileName == null) {
-            throw new IllegalStateException("Artifact path has no file name: " + selectedVersion.artifactPath());
-        }
+        String artifactFileName = selectedVersion.artifactReference().fileName();
         Path pluginsRoot = pluginDirectoryRoot();
         Path destination = installDestination(pluginsRoot, trustedPlugin.coordinates(), trustedVersion,
-                artifactFileName.toString());
+                artifactFileName);
         String previouslyInstalledVersion = findInstalledVersion(trustedPlugin.coordinates());
         try {
             Path destinationParent = requireDestinationParent(pluginsRoot, destination);
@@ -138,8 +163,9 @@ public class PluginMarketplaceService {
                     Files.createTempFile(destinationParent, "plugin-", ".tmp"),
                     "plugin temp artifact");
             try {
-                Files.copy(selectedVersion.artifactPath(), tempFile, StandardCopyOption.REPLACE_EXISTING);
-                Files.move(tempFile, destination, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                copyArtifactTo(selectedVersion.artifactReference(), tempFile);
+                verifyChecksum(tempFile, selectedVersion.versionMetadata().getChecksumSha256());
+                moveAtomically(tempFile, destination);
             } finally {
                 Files.deleteIfExists(tempFile);
             }
@@ -159,7 +185,7 @@ public class PluginMarketplaceService {
                         previouslyInstalledVersion,
                         null,
                         null,
-                        selectedVersion.artifactPath(),
+                        selectedVersion.artifactReference(),
                         selectedVersion.compatible()));
 
         String status = resolveInstallStatus(previouslyInstalledVersion, trustedVersion);
@@ -186,7 +212,7 @@ public class PluginMarketplaceService {
                             findInstalledVersion(plugin.coordinates()),
                             loadedById.get(pluginId),
                             settingsRouteByPlugin.get(pluginId),
-                            latestVersion.artifactPath(),
+                            latestVersion.artifactReference(),
                             latestVersion.compatible());
                 })
                 .sorted(Comparator
@@ -200,7 +226,7 @@ public class PluginMarketplaceService {
         Path registryRoot = requireDirectory(repoRoot.resolve("registry"), "marketplace registry");
         List<Path> indexPaths;
         try (Stream<Path> stream = Files.walk(registryRoot, 3)) {
-            indexPaths = stream.filter(path -> "index.yaml".equals(path.getFileName().toString()))
+            indexPaths = stream.filter(path -> "index.yaml".equals(fileNameOrEmpty(path)))
                     .sorted()
                     .toList();
         } catch (IOException ex) {
@@ -258,7 +284,7 @@ public class PluginMarketplaceService {
         List<Path> versionPaths;
         try (Stream<Path> stream = Files.list(versionsDir)) {
             versionPaths = stream.filter(Files::isRegularFile)
-                    .filter(path -> path.getFileName().toString().endsWith(".yaml"))
+                    .filter(path -> fileNameOrEmpty(path).endsWith(".yaml"))
                     .sorted()
                     .toList();
         }
@@ -278,18 +304,233 @@ public class PluginMarketplaceService {
             }
             versionMetadata.setId(metadataPluginId);
             versionMetadata.setVersion(normalizedVersion);
-            Path artifactPath = resolveArtifactPath(repoRoot, coordinates, versionMetadata);
-            PluginDescriptor descriptor = readDescriptor(artifactPath, versionMetadata, index);
+            ArtifactReference artifactReference = resolveLocalArtifactReference(repoRoot, coordinates, versionMetadata);
+            PluginDescriptor descriptor = readDescriptor(artifactReference.localPath(), versionMetadata, index);
             boolean compatible = PluginVersionSupport.matchesVersionConstraint(
                     engineVersion,
                     versionMetadata.getEngineVersion());
             versions.put(normalizedVersion,
-                    new TrustedVersionRecord(versionMetadata, descriptor, artifactPath, compatible));
+                    new TrustedVersionRecord(versionMetadata, descriptor, artifactReference, compatible));
         }
         if (versions.isEmpty()) {
             throw new IllegalArgumentException("No marketplace versions found for " + coordinates.id());
         }
         return versions;
+    }
+
+    private Map<String, TrustedPluginRecord> loadRemoteCatalogPlugins(String engineVersion) {
+        Duration cacheTtl = botProperties.getPlugins().getMarketplace().getRemoteCacheTtl();
+        if (cacheTtl == null || cacheTtl.isZero() || cacheTtl.isNegative()) {
+            return fetchRemoteCatalogPlugins(engineVersion);
+        }
+
+        RemoteCatalogCache currentCache = remoteCatalogCache;
+        Instant now = Instant.now();
+        if (currentCache != null && now.isBefore(currentCache.loadedAt().plus(cacheTtl))) {
+            return currentCache.trustedPlugins();
+        }
+
+        synchronized (remoteCatalogLock) {
+            RemoteCatalogCache lockedCache = remoteCatalogCache;
+            Instant refreshedNow = Instant.now();
+            if (lockedCache != null && refreshedNow.isBefore(lockedCache.loadedAt().plus(cacheTtl))) {
+                return lockedCache.trustedPlugins();
+            }
+            Map<String, TrustedPluginRecord> loaded = fetchRemoteCatalogPlugins(engineVersion);
+            remoteCatalogCache = new RemoteCatalogCache(refreshedNow, loaded);
+            return loaded;
+        }
+    }
+
+    private Map<String, TrustedPluginRecord> fetchRemoteCatalogPlugins(String engineVersion) {
+        List<String> indexPaths = fetchRemoteRegistryIndexPaths();
+        Map<String, TrustedPluginRecord> trustedPlugins = new LinkedHashMap<>();
+        for (String indexPath : indexPaths) {
+            try {
+                TrustedPluginRecord plugin = loadRemoteCatalogPlugin(indexPath, engineVersion);
+                if (plugin != null) {
+                    trustedPlugins.putIfAbsent(plugin.coordinates().id(), plugin);
+                }
+            } catch (RuntimeException ex) {
+                log.warn("[Plugins] Failed to read remote marketplace entry {}: {}", indexPath, ex.getMessage());
+            }
+        }
+        return Map.copyOf(trustedPlugins);
+    }
+
+    private TrustedPluginRecord loadRemoteCatalogPlugin(String indexPath, String engineVersion) {
+        RegistryIndexMetadata index = fetchRemoteYaml(indexPath, RegistryIndexMetadata.class);
+        if (index == null || index.getId() == null || index.getLatest() == null) {
+            return null;
+        }
+        String normalizedIndexPluginId = normalizePluginId(index.getId());
+        if (normalizedIndexPluginId == null) {
+            return null;
+        }
+        PluginCoordinates coordinates = parsePluginId(normalizedIndexPluginId);
+        index.setId(coordinates.id());
+        index.setVersions(normalizePublishedVersions(index.getVersions()));
+
+        TrustedVersionRecord latestVersion = loadRemoteLatestVersionRecord(coordinates, index, engineVersion);
+        return new TrustedPluginRecord(
+                coordinates,
+                index,
+                Map.of(latestVersion.versionMetadata().getVersion(), latestVersion),
+                latestVersion.versionMetadata().getVersion());
+    }
+
+    private TrustedPluginRecord loadRemotePlugin(PluginCoordinates coordinates, String engineVersion) {
+        RegistryIndexMetadata index = fetchRemoteYaml(remoteRegistryIndexPath(coordinates),
+                RegistryIndexMetadata.class);
+        if (index == null || index.getId() == null) {
+            throw new IllegalArgumentException("Unknown plugin: " + coordinates.id());
+        }
+        String normalizedIndexPluginId = normalizePluginId(index.getId());
+        if (normalizedIndexPluginId == null || !coordinates.id().equals(normalizedIndexPluginId)) {
+            throw new IllegalArgumentException("Unknown plugin: " + coordinates.id());
+        }
+        index.setId(coordinates.id());
+        index.setVersions(normalizePublishedVersions(index.getVersions()));
+
+        Map<String, TrustedVersionRecord> versions = loadRemoteVersions(coordinates, index, engineVersion);
+        String latestVersion = resolvePublishedVersion(index.getLatest(), index.getVersions(), versions.keySet());
+        return new TrustedPluginRecord(coordinates, index, versions, latestVersion);
+    }
+
+    private Map<String, TrustedVersionRecord> loadRemoteVersions(
+            PluginCoordinates coordinates,
+            RegistryIndexMetadata index,
+            String engineVersion) {
+        List<String> versionsToLoad = new ArrayList<>();
+        if (index.getVersions() != null && !index.getVersions().isEmpty()) {
+            versionsToLoad.addAll(index.getVersions());
+        } else {
+            String latestVersion = normalizeVersion(index.getLatest());
+            if (latestVersion != null) {
+                versionsToLoad.add(latestVersion);
+            }
+        }
+
+        Map<String, TrustedVersionRecord> versions = new LinkedHashMap<>();
+        for (String version : versionsToLoad) {
+            try {
+                TrustedVersionRecord versionRecord = loadRemoteVersionRecord(coordinates, index, version,
+                        engineVersion);
+                versions.put(versionRecord.versionMetadata().getVersion(), versionRecord);
+            } catch (RuntimeException ex) {
+                log.warn("[Plugins] Failed to read remote marketplace version {} {}: {}",
+                        coordinates.id(), version, ex.getMessage());
+            }
+        }
+        if (versions.isEmpty()) {
+            throw new IllegalArgumentException("No marketplace versions found for " + coordinates.id());
+        }
+        return versions;
+    }
+
+    private TrustedVersionRecord loadRemoteLatestVersionRecord(
+            PluginCoordinates coordinates,
+            RegistryIndexMetadata index,
+            String engineVersion) {
+        RuntimeException lastError = null;
+        for (String candidate : buildRemoteVersionCandidates(index)) {
+            try {
+                return loadRemoteVersionRecord(coordinates, index, candidate, engineVersion);
+            } catch (RuntimeException ex) {
+                lastError = ex;
+            }
+        }
+        if (lastError != null) {
+            throw new IllegalStateException(
+                    "Failed to load latest marketplace version for " + coordinates.id(),
+                    lastError);
+        }
+        throw new IllegalArgumentException("No marketplace versions found for " + coordinates.id());
+    }
+
+    private List<String> buildRemoteVersionCandidates(RegistryIndexMetadata index) {
+        List<String> candidates = new ArrayList<>();
+        String latestVersion = normalizeVersion(index.getLatest());
+        if (latestVersion != null) {
+            candidates.add(latestVersion);
+        }
+        if (index.getVersions() != null && !index.getVersions().isEmpty()) {
+            List<String> published = new ArrayList<>(index.getVersions());
+            published.sort(PluginVersionSupport::compareVersions);
+            for (int indexPosition = published.size() - 1; indexPosition >= 0; indexPosition--) {
+                String publishedVersion = published.get(indexPosition);
+                if (!candidates.contains(publishedVersion)) {
+                    candidates.add(publishedVersion);
+                }
+            }
+        }
+        return candidates;
+    }
+
+    private TrustedVersionRecord loadRemoteVersionRecord(
+            PluginCoordinates coordinates,
+            RegistryIndexMetadata index,
+            String version,
+            String engineVersion) {
+        RegistryVersionMetadata versionMetadata = fetchRemoteYaml(
+                remoteRegistryVersionPath(coordinates, version),
+                RegistryVersionMetadata.class);
+        normalizeVersionMetadata(versionMetadata, coordinates);
+        ArtifactReference artifactReference = resolveRemoteArtifactReference(coordinates, versionMetadata);
+        PluginDescriptor descriptor = buildDescriptorFromMetadata(versionMetadata, index);
+        boolean compatible = PluginVersionSupport.matchesVersionConstraint(
+                engineVersion,
+                versionMetadata.getEngineVersion());
+        return new TrustedVersionRecord(versionMetadata, descriptor, artifactReference, compatible);
+    }
+
+    private void normalizeVersionMetadata(RegistryVersionMetadata versionMetadata, PluginCoordinates coordinates) {
+        if (versionMetadata == null || versionMetadata.getVersion() == null) {
+            throw new IllegalArgumentException("Marketplace version metadata is invalid for " + coordinates.id());
+        }
+        String normalizedVersion = normalizeVersion(versionMetadata.getVersion());
+        String metadataPluginId = versionMetadata.getId() != null
+                ? normalizePluginId(versionMetadata.getId())
+                : coordinates.id();
+        if (!coordinates.id().equals(metadataPluginId)) {
+            throw new IllegalArgumentException("Version metadata id must match plugin id");
+        }
+        versionMetadata.setId(metadataPluginId);
+        versionMetadata.setVersion(normalizedVersion);
+    }
+
+    private List<String> fetchRemoteRegistryIndexPaths() {
+        URI treeUri = remoteTreeApiUri();
+        String responseBody = fetchText(treeUri, METADATA_REQUEST_TIMEOUT);
+        try {
+            com.fasterxml.jackson.databind.JsonNode root = JSON_MAPPER.readTree(responseBody);
+            List<String> indexPaths = new ArrayList<>();
+            com.fasterxml.jackson.databind.JsonNode treeNode = root.path("tree");
+            if (!treeNode.isArray()) {
+                return List.of();
+            }
+            for (com.fasterxml.jackson.databind.JsonNode entry : treeNode) {
+                String type = entry.path("type").asText("");
+                String path = entry.path("path").asText("");
+                if ("blob".equals(type) && isRegistryIndexPath(path)) {
+                    indexPaths.add(path);
+                }
+            }
+            indexPaths.sort(String::compareTo);
+            return List.copyOf(indexPaths);
+        } catch (IOException ex) {
+            throw new IllegalStateException("Failed to parse marketplace tree metadata", ex);
+        }
+    }
+
+    private boolean isRegistryIndexPath(String path) {
+        if (path == null || path.isBlank()) {
+            return false;
+        }
+        Path candidate = Path.of(path);
+        return candidate.getNameCount() == 4
+                && "registry".equals(candidate.getName(0).toString())
+                && "index.yaml".equals(candidate.getName(3).toString());
     }
 
     private TrustedVersionRecord latestVersion(TrustedPluginRecord plugin) {
@@ -361,7 +602,7 @@ public class PluginMarketplaceService {
             String installedVersion,
             PluginRuntimeInfo loaded,
             String settingsRouteKey,
-            Path artifactPath,
+            ArtifactReference artifactReference,
             boolean compatible) {
         boolean installed = installedVersion != null && !installedVersion.isBlank();
         boolean loadedFlag = loaded != null && loaded.isLoaded();
@@ -380,7 +621,7 @@ public class PluginMarketplaceService {
                 .maintainers(descriptor.getMaintainers() != null ? descriptor.getMaintainers() : List.of())
                 .official("golemcore".equals(descriptor.getProvider()))
                 .compatible(compatible)
-                .artifactAvailable(Files.isRegularFile(artifactPath))
+                .artifactAvailable(artifactReference.isAvailable())
                 .installed(installed)
                 .loaded(loadedFlag)
                 .updateAvailable(
@@ -423,6 +664,23 @@ public class PluginMarketplaceService {
         return descriptor;
     }
 
+    private PluginDescriptor buildDescriptorFromMetadata(
+            RegistryVersionMetadata versionMetadata,
+            RegistryIndexMetadata indexMetadata) {
+        PluginDescriptor descriptor = new PluginDescriptor();
+        descriptor.setId(coalesce(versionMetadata.getId(), indexMetadata.getId()));
+        descriptor.setProvider(ownerFromPluginId(indexMetadata.getId()));
+        descriptor.setName(indexMetadata.getName());
+        descriptor.setVersion(versionMetadata.getVersion());
+        descriptor.setPluginApiVersion(versionMetadata.getPluginApiVersion());
+        descriptor.setEngineVersion(versionMetadata.getEngineVersion());
+        descriptor.setEntrypoint(versionMetadata.getEntrypoint());
+        descriptor.setSourceUrl(coalesce(versionMetadata.getSourceUrl(), indexMetadata.getSource()));
+        descriptor.setLicense(versionMetadata.getLicense());
+        descriptor.setMaintainers(versionMetadata.getMaintainers());
+        return descriptor;
+    }
+
     private PluginDescriptor readDescriptorFromArtifact(Path artifactPath) throws IOException {
         try (JarFile jarFile = new JarFile(artifactPath.toFile())) {
             java.util.jar.JarEntry entry = jarFile.getJarEntry(PLUGIN_MANIFEST_PATH);
@@ -435,44 +693,44 @@ public class PluginMarketplaceService {
         }
     }
 
-    private Optional<Path> resolveRepositoryRoot() {
+    private Optional<Path> resolveLocalRepositoryRoot() {
         String configured = botProperties.getPlugins().getMarketplace().getRepositoryDirectory();
         if (configured != null && !configured.isBlank()) {
             Path configuredPath = Path.of(configured).toAbsolutePath().normalize();
             return Files.isDirectory(configuredPath) ? Optional.of(configuredPath) : Optional.empty();
         }
-
-        Path cwd = Path.of("").toAbsolutePath().normalize();
-        List<Path> candidates = List.of(
-                cwd.resolve("golemcore-plugins"),
-                cwd.resolve("../golemcore-plugins").normalize());
-        return candidates.stream()
-                .filter(Files::isDirectory)
-                .findFirst();
+        return Optional.empty();
     }
 
-    private Path resolveArtifactPath(
+    private boolean isLocalRepositoryConfigured() {
+        String configured = botProperties.getPlugins().getMarketplace().getRepositoryDirectory();
+        return configured != null && !configured.isBlank();
+    }
+
+    private ArtifactReference resolveLocalArtifactReference(
             Path repositoryRoot,
             PluginCoordinates coordinates,
             RegistryVersionMetadata versionMetadata) {
         Path artifactDirectory = artifactDirectory(repositoryRoot, coordinates, versionMetadata.getVersion());
         if (!Files.isDirectory(artifactDirectory)) {
-            return missingArtifactPath(repositoryRoot);
+            return ArtifactReference.local(missingArtifactPath(repositoryRoot));
         }
         String expectedFileName = parseArtifactFileName(versionMetadata.getArtifactUrl(), coordinates,
                 versionMetadata.getVersion());
         try (Stream<Path> stream = Files.list(artifactDirectory)) {
             List<Path> jarFiles = stream.filter(Files::isRegularFile)
-                    .filter(path -> path.getFileName().toString().endsWith(".jar"))
+                    .filter(path -> fileNameOrEmpty(path).endsWith(".jar"))
                     .sorted()
                     .toList();
             if (expectedFileName != null) {
-                return jarFiles.stream()
-                        .filter(path -> expectedFileName.equals(path.getFileName().toString()))
+                Path resolvedPath = jarFiles.stream()
+                        .filter(path -> expectedFileName.equals(fileNameOrEmpty(path)))
                         .findFirst()
                         .orElseGet(() -> missingArtifactPath(repositoryRoot));
+                return ArtifactReference.local(resolvedPath);
             }
-            return jarFiles.isEmpty() ? missingArtifactPath(repositoryRoot) : jarFiles.getFirst();
+            Path resolvedPath = jarFiles.isEmpty() ? missingArtifactPath(repositoryRoot) : jarFiles.getFirst();
+            return ArtifactReference.local(resolvedPath);
         } catch (IOException ex) {
             throw new IllegalStateException("Failed to inspect plugin artifacts under " + artifactDirectory, ex);
         }
@@ -493,6 +751,193 @@ public class PluginMarketplaceService {
         return ensureContainedInRoot(pluginsRoot, destination, "plugin install destination");
     }
 
+    private TrustedPluginRecord loadTrustedPluginForInstall(PluginCoordinates coordinates, String engineVersion) {
+        if (isLocalRepositoryConfigured()) {
+            Path repositoryRoot = resolveLocalRepositoryRoot()
+                    .orElseThrow(() -> new IllegalStateException("Marketplace repository was not found"));
+            Map<String, TrustedPluginRecord> trustedPlugins = loadTrustedPlugins(repositoryRoot, engineVersion);
+            return trustedPlugins.get(coordinates.id());
+        }
+        return loadRemotePlugin(coordinates, engineVersion);
+    }
+
+    private String buildMarketplaceLoadFailureMessage(boolean localRepository) {
+        if (localRepository) {
+            return "Marketplace repository could not be loaded from configured directory.";
+        }
+        return "Marketplace repository could not be loaded from " + remoteRepositoryUrl();
+    }
+
+    private void copyArtifactTo(ArtifactReference artifactReference, Path destination) throws IOException {
+        if (artifactReference.localPath() != null) {
+            Files.copy(artifactReference.localPath(), destination, StandardCopyOption.REPLACE_EXISTING);
+            return;
+        }
+        URI remoteUri = artifactReference.remoteUri();
+        if (remoteUri == null) {
+            throw new IllegalStateException("Artifact source is not available");
+        }
+
+        HttpRequest request = HttpRequest.newBuilder(remoteUri)
+                .GET()
+                .timeout(ARTIFACT_REQUEST_TIMEOUT)
+                .header("User-Agent", GITHUB_USER_AGENT)
+                .build();
+        HttpResponse<InputStream> response;
+        try {
+            response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while downloading marketplace artifact", ex);
+        }
+        ensureSuccessfulResponse(response, remoteUri);
+        try (InputStream inputStream = response.body()) {
+            Files.copy(inputStream, destination, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    private void moveAtomically(Path source, Path target) throws IOException {
+        try {
+            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } catch (AtomicMoveNotSupportedException ex) {
+            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    private <T> T fetchRemoteYaml(String path, Class<T> type) {
+        URI uri = remoteRawFileUri(path);
+        String payload = fetchText(uri, METADATA_REQUEST_TIMEOUT);
+        try {
+            return YAML_MAPPER.readValue(payload, type);
+        } catch (IOException ex) {
+            throw new IllegalStateException("Failed to parse marketplace metadata from " + uri, ex);
+        }
+    }
+
+    private String fetchText(URI uri, Duration timeout) {
+        HttpRequest request = HttpRequest.newBuilder(uri)
+                .GET()
+                .timeout(timeout)
+                .header("User-Agent", GITHUB_USER_AGENT)
+                .build();
+        HttpResponse<String> response;
+        try {
+            response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while loading marketplace metadata from " + uri, ex);
+        } catch (IOException ex) {
+            throw new IllegalStateException("Failed to load marketplace metadata from " + uri, ex);
+        }
+        ensureSuccessfulResponse(response, uri);
+        return response.body();
+    }
+
+    private void ensureSuccessfulResponse(HttpResponse<?> response, URI uri) {
+        int statusCode = response.statusCode();
+        if (statusCode >= 200 && statusCode < 300) {
+            return;
+        }
+        throw new IllegalStateException("Marketplace request failed with HTTP " + statusCode + " for " + uri);
+    }
+
+    private ArtifactReference resolveRemoteArtifactReference(
+            PluginCoordinates coordinates,
+            RegistryVersionMetadata versionMetadata) {
+        String artifactUrl = versionMetadata.getArtifactUrl();
+        if (artifactUrl == null || artifactUrl.isBlank()) {
+            return ArtifactReference.missing();
+        }
+        if (looksLikeAbsoluteHttpUrl(artifactUrl)) {
+            return ArtifactReference.remote(URI.create(artifactUrl));
+        }
+        String artifactFileName = parseArtifactFileName(artifactUrl, coordinates, versionMetadata.getVersion());
+        return ArtifactReference.remote(remoteReleaseArtifactUri(coordinates, versionMetadata.getVersion(),
+                artifactFileName));
+    }
+
+    private boolean looksLikeAbsoluteHttpUrl(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        String normalized = value.toLowerCase(Locale.ROOT);
+        return normalized.startsWith("https://") || normalized.startsWith("http://");
+    }
+
+    private URI remoteRepositoryUrl() {
+        String repositoryUrl = botProperties.getPlugins().getMarketplace().getRepositoryUrl();
+        if (repositoryUrl == null || repositoryUrl.isBlank()) {
+            throw new IllegalStateException("bot.plugins.marketplace.repository-url must not be blank");
+        }
+        return URI.create(repositoryUrl.endsWith("/") ? repositoryUrl : repositoryUrl + "/");
+    }
+
+    private URI remoteTreeApiUri() {
+        BotProperties.MarketplaceProperties marketplace = botProperties.getPlugins().getMarketplace();
+        GitHubRepository repository = parseRemoteRepository();
+        String encodedBranch = encodePathSegment(marketplace.getBranch());
+        String relativePath = "repos/" + repository.owner() + "/" + repository.name()
+                + "/git/trees/" + encodedBranch + "?recursive=1";
+        return buildUri(marketplace.getApiBaseUrl(), relativePath);
+    }
+
+    private URI remoteRawFileUri(String filePath) {
+        BotProperties.MarketplaceProperties marketplace = botProperties.getPlugins().getMarketplace();
+        GitHubRepository repository = parseRemoteRepository();
+        String branch = marketplace.getBranch();
+        String relativePath = repository.owner() + "/" + repository.name() + "/" + branch + "/" + filePath;
+        return buildUri(marketplace.getRawBaseUrl(), relativePath);
+    }
+
+    private URI remoteReleaseArtifactUri(PluginCoordinates coordinates, String version, String artifactFileName) {
+        String releaseTag = coordinates.owner() + "-" + coordinates.name() + "-v" + version;
+        String relativePath = "releases/download/" + releaseTag + "/" + artifactFileName;
+        return remoteRepositoryUrl().resolve(relativePath);
+    }
+
+    private String remoteRegistryIndexPath(PluginCoordinates coordinates) {
+        return "registry/" + coordinates.owner() + "/" + coordinates.name() + "/index.yaml";
+    }
+
+    private String remoteRegistryVersionPath(PluginCoordinates coordinates, String version) {
+        return "registry/" + coordinates.owner() + "/" + coordinates.name() + "/versions/" + version + ".yaml";
+    }
+
+    private GitHubRepository parseRemoteRepository() {
+        URI repositoryUrl = remoteRepositoryUrl();
+        String path = repositoryUrl.getPath();
+        if (path == null || path.isBlank()) {
+            throw new IllegalStateException("Marketplace repository URL is invalid: " + repositoryUrl);
+        }
+        String normalizedPath = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
+        if (normalizedPath.endsWith(".git")) {
+            normalizedPath = normalizedPath.substring(0, normalizedPath.length() - 4);
+        }
+        String[] segments = normalizedPath.split("/");
+        if (segments.length < 3) {
+            throw new IllegalStateException("Marketplace repository URL must match <host>/<owner>/<repo>");
+        }
+        String owner = segments[segments.length - 2];
+        String name = segments[segments.length - 1];
+        if (owner.isBlank() || name.isBlank()) {
+            throw new IllegalStateException("Marketplace repository URL must match <host>/<owner>/<repo>");
+        }
+        return new GitHubRepository(owner, name);
+    }
+
+    private URI buildUri(String baseUrl, String relativePath) {
+        if (baseUrl == null || baseUrl.isBlank()) {
+            throw new IllegalStateException("Marketplace base URL must not be blank");
+        }
+        String normalizedBaseUrl = baseUrl.endsWith("/") ? baseUrl : baseUrl + "/";
+        return URI.create(normalizedBaseUrl).resolve(relativePath);
+    }
+
+    private String encodePathSegment(String value) {
+        String encoded = URLEncoder.encode(value, StandardCharsets.UTF_8);
+        return encoded.replace("+", "%20");
+    }
+
     private Path requireDestinationParent(Path pluginsRoot, Path destination) {
         Path destinationParent = destination.getParent();
         if (destinationParent == null) {
@@ -511,7 +956,8 @@ public class PluginMarketplaceService {
         }
         try (Stream<Path> stream = Files.list(pluginDir)) {
             return stream.filter(Files::isDirectory)
-                    .map(path -> path.getFileName().toString())
+                    .map(this::fileNameOrNull)
+                    .filter(version -> version != null && !version.isBlank())
                     .filter(version -> {
                         try {
                             String normalizedVersion = normalizeVersion(version);
@@ -530,7 +976,7 @@ public class PluginMarketplaceService {
 
     private boolean hasJarFile(Path versionDir) {
         try (Stream<Path> stream = Files.list(versionDir)) {
-            return stream.anyMatch(path -> Files.isRegularFile(path) && path.getFileName().toString().endsWith(".jar"));
+            return stream.anyMatch(path -> Files.isRegularFile(path) && fileNameOrEmpty(path).endsWith(".jar"));
         } catch (IOException ex) {
             return false;
         }
@@ -771,6 +1217,16 @@ public class PluginMarketplaceService {
         return normalizedCandidate;
     }
 
+    private String fileNameOrEmpty(Path path) {
+        Path fileName = path != null ? path.getFileName() : null;
+        return fileName != null ? fileName.toString() : "";
+    }
+
+    private String fileNameOrNull(Path path) {
+        Path fileName = path != null ? path.getFileName() : null;
+        return fileName != null ? fileName.toString() : null;
+    }
+
     private String parseArtifactFileName(String artifactUrl, PluginCoordinates coordinates, String version) {
         if (artifactUrl == null || artifactUrl.isBlank()) {
             return null;
@@ -824,7 +1280,7 @@ public class PluginMarketplaceService {
     private record TrustedVersionRecord(
             RegistryVersionMetadata versionMetadata,
             PluginDescriptor descriptor,
-            Path artifactPath,
+            ArtifactReference artifactReference,
             boolean compatible) {
     }
 
@@ -833,6 +1289,63 @@ public class PluginMarketplaceService {
         private String id() {
             return owner + "/" + name;
         }
+    }
+
+    private record ArtifactReference(Path localPath, URI remoteUri) {
+
+        private static ArtifactReference local(Path path) {
+            return new ArtifactReference(path, null);
+        }
+
+        private static ArtifactReference remote(URI uri) {
+            return new ArtifactReference(null, uri);
+        }
+
+        private static ArtifactReference missing() {
+            return new ArtifactReference(null, null);
+        }
+
+        private boolean isAvailable() {
+            if (localPath != null) {
+                return Files.isRegularFile(localPath);
+            }
+            return remoteUri != null;
+        }
+
+        private String fileName() {
+            if (localPath != null) {
+                Path fileNamePath = localPath.getFileName();
+                if (fileNamePath == null) {
+                    throw new IllegalStateException("Artifact path has no file name: " + localPath);
+                }
+                return fileNamePath.toString();
+            }
+            if (remoteUri != null) {
+                String path = remoteUri.getPath();
+                if (path != null && !path.isBlank()) {
+                    int separatorIndex = path.lastIndexOf('/');
+                    String fileName = separatorIndex >= 0 ? path.substring(separatorIndex + 1) : path;
+                    if (!fileName.isBlank()) {
+                        return fileName;
+                    }
+                }
+            }
+            throw new IllegalStateException("Artifact source has no file name");
+        }
+
+        @Override
+        public String toString() {
+            if (localPath != null) {
+                return localPath.toString();
+            }
+            return remoteUri != null ? remoteUri.toString() : "unavailable";
+        }
+    }
+
+    private record RemoteCatalogCache(Instant loadedAt, Map<String, TrustedPluginRecord> trustedPlugins) {
+    }
+
+    private record GitHubRepository(String owner, String name) {
     }
 
     @Data
