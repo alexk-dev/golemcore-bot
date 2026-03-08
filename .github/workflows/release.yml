@@ -177,7 +177,7 @@ jobs:
 
       - name: Install plugin API artifacts
         if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
-        run: mvn -B -ntp -f golemcore-plugins/pom.xml -pl extension-api,runtime-api -am install -DskipTests
+        run: mvn -B -ntp -Dmaven.multiModuleProjectDirectory="${{ github.workspace }}/golemcore-plugins" -f golemcore-plugins/pom.xml -pl extension-api,runtime-api -am install -DskipTests
 
       - name: Build release JAR
         if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'

@@ -101,7 +101,7 @@ class SettingsControllerTest {
         MemoryPreset preset = MemoryPreset.builder()
                 .id("coding_balanced")
                 .label("Coding Balanced")
-                .comment("Универсальный дефолт для большинства разработчиков.")
+                .comment("Balanced default for most developers.")
                 .memory(RuntimeConfig.MemoryConfig.builder()
                         .softPromptBudgetTokens(1800)
                         .maxPromptBudgetTokens(3500)

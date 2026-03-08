@@ -52,7 +52,8 @@ public class RagIndexingSystem implements AgentSystem {
 
     private static final Set<String> TRIVIAL_PATTERNS = Set.of(
             "hi", "hello", "hey", "bye", "thanks", "thank you", "ok", "okay",
-            "yes", "no", "привет", "пока", "спасибо", "да", "нет");
+            "yes", "no", "\u043f\u0440\u0438\u0432\u0435\u0442", "\u043f\u043e\u043a\u0430",
+            "\u0441\u043f\u0430\u0441\u0438\u0431\u043e", "\u0434\u0430", "\u043d\u0435\u0442");
 
     @Override
     public String getName() {
