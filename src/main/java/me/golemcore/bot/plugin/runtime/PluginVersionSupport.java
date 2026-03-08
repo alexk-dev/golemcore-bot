@@ -44,8 +44,8 @@ final class PluginVersionSupport {
     }
 
     static int compareVersions(String left, String right) {
-        SemVer leftVersion = parseSemVer(left);
-        SemVer rightVersion = parseSemVer(right);
+        PluginSemVer leftVersion = parseSemVer(left);
+        PluginSemVer rightVersion = parseSemVer(right);
         int mainComparison = Integer.compare(leftVersion.major(), rightVersion.major());
         if (mainComparison != 0) {
             return mainComparison;
@@ -149,18 +149,19 @@ final class PluginVersionSupport {
         return 0;
     }
 
-    private static SemVer parseSemVer(String version) {
+    private static PluginSemVer parseSemVer(String version) {
         Matcher matcher = SEMVER_PATTERN.matcher(version);
         if (!matcher.matches()) {
             throw new IllegalArgumentException("Invalid SemVer: " + version);
         }
-        return new SemVer(
+        return new PluginSemVer(
                 Integer.parseInt(matcher.group(1)),
                 Integer.parseInt(matcher.group(2)),
                 matcher.group(3) != null ? Integer.parseInt(matcher.group(3)) : 0,
                 matcher.group(4));
     }
 
-    private record SemVer(int major, int minor, int patch, String preRelease) {
-    }
+}
+
+record PluginSemVer(int major, int minor, int patch, String preRelease) {
 }

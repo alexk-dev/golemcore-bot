@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.net.URLEncoder;
+import java.net.URLDecoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -40,6 +41,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.jar.JarFile;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
@@ -60,6 +63,10 @@ public class PluginMarketplaceService {
     private static final Map<String, String> DISPLAY_NAME_OVERRIDES = Map.of(
             "lightrag", "LightRAG",
             "elevenlabs", "ElevenLabs");
+    private static final Pattern GITHUB_PACKAGE_ENTRY_PATTERN = Pattern.compile(
+            "title=\"([^\"]+)\" href=\"(/[^\"]+/packages/\\d+)\"");
+    private static final Pattern GITHUB_PACKAGE_DOWNLOAD_PATTERN = Pattern.compile(
+            "href=\"(https?://[^\"]+)\"");
 
     private final BotProperties botProperties;
     private final ObjectProvider<BuildProperties> buildPropertiesProvider;
@@ -192,11 +199,7 @@ public class PluginMarketplaceService {
 
         String status = resolveInstallStatus(previouslyInstalledVersion, trustedVersion);
         String message = buildInstallMessage(plugin, status, loaded);
-        return PluginInstallResult.builder()
-                .status(status)
-                .message(message)
-                .plugin(plugin)
-                .build();
+        return new PluginInstallResult(status, message, plugin);
     }
 
     private List<PluginMarketplaceItem> loadMarketplaceItems(
@@ -346,11 +349,13 @@ public class PluginMarketplaceService {
 
     private Map<String, TrustedPluginRecord> fetchRemoteCatalogPlugins(String engineVersion) {
         RemoteRepositoryTree repositoryTree = fetchRemoteRepositoryTree();
+        Map<String, URI> packagePageUrisByArtifactId = fetchRemotePackagePageUris();
         List<String> indexPaths = repositoryTree.indexPaths();
         Map<String, TrustedPluginRecord> trustedPlugins = new LinkedHashMap<>();
         for (String indexPath : indexPaths) {
             try {
-                TrustedPluginRecord plugin = loadRemoteCatalogPlugin(indexPath, engineVersion, repositoryTree);
+                TrustedPluginRecord plugin = loadRemoteCatalogPlugin(indexPath, engineVersion,
+                        packagePageUrisByArtifactId);
                 if (plugin != null) {
                     trustedPlugins.putIfAbsent(plugin.coordinates().id(), plugin);
                 }
@@ -364,7 +369,7 @@ public class PluginMarketplaceService {
     private TrustedPluginRecord loadRemoteCatalogPlugin(
             String indexPath,
             String engineVersion,
-            RemoteRepositoryTree repositoryTree) {
+            Map<String, URI> packagePageUrisByArtifactId) {
         RegistryIndexMetadata index = fetchRemoteYaml(indexPath, RegistryIndexMetadata.class);
         if (index == null || index.getId() == null || index.getLatest() == null) {
             return null;
@@ -381,7 +386,7 @@ public class PluginMarketplaceService {
                 coordinates,
                 index,
                 engineVersion,
-                repositoryTree);
+                packagePageUrisByArtifactId);
         return new TrustedPluginRecord(
                 coordinates,
                 index,
@@ -390,7 +395,7 @@ public class PluginMarketplaceService {
     }
 
     private TrustedPluginRecord loadRemotePlugin(PluginCoordinates coordinates, String engineVersion) {
-        RemoteRepositoryTree repositoryTree = fetchRemoteRepositoryTree();
+        Map<String, URI> packagePageUrisByArtifactId = fetchRemotePackagePageUris();
         RegistryIndexMetadata index = fetchRemoteYaml(remoteRegistryIndexPath(coordinates),
                 RegistryIndexMetadata.class);
         if (index == null || index.getId() == null) {
@@ -407,7 +412,7 @@ public class PluginMarketplaceService {
                 coordinates,
                 index,
                 engineVersion,
-                repositoryTree);
+                packagePageUrisByArtifactId);
         String latestVersion = resolvePublishedVersion(index.getLatest(), index.getVersions(), versions.keySet());
         return new TrustedPluginRecord(coordinates, index, versions, latestVersion);
     }
@@ -416,7 +421,7 @@ public class PluginMarketplaceService {
             PluginCoordinates coordinates,
             RegistryIndexMetadata index,
             String engineVersion,
-            RemoteRepositoryTree repositoryTree) {
+            Map<String, URI> packagePageUrisByArtifactId) {
         List<String> versionsToLoad = new ArrayList<>();
         if (index.getVersions() != null && !index.getVersions().isEmpty()) {
             versionsToLoad.addAll(index.getVersions());
@@ -431,7 +436,7 @@ public class PluginMarketplaceService {
         for (String version : versionsToLoad) {
             try {
                 TrustedVersionRecord versionRecord = loadRemoteVersionRecord(coordinates, index, version,
-                        engineVersion, repositoryTree);
+                        engineVersion, packagePageUrisByArtifactId);
                 versions.put(versionRecord.versionMetadata().getVersion(), versionRecord);
             } catch (RuntimeException ex) {
                 log.warn("[Plugins] Failed to read remote marketplace version {} {}: {}",
@@ -448,11 +453,12 @@ public class PluginMarketplaceService {
             PluginCoordinates coordinates,
             RegistryIndexMetadata index,
             String engineVersion,
-            RemoteRepositoryTree repositoryTree) {
+            Map<String, URI> packagePageUrisByArtifactId) {
         RuntimeException lastError = null;
         for (String candidate : buildRemoteVersionCandidates(index)) {
             try {
-                return loadRemoteVersionRecord(coordinates, index, candidate, engineVersion, repositoryTree);
+                return loadRemoteVersionRecord(coordinates, index, candidate, engineVersion,
+                        packagePageUrisByArtifactId);
             } catch (RuntimeException ex) {
                 lastError = ex;
             }
@@ -489,13 +495,13 @@ public class PluginMarketplaceService {
             RegistryIndexMetadata index,
             String version,
             String engineVersion,
-            RemoteRepositoryTree repositoryTree) {
+            Map<String, URI> packagePageUrisByArtifactId) {
         RegistryVersionMetadata versionMetadata = fetchRemoteYaml(
                 remoteRegistryVersionPath(coordinates, version),
                 RegistryVersionMetadata.class);
         normalizeVersionMetadata(versionMetadata, coordinates);
         ArtifactReference artifactReference = resolveRemoteArtifactReference(coordinates, versionMetadata,
-                repositoryTree);
+                packagePageUrisByArtifactId);
         PluginDescriptor descriptor = buildDescriptorFromMetadata(versionMetadata, index);
         boolean compatible = PluginVersionSupport.matchesVersionConstraint(
                 engineVersion,
@@ -867,20 +873,33 @@ public class PluginMarketplaceService {
     private ArtifactReference resolveRemoteArtifactReference(
             PluginCoordinates coordinates,
             RegistryVersionMetadata versionMetadata,
-            RemoteRepositoryTree repositoryTree) {
+            Map<String, URI> packagePageUrisByArtifactId) {
         String artifactUrl = versionMetadata.getArtifactUrl();
         if (artifactUrl == null || artifactUrl.isBlank()) {
             return ArtifactReference.missing();
         }
         if (looksLikeAbsoluteHttpUrl(artifactUrl)) {
-            return ArtifactReference.remote(URI.create(artifactUrl));
+            URI artifactUri = URI.create(artifactUrl);
+            String artifactFileName = resolveRemoteArtifactFileName(artifactUri);
+            return artifactFileName != null
+                    ? ArtifactReference.remote(artifactUri, artifactFileName)
+                    : ArtifactReference.missing();
         }
-        Path artifactPath = parseArtifactRelativePath(artifactUrl, coordinates, versionMetadata.getVersion());
-        String normalizedArtifactPath = toRepositoryPath(artifactPath);
-        if (!repositoryTree.blobPaths().contains(normalizedArtifactPath)) {
+        String artifactFileName = parseArtifactFileName(artifactUrl, coordinates, versionMetadata.getVersion());
+        if (artifactFileName == null) {
             return ArtifactReference.missing();
         }
-        return ArtifactReference.remote(remoteRawFileUri(normalizedArtifactPath));
+        URI packagePageUri = findRemotePackagePageUri(packagePageUrisByArtifactId, artifactFileName,
+                versionMetadata.getVersion());
+        if (packagePageUri == null) {
+            return ArtifactReference.missing();
+        }
+        URI downloadUri = resolveRemotePackageDownloadUri(packagePageUri, versionMetadata.getVersion(),
+                artifactFileName);
+        if (downloadUri == null) {
+            return ArtifactReference.missing();
+        }
+        return ArtifactReference.remote(downloadUri, artifactFileName);
     }
 
     private boolean looksLikeAbsoluteHttpUrl(String value) {
@@ -919,12 +938,108 @@ public class PluginMarketplaceService {
         return buildUri(marketplace.getRawBaseUrl(), relativePath);
     }
 
+    private URI remotePackagesPageUri() {
+        return remoteRepositoryUrl().resolve("packages");
+    }
+
     private String remoteRegistryIndexPath(PluginCoordinates coordinates) {
         return "registry/" + coordinates.owner() + "/" + coordinates.name() + "/index.yaml";
     }
 
     private String remoteRegistryVersionPath(PluginCoordinates coordinates, String version) {
         return "registry/" + coordinates.owner() + "/" + coordinates.name() + "/versions/" + version + ".yaml";
+    }
+
+    private Map<String, URI> fetchRemotePackagePageUris() {
+        URI packagesUri = remotePackagesPageUri();
+        String responseBody = fetchText(packagesUri, METADATA_REQUEST_TIMEOUT);
+        Matcher matcher = GITHUB_PACKAGE_ENTRY_PATTERN.matcher(responseBody);
+        Map<String, URI> packagePageUris = new LinkedHashMap<>();
+        while (matcher.find()) {
+            String packageName = matcher.group(1);
+            String artifactId = artifactIdFromPackageName(packageName);
+            if (artifactId == null) {
+                continue;
+            }
+            URI packagePageUri = remoteRepositoryUrl().resolve(matcher.group(2));
+            packagePageUris.putIfAbsent(artifactId, packagePageUri);
+        }
+        return Map.copyOf(packagePageUris);
+    }
+
+    private String artifactIdFromPackageName(String packageName) {
+        if (packageName == null || packageName.isBlank()) {
+            return null;
+        }
+        int separatorIndex = packageName.lastIndexOf('.');
+        String artifactId = separatorIndex >= 0 ? packageName.substring(separatorIndex + 1) : packageName;
+        return artifactId.isBlank() ? null : artifactId;
+    }
+
+    private URI findRemotePackagePageUri(
+            Map<String, URI> packagePageUrisByArtifactId,
+            String artifactFileName,
+            String version) {
+        String artifactId = parseArtifactId(artifactFileName, version);
+        return packagePageUrisByArtifactId.get(artifactId);
+    }
+
+    private URI resolveRemotePackageDownloadUri(URI packagePageUri, String version, String artifactFileName) {
+        URI versionPageUri = appendQueryParameter(packagePageUri, "version", version);
+        String responseBody = fetchText(versionPageUri, METADATA_REQUEST_TIMEOUT);
+        Matcher matcher = GITHUB_PACKAGE_DOWNLOAD_PATTERN.matcher(responseBody);
+        while (matcher.find()) {
+            String href = decodeHtmlHref(matcher.group(1));
+            URI candidate = URI.create(href);
+            String fileName = resolveRemoteArtifactFileName(candidate);
+            if (artifactFileName.equals(fileName)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private URI appendQueryParameter(URI uri, String name, String value) {
+        String separator = uri.getQuery() == null || uri.getQuery().isBlank() ? "?" : "&";
+        return URI.create(uri + separator + encodePathSegment(name) + "=" + encodePathSegment(value));
+    }
+
+    private String decodeHtmlHref(String href) {
+        return href.replace("&amp;", "&");
+    }
+
+    private String resolveRemoteArtifactFileName(URI artifactUri) {
+        String dispositionFileName = extractDispositionFileName(artifactUri);
+        if (dispositionFileName != null) {
+            return dispositionFileName;
+        }
+        String path = artifactUri.getPath();
+        if (path == null || path.isBlank()) {
+            return null;
+        }
+        int separatorIndex = path.lastIndexOf('/');
+        String fileName = separatorIndex >= 0 ? path.substring(separatorIndex + 1) : path;
+        return fileName.isBlank() ? null : fileName;
+    }
+
+    private String extractDispositionFileName(URI artifactUri) {
+        String query = artifactUri.getRawQuery();
+        if (query == null || query.isBlank()) {
+            return null;
+        }
+        for (String segment : query.split("&")) {
+            int separatorIndex = segment.indexOf('=');
+            String name = separatorIndex >= 0 ? segment.substring(0, separatorIndex) : segment;
+            if (!"response-content-disposition".equals(name)) {
+                continue;
+            }
+            String value = separatorIndex >= 0 ? segment.substring(separatorIndex + 1) : "";
+            String decoded = URLDecoder.decode(value, StandardCharsets.UTF_8);
+            if (decoded.startsWith("filename=") && decoded.length() > "filename=".length()) {
+                return decoded.substring("filename=".length());
+            }
+        }
+        return null;
     }
 
     private GitHubRepository parseRemoteRepository() {
@@ -1259,6 +1374,16 @@ public class PluginMarketplaceService {
         return fileName != null ? fileName.toString() : null;
     }
 
+    private String parseArtifactId(String artifactFileName, String version) {
+        String normalizedVersion = normalizeVersion(version);
+        String validatedFileName = validateFileName(artifactFileName, ".jar", "artifact file name");
+        String versionSuffix = "-" + normalizedVersion + ".jar";
+        if (validatedFileName.endsWith(versionSuffix) && validatedFileName.length() > versionSuffix.length()) {
+            return validatedFileName.substring(0, validatedFileName.length() - versionSuffix.length());
+        }
+        return validatedFileName.substring(0, validatedFileName.length() - ".jar".length());
+    }
+
     private String parseArtifactFileName(String artifactUrl, PluginCoordinates coordinates, String version) {
         Path artifactPath = parseArtifactRelativePath(artifactUrl, coordinates, version);
         if (artifactPath == null) {
@@ -1299,13 +1424,6 @@ public class PluginMarketplaceService {
         return candidate;
     }
 
-    private String toRepositoryPath(Path path) {
-        if (path == null) {
-            throw new IllegalArgumentException("Repository path is required");
-        }
-        return path.toString().replace('\\', '/');
-    }
-
     private Path artifactDirectory(Path repositoryRoot, PluginCoordinates coordinates, String version) {
         Path distRoot = ensureContainedInRoot(repositoryRoot, repositoryRoot.resolve("dist"), "plugin artifact root");
         String safeVersion = normalizeVersion(version);
@@ -1343,44 +1461,31 @@ public class PluginMarketplaceService {
         }
     }
 
-    private record ArtifactReference(Path localPath, URI remoteUri) {
+    private record ArtifactReference(Path localPath, URI remoteUri, String artifactFileName) {
 
         private static ArtifactReference local(Path path) {
-            return new ArtifactReference(path, null);
+            Path fileNamePath = path != null ? path.getFileName() : null;
+            return new ArtifactReference(path, null, fileNamePath != null ? fileNamePath.toString() : null);
         }
 
-        private static ArtifactReference remote(URI uri) {
-            return new ArtifactReference(null, uri);
+        private static ArtifactReference remote(URI uri, String fileName) {
+            return new ArtifactReference(null, uri, fileName);
         }
 
         private static ArtifactReference missing() {
-            return new ArtifactReference(null, null);
+            return new ArtifactReference(null, null, null);
         }
 
         private boolean isAvailable() {
             if (localPath != null) {
                 return Files.isRegularFile(localPath);
             }
-            return remoteUri != null;
+            return remoteUri != null && artifactFileName != null && !artifactFileName.isBlank();
         }
 
         private String fileName() {
-            if (localPath != null) {
-                Path fileNamePath = localPath.getFileName();
-                if (fileNamePath == null) {
-                    throw new IllegalStateException("Artifact path has no file name: " + localPath);
-                }
-                return fileNamePath.toString();
-            }
-            if (remoteUri != null) {
-                String path = remoteUri.getPath();
-                if (path != null && !path.isBlank()) {
-                    int separatorIndex = path.lastIndexOf('/');
-                    String fileName = separatorIndex >= 0 ? path.substring(separatorIndex + 1) : path;
-                    if (!fileName.isBlank()) {
-                        return fileName;
-                    }
-                }
+            if (artifactFileName != null && !artifactFileName.isBlank()) {
+                return artifactFileName;
             }
             throw new IllegalStateException("Artifact source has no file name");
         }

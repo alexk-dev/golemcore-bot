@@ -570,6 +570,10 @@ class PluginMarketplaceServiceTest {
         String artifactFileName = artifactPath.getFileName().toString();
         String checksum = sha256(artifactPath);
         String artifactRepositoryPath = "dist/" + parts[0] + "/" + parts[1] + "/" + version + "/" + artifactFileName;
+        String artifactId = artifactFileName.substring(0,
+                artifactFileName.length() - ("-" + version + ".jar").length());
+        String packageName = "me.golemcore.plugins." + artifactId;
+        String packagePagePath = "/alexk-dev/golemcore-plugins/packages/2891620";
         String indexYaml = """
                 id: %s
                 owner: %s
@@ -603,31 +607,25 @@ class PluginMarketplaceServiceTest {
                 parts[0],
                 parts[1]);
 
-        String treeJson = artifactAvailable
+        String treeJson = """
+                {
+                  "tree": [
+                    {
+                      "path": "registry/%s/%s/index.yaml",
+                      "type": "blob"
+                    }
+                  ]
+                }
+                """.formatted(parts[0], parts[1]);
+        String packagesHtml = artifactAvailable
                 ? """
-                        {
-                          "tree": [
-                            {
-                              "path": "registry/%s/%s/index.yaml",
-                              "type": "blob"
-                            },
-                            {
-                              "path": "%s",
-                              "type": "blob"
-                            }
-                          ]
-                        }
-                        """.formatted(parts[0], parts[1], artifactRepositoryPath)
-                : """
-                        {
-                          "tree": [
-                            {
-                              "path": "registry/%s/%s/index.yaml",
-                              "type": "blob"
-                            }
-                          ]
-                        }
-                        """.formatted(parts[0], parts[1]);
+                        <html>
+                          <body>
+                            <a class="text-bold f4 Link--primary" title="%s" href="%s">%s</a>
+                          </body>
+                        </html>
+                        """.formatted(packageName, packagePagePath, packageName)
+                : "<html><body></body></html>";
 
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
         server.createContext("/api/repos/alexk-dev/golemcore-plugins/git/trees/main",
@@ -637,8 +635,24 @@ class PluginMarketplaceServiceTest {
         server.createContext("/raw/alexk-dev/golemcore-plugins/main/registry/" + parts[0] + "/" + parts[1]
                 + "/versions/" + version + ".yaml",
                 exchange -> respond(exchange, 200, "text/plain; charset=utf-8", versionYaml));
+        server.createContext("/alexk-dev/golemcore-plugins/packages",
+                exchange -> respond(exchange, 200, "text/html; charset=utf-8", packagesHtml));
         if (artifactAvailable) {
-            server.createContext("/raw/alexk-dev/golemcore-plugins/main/" + artifactRepositoryPath,
+            server.createContext(packagePagePath, exchange -> {
+                int port = exchange.getLocalAddress().getPort();
+                String detailHtml = """
+                        <html>
+                          <body>
+                            <a href="http://127.0.0.1:%d/downloads/%s?response-content-disposition=filename%%3D%s&amp;response-content-type=application%%2Foctet-stream" class="d-flex">
+                              %s
+                            </a>
+                          </body>
+                        </html>
+                        """
+                        .formatted(port, artifactId, artifactFileName, artifactFileName);
+                respond(exchange, 200, "text/html; charset=utf-8", detailHtml);
+            });
+            server.createContext("/downloads/" + artifactId,
                     exchange -> respond(exchange, 200, "application/java-archive", Files.readAllBytes(artifactPath)));
         }
         server.start();
