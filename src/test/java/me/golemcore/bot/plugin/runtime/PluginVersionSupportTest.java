@@ -32,6 +32,10 @@ class PluginVersionSupportTest {
     @Test
     void shouldNormalizeSnapshotHostVersions() {
         assertEquals("1.4.0", PluginVersionSupport.normalizeHostVersion("1.4.0-SNAPSHOT"));
+        assertEquals("0.12.0",
+                PluginVersionSupport.normalizeHostVersion("0.12.0-feat_plugin_runtime_marketplace"));
+        assertEquals("1.2.3",
+                PluginVersionSupport.normalizeHostVersion("1.2.3-rc_1+build.5"));
         assertEquals("0.0.0", PluginVersionSupport.normalizeHostVersion(" "));
     }
 }

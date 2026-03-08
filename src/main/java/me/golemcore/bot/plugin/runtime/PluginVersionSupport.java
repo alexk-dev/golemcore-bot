@@ -75,10 +75,35 @@ final class PluginVersionSupport {
             return "0.0.0";
         }
         String normalized = version.trim();
-        if (normalized.endsWith("-SNAPSHOT")) {
-            return normalized.substring(0, normalized.length() - "-SNAPSHOT".length());
+        StringBuilder baseVersion = new StringBuilder(normalized.length());
+        int numericParts = 0;
+        int index = 0;
+        while (index < normalized.length() && numericParts < 3) {
+            int partStart = index;
+            while (index < normalized.length() && Character.isDigit(normalized.charAt(index))) {
+                index++;
+            }
+            if (partStart == index) {
+                break;
+            }
+            if (baseVersion.length() > 0) {
+                baseVersion.append('.');
+            }
+            baseVersion.append(normalized, partStart, index);
+            numericParts++;
+            if (index >= normalized.length() || normalized.charAt(index) != '.') {
+                break;
+            }
+            index++;
         }
-        return normalized;
+        if (numericParts == 0) {
+            return "0.0.0";
+        }
+        while (numericParts < 3) {
+            baseVersion.append(".0");
+            numericParts++;
+        }
+        return baseVersion.toString();
     }
 
     private static String extractOperator(String token) {

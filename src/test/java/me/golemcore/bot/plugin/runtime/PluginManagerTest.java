@@ -115,6 +115,19 @@ class PluginManagerTest {
         assertTrue(manager.listPlugins().isEmpty());
     }
 
+    @Test
+    void shouldLoadPluginWhenHostVersionUsesBranchSuffix(@TempDir Path tempDir) throws Exception {
+        Path pluginsDir = tempDir.resolve("plugins");
+        createPluginJar(pluginsDir, "golemcore/browser", "1.0.0", ">=0.12.0 <1.0.0");
+        manager = createManager(pluginsDir, "0.12.0-feat_plugin_runtime_marketplace");
+
+        manager.reloadAll();
+
+        List<PluginRuntimeInfo> plugins = manager.listPlugins();
+        assertEquals(1, plugins.size());
+        assertEquals("golemcore/browser", plugins.getFirst().getId());
+    }
+
     private PluginManager createManager(Path pluginsDir, String hostVersion) {
         BotProperties properties = new BotProperties();
         properties.getPlugins().setEnabled(true);
