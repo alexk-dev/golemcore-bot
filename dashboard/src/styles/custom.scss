@@ -1457,6 +1457,46 @@ textarea:focus-visible,
   flex-wrap: wrap;
 }
 
+.plugin-market-official-badge {
+  --plugin-market-official-bg: rgba(var(--bs-primary-rgb), 0.12);
+  --plugin-market-official-border: rgba(var(--bs-primary-rgb), 0.2);
+  --plugin-market-official-color: var(--bs-primary-text-emphasis);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding-inline: 0.68em;
+  background:
+    linear-gradient(135deg, rgba(var(--bs-info-rgb), 0.1), rgba(var(--bs-primary-rgb), 0.04)),
+    var(--plugin-market-official-bg);
+  color: var(--plugin-market-official-color);
+  border: 1px solid var(--plugin-market-official-border);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.plugin-market-official-badge::before {
+  content: "";
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.82;
+  box-shadow: 0 0 0 0.12rem rgba(var(--bs-primary-rgb), 0.16);
+}
+
+[data-bs-theme="light"] .plugin-market-official-badge {
+  --plugin-market-official-bg: rgba(var(--bs-primary-rgb), 0.12);
+  --plugin-market-official-border: rgba(var(--bs-primary-rgb), 0.18);
+  --plugin-market-official-color: #0b3f63;
+}
+
+[data-bs-theme="dark"] .plugin-market-official-badge {
+  --plugin-market-official-bg: rgba(var(--bs-info-rgb), 0.2);
+  --plugin-market-official-border: rgba(var(--bs-info-rgb), 0.32);
+  --plugin-market-official-color: #d7f2ff;
+}
+
 .plugin-market-plugin-id {
   margin-top: 0.2rem;
   font-size: 0.76rem;

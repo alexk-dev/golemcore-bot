@@ -236,7 +236,7 @@ export function PluginMarketplaceCard({
           <div className="min-w-0 flex-grow-1">
             <div className="plugin-market-title-row">
               <h3 className="h6 mb-0">{item.name}</h3>
-              {item.official && <Badge bg="dark-subtle" text="dark">Official</Badge>}
+              {item.official && <span className="badge plugin-market-official-badge">Official</span>}
             </div>
             <div className="plugin-market-plugin-id">{item.id}</div>
           </div>
