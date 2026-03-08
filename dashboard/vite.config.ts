@@ -1,9 +1,15 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { fileURLToPath, URL } from 'node:url';
 
 export default defineConfig({
   plugins: [react()],
   base: '/dashboard/',
+  resolve: {
+    alias: {
+      'react-bootstrap': fileURLToPath(new URL('./src/lib/react-bootstrap.tsx', import.meta.url)),
+    },
+  },
   build: {
     outDir: '../src/main/resources/static/dashboard',
     emptyOutDir: true,
@@ -39,9 +45,8 @@ export default defineConfig({
           }
 
           if (
-            id.includes('react-bootstrap') ||
-            id.includes('bootstrap') ||
-            id.includes('bootswatch') ||
+            id.includes('class-variance-authority') ||
+            id.includes('tailwind-merge') ||
             id.includes('react-hot-toast') ||
             id.includes('react-icons')
           ) {

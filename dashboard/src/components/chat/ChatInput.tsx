@@ -65,6 +65,7 @@ function ChatInputActions({
   isSubmitDisabled,
 }: ChatInputActionsProps) {
   const voiceButtonCopy = getVoiceButtonCopy(speechSupported, isRecording);
+  const voiceLabel = isRecording ? 'Listening' : 'Voice';
 
   return (
     <div className="chat-input-actions">
@@ -72,7 +73,10 @@ function ChatInputActions({
         <Button type="button" variant="secondary" disabled={isDisabled}
           onClick={onAttachClick}
           className={iconBtnClass} title="Attach images" aria-label="Attach images">
-          <FiPaperclip size={24} />
+          <span className="chat-action-icon" aria-hidden="true">
+            <FiPaperclip size={18} />
+          </span>
+          <span className="chat-action-label">Images</span>
         </Button>
         <Button type="button" variant={isRecording ? 'danger' : 'secondary'}
           disabled={isDisabled || !speechSupported} onClick={onVoiceToggle}
@@ -80,17 +84,26 @@ function ChatInputActions({
           title={voiceButtonCopy.title}
           aria-label={voiceButtonCopy.label}
           aria-pressed={isRecording}>
-          {isRecording ? <FiSquare size={22} /> : <FiMic size={24} />}
+          <span className="chat-action-icon" aria-hidden="true">
+            {isRecording ? <FiSquare size={16} /> : <FiMic size={18} />}
+          </span>
+          <span className="chat-action-label">{voiceLabel}</span>
         </Button>
       </div>
       {running === true && onStop !== undefined ? (
         <Button type="button" variant="danger" onClick={onStop}
           className={btnClass} title="Stop generation" aria-label="Stop generation">
-          <FiStopCircle size={20} />
+          <span className="chat-action-icon" aria-hidden="true">
+            <FiStopCircle size={18} />
+          </span>
+          <span className="chat-action-label">Stop</span>
         </Button>
       ) : (
         <Button type="submit" variant="primary" disabled={isSubmitDisabled} className={btnClass} aria-label="Send message" title="Send message">
-          <FiSend size={18} />
+          <span className="chat-action-icon" aria-hidden="true">
+            <FiSend size={17} />
+          </span>
+          <span className="chat-action-label">Send</span>
         </Button>
       )}
     </div>
@@ -248,7 +261,7 @@ export default function ChatInput({ onSend, disabled, running, onStop }: Props) 
 
   const shellClasses = `chat-input-shell${isFocused ? ' chat-input-shell--focused' : ''}${isDragOver ? ' chat-drop-target-active' : ''}`;
   const isSubmitDisabled = isDisabled || (text.trim().length === 0 && attachments.length === 0);
-  const btnClass = 'chat-send-btn rounded-circle d-flex align-items-center justify-content-center';
+  const btnClass = 'chat-send-btn d-flex align-items-center justify-content-center';
   const iconBtnClass = 'chat-inline-icon-btn d-flex align-items-center justify-content-center';
   const activeSuggestion = suggestions[activeIndex];
 
