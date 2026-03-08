@@ -702,7 +702,8 @@ public class PluginMarketplaceService {
         }
         validateRelativePath(candidate, true);
         if (candidate.getNameCount() != 5) {
-            throw new IllegalArgumentException("Marketplace artifact path must match dist/<owner>/<plugin>/<version>/<file>");
+            throw new IllegalArgumentException(
+                    "Marketplace artifact path must match dist/<owner>/<plugin>/<version>/<file>");
         }
         if (!"dist".equals(candidate.getName(0).toString())) {
             throw new IllegalArgumentException("Marketplace artifact path must stay under dist/");

@@ -80,7 +80,8 @@ class PluginVoicePortTest {
         when(runtimeConfigService.getTtsProvider()).thenReturn("golemcore/elevenlabs");
         when(ttsProvider.getProviderId()).thenReturn("golemcore/elevenlabs");
         when(ttsProvider.isAvailable()).thenReturn(true);
-        when(ttsProvider.synthesize(anyString(), any(me.golemcore.plugin.api.extension.port.outbound.VoicePort.VoiceConfig.class)))
+        when(ttsProvider.synthesize(anyString(),
+                any(me.golemcore.plugin.api.extension.port.outbound.VoicePort.VoiceConfig.class)))
                 .thenReturn(CompletableFuture.failedFuture(
                         new me.golemcore.plugin.api.extension.port.outbound.VoicePort.QuotaExceededException(
                                 "quota exceeded")));
