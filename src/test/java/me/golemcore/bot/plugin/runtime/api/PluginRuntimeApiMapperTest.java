@@ -162,11 +162,11 @@ class PluginRuntimeApiMapperTest {
                 .build();
 
         me.golemcore.plugin.api.runtime.model.RuntimeConfig pluginConfig = mapper.toPluginRuntimeConfig(runtimeConfig);
-        assertNull(pluginConfig.getTelegram().getAllowedUsers());
+        assertTrue(pluginConfig.getTelegram().getAllowedUsers().isEmpty());
         assertTrue(pluginConfig.getTelegram().getInviteCodes().isEmpty());
 
         me.golemcore.bot.domain.model.RuntimeConfig mappedBack = mapper.toHostRuntimeConfig(pluginConfig);
-        assertNull(mappedBack.getTelegram().getAllowedUsers());
+        assertTrue(mappedBack.getTelegram().getAllowedUsers().isEmpty());
         assertTrue(mappedBack.getTelegram().getInviteCodes().isEmpty());
 
         me.golemcore.bot.domain.model.SessionIdentity hostSessionIdentity = mapper.toHostSessionIdentity(

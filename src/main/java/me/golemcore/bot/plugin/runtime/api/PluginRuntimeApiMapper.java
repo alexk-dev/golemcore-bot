@@ -380,7 +380,7 @@ public class PluginRuntimeApiMapper {
 
     private static Map<String, Object> copyMap(Map<String, Object> source) {
         if (source == null) {
-            return null;
+            return Map.of();
         }
         Map<String, Object> copied = new LinkedHashMap<>();
         source.forEach((key, value) -> copied.put(key, copyObject(value)));
@@ -388,7 +388,7 @@ public class PluginRuntimeApiMapper {
     }
 
     private static List<String> copyList(List<String> source) {
-        return source == null ? null : List.copyOf(source);
+        return source == null ? List.of() : List.copyOf(source);
     }
 
     private static Object copyObject(Object source) {

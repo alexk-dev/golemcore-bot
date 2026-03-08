@@ -24,7 +24,6 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -123,7 +122,7 @@ class WebSocketLogsHandlerTest {
 
         Map<String, Object> payload = objectMapper.readValue(
                 sentPayloads.get(0),
-                new TypeReference<Map<String, Object>>() {
+                new TypeReference<>() {
                 });
         assertEquals("log_batch", payload.get("type"));
 

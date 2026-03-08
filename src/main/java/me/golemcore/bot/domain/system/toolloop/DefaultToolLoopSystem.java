@@ -630,7 +630,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
 
         Throwable current = throwable;
         int depth = 0;
-        while (current.getCause() != null && current.getCause() != current && depth < 32) {
+        while (current.getCause() != null && !current.equals(current.getCause()) && depth < 32) {
             current = current.getCause();
             depth++;
         }

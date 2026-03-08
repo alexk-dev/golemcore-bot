@@ -35,8 +35,10 @@ import java.util.Comparator;
 import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
@@ -89,6 +91,10 @@ public class SessionRunCoordinator {
         log.info("[Stop] stop requested while no active runner: channel={}, chatId={}", channelType, chatId);
     }
 
+    int runnerCount() {
+        return runners.size();
+    }
+
     private final class SessionRunner {
 
         private final SessionKey key;
@@ -97,7 +103,7 @@ public class SessionRunCoordinator {
         private final Deque<Message> queuedFollowUpMessages = new ArrayDeque<>();
 
         private boolean pausedAfterStop = false;
-        private Future<?> runningTask;
+        private Optional<Future<?>> runningTask = Optional.empty();
 
         private SessionRunner(SessionKey key) {
             this.key = key;
@@ -133,7 +139,7 @@ public class SessionRunCoordinator {
             synchronized (lock) {
                 shouldPause = isRunning() || !queuedSteeringMessages.isEmpty() || !queuedFollowUpMessages.isEmpty();
                 pausedAfterStop = shouldPause;
-                taskToCancel = runningTask;
+                taskToCancel = runningTask.orElse(null);
             }
 
             markInterruptRequested(key);
@@ -183,12 +189,12 @@ public class SessionRunCoordinator {
         }
 
         private boolean isRunning() {
-            return runningTask != null && !runningTask.isDone();
+            return runningTask.map(task -> !task.isDone()).orElse(false);
         }
 
         private void startRun(Message inbound, Deque<Message> prefix) {
             SessionKey runKey = new SessionKey(inbound.getChannelType(), inbound.getChatId());
-            runningTask = sessionRunExecutor.submit(() -> {
+            runningTask = Optional.of(sessionRunExecutor.submit(() -> {
                 try {
                     clearInterruptRequested(runKey);
                     if (!prefix.isEmpty()) {
@@ -200,7 +206,7 @@ public class SessionRunCoordinator {
                 } finally {
                     onRunComplete();
                 }
-            });
+            }));
         }
 
         private void handleRunFailure(Message inbound, Exception e) {
@@ -218,7 +224,7 @@ public class SessionRunCoordinator {
         private void onRunComplete() {
             Message next;
             synchronized (lock) {
-                runningTask = null;
+                runningTask = Optional.empty();
                 if (pausedAfterStop) {
                     return;
                 }
@@ -395,7 +401,7 @@ public class SessionRunCoordinator {
 
         Object explicit = inbound.getMetadata().get(ContextAttributes.TURN_QUEUE_KIND);
         if (explicit instanceof String explicitKind) {
-            String normalized = explicitKind.trim().toLowerCase();
+            String normalized = explicitKind.trim().toLowerCase(Locale.ROOT);
             if (ContextAttributes.TURN_QUEUE_KIND_STEERING.equals(normalized)) {
                 return ContextAttributes.TURN_QUEUE_KIND_STEERING;
             }

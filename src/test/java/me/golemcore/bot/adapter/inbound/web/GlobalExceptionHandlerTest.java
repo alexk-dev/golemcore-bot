@@ -4,10 +4,14 @@ import me.golemcore.bot.adapter.inbound.web.dto.ApiErrorResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.server.ResponseStatusException;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import reactor.test.StepVerifier;
 
@@ -78,5 +82,13 @@ class GlobalExceptionHandlerTest {
                     assertEquals("Internal server error", body.getMessage());
                 })
                 .verifyComplete();
+    }
+
+    @Test
+    void shouldApplyToPluginRuntimeControllers() {
+        ControllerAdvice controllerAdvice = GlobalExceptionHandler.class.getAnnotation(ControllerAdvice.class);
+
+        assertNotNull(controllerAdvice);
+        assertTrue(List.of(controllerAdvice.basePackages()).contains("me.golemcore.bot.plugin.runtime"));
     }
 }

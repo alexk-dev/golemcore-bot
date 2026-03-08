@@ -53,9 +53,7 @@ class PluginControllerTest {
 
     @Test
     void shouldInstallPluginFromRequest() {
-        PluginInstallResult result = PluginInstallResult.builder()
-                .status("installed")
-                .build();
+        PluginInstallResult result = new PluginInstallResult("installed", null, null);
         when(pluginMarketplaceService.install("golemcore/browser", "1.0.0")).thenReturn(result);
 
         StepVerifier.create(controller.installPlugin(new PluginInstallRequest("golemcore/browser", "1.0.0")))

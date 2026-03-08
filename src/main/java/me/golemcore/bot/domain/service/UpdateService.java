@@ -964,8 +964,8 @@ public class UpdateService {
             return Integer.compare(leftSemver.patch, rightSemver.patch);
         }
 
-        String leftPrerelease = leftSemver.prerelease;
-        String rightPrerelease = rightSemver.prerelease;
+        String leftPrerelease = leftSemver.preRelease;
+        String rightPrerelease = rightSemver.preRelease;
         if (leftPrerelease == null && rightPrerelease == null) {
             return 0;
         }
@@ -1040,9 +1040,9 @@ public class UpdateService {
         int major = Integer.parseInt(matcher.group(1));
         int minor = Integer.parseInt(matcher.group(2));
         int patch = Integer.parseInt(matcher.group(3));
-        String prerelease = matcher.group(4);
+        String preRelease = matcher.group(4);
 
-        return new Semver(major, minor, patch, prerelease);
+        return new Semver(major, minor, patch, preRelease);
     }
 
     private Instant parseInstant(String value) {
@@ -1121,7 +1121,7 @@ public class UpdateService {
         return throwable.getMessage();
     }
 
-    private record Semver(int major, int minor, int patch, String prerelease) {
+    private record Semver(int major, int minor, int patch, String preRelease) {
     }
 
     private record AvailableRelease(
