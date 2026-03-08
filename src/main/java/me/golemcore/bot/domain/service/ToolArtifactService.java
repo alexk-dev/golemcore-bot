@@ -113,10 +113,7 @@ public class ToolArtifactService {
                 builder.append('_');
             }
         }
-        String candidate = builder.toString()
-                .replaceAll("_+", "_")
-                .replaceAll("^[._-]+", "")
-                .replaceAll("[._-]+$", "");
+        String candidate = normalizeSanitizedValue(builder, true);
         if (candidate.isBlank()) {
             candidate = fallback;
         }
@@ -146,10 +143,7 @@ public class ToolArtifactService {
             }
         }
 
-        String sanitized = builder.toString()
-                .replaceAll("_+", "_")
-                .replaceAll("^[._-]+", "")
-                .replaceAll("[_-]+$", "");
+        String sanitized = normalizeSanitizedValue(builder, false);
         if (sanitized.isBlank()) {
             sanitized = "download";
         }
@@ -185,5 +179,41 @@ public class ToolArtifactService {
         case "application/pdf" -> ".pdf";
         default -> null;
         };
+    }
+
+    private String normalizeSanitizedValue(CharSequence value, boolean trimTrailingDot) {
+        StringBuilder collapsed = new StringBuilder(value.length());
+        boolean previousUnderscore = false;
+        for (int index = 0; index < value.length(); index++) {
+            char current = value.charAt(index);
+            if (current == '_') {
+                if (!previousUnderscore) {
+                    collapsed.append(current);
+                    previousUnderscore = true;
+                }
+                continue;
+            }
+            collapsed.append(current);
+            previousUnderscore = false;
+        }
+
+        int start = 0;
+        while (start < collapsed.length() && isLeadingTrimCharacter(collapsed.charAt(start))) {
+            start++;
+        }
+
+        int end = collapsed.length();
+        while (end > start && isTrailingTrimCharacter(collapsed.charAt(end - 1), trimTrailingDot)) {
+            end--;
+        }
+        return collapsed.substring(start, end);
+    }
+
+    private boolean isLeadingTrimCharacter(char current) {
+        return current == '.' || current == '_' || current == '-';
+    }
+
+    private boolean isTrailingTrimCharacter(char current, boolean trimTrailingDot) {
+        return current == '_' || current == '-' || (trimTrailingDot && current == '.');
     }
 }

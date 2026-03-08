@@ -61,6 +61,23 @@ class ToolArtifactServiceTest {
     }
 
     @Test
+    void shouldNormalizeSegmentsAndFilenameWithoutRegexPostProcessing() {
+        byte[] data = new byte[] { 1, 2, 3 };
+
+        ToolArtifact stored = toolArtifactService.saveArtifact(
+                "..__session///42--",
+                "__browserless:::smart scrape--",
+                ".___Monthly   Report__--",
+                data,
+                "application/pdf");
+
+        assertTrue(stored.getPath().startsWith(
+                ".golemcore/tool-artifacts/session_42/browserless_smart_scrape/"));
+        assertTrue(stored.getPath().endsWith("/Monthly_Report.pdf"));
+        assertEquals("Monthly_Report.pdf", stored.getFilename());
+    }
+
+    @Test
     void shouldReadStoredArtifactDownload() {
         byte[] data = new byte[] { 9, 8, 7 };
         ToolArtifact stored = toolArtifactService.saveArtifact(
