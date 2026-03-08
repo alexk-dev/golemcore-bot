@@ -1,5 +1,7 @@
 package me.golemcore.bot.plugin.runtime;
 
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.plugin.api.extension.spi.PluginSettingsCatalogItem;
 import org.junit.jupiter.api.Test;
@@ -9,11 +11,13 @@ import org.springframework.boot.info.BuildProperties;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Properties;
@@ -144,6 +148,74 @@ class PluginMarketplaceServiceTest {
         assertFalse(catalog.isAvailable());
         assertNotNull(catalog.getMessage());
         assertTrue(catalog.getItems().isEmpty());
+    }
+
+    @Test
+    void shouldListMarketplaceItemsFromRemoteRepositoryWhenRepositoryDirectoryIsBlank(@TempDir Path tempDir)
+            throws Exception {
+        Path installRoot = tempDir.resolve("installed-plugins");
+        Path artifactRoot = tempDir.resolve("remote-artifacts");
+        Path artifactPath = createPluginArtifact(artifactRoot, "golemcore/browser", "1.0.0",
+                "Playwright-backed browser automation tool with screenshot support.");
+
+        try (RemoteMarketplaceServer remoteServer = startRemoteMarketplaceServer(artifactPath, "golemcore/browser",
+                "1.0.0")) {
+            PluginManager pluginManager = mock(PluginManager.class);
+            when(pluginManager.listPlugins()).thenReturn(List.of());
+
+            PluginMarketplaceService service = new PluginMarketplaceService(
+                    remoteBotProperties(remoteServer.baseUrl(), installRoot),
+                    buildPropertiesProvider("0.0.0-SNAPSHOT"),
+                    pluginManager,
+                    mock(PluginSettingsRegistry.class));
+
+            PluginMarketplaceCatalog catalog = service.getCatalog();
+
+            assertTrue(catalog.isAvailable());
+            assertEquals(remoteServer.repositoryUrl(), catalog.getSourceDirectory());
+            assertEquals(1, catalog.getItems().size());
+            assertEquals("golemcore/browser", catalog.getItems().getFirst().getId());
+            assertEquals("Browser", catalog.getItems().getFirst().getName());
+            assertTrue(catalog.getItems().getFirst().isArtifactAvailable());
+        }
+    }
+
+    @Test
+    void shouldInstallPluginArtifactFromRemoteRepositoryWhenRepositoryDirectoryIsBlank(@TempDir Path tempDir)
+            throws Exception {
+        Path installRoot = tempDir.resolve("installed-plugins");
+        Path artifactRoot = tempDir.resolve("remote-artifacts");
+        Path artifactPath = createPluginArtifact(artifactRoot, "golemcore/browser", "1.0.0",
+                "Playwright-backed browser automation tool with screenshot support.");
+
+        try (RemoteMarketplaceServer remoteServer = startRemoteMarketplaceServer(artifactPath, "golemcore/browser",
+                "1.0.0")) {
+            PluginManager pluginManager = mock(PluginManager.class);
+            when(pluginManager.reloadPlugin("golemcore/browser")).thenReturn(true);
+            when(pluginManager.listPlugins()).thenReturn(List.of(PluginRuntimeInfo.builder()
+                    .id("golemcore/browser")
+                    .name("browser")
+                    .provider("golemcore")
+                    .version("1.0.0")
+                    .loaded(true)
+                    .build()));
+
+            PluginMarketplaceService service = new PluginMarketplaceService(
+                    remoteBotProperties(remoteServer.baseUrl(), installRoot),
+                    buildPropertiesProvider("0.0.0-SNAPSHOT"),
+                    pluginManager,
+                    mock(PluginSettingsRegistry.class));
+
+            PluginInstallResult result = service.install("golemcore/browser", null);
+
+            Path installedJar = installRoot.resolve("golemcore/browser/1.0.0/golemcore-browser-plugin-1.0.0.jar");
+            assertTrue(Files.isRegularFile(installedJar));
+            assertEquals("installed", result.getStatus());
+            assertEquals("1.0.0", result.getPlugin().getVersion());
+            assertTrue(result.getPlugin().isInstalled());
+            assertTrue(result.getPlugin().isLoaded());
+            verify(pluginManager).reloadPlugin("golemcore/browser");
+        }
     }
 
     @Test
@@ -325,6 +397,18 @@ class PluginMarketplaceServiceTest {
         assertFalse(catalog.getItems().getFirst().isArtifactAvailable());
     }
 
+    private BotProperties remoteBotProperties(String baseUrl, Path installRoot) {
+        BotProperties properties = new BotProperties();
+        properties.getPlugins().setDirectory(installRoot.toString());
+        properties.getPlugins().getMarketplace().setRepositoryDirectory("");
+        properties.getPlugins().getMarketplace().setRepositoryUrl(baseUrl + "/alexk-dev/golemcore-plugins");
+        properties.getPlugins().getMarketplace().setApiBaseUrl(baseUrl + "/api");
+        properties.getPlugins().getMarketplace().setRawBaseUrl(baseUrl + "/raw");
+        properties.getPlugins().getMarketplace().setBranch("main");
+        properties.getPlugins().getMarketplace().setRemoteCacheTtl(Duration.ofSeconds(30));
+        return properties;
+    }
+
     private BotProperties botProperties(Path repositoryRoot, Path installRoot) {
         BotProperties properties = new BotProperties();
         properties.getPlugins().setDirectory(installRoot.toString());
@@ -439,6 +523,86 @@ class PluginMarketplaceServiceTest {
                 parts[1]);
     }
 
+    private RemoteMarketplaceServer startRemoteMarketplaceServer(Path artifactPath, String pluginId, String version)
+            throws IOException {
+        String[] parts = pluginId.split("/", 2);
+        String artifactFileName = artifactPath.getFileName().toString();
+        String checksum = sha256(artifactPath);
+        String indexYaml = """
+                id: %s
+                owner: %s
+                name: %s
+                latest: %s
+                versions:
+                  - %s
+                source: https://github.com/alexk-dev/golemcore-plugins/tree/main/%s/%s
+                """.formatted(pluginId, parts[0], parts[1], version, version, parts[0], parts[1]);
+        String versionYaml = """
+                id: %s
+                version: %s
+                pluginApiVersion: 1
+                engineVersion: ">=0.0.0 <1.0.0"
+                artifactUrl: "dist/%s/%s/%s/%s"
+                checksumSha256: "%s"
+                publishedAt: "2026-03-07T00:00:00Z"
+                sourceCommit: "abc123"
+                entrypoint: me.golemcore.plugins.%s.%s.PluginBootstrap
+                sourceUrl: https://github.com/alexk-dev/golemcore-plugins/tree/main/%s/%s
+                license: Apache-2.0
+                maintainers:
+                  - alexk-dev
+                """.formatted(
+                pluginId,
+                version,
+                parts[0],
+                parts[1],
+                version,
+                artifactFileName,
+                checksum,
+                parts[0],
+                parts[1],
+                parts[0],
+                parts[1]);
+
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/api/repos/alexk-dev/golemcore-plugins/git/trees/main",
+                exchange -> respond(exchange, 200, "application/json", """
+                        {
+                          "tree": [
+                            {
+                              "path": "registry/%s/%s/index.yaml",
+                              "type": "blob"
+                            }
+                          ]
+                        }
+                        """.formatted(parts[0], parts[1])));
+        server.createContext("/raw/alexk-dev/golemcore-plugins/main/registry/" + parts[0] + "/" + parts[1]
+                + "/index.yaml", exchange -> respond(exchange, 200, "text/plain; charset=utf-8", indexYaml));
+        server.createContext("/raw/alexk-dev/golemcore-plugins/main/registry/" + parts[0] + "/" + parts[1]
+                + "/versions/" + version + ".yaml",
+                exchange -> respond(exchange, 200, "text/plain; charset=utf-8", versionYaml));
+        server.createContext("/alexk-dev/golemcore-plugins/releases/download/" + parts[0] + "-" + parts[1]
+                + "-v" + version + "/" + artifactFileName,
+                exchange -> respond(exchange, 200, "application/java-archive", Files.readAllBytes(artifactPath)));
+        server.start();
+        int port = server.getAddress().getPort();
+        String baseUrl = "http://127.0.0.1:" + port;
+        return new RemoteMarketplaceServer(server, baseUrl);
+    }
+
+    private void respond(HttpExchange exchange, int statusCode, String contentType, String body) throws IOException {
+        respond(exchange, statusCode, contentType, body.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private void respond(HttpExchange exchange, int statusCode, String contentType, byte[] body) throws IOException {
+        try (HttpExchange closableExchange = exchange;
+                OutputStream outputStream = closableExchange.getResponseBody()) {
+            closableExchange.getResponseHeaders().set("Content-Type", contentType);
+            closableExchange.sendResponseHeaders(statusCode, body.length);
+            outputStream.write(body);
+        }
+    }
+
     private String sha256(Path file) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -448,4 +612,15 @@ class PluginMarketplaceServiceTest {
             throw new IllegalStateException(ex);
         }
     }
-}
+
+    private record RemoteMarketplaceServer(HttpServer server, String baseUrl) implements AutoCloseable {
+
+    private String repositoryUrl() {
+        return baseUrl + "/alexk-dev/golemcore-plugins/";
+    }
+
+    @Override
+    public void close() {
+        server.stop(0);
+    }
+}}

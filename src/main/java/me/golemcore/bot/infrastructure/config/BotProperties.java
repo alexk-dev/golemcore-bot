@@ -273,6 +273,11 @@ public class BotProperties {
     public static class MarketplaceProperties {
         private boolean enabled = true;
         private String repositoryDirectory = "";
+        private String repositoryUrl = "https://github.com/alexk-dev/golemcore-plugins";
+        private String branch = "main";
+        private String apiBaseUrl = "https://api.github.com";
+        private String rawBaseUrl = "https://raw.githubusercontent.com";
+        private java.time.Duration remoteCacheTtl = java.time.Duration.ofMinutes(5);
     }
 
     // ==================== PROMPTS (system prompt sections) ====================
