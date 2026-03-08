@@ -6,9 +6,9 @@ import me.golemcore.bot.domain.loop.AgentContextHolder;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Attachment;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.ToolArtifact;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.ToolResult;
-import me.golemcore.bot.domain.model.DashboardStoredFile;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
@@ -44,14 +44,14 @@ public class ToolCallExecutionService {
     private final ConfirmationPort confirmationPort;
     private final BotProperties properties;
     private final ChannelRegistry channelRegistry;
-    private final DashboardFileService dashboardFileService;
+    private final ToolArtifactService toolArtifactService;
 
     public ToolCallExecutionService(List<ToolComponent> toolComponents,
             ToolConfirmationPolicy confirmationPolicy,
             ConfirmationPort confirmationPort,
             BotProperties properties,
             ChannelRegistry channelRegistry,
-            DashboardFileService dashboardFileService) {
+            ToolArtifactService toolArtifactService) {
         this.toolRegistry = new ConcurrentHashMap<>();
         for (ToolComponent tool : toolComponents) {
             toolRegistry.put(tool.getToolName(), tool);
@@ -60,7 +60,7 @@ public class ToolCallExecutionService {
         this.confirmationPort = confirmationPort;
         this.properties = properties;
         this.channelRegistry = channelRegistry;
-        this.dashboardFileService = dashboardFileService;
+        this.toolArtifactService = toolArtifactService;
     }
 
     public ToolCallExecutionResult execute(AgentContext context, Message.ToolCall toolCall) {
@@ -317,10 +317,10 @@ public class ToolCallExecutionService {
             mutated = stripBinaryPayload(dataMap) || mutated;
         }
 
-        DashboardStoredFile storedFile = null;
+        ToolArtifact storedFile = null;
         if (attachment != null) {
             try {
-                storedFile = dashboardFileService.saveToolArtifact(
+                storedFile = toolArtifactService.saveArtifact(
                         resolveSessionId(context),
                         toolName,
                         attachment.getFilename(),
@@ -377,7 +377,7 @@ public class ToolCallExecutionService {
         return context.getSession().getId();
     }
 
-    private String appendInternalFileLink(String output, DashboardStoredFile storedFile) {
+    private String appendInternalFileLink(String output, ToolArtifact storedFile) {
         String linkBlock = "Internal file: [" + storedFile.getFilename() + "](" + storedFile.getDownloadUrl() + ")\n"
                 + "Workspace path: `" + storedFile.getPath() + "`";
         if (output == null || output.isBlank()) {

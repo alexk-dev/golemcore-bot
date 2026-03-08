@@ -9,11 +9,11 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class DashboardFileDownload {
+public class ToolArtifact {
 
     private String path;
     private String filename;
     private String mimeType;
     private long size;
-    private byte[] data;
+    private String downloadUrl;
 }

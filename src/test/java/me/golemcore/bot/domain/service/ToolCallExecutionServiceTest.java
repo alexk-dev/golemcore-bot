@@ -5,8 +5,8 @@ import me.golemcore.bot.domain.loop.AgentContextHolder;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Attachment;
-import me.golemcore.bot.domain.model.DashboardStoredFile;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.ToolArtifact;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.infrastructure.config.BotProperties;
@@ -50,7 +50,7 @@ class ToolCallExecutionServiceTest {
     private ConfirmationPort confirmationPort;
     private BotProperties properties;
     private ChannelPort channelPort;
-    private DashboardFileService dashboardFileService;
+    private ToolArtifactService toolArtifactService;
     private ToolCallExecutionService service;
 
     @BeforeEach
@@ -61,7 +61,7 @@ class ToolCallExecutionServiceTest {
         properties = new BotProperties();
         properties.getAutoCompact().setMaxToolResultChars(MAX_TOOL_RESULT_CHARS);
         channelPort = mock(ChannelPort.class);
-        dashboardFileService = mock(DashboardFileService.class);
+        toolArtifactService = mock(ToolArtifactService.class);
 
         when(toolComponent.getToolName()).thenReturn(TOOL_NAME);
         when(toolComponent.isEnabled()).thenReturn(true);
@@ -69,13 +69,13 @@ class ToolCallExecutionServiceTest {
         when(confirmationPort.isAvailable()).thenReturn(false);
         when(confirmationPolicy.requiresConfirmation(any())).thenReturn(false);
         when(confirmationPolicy.isEnabled()).thenReturn(true);
-        when(dashboardFileService.saveToolArtifact(anyString(), anyString(), anyString(), any(), anyString()))
+        when(toolArtifactService.saveArtifact(anyString(), anyString(), anyString(), any(), anyString()))
                 .thenAnswer(invocation -> {
                     String filename = invocation.getArgument(2, String.class);
                     byte[] bytes = invocation.getArgument(3, byte[].class);
                     String mimeType = invocation.getArgument(4, String.class);
                     String safeFilename = filename != null ? filename : "download.bin";
-                    return DashboardStoredFile.builder()
+                    return ToolArtifact.builder()
                             .path(".golemcore/tool-artifacts/session/test/" + safeFilename)
                             .filename(safeFilename)
                             .mimeType(mimeType != null ? mimeType : "application/octet-stream")
@@ -91,7 +91,7 @@ class ToolCallExecutionServiceTest {
                 confirmationPort,
                 properties,
                 new ChannelRegistry(List.of(channelPort)),
-                dashboardFileService);
+                toolArtifactService);
     }
 
     @AfterEach
@@ -439,7 +439,7 @@ class ToolCallExecutionServiceTest {
                 .data(data)
                 .build();
         when(toolComponent.execute(any())).thenReturn(CompletableFuture.completedFuture(successResult));
-        when(dashboardFileService.saveToolArtifact(anyString(), anyString(), anyString(), any(), anyString()))
+        when(toolArtifactService.saveArtifact(anyString(), anyString(), anyString(), any(), anyString()))
                 .thenThrow(new IllegalStateException("disk full"));
 
         ToolCallExecutionResult result = service.execute(context, toolCall);

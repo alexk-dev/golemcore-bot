@@ -7,10 +7,11 @@ import me.golemcore.bot.adapter.inbound.web.dto.FileRenameRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.FileRenameResponse;
 import me.golemcore.bot.adapter.inbound.web.dto.FileSaveRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.FileTreeNodeDto;
-import me.golemcore.bot.domain.model.DashboardFileDownload;
 import me.golemcore.bot.domain.model.DashboardFileContent;
 import me.golemcore.bot.domain.model.DashboardFileNode;
+import me.golemcore.bot.domain.model.ToolArtifactDownload;
 import me.golemcore.bot.domain.service.DashboardFileService;
+import me.golemcore.bot.domain.service.ToolArtifactService;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -34,6 +35,7 @@ import java.util.List;
 public class FilesController {
 
     private final DashboardFileService dashboardFileService;
+    private final ToolArtifactService toolArtifactService;
 
     @GetMapping("/tree")
     public Mono<ResponseEntity<List<FileTreeNodeDto>>> getTree(
@@ -60,7 +62,7 @@ public class FilesController {
     @GetMapping("/download")
     public Mono<ResponseEntity<byte[]>> download(@RequestParam String path) {
         try {
-            DashboardFileDownload download = dashboardFileService.getDownload(path);
+            ToolArtifactDownload download = toolArtifactService.getDownload(path);
             MediaType mediaType = parseMediaType(download.getMimeType());
             ContentDisposition disposition = ContentDisposition.attachment()
                     .filename(download.getFilename(), StandardCharsets.UTF_8)

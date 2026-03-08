@@ -1,9 +1,7 @@
 package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.model.DashboardFileContent;
-import me.golemcore.bot.domain.model.DashboardFileDownload;
 import me.golemcore.bot.domain.model.DashboardFileNode;
-import me.golemcore.bot.domain.model.DashboardStoredFile;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,7 +18,6 @@ import java.util.List;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -42,8 +39,9 @@ class DashboardFileServiceTest {
         BotProperties botProperties = new BotProperties();
         botProperties.getTools().getFilesystem().setWorkspace(workspaceRoot.toString());
 
-        dashboardFileService = new DashboardFileService(botProperties);
-        dashboardFileService.init();
+        WorkspacePathService workspacePathService = new WorkspacePathService(botProperties);
+        workspacePathService.init();
+        dashboardFileService = new DashboardFileService(workspacePathService);
     }
 
     @Test
@@ -128,45 +126,6 @@ class DashboardFileServiceTest {
         Instant.parse(content.getUpdatedAt());
     }
 
-    @Test
-    void shouldSaveToolArtifactUnderHiddenWorkspaceDirectory() {
-        byte[] data = new byte[] { 1, 2, 3, 4 };
-
-        DashboardStoredFile stored = dashboardFileService.saveToolArtifact(
-                "session:42",
-                "browserless_smart_scrape",
-                "Monthly Report.pdf",
-                data,
-                "application/pdf");
-
-        assertTrue(stored.getPath().startsWith(".golemcore/tool-artifacts/session_42/browserless_smart_scrape/"));
-        assertTrue(stored.getPath().endsWith("/Monthly_Report.pdf"));
-        assertEquals("Monthly_Report.pdf", stored.getFilename());
-        assertEquals("application/pdf", stored.getMimeType());
-        assertEquals(4L, stored.getSize());
-        assertTrue(stored.getDownloadUrl().startsWith("/api/files/download?path="));
-        assertTrue(Files.exists(workspaceRoot.resolve(stored.getPath())));
-    }
-
-    @Test
-    void shouldReadStoredBinaryDownload() {
-        byte[] data = new byte[] { 9, 8, 7 };
-        DashboardStoredFile stored = dashboardFileService.saveToolArtifact(
-                "session-1",
-                "browserless_smart_scrape",
-                "capture.png",
-                data,
-                "image/png");
-
-        DashboardFileDownload download = dashboardFileService.getDownload(stored.getPath());
-
-        assertEquals(stored.getPath(), download.getPath());
-        assertEquals("capture.png", download.getFilename());
-        assertEquals("image/png", download.getMimeType());
-        assertEquals(3L, download.getSize());
-        assertArrayEquals(data, download.getData());
-    }
-
     @ParameterizedTest
     @MethodSource("blankPaths")
     void shouldThrowWhenContentPathIsBlank(String path) {
@@ -182,12 +141,6 @@ class DashboardFileServiceTest {
                 () -> dashboardFileService.getContent("src/missing.ts"));
 
         assertTrue(exception.getMessage().contains("File not found"));
-    }
-
-    @ParameterizedTest
-    @MethodSource("invalidPaths")
-    void shouldRejectInvalidPathsWhenDownloading(String path) {
-        assertThrows(IllegalArgumentException.class, () -> dashboardFileService.getDownload(path));
     }
 
     @Test

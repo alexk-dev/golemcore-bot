@@ -3,10 +3,11 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 import me.golemcore.bot.adapter.inbound.web.dto.FileCreateRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.FileRenameRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.FileSaveRequest;
-import me.golemcore.bot.domain.model.DashboardFileDownload;
 import me.golemcore.bot.domain.model.DashboardFileContent;
 import me.golemcore.bot.domain.model.DashboardFileNode;
+import me.golemcore.bot.domain.model.ToolArtifactDownload;
 import me.golemcore.bot.domain.service.DashboardFileService;
+import me.golemcore.bot.domain.service.ToolArtifactService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -27,12 +28,14 @@ import static org.mockito.Mockito.when;
 class FilesControllerTest {
 
     private DashboardFileService dashboardFileService;
+    private ToolArtifactService toolArtifactService;
     private FilesController filesController;
 
     @BeforeEach
     void setUp() {
         dashboardFileService = mock(DashboardFileService.class);
-        filesController = new FilesController(dashboardFileService);
+        toolArtifactService = mock(ToolArtifactService.class);
+        filesController = new FilesController(dashboardFileService, toolArtifactService);
     }
 
     @Test
@@ -152,7 +155,7 @@ class FilesControllerTest {
 
     @Test
     void shouldReturnBinaryDownloadWhenPathIsValid() {
-        DashboardFileDownload download = DashboardFileDownload.builder()
+        ToolArtifactDownload download = ToolArtifactDownload.builder()
                 .path(".golemcore/tool-artifacts/session/test/report.pdf")
                 .filename("report.pdf")
                 .mimeType("application/pdf")
@@ -160,7 +163,7 @@ class FilesControllerTest {
                 .data(new byte[] { 1, 2, 3 })
                 .build();
 
-        when(dashboardFileService.getDownload(".golemcore/tool-artifacts/session/test/report.pdf"))
+        when(toolArtifactService.getDownload(".golemcore/tool-artifacts/session/test/report.pdf"))
                 .thenReturn(download);
 
         StepVerifier.create(filesController.download(".golemcore/tool-artifacts/session/test/report.pdf"))
@@ -176,7 +179,7 @@ class FilesControllerTest {
 
     @Test
     void shouldReturnBadRequestForInvalidDownloadPath() {
-        when(dashboardFileService.getDownload("../etc/passwd")).thenThrow(new IllegalArgumentException("Invalid path"));
+        when(toolArtifactService.getDownload("../etc/passwd")).thenThrow(new IllegalArgumentException("Invalid path"));
 
         StepVerifier.create(filesController.download("../etc/passwd"))
                 .assertNext(response -> assertStatus(response, HttpStatus.BAD_REQUEST))
