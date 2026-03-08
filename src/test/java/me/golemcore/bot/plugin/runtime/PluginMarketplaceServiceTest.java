@@ -158,8 +158,11 @@ class PluginMarketplaceServiceTest {
         Path artifactPath = createPluginArtifact(artifactRoot, "golemcore/browser", "1.0.0",
                 "Playwright-backed browser automation tool with screenshot support.");
 
-        try (RemoteMarketplaceServer remoteServer = startRemoteMarketplaceServer(artifactPath, "golemcore/browser",
-                "1.0.0")) {
+        try (RemoteMarketplaceServer remoteServer = startRemoteMarketplaceServer(
+                artifactPath,
+                "golemcore/browser",
+                "1.0.0",
+                true)) {
             PluginManager pluginManager = mock(PluginManager.class);
             when(pluginManager.listPlugins()).thenReturn(List.of());
 
@@ -188,8 +191,11 @@ class PluginMarketplaceServiceTest {
         Path artifactPath = createPluginArtifact(artifactRoot, "golemcore/browser", "1.0.0",
                 "Playwright-backed browser automation tool with screenshot support.");
 
-        try (RemoteMarketplaceServer remoteServer = startRemoteMarketplaceServer(artifactPath, "golemcore/browser",
-                "1.0.0")) {
+        try (RemoteMarketplaceServer remoteServer = startRemoteMarketplaceServer(
+                artifactPath,
+                "golemcore/browser",
+                "1.0.0",
+                true)) {
             PluginManager pluginManager = mock(PluginManager.class);
             when(pluginManager.reloadPlugin("golemcore/browser")).thenReturn(true);
             when(pluginManager.listPlugins()).thenReturn(List.of(PluginRuntimeInfo.builder()
@@ -215,6 +221,37 @@ class PluginMarketplaceServiceTest {
             assertTrue(result.getPlugin().isInstalled());
             assertTrue(result.getPlugin().isLoaded());
             verify(pluginManager).reloadPlugin("golemcore/browser");
+        }
+    }
+
+    @Test
+    void shouldMarkRemoteCatalogItemArtifactUnavailableWhenJarIsMissing(@TempDir Path tempDir) throws Exception {
+        Path installRoot = tempDir.resolve("installed-plugins");
+        Path artifactRoot = tempDir.resolve("remote-artifacts");
+        Path artifactPath = createPluginArtifact(artifactRoot, "golemcore/browser", "1.0.0",
+                "Playwright-backed browser automation tool with screenshot support.");
+
+        try (RemoteMarketplaceServer remoteServer = startRemoteMarketplaceServer(
+                artifactPath,
+                "golemcore/browser",
+                "1.0.0",
+                false)) {
+            PluginManager pluginManager = mock(PluginManager.class);
+            when(pluginManager.listPlugins()).thenReturn(List.of());
+
+            PluginMarketplaceService service = new PluginMarketplaceService(
+                    remoteBotProperties(remoteServer.baseUrl(), installRoot),
+                    buildPropertiesProvider("0.0.0-SNAPSHOT"),
+                    pluginManager,
+                    mock(PluginSettingsRegistry.class));
+
+            PluginMarketplaceCatalog catalog = service.getCatalog();
+            IllegalStateException exception = assertThrows(IllegalStateException.class,
+                    () -> service.install("golemcore/browser", null));
+
+            assertEquals(1, catalog.getItems().size());
+            assertFalse(catalog.getItems().getFirst().isArtifactAvailable());
+            assertTrue(exception.getMessage().contains("Artifact not found"));
         }
     }
 
@@ -523,11 +560,16 @@ class PluginMarketplaceServiceTest {
                 parts[1]);
     }
 
-    private RemoteMarketplaceServer startRemoteMarketplaceServer(Path artifactPath, String pluginId, String version)
+    private RemoteMarketplaceServer startRemoteMarketplaceServer(
+            Path artifactPath,
+            String pluginId,
+            String version,
+            boolean artifactAvailable)
             throws IOException {
         String[] parts = pluginId.split("/", 2);
         String artifactFileName = artifactPath.getFileName().toString();
         String checksum = sha256(artifactPath);
+        String artifactRepositoryPath = "dist/" + parts[0] + "/" + parts[1] + "/" + version + "/" + artifactFileName;
         String indexYaml = """
                 id: %s
                 owner: %s
@@ -542,7 +584,7 @@ class PluginMarketplaceServiceTest {
                 version: %s
                 pluginApiVersion: 1
                 engineVersion: ">=0.0.0 <1.0.0"
-                artifactUrl: "dist/%s/%s/%s/%s"
+                artifactUrl: "%s"
                 checksumSha256: "%s"
                 publishedAt: "2026-03-07T00:00:00Z"
                 sourceCommit: "abc123"
@@ -554,19 +596,29 @@ class PluginMarketplaceServiceTest {
                 """.formatted(
                 pluginId,
                 version,
-                parts[0],
-                parts[1],
-                version,
-                artifactFileName,
+                artifactRepositoryPath,
                 checksum,
                 parts[0],
                 parts[1],
                 parts[0],
                 parts[1]);
 
-        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
-        server.createContext("/api/repos/alexk-dev/golemcore-plugins/git/trees/main",
-                exchange -> respond(exchange, 200, "application/json", """
+        String treeJson = artifactAvailable
+                ? """
+                        {
+                          "tree": [
+                            {
+                              "path": "registry/%s/%s/index.yaml",
+                              "type": "blob"
+                            },
+                            {
+                              "path": "%s",
+                              "type": "blob"
+                            }
+                          ]
+                        }
+                        """.formatted(parts[0], parts[1], artifactRepositoryPath)
+                : """
                         {
                           "tree": [
                             {
@@ -575,15 +627,20 @@ class PluginMarketplaceServiceTest {
                             }
                           ]
                         }
-                        """.formatted(parts[0], parts[1])));
+                        """.formatted(parts[0], parts[1]);
+
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/api/repos/alexk-dev/golemcore-plugins/git/trees/main",
+                exchange -> respond(exchange, 200, "application/json", treeJson));
         server.createContext("/raw/alexk-dev/golemcore-plugins/main/registry/" + parts[0] + "/" + parts[1]
                 + "/index.yaml", exchange -> respond(exchange, 200, "text/plain; charset=utf-8", indexYaml));
         server.createContext("/raw/alexk-dev/golemcore-plugins/main/registry/" + parts[0] + "/" + parts[1]
                 + "/versions/" + version + ".yaml",
                 exchange -> respond(exchange, 200, "text/plain; charset=utf-8", versionYaml));
-        server.createContext("/alexk-dev/golemcore-plugins/releases/download/" + parts[0] + "-" + parts[1]
-                + "-v" + version + "/" + artifactFileName,
-                exchange -> respond(exchange, 200, "application/java-archive", Files.readAllBytes(artifactPath)));
+        if (artifactAvailable) {
+            server.createContext("/raw/alexk-dev/golemcore-plugins/main/" + artifactRepositoryPath,
+                    exchange -> respond(exchange, 200, "application/java-archive", Files.readAllBytes(artifactPath)));
+        }
         server.start();
         int port = server.getAddress().getPort();
         String baseUrl = "http://127.0.0.1:" + port;

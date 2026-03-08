@@ -291,7 +291,7 @@ public class PluginExtensionApiMapper {
     private List<me.golemcore.bot.domain.model.Message.ToolCall> toHostToolCalls(
             List<me.golemcore.plugin.api.extension.model.Message.ToolCall> toolCalls) {
         if (toolCalls == null) {
-            return null;
+            return List.of();
         }
         List<me.golemcore.bot.domain.model.Message.ToolCall> copied = new ArrayList<>(toolCalls.size());
         for (me.golemcore.plugin.api.extension.model.Message.ToolCall toolCall : toolCalls) {
@@ -311,7 +311,7 @@ public class PluginExtensionApiMapper {
     private List<me.golemcore.plugin.api.extension.model.Message.ToolCall> toPluginToolCalls(
             List<me.golemcore.bot.domain.model.Message.ToolCall> toolCalls) {
         if (toolCalls == null) {
-            return null;
+            return List.of();
         }
         List<me.golemcore.plugin.api.extension.model.Message.ToolCall> copied = new ArrayList<>(toolCalls.size());
         for (me.golemcore.bot.domain.model.Message.ToolCall toolCall : toolCalls) {
@@ -409,7 +409,7 @@ public class PluginExtensionApiMapper {
 
     private Map<String, Object> copyMap(Map<String, Object> source) {
         if (source == null) {
-            return null;
+            return Map.of();
         }
         Map<String, Object> copied = new LinkedHashMap<>();
         source.forEach((key, value) -> copied.put(key, copyObject(value)));

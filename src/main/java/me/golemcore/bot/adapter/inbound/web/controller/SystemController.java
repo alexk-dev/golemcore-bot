@@ -102,7 +102,7 @@ public class SystemController {
 
     @GetMapping("/channels")
     public Mono<ResponseEntity<List<Map<String, Object>>>> getChannels() {
-        java.util.List<Map<String, Object>> result = channelRegistry.getAll().stream()
+        List<Map<String, Object>> result = channelRegistry.getAll().stream()
                 .map(port -> {
                     Map<String, Object> ch = new LinkedHashMap<>();
                     ch.put("type", port.getChannelType());

@@ -21,7 +21,7 @@ public class PluginConfigurationService {
 
     private static final String PREFERENCES_DIR = "preferences";
     private static final String PLUGINS_PREFIX = "plugins/";
-    private static final TypeReference<LinkedHashMap<String, Object>> MAP_TYPE = new TypeReference<>() {
+    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
     };
 
     private final StoragePort storagePort;

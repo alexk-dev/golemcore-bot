@@ -39,6 +39,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.ServiceConfigurationError;
 import java.util.ServiceLoader;
 import java.util.concurrent.Executors;
@@ -194,7 +195,7 @@ public class PluginManager {
         if (existingById != null) {
             removeLoadedPlugin(existingById);
         }
-        if (existingByPath != null && existingByPath != existingById) {
+        if (existingByPath != null && !Objects.equals(existingByPath, existingById)) {
             removeLoadedPlugin(existingByPath);
         }
 
@@ -349,7 +350,10 @@ public class PluginManager {
         }
         try (java.util.stream.Stream<Path> stream = Files.walk(pluginsRoot)) {
             stream.filter(Files::isRegularFile)
-                    .filter(path -> path.getFileName().toString().endsWith(".jar"))
+                    .filter(path -> {
+                        Path fileName = path.getFileName();
+                        return fileName != null && fileName.toString().endsWith(".jar");
+                    })
                     .sorted()
                     .forEach(path -> registerCandidate(result, path.toAbsolutePath().normalize()));
         } catch (IOException ex) {

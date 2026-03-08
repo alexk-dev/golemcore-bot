@@ -21,7 +21,7 @@ class SttProviderRegistryTest {
     @Test
     void shouldFindProviderByIdOrAliasIgnoringCase() {
         SttProviderRegistry registry = new SttProviderRegistry();
-        TestSttProvider provider = new TestSttProvider("golemcore/whisper", Set.of("whisper", "local-whisper"));
+        FakeSttProvider provider = new FakeSttProvider("golemcore/whisper", Set.of("whisper", "local-whisper"));
         registry.replaceProviders("plugin-a", List.of(provider));
 
         assertSame(provider, registry.find("golemcore/whisper").orElseThrow());
@@ -34,9 +34,9 @@ class SttProviderRegistryTest {
     @Test
     void shouldReplaceRemoveAndListProviders() {
         SttProviderRegistry registry = new SttProviderRegistry();
-        TestSttProvider original = new TestSttProvider("golemcore/whisper", Set.of());
-        TestSttProvider replacement = new TestSttProvider("golemcore/parakeet", Set.of("parakeet"));
-        TestSttProvider secondPlugin = new TestSttProvider("golemcore/custom", Set.of());
+        FakeSttProvider original = new FakeSttProvider("golemcore/whisper", Set.of());
+        FakeSttProvider replacement = new FakeSttProvider("golemcore/parakeet", Set.of("parakeet"));
+        FakeSttProvider secondPlugin = new FakeSttProvider("golemcore/custom", Set.of());
 
         registry.replaceProviders("plugin-a", List.of(original));
         registry.replaceProviders("plugin-a", List.of(replacement));
@@ -54,12 +54,12 @@ class SttProviderRegistryTest {
         assertSame(secondPlugin, registry.find("golemcore/custom").orElseThrow());
     }
 
-    private static final class TestSttProvider implements SttProvider {
+    private static final class FakeSttProvider implements SttProvider {
 
         private final String providerId;
         private final Set<String> aliases;
 
-        private TestSttProvider(String providerId, Set<String> aliases) {
+        private FakeSttProvider(String providerId, Set<String> aliases) {
             this.providerId = providerId;
             this.aliases = aliases;
         }

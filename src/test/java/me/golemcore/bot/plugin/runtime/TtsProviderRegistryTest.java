@@ -19,7 +19,7 @@ class TtsProviderRegistryTest {
     @Test
     void shouldFindProviderByIdOrAliasIgnoringCase() {
         TtsProviderRegistry registry = new TtsProviderRegistry();
-        TestTtsProvider provider = new TestTtsProvider("golemcore/elevenlabs", Set.of("elevenlabs", "voice"));
+        FakeTtsProvider provider = new FakeTtsProvider("golemcore/elevenlabs", Set.of("elevenlabs", "voice"));
         registry.replaceProviders("plugin-a", List.of(provider));
 
         assertSame(provider, registry.find("golemcore/elevenlabs").orElseThrow());
@@ -32,9 +32,9 @@ class TtsProviderRegistryTest {
     @Test
     void shouldReplaceRemoveAndListProviders() {
         TtsProviderRegistry registry = new TtsProviderRegistry();
-        TestTtsProvider original = new TestTtsProvider("golemcore/elevenlabs", Set.of());
-        TestTtsProvider replacement = new TestTtsProvider("golemcore/custom-voice", Set.of("custom"));
-        TestTtsProvider secondPlugin = new TestTtsProvider("golemcore/backup-voice", Set.of());
+        FakeTtsProvider original = new FakeTtsProvider("golemcore/elevenlabs", Set.of());
+        FakeTtsProvider replacement = new FakeTtsProvider("golemcore/custom-voice", Set.of("custom"));
+        FakeTtsProvider secondPlugin = new FakeTtsProvider("golemcore/backup-voice", Set.of());
 
         registry.replaceProviders("plugin-a", List.of(original));
         registry.replaceProviders("plugin-a", List.of(replacement));
@@ -52,12 +52,12 @@ class TtsProviderRegistryTest {
         assertSame(secondPlugin, registry.find("golemcore/backup-voice").orElseThrow());
     }
 
-    private static final class TestTtsProvider implements TtsProvider {
+    private static final class FakeTtsProvider implements TtsProvider {
 
         private final String providerId;
         private final Set<String> aliases;
 
-        private TestTtsProvider(String providerId, Set<String> aliases) {
+        private FakeTtsProvider(String providerId, Set<String> aliases) {
             this.providerId = providerId;
             this.aliases = aliases;
         }

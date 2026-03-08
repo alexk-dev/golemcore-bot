@@ -67,14 +67,14 @@ class PluginEventBridgeTest {
     void shouldIgnoreChildContextEvents() {
         PluginManager pluginManager = mock(PluginManager.class);
         PluginEventBridge bridge = new PluginEventBridge(pluginManager, new PluginExtensionApiMapper());
-        AnnotationConfigApplicationContext childContext = new AnnotationConfigApplicationContext();
-        ApplicationEvent event = new ApplicationEvent(childContext) {
-        };
+        try (AnnotationConfigApplicationContext childContext = new AnnotationConfigApplicationContext()) {
+            ApplicationEvent event = new ApplicationEvent(childContext) {
+            };
 
-        bridge.onApplicationEvent(event);
+            bridge.onApplicationEvent(event);
 
-        verify(pluginManager, never()).publishToPlugins(org.mockito.ArgumentMatchers.any());
-        childContext.close();
+            verify(pluginManager, never()).publishToPlugins(org.mockito.ArgumentMatchers.any());
+        }
     }
 
     @Test
