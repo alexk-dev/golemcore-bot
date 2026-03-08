@@ -47,7 +47,7 @@ jobs:
           path: golemcore-plugins
 
       - name: Install plugin API artifacts
-        run: mvn -B -ntp -Dmaven.multiModuleProjectDirectory="${{ github.workspace }}/golemcore-plugins" -f golemcore-plugins/pom.xml -pl extension-api,runtime-api -am install -DskipTests
+        run: mvn -B -ntp -Djgitver.skip=true -f golemcore-plugins/pom.xml -pl extension-api,runtime-api -am install -DskipTests
 
       - name: Build and run tests
         run: ./mvnw clean verify -DskipGitHooks=true
@@ -92,7 +92,7 @@ jobs:
           path: golemcore-plugins
 
       - name: Install plugin API artifacts
-        run: mvn -B -ntp -Dmaven.multiModuleProjectDirectory="${{ github.workspace }}/golemcore-plugins" -f golemcore-plugins/pom.xml -pl extension-api,runtime-api -am install -DskipTests
+        run: mvn -B -ntp -Djgitver.skip=true -f golemcore-plugins/pom.xml -pl extension-api,runtime-api -am install -DskipTests
 
       - name: Check formatting
         run: ./mvnw formatter:validate -DskipGitHooks=true
@@ -158,7 +158,7 @@ jobs:
 
       - name: Install plugin API artifacts
         if: steps.sonar-token.outputs.available == 'true'
-        run: mvn -B -ntp -Dmaven.multiModuleProjectDirectory="${{ github.workspace }}/golemcore-plugins" -f golemcore-plugins/pom.xml -pl extension-api,runtime-api -am install -DskipTests
+        run: mvn -B -ntp -Djgitver.skip=true -f golemcore-plugins/pom.xml -pl extension-api,runtime-api -am install -DskipTests
 
       - name: Build, test and analyze
         if: steps.sonar-token.outputs.available == 'true'
@@ -206,7 +206,7 @@ jobs:
           path: golemcore-plugins
 
       - name: Install plugin API artifacts
-        run: mvn -B -ntp -Dmaven.multiModuleProjectDirectory="${{ github.workspace }}/golemcore-plugins" -f golemcore-plugins/pom.xml -pl extension-api,runtime-api -am install -DskipTests
+        run: mvn -B -ntp -Djgitver.skip=true -f golemcore-plugins/pom.xml -pl extension-api,runtime-api -am install -DskipTests
 
       - name: Determine image tags
         id: tags
