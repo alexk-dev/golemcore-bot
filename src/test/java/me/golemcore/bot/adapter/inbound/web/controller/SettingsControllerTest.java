@@ -615,6 +615,71 @@ class SettingsControllerTest {
     }
 
     @Test
+    void shouldPreserveExistingToolsSectionWhenIncomingToolsSectionIsEmpty() {
+        RuntimeConfig current = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder().providers(new LinkedHashMap<>()).build())
+                .modelRouter(RuntimeConfig.ModelRouterConfig.builder().build())
+                .tools(RuntimeConfig.ToolsConfig.builder()
+                        .filesystemEnabled(true)
+                        .shellEnabled(true)
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .tools(RuntimeConfig.ToolsConfig.builder().build())
+                .build();
+
+        StepVerifier.create(controller.updateRuntimeConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        RuntimeConfig saved = captor.getValue();
+        assertEquals(Boolean.TRUE, saved.getTools().getFilesystemEnabled());
+        assertEquals(Boolean.TRUE, saved.getTools().getShellEnabled());
+    }
+
+    @Test
+    void shouldPreserveUnspecifiedRuntimeSectionsDuringPartialRuntimeUpdate() {
+        RuntimeConfig current = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder()
+                        .providers(new LinkedHashMap<>(Map.of(
+                                "openai", RuntimeConfig.LlmProviderConfig.builder().apiKey(Secret.of("x")).build())))
+                        .build())
+                .modelRouter(RuntimeConfig.ModelRouterConfig.builder()
+                        .balancedModel("openai/gpt-5.1")
+                        .build())
+                .tools(RuntimeConfig.ToolsConfig.builder()
+                        .filesystemEnabled(true)
+                        .build())
+                .turn(RuntimeConfig.TurnConfig.builder()
+                        .maxLlmCalls(9)
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .turn(RuntimeConfig.TurnConfig.builder()
+                        .maxLlmCalls(12)
+                        .build())
+                .build();
+
+        StepVerifier.create(controller.updateRuntimeConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        RuntimeConfig saved = captor.getValue();
+        assertEquals(12, saved.getTurn().getMaxLlmCalls());
+        assertEquals(Boolean.TRUE, saved.getTools().getFilesystemEnabled());
+        assertEquals("openai/gpt-5.1", saved.getModelRouter().getBalancedModel());
+        assertTrue(saved.getLlm().getProviders().containsKey("openai"));
+    }
+
+    @Test
     void shouldGetShellEnvironmentVariablesFromRuntimeConfigForApi() {
         RuntimeConfig runtimeConfig = RuntimeConfig.builder()
                 .tools(RuntimeConfig.ToolsConfig.builder()

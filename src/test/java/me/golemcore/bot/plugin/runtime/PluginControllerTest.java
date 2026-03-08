@@ -1,0 +1,107 @@
+package me.golemcore.bot.plugin.runtime;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
+import reactor.test.StepVerifier;
+
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+class PluginControllerTest {
+
+    private PluginManager pluginManager;
+    private PluginMarketplaceService pluginMarketplaceService;
+    private SttProviderRegistry sttProviderRegistry;
+    private TtsProviderRegistry ttsProviderRegistry;
+    private PluginController controller;
+
+    @BeforeEach
+    void setUp() {
+        pluginManager = mock(PluginManager.class);
+        pluginMarketplaceService = mock(PluginMarketplaceService.class);
+        sttProviderRegistry = mock(SttProviderRegistry.class);
+        ttsProviderRegistry = mock(TtsProviderRegistry.class);
+        controller = new PluginController(pluginManager, pluginMarketplaceService, sttProviderRegistry,
+                ttsProviderRegistry);
+    }
+
+    @Test
+    void shouldListPluginsFromManager() {
+        when(pluginManager.listPlugins()).thenReturn(List.of(PluginRuntimeInfo.builder()
+                .id("golemcore/browser")
+                .version("1.0.0")
+                .loaded(true)
+                .build()));
+
+        StepVerifier.create(controller.listPlugins())
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertNotNull(response.getBody());
+                    assertEquals(1, response.getBody().size());
+                    assertEquals("golemcore/browser", response.getBody().getFirst().getId());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldInstallPluginFromRequest() {
+        PluginInstallResult result = PluginInstallResult.builder()
+                .status("installed")
+                .build();
+        when(pluginMarketplaceService.install("golemcore/browser", "1.0.0")).thenReturn(result);
+
+        StepVerifier.create(controller.installPlugin(new PluginInstallRequest("golemcore/browser", "1.0.0")))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertEquals("installed", response.getBody().getStatus());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldReturnReloadStatusForSinglePlugin() {
+        when(pluginManager.reloadPlugin("golemcore/browser")).thenReturn(false);
+
+        StepVerifier.create(controller.reloadPlugin("golemcore/browser"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertEquals("missing", response.getBody().get("status"));
+                    assertEquals("golemcore/browser", response.getBody().get("pluginId"));
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldReloadAllPlugins() {
+        StepVerifier.create(controller.reloadAll())
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertEquals("reloaded", response.getBody().get("status"));
+                })
+                .verifyComplete();
+
+        verify(pluginManager).reloadAll();
+    }
+
+    @Test
+    void shouldListVoiceProviders() {
+        when(sttProviderRegistry.listProviderIds()).thenReturn(Map.of("golemcore/whisper", "golemcore/whisper"));
+        when(ttsProviderRegistry.listProviderIds()).thenReturn(Map.of("golemcore/elevenlabs", "golemcore/elevenlabs"));
+
+        StepVerifier.create(controller.listVoiceProviders())
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertEquals(Map.of("golemcore/whisper", "golemcore/whisper"), response.getBody().get("stt"));
+                    assertEquals(Map.of("golemcore/elevenlabs", "golemcore/elevenlabs"),
+                            response.getBody().get("tts"));
+                })
+                .verifyComplete();
+    }
+}
