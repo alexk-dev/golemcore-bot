@@ -94,10 +94,31 @@ public class PluginSettingsRegistry {
                 || normalizedSectionKey.isBlank()
                         ? "plugin-" + pluginId
                         : "plugin-" + pluginId + "-" + sectionKey;
-        return routeSeed
-                .toLowerCase(Locale.ROOT)
-                .replaceAll("[^a-z0-9]+", "-")
-                .replaceAll("(^-|-$)", "");
+        return sanitizeRouteKey(routeSeed);
+    }
+
+    private static String sanitizeRouteKey(String routeSeed) {
+        String normalized = routeSeed.toLowerCase(Locale.ROOT);
+        StringBuilder sanitized = new StringBuilder(normalized.length());
+        boolean previousDash = false;
+        for (int index = 0; index < normalized.length(); index++) {
+            char current = normalized.charAt(index);
+            boolean alphanumeric = current >= 'a' && current <= 'z' || current >= '0' && current <= '9';
+            if (alphanumeric) {
+                sanitized.append(current);
+                previousDash = false;
+                continue;
+            }
+            if (!previousDash && !sanitized.isEmpty()) {
+                sanitized.append('-');
+                previousDash = true;
+            }
+        }
+        int length = sanitized.length();
+        if (length > 0 && sanitized.charAt(length - 1) == '-') {
+            sanitized.setLength(length - 1);
+        }
+        return sanitized.toString();
     }
 
     private RegisteredContributor require(String routeKey) {

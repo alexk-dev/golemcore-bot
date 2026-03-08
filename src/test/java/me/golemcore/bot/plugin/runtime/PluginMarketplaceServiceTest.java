@@ -23,8 +23,10 @@ import java.util.jar.JarOutputStream;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -144,6 +146,185 @@ class PluginMarketplaceServiceTest {
         assertTrue(catalog.getItems().isEmpty());
     }
 
+    @Test
+    void shouldRejectInvalidPluginIdDuringInstall(@TempDir Path tempDir) throws Exception {
+        Path repositoryRoot = tempDir.resolve("golemcore-plugins");
+        Path installRoot = tempDir.resolve("installed-plugins");
+        Path artifactPath = createPluginArtifact(repositoryRoot, "golemcore/browser", "1.0.0",
+                "Playwright-backed browser automation tool with screenshot support.");
+        writeRegistryEntry(repositoryRoot, "golemcore/browser", "1.0.0", artifactPath);
+
+        PluginManager pluginManager = mock(PluginManager.class);
+        PluginMarketplaceService service = new PluginMarketplaceService(
+                botProperties(repositoryRoot, installRoot),
+                buildPropertiesProvider("0.0.0-SNAPSHOT"),
+                pluginManager,
+                mock(PluginSettingsRegistry.class));
+
+        assertThrows(IllegalArgumentException.class, () -> service.install("../browser", null));
+        verify(pluginManager, never()).reloadPlugin("golemcore/browser");
+    }
+
+    @Test
+    void shouldRejectArtifactPathThatEscapesRepositoryRoot(@TempDir Path tempDir) throws Exception {
+        Path repositoryRoot = tempDir.resolve("golemcore-plugins");
+        Path installRoot = tempDir.resolve("installed-plugins");
+        Path artifactPath = createPluginArtifact(repositoryRoot, "golemcore/browser", "1.0.0",
+                "Playwright-backed browser automation tool with screenshot support.");
+        writeRegistryEntry(repositoryRoot, "golemcore/browser", "1.0.0", artifactPath,
+                "../outside/golemcore-browser-plugin-1.0.0.jar");
+
+        PluginManager pluginManager = mock(PluginManager.class);
+        PluginMarketplaceService service = new PluginMarketplaceService(
+                botProperties(repositoryRoot, installRoot),
+                buildPropertiesProvider("0.0.0-SNAPSHOT"),
+                pluginManager,
+                mock(PluginSettingsRegistry.class));
+
+        assertThrows(IllegalArgumentException.class, () -> service.install("golemcore/browser", null));
+        verify(pluginManager, never()).reloadPlugin("golemcore/browser");
+    }
+
+    @Test
+    void shouldRejectArtifactPathThatDoesNotMatchPluginCoordinates(@TempDir Path tempDir) throws Exception {
+        Path repositoryRoot = tempDir.resolve("golemcore-plugins");
+        Path installRoot = tempDir.resolve("installed-plugins");
+        Path artifactPath = createPluginArtifact(repositoryRoot, "golemcore/browser", "1.0.0",
+                "Playwright-backed browser automation tool with screenshot support.");
+        writeRegistryEntry(repositoryRoot, "golemcore/browser", "1.0.0", artifactPath,
+                "dist/golemcore/other-plugin/1.0.0/golemcore-browser-plugin-1.0.0.jar");
+
+        PluginMarketplaceService service = new PluginMarketplaceService(
+                botProperties(repositoryRoot, installRoot),
+                buildPropertiesProvider("0.0.0-SNAPSHOT"),
+                mock(PluginManager.class),
+                mock(PluginSettingsRegistry.class));
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> service.install("golemcore/browser", null));
+
+        assertTrue(exception.getMessage().contains("plugin id"));
+    }
+
+    @Test
+    void shouldRejectRequestedVersionThatIsNotPublished(@TempDir Path tempDir) throws Exception {
+        Path repositoryRoot = tempDir.resolve("golemcore-plugins");
+        Path installRoot = tempDir.resolve("installed-plugins");
+        Path artifactPath = createPluginArtifact(repositoryRoot, "golemcore/browser", "1.0.0",
+                "Playwright-backed browser automation tool with screenshot support.");
+        writeRegistryEntry(repositoryRoot, "golemcore/browser", "1.0.0", artifactPath);
+
+        PluginManager pluginManager = mock(PluginManager.class);
+        PluginMarketplaceService service = new PluginMarketplaceService(
+                botProperties(repositoryRoot, installRoot),
+                buildPropertiesProvider("0.0.0-SNAPSHOT"),
+                pluginManager,
+                mock(PluginSettingsRegistry.class));
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> service.install("golemcore/browser", "2.0.0"));
+
+        assertTrue(exception.getMessage().contains("Unknown plugin version"));
+        verify(pluginManager, never()).reloadPlugin("golemcore/browser");
+    }
+
+    @Test
+    void shouldRejectIncompatiblePluginVersion(@TempDir Path tempDir) throws Exception {
+        Path repositoryRoot = tempDir.resolve("golemcore-plugins");
+        Path installRoot = tempDir.resolve("installed-plugins");
+        Path artifactPath = createPluginArtifact(repositoryRoot, "golemcore/browser", "1.0.0",
+                "Playwright-backed browser automation tool with screenshot support.");
+        writeRegistryEntry(repositoryRoot, "golemcore/browser", "1.0.0", artifactPath);
+
+        PluginMarketplaceService service = new PluginMarketplaceService(
+                botProperties(repositoryRoot, installRoot),
+                buildPropertiesProvider("1.0.0"),
+                mock(PluginManager.class),
+                mock(PluginSettingsRegistry.class));
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class,
+                () -> service.install("golemcore/browser", null));
+
+        assertTrue(exception.getMessage().contains("not compatible"));
+    }
+
+    @Test
+    void shouldResolveVersionMetadataByContentsInsteadOfRequestedPath(@TempDir Path tempDir) throws Exception {
+        Path repositoryRoot = tempDir.resolve("golemcore-plugins");
+        Path installRoot = tempDir.resolve("installed-plugins");
+        Path artifactPath = createPluginArtifact(repositoryRoot, "golemcore/browser", "1.0.0",
+                "Playwright-backed browser automation tool with screenshot support.");
+        writeRegistryEntry(repositoryRoot, "golemcore/browser", "1.0.0", artifactPath,
+                "release.yaml",
+                "dist/golemcore/browser/1.0.0/golemcore-browser-plugin-1.0.0.jar");
+
+        PluginManager pluginManager = mock(PluginManager.class);
+        when(pluginManager.reloadPlugin("golemcore/browser")).thenReturn(true);
+        when(pluginManager.listPlugins()).thenReturn(List.of());
+
+        PluginMarketplaceService service = new PluginMarketplaceService(
+                botProperties(repositoryRoot, installRoot),
+                buildPropertiesProvider("0.0.0-SNAPSHOT"),
+                pluginManager,
+                mock(PluginSettingsRegistry.class));
+
+        PluginInstallResult result = service.install("golemcore/browser", "1.0.0");
+
+        assertEquals("installed", result.getStatus());
+        assertTrue(Files.isRegularFile(
+                installRoot.resolve("golemcore/browser/1.0.0/golemcore-browser-plugin-1.0.0.jar")));
+        verify(pluginManager).reloadPlugin("golemcore/browser");
+    }
+
+    @Test
+    void shouldInstallWhenArtifactUrlIsMissingButDirectoryContainsSingleJar(@TempDir Path tempDir) throws Exception {
+        Path repositoryRoot = tempDir.resolve("golemcore-plugins");
+        Path installRoot = tempDir.resolve("installed-plugins");
+        Path artifactPath = createPluginArtifact(repositoryRoot, "golemcore/browser", "1.0.0",
+                "Playwright-backed browser automation tool with screenshot support.");
+        writeRegistryEntry(repositoryRoot, "golemcore/browser", "1.0.0", artifactPath, "");
+
+        PluginManager pluginManager = mock(PluginManager.class);
+        when(pluginManager.reloadPlugin("golemcore/browser")).thenReturn(true);
+        when(pluginManager.listPlugins()).thenReturn(List.of());
+
+        PluginMarketplaceService service = new PluginMarketplaceService(
+                botProperties(repositoryRoot, installRoot),
+                buildPropertiesProvider("0.0.0-SNAPSHOT"),
+                pluginManager,
+                mock(PluginSettingsRegistry.class));
+
+        PluginInstallResult result = service.install("golemcore/browser", null);
+
+        assertEquals("installed", result.getStatus());
+        assertTrue(Files.isRegularFile(
+                installRoot.resolve("golemcore/browser/1.0.0/golemcore-browser-plugin-1.0.0.jar")));
+    }
+
+    @Test
+    void shouldMarkCatalogItemArtifactUnavailableWhenJarIsMissing(@TempDir Path tempDir) throws Exception {
+        Path repositoryRoot = tempDir.resolve("golemcore-plugins");
+        Path installRoot = tempDir.resolve("installed-plugins");
+        Path artifactPath = createPluginArtifact(repositoryRoot, "golemcore/browser", "1.0.0",
+                "Playwright-backed browser automation tool with screenshot support.");
+        writeRegistryEntry(repositoryRoot, "golemcore/browser", "1.0.0", artifactPath);
+        Files.delete(artifactPath);
+
+        PluginManager pluginManager = mock(PluginManager.class);
+        when(pluginManager.listPlugins()).thenReturn(List.of());
+
+        PluginMarketplaceService service = new PluginMarketplaceService(
+                botProperties(repositoryRoot, installRoot),
+                buildPropertiesProvider("0.0.0-SNAPSHOT"),
+                pluginManager,
+                mock(PluginSettingsRegistry.class));
+
+        PluginMarketplaceCatalog catalog = service.getCatalog();
+
+        assertEquals(1, catalog.getItems().size());
+        assertFalse(catalog.getItems().getFirst().isArtifactAvailable());
+    }
+
     private BotProperties botProperties(Path repositoryRoot, Path installRoot) {
         BotProperties properties = new BotProperties();
         properties.getPlugins().setDirectory(installRoot.toString());
@@ -180,6 +361,27 @@ class PluginMarketplaceServiceTest {
 
     private void writeRegistryEntry(Path repositoryRoot, String pluginId, String version, Path artifactPath)
             throws IOException {
+        writeRegistryEntry(repositoryRoot, pluginId, version, artifactPath,
+                version + ".yaml",
+                "dist/%s/%s/%s/%s".formatted(
+                        pluginId.split("/", 2)[0],
+                        pluginId.split("/", 2)[1],
+                        version,
+                        artifactPath.getFileName()));
+    }
+
+    private void writeRegistryEntry(Path repositoryRoot, String pluginId, String version, Path artifactPath,
+            String artifactUrl) throws IOException {
+        writeRegistryEntry(repositoryRoot, pluginId, version, artifactPath, version + ".yaml", artifactUrl);
+    }
+
+    private void writeRegistryEntry(
+            Path repositoryRoot,
+            String pluginId,
+            String version,
+            Path artifactPath,
+            String versionMetadataFileName,
+            String artifactUrl) throws IOException {
         String[] parts = pluginId.split("/", 2);
         Path pluginRegistryDir = repositoryRoot.resolve("registry").resolve(parts[0]).resolve(parts[1]);
         Files.createDirectories(pluginRegistryDir.resolve("versions"));
@@ -193,12 +395,12 @@ class PluginMarketplaceServiceTest {
                 source: https://github.com/alexk-dev/golemcore-plugins/tree/main/%s/%s
                 """.formatted(pluginId, parts[0], parts[1], version, version, parts[0], parts[1]),
                 StandardCharsets.UTF_8);
-        Files.writeString(pluginRegistryDir.resolve("versions").resolve(version + ".yaml"), """
+        Files.writeString(pluginRegistryDir.resolve("versions").resolve(versionMetadataFileName), """
                 id: %s
                 version: %s
                 pluginApiVersion: 1
                 engineVersion: ">=0.0.0 <1.0.0"
-                artifactUrl: "dist/%s/%s/%s/%s"
+                artifactUrl: "%s"
                 checksumSha256: "%s"
                 publishedAt: "2026-03-07T00:00:00Z"
                 sourceCommit: "abc123"
@@ -210,10 +412,7 @@ class PluginMarketplaceServiceTest {
                 """.formatted(
                 pluginId,
                 version,
-                parts[0],
-                parts[1],
-                version,
-                artifactPath.getFileName(),
+                artifactUrl,
                 sha256(artifactPath),
                 parts[0],
                 parts[1],

@@ -9,6 +9,7 @@ import me.golemcore.bot.port.outbound.StoragePort;
 
 import java.io.IOException;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -34,7 +35,8 @@ public class PluginConfigurationService {
     }
 
     public boolean hasPluginConfig(String pluginId) {
-        return storagePort.exists(PREFERENCES_DIR, pathFor(pluginId)).join();
+        String normalized = normalizePluginId(pluginId);
+        return storagePort.exists(PREFERENCES_DIR, pathFor(normalized)).join();
     }
 
     public synchronized Map<String, Object> getPluginConfig(String pluginId) {
@@ -111,9 +113,35 @@ public class PluginConfigurationService {
     }
 
     private String normalizePluginId(String pluginId) {
-        if (pluginId == null || !pluginId.matches("[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*")) {
+        if (pluginId == null) {
             throw new IllegalArgumentException("Plugin id must match <owner>/<plugin>");
         }
-        return pluginId;
+        String normalized = pluginId.trim().toLowerCase(Locale.ROOT);
+        int separatorIndex = normalized.indexOf('/');
+        if (separatorIndex <= 0 || separatorIndex != normalized.lastIndexOf('/')
+                || separatorIndex == normalized.length() - 1) {
+            throw new IllegalArgumentException("Plugin id must match <owner>/<plugin>");
+        }
+        String owner = normalized.substring(0, separatorIndex);
+        String name = normalized.substring(separatorIndex + 1);
+        validateIdentifier(owner, "Plugin owner");
+        validateIdentifier(name, "Plugin name");
+        return owner + "/" + name;
+    }
+
+    private void validateIdentifier(String value, String label) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(label + " is required");
+        }
+        for (int index = 0; index < value.length(); index++) {
+            char current = value.charAt(index);
+            boolean alphanumeric = current >= 'a' && current <= 'z' || current >= '0' && current <= '9';
+            if (index == 0 && !alphanumeric) {
+                throw new IllegalArgumentException(label + " must start with a lowercase letter or digit");
+            }
+            if (!alphanumeric && current != '-') {
+                throw new IllegalArgumentException(label + " must contain only lowercase letters, digits, and '-'");
+            }
+        }
     }
 }
