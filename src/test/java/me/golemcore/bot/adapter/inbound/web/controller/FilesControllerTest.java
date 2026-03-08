@@ -199,6 +199,27 @@ class FilesControllerTest {
     }
 
     @Test
+    void shouldFallbackToOctetStreamWhenMimeTypeIsBlank() {
+        ToolArtifactDownload download = ToolArtifactDownload.builder()
+                .path(".golemcore/tool-artifacts/session/test/report.bin")
+                .filename("report.bin")
+                .mimeType("   ")
+                .size(3L)
+                .data(new byte[] { 1, 2, 3 })
+                .build();
+
+        when(toolArtifactService.getDownload(".golemcore/tool-artifacts/session/test/report.bin"))
+                .thenReturn(download);
+
+        StepVerifier.create(filesController.download(".golemcore/tool-artifacts/session/test/report.bin"))
+                .assertNext(response -> {
+                    assertStatus(response, HttpStatus.OK);
+                    assertEquals("application/octet-stream", response.getHeaders().getContentType().toString());
+                })
+                .verifyComplete();
+    }
+
+    @Test
     void shouldReturnBadRequestForInvalidDownloadPath() {
         when(toolArtifactService.getDownload("../etc/passwd")).thenThrow(new IllegalArgumentException("Invalid path"));
 

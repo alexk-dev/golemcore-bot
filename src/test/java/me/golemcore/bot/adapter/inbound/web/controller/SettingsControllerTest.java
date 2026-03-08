@@ -615,6 +615,28 @@ class SettingsControllerTest {
     }
 
     @Test
+    void shouldInitializeTelegramSectionWhenBaselineRuntimeConfigIsNull() {
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(null);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder().providers(new LinkedHashMap<>()).build())
+                .modelRouter(RuntimeConfig.ModelRouterConfig.builder().build())
+                .build();
+
+        StepVerifier.create(controller.updateRuntimeConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        RuntimeConfig saved = captor.getValue();
+        assertNotNull(saved.getTelegram());
+        assertEquals("invite_only", saved.getTelegram().getAuthMode());
+        assertNotNull(saved.getLlm());
+        assertNotNull(saved.getModelRouter());
+    }
+
+    @Test
     void shouldPreserveExistingToolsSectionWhenIncomingToolsSectionIsEmpty() {
         RuntimeConfig current = RuntimeConfig.builder()
                 .llm(RuntimeConfig.LlmConfig.builder().providers(new LinkedHashMap<>()).build())

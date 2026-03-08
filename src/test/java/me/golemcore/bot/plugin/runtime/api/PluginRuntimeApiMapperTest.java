@@ -11,6 +11,8 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PluginRuntimeApiMapperTest {
 
@@ -136,5 +138,89 @@ class PluginRuntimeApiMapperTest {
         assertEquals("Europe/Moscow", mappedBack.getTimezone());
         assertNotNull(mappedBack.getWebhooks().getToken());
         assertEquals("telegram", mappedBack.getWebhooks().getMappings().getFirst().getChannel());
+    }
+
+    @Test
+    void shouldHandleNullInputsAndNullCollectionFields() {
+        assertNull(mapper.toHostSessionIdentity(null));
+        assertNull(mapper.toPluginPlan(null));
+        assertNull(mapper.toPluginRuntimeConfig(null));
+        assertNull(mapper.toHostRuntimeConfig(null));
+        assertNull(mapper.toPluginUserPreferences(null));
+        assertNull(mapper.toHostUserPreferences(null));
+        assertNull(mapper.toPluginInviteCode(null));
+
+        me.golemcore.bot.domain.model.RuntimeConfig.TelegramConfig telegram = me.golemcore.bot.domain.model.RuntimeConfig.TelegramConfig
+                .builder()
+                .build();
+        telegram.setAllowedUsers(null);
+        telegram.setInviteCodes(null);
+        me.golemcore.bot.domain.model.RuntimeConfig runtimeConfig = me.golemcore.bot.domain.model.RuntimeConfig
+                .builder()
+                .telegram(telegram)
+                .voice(me.golemcore.bot.domain.model.RuntimeConfig.VoiceConfig.builder().build())
+                .build();
+
+        me.golemcore.plugin.api.runtime.model.RuntimeConfig pluginConfig = mapper.toPluginRuntimeConfig(runtimeConfig);
+        assertNull(pluginConfig.getTelegram().getAllowedUsers());
+        assertTrue(pluginConfig.getTelegram().getInviteCodes().isEmpty());
+
+        me.golemcore.bot.domain.model.RuntimeConfig mappedBack = mapper.toHostRuntimeConfig(pluginConfig);
+        assertNull(mappedBack.getTelegram().getAllowedUsers());
+        assertTrue(mappedBack.getTelegram().getInviteCodes().isEmpty());
+
+        me.golemcore.bot.domain.model.SessionIdentity hostSessionIdentity = mapper.toHostSessionIdentity(
+                new me.golemcore.plugin.api.runtime.model.SessionIdentity("telegram", "chat-1"));
+        assertEquals("telegram", hostSessionIdentity.channelType());
+        assertEquals("chat-1", hostSessionIdentity.conversationKey());
+    }
+
+    @Test
+    void shouldPreserveNullEntriesInMappedCollections() {
+        List<me.golemcore.bot.domain.model.PlanStep> planSteps = new ArrayList<>();
+        planSteps.add(null);
+        planSteps.add(me.golemcore.bot.domain.model.PlanStep.builder()
+                .id("step-1")
+                .description("open")
+                .build());
+
+        me.golemcore.bot.domain.model.Plan plan = me.golemcore.bot.domain.model.Plan.builder()
+                .id("plan-1")
+                .steps(planSteps)
+                .build();
+        plan.setStatus(null);
+
+        me.golemcore.plugin.api.runtime.model.Plan pluginPlan = mapper.toPluginPlan(plan);
+        assertNull(pluginPlan.getStatus());
+        assertNull(pluginPlan.getSteps().getFirst());
+        assertEquals("step-1", pluginPlan.getSteps().get(1).getId());
+
+        List<me.golemcore.bot.domain.model.UserPreferences.HookMapping> mappings = new ArrayList<>();
+        mappings.add(null);
+        mappings.add(me.golemcore.bot.domain.model.UserPreferences.HookMapping.builder()
+                .name("github")
+                .channel("telegram")
+                .build());
+        Map<String, me.golemcore.bot.domain.model.UserPreferences.TierOverride> tierOverrides = new LinkedHashMap<>();
+        tierOverrides.put("coding", null);
+
+        me.golemcore.bot.domain.model.UserPreferences preferences = me.golemcore.bot.domain.model.UserPreferences
+                .builder()
+                .tierOverrides(tierOverrides)
+                .webhooks(me.golemcore.bot.domain.model.UserPreferences.WebhookConfig.builder()
+                        .mappings(mappings)
+                        .build())
+                .build();
+
+        me.golemcore.plugin.api.runtime.model.UserPreferences pluginPreferences = mapper
+                .toPluginUserPreferences(preferences);
+        assertNull(pluginPreferences.getTierOverrides().get("coding"));
+        assertNull(pluginPreferences.getWebhooks().getMappings().getFirst());
+        assertEquals("github", pluginPreferences.getWebhooks().getMappings().get(1).getName());
+
+        me.golemcore.bot.domain.model.UserPreferences mappedBack = mapper.toHostUserPreferences(pluginPreferences);
+        assertNull(mappedBack.getTierOverrides().get("coding"));
+        assertNull(mappedBack.getWebhooks().getMappings().getFirst());
+        assertEquals("telegram", mappedBack.getWebhooks().getMappings().get(1).getChannel());
     }
 }

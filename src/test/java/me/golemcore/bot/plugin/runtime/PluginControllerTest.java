@@ -10,6 +10,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -61,6 +62,24 @@ class PluginControllerTest {
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
                     assertEquals("installed", response.getBody().getStatus());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldReturnMarketplaceCatalog() {
+        when(pluginMarketplaceService.getCatalog()).thenReturn(PluginMarketplaceCatalog.builder()
+                .available(true)
+                .message("ready")
+                .sourceDirectory("plugins/marketplace")
+                .build());
+
+        StepVerifier.create(controller.getMarketplace())
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertNotNull(response.getBody());
+                    assertTrue(response.getBody().isAvailable());
+                    assertEquals("plugins/marketplace", response.getBody().getSourceDirectory());
                 })
                 .verifyComplete();
     }

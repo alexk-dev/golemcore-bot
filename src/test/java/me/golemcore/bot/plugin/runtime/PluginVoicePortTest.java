@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -128,5 +129,37 @@ class PluginVoicePortTest {
                 () -> pluginVoicePort.synthesize("hello", VoicePort.VoiceConfig.defaultConfig()));
 
         assertTrue(exception.getMessage().contains("No TTS provider loaded"));
+    }
+
+    @Test
+    void shouldFailWhenConfiguredSttProviderIsUnavailable() {
+        SttProvider sttProvider = mock(SttProvider.class);
+        when(runtimeConfigService.getSttProvider()).thenReturn("golemcore/whisper");
+        when(sttProvider.getProviderId()).thenReturn("golemcore/whisper");
+        when(sttProvider.isAvailable()).thenReturn(false);
+
+        sttProviderRegistry.replaceProviders("golemcore/whisper", List.of(sttProvider));
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class,
+                () -> pluginVoicePort.transcribe(new byte[] { 1 }, AudioFormat.MP3));
+
+        assertTrue(exception.getMessage().contains("STT provider is not available"));
+    }
+
+    @Test
+    void shouldUseDefaultTtsProviderWhenConfiguredValueIsBlank() {
+        TtsProvider ttsProvider = mock(TtsProvider.class);
+        when(runtimeConfigService.getTtsProvider()).thenReturn("   ");
+        when(ttsProvider.getProviderId()).thenReturn("golemcore/elevenlabs");
+        when(ttsProvider.isAvailable()).thenReturn(true);
+        when(ttsProvider.synthesize(anyString(),
+                any(me.golemcore.plugin.api.extension.port.outbound.VoicePort.VoiceConfig.class)))
+                .thenReturn(CompletableFuture.completedFuture(new byte[] { 4, 5, 6 }));
+
+        ttsProviderRegistry.replaceProviders("golemcore/elevenlabs", List.of(ttsProvider));
+
+        byte[] synthesized = pluginVoicePort.synthesize("hello", VoicePort.VoiceConfig.defaultConfig()).join();
+
+        assertArrayEquals(new byte[] { 4, 5, 6 }, synthesized);
     }
 }
