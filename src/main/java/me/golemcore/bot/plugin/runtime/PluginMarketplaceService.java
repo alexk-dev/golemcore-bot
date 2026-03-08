@@ -234,7 +234,9 @@ public class PluginMarketplaceService {
         PluginCoordinates coordinates = parsePluginId(normalizedIndexPluginId);
         index.setId(coordinates.id());
         index.setVersions(normalizePublishedVersions(index.getVersions()));
-        Path pluginRegistryDir = requireDirectory(indexPath.getParent(), "plugin registry directory");
+        Path pluginRegistryDir = requireDirectory(
+                indexPath.toAbsolutePath().normalize().resolve("..").normalize(),
+                "plugin registry directory");
         Map<String, TrustedVersionRecord> versions = loadTrustedVersions(
                 repoRoot,
                 pluginRegistryDir,
@@ -547,10 +549,14 @@ public class PluginMarketplaceService {
 
     private String sha256(Path path) {
         try {
-            Path safePath = ensureContainedInRoot(path.getParent() != null ? path.getParent() : path, path,
-                    "checksum input");
+            if (path == null) {
+                throw new IllegalArgumentException("Checksum path is required");
+            }
+            Path safePath = path.toAbsolutePath().normalize();
+            Path checksumRoot = safePath.resolve("..").normalize();
+            Path containedPath = ensureContainedInRoot(checksumRoot, safePath, "checksum input");
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            digest.update(Files.readAllBytes(safePath));
+            digest.update(Files.readAllBytes(containedPath));
             return HexFormat.of().formatHex(digest.digest());
         } catch (IOException ex) {
             throw new IllegalStateException("Failed to read " + path + " for checksum verification", ex);
