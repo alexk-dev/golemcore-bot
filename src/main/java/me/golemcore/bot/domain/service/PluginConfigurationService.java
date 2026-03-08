@@ -135,7 +135,7 @@ public class PluginConfigurationService {
         }
         for (int index = 0; index < value.length(); index++) {
             char current = value.charAt(index);
-            boolean alphanumeric = current >= 'a' && current <= 'z' || current >= '0' && current <= '9';
+            boolean alphanumeric = (current >= 'a' && current <= 'z') || (current >= '0' && current <= '9');
             if (index == 0 && !alphanumeric) {
                 throw new IllegalArgumentException(label + " must start with a lowercase letter or digit");
             }

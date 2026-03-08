@@ -203,7 +203,7 @@ class PluginMarketplaceServiceTest {
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
                 () -> service.install("golemcore/browser", null));
 
-        assertTrue(exception.getMessage().contains("plugin id"));
+        assertTrue(exception.getMessage().contains("plugin"));
     }
 
     @Test

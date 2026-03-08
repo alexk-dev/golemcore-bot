@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.jar.JarFile;
 import java.util.stream.Stream;
 
@@ -67,6 +68,8 @@ public class PluginMarketplaceService {
             return unavailable("Marketplace registry directory is missing under " + repoRoot);
         }
 
+        String engineVersion = resolveEngineVersion();
+        Map<String, TrustedPluginRecord> trustedPlugins = loadTrustedPlugins(repoRoot, engineVersion);
         Map<String, PluginRuntimeInfo> loadedById = pluginManager.listPlugins().stream()
                 .collect(java.util.stream.Collectors.toMap(
                         PluginRuntimeInfo::getId,
@@ -80,8 +83,7 @@ public class PluginMarketplaceService {
                         (left, right) -> left,
                         LinkedHashMap::new));
 
-        List<PluginMarketplaceItem> items = loadRegistryItems(repoRoot, registryRoot, loadedById,
-                settingsRouteByPlugin);
+        List<PluginMarketplaceItem> items = loadMarketplaceItems(trustedPlugins, loadedById, settingsRouteByPlugin);
         return PluginMarketplaceCatalog.builder()
                 .available(true)
                 .sourceDirectory(repoRoot.toString())
@@ -102,55 +104,63 @@ public class PluginMarketplaceService {
 
         Path repoRoot = resolveRepositoryRoot()
                 .orElseThrow(() -> new IllegalStateException("Marketplace repository was not found"));
-        RegistrySelection selection = resolveSelection(repoRoot, requestedPlugin, normalizedVersion);
-        String trustedPluginId = selection.coordinates().id();
-        String trustedVersion = selection.versionMetadata().getVersion();
-        if (!selection.compatible()) {
-            throw new IllegalStateException("Plugin " + normalizedPluginId + " is not compatible with engine "
-                    + resolveEngineVersion());
+        String engineVersion = resolveEngineVersion();
+        Map<String, TrustedPluginRecord> trustedPlugins = loadTrustedPlugins(repoRoot, engineVersion);
+        TrustedPluginRecord trustedPlugin = trustedPlugins.get(normalizedPluginId);
+        if (trustedPlugin == null) {
+            throw new IllegalArgumentException("Unknown plugin: " + normalizedPluginId);
         }
-        if (!Files.isRegularFile(selection.artifactPath())) {
+        TrustedVersionRecord selectedVersion = selectVersion(trustedPlugin, normalizedVersion);
+        String trustedPluginId = trustedPlugin.coordinates().id();
+        String trustedVersion = selectedVersion.versionMetadata().getVersion();
+        if (!selectedVersion.compatible()) {
+            throw new IllegalStateException("Plugin " + normalizedPluginId + " is not compatible with engine "
+                    + engineVersion);
+        }
+        if (!Files.isRegularFile(selectedVersion.artifactPath())) {
             throw new IllegalStateException(
-                    "Artifact not found for " + normalizedPluginId + " at " + selection.artifactPath());
+                    "Artifact not found for " + normalizedPluginId + " at " + selectedVersion.artifactPath());
         }
 
-        verifyChecksum(selection.artifactPath(), selection.versionMetadata().getChecksumSha256());
-        Path artifactFileName = selection.artifactPath().getFileName();
+        verifyChecksum(selectedVersion.artifactPath(), selectedVersion.versionMetadata().getChecksumSha256());
+        Path artifactFileName = selectedVersion.artifactPath().getFileName();
         if (artifactFileName == null) {
-            throw new IllegalStateException("Artifact path has no file name: " + selection.artifactPath());
+            throw new IllegalStateException("Artifact path has no file name: " + selectedVersion.artifactPath());
         }
         Path pluginsRoot = pluginDirectoryRoot();
-        Path destination = installDestination(pluginsRoot, selection.coordinates(), trustedVersion,
+        Path destination = installDestination(pluginsRoot, trustedPlugin.coordinates(), trustedVersion,
                 artifactFileName.toString());
-        String previouslyInstalledVersion = findInstalledVersion(selection.coordinates());
+        String previouslyInstalledVersion = findInstalledVersion(trustedPlugin.coordinates());
         try {
-            Path destinationParent = destination.getParent();
-            if (destinationParent == null || !destinationParent.startsWith(pluginsRoot)) {
-                throw new IllegalStateException("Invalid plugin install destination: " + destination);
-            }
+            Path destinationParent = requireDestinationParent(pluginsRoot, destination);
             Files.createDirectories(destinationParent);
-            Path tempFile = destination.resolveSibling(destination.getFileName() + ".tmp");
-            ensureContainedInRoot(pluginsRoot, tempFile, "plugin temp artifact");
-            Files.copy(selection.artifactPath(), tempFile, StandardCopyOption.REPLACE_EXISTING);
-            Files.move(tempFile, destination, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            Path tempFile = ensureContainedInRoot(pluginsRoot,
+                    Files.createTempFile(destinationParent, "plugin-", ".tmp"),
+                    "plugin temp artifact");
+            try {
+                Files.copy(selectedVersion.artifactPath(), tempFile, StandardCopyOption.REPLACE_EXISTING);
+                Files.move(tempFile, destination, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } finally {
+                Files.deleteIfExists(tempFile);
+            }
         } catch (IOException ex) {
             throw new IllegalStateException("Failed to install plugin artifact for " + normalizedPluginId, ex);
         }
-        verifyChecksum(destination, selection.versionMetadata().getChecksumSha256());
+        verifyChecksum(destination, selectedVersion.versionMetadata().getChecksumSha256());
 
         boolean loaded = pluginManager.reloadPlugin(trustedPluginId);
         PluginMarketplaceItem plugin = getCatalog().getItems().stream()
                 .filter(item -> trustedPluginId.equals(item.getId()))
                 .findFirst()
                 .orElseGet(() -> toMarketplaceItem(
-                        selection.indexMetadata(),
-                        selection.versionMetadata(),
-                        selection.descriptor(),
+                        trustedPlugin.indexMetadata(),
+                        selectedVersion.versionMetadata(),
+                        selectedVersion.descriptor(),
                         previouslyInstalledVersion,
                         null,
                         null,
-                        selection.artifactPath(),
-                        selection.compatible()));
+                        selectedVersion.artifactPath(),
+                        selectedVersion.compatible()));
 
         String status = resolveInstallStatus(previouslyInstalledVersion, trustedVersion);
         String message = buildInstallMessage(plugin, status, loaded);
@@ -161,63 +171,185 @@ public class PluginMarketplaceService {
                 .build();
     }
 
-    private List<PluginMarketplaceItem> loadRegistryItems(
-            Path repoRoot,
-            Path registryRoot,
+    private List<PluginMarketplaceItem> loadMarketplaceItems(
+            Map<String, TrustedPluginRecord> trustedPlugins,
             Map<String, PluginRuntimeInfo> loadedById,
             Map<String, String> settingsRouteByPlugin) {
-        List<PluginMarketplaceItem> items = new ArrayList<>();
-        try (Stream<Path> stream = Files.walk(registryRoot, 3)) {
-            stream.filter(path -> path.getFileName().toString().equals("index.yaml"))
-                    .sorted()
-                    .forEach(indexPath -> {
-                        try {
-                            RegistryIndexMetadata index = YAML_MAPPER.readValue(indexPath.toFile(),
-                                    RegistryIndexMetadata.class);
-                            if (index == null || index.getId() == null || index.getLatest() == null) {
-                                return;
-                            }
-                            String normalizedIndexPluginId = normalizePluginId(index.getId());
-                            if (normalizedIndexPluginId == null) {
-                                return;
-                            }
-                            PluginCoordinates coordinates = parsePluginId(normalizedIndexPluginId);
-                            index.setId(coordinates.id());
-                            RegistryVersionMetadata version = resolveVersionMetadata(
-                                    requireDirectory(indexPath.getParent(), "plugin registry directory"),
-                                    null,
-                                    index.getVersions(),
-                                    index.getLatest());
-                            Path artifactPath = resolveArtifactPath(repoRoot, coordinates, version);
-                            PluginDescriptor descriptor = readDescriptor(artifactPath, version, index);
-                            String installedVersion = findInstalledVersion(coordinates);
-                            PluginRuntimeInfo loaded = loadedById.get(coordinates.id());
-                            String settingsRouteKey = settingsRouteByPlugin.get(coordinates.id());
-                            boolean compatible = PluginVersionSupport.matchesVersionConstraint(
-                                    resolveEngineVersion(),
-                                    version.getEngineVersion());
-                            items.add(toMarketplaceItem(
-                                    index,
-                                    version,
-                                    descriptor,
-                                    installedVersion,
-                                    loaded,
-                                    settingsRouteKey,
-                                    artifactPath,
-                                    compatible));
-                        } catch (RuntimeException | IOException ex) {
-                            log.warn("[Plugins] Failed to read marketplace entry {}: {}", indexPath, ex.getMessage());
-                        }
-                    });
-        } catch (IOException ex) {
-            throw new IllegalStateException("Failed to scan marketplace registry " + registryRoot, ex);
-        }
-        return items.stream()
+        return trustedPlugins.values().stream()
+                .map(plugin -> {
+                    TrustedVersionRecord latestVersion = latestVersion(plugin);
+                    String pluginId = plugin.coordinates().id();
+                    return toMarketplaceItem(
+                            plugin.indexMetadata(),
+                            latestVersion.versionMetadata(),
+                            latestVersion.descriptor(),
+                            findInstalledVersion(plugin.coordinates()),
+                            loadedById.get(pluginId),
+                            settingsRouteByPlugin.get(pluginId),
+                            latestVersion.artifactPath(),
+                            latestVersion.compatible());
+                })
                 .sorted(Comparator
                         .comparing(PluginMarketplaceItem::isUpdateAvailable).reversed()
                         .thenComparing(PluginMarketplaceItem::isInstalled).reversed()
                         .thenComparing(PluginMarketplaceItem::getName))
                 .toList();
+    }
+
+    private Map<String, TrustedPluginRecord> loadTrustedPlugins(Path repoRoot, String engineVersion) {
+        Path registryRoot = requireDirectory(repoRoot.resolve("registry"), "marketplace registry");
+        List<Path> indexPaths;
+        try (Stream<Path> stream = Files.walk(registryRoot, 3)) {
+            indexPaths = stream.filter(path -> "index.yaml".equals(path.getFileName().toString()))
+                    .sorted()
+                    .toList();
+        } catch (IOException ex) {
+            throw new IllegalStateException("Failed to scan marketplace registry " + registryRoot, ex);
+        }
+
+        Map<String, TrustedPluginRecord> trustedPlugins = new LinkedHashMap<>();
+        for (Path indexPath : indexPaths) {
+            try {
+                TrustedPluginRecord plugin = loadTrustedPlugin(repoRoot, indexPath, engineVersion);
+                if (plugin != null) {
+                    trustedPlugins.putIfAbsent(plugin.coordinates().id(), plugin);
+                }
+            } catch (RuntimeException | IOException ex) {
+                log.warn("[Plugins] Failed to read marketplace entry {}: {}", indexPath, ex.getMessage());
+            }
+        }
+        return trustedPlugins;
+    }
+
+    private TrustedPluginRecord loadTrustedPlugin(Path repoRoot, Path indexPath, String engineVersion)
+            throws IOException {
+        RegistryIndexMetadata index = YAML_MAPPER.readValue(indexPath.toFile(), RegistryIndexMetadata.class);
+        if (index == null || index.getId() == null || index.getLatest() == null) {
+            return null;
+        }
+        String normalizedIndexPluginId = normalizePluginId(index.getId());
+        if (normalizedIndexPluginId == null) {
+            return null;
+        }
+        PluginCoordinates coordinates = parsePluginId(normalizedIndexPluginId);
+        index.setId(coordinates.id());
+        index.setVersions(normalizePublishedVersions(index.getVersions()));
+        Path pluginRegistryDir = requireDirectory(indexPath.getParent(), "plugin registry directory");
+        Map<String, TrustedVersionRecord> versions = loadTrustedVersions(
+                repoRoot,
+                pluginRegistryDir,
+                coordinates,
+                index,
+                engineVersion);
+        String latestVersion = resolvePublishedVersion(index.getLatest(), index.getVersions(), versions.keySet());
+        index.setLatest(latestVersion);
+        return new TrustedPluginRecord(coordinates, index, versions, latestVersion);
+    }
+
+    private Map<String, TrustedVersionRecord> loadTrustedVersions(
+            Path repoRoot,
+            Path pluginRegistryDir,
+            PluginCoordinates coordinates,
+            RegistryIndexMetadata index,
+            String engineVersion) throws IOException {
+        Path versionsDir = requireDirectory(pluginRegistryDir.resolve("versions"), "plugin versions directory");
+        List<Path> versionPaths;
+        try (Stream<Path> stream = Files.list(versionsDir)) {
+            versionPaths = stream.filter(Files::isRegularFile)
+                    .filter(path -> path.getFileName().toString().endsWith(".yaml"))
+                    .sorted()
+                    .toList();
+        }
+
+        Map<String, TrustedVersionRecord> versions = new LinkedHashMap<>();
+        for (Path versionPath : versionPaths) {
+            RegistryVersionMetadata versionMetadata = readVersionMetadata(versionPath);
+            if (versionMetadata == null || versionMetadata.getVersion() == null) {
+                continue;
+            }
+            String normalizedVersion = normalizeVersion(versionMetadata.getVersion());
+            String metadataPluginId = versionMetadata.getId() != null
+                    ? normalizePluginId(versionMetadata.getId())
+                    : coordinates.id();
+            if (!coordinates.id().equals(metadataPluginId)) {
+                throw new IllegalArgumentException("Version metadata id must match plugin id");
+            }
+            versionMetadata.setId(metadataPluginId);
+            versionMetadata.setVersion(normalizedVersion);
+            Path artifactPath = resolveArtifactPath(repoRoot, coordinates, versionMetadata);
+            PluginDescriptor descriptor = readDescriptor(artifactPath, versionMetadata, index);
+            boolean compatible = PluginVersionSupport.matchesVersionConstraint(
+                    engineVersion,
+                    versionMetadata.getEngineVersion());
+            versions.put(normalizedVersion,
+                    new TrustedVersionRecord(versionMetadata, descriptor, artifactPath, compatible));
+        }
+        if (versions.isEmpty()) {
+            throw new IllegalArgumentException("No marketplace versions found for " + coordinates.id());
+        }
+        return versions;
+    }
+
+    private TrustedVersionRecord latestVersion(TrustedPluginRecord plugin) {
+        TrustedVersionRecord latestVersion = plugin.versions().get(plugin.latestVersion());
+        if (latestVersion == null) {
+            throw new IllegalStateException(
+                    "Latest marketplace version was not found for " + plugin.coordinates().id());
+        }
+        return latestVersion;
+    }
+
+    private TrustedVersionRecord selectVersion(TrustedPluginRecord plugin, String requestedVersion) {
+        String versionCandidate = requestedVersion != null ? requestedVersion : plugin.latestVersion();
+        String selectedVersion = resolvePublishedVersion(
+                versionCandidate,
+                plugin.indexMetadata().getVersions(),
+                plugin.versions().keySet());
+        TrustedVersionRecord version = plugin.versions().get(selectedVersion);
+        if (version == null) {
+            throw new IllegalArgumentException("Unknown plugin version: " + selectedVersion);
+        }
+        return version;
+    }
+
+    private String resolvePublishedVersion(
+            String candidateVersion,
+            List<String> publishedVersions,
+            Set<String> availableVersions) {
+        String normalizedVersion = normalizeVersion(candidateVersion);
+        if (normalizedVersion == null) {
+            throw new IllegalArgumentException("Plugin version is required");
+        }
+        if (publishedVersions != null && !publishedVersions.isEmpty()) {
+            boolean published = false;
+            for (String publishedVersion : publishedVersions) {
+                if (normalizedVersion.equals(publishedVersion)) {
+                    published = true;
+                    break;
+                }
+            }
+            if (!published) {
+                throw new IllegalArgumentException("Unknown plugin version: " + normalizedVersion);
+            }
+        }
+        if (!availableVersions.contains(normalizedVersion)) {
+            throw new IllegalArgumentException("Unknown plugin version: " + normalizedVersion);
+        }
+        return normalizedVersion;
+    }
+
+    private List<String> normalizePublishedVersions(List<String> versions) {
+        if (versions == null || versions.isEmpty()) {
+            return List.of();
+        }
+        List<String> normalizedVersions = new ArrayList<>();
+        for (String version : versions) {
+            String normalizedVersion = normalizeVersion(version);
+            if (normalizedVersion != null) {
+                normalizedVersions.add(normalizedVersion);
+            }
+        }
+        return List.copyOf(normalizedVersions);
     }
 
     private PluginMarketplaceItem toMarketplaceItem(
@@ -255,42 +387,6 @@ public class PluginMarketplaceService {
                 .loadedVersion(loadedVersion)
                 .settingsRouteKey(settingsRouteKey)
                 .build();
-    }
-
-    private RegistrySelection resolveSelection(Path repoRoot, PluginCoordinates pluginId, String requestedVersion) {
-        Path registryRoot = requireDirectory(repoRoot.resolve("registry"), "marketplace registry");
-        try (Stream<Path> stream = Files.walk(registryRoot, 3)) {
-            List<Path> indexPaths = stream.filter(path -> "index.yaml".equals(path.getFileName().toString()))
-                    .sorted()
-                    .toList();
-            for (Path indexPath : indexPaths) {
-                RegistryIndexMetadata index = YAML_MAPPER.readValue(indexPath.toFile(), RegistryIndexMetadata.class);
-                if (index == null || index.getId() == null || index.getLatest() == null) {
-                    continue;
-                }
-                String normalizedIndexPluginId = normalizePluginId(index.getId());
-                if (!pluginId.id().equals(normalizedIndexPluginId)) {
-                    continue;
-                }
-                PluginCoordinates coordinates = parsePluginId(normalizedIndexPluginId);
-                index.setId(coordinates.id());
-                Path pluginRegistryDir = requireDirectory(indexPath.getParent(), "plugin registry directory");
-                RegistryVersionMetadata versionMetadata = resolveVersionMetadata(
-                        pluginRegistryDir,
-                        requestedVersion,
-                        index.getVersions(),
-                        index.getLatest());
-                Path artifactPath = resolveArtifactPath(repoRoot, coordinates, versionMetadata);
-                PluginDescriptor descriptor = readDescriptor(artifactPath, versionMetadata, index);
-                boolean compatible = PluginVersionSupport.matchesVersionConstraint(
-                        resolveEngineVersion(),
-                        versionMetadata.getEngineVersion());
-                return new RegistrySelection(coordinates, index, versionMetadata, descriptor, artifactPath, compatible);
-            }
-        } catch (IOException ex) {
-            throw new IllegalStateException("Failed to load marketplace metadata for " + pluginId.id(), ex);
-        }
-        throw new IllegalArgumentException("Unknown plugin: " + pluginId.id());
     }
 
     private RegistryVersionMetadata readVersionMetadata(Path versionPath) throws IOException {
@@ -393,6 +489,14 @@ public class PluginMarketplaceService {
                 .resolve(safeVersion)
                 .resolve(safeArtifactFileName);
         return ensureContainedInRoot(pluginsRoot, destination, "plugin install destination");
+    }
+
+    private Path requireDestinationParent(Path pluginsRoot, Path destination) {
+        Path destinationParent = destination.getParent();
+        if (destinationParent == null) {
+            throw new IllegalStateException("Invalid plugin install destination: " + destination);
+        }
+        return ensureContainedInRoot(pluginsRoot, destinationParent, "plugin install destination");
     }
 
     private String findInstalledVersion(PluginCoordinates coordinates) {
@@ -524,11 +628,29 @@ public class PluginMarketplaceService {
         if (override != null) {
             return override;
         }
-        return java.util.Arrays.stream(normalized.split("-"))
-                .filter(part -> !part.isBlank())
-                .map(part -> Character.toUpperCase(part.charAt(0)) + part.substring(1))
-                .reduce((left, right) -> left + " " + right)
-                .orElse("Plugin");
+        StringBuilder humanized = new StringBuilder(normalized.length());
+        boolean capitalizeNext = true;
+        for (int index = 0; index < normalized.length(); index++) {
+            char current = normalized.charAt(index);
+            if (current == '-') {
+                if (!humanized.isEmpty() && humanized.charAt(humanized.length() - 1) != ' ') {
+                    humanized.append(' ');
+                }
+                capitalizeNext = true;
+                continue;
+            }
+            if (capitalizeNext) {
+                humanized.append(Character.toUpperCase(current));
+                capitalizeNext = false;
+            } else {
+                humanized.append(current);
+            }
+        }
+        int length = humanized.length();
+        if (length > 0 && humanized.charAt(length - 1) == ' ') {
+            humanized.setLength(length - 1);
+        }
+        return humanized.isEmpty() ? "Plugin" : humanized.toString();
     }
 
     @SafeVarargs
@@ -556,55 +678,6 @@ public class PluginMarketplaceService {
         return normalized;
     }
 
-    private String resolveRequestedVersion(String requestedVersion, List<String> availableVersions,
-            String latestVersion) {
-        String candidate = requestedVersion != null ? requestedVersion : latestVersion;
-        String normalizedVersion = normalizeVersion(candidate);
-        if (normalizedVersion == null) {
-            throw new IllegalArgumentException("Plugin version is required");
-        }
-        if (availableVersions == null || availableVersions.isEmpty()) {
-            return normalizedVersion;
-        }
-        for (String version : availableVersions) {
-            String normalizedAvailableVersion = normalizeVersion(version);
-            if (normalizedVersion.equals(normalizedAvailableVersion)) {
-                return normalizedAvailableVersion;
-            }
-        }
-        throw new IllegalArgumentException("Unknown plugin version: " + normalizedVersion);
-    }
-
-    private RegistryVersionMetadata resolveVersionMetadata(
-            Path pluginRegistryDir,
-            String requestedVersion,
-            List<String> availableVersions,
-            String latestVersion) throws IOException {
-        String selectedVersion = resolveRequestedVersion(requestedVersion, availableVersions, latestVersion);
-        Path versionsDir = requireDirectory(pluginRegistryDir.resolve("versions"), "plugin versions directory");
-        try (Stream<Path> stream = Files.list(versionsDir)) {
-            List<Path> versionPaths = stream.filter(Files::isRegularFile)
-                    .filter(path -> path.getFileName().toString().endsWith(".yaml"))
-                    .sorted()
-                    .toList();
-            for (Path versionPath : versionPaths) {
-                RegistryVersionMetadata candidate = readVersionMetadata(versionPath);
-                if (candidate == null) {
-                    continue;
-                }
-                String candidateVersion = normalizeVersion(candidate.getVersion());
-                if (candidate.getId() != null) {
-                    candidate.setId(normalizePluginId(candidate.getId()));
-                }
-                if (selectedVersion.equals(candidateVersion)) {
-                    candidate.setVersion(candidateVersion);
-                    return candidate;
-                }
-            }
-        }
-        throw new IllegalArgumentException("Unknown plugin version: " + selectedVersion);
-    }
-
     private PluginCoordinates parsePluginId(String pluginId) {
         if (pluginId == null || pluginId.isBlank()) {
             throw new IllegalArgumentException("Plugin id must match <owner>/<plugin>");
@@ -627,7 +700,7 @@ public class PluginMarketplaceService {
         }
         for (int index = 0; index < value.length(); index++) {
             char current = value.charAt(index);
-            boolean alphanumeric = current >= 'a' && current <= 'z' || current >= '0' && current <= '9';
+            boolean alphanumeric = (current >= 'a' && current <= 'z') || (current >= '0' && current <= '9');
             if (index == 0 && !alphanumeric) {
                 throw new IllegalArgumentException(label + " must start with a lowercase letter or digit");
             }
@@ -653,9 +726,9 @@ public class PluginMarketplaceService {
         }
         for (int index = 0; index < value.length(); index++) {
             char current = value.charAt(index);
-            boolean alphanumeric = current >= 'a' && current <= 'z'
-                    || current >= 'A' && current <= 'Z'
-                    || current >= '0' && current <= '9';
+            boolean alphanumeric = (current >= 'a' && current <= 'z')
+                    || (current >= 'A' && current <= 'Z')
+                    || (current >= '0' && current <= '9');
             boolean punctuation = current == '-' || current == '_';
             boolean dot = allowDots && current == '.';
             if (!alphanumeric && !punctuation && !dot) {
@@ -735,9 +808,14 @@ public class PluginMarketplaceService {
         return Path.of(botProperties.getPlugins().getDirectory()).toAbsolutePath().normalize();
     }
 
-    private record RegistrySelection(
+    private record TrustedPluginRecord(
             PluginCoordinates coordinates,
             RegistryIndexMetadata indexMetadata,
+            Map<String, TrustedVersionRecord> versions,
+            String latestVersion) {
+    }
+
+    private record TrustedVersionRecord(
             RegistryVersionMetadata versionMetadata,
             PluginDescriptor descriptor,
             Path artifactPath,

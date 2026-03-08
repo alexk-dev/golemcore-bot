@@ -103,7 +103,7 @@ public class PluginSettingsRegistry {
         boolean previousDash = false;
         for (int index = 0; index < normalized.length(); index++) {
             char current = normalized.charAt(index);
-            boolean alphanumeric = current >= 'a' && current <= 'z' || current >= '0' && current <= '9';
+            boolean alphanumeric = (current >= 'a' && current <= 'z') || (current >= '0' && current <= '9');
             if (alphanumeric) {
                 sanitized.append(current);
                 previousDash = false;
