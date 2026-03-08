@@ -177,6 +177,43 @@ class RuntimeEventServiceTest {
     }
 
     @Test
+    void shouldAppendNewRuntimeEventToExistingContextList() {
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn("web");
+        when(channel.sendRuntimeEvent(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        RuntimeEventService service = new RuntimeEventService(Clock.systemUTC(), List.of(channel));
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType("web")
+                .chatId("chat-1")
+                .build();
+        AgentContext context = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>())
+                .build();
+
+        List<RuntimeEvent> existing = new ArrayList<>();
+        existing.add(RuntimeEvent.builder()
+                .type(RuntimeEventType.TURN_STARTED)
+                .timestamp(Instant.parse("2026-03-01T00:00:00Z"))
+                .sessionId("s1")
+                .channelType("web")
+                .chatId("chat-1")
+                .payload(Map.of("step", "before"))
+                .build());
+        context.setAttribute(ContextAttributes.RUNTIME_EVENTS, existing);
+
+        service.emit(context, RuntimeEventType.TURN_FINISHED, Map.of("step", "after"));
+
+        List<RuntimeEvent> events = context.getAttribute(ContextAttributes.RUNTIME_EVENTS);
+        assertSame(existing, events);
+        assertEquals(2, events.size());
+        assertEquals(RuntimeEventType.TURN_STARTED, events.get(0).type());
+        assertEquals(RuntimeEventType.TURN_FINISHED, events.get(1).type());
+    }
+
+    @Test
     void shouldCreateRuntimeEventsListWhenAttributeHasUnexpectedType() {
         RuntimeEventService service = new RuntimeEventService(Clock.systemUTC(), List.of());
         AgentContext context = AgentContext.builder()

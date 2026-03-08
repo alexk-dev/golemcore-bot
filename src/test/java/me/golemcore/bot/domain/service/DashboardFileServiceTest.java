@@ -39,8 +39,9 @@ class DashboardFileServiceTest {
         BotProperties botProperties = new BotProperties();
         botProperties.getTools().getFilesystem().setWorkspace(workspaceRoot.toString());
 
-        dashboardFileService = new DashboardFileService(botProperties);
-        dashboardFileService.init();
+        WorkspacePathService workspacePathService = new WorkspacePathService(botProperties);
+        workspacePathService.init();
+        dashboardFileService = new DashboardFileService(workspacePathService);
     }
 
     @Test

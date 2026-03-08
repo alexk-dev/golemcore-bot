@@ -2,10 +2,7 @@ package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.model.DashboardFileContent;
 import me.golemcore.bot.domain.model.DashboardFileNode;
-import me.golemcore.bot.infrastructure.config.BotProperties;
-import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -13,42 +10,24 @@ import java.nio.charset.MalformedInputException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
-import java.nio.file.InvalidPathException;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class DashboardFileService {
 
     private static final long MAX_EDITABLE_FILE_SIZE = 1024L * 1024L * 2L;
 
-    private final BotProperties botProperties;
-
-    private Path workspaceRoot;
-
-    @PostConstruct
-    public void init() {
-        String workspace = botProperties.getTools().getFilesystem().getWorkspace();
-        this.workspaceRoot = Paths.get(workspace.replace("${user.home}", System.getProperty("user.home")))
-                .toAbsolutePath()
-                .normalize();
-        try {
-            Files.createDirectories(workspaceRoot);
-            log.info("[DashboardFiles] Workspace root: {}", workspaceRoot);
-        } catch (IOException e) {
-            throw new IllegalStateException("Failed to initialize dashboard file workspace", e);
-        }
-    }
+    private final WorkspacePathService workspacePathService;
 
     public List<DashboardFileNode> getTree(String relativePath) {
         Path base = resolveSafePath(relativePath == null ? "" : relativePath);
@@ -173,7 +152,7 @@ public class DashboardFileService {
         Path sourcePath = resolveSafePath(sourceRelativePath);
         Path targetPath = resolveSafePath(targetRelativePath);
 
-        if (sourcePath.equals(workspaceRoot) || targetPath.equals(workspaceRoot)) {
+        if (sourcePath.equals(getWorkspaceRoot()) || targetPath.equals(getWorkspaceRoot())) {
             throw new IllegalArgumentException("Workspace root cannot be renamed");
         }
         if (!Files.exists(sourcePath, LinkOption.NOFOLLOW_LINKS)) {
@@ -200,7 +179,7 @@ public class DashboardFileService {
         }
 
         Path path = resolveSafePath(relativePath);
-        if (path.equals(workspaceRoot)) {
+        if (path.equals(getWorkspaceRoot())) {
             throw new IllegalArgumentException("Workspace root cannot be deleted");
         }
         if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
@@ -230,7 +209,7 @@ public class DashboardFileService {
         try (Stream<Path> walk = Files.walk(path)) {
             List<Path> paths = walk.sorted(Comparator.reverseOrder()).toList();
             for (Path current : paths) {
-                if (current.equals(workspaceRoot)) {
+                if (current.equals(getWorkspaceRoot())) {
                     continue;
                 }
                 Files.delete(current);
@@ -244,7 +223,7 @@ public class DashboardFileService {
                     .filter(path -> !Files.isSymbolicLink(path))
                     .sorted(Comparator
                             .comparing((Path p) -> !Files.isDirectory(p, LinkOption.NOFOLLOW_LINKS))
-                            .thenComparing(p -> requireFileName(p).toLowerCase()))
+                            .thenComparing(p -> requireFileName(p).toLowerCase(Locale.ROOT)))
                     .toList();
 
             List<DashboardFileNode> nodes = new ArrayList<>();
@@ -275,62 +254,19 @@ public class DashboardFileService {
         }
     }
 
-    private String requireFileName(Path path) {
-        Path fileName = path.getFileName();
-        if (fileName == null) {
-            throw new IllegalStateException("Path has no file name: " + path);
-        }
-        return fileName.toString();
-    }
-
-    private Path resolveSafePath(String relativePath) {
-        String normalizedInput = relativePath == null ? "" : relativePath.trim();
-        if (normalizedInput.startsWith("/") || normalizedInput.startsWith("\\")) {
-            throw new IllegalArgumentException("Absolute paths are not allowed");
-        }
-        if (normalizedInput.contains("../") || normalizedInput.contains("..\\")) {
-            throw new IllegalArgumentException("Path traversal is not allowed");
-        }
-
-        try {
-            Path resolved = workspaceRoot.resolve(normalizedInput).normalize();
-            if (!resolved.startsWith(workspaceRoot)) {
-                throw new IllegalArgumentException("Path must be inside workspace");
-            }
-            validateExistingParentInsideWorkspace(resolved);
-            return resolved;
-        } catch (InvalidPathException e) {
-            throw new IllegalArgumentException("Invalid path");
-        }
-    }
-
-    private void validateExistingParentInsideWorkspace(Path resolvedPath) {
-        Path existingPath = findExistingPath(resolvedPath);
-        if (existingPath == null) {
-            throw new IllegalArgumentException("Invalid path");
-        }
-
-        try {
-            Path realExistingPath = existingPath.toRealPath();
-            Path realWorkspacePath = workspaceRoot.toRealPath();
-            if (!realExistingPath.startsWith(realWorkspacePath)) {
-                throw new IllegalArgumentException("Path must be inside workspace");
-            }
-        } catch (IOException e) {
-            throw new IllegalStateException("Failed to resolve path", e);
-        }
-    }
-
-    private Path findExistingPath(Path path) {
-        Path current = path;
-        while (current != null && !Files.exists(current)) {
-            current = current.getParent();
-        }
-        return current;
+    private Path getWorkspaceRoot() {
+        return workspacePathService.getWorkspaceRoot();
     }
 
     private String toRelativePath(Path path) {
-        String raw = workspaceRoot.relativize(path).toString();
-        return raw.replace("\\", "/");
+        return workspacePathService.toRelativePath(path);
+    }
+
+    private Path resolveSafePath(String relativePath) {
+        return workspacePathService.resolveSafePath(relativePath);
+    }
+
+    private String requireFileName(Path path) {
+        return workspacePathService.requireFileName(path);
     }
 }

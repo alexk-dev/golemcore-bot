@@ -8,6 +8,9 @@ on:
   schedule:
     - cron: '0 6 * * 1'  # every Monday at 06:00 UTC
 
+env:
+  PLUGIN_API_REPO_REF: 5901f7b3926cdc6970b86d2f42241ed2ad82340c
+
 jobs:
   analyze:
     name: CodeQL Analysis
@@ -28,10 +31,20 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
+      - name: Checkout plugin APIs
+        uses: actions/checkout@v6
+        with:
+          repository: alexk-dev/golemcore-plugins
+          ref: ${{ env.PLUGIN_API_REPO_REF }}
+          path: golemcore-plugins
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
           languages: java-kotlin
+
+      - name: Install plugin API artifacts
+        run: mvn -B -ntp -Djgitver.skip=true -f golemcore-plugins/pom.xml -pl extension-api,runtime-api -am install -DskipTests
 
       - name: Build
         run: ./mvnw compile -DskipTests -DskipGitHooks=true

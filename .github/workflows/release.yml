@@ -12,6 +12,9 @@ permissions:
   contents: write
   actions: write
 
+env:
+  PLUGIN_API_REPO_REF: 5901f7b3926cdc6970b86d2f42241ed2ad82340c
+
 jobs:
   release:
     name: Conventional Release
@@ -163,6 +166,18 @@ jobs:
           java-version: '25'
           distribution: 'temurin'
           cache: maven
+
+      - name: Checkout plugin APIs
+        if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
+        uses: actions/checkout@v6
+        with:
+          repository: alexk-dev/golemcore-plugins
+          ref: ${{ env.PLUGIN_API_REPO_REF }}
+          path: golemcore-plugins
+
+      - name: Install plugin API artifacts
+        if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
+        run: mvn -B -ntp -Djgitver.skip=true -f golemcore-plugins/pom.xml -pl extension-api,runtime-api -am install -DskipTests
 
       - name: Build release JAR
         if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'

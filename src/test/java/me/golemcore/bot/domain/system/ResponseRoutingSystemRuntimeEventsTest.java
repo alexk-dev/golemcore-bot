@@ -9,20 +9,24 @@ import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.domain.model.RoutingOutcome;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
+import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -41,25 +45,29 @@ class ResponseRoutingSystemRuntimeEventsTest {
 
         UserPreferencesService preferencesService = mock(UserPreferencesService.class);
         VoiceResponseHandler voiceHandler = mock(VoiceResponseHandler.class);
-        system = new ResponseRoutingSystem(List.of(telegramChannel), preferencesService, voiceHandler);
+        system = new ResponseRoutingSystem(new ChannelRegistry(List.of(telegramChannel)), preferencesService,
+                voiceHandler);
     }
 
     @Test
-    void shouldHandleMixedRuntimeEventsWithoutFailing() {
-        AgentContext context = contextWithSession("telegram", "chat-1");
+    void shouldSendValidRuntimeEventsToTransportChatId() {
+        AgentContext context = contextWithSession("telegram", "chat-1", "transport-1");
+        RuntimeEvent runtimeEvent = RuntimeEvent.builder()
+                .type(RuntimeEventType.TURN_STARTED)
+                .timestamp(Instant.now())
+                .sessionId("s1")
+                .channelType("telegram")
+                .chatId("chat-1")
+                .payload(Map.of("phase", "start"))
+                .build();
         context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.builder().build());
         context.setAttribute(ContextAttributes.RUNTIME_EVENTS, List.of(
                 "unexpected-entry",
-                RuntimeEvent.builder()
-                        .type(RuntimeEventType.TURN_STARTED)
-                        .timestamp(Instant.now())
-                        .sessionId("s1")
-                        .channelType("telegram")
-                        .chatId("chat-1")
-                        .payload(Map.of("phase", "start"))
-                        .build()));
+                runtimeEvent));
 
-        assertDoesNotThrow(() -> system.process(context));
+        system.process(context);
+
+        verify(telegramChannel).sendRuntimeEvent(eq("transport-1"), eq(runtimeEvent));
         RoutingOutcome outcome = context.getAttribute(ContextAttributes.ROUTING_OUTCOME);
         assertNotNull(outcome);
     }
@@ -81,6 +89,34 @@ class ResponseRoutingSystemRuntimeEventsTest {
         system.process(context);
 
         verify(telegramChannel, never()).sendRuntimeEvent(anyString(), any());
+    }
+
+    @Test
+    void shouldContinueRoutingWhenRuntimeEventDispatchFails() {
+        when(telegramChannel.sendMessage(anyString(), anyString(), any()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+        when(telegramChannel.sendRuntimeEvent(anyString(), any()))
+                .thenThrow(new RuntimeException("socket closed"));
+
+        AgentContext context = contextWithSession("telegram", "chat-6", null);
+        RuntimeEvent runtimeEvent = RuntimeEvent.builder()
+                .type(RuntimeEventType.TURN_FINISHED)
+                .timestamp(Instant.now())
+                .sessionId("s6")
+                .channelType("telegram")
+                .chatId("chat-6")
+                .payload(Map.of("phase", "finish"))
+                .build();
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly("done"));
+        context.setAttribute(ContextAttributes.RUNTIME_EVENTS, List.of(runtimeEvent));
+
+        assertDoesNotThrow(() -> system.process(context));
+
+        verify(telegramChannel).sendMessage(eq("chat-6"), eq("done"), any());
+        verify(telegramChannel).sendRuntimeEvent(eq("chat-6"), eq(runtimeEvent));
+        RoutingOutcome outcome = context.getAttribute(ContextAttributes.ROUTING_OUTCOME);
+        assertNotNull(outcome);
+        assertTrue(outcome.isSentText());
     }
 
     @Test
@@ -122,12 +158,21 @@ class ResponseRoutingSystemRuntimeEventsTest {
     }
 
     private AgentContext contextWithSession(String channelType, String chatId) {
+        return contextWithSession(channelType, chatId, null);
+    }
+
+    private AgentContext contextWithSession(String channelType, String chatId, String transportChatId) {
         AgentSession session = AgentSession.builder()
                 .id("session-rt")
                 .channelType(channelType)
                 .chatId(chatId)
                 .messages(new ArrayList<>())
                 .build();
+        if (transportChatId != null) {
+            Map<String, Object> metadata = new HashMap<>();
+            metadata.put(ContextAttributes.TRANSPORT_CHAT_ID, transportChatId);
+            session.setMetadata(metadata);
+        }
         return AgentContext.builder()
                 .session(session)
                 .messages(new ArrayList<>())

@@ -130,7 +130,6 @@ export default tseslint.config(
       'src/pages/SettingsPage.tsx',
       'src/pages/SkillsPage.tsx',
       'src/pages/settings/ToolsTab.tsx',
-      'src/pages/settings/TelegramTab.tsx',
       'src/pages/settings/LlmProvidersTab.tsx',
     ],
     rules: {

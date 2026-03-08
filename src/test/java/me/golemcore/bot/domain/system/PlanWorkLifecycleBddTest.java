@@ -205,11 +205,13 @@ class PlanWorkLifecycleBddTest {
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         WorkspaceInstructionService workspaceInstructionService = mock(WorkspaceInstructionService.class);
         when(workspaceInstructionService.getWorkspaceInstructionsContext()).thenReturn("");
+        PlanSetContentTool planSetContentTool = new PlanSetContentTool(planService);
+        PlanGetTool planGetTool = new PlanGetTool(planService);
+        when(toolCallExecutionService.listTools()).thenReturn(List.of(planSetContentTool, planGetTool));
 
         return new ContextBuildingSystem(
                 memoryComponent,
                 skillComponent,
-                List.of(new PlanSetContentTool(planService), new PlanGetTool(planService)),
                 templateEngine,
                 mcpPort,
                 toolCallExecutionService,

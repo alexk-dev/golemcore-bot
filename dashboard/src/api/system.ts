@@ -27,18 +27,6 @@ export interface SystemDiagnosticsResponse {
   };
 }
 
-export interface BrowserHealthResponse {
-  enabled: boolean;
-  type: string;
-  provider: string;
-  headless: boolean;
-  timeoutMs: number;
-  availableBefore: boolean;
-  availableAfter: boolean;
-  ok: boolean;
-  message: string;
-}
-
 export interface LogEntryResponse {
   seq: number;
   timestamp: string;
@@ -103,11 +91,6 @@ export async function checkSystemUpdate(): Promise<SystemUpdateActionResponse> {
 
 export async function updateSystemNow(): Promise<SystemUpdateActionResponse> {
   const { data } = await client.post<SystemUpdateActionResponse>('/system/update/update-now');
-  return data;
-}
-
-export async function getBrowserHealth(): Promise<BrowserHealthResponse> {
-  const { data } = await client.get<BrowserHealthResponse>('/system/browser/health');
   return data;
 }
 

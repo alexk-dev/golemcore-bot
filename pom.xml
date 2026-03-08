@@ -29,7 +29,6 @@
         <okhttp.version>5.3.2</okhttp.version>
         <telegram.version>9.4.0</telegram.version>
         <langchain4j.version>1.11.0</langchain4j.version>
-        <playwright.version>1.49.0</playwright.version>
         <jjwt.version>0.13.0</jjwt.version>
         <totp.version>1.7.1</totp.version>
         <protobuf.version>4.34.0</protobuf.version>
@@ -70,6 +69,16 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>me.golemcore.plugins</groupId>
+            <artifactId>golemcore-plugin-extension-api</artifactId>
+            <version>1.0.0</version>
+        </dependency>
+        <dependency>
+            <groupId>me.golemcore.plugins</groupId>
+            <artifactId>golemcore-plugin-runtime-api</artifactId>
+            <version>1.0.0</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -136,18 +145,6 @@
             <version>${okhttp.version}</version>
         </dependency>
 
-        <!-- Telegram Bot API -->
-        <dependency>
-            <groupId>org.telegram</groupId>
-            <artifactId>telegrambots-longpolling</artifactId>
-            <version>${telegram.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.telegram</groupId>
-            <artifactId>telegrambots-client</artifactId>
-            <version>${telegram.version}</version>
-        </dependency>
-
         <!-- langchain4j -->
         <dependency>
             <groupId>dev.langchain4j</groupId>
@@ -189,31 +186,6 @@
             <groupId>com.google.protobuf</groupId>
             <artifactId>protobuf-java</artifactId>
             <version>${protobuf.version}</version>
-        </dependency>
-
-        <!-- Playwright (Headless Browser) -->
-        <dependency>
-            <groupId>com.microsoft.playwright</groupId>
-            <artifactId>playwright</artifactId>
-            <version>${playwright.version}</version>
-            <exclusions>
-                <exclusion>
-                    <groupId>com.microsoft.playwright</groupId>
-                    <artifactId>driver-bundle</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-        <dependency>
-            <groupId>com.microsoft.playwright</groupId>
-            <artifactId>driver</artifactId>
-            <version>${playwright.version}</version>
-        </dependency>
-
-        <!-- Jakarta Mail (IMAP + SMTP with STARTTLS) -->
-        <dependency>
-            <groupId>org.eclipse.angus</groupId>
-            <artifactId>angus-mail</artifactId>
-            <version>2.0.5</version>
         </dependency>
 
         <!-- Testing -->
@@ -299,6 +271,7 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
+                    <classifier>exec</classifier>
                     <excludes>
                         <exclude>
                             <groupId>org.projectlombok</groupId>
@@ -483,7 +456,6 @@
                         </entrypoint>
                         <environment>
                             <JAVA_TOOL_OPTIONS>-XX:+UseG1GC -XX:MaxRAMPercentage=75.0</JAVA_TOOL_OPTIONS>
-                            <PLAYWRIGHT_BROWSERS_PATH>/opt/playwright</PLAYWRIGHT_BROWSERS_PATH>
                         </environment>
                         <ports>
                             <port>8080</port>

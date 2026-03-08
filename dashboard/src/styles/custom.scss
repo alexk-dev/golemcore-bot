@@ -1219,10 +1219,6 @@ textarea:focus-visible,
   line-height: 1.35;
 }
 
-.tools-browser-status {
-  min-height: 2.25rem;
-}
-
 .tools-savebar {
   border-top: 1px solid var(--bs-border-color);
   padding-top: 0.75rem;
@@ -1307,6 +1303,242 @@ textarea:focus-visible,
     display: flex;
     flex-direction: column;
   }
+}
+
+.plugin-market-hero {
+  overflow: hidden;
+  border: 1px solid rgba(var(--bs-primary-rgb), 0.15);
+  background:
+    radial-gradient(circle at top right, rgba(var(--bs-primary-rgb), 0.14), transparent 32%),
+    linear-gradient(135deg, rgba(var(--bs-info-rgb), 0.06), rgba(var(--bs-body-bg-rgb), 0.98) 58%);
+}
+
+.plugin-market-hero-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1.25rem;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+}
+
+.plugin-market-eyebrow {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--bs-primary);
+  margin-bottom: 0.35rem;
+}
+
+.plugin-market-hero-copy {
+  max-width: 50rem;
+  line-height: 1.5;
+}
+
+.plugin-market-hero-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(92px, 1fr));
+  gap: 0.65rem;
+  min-width: min(100%, 19rem);
+}
+
+.plugin-market-stat {
+  border: 1px solid rgba(var(--bs-border-color-rgb), 0.9);
+  border-radius: 0.9rem;
+  padding: 0.8rem 0.9rem;
+  background-color: rgba(var(--bs-body-bg-rgb), 0.84);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.plugin-market-stat-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--bs-emphasis-color);
+}
+
+.plugin-market-stat-label {
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--bs-secondary-color);
+}
+
+.plugin-market-search .input-group-text {
+  background-color: rgba(var(--bs-body-bg-rgb), 0.94);
+}
+
+.plugin-market-filter-row {
+  display: flex;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.plugin-market-filter {
+  border: 1px solid rgba(var(--bs-border-color-rgb), 0.9);
+  border-radius: 999px;
+  background-color: rgba(var(--bs-body-bg-rgb), 0.88);
+  color: var(--bs-emphasis-color);
+  padding: 0.46rem 0.72rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.plugin-market-filter:hover,
+.plugin-market-filter:focus-visible {
+  border-color: rgba(var(--bs-primary-rgb), 0.4);
+  background-color: rgba(var(--bs-primary-rgb), 0.08);
+}
+
+.plugin-market-filter.active {
+  border-color: rgba(var(--bs-primary-rgb), 0.55);
+  background-color: rgba(var(--bs-primary-rgb), 0.14);
+}
+
+.plugin-market-source {
+  opacity: 0.9;
+}
+
+.plugin-market-card {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(var(--bs-border-color-rgb), 0.92);
+}
+
+.plugin-market-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(90deg, rgba(var(--bs-primary-rgb), 0.9), rgba(var(--bs-info-rgb), 0.55));
+}
+
+.plugin-market-card.is-installed {
+  border-color: rgba(var(--bs-success-rgb), 0.22);
+}
+
+.plugin-market-card.is-update {
+  border-color: rgba(var(--bs-warning-rgb), 0.35);
+}
+
+.plugin-market-card.is-update::before {
+  background: linear-gradient(90deg, rgba(var(--bs-warning-rgb), 0.88), rgba(var(--bs-primary-rgb), 0.55));
+}
+
+.plugin-market-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+}
+
+.plugin-market-icon-shell {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 0.95rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--bs-primary);
+  background: linear-gradient(135deg, rgba(var(--bs-primary-rgb), 0.14), rgba(var(--bs-info-rgb), 0.08));
+  border: 1px solid rgba(var(--bs-primary-rgb), 0.12);
+  flex-shrink: 0;
+}
+
+.plugin-market-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.plugin-market-official-badge {
+  --plugin-market-official-bg: rgba(var(--bs-primary-rgb), 0.12);
+  --plugin-market-official-border: rgba(var(--bs-primary-rgb), 0.2);
+  --plugin-market-official-color: var(--bs-primary-text-emphasis);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding-inline: 0.68em;
+  background:
+    linear-gradient(135deg, rgba(var(--bs-info-rgb), 0.1), rgba(var(--bs-primary-rgb), 0.04)),
+    var(--plugin-market-official-bg);
+  color: var(--plugin-market-official-color);
+  border: 1px solid var(--plugin-market-official-border);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.plugin-market-official-badge::before {
+  content: "";
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.82;
+  box-shadow: 0 0 0 0.12rem rgba(var(--bs-primary-rgb), 0.16);
+}
+
+[data-bs-theme="light"] .plugin-market-official-badge {
+  --plugin-market-official-bg: rgba(var(--bs-primary-rgb), 0.12);
+  --plugin-market-official-border: rgba(var(--bs-primary-rgb), 0.18);
+  --plugin-market-official-color: #0b3f63;
+}
+
+[data-bs-theme="dark"] .plugin-market-official-badge {
+  --plugin-market-official-bg: rgba(var(--bs-info-rgb), 0.2);
+  --plugin-market-official-border: rgba(var(--bs-info-rgb), 0.32);
+  --plugin-market-official-color: #d7f2ff;
+}
+
+.plugin-market-plugin-id {
+  margin-top: 0.2rem;
+  font-size: 0.76rem;
+  color: var(--bs-secondary-color);
+  font-family: var(--font-mono);
+  word-break: break-word;
+}
+
+.plugin-market-description {
+  line-height: 1.5;
+}
+
+.plugin-market-badges {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.plugin-market-meta {
+  display: grid;
+  gap: 0.2rem;
+  line-height: 1.45;
+}
+
+.plugin-market-empty {
+  text-align: center;
+
+  .card-body {
+    padding: 2rem 1rem;
+  }
+}
+
+.plugin-market-empty-icon {
+  width: 3rem;
+  height: 3rem;
+  margin: 0 auto 0.75rem;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--bs-primary);
+  background-color: rgba(var(--bs-primary-rgb), 0.08);
 }
 
 .voice-status-badges {

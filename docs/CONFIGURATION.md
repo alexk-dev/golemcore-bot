@@ -108,61 +108,44 @@ Notes:
 
 ### Tools
 
-Most tool enablement flags are in `runtime-config.json` under `tools`:
+Core tool enablement flags are in `runtime-config.json` under `tools`:
 
 ```json
 {
   "tools": {
     "filesystemEnabled": true,
     "shellEnabled": true,
-    "browserEnabled": true,
-    "browserType": "playwright",
-    "browserHeadless": true,
-    "browserTimeout": 30000,
-    "browserUserAgent": "...",
-    "browserApiProvider": "brave",
-
-    "braveSearchEnabled": false,
-    "braveSearchApiKey": "...",
-
     "skillManagementEnabled": true,
     "skillTransitionEnabled": true,
     "tierEnabled": true,
     "goalManagementEnabled": true,
-
-    "imap": {
-      "enabled": false,
-      "host": "imap.example.com",
-      "port": 993,
-      "username": "user@example.com",
-      "password": "...",
-      "security": "ssl",
-      "sslTrust": "",
-      "connectTimeout": 10000,
-      "readTimeout": 30000,
-      "maxBodyLength": 50000,
-      "defaultMessageLimit": 20
-    },
-    "smtp": {
-      "enabled": false,
-      "host": "smtp.example.com",
-      "port": 587,
-      "username": "user@example.com",
-      "password": "...",
-      "security": "starttls",
-      "sslTrust": "",
-      "connectTimeout": 10000,
-      "readTimeout": 30000
-    }
+    "shellEnvironmentVariables": []
   }
 }
 ```
+
+Official integrations that are loaded through the plugin runtime keep their
+own configuration under `preferences/plugins/<owner>/<plugin>.json`. This
+includes the first-party browser, Brave Search, Tavily Search, Firecrawl,
+Perplexity Sonar, weather, mail, and LightRAG modules.
 
 See: [Tools Guide](TOOLS.md)
 
 ### Browser Tool
 
-The `browse` tool uses Playwright.
+The `browse` tool is provided by the official `golemcore/browser` plugin and
+uses Playwright.
+
+Configuration lives in `preferences/plugins/golemcore/browser.json`:
+
+```json
+{
+  "enabled": true,
+  "headless": true,
+  "timeoutMs": 30000,
+  "userAgent": "..."
+}
+```
 
 Docker requirements (Chromium sandbox):
 
@@ -171,6 +154,61 @@ docker run -d \
   --shm-size=256m \
   --cap-add=SYS_ADMIN \
   ...
+```
+
+### Tavily Search Tool
+
+The `tavily_search` tool is provided by the official
+`golemcore/tavily-search` plugin.
+
+Configuration lives in `preferences/plugins/golemcore/tavily-search.json`:
+
+```json
+{
+  "enabled": true,
+  "apiKey": "tvly-...",
+  "defaultMaxResults": 5,
+  "defaultTopic": "general",
+  "defaultSearchDepth": "basic",
+  "includeAnswer": true,
+  "includeRawContent": false
+}
+```
+
+### Firecrawl Tool
+
+The `firecrawl_scrape` tool is provided by the official `golemcore/firecrawl`
+plugin.
+
+Configuration lives in `preferences/plugins/golemcore/firecrawl.json`:
+
+```json
+{
+  "enabled": true,
+  "apiKey": "fc-...",
+  "defaultFormat": "markdown",
+  "onlyMainContent": true,
+  "maxAgeMs": 172800000,
+  "timeoutMs": 30000
+}
+```
+
+### Perplexity Sonar Tool
+
+The `perplexity_ask` tool is provided by the official
+`golemcore/perplexity-sonar` plugin and currently uses synchronous completions.
+
+Configuration lives in `preferences/plugins/golemcore/perplexity-sonar.json`:
+
+```json
+{
+  "enabled": true,
+  "apiKey": "pplx-...",
+  "defaultModel": "sonar",
+  "defaultSearchMode": "web",
+  "returnRelatedQuestions": false,
+  "returnImages": false
+}
 ```
 
 ### Security
@@ -317,18 +355,22 @@ Telegram channel settings are stored in runtime config under `telegram`:
 
 ### RAG
 
+RAG is configured through the official `golemcore/lightrag` plugin rather than
+the core runtime schema.
+
 ```json
 {
-  "rag": {
-    "enabled": false,
-    "url": "http://localhost:9621",
-    "apiKey": "",
-    "queryMode": "hybrid",
-    "timeoutSeconds": 10,
-    "indexMinLength": 50
-  }
+  "enabled": false,
+  "url": "http://localhost:9621",
+  "apiKey": "",
+  "queryMode": "hybrid",
+  "timeoutSeconds": 10,
+  "indexMinLength": 50
 }
 ```
+
+Store this in `preferences/plugins/golemcore/lightrag.json` or configure it
+from the dashboard plugin settings UI.
 
 ### MCP
 
