@@ -3,6 +3,7 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 import me.golemcore.bot.adapter.inbound.web.dto.FileCreateRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.FileRenameRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.FileSaveRequest;
+import me.golemcore.bot.domain.model.DashboardFileDownload;
 import me.golemcore.bot.domain.model.DashboardFileContent;
 import me.golemcore.bot.domain.model.DashboardFileNode;
 import me.golemcore.bot.domain.service.DashboardFileService;
@@ -146,6 +147,39 @@ class FilesControllerTest {
                     assertEquals(31L, response.getBody().getSize());
                     assertEquals("2026-02-23T00:00:00Z", response.getBody().getUpdatedAt());
                 })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldReturnBinaryDownloadWhenPathIsValid() {
+        DashboardFileDownload download = DashboardFileDownload.builder()
+                .path(".golemcore/tool-artifacts/session/test/report.pdf")
+                .filename("report.pdf")
+                .mimeType("application/pdf")
+                .size(3L)
+                .data(new byte[] { 1, 2, 3 })
+                .build();
+
+        when(dashboardFileService.getDownload(".golemcore/tool-artifacts/session/test/report.pdf"))
+                .thenReturn(download);
+
+        StepVerifier.create(filesController.download(".golemcore/tool-artifacts/session/test/report.pdf"))
+                .assertNext(response -> {
+                    assertStatus(response, HttpStatus.OK);
+                    assertNotNull(response.getBody());
+                    assertEquals(3, response.getBody().length);
+                    assertEquals("application/pdf", response.getHeaders().getContentType().toString());
+                    assertTrue(response.getHeaders().getFirst("Content-Disposition").contains("report.pdf"));
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldReturnBadRequestForInvalidDownloadPath() {
+        when(dashboardFileService.getDownload("../etc/passwd")).thenThrow(new IllegalArgumentException("Invalid path"));
+
+        StepVerifier.create(filesController.download("../etc/passwd"))
+                .assertNext(response -> assertStatus(response, HttpStatus.BAD_REQUEST))
                 .verifyComplete();
     }
 
