@@ -1,36 +1,96 @@
 import type { ReactElement } from 'react';
 import {
-  Card, Button, Row, Col, Spinner, Placeholder,
+  Badge, Card, Button, Row, Col, Spinner, Placeholder,
 } from 'react-bootstrap';
+import { FiPackage } from 'react-icons/fi';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   useSettings, useRuntimeConfig,
 } from '../hooks/useSettings';
+import { usePluginMarketplace, usePluginSettingsCatalog } from '../hooks/usePlugins';
 import { useMe } from '../hooks/useAuth';
 import { useQueryClient } from '@tanstack/react-query';
 import GeneralTab from './settings/GeneralTab';
 import WebhooksTab from './settings/WebhooksTab';
 import { AdvancedTab } from './settings/AdvancedTab';
 import ToolsTab from './settings/ToolsTab';
-import TelegramTab from './settings/TelegramTab';
 import ModelsTab from './settings/ModelsTab';
+import { ModelCatalogTab } from './settings/ModelCatalogTab';
 import LlmProvidersTab from './settings/LlmProvidersTab';
-import VoiceTab from './settings/VoiceTab';
-import WhisperTab from './settings/WhisperTab';
 import VoiceRoutingTab from './settings/VoiceRoutingTab';
 import MemoryTab from './settings/MemoryTab';
 import SkillsTab from './settings/SkillsTab';
 import TurnTab from './settings/TurnTab';
 import UsageTab from './settings/UsageTab';
-import RagTab from './settings/RagTab';
 import McpTab from './settings/McpTab';
 import AutoModeTab from './settings/AutoModeTab';
 import { UpdatesTab } from './settings/UpdatesTab';
+import PluginSettingsPanel from './settings/PluginSettingsPanel';
+import PluginsMarketplaceTab from './settings/PluginsMarketplaceTab';
 import {
   SETTINGS_BLOCKS,
   SETTINGS_SECTIONS,
   isSettingsSectionKey,
+  type SettingsSectionMeta,
 } from './settings/settingsCatalog';
+
+interface CatalogCardItem {
+  key: string;
+  routeKey: string;
+  title: string;
+  description: string;
+  icon: SettingsSectionMeta['icon'];
+  badgeLabel?: string;
+  badgeVariant?: string;
+  metaText?: string;
+}
+
+interface CatalogBlockView {
+  key: string;
+  title: string;
+  description: string;
+  items: CatalogCardItem[];
+}
+
+interface CatalogBadgeMeta {
+  label: string;
+  variant: string;
+  meta: string;
+}
+
+function buildMarketplaceBadge(
+  pluginMarketplace: ReturnType<typeof usePluginMarketplace>['data'],
+): CatalogBadgeMeta | null {
+  if (pluginMarketplace == null) {
+    return null;
+  }
+
+  const installedCount = pluginMarketplace.items.filter((item) => item.installed).length;
+  const updatesCount = pluginMarketplace.items.filter((item) => item.updateAvailable).length;
+  const installedMeta = `${installedCount} installed plugin${installedCount === 1 ? '' : 's'}`;
+
+  if (!pluginMarketplace.available) {
+    return {
+      label: 'Unavailable',
+      variant: 'secondary',
+      meta: pluginMarketplace.message ?? 'Marketplace metadata is not available.',
+    };
+  }
+
+  if (updatesCount > 0) {
+    return {
+      label: `${updatesCount} update${updatesCount === 1 ? '' : 's'}`,
+      variant: 'warning',
+      meta: installedMeta,
+    };
+  }
+
+  return {
+    label: `${pluginMarketplace.items.length} plugins`,
+    variant: 'secondary',
+    meta: installedMeta,
+  };
+}
 
 // ==================== Main ====================
 
@@ -39,16 +99,89 @@ export default function SettingsPage(): ReactElement {
   const { section } = useParams<{ section?: string }>();
   const { data: settings, isLoading: settingsLoading } = useSettings();
   const { data: rc, isLoading: rcLoading } = useRuntimeConfig();
+  const { data: pluginCatalog = [], isLoading: pluginCatalogLoading } = usePluginSettingsCatalog();
+  const { data: pluginMarketplace } = usePluginMarketplace();
   const { data: me } = useMe();
   const qc = useQueryClient();
+  const marketplaceBadge = buildMarketplaceBadge(pluginMarketplace);
 
-  const selectedSection = isSettingsSectionKey(section) ? section : null;
-
-  const sectionMeta = selectedSection != null
-    ? SETTINGS_SECTIONS.find((s) => s.key === selectedSection) ?? null
+  const staticSection = isSettingsSectionKey(section) ? section : null;
+  const pluginSection = staticSection == null && section != null
+    ? pluginCatalog.find((item) => item.routeKey === section) ?? null
     : null;
 
-  if (settingsLoading || rcLoading) {
+  const sectionMeta = staticSection != null
+    ? SETTINGS_SECTIONS.find((entry) => entry.key === staticSection) ?? null
+    : pluginSection != null
+      ? {
+        key: pluginSection.routeKey,
+        title: pluginSection.title,
+        description: pluginSection.description,
+        icon: FiPackage,
+      }
+      : null;
+
+  const catalogBlocks: CatalogBlockView[] = (() => {
+    const byKey = new Map<string, CatalogBlockView>();
+
+    SETTINGS_BLOCKS.forEach((block) => {
+      const items = block.sections.flatMap((sectionKey) => {
+        const entry = SETTINGS_SECTIONS.find((candidate) => candidate.key === sectionKey);
+        if (entry == null) {
+          return [];
+        }
+
+        return {
+          key: entry.key,
+          routeKey: entry.key,
+          title: entry.title,
+          description: entry.description,
+          icon: entry.icon,
+          badgeLabel: entry.key === 'plugins-marketplace' ? marketplaceBadge?.label : undefined,
+          badgeVariant: entry.key === 'plugins-marketplace' ? marketplaceBadge?.variant : undefined,
+          metaText: entry.key === 'plugins-marketplace' ? marketplaceBadge?.meta : undefined,
+        };
+      });
+      byKey.set(block.key, {
+        key: block.key,
+        title: block.title,
+        description: block.description,
+        items,
+      });
+    });
+
+    pluginCatalog
+      .slice()
+      .sort((left, right) => {
+        const leftOrder = left.order ?? Number.MAX_SAFE_INTEGER;
+        const rightOrder = right.order ?? Number.MAX_SAFE_INTEGER;
+        if (leftOrder !== rightOrder) {
+          return leftOrder - rightOrder;
+        }
+        return left.title.localeCompare(right.title);
+      })
+      .forEach((item) => {
+        const blockKey = item.blockKey ?? 'plugins';
+        const current = byKey.get(blockKey) ?? {
+          key: blockKey,
+          title: item.blockTitle ?? 'Plugins',
+          description: item.blockDescription ?? 'Plugin-provided settings',
+          items: [],
+        };
+        current.items.push({
+          key: item.routeKey,
+          routeKey: item.routeKey,
+          title: item.title,
+          description: item.description,
+          icon: FiPackage,
+        });
+        byKey.set(blockKey, current);
+      });
+
+    return Array.from(byKey.values()).filter((block) => block.items.length > 0);
+  })();
+
+  if (settingsLoading || rcLoading || pluginCatalogLoading) {
     return (
       <div>
         <div className="page-header">
@@ -69,45 +202,46 @@ export default function SettingsPage(): ReactElement {
     );
   }
 
-  if (selectedSection == null) {
+  if (staticSection == null && pluginSection == null) {
     return (
       <div>
         <div className="page-header">
           <h4>Settings</h4>
           <p className="text-body-secondary mb-0">Select a settings category</p>
         </div>
-        {SETTINGS_BLOCKS.map((block) => (
+        {catalogBlocks.map((block) => (
           <div key={block.key} className="mb-4">
             <div className="mb-2">
               <h2 className="h6 mb-1">{block.title}</h2>
               <p className="text-body-secondary small mb-0">{block.description}</p>
             </div>
             <Row className="g-3">
-              {block.sections.map((sectionKey) => {
-                const item = SETTINGS_SECTIONS.find((section) => section.key === sectionKey);
-                if (item == null) {
-                  return null;
-                }
-
-                return (
-                  <Col sm={6} lg={4} xl={3} key={item.key}>
-                    <Card className="settings-card h-100">
-                      <Card.Body className="d-flex flex-column">
-                        <h3 className="h6 mb-2 settings-catalog-title">
+              {block.items.map((item) => (
+                <Col sm={6} lg={4} xl={3} key={item.key}>
+                  <Card className="settings-card h-100">
+                    <Card.Body className="d-flex flex-column">
+                      <div className="d-flex align-items-start justify-content-between gap-2 mb-2">
+                        <h3 className="h6 mb-0 settings-catalog-title">
                           <span className="text-primary"><item.icon size={18} /></span>
                           <span>{item.title}</span>
                         </h3>
-                        <Card.Text className="text-body-secondary small mb-3">{item.description}</Card.Text>
-                        <div className="mt-auto">
-                          <Button type="button" size="sm" variant="primary" onClick={() => navigate(`/settings/${item.key}`)}>
-                            Open
-                          </Button>
-                        </div>
-                      </Card.Body>
-                    </Card>
-                  </Col>
-                );
-              })}
+                        {item.badgeLabel != null && item.badgeVariant != null && (
+                          <Badge bg={item.badgeVariant}>{item.badgeLabel}</Badge>
+                        )}
+                      </div>
+                      <Card.Text className="text-body-secondary small mb-3">{item.description}</Card.Text>
+                      {item.metaText != null && (
+                        <div className="small text-body-secondary mb-3">{item.metaText}</div>
+                      )}
+                      <div className="mt-auto">
+                        <Button type="button" size="sm" variant="primary" onClick={() => navigate(`/settings/${item.routeKey}`)}>
+                          Open
+                        </Button>
+                      </div>
+                    </Card.Body>
+                  </Card>
+                </Col>
+              ))}
             </Row>
           </div>
         ))}
@@ -127,39 +261,36 @@ export default function SettingsPage(): ReactElement {
         </Button>
       </div>
 
-      {selectedSection === 'general' && <GeneralTab settings={settings} me={me} qc={qc} />}
-      {selectedSection === 'telegram' && rc != null && <TelegramTab config={rc.telegram} voiceConfig={rc.voice} />}
-      {selectedSection === 'models' && rc != null && <ModelsTab config={rc.modelRouter} llmConfig={rc.llm} />}
-      {selectedSection === 'llm-providers' && rc != null && <LlmProvidersTab config={rc.llm} modelRouter={rc.modelRouter} />}
+      {pluginSection != null && <PluginSettingsPanel routeKey={pluginSection.routeKey} />}
 
-      {selectedSection === 'tool-browser' && rc != null && <ToolsTab config={rc.tools} mode="browser" />}
-      {selectedSection === 'tool-brave' && rc != null && <ToolsTab config={rc.tools} mode="brave" />}
-      {selectedSection === 'tool-filesystem' && rc != null && <ToolsTab config={rc.tools} mode="filesystem" />}
-      {selectedSection === 'tool-shell' && rc != null && <ToolsTab config={rc.tools} mode="shell" />}
-      {selectedSection === 'tool-email' && rc != null && <ToolsTab config={rc.tools} mode="email" />}
-      {selectedSection === 'tool-automation' && rc != null && <ToolsTab config={rc.tools} mode="automation" />}
-      {selectedSection === 'tool-goals' && rc != null && <ToolsTab config={rc.tools} mode="goals" />}
-      {selectedSection === 'tool-voice' && rc != null && <VoiceRoutingTab config={rc.voice} />}
+      {staticSection === 'general' && <GeneralTab settings={settings} me={me} qc={qc} />}
+      {staticSection === 'models' && rc != null && <ModelsTab config={rc.modelRouter} llmConfig={rc.llm} />}
+      {staticSection === 'llm-providers' && rc != null && <LlmProvidersTab config={rc.llm} modelRouter={rc.modelRouter} />}
+      {staticSection === 'model-catalog' && rc != null && <ModelCatalogTab llmConfig={rc.llm} />}
+      {staticSection === 'plugins-marketplace' && <PluginsMarketplaceTab />}
 
-      {selectedSection === 'voice-elevenlabs' && rc != null && <VoiceTab config={rc.voice} />}
-      {selectedSection === 'voice-whisper' && rc != null && <WhisperTab config={rc.voice} />}
-      {selectedSection === 'memory' && rc != null && <MemoryTab config={rc.memory} />}
-      {selectedSection === 'skills' && rc != null && <SkillsTab config={rc.skills} />}
-      {selectedSection === 'turn' && rc != null && <TurnTab config={rc.turn} />}
-      {selectedSection === 'usage' && rc != null && <UsageTab config={rc.usage} />}
-      {selectedSection === 'rag' && rc != null && <RagTab config={rc.rag} />}
-      {selectedSection === 'mcp' && rc != null && <McpTab config={rc.mcp} />}
-      {selectedSection === 'webhooks' && <WebhooksTab />}
-      {selectedSection === 'auto' && rc != null && <AutoModeTab config={rc.autoMode} />}
-      {selectedSection === 'updates' && <UpdatesTab />}
+      {staticSection === 'tool-filesystem' && rc != null && <ToolsTab config={rc.tools} mode="filesystem" />}
+      {staticSection === 'tool-shell' && rc != null && <ToolsTab config={rc.tools} mode="shell" />}
+      {staticSection === 'tool-automation' && rc != null && <ToolsTab config={rc.tools} mode="automation" />}
+      {staticSection === 'tool-goals' && rc != null && <ToolsTab config={rc.tools} mode="goals" />}
+      {staticSection === 'tool-voice' && rc != null && <VoiceRoutingTab config={rc.voice} />}
 
-      {selectedSection === 'advanced-rate-limit' && rc != null && (
+      {staticSection === 'memory' && rc != null && <MemoryTab config={rc.memory} />}
+      {staticSection === 'skills' && rc != null && <SkillsTab config={rc.skills} />}
+      {staticSection === 'turn' && rc != null && <TurnTab config={rc.turn} />}
+      {staticSection === 'usage' && rc != null && <UsageTab config={rc.usage} />}
+      {staticSection === 'mcp' && rc != null && <McpTab config={rc.mcp} />}
+      {staticSection === 'webhooks' && <WebhooksTab />}
+      {staticSection === 'auto' && rc != null && <AutoModeTab config={rc.autoMode} />}
+      {staticSection === 'updates' && <UpdatesTab />}
+
+      {staticSection === 'advanced-rate-limit' && rc != null && (
         <AdvancedTab rateLimit={rc.rateLimit} security={rc.security} compaction={rc.compaction} mode="rateLimit" />
       )}
-      {selectedSection === 'advanced-security' && rc != null && (
+      {staticSection === 'advanced-security' && rc != null && (
         <AdvancedTab rateLimit={rc.rateLimit} security={rc.security} compaction={rc.compaction} mode="security" />
       )}
-      {selectedSection === 'advanced-compaction' && rc != null && (
+      {staticSection === 'advanced-compaction' && rc != null && (
         <AdvancedTab rateLimit={rc.rateLimit} security={rc.security} compaction={rc.compaction} mode="compaction" />
       )}
     </div>

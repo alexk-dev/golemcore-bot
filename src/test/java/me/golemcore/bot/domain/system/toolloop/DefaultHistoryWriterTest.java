@@ -17,6 +17,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DefaultHistoryWriterTest {
 
@@ -151,6 +152,18 @@ class DefaultHistoryWriterTest {
         Message msg = context.getMessages().get(0);
         assertEquals("Fallback text", msg.getContent());
         assertNull(msg.getToolCalls());
+    }
+
+    @Test
+    void shouldPersistBalancedTierWhenContextTierIsMissing() {
+        AgentContext context = buildContext(true);
+
+        writer.appendFinalAssistantAnswer(context, null, "Fallback text");
+
+        Message msg = context.getMessages().get(0);
+        assertNotNull(msg.getMetadata());
+        assertEquals("balanced", msg.getMetadata().get("modelTier"));
+        assertTrue(context.getSession().getMessages().get(0).getMetadata().containsKey("modelTier"));
     }
 
     @Test

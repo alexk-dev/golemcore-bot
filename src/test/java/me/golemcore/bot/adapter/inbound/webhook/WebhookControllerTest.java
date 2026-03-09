@@ -14,6 +14,7 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 
 import java.util.List;
@@ -253,7 +254,7 @@ class WebhookControllerTest {
         ResponseEntity<WebhookResponse> response = controller.customHook("big", body, new HttpHeaders()).block();
 
         assertNotNull(response);
-        assertEquals(HttpStatus.PAYLOAD_TOO_LARGE, response.getStatusCode());
+        assertEquals(HttpStatusCode.valueOf(413), response.getStatusCode());
     }
 
     @Test

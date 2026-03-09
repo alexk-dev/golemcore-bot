@@ -1,6 +1,7 @@
 import { type UseMutationResult, type UseQueryResult, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   type ModelSettings,
+  discoverProviderModels,
   getModelsConfig,
   getAvailableModels,
   saveModel,
@@ -14,6 +15,17 @@ export function useModelsConfig(): UseQueryResult<Awaited<ReturnType<typeof getM
 
 export function useAvailableModels(): UseQueryResult<Awaited<ReturnType<typeof getAvailableModels>>, unknown> {
   return useQuery({ queryKey: ['models-available'], queryFn: getAvailableModels });
+}
+
+export function useDiscoveredProviderModels(
+  providerName: string,
+  enabled = true,
+): UseQueryResult<Awaited<ReturnType<typeof discoverProviderModels>>, unknown> {
+  return useQuery({
+    queryKey: ['models-discover', providerName],
+    queryFn: () => discoverProviderModels(providerName),
+    enabled: enabled && providerName.trim().length > 0,
+  });
 }
 
 export function useSaveModel(): UseMutationResult<Awaited<ReturnType<typeof saveModel>>, unknown, { id: string; settings: ModelSettings }> {

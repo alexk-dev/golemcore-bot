@@ -13,6 +13,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  PLUGIN_API_REPO_REF: 5901f7b3926cdc6970b86d2f42241ed2ad82340c
 
 jobs:
   test:
@@ -37,6 +38,16 @@ jobs:
           java-version: '25'
           distribution: 'temurin'
           cache: maven
+
+      - name: Checkout plugin APIs
+        uses: actions/checkout@v6
+        with:
+          repository: alexk-dev/golemcore-plugins
+          ref: ${{ env.PLUGIN_API_REPO_REF }}
+          path: golemcore-plugins
+
+      - name: Install plugin API artifacts
+        run: mvn -B -ntp -Djgitver.skip=true -f golemcore-plugins/pom.xml -pl extension-api,runtime-api -am install -DskipTests
 
       - name: Build and run tests
         run: ./mvnw clean verify -DskipGitHooks=true
@@ -72,6 +83,16 @@ jobs:
           java-version: '25'
           distribution: 'temurin'
           cache: maven
+
+      - name: Checkout plugin APIs
+        uses: actions/checkout@v6
+        with:
+          repository: alexk-dev/golemcore-plugins
+          ref: ${{ env.PLUGIN_API_REPO_REF }}
+          path: golemcore-plugins
+
+      - name: Install plugin API artifacts
+        run: mvn -B -ntp -Djgitver.skip=true -f golemcore-plugins/pom.xml -pl extension-api,runtime-api -am install -DskipTests
 
       - name: Check formatting
         run: ./mvnw formatter:validate -DskipGitHooks=true
@@ -127,6 +148,18 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
+      - name: Checkout plugin APIs
+        if: steps.sonar-token.outputs.available == 'true'
+        uses: actions/checkout@v6
+        with:
+          repository: alexk-dev/golemcore-plugins
+          ref: ${{ env.PLUGIN_API_REPO_REF }}
+          path: golemcore-plugins
+
+      - name: Install plugin API artifacts
+        if: steps.sonar-token.outputs.available == 'true'
+        run: mvn -B -ntp -Djgitver.skip=true -f golemcore-plugins/pom.xml -pl extension-api,runtime-api -am install -DskipTests
+
       - name: Build, test and analyze
         if: steps.sonar-token.outputs.available == 'true'
         env:
@@ -164,6 +197,16 @@ jobs:
           java-version: '25'
           distribution: 'temurin'
           cache: maven
+
+      - name: Checkout plugin APIs
+        uses: actions/checkout@v6
+        with:
+          repository: alexk-dev/golemcore-plugins
+          ref: ${{ env.PLUGIN_API_REPO_REF }}
+          path: golemcore-plugins
+
+      - name: Install plugin API artifacts
+        run: mvn -B -ntp -Djgitver.skip=true -f golemcore-plugins/pom.xml -pl extension-api,runtime-api -am install -DskipTests
 
       - name: Determine image tags
         id: tags

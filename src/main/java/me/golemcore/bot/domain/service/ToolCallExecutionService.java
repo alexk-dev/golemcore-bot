@@ -6,22 +6,24 @@ import me.golemcore.bot.domain.loop.AgentContextHolder;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Attachment;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.ToolArtifact;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.ConfirmationPort;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
 import java.util.Base64;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Pure tool-call execution service: executes tools + confirmation gating +
@@ -41,15 +43,15 @@ public class ToolCallExecutionService {
     private final ToolConfirmationPolicy confirmationPolicy;
     private final ConfirmationPort confirmationPort;
     private final BotProperties properties;
-    private final ObjectProvider<List<ChannelPort>> channelPortsProvider;
-
-    private final AtomicReference<Map<String, ChannelPort>> channelRegistry = new AtomicReference<>();
+    private final ChannelRegistry channelRegistry;
+    private final ToolArtifactService toolArtifactService;
 
     public ToolCallExecutionService(List<ToolComponent> toolComponents,
             ToolConfirmationPolicy confirmationPolicy,
             ConfirmationPort confirmationPort,
             BotProperties properties,
-            ObjectProvider<List<ChannelPort>> channelPortsProvider) {
+            ChannelRegistry channelRegistry,
+            ToolArtifactService toolArtifactService) {
         this.toolRegistry = new ConcurrentHashMap<>();
         for (ToolComponent tool : toolComponents) {
             toolRegistry.put(tool.getToolName(), tool);
@@ -57,7 +59,8 @@ public class ToolCallExecutionService {
         this.confirmationPolicy = confirmationPolicy;
         this.confirmationPort = confirmationPort;
         this.properties = properties;
-        this.channelPortsProvider = channelPortsProvider;
+        this.channelRegistry = channelRegistry;
+        this.toolArtifactService = toolArtifactService;
     }
 
     public ToolCallExecutionResult execute(AgentContext context, Message.ToolCall toolCall) {
@@ -75,9 +78,10 @@ public class ToolCallExecutionService {
                 notifyToolExecution(context, toolCall);
             }
 
-            ToolResult result = executeToolCall(toolCall);
+            ToolResult rawResult = executeToolCall(toolCall);
+            Attachment attachment = extractAttachment(context, rawResult, toolCall.getName());
+            ToolResult result = enrichToolResult(context, rawResult, toolCall.getName(), attachment);
             context.addToolResult(toolCall.getId(), result);
-            Attachment attachment = extractAttachment(context, result, toolCall.getName());
 
             String content = buildToolMessageContent(result);
             content = truncateToolResult(content, toolCall.getName());
@@ -103,6 +107,12 @@ public class ToolCallExecutionService {
 
     public ToolComponent getTool(String name) {
         return toolRegistry.get(name);
+    }
+
+    public List<ToolComponent> listTools() {
+        return toolRegistry.values().stream()
+                .sorted(java.util.Comparator.comparing(ToolComponent::getToolName))
+                .toList();
     }
 
     private boolean requiresConfirmation(Message.ToolCall toolCall) {
@@ -216,22 +226,7 @@ public class ToolCallExecutionService {
         if (channelType == null) {
             return null;
         }
-
-        Map<String, ChannelPort> existing = channelRegistry.get();
-        if (existing != null) {
-            return existing.get(channelType);
-        }
-
-        Map<String, ChannelPort> resolved = new ConcurrentHashMap<>();
-        List<ChannelPort> ports = channelPortsProvider.getIfAvailable();
-        if (ports != null) {
-            for (ChannelPort port : ports) {
-                resolved.put(port.getChannelType(), port);
-            }
-        }
-
-        channelRegistry.compareAndSet(null, resolved);
-        return resolved.get(channelType);
+        return channelRegistry.get(channelType).orElse(null);
     }
 
     /**
@@ -306,5 +301,91 @@ public class ToolCallExecutionService {
         }
 
         return attachment;
+    }
+
+    @SuppressWarnings("unchecked")
+    private ToolResult enrichToolResult(AgentContext context, ToolResult result, String toolName,
+            Attachment attachment) {
+        if (result == null) {
+            return null;
+        }
+
+        Map<String, Object> dataMap = null;
+        boolean mutated = false;
+        if (result.getData() instanceof Map<?, ?> rawMap) {
+            dataMap = new LinkedHashMap<>((Map<String, Object>) rawMap);
+            mutated = stripBinaryPayload(dataMap) || mutated;
+        }
+
+        ToolArtifact storedFile = null;
+        if (attachment != null) {
+            try {
+                storedFile = toolArtifactService.saveArtifact(
+                        resolveSessionId(context),
+                        toolName,
+                        attachment.getFilename(),
+                        attachment.getData(),
+                        attachment.getMimeType());
+            } catch (RuntimeException ex) {
+                log.warn("[Tools] Failed to persist attachment for '{}': {}", toolName, ex.getMessage());
+            }
+        }
+
+        String output = result.getOutput();
+        if (storedFile != null) {
+            if (dataMap == null) {
+                dataMap = new LinkedHashMap<>();
+            }
+            dataMap.put("internal_file_path", storedFile.getPath());
+            dataMap.put("internal_file_url", storedFile.getDownloadUrl());
+            dataMap.put("internal_file_name", storedFile.getFilename());
+            dataMap.put("internal_file_mime_type", storedFile.getMimeType());
+            dataMap.put("internal_file_size", storedFile.getSize());
+            if (attachment.getType() != null) {
+                dataMap.put("internal_file_kind", attachment.getType().name().toLowerCase(Locale.ROOT));
+            }
+            output = appendInternalFileLink(output, storedFile);
+            mutated = true;
+        }
+
+        if (!mutated) {
+            return result;
+        }
+
+        return ToolResult.builder()
+                .success(result.isSuccess())
+                .output(output)
+                .data(dataMap)
+                .error(result.getError())
+                .failureKind(result.getFailureKind())
+                .build();
+    }
+
+    private boolean stripBinaryPayload(Map<String, Object> dataMap) {
+        boolean mutated = false;
+        mutated = dataMap.remove("attachment") != null || mutated;
+        mutated = dataMap.remove("screenshot_base64") != null || mutated;
+        mutated = dataMap.remove("file_bytes") != null || mutated;
+        return mutated;
+    }
+
+    private String resolveSessionId(AgentContext context) {
+        if (context == null || context.getSession() == null || context.getSession().getId() == null
+                || context.getSession().getId().isBlank()) {
+            return "session";
+        }
+        return context.getSession().getId();
+    }
+
+    private String appendInternalFileLink(String output, ToolArtifact storedFile) {
+        String linkBlock = "Internal file: [" + storedFile.getFilename() + "](" + storedFile.getDownloadUrl() + ")\n"
+                + "Workspace path: `" + storedFile.getPath() + "`";
+        if (output == null || output.isBlank()) {
+            return linkBlock;
+        }
+        if (output.contains(storedFile.getDownloadUrl())) {
+            return output;
+        }
+        return output + "\n\n" + linkBlock;
     }
 }

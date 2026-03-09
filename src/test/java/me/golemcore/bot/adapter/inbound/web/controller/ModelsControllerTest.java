@@ -1,6 +1,7 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
 import me.golemcore.bot.domain.service.ModelSelectionService;
+import me.golemcore.bot.domain.service.ProviderModelDiscoveryService;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,13 +25,15 @@ class ModelsControllerTest {
 
     private ModelConfigService modelConfigService;
     private ModelSelectionService modelSelectionService;
+    private ProviderModelDiscoveryService providerModelDiscoveryService;
     private ModelsController controller;
 
     @BeforeEach
     void setUp() {
         modelConfigService = mock(ModelConfigService.class);
         modelSelectionService = mock(ModelSelectionService.class);
-        controller = new ModelsController(modelConfigService, modelSelectionService);
+        providerModelDiscoveryService = mock(ProviderModelDiscoveryService.class);
+        controller = new ModelsController(modelConfigService, modelSelectionService, providerModelDiscoveryService);
     }
 
     @Test
@@ -95,10 +98,10 @@ class ModelsControllerTest {
         Map<String, List<ModelSelectionService.AvailableModel>> grouped = new LinkedHashMap<>();
         grouped.put("openai", List.of(
                 new ModelSelectionService.AvailableModel("gpt-5", "openai", "GPT-5", true,
-                        List.of("low", "high"))));
+                        List.of("low", "high"), true)));
         grouped.put("anthropic", List.of(
                 new ModelSelectionService.AvailableModel("claude-opus-4-6", "anthropic", "Claude Opus", false,
-                        List.of())));
+                        List.of(), false)));
         when(modelSelectionService.getAvailableModelsGrouped()).thenReturn(grouped);
 
         @SuppressWarnings("unchecked")
@@ -120,5 +123,34 @@ class ModelsControllerTest {
         verify(modelConfigService).reload();
         assertNotNull(result);
         assertEquals(HttpStatus.OK, result.getStatusCode());
+    }
+
+    @Test
+    void shouldDiscoverProviderModels() {
+        List<ProviderModelDiscoveryService.DiscoveredModel> discovered = List.of(
+                new ProviderModelDiscoveryService.DiscoveredModel("xmesh", "gpt-5.2", "GPT-5.2", "openai"),
+                new ProviderModelDiscoveryService.DiscoveredModel("xmesh", "gemini-2.5-pro", "Gemini 2.5 Pro",
+                        "google"));
+        when(providerModelDiscoveryService.discoverModels("xmesh")).thenReturn(discovered);
+
+        @SuppressWarnings("unchecked")
+        ResponseEntity<List<?>> result = (ResponseEntity<List<?>>) (ResponseEntity<?>) controller
+                .discoverProviderModels("xmesh").block();
+
+        assertNotNull(result);
+        assertEquals(HttpStatus.OK, result.getStatusCode());
+        assertNotNull(result.getBody());
+        assertEquals(2, result.getBody().size());
+    }
+
+    @Test
+    void shouldReturnBadRequestWhenProviderDiscoveryRequestIsInvalid() {
+        when(providerModelDiscoveryService.discoverModels("missing"))
+                .thenThrow(new IllegalArgumentException("Provider 'missing' is not configured"));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.discoverProviderModels("missing").block());
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertEquals("Provider 'missing' is not configured", ex.getReason());
     }
 }

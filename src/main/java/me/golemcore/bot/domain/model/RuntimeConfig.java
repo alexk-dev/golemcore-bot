@@ -15,8 +15,8 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Application-level runtime settings that override BotProperties defaults.
- * Persisted to {@code preferences/runtime-config.json} via StoragePort.
+ * Application-level runtime settings persisted as per-section files under
+ * {@code preferences/}.
  */
 @Data
 @NoArgsConstructor
@@ -62,9 +62,6 @@ public class RuntimeConfig {
 
     @Builder.Default
     private UsageConfig usage = new UsageConfig();
-
-    @Builder.Default
-    private RagConfig rag = new RagConfig();
 
     @Builder.Default
     private McpConfig mcp = new McpConfig();
@@ -139,27 +136,16 @@ public class RuntimeConfig {
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class ToolsConfig {
-        private Boolean browserEnabled;
-        private String browserType;
-        private Integer browserTimeout;
-        private String browserUserAgent;
         private Boolean filesystemEnabled;
         private Boolean shellEnabled;
-        private String browserApiProvider;
-        private Boolean browserHeadless;
-        private Boolean braveSearchEnabled;
-        private Secret braveSearchApiKey;
         private Boolean skillManagementEnabled;
         private Boolean skillTransitionEnabled;
         private Boolean tierEnabled;
         private Boolean goalManagementEnabled;
         @Builder.Default
         private List<ShellEnvironmentVariable> shellEnvironmentVariables = new ArrayList<>();
-        @Builder.Default
-        private ImapConfig imap = new ImapConfig();
-        @Builder.Default
-        private SmtpConfig smtp = new SmtpConfig();
     }
 
     @Data
@@ -169,40 +155,6 @@ public class RuntimeConfig {
     public static class ShellEnvironmentVariable {
         private String name;
         private String value;
-    }
-
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
-    @Builder
-    public static class ImapConfig {
-        private Boolean enabled;
-        private String host;
-        private Integer port;
-        private String username;
-        private Secret password;
-        private String security;
-        private String sslTrust;
-        private Integer connectTimeout;
-        private Integer readTimeout;
-        private Integer maxBodyLength;
-        private Integer defaultMessageLimit;
-    }
-
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
-    @Builder
-    public static class SmtpConfig {
-        private Boolean enabled;
-        private String host;
-        private Integer port;
-        private String username;
-        private Secret password;
-        private String security;
-        private String sslTrust;
-        private Integer connectTimeout;
-        private Integer readTimeout;
     }
 
     @Data
@@ -371,19 +323,6 @@ public class RuntimeConfig {
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
-    public static class RagConfig {
-        private Boolean enabled;
-        private String url;
-        private Secret apiKey;
-        private String queryMode;
-        private Integer timeoutSeconds;
-        private Integer indexMinLength;
-    }
-
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
-    @Builder
     public static class McpConfig {
         private Boolean enabled;
         private Integer defaultStartupTimeout;
@@ -404,8 +343,8 @@ public class RuntimeConfig {
                         AutoModeConfig.class), RATE_LIMIT("rate-limit", RateLimitConfig.class), SECURITY("security",
                                 SecurityConfig.class), COMPACTION("compaction", CompactionConfig.class), TURN("turn",
                                         TurnConfig.class), MEMORY("memory", MemoryConfig.class), SKILLS("skills",
-                                                SkillsConfig.class), USAGE("usage", UsageConfig.class), RAG("rag",
-                                                        RagConfig.class), MCP("mcp", McpConfig.class);
+                                                SkillsConfig.class), USAGE("usage", UsageConfig.class), MCP("mcp",
+                                                        McpConfig.class);
 
         private final String fileId;
         private final Class<?> configClass;

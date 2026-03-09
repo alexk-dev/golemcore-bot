@@ -8,7 +8,6 @@ import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.port.outbound.SessionPort;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Field;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -637,10 +636,6 @@ class SessionRunCoordinatorTest {
         return user(content, null, timestamp);
     }
 
-    private static Message user(String content, Map<String, Object> metadata) {
-        return user(content, metadata, Instant.EPOCH);
-    }
-
     private static Message user(String content, Map<String, Object> metadata, Instant timestamp) {
         return Message.builder()
                 .role("user")
@@ -653,24 +648,17 @@ class SessionRunCoordinatorTest {
                 .build();
     }
 
-    private static int getRunnerCount(SessionRunCoordinator coordinator) throws Exception {
-        Field runnersField = SessionRunCoordinator.class.getDeclaredField("runners");
-        runnersField.setAccessible(true);
-        Map<?, ?> runners = (Map<?, ?>) runnersField.get(coordinator);
-        return runners.size();
-    }
-
     private static boolean waitForRunnerCount(SessionRunCoordinator coordinator, int expected, long timeout,
-            TimeUnit unit) throws Exception {
+            TimeUnit unit) throws InterruptedException {
         long timeoutNanos = unit.toNanos(timeout);
         long deadline = System.nanoTime() + timeoutNanos;
         while (System.nanoTime() < deadline) {
-            if (getRunnerCount(coordinator) == expected) {
+            if (coordinator.runnerCount() == expected) {
                 return true;
             }
             Thread.sleep(10);
         }
-        return getRunnerCount(coordinator) == expected;
+        return coordinator.runnerCount() == expected;
     }
 
     private static final class Gate {

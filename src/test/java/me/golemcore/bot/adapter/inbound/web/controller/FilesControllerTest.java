@@ -5,7 +5,9 @@ import me.golemcore.bot.adapter.inbound.web.dto.FileRenameRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.FileSaveRequest;
 import me.golemcore.bot.domain.model.DashboardFileContent;
 import me.golemcore.bot.domain.model.DashboardFileNode;
+import me.golemcore.bot.domain.model.ToolArtifactDownload;
 import me.golemcore.bot.domain.service.DashboardFileService;
+import me.golemcore.bot.domain.service.ToolArtifactService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -26,12 +28,14 @@ import static org.mockito.Mockito.when;
 class FilesControllerTest {
 
     private DashboardFileService dashboardFileService;
+    private ToolArtifactService toolArtifactService;
     private FilesController filesController;
 
     @BeforeEach
     void setUp() {
         dashboardFileService = mock(DashboardFileService.class);
-        filesController = new FilesController(dashboardFileService);
+        toolArtifactService = mock(ToolArtifactService.class);
+        filesController = new FilesController(dashboardFileService, toolArtifactService);
     }
 
     @Test
@@ -147,6 +151,88 @@ class FilesControllerTest {
                     assertEquals("2026-02-23T00:00:00Z", response.getBody().getUpdatedAt());
                 })
                 .verifyComplete();
+    }
+
+    @Test
+    void shouldReturnBinaryDownloadWhenPathIsValid() {
+        ToolArtifactDownload download = ToolArtifactDownload.builder()
+                .path(".golemcore/tool-artifacts/session/test/report.pdf")
+                .filename("report.pdf")
+                .mimeType("application/pdf")
+                .size(3L)
+                .data(new byte[] { 1, 2, 3 })
+                .build();
+
+        when(toolArtifactService.getDownload(".golemcore/tool-artifacts/session/test/report.pdf"))
+                .thenReturn(download);
+
+        StepVerifier.create(filesController.download(".golemcore/tool-artifacts/session/test/report.pdf"))
+                .assertNext(response -> {
+                    assertStatus(response, HttpStatus.OK);
+                    assertNotNull(response.getBody());
+                    assertEquals(3, response.getBody().length);
+                    assertEquals("application/pdf", response.getHeaders().getContentType().toString());
+                    assertTrue(response.getHeaders().getFirst("Content-Disposition").contains("report.pdf"));
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldFallbackToOctetStreamWhenMimeTypeIsInvalid() {
+        ToolArtifactDownload download = ToolArtifactDownload.builder()
+                .path(".golemcore/tool-artifacts/session/test/report.bin")
+                .filename("report.bin")
+                .mimeType("not a mime type")
+                .size(3L)
+                .data(new byte[] { 1, 2, 3 })
+                .build();
+
+        when(toolArtifactService.getDownload(".golemcore/tool-artifacts/session/test/report.bin"))
+                .thenReturn(download);
+
+        StepVerifier.create(filesController.download(".golemcore/tool-artifacts/session/test/report.bin"))
+                .assertNext(response -> {
+                    assertStatus(response, HttpStatus.OK);
+                    assertEquals("application/octet-stream", response.getHeaders().getContentType().toString());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldFallbackToOctetStreamWhenMimeTypeIsBlank() {
+        ToolArtifactDownload download = ToolArtifactDownload.builder()
+                .path(".golemcore/tool-artifacts/session/test/report.bin")
+                .filename("report.bin")
+                .mimeType("   ")
+                .size(3L)
+                .data(new byte[] { 1, 2, 3 })
+                .build();
+
+        when(toolArtifactService.getDownload(".golemcore/tool-artifacts/session/test/report.bin"))
+                .thenReturn(download);
+
+        StepVerifier.create(filesController.download(".golemcore/tool-artifacts/session/test/report.bin"))
+                .assertNext(response -> {
+                    assertStatus(response, HttpStatus.OK);
+                    assertEquals("application/octet-stream", response.getHeaders().getContentType().toString());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldReturnBadRequestForInvalidDownloadPath() {
+        when(toolArtifactService.getDownload("../etc/passwd")).thenThrow(new IllegalArgumentException("Invalid path"));
+
+        StepVerifier.create(filesController.download("../etc/passwd"))
+                .assertNext(response -> assertStatus(response, HttpStatus.BAD_REQUEST))
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldThrowWhenDownloadEndpointHasUnexpectedServiceFailure() {
+        when(toolArtifactService.getDownload("broken.bin")).thenThrow(new IllegalStateException("Storage unavailable"));
+
+        assertThrows(IllegalStateException.class, () -> filesController.download("broken.bin"));
     }
 
     @Test

@@ -17,6 +17,8 @@ import java.util.UUID;
  */
 public class DefaultHistoryWriter implements HistoryWriter {
 
+    private static final String DEFAULT_MODEL_TIER = "balanced";
+
     private final Clock clock;
 
     public DefaultHistoryWriter(Clock clock) {
@@ -86,9 +88,7 @@ public class DefaultHistoryWriter implements HistoryWriter {
         }
 
         String tier = context.getModelTier();
-        if (tier != null && !tier.isBlank()) {
-            metadata.put("modelTier", tier);
-        }
+        metadata.put("modelTier", tier != null && !tier.isBlank() ? tier : DEFAULT_MODEL_TIER);
 
         String model = null;
         if (context.getSession() != null && context.getSession().getMetadata() != null) {

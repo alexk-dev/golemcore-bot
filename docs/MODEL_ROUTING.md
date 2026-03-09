@@ -15,6 +15,13 @@ The bot uses a **4-tier model selection** strategy that picks the most appropria
 3. **Dynamic upgrade** — `DynamicTierSystem` promotes to `coding` when code activity is detected mid-conversation
 4. **Fallback** — `"balanced"` when no tier is explicitly set
 5. **Per-user model override** — set via `/model` command
+
+Operationally, model setup now follows this flow:
+
+1. Configure provider profiles in `LLM Providers`
+2. Maintain capability metadata in `Model Catalog`
+3. Assign routing/tier slots in `Model Router`
+
 ```
 User Message
     |
@@ -56,14 +63,16 @@ Configure tier models in `preferences/runtime-config.json` under `modelRouter`:
 ```json
 {
   "modelRouter": {
+    "routingModel": "openai/gpt-5.2-codex",
+    "routingModelReasoning": "none",
     "balancedModel": "openai/gpt-5.1",
-    "balancedModelReasoning": "medium",
+    "balancedModelReasoning": "none",
     "smartModel": "openai/gpt-5.1",
-    "smartModelReasoning": "high",
+    "smartModelReasoning": "none",
     "codingModel": "openai/gpt-5.2",
-    "codingModelReasoning": "medium",
+    "codingModelReasoning": "none",
     "deepModel": "openai/gpt-5.2",
-    "deepModelReasoning": "xhigh",
+    "deepModelReasoning": "none",
     "dynamicTierEnabled": true,
     "temperature": 0.7
   }
@@ -246,15 +255,16 @@ This decouples provider naming from wire protocol, so custom provider keys can s
 
 Model capabilities are defined in the workspace at `models/models.json`.
 
-On first run, the bot copies a bundled `models.json` into the workspace so edits can persist (dashboard: Models).
+On first run, the bot copies a bundled `models.json` into the workspace so edits can persist. The dashboard now manages this file through the `Model Catalog` section and can fetch live suggestions from provider APIs.
 
 Each entry specifies:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `provider` | string | Provider name: `openai`, `anthropic`, `zhipu`, `qwen`, `cerebras`, `deepinfra` |
+| `provider` | string | Provider profile key used by runtime config and model discovery |
 | `displayName` | string | Human-readable name for UI display (e.g., in `/model list`) |
 | `supportsTemperature` | boolean | Whether to send the `temperature` parameter (reasoning models typically don't support it) |
+| `supportsVision` | boolean | Whether the model supports image/vision inputs |
 | `maxInputTokens` | integer | Maximum input tokens for non-reasoning models (used for truncation) |
 | `reasoning` | object | Reasoning configuration (null/absent for non-reasoning models) |
 | `reasoning.default` | string | Default reasoning level (e.g., `"medium"`) |
@@ -265,10 +275,11 @@ Each entry specifies:
 ```json
 {
   "models": {
-    "gpt-5.1": {
+    "openai/gpt-5.1": {
       "provider": "openai",
       "displayName": "GPT-5.1",
       "supportsTemperature": false,
+      "supportsVision": true,
       "reasoning": {
         "default": "medium",
         "levels": {
@@ -279,21 +290,24 @@ Each entry specifies:
         }
       }
     },
-    "gpt-4o": {
+    "openai/gpt-4o": {
       "provider": "openai",
       "displayName": "GPT-4o",
       "supportsTemperature": true,
+      "supportsVision": true,
       "maxInputTokens": 128000
     },
-    "claude-sonnet-4-20250514": {
+    "anthropic/claude-sonnet-4-20250514": {
       "provider": "anthropic",
       "displayName": "Claude Sonnet 4",
       "supportsTemperature": true,
+      "supportsVision": true,
       "maxInputTokens": 200000
     }
   },
   "defaults": {
     "supportsTemperature": true,
+    "supportsVision": true,
     "maxInputTokens": 128000
   }
 }
@@ -303,10 +317,26 @@ Each entry specifies:
 
 **Model name resolution** in `ModelConfigService`:
 
-1. Exact match (e.g., `gpt-5.1`)
+1. Exact match (e.g., `openai/gpt-5.1`)
 2. Strip provider prefix (e.g., `openai/gpt-5.1` becomes `gpt-5.1`)
 3. Prefix match (e.g., `gpt-5.1-preview` matches `gpt-5.1`)
 4. Fall back to `defaults` section
+
+This means both plain ids and provider-scoped ids work, but provider-scoped ids are preferred when the same raw model id can appear under multiple providers.
+
+### Live Discovery
+
+The dashboard can seed catalog entries by calling:
+
+- `GET /api/models/discover/{provider}`
+
+`ProviderModelDiscoveryService` uses the configured provider profile and supports:
+
+- OpenAI-compatible `/models`
+- Anthropic `/v1/models`
+- Gemini `/v1beta/models`
+
+Only provider profiles with configured API keys can be discovered successfully.
 
 The `maxInputTokens` value is used by:
 - `AutoCompactionSystem` — triggers compaction at 80% of context window (uses per-level limit when available)
@@ -326,6 +356,7 @@ Edit `preferences/runtime-config.json`:
 ```json
 {
   "modelRouter": {
+    "routingModel": "openai/gpt-5.2-codex",
     "balancedModel": "openai/gpt-5.1",
     "smartModel": "openai/gpt-5.1",
     "codingModel": "openai/gpt-5.2",
@@ -334,6 +365,12 @@ Edit `preferences/runtime-config.json`:
   }
 }
 ```
+
+Dashboard mapping:
+
+- `LLM Providers` edits `llm.providers`
+- `Model Catalog` edits `models/models.json`
+- `Model Router` edits `modelRouter`
 
 ---
 
@@ -553,9 +590,10 @@ Layer 1: AutoCompactionSystem (order=18)
 | `ToolLoopExecutionSystem` | `domain.system` | 30 | LLM calls, tool execution loop, plan intercept, model selection, emergency truncation |
 | `AutoCompactionSystem` | `domain.system` | 18 | Preventive context compaction before LLM call |
 | `TierTool` | `tools` | — | LLM tool for switching tier mid-conversation |
-| `CommandRouter` | `adapter.inbound.command` | — | `/tier` command handler || `LlmAdapterFactory` | `adapter.outbound.llm` | — | Provider adapter selection |
+| `CommandRouter` | `adapter.inbound.command` | — | `/tier` and `/model` command handlers |
 | `Langchain4jAdapter` | `adapter.outbound.llm` | — | OpenAI/Anthropic/Gemini protocol dispatch, ID remapping, name sanitization |
 | `ModelConfigService` | `infrastructure.config` | — | Model capability lookups from models.json |
+| `ProviderModelDiscoveryService` | `domain.service` | — | Live provider API discovery for the Model Catalog |
 | `ModelSelectionService` | `domain.service` | — | Per-user model override resolution, provider filtering |
 | `AgentContext` | `domain.model` | — | Runtime state: holds `modelTier`, `activeSkill` |
 

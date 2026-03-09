@@ -21,9 +21,9 @@ package me.golemcore.bot.domain.component;
 /**
  * Base interface for all components in the agent system. Components provide
  * modular, pluggable functionality that can be attached to agent sessions. Each
- * component type (skill, tool, memory, llm, browser, sanitizer) extends this
- * interface to provide specialized capabilities while maintaining a consistent
- * lifecycle contract.
+ * component type (skill, tool, memory, llm, sanitizer) extends this interface
+ * to provide specialized capabilities while maintaining a consistent lifecycle
+ * contract.
  */
 public interface Component {
 

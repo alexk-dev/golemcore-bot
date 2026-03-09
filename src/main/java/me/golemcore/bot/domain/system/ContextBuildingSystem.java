@@ -73,7 +73,6 @@ public class ContextBuildingSystem implements AgentSystem {
 
     private final MemoryComponent memoryComponent;
     private final SkillComponent skillComponent;
-    private final List<ToolComponent> toolComponents;
     private final SkillTemplateEngine templateEngine;
     private final McpPort mcpPort;
     private final ToolCallExecutionService toolCallExecutionService;
@@ -168,7 +167,7 @@ public class ContextBuildingSystem implements AgentSystem {
                 skillsSummary != null ? skillsSummary.length() : 0);
 
         // Collect tool definitions (native + MCP)
-        List<ToolDefinition> tools = new ArrayList<>(toolComponents.stream()
+        List<ToolDefinition> tools = new ArrayList<>(toolCallExecutionService.listTools().stream()
                 .filter(ToolComponent::isEnabled)
                 .filter(tool -> isToolAdvertised(tool, planModeActive))
                 .map(ToolComponent::getDefinition)
@@ -206,7 +205,7 @@ public class ContextBuildingSystem implements AgentSystem {
             String userQuery = getLastUserMessageText(context);
             if (userQuery != null && !userQuery.isBlank()) {
                 try {
-                    String ragContext = ragPort.query(userQuery, runtimeConfigService.getRagQueryMode()).join();
+                    String ragContext = ragPort.query(userQuery).join();
                     if (ragContext != null && !ragContext.isBlank()) {
                         context.setAttribute(ContextAttributes.RAG_CONTEXT, ragContext);
                         log.debug("[Context] RAG context: {} chars", ragContext.length());

@@ -29,6 +29,15 @@ import java.util.concurrent.CompletableFuture;
 public interface RagPort {
 
     /**
+     * Query the RAG system for relevant context using provider-owned defaults.
+     *
+     * @param query
+     *            the search query
+     * @return formatted text from RAG, or empty string if unavailable
+     */
+    CompletableFuture<String> query(String query);
+
+    /**
      * Query the RAG system for relevant context.
      *
      * @param query
@@ -37,7 +46,9 @@ public interface RagPort {
      *            query mode (naive, local, global, hybrid)
      * @return formatted text from RAG, or empty string if unavailable
      */
-    CompletableFuture<String> query(String query, String mode);
+    default CompletableFuture<String> query(String query, String mode) {
+        return query(query);
+    }
 
     /**
      * Index content into the RAG system for future retrieval.
@@ -51,4 +62,11 @@ public interface RagPort {
      * Check if the RAG system is available (enabled + healthy).
      */
     boolean isAvailable();
+
+    /**
+     * Minimum combined user/assistant text length required before indexing.
+     */
+    default int getIndexMinLength() {
+        return 50;
+    }
 }

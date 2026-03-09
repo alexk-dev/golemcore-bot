@@ -7,88 +7,125 @@ import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 import type { VoiceConfig } from '../../api/settings';
 import { useUpdateVoice } from '../../hooks/useSettings';
-import {
-  STT_PROVIDER_ELEVENLABS,
-  STT_PROVIDER_WHISPER,
-  TTS_PROVIDER_ELEVENLABS,
-  isValidHttpUrl,
-  resolveSttProvider,
-  resolveTtsProvider,
-} from './voiceProviders';
+import { usePluginSettingsCatalog, useVoiceProviders } from '../../hooks/usePlugins';
 
 interface VoiceRoutingTabProps {
   config: VoiceConfig;
 }
 
-interface WhisperRoutingValidation {
-  hasError: boolean;
-  message: string;
+interface ProviderOption {
+  id: string;
+  label: string;
+  routeKey: string | null;
 }
+
+const DEFAULT_TTS_PROVIDER = 'golemcore/elevenlabs';
+const DEFAULT_STT_PROVIDER = 'golemcore/elevenlabs';
+const LEGACY_ELEVENLABS_PROVIDER = 'elevenlabs';
+const LEGACY_WHISPER_PROVIDER = 'whisper';
+const CANONICAL_WHISPER_PROVIDER = 'golemcore/whisper';
 
 function hasDiff<T>(current: T, initial: T): boolean {
   return JSON.stringify(current) !== JSON.stringify(initial);
 }
 
-function buildWhisperRoutingValidation(
-  isWhisperStt: boolean,
-  whisperSttUrl: string | null | undefined,
-): WhisperRoutingValidation {
-  if (!isWhisperStt) {
-    return { hasError: false, message: '' };
-  }
-  if (whisperSttUrl == null || whisperSttUrl.trim().length === 0) {
-    return {
-      hasError: true,
-      message: 'Whisper STT URL is required before you can save this provider selection.',
-    };
-  }
-  if (!isValidHttpUrl(whisperSttUrl)) {
-    return {
-      hasError: true,
-      message: 'Whisper STT URL must be a valid http(s) URL.',
-    };
-  }
-  return { hasError: false, message: '' };
+function humanizeProviderId(providerId: string): string {
+  const value = providerId.includes('/') ? providerId.split('/')[1] : providerId;
+  return value
+    .split('-')
+    .filter((part) => part.length > 0)
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join(' ');
 }
 
-function getSttStatusLabel(isWhisperStt: boolean): string {
-  return isWhisperStt ? 'Whisper' : 'ElevenLabs';
+function normalizeProviderId(value: string | null | undefined, fallback: string): string {
+  if (value == null || value.trim().length === 0) {
+    return fallback;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === LEGACY_ELEVENLABS_PROVIDER) {
+    return DEFAULT_STT_PROVIDER;
+  }
+  if (normalized === LEGACY_WHISPER_PROVIDER) {
+    return CANONICAL_WHISPER_PROVIDER;
+  }
+  return normalized;
 }
 
-function getSttStatusVariant(isWhisperStt: boolean): 'primary' | 'secondary' {
-  return isWhisperStt ? 'secondary' : 'primary';
-}
-
-function getSttHintText(isWhisperStt: boolean): string {
-  return isWhisperStt
-    ? 'Whisper STT is selected. Configure URL and API key in Voice: Whisper STT.'
-    : 'ElevenLabs STT is selected. Configure credentials in Voice: ElevenLabs.';
+function buildProviderOptions(
+  providers: Record<string, string> | undefined,
+  fallback: string,
+  routeByPluginId: Map<string, string>,
+): ProviderOption[] {
+  const ids = new Set<string>(Object.keys(providers ?? {}));
+  ids.add(fallback);
+  return Array.from(ids)
+    .sort((left, right) => humanizeProviderId(left).localeCompare(humanizeProviderId(right)))
+    .map((id) => ({
+      id,
+      label: humanizeProviderId(id),
+      routeKey: routeByPluginId.get(id) ?? null,
+    }));
 }
 
 export default function VoiceRoutingTab({ config }: VoiceRoutingTabProps): ReactElement {
   const navigate = useNavigate();
   const updateVoice = useUpdateVoice();
-  const [form, setForm] = useState<VoiceConfig>({ ...config });
-  const isDirty = useMemo(() => hasDiff(form, config), [form, config]);
-  const sttProvider = resolveSttProvider(form.sttProvider);
-  const ttsProvider = resolveTtsProvider(form.ttsProvider);
-  const isWhisperStt = sttProvider === STT_PROVIDER_WHISPER;
-  const whisperValidation = buildWhisperRoutingValidation(isWhisperStt, form.whisperSttUrl);
-  const saveDisabled = !isDirty || updateVoice.isPending || whisperValidation.hasError;
-  const whisperValidationId = 'voice-routing-whisper-validation';
-  const sttHintId = 'voice-routing-stt-hint';
-  const ttsHintId = 'voice-routing-tts-hint';
+  const { data: providers } = useVoiceProviders();
+  const { data: pluginCatalog = [] } = usePluginSettingsCatalog();
+  const routeByPluginId = useMemo(() => new Map(pluginCatalog.map((item) => [item.pluginId, item.routeKey])), [pluginCatalog]);
+  const sttOptions = useMemo(
+    () => buildProviderOptions(providers?.stt, normalizeProviderId(config.sttProvider, DEFAULT_STT_PROVIDER), routeByPluginId),
+    [providers?.stt, config.sttProvider, routeByPluginId],
+  );
+  const ttsOptions = useMemo(
+    () => buildProviderOptions(providers?.tts, normalizeProviderId(config.ttsProvider, DEFAULT_TTS_PROVIDER), routeByPluginId),
+    [providers?.tts, config.ttsProvider, routeByPluginId],
+  );
 
-  // Keep local draft in sync after server-side updates/refetch.
+  const [form, setForm] = useState<VoiceConfig>({
+    ...config,
+    sttProvider: normalizeProviderId(config.sttProvider, DEFAULT_STT_PROVIDER),
+    ttsProvider: normalizeProviderId(config.ttsProvider, DEFAULT_TTS_PROVIDER),
+  });
+
   useEffect(() => {
-    setForm({ ...config });
+    setForm({
+      ...config,
+      sttProvider: normalizeProviderId(config.sttProvider, DEFAULT_STT_PROVIDER),
+      ttsProvider: normalizeProviderId(config.ttsProvider, DEFAULT_TTS_PROVIDER),
+    });
   }, [config]);
+
+  const isDirty = useMemo(() => hasDiff(form, {
+    ...config,
+    sttProvider: normalizeProviderId(config.sttProvider, DEFAULT_STT_PROVIDER),
+    ttsProvider: normalizeProviderId(config.ttsProvider, DEFAULT_TTS_PROVIDER),
+  }), [form, config]);
+
+  const selectedProviderRoutes = useMemo(() => {
+    const entries = new Map<string, { id: string; label: string; routeKey: string }>();
+    const sttProvider = form.sttProvider ?? DEFAULT_STT_PROVIDER;
+    const ttsProvider = form.ttsProvider ?? DEFAULT_TTS_PROVIDER;
+    [sttProvider, ttsProvider].forEach((providerId) => {
+      const routeKey = routeByPluginId.get(providerId);
+      if (routeKey != null) {
+        entries.set(providerId, {
+          id: providerId,
+          label: humanizeProviderId(providerId),
+          routeKey,
+        });
+      }
+    });
+    return Array.from(entries.values());
+  }, [form.sttProvider, form.ttsProvider, routeByPluginId]);
 
   const handleSave = async (): Promise<void> => {
     await updateVoice.mutateAsync({
+      ...config,
       ...form,
-      sttProvider,
-      ttsProvider,
+      sttProvider: normalizeProviderId(form.sttProvider, DEFAULT_STT_PROVIDER),
+      ttsProvider: normalizeProviderId(form.ttsProvider, DEFAULT_TTS_PROVIDER),
     });
     toast.success('Voice routing saved');
   };
@@ -98,14 +135,13 @@ export default function VoiceRoutingTab({ config }: VoiceRoutingTabProps): React
       <Card.Body>
         <SettingsCardTitle title="Voice Routing" />
         <Form.Text className="text-muted d-block mb-3">
-          Step 1: choose routing for STT/TTS. Step 2: open provider cards to configure credentials and endpoint details.
+          Choose the active STT/TTS providers from the plugins currently loaded by the runtime.
         </Form.Text>
         <div className="d-flex align-items-center gap-2 mb-3 voice-status-badges">
-          <Badge bg={getSttStatusVariant(isWhisperStt)}>
-            STT: {getSttStatusLabel(isWhisperStt)}
-          </Badge>
-          <Badge bg="primary">TTS: ElevenLabs</Badge>
+          <Badge bg="primary">STT: {humanizeProviderId(normalizeProviderId(form.sttProvider, DEFAULT_STT_PROVIDER))}</Badge>
+          <Badge bg="primary">TTS: {humanizeProviderId(normalizeProviderId(form.ttsProvider, DEFAULT_TTS_PROVIDER))}</Badge>
         </div>
+
         <Form.Check
           type="switch"
           label={<>Enable Voice <HelpTip text="Enable speech-to-text and text-to-speech pipeline" /></>}
@@ -121,15 +157,14 @@ export default function VoiceRoutingTab({ config }: VoiceRoutingTabProps): React
                 STT Provider <HelpTip text="Provider used for speech-to-text transcription" />
               </Form.Label>
               <Form.Select
-                id="voice-routing-stt-provider"
                 size="sm"
-                value={sttProvider}
-                aria-invalid={whisperValidation.hasError || undefined}
-                aria-describedby={whisperValidation.hasError ? whisperValidationId : sttHintId}
+                value={normalizeProviderId(form.sttProvider, DEFAULT_STT_PROVIDER)}
+                disabled={sttOptions.length === 0}
                 onChange={(event) => setForm((prev) => ({ ...prev, sttProvider: event.target.value }))}
               >
-                <option value={STT_PROVIDER_ELEVENLABS}>ElevenLabs</option>
-                <option value={STT_PROVIDER_WHISPER}>Whisper-compatible</option>
+                {sttOptions.map((option) => (
+                  <option key={option.id} value={option.id}>{option.label}</option>
+                ))}
               </Form.Select>
             </Form.Group>
           </Col>
@@ -139,54 +174,40 @@ export default function VoiceRoutingTab({ config }: VoiceRoutingTabProps): React
                 TTS Provider <HelpTip text="Provider used for text-to-speech synthesis" />
               </Form.Label>
               <Form.Select
-                id="voice-routing-tts-provider"
                 size="sm"
-                value={ttsProvider}
-                aria-disabled="true"
-                aria-describedby={ttsHintId}
+                value={normalizeProviderId(form.ttsProvider, DEFAULT_TTS_PROVIDER)}
+                disabled={ttsOptions.length === 0}
                 onChange={(event) => setForm((prev) => ({ ...prev, ttsProvider: event.target.value }))}
-                disabled
               >
-                <option value={TTS_PROVIDER_ELEVENLABS}>ElevenLabs</option>
+                {ttsOptions.map((option) => (
+                  <option key={option.id} value={option.id}>{option.label}</option>
+                ))}
               </Form.Select>
-              <Form.Text id={ttsHintId} className="text-muted">Whisper TTS is not supported yet.</Form.Text>
             </Form.Group>
           </Col>
         </Row>
 
-        <Form.Text id={sttHintId} className="text-muted d-block mt-3">
-          {getSttHintText(isWhisperStt)}
+        <Form.Text className="text-muted d-block mt-3">
+          Provider-specific credentials and endpoint configuration now live in plugin pages. Configure the provider first if it needs additional secrets or URLs.
         </Form.Text>
-        {whisperValidation.hasError && (
-          <Form.Text id={whisperValidationId} className="text-danger d-block mt-2" role="alert" aria-live="assertive">
-            {whisperValidation.message}
-          </Form.Text>
-        )}
 
-        <Row className="g-2 mt-1 voice-provider-links">
-          <Col xs={12} sm="auto">
-            <Button
-              type="button"
-              size="sm"
-              className="voice-route-shortcut"
-              variant={isWhisperStt ? 'primary' : 'secondary'}
-              onClick={() => navigate('/settings/voice-whisper')}
-            >
-              Open Voice: Whisper STT
-            </Button>
-          </Col>
-          <Col xs={12} sm="auto">
-            <Button
-              type="button"
-              size="sm"
-              className="voice-route-shortcut"
-              variant={!isWhisperStt ? 'primary' : 'secondary'}
-              onClick={() => navigate('/settings/voice-elevenlabs')}
-            >
-              Open Voice: ElevenLabs
-            </Button>
-          </Col>
-        </Row>
+        {selectedProviderRoutes.length > 0 && (
+          <Row className="g-2 mt-1 voice-provider-links">
+            {selectedProviderRoutes.map((provider) => (
+              <Col xs={12} sm="auto" key={provider.id}>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="voice-route-shortcut"
+                  variant="secondary"
+                  onClick={() => navigate(`/settings/${provider.routeKey}`)}
+                >
+                  Open {provider.label}
+                </Button>
+              </Col>
+            ))}
+          </Row>
+        )}
 
         <SettingsSaveBar className="mt-3">
           <Button
@@ -194,7 +215,7 @@ export default function VoiceRoutingTab({ config }: VoiceRoutingTabProps): React
             variant="primary"
             size="sm"
             onClick={() => { void handleSave(); }}
-            disabled={saveDisabled}
+            disabled={!isDirty || updateVoice.isPending}
           >
             {updateVoice.isPending ? 'Saving...' : 'Save'}
           </Button>

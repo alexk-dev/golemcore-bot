@@ -15,6 +15,7 @@ import me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem;
 import me.golemcore.bot.domain.system.toolloop.ToolExecutionOutcome;
 import me.golemcore.bot.domain.system.toolloop.ToolExecutorPort;
 import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import org.junit.jupiter.api.Test;
@@ -127,7 +128,8 @@ class ToolLoopNoDuplicateHistoryBddTest {
         VoiceResponseHandler voiceHandler = mock(VoiceResponseHandler.class);
         when(voiceHandler.isAvailable()).thenReturn(false);
 
-        ResponseRoutingSystem routing = new ResponseRoutingSystem(List.of(channel), preferences, voiceHandler);
+        ResponseRoutingSystem routing = new ResponseRoutingSystem(new ChannelRegistry(List.of(channel)), preferences,
+                voiceHandler);
 
         ctx.setAttribute(ContextAttributes.OUTGOING_RESPONSE,
                 me.golemcore.bot.domain.model.OutgoingResponse.textOnly(second.getContent()));

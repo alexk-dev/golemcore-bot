@@ -19,6 +19,9 @@ package me.golemcore.bot.infrastructure.config;
  */
 
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.LegacyPluginConfigurationMigrationService;
+import me.golemcore.bot.plugin.runtime.ChannelRegistry;
+import me.golemcore.bot.plugin.runtime.PluginManager;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -33,11 +36,8 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import me.golemcore.bot.adapter.outbound.browser.PlaywrightDriverBundleService;
 
 import java.time.Clock;
-import java.nio.file.Path;
-import java.util.List;
 
 /**
  * Spring auto-configuration that initializes and starts the bot on application
@@ -63,9 +63,10 @@ import java.util.List;
 public class AutoConfiguration {
 
     private final BotProperties properties;
-    private final List<ChannelPort> channelPorts;
+    private final ChannelRegistry channelRegistry;
     private final RuntimeConfigService runtimeConfigService;
-    private final PlaywrightDriverBundleService playwrightDriverBundleService;
+    private final LegacyPluginConfigurationMigrationService legacyPluginConfigurationMigrationService;
+    private final PluginManager pluginManager;
     private final ObjectProvider<BuildProperties> buildPropertiesProvider;
     private final ObjectProvider<GitProperties> gitPropertiesProvider;
 
@@ -93,10 +94,12 @@ public class AutoConfiguration {
         log.info("Balanced Model: {}", runtimeConfigService.getBalancedModel());
         log.info("LLM Provider: {}", properties.getLlm().getProvider());
         log.info("Storage Path: {}", properties.getStorage().getLocal().getBasePath());
-        preparePlaywrightDriver();
+
+        legacyPluginConfigurationMigrationService.migrateIfNeeded();
+        pluginManager.reloadAll();
 
         // Auto-start enabled channels
-        for (ChannelPort channel : channelPorts) {
+        for (ChannelPort channel : channelRegistry.getAll()) {
             String channelType = channel.getChannelType();
 
             boolean enabled = "telegram".equals(channelType)
@@ -110,20 +113,6 @@ public class AutoConfiguration {
         }
 
         log.info("Java AI Bot started successfully");
-    }
-
-    private void preparePlaywrightDriver() {
-        if (!runtimeConfigService.isBrowserEnabled()) {
-            log.info("Browser tool disabled, skipping Playwright driver preparation");
-            return;
-        }
-
-        try {
-            Path driverDir = playwrightDriverBundleService.ensureDriverReady();
-            log.info("Playwright driver ready at {}", driverDir);
-        } catch (RuntimeException e) {
-            log.warn("Playwright driver preparation failed: {}", e.getMessage());
-        }
     }
 
     private boolean isChannelEnabled(String channelType) {

@@ -9,7 +9,12 @@ import me.golemcore.bot.adapter.inbound.web.dto.FileSaveRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.FileTreeNodeDto;
 import me.golemcore.bot.domain.model.DashboardFileContent;
 import me.golemcore.bot.domain.model.DashboardFileNode;
+import me.golemcore.bot.domain.model.ToolArtifactDownload;
 import me.golemcore.bot.domain.service.DashboardFileService;
+import me.golemcore.bot.domain.service.ToolArtifactService;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,6 +26,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 @RestController
@@ -29,6 +35,7 @@ import java.util.List;
 public class FilesController {
 
     private final DashboardFileService dashboardFileService;
+    private final ToolArtifactService toolArtifactService;
 
     @GetMapping("/tree")
     public Mono<ResponseEntity<List<FileTreeNodeDto>>> getTree(
@@ -47,6 +54,24 @@ public class FilesController {
         try {
             DashboardFileContent content = dashboardFileService.getContent(path);
             return Mono.just(ResponseEntity.ok(toContentDto(content)));
+        } catch (IllegalArgumentException e) {
+            return Mono.just(ResponseEntity.badRequest().build());
+        }
+    }
+
+    @GetMapping("/download")
+    public Mono<ResponseEntity<byte[]>> download(@RequestParam String path) {
+        try {
+            ToolArtifactDownload download = toolArtifactService.getDownload(path);
+            MediaType mediaType = parseMediaType(download.getMimeType());
+            ContentDisposition disposition = ContentDisposition.attachment()
+                    .filename(download.getFilename(), StandardCharsets.UTF_8)
+                    .build();
+            return Mono.just(ResponseEntity.ok()
+                    .contentType(mediaType)
+                    .contentLength(download.getSize())
+                    .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
+                    .body(download.getData()));
         } catch (IllegalArgumentException e) {
             return Mono.just(ResponseEntity.badRequest().build());
         }
@@ -113,5 +138,16 @@ public class FilesController {
                 .size(content.getSize())
                 .updatedAt(content.getUpdatedAt())
                 .build();
+    }
+
+    private MediaType parseMediaType(String mimeType) {
+        if (mimeType == null || mimeType.isBlank()) {
+            return MediaType.APPLICATION_OCTET_STREAM;
+        }
+        try {
+            return MediaType.parseMediaType(mimeType);
+        } catch (IllegalArgumentException ignored) {
+            return MediaType.APPLICATION_OCTET_STREAM;
+        }
     }
 }

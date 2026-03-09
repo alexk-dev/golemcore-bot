@@ -43,6 +43,8 @@ import java.util.UUID;
 @Slf4j
 public class SessionsController {
 
+    private static final String ROLE_ASSISTANT = "assistant";
+    private static final String DEFAULT_MODEL_TIER = "balanced";
     private static final String CHANNEL_WEB = "web";
     private static final String CHANNEL_TELEGRAM = "telegram";
     private static final int MAX_RECENT_LIMIT = 20;
@@ -295,6 +297,9 @@ public class SessionsController {
             if (tierValue instanceof String) {
                 modelTier = (String) tierValue;
             }
+        }
+        if (ROLE_ASSISTANT.equals(msg.getRole()) && (modelTier == null || modelTier.isBlank())) {
+            modelTier = DEFAULT_MODEL_TIER;
         }
 
         return SessionDetailDto.MessageDto.builder()

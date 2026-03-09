@@ -23,7 +23,6 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.TurnOutcome;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.RagPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -47,14 +46,14 @@ import java.util.Set;
 public class RagIndexingSystem implements AgentSystem {
 
     private final RagPort ragPort;
-    private final RuntimeConfigService runtimeConfigService;
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
             .withZone(ZoneId.systemDefault());
 
     private static final Set<String> TRIVIAL_PATTERNS = Set.of(
             "hi", "hello", "hey", "bye", "thanks", "thank you", "ok", "okay",
-            "yes", "no", "привет", "пока", "спасибо", "да", "нет");
+            "yes", "no", "\u043f\u0440\u0438\u0432\u0435\u0442", "\u043f\u043e\u043a\u0430",
+            "\u0441\u043f\u0430\u0441\u0438\u0431\u043e", "\u0434\u0430", "\u043d\u0435\u0442");
 
     @Override
     public String getName() {
@@ -123,7 +122,7 @@ public class RagIndexingSystem implements AgentSystem {
     }
 
     private boolean isTrivial(String userText, String assistantText) {
-        int minLength = runtimeConfigService.getRagIndexMinLength();
+        int minLength = ragPort.getIndexMinLength();
         int combinedLength = userText.length() + assistantText.length();
         if (combinedLength < minLength) {
             return true;

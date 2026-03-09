@@ -10,10 +10,14 @@ import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 
 /**
- * Centralized exception handler for dashboard controllers. Scoped to web
- * controllers only — excludes WebhookController (in adapter.inbound.webhook).
+ * Centralized exception handler for dashboard and plugin runtime controllers.
+ * Scoped to HTTP API controllers only — excludes WebhookController (in
+ * adapter.inbound.webhook).
  */
-@ControllerAdvice(basePackages = "me.golemcore.bot.adapter.inbound.web.controller")
+@ControllerAdvice(basePackages = {
+        "me.golemcore.bot.adapter.inbound.web.controller",
+        "me.golemcore.bot.plugin.runtime"
+})
 @Slf4j
 public class GlobalExceptionHandler {
 

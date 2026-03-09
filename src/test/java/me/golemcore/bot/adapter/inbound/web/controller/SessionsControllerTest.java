@@ -109,6 +109,34 @@ class SessionsControllerTest {
     }
 
     @Test
+    void shouldFallbackAssistantTierToBalancedWhenHistoryMetadataIsMissing() {
+        Message msg = Message.builder()
+                .id("m1")
+                .role("assistant")
+                .content("hello")
+                .metadata(Map.of("model", "deepseek-coder-v2-lite"))
+                .timestamp(Instant.now())
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType("web")
+                .chatId("123")
+                .createdAt(Instant.now())
+                .messages(List.of(msg))
+                .build();
+        when(sessionPort.get("s1")).thenReturn(Optional.of(session));
+
+        StepVerifier.create(controller.getSession("s1"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    SessionDetailDto body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals("balanced", body.getMessages().get(0).getModelTier());
+                })
+                .verifyComplete();
+    }
+
+    @Test
     void shouldReturn404ForMissingSession() {
         when(sessionPort.get("unknown")).thenReturn(Optional.empty());
 

@@ -1,8 +1,8 @@
 import type { IconType } from 'react-icons';
 import {
-  FiSliders, FiSend, FiCpu, FiTool, FiMic,
-  FiGlobe, FiPlayCircle, FiShield, FiSearch, FiHardDrive, FiBarChart2,
-  FiTerminal, FiMail, FiCompass, FiShuffle, FiKey, FiRefreshCw,
+  FiSliders, FiCpu, FiTool, FiMic,
+  FiGlobe, FiPlayCircle, FiShield, FiHardDrive, FiBarChart2,
+  FiTerminal, FiShuffle, FiKey, FiRefreshCw, FiPackage, FiDatabase,
 } from 'react-icons/fi';
 
 export interface SettingsSectionMeta {
@@ -14,26 +14,21 @@ export interface SettingsSectionMeta {
 
 export const SETTINGS_SECTIONS = [
   { key: 'general', title: 'General', description: 'Preferences, account security, and MFA', icon: FiSliders },
-  { key: 'telegram', title: 'Telegram', description: 'Bot token, invite codes, and invited users', icon: FiSend },
-  { key: 'models', title: 'Model Router', description: 'Routing and tier model configuration', icon: FiCpu },
   { key: 'llm-providers', title: 'LLM Providers', description: 'Provider API keys and base URLs', icon: FiKey },
+  { key: 'model-catalog', title: 'Model Catalog', description: 'Edit model definitions and provider capability metadata', icon: FiDatabase },
+  { key: 'models', title: 'Model Router', description: 'Routing and tier model configuration', icon: FiCpu },
+  { key: 'plugins-marketplace', title: 'Plugin Marketplace', description: 'Browse, install, and update official integrations', icon: FiPackage },
 
-  { key: 'tool-browser', title: 'Browser', description: 'Web browsing tool runtime status and behavior', icon: FiCompass },
-  { key: 'tool-brave', title: 'Brave Search', description: 'Brave API search tool', icon: FiSearch },
   { key: 'tool-filesystem', title: 'Filesystem Tool', description: 'Sandbox file read/write operations', icon: FiHardDrive },
   { key: 'tool-shell', title: 'Shell Tool', description: 'Sandbox shell command execution', icon: FiTerminal },
-  { key: 'tool-email', title: 'Email (IMAP/SMTP)', description: 'Email reading and sending integrations', icon: FiMail },
   { key: 'tool-automation', title: 'Automation Tools', description: 'Skill management, transitions, and tier switching', icon: FiShuffle },
   { key: 'tool-goals', title: 'Goal Management', description: 'Auto mode goal operations', icon: FiTool },
   { key: 'tool-voice', title: 'Voice Routing', description: 'Enable voice and choose STT/TTS providers', icon: FiMic },
 
-  { key: 'voice-elevenlabs', title: 'Voice: ElevenLabs', description: 'ElevenLabs credentials, voice ID, and model settings', icon: FiMic },
-  { key: 'voice-whisper', title: 'Voice: Whisper STT', description: 'Whisper-compatible STT endpoint and API key', icon: FiMic },
   { key: 'memory', title: 'Memory', description: 'Conversation memory persistence and retention', icon: FiHardDrive },
   { key: 'skills', title: 'Skills Runtime', description: 'Enable skills and progressive loading behavior', icon: FiTool },
   { key: 'turn', title: 'Turn Budget', description: 'Runtime limits for LLM/tool calls and deadline', icon: FiCpu },
   { key: 'usage', title: 'Usage Tracking', description: 'Enable/disable analytics usage tracking', icon: FiBarChart2 },
-  { key: 'rag', title: 'RAG', description: 'LightRAG integration settings', icon: FiGlobe },
   { key: 'mcp', title: 'MCP', description: 'Model Context Protocol runtime defaults', icon: FiTool },
   { key: 'webhooks', title: 'Webhooks', description: 'Incoming hooks, auth, and delivery actions', icon: FiGlobe },
   { key: 'auto', title: 'Auto Mode', description: 'Autonomous run behavior and constraints', icon: FiPlayCircle },
@@ -57,19 +52,25 @@ export const SETTINGS_BLOCKS: SettingsBlock[] = [
     key: 'core',
     title: 'Core',
     description: 'Main runtime settings and access configuration',
-    sections: ['general', 'telegram', 'models', 'llm-providers'],
+    sections: ['general', 'llm-providers', 'model-catalog', 'models'],
+  },
+  {
+    key: 'plugins',
+    title: 'Extensions',
+    description: 'Install and configure plugin-backed integrations',
+    sections: ['plugins-marketplace'],
   },
   {
     key: 'tools',
     title: 'Tools',
     description: 'Tool-specific runtime behavior and integrations',
-    sections: ['tool-browser', 'tool-brave', 'tool-filesystem', 'tool-shell', 'tool-email', 'tool-automation', 'tool-goals', 'tool-voice', 'voice-elevenlabs', 'voice-whisper'],
+    sections: ['tool-filesystem', 'tool-shell', 'tool-automation', 'tool-goals', 'tool-voice'],
   },
   {
     key: 'runtime',
     title: 'Runtime',
     description: 'Agent execution, memory, usage, and autonomy',
-    sections: ['memory', 'skills', 'turn', 'usage', 'rag', 'mcp', 'auto', 'webhooks', 'updates'],
+    sections: ['memory', 'skills', 'turn', 'usage', 'mcp', 'auto', 'webhooks', 'updates'],
   },
   {
     key: 'advanced',

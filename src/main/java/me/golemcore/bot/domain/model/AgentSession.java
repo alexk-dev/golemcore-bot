@@ -56,11 +56,12 @@ public class AgentSession {
      * Adds a message to the session history and updates the session timestamp.
      */
     public void addMessage(Message message) {
-        if (messages == null) {
-            messages = new ArrayList<>();
-        }
-        messages.add(message);
+        ensureMutableMessages().add(message);
         this.updatedAt = Instant.now();
+    }
+
+    public List<Message> mutableMessages() {
+        return ensureMutableMessages();
     }
 
     /**
@@ -79,5 +80,16 @@ public class AgentSession {
      */
     public enum SessionState {
         ACTIVE, PAUSED, TERMINATED
+    }
+
+    private List<Message> ensureMutableMessages() {
+        if (messages == null) {
+            messages = new ArrayList<>();
+            return messages;
+        }
+        if (!(messages instanceof ArrayList<?>)) {
+            messages = new ArrayList<>(messages);
+        }
+        return messages;
     }
 }

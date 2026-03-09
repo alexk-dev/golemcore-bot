@@ -28,6 +28,7 @@ import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.system.AgentSystem;
 import me.golemcore.bot.domain.system.ResponseRoutingSystem;
+import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.RateLimitPort;
@@ -124,9 +125,9 @@ class AgentLoopRoutingBddTest {
         // Use a real ResponseRoutingSystem so AgentLoop's instanceof check works.
         VoiceResponseHandler voiceHandler = mock(VoiceResponseHandler.class);
         ResponseRoutingSystem routing = new ResponseRoutingSystem(
-                List.of(channel), preferencesService, voiceHandler);
+                new ChannelRegistry(List.of(channel)), preferencesService, voiceHandler);
 
-        AgentLoop loop = new AgentLoop(
+        AgentLoop loop = createLoop(
                 sessionPort,
                 rateLimitPort,
                 List.of(requester, routing),
@@ -154,6 +155,26 @@ class AgentLoopRoutingBddTest {
         // Verify no synthetic assistant message was added to session.
         assertFalse(session.getMessages().stream().anyMatch(m -> "assistant".equals(m.getRole())),
                 "Orchestration must not write synthetic assistant messages to raw history");
+    }
+
+    private static AgentLoop createLoop(
+            SessionPort sessionPort,
+            RateLimitPort rateLimitPort,
+            List<AgentSystem> systems,
+            List<ChannelPort> channels,
+            RuntimeConfigService runtimeConfigService,
+            UserPreferencesService preferencesService,
+            LlmPort llmPort,
+            Clock clock) {
+        return new AgentLoop(
+                sessionPort,
+                rateLimitPort,
+                systems,
+                new ChannelRegistry(channels),
+                runtimeConfigService,
+                preferencesService,
+                llmPort,
+                clock);
     }
 
     private static RuntimeConfigService mockRuntimeConfigService(int maxLlmCalls) {

@@ -1,19 +1,18 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.adapter.inbound.web.dto.PreferencesUpdateRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.SettingsResponse;
 import me.golemcore.bot.domain.model.MemoryPreset;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
-import me.golemcore.bot.domain.model.TelegramRestartEvent;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import org.springframework.context.ApplicationEventPublisher;
+import me.golemcore.bot.plugin.runtime.SttProviderRegistry;
+import me.golemcore.bot.plugin.runtime.TtsProviderRegistry;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -34,6 +33,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 /**
@@ -41,15 +41,15 @@ import java.util.regex.Pattern;
  */
 @RestController
 @RequestMapping("/api/settings")
-@RequiredArgsConstructor
 @Slf4j
 public class SettingsController {
 
     private static final String TELEGRAM_AUTH_MODE_INVITE_ONLY = "invite_only";
-    private static final String STT_PROVIDER_ELEVENLABS = "elevenlabs";
-    private static final String STT_PROVIDER_WHISPER = "whisper";
-    private static final String TTS_PROVIDER_ELEVENLABS = "elevenlabs";
-    private static final Set<String> VALID_STT_PROVIDERS = Set.of(STT_PROVIDER_ELEVENLABS, STT_PROVIDER_WHISPER);
+    private static final String STT_PROVIDER_ELEVENLABS = "golemcore/elevenlabs";
+    private static final String STT_PROVIDER_WHISPER = "golemcore/whisper";
+    private static final String TTS_PROVIDER_ELEVENLABS = "golemcore/elevenlabs";
+    private static final String LEGACY_STT_PROVIDER_ELEVENLABS = "elevenlabs";
+    private static final String LEGACY_STT_PROVIDER_WHISPER = "whisper";
     private static final Set<String> VALID_API_TYPES = Set.of("openai", "anthropic", "gemini");
     private static final int MEMORY_SOFT_BUDGET_MIN = 200;
     private static final int MEMORY_SOFT_BUDGET_MAX = 10000;
@@ -70,7 +70,22 @@ public class SettingsController {
     private final ModelSelectionService modelSelectionService;
     private final RuntimeConfigService runtimeConfigService;
     private final MemoryPresetService memoryPresetService;
-    private final ApplicationEventPublisher eventPublisher;
+    private final SttProviderRegistry sttProviderRegistry;
+    private final TtsProviderRegistry ttsProviderRegistry;
+
+    public SettingsController(UserPreferencesService preferencesService,
+            ModelSelectionService modelSelectionService,
+            RuntimeConfigService runtimeConfigService,
+            MemoryPresetService memoryPresetService,
+            SttProviderRegistry sttProviderRegistry,
+            TtsProviderRegistry ttsProviderRegistry) {
+        this.preferencesService = preferencesService;
+        this.modelSelectionService = modelSelectionService;
+        this.runtimeConfigService = runtimeConfigService;
+        this.memoryPresetService = memoryPresetService;
+        this.sttProviderRegistry = sttProviderRegistry;
+        this.ttsProviderRegistry = ttsProviderRegistry;
+    }
 
     @GetMapping
     public Mono<ResponseEntity<SettingsResponse>> getSettings() {
@@ -123,7 +138,8 @@ public class SettingsController {
                 .getAvailableModelsGrouped();
         Map<String, List<ModelDto>> result = new LinkedHashMap<>();
         grouped.forEach((provider, models) -> result.put(provider, models.stream()
-                .map(m -> new ModelDto(m.id(), m.displayName(), m.hasReasoning(), m.reasoningLevels()))
+                .map(m -> new ModelDto(m.id(), m.displayName(), m.hasReasoning(),
+                        m.reasoningLevels(), m.supportsVision()))
                 .toList()));
         return Mono.just(ResponseEntity.ok(result));
     }
@@ -149,30 +165,20 @@ public class SettingsController {
 
     @PutMapping("/runtime")
     public Mono<ResponseEntity<RuntimeConfig>> updateRuntimeConfig(@RequestBody RuntimeConfig config) {
-        if (config.getTelegram() == null) {
-            config.setTelegram(new RuntimeConfig.TelegramConfig());
+        RuntimeConfig current = runtimeConfigService.getRuntimeConfig();
+        RuntimeConfig merged = mergeRuntimeConfigSections(current, config);
+        if (merged.getTelegram() == null) {
+            merged.setTelegram(new RuntimeConfig.TelegramConfig());
         }
-        normalizeAndValidateTelegramConfig(config.getTelegram());
-        mergeRuntimeSecrets(runtimeConfigService.getRuntimeConfig(), config);
-        normalizeAndValidateShellEnvironmentVariables(config.getTools());
-        validateLlmConfig(config.getLlm(), config.getModelRouter());
-        if (config.getMemory() != null) {
-            validateMemoryConfig(config.getMemory());
+        normalizeAndValidateTelegramConfig(merged.getTelegram());
+        mergeRuntimeSecrets(current, merged);
+        normalizeAndValidateShellEnvironmentVariables(merged.getTools());
+        validateLlmConfig(merged.getLlm(), merged.getModelRouter());
+        if (merged.getMemory() != null) {
+            validateMemoryConfig(merged.getMemory());
         }
-        validateVoiceConfig(config.getVoice());
-        runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
-    }
-
-    @PutMapping("/runtime/telegram")
-    public Mono<ResponseEntity<RuntimeConfig>> updateTelegramConfig(
-            @RequestBody RuntimeConfig.TelegramConfig telegramConfig) {
-        normalizeAndValidateTelegramConfig(telegramConfig);
-        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        telegramConfig.setToken(mergeSecret(config.getTelegram().getToken(), telegramConfig.getToken()));
-        config.setTelegram(telegramConfig);
-        runtimeConfigService.updateRuntimeConfig(config);
-        eventPublisher.publishEvent(new TelegramRestartEvent());
+        validateVoiceConfig(merged.getVoice());
+        runtimeConfigService.updateRuntimeConfig(merged);
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
 
@@ -273,7 +279,6 @@ public class SettingsController {
     public Mono<ResponseEntity<RuntimeConfig>> updateToolsConfig(
             @RequestBody RuntimeConfig.ToolsConfig toolsConfig) {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        mergeToolsSecrets(config.getTools(), toolsConfig);
         normalizeAndValidateShellEnvironmentVariables(toolsConfig);
         config.setTools(toolsConfig);
         runtimeConfigService.updateRuntimeConfig(config);
@@ -417,16 +422,6 @@ public class SettingsController {
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
 
-    @PutMapping("/runtime/rag")
-    public Mono<ResponseEntity<RuntimeConfig>> updateRagConfig(
-            @RequestBody RuntimeConfig.RagConfig ragConfig) {
-        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        ragConfig.setApiKey(mergeSecret(config.getRag().getApiKey(), ragConfig.getApiKey()));
-        config.setRag(ragConfig);
-        runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
-    }
-
     @PutMapping("/runtime/mcp")
     public Mono<ResponseEntity<RuntimeConfig>> updateMcpConfig(
             @RequestBody RuntimeConfig.McpConfig mcpConfig) {
@@ -472,46 +467,10 @@ public class SettingsController {
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfig()));
     }
 
-    // ==================== Invite Codes ====================
-
-    @PostMapping("/telegram/invite-codes")
-    public Mono<ResponseEntity<RuntimeConfig.InviteCode>> generateInviteCode() {
-        RuntimeConfig.InviteCode code = runtimeConfigService.generateInviteCode();
-        return Mono.just(ResponseEntity.ok(code));
-    }
-
-    @DeleteMapping("/telegram/invite-codes/{code}")
-    public Mono<ResponseEntity<Void>> revokeInviteCode(@PathVariable String code) {
-        boolean revoked = runtimeConfigService.revokeInviteCode(code);
-        if (!revoked) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Invite code not found");
-        }
-        return Mono.just(ResponseEntity.ok().build());
-    }
-
-    @DeleteMapping("/telegram/allowed-users/{userId}")
-    public Mono<ResponseEntity<Void>> removeTelegramAllowedUser(@PathVariable String userId) {
-        if (userId == null || !userId.matches("\\d+")) {
-            throw new IllegalArgumentException("telegram.userId must be numeric");
-        }
-        boolean removed = runtimeConfigService.removeTelegramAllowedUser(userId);
-        if (!removed) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Telegram user not found");
-        }
-        return Mono.just(ResponseEntity.ok().build());
-    }
-
-    // ==================== Telegram Restart ====================
-
-    @PostMapping("/telegram/restart")
-    public Mono<ResponseEntity<Void>> restartTelegram() {
-        eventPublisher.publishEvent(new TelegramRestartEvent());
-        return Mono.just(ResponseEntity.ok().build());
-    }
-
     // ==================== DTOs ====================
 
-    private record ModelDto(String id, String displayName, boolean hasReasoning, List<String> reasoningLevels) {
+    private record ModelDto(String id, String displayName, boolean hasReasoning,
+            List<String> reasoningLevels, boolean supportsVision) {
     }
 
     private record AdvancedConfigRequest(
@@ -664,14 +623,14 @@ public class SettingsController {
         }
 
         String normalizedSttProvider = normalizeProvider(voiceConfig.getSttProvider(), STT_PROVIDER_ELEVENLABS);
-        if (!VALID_STT_PROVIDERS.contains(normalizedSttProvider)) {
-            throw new IllegalArgumentException("voice.sttProvider must be one of " + VALID_STT_PROVIDERS);
+        if (!isKnownSttProvider(normalizedSttProvider)) {
+            throw new IllegalArgumentException("voice.sttProvider must resolve to a loaded STT provider");
         }
         voiceConfig.setSttProvider(normalizedSttProvider);
 
         String normalizedTtsProvider = normalizeProvider(voiceConfig.getTtsProvider(), TTS_PROVIDER_ELEVENLABS);
-        if (!TTS_PROVIDER_ELEVENLABS.equals(normalizedTtsProvider)) {
-            throw new IllegalArgumentException("voice.ttsProvider must be '" + TTS_PROVIDER_ELEVENLABS + "'");
+        if (!isKnownTtsProvider(normalizedTtsProvider)) {
+            throw new IllegalArgumentException("voice.ttsProvider must resolve to a loaded TTS provider");
         }
         voiceConfig.setTtsProvider(normalizedTtsProvider);
 
@@ -680,10 +639,10 @@ public class SettingsController {
             voiceConfig.setWhisperSttUrl(null);
         }
         String effectiveWhisperSttUrl = voiceConfig.getWhisperSttUrl();
-        if (STT_PROVIDER_WHISPER.equals(normalizedSttProvider)) {
+        if (isWhisperProvider(normalizedSttProvider)) {
             if (effectiveWhisperSttUrl == null || effectiveWhisperSttUrl.isBlank()) {
                 throw new IllegalArgumentException(
-                        "voice.whisperSttUrl is required when voice.sttProvider is 'whisper'");
+                        "voice.whisperSttUrl is required when the STT provider is Whisper-compatible");
             }
             if (!isValidHttpUrl(effectiveWhisperSttUrl)) {
                 throw new IllegalArgumentException("voice.whisperSttUrl must be a valid http(s) URL");
@@ -698,6 +657,40 @@ public class SettingsController {
             config.setTools(toolsConfig);
         }
         return toolsConfig;
+    }
+
+    private RuntimeConfig mergeRuntimeConfigSections(RuntimeConfig current, RuntimeConfig incoming) {
+        RuntimeConfig baseline = current != null ? current : RuntimeConfig.builder().build();
+        RuntimeConfig patch = incoming != null ? incoming : RuntimeConfig.builder().build();
+        return RuntimeConfig.builder()
+                .telegram(mergeSection(patch.getTelegram(), baseline.getTelegram(), RuntimeConfig.TelegramConfig::new))
+                .modelRouter(mergeSection(patch.getModelRouter(), baseline.getModelRouter(),
+                        RuntimeConfig.ModelRouterConfig::new))
+                .llm(mergeSection(patch.getLlm(), baseline.getLlm(), RuntimeConfig.LlmConfig::new))
+                .tools(mergeSection(patch.getTools(), baseline.getTools(), RuntimeConfig.ToolsConfig::new))
+                .voice(mergeSection(patch.getVoice(), baseline.getVoice(), RuntimeConfig.VoiceConfig::new))
+                .autoMode(mergeSection(patch.getAutoMode(), baseline.getAutoMode(), RuntimeConfig.AutoModeConfig::new))
+                .rateLimit(mergeSection(patch.getRateLimit(), baseline.getRateLimit(),
+                        RuntimeConfig.RateLimitConfig::new))
+                .security(mergeSection(patch.getSecurity(), baseline.getSecurity(), RuntimeConfig.SecurityConfig::new))
+                .compaction(mergeSection(patch.getCompaction(), baseline.getCompaction(),
+                        RuntimeConfig.CompactionConfig::new))
+                .turn(mergeSection(patch.getTurn(), baseline.getTurn(), RuntimeConfig.TurnConfig::new))
+                .memory(mergeSection(patch.getMemory(), baseline.getMemory(), RuntimeConfig.MemoryConfig::new))
+                .skills(mergeSection(patch.getSkills(), baseline.getSkills(), RuntimeConfig.SkillsConfig::new))
+                .usage(mergeSection(patch.getUsage(), baseline.getUsage(), RuntimeConfig.UsageConfig::new))
+                .mcp(mergeSection(patch.getMcp(), baseline.getMcp(), RuntimeConfig.McpConfig::new))
+                .build();
+    }
+
+    private <T> T mergeSection(T incoming, T current, Supplier<T> emptySupplier) {
+        if (incoming == null) {
+            return current;
+        }
+        if (current == null) {
+            return incoming;
+        }
+        return incoming.equals(emptySupplier.get()) ? current : incoming;
     }
 
     private List<RuntimeConfig.ShellEnvironmentVariable> ensureShellEnvironmentVariables(
@@ -828,11 +821,7 @@ public class SettingsController {
             incoming.getVoice().setWhisperSttApiKey(
                     mergeSecret(current.getVoice().getWhisperSttApiKey(), incoming.getVoice().getWhisperSttApiKey()));
         }
-        if (incoming.getRag() != null && current.getRag() != null) {
-            incoming.getRag().setApiKey(mergeSecret(current.getRag().getApiKey(), incoming.getRag().getApiKey()));
-        }
         mergeLlmSecrets(current.getLlm(), incoming.getLlm());
-        mergeToolsSecrets(current.getTools(), incoming.getTools());
     }
 
     private void mergeLlmSecrets(RuntimeConfig.LlmConfig current, RuntimeConfig.LlmConfig incoming) {
@@ -848,25 +837,6 @@ public class SettingsController {
             if (incomingProvider != null && currentProvider != null) {
                 incomingProvider.setApiKey(mergeSecret(currentProvider.getApiKey(), incomingProvider.getApiKey()));
             }
-        }
-    }
-
-    private void mergeToolsSecrets(RuntimeConfig.ToolsConfig current, RuntimeConfig.ToolsConfig incoming) {
-        if (current == null || incoming == null) {
-            return;
-        }
-        incoming.setBraveSearchApiKey(mergeSecret(current.getBraveSearchApiKey(), incoming.getBraveSearchApiKey()));
-
-        RuntimeConfig.ImapConfig currentImap = current.getImap();
-        RuntimeConfig.ImapConfig incomingImap = incoming.getImap();
-        if (incomingImap != null && currentImap != null) {
-            incomingImap.setPassword(mergeSecret(currentImap.getPassword(), incomingImap.getPassword()));
-        }
-
-        RuntimeConfig.SmtpConfig currentSmtp = current.getSmtp();
-        RuntimeConfig.SmtpConfig incomingSmtp = incoming.getSmtp();
-        if (incomingSmtp != null && currentSmtp != null) {
-            incomingSmtp.setPassword(mergeSecret(currentSmtp.getPassword(), incomingSmtp.getPassword()));
         }
     }
 
@@ -923,7 +893,29 @@ public class SettingsController {
         if (value == null || value.isBlank()) {
             return fallback;
         }
-        return value.trim().toLowerCase(Locale.ROOT);
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
+        if (LEGACY_STT_PROVIDER_ELEVENLABS.equals(normalized)) {
+            return STT_PROVIDER_ELEVENLABS;
+        }
+        if (LEGACY_STT_PROVIDER_WHISPER.equals(normalized)) {
+            return STT_PROVIDER_WHISPER;
+        }
+        return normalized;
+    }
+
+    private boolean isKnownSttProvider(String providerId) {
+        return sttProviderRegistry.find(providerId).isPresent()
+                || STT_PROVIDER_ELEVENLABS.equals(providerId)
+                || STT_PROVIDER_WHISPER.equals(providerId);
+    }
+
+    private boolean isKnownTtsProvider(String providerId) {
+        return ttsProviderRegistry.find(providerId).isPresent()
+                || TTS_PROVIDER_ELEVENLABS.equals(providerId);
+    }
+
+    private boolean isWhisperProvider(String providerId) {
+        return STT_PROVIDER_WHISPER.equals(providerId);
     }
 
     private boolean isValidHttpUrl(String value) {

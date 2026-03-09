@@ -47,6 +47,11 @@ def run_git_command(args: List[str]) -> str:
     return result.stdout.strip()
 
 
+def git_ref_exists(ref: str) -> bool:
+    result = subprocess.run(["git", "rev-parse", "--verify", "--quiet", ref], capture_output=True, text=True)
+    return result.returncode == 0
+
+
 def resolve_diff_range() -> str:
     event_name = os.getenv("GITHUB_EVENT_NAME", "")
 
@@ -55,6 +60,10 @@ def resolve_diff_range() -> str:
         if base_ref:
             base_branch = f"origin/{base_ref}"
             return f"{base_branch}...HEAD"
+
+    ref_name = os.getenv("GITHUB_REF_NAME", "")
+    if ref_name and ref_name not in {"main", "master"} and git_ref_exists("origin/main"):
+        return "origin/main...HEAD"
 
     before_sha = os.getenv("GITHUB_EVENT_BEFORE", "")
     github_sha = os.getenv("GITHUB_SHA", "")

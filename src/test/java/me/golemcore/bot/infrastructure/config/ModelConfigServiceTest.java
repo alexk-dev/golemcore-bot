@@ -138,6 +138,12 @@ class ModelConfigServiceTest {
         assertFalse(service.supportsTemperature(MODEL_GPT_5_1));
     }
 
+    @Test
+    void exactMatchReturnsSupportsVision() {
+        assertTrue(service.supportsVision(MODEL_GPT_5_CHAT_LATEST));
+        assertTrue(service.supportsVision(MODEL_GPT_5_1));
+    }
+
     // ===== Provider prefix stripping =====
 
     @Test
@@ -331,10 +337,12 @@ class ModelConfigServiceTest {
         assertEquals(2, testModel.getReasoning().getLevels().size());
         assertEquals(64000, testModel.getReasoning().getLevels().get("medium").getMaxInputTokens());
         assertFalse(testModel.isSupportsTemperature());
+        assertTrue(testModel.isSupportsVision());
 
         ModelConfigService.ModelSettings defaults = config.getDefaults();
         assertEquals("default-provider", defaults.getProvider());
         assertEquals(32000, defaults.getMaxInputTokens());
+        assertTrue(defaults.isSupportsVision());
     }
 
     @Test
@@ -478,6 +486,12 @@ class ModelConfigServiceTest {
     }
 
     @Test
+    void supportsVisionDelegatesToGetModelSettings() {
+        assertTrue(service.supportsVision(MODEL_GPT_5_CHAT_LATEST));
+        assertTrue(service.supportsVision(MODEL_GPT_5_1));
+    }
+
+    @Test
     void getMaxInputTokensDelegatesToGetModelSettings() {
         int tokens = service.getMaxInputTokens(MODEL_GPT_5_CHAT_LATEST);
         assertTrue(tokens > 0);
@@ -519,6 +533,7 @@ class ModelConfigServiceTest {
         ModelConfigService.ModelSettings settings = new ModelConfigService.ModelSettings();
         settings.setProvider(PROVIDER_CUSTOM);
         settings.setDisplayName("Custom Model");
+        settings.setSupportsVision(false);
         settings.setSupportsTemperature(false);
         settings.setMaxInputTokens(64000);
 
@@ -532,6 +547,7 @@ class ModelConfigServiceTest {
         assertNotNull(settings.getReasoning());
         assertEquals("high", settings.getReasoning().getDefaultLevel());
         assertEquals(1, settings.getReasoning().getLevels().size());
+        assertFalse(settings.isSupportsVision());
         assertFalse(settings.isSupportsTemperature());
         assertEquals(64000, settings.getMaxInputTokens());
     }

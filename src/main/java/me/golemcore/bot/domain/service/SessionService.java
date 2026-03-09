@@ -147,7 +147,7 @@ public class SessionService implements SessionPort {
         AgentSession session = sessionCache.get(sessionId);
         if (session != null) {
             synchronized (session) {
-                session.getMessages().clear();
+                session.mutableMessages().clear();
                 save(session);
             }
             log.info("Cleared messages for session: {}", sessionId);
@@ -160,7 +160,7 @@ public class SessionService implements SessionPort {
             return -1;
         }
 
-        List<Message> messages = session.getMessages();
+        List<Message> messages = session.mutableMessages();
         int total = messages.size();
         if (total <= keepLast) {
             return 0;
@@ -182,7 +182,7 @@ public class SessionService implements SessionPort {
             return -1;
         }
 
-        List<Message> messages = session.getMessages();
+        List<Message> messages = session.mutableMessages();
         int total = messages.size();
         if (total <= keepLast) {
             return 0;

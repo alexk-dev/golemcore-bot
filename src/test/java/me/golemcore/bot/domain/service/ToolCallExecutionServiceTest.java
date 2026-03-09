@@ -6,15 +6,16 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Attachment;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.ToolArtifact;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.ConfirmationPort;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.ObjectProvider;
 
 import java.util.ArrayList;
 import java.util.Base64;
@@ -49,6 +50,7 @@ class ToolCallExecutionServiceTest {
     private ConfirmationPort confirmationPort;
     private BotProperties properties;
     private ChannelPort channelPort;
+    private ToolArtifactService toolArtifactService;
     private ToolCallExecutionService service;
 
     @BeforeEach
@@ -59,6 +61,7 @@ class ToolCallExecutionServiceTest {
         properties = new BotProperties();
         properties.getAutoCompact().setMaxToolResultChars(MAX_TOOL_RESULT_CHARS);
         channelPort = mock(ChannelPort.class);
+        toolArtifactService = mock(ToolArtifactService.class);
 
         when(toolComponent.getToolName()).thenReturn(TOOL_NAME);
         when(toolComponent.isEnabled()).thenReturn(true);
@@ -66,17 +69,29 @@ class ToolCallExecutionServiceTest {
         when(confirmationPort.isAvailable()).thenReturn(false);
         when(confirmationPolicy.requiresConfirmation(any())).thenReturn(false);
         when(confirmationPolicy.isEnabled()).thenReturn(true);
-
-        @SuppressWarnings("unchecked")
-        ObjectProvider<List<ChannelPort>> channelPortsProvider = mock(ObjectProvider.class);
-        when(channelPortsProvider.getIfAvailable()).thenReturn(List.of(channelPort));
+        when(toolArtifactService.saveArtifact(anyString(), anyString(), anyString(), any(), anyString()))
+                .thenAnswer(invocation -> {
+                    String filename = invocation.getArgument(2, String.class);
+                    byte[] bytes = invocation.getArgument(3, byte[].class);
+                    String mimeType = invocation.getArgument(4, String.class);
+                    String safeFilename = filename != null ? filename : "download.bin";
+                    return ToolArtifact.builder()
+                            .path(".golemcore/tool-artifacts/session/test/" + safeFilename)
+                            .filename(safeFilename)
+                            .mimeType(mimeType != null ? mimeType : "application/octet-stream")
+                            .size(bytes != null ? bytes.length : 0L)
+                            .downloadUrl("/api/files/download?path=.golemcore%2Ftool-artifacts%2Fsession%2Ftest%2F"
+                                    + safeFilename)
+                            .build();
+                });
 
         service = new ToolCallExecutionService(
                 List.of(toolComponent),
                 confirmationPolicy,
                 confirmationPort,
                 properties,
-                channelPortsProvider);
+                new ChannelRegistry(List.of(channelPort)),
+                toolArtifactService);
     }
 
     @AfterEach
@@ -326,6 +341,13 @@ class ToolCallExecutionServiceTest {
         assertNotNull(result.extractedAttachment());
         assertEquals(Attachment.Type.DOCUMENT, result.extractedAttachment().getType());
         assertEquals("report.pdf", result.extractedAttachment().getFilename());
+        assertTrue(result.toolMessageContent().contains("Internal file: [report.pdf]("));
+        assertTrue(result.toolMessageContent()
+                .contains("Workspace path: `.golemcore/tool-artifacts/session/test/report.pdf`"));
+        Map<?, ?> sanitizedData = (Map<?, ?>) result.toolResult().getData();
+        assertTrue(!sanitizedData.containsKey("attachment"));
+        assertEquals("/api/files/download?path=.golemcore%2Ftool-artifacts%2Fsession%2Ftest%2Freport.pdf",
+                sanitizedData.get("internal_file_url"));
     }
 
     @Test
@@ -350,6 +372,9 @@ class ToolCallExecutionServiceTest {
         assertEquals(Attachment.Type.DOCUMENT, result.extractedAttachment().getType());
         assertEquals("data.csv", result.extractedAttachment().getFilename());
         assertEquals("text/csv", result.extractedAttachment().getMimeType());
+        Map<?, ?> sanitizedData = (Map<?, ?>) result.toolResult().getData();
+        assertTrue(!sanitizedData.containsKey("file_bytes"));
+        assertEquals("data.csv", sanitizedData.get("internal_file_name"));
     }
 
     @Test
@@ -394,6 +419,36 @@ class ToolCallExecutionServiceTest {
         assertNotNull(result);
         assertNull(result.extractedAttachment());
         assertEquals("Screenshot captured", result.toolMessageContent());
+    }
+
+    @Test
+    void shouldPreserveToolResultWhenArtifactPersistenceFails() {
+        AgentContext context = buildContext();
+        Message.ToolCall toolCall = buildToolCall(TOOL_NAME, Map.of());
+        Attachment directAttachment = Attachment.builder()
+                .type(Attachment.Type.DOCUMENT)
+                .data(new byte[] { 1, 2, 3 })
+                .filename("report.pdf")
+                .mimeType("application/pdf")
+                .build();
+        Map<String, Object> data = new HashMap<>();
+        data.put("attachment", directAttachment);
+        ToolResult successResult = ToolResult.builder()
+                .success(true)
+                .output("Document generated")
+                .data(data)
+                .build();
+        when(toolComponent.execute(any())).thenReturn(CompletableFuture.completedFuture(successResult));
+        when(toolArtifactService.saveArtifact(anyString(), anyString(), anyString(), any(), anyString()))
+                .thenThrow(new IllegalStateException("disk full"));
+
+        ToolCallExecutionResult result = service.execute(context, toolCall);
+
+        assertNotNull(result.extractedAttachment());
+        assertEquals("Document generated", result.toolMessageContent());
+        Map<?, ?> sanitizedData = (Map<?, ?>) result.toolResult().getData();
+        assertTrue(!sanitizedData.containsKey("attachment"));
+        assertTrue(!sanitizedData.containsKey("internal_file_url"));
     }
 
     @Test

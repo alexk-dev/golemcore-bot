@@ -1,6 +1,5 @@
 import { type UseMutationResult, type UseQueryResult, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  type TelegramConfig,
   type ModelRouterConfig,
   type LlmConfig,
   type LlmProviderConfig,
@@ -11,7 +10,6 @@ import {
   type SkillsConfig,
   type TurnConfig,
   type UsageConfig,
-  type RagConfig,
   type McpConfig,
   type AutoModeConfig,
   type RateLimitConfig,
@@ -22,7 +20,6 @@ import {
   updatePreferences,
   getModels,
   getRuntimeConfig,
-  updateTelegramConfig,
   updateModelRouterConfig,
   updateLlmConfig,
   addLlmProvider,
@@ -35,15 +32,10 @@ import {
   updateSkillsConfig,
   updateTurnConfig,
   updateUsageConfig,
-  updateRagConfig,
   updateMcpConfig,
   updateWebhooksConfig,
   updateAutoConfig,
   updateAdvancedConfig,
-  generateInviteCode,
-  deleteInviteCode,
-  deleteTelegramAllowedUser,
-  restartTelegram,
 } from '../api/settings';
 
 export function useSettings(): UseQueryResult<Awaited<ReturnType<typeof getSettings>>, unknown> {
@@ -66,14 +58,6 @@ export function useUpdatePreferences(): UseMutationResult<Awaited<ReturnType<typ
 
 export function useRuntimeConfig(): UseQueryResult<Awaited<ReturnType<typeof getRuntimeConfig>>, unknown> {
   return useQuery({ queryKey: ['runtime-config'], queryFn: getRuntimeConfig });
-}
-
-export function useUpdateTelegram(): UseMutationResult<Awaited<ReturnType<typeof updateTelegramConfig>>, unknown, TelegramConfig> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (config: TelegramConfig) => updateTelegramConfig(config),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
-  });
 }
 
 export function useUpdateModelRouter(): UseMutationResult<Awaited<ReturnType<typeof updateModelRouterConfig>>, unknown, ModelRouterConfig> {
@@ -168,14 +152,6 @@ export function useUpdateUsage(): UseMutationResult<Awaited<ReturnType<typeof up
   });
 }
 
-export function useUpdateRag(): UseMutationResult<Awaited<ReturnType<typeof updateRagConfig>>, unknown, RagConfig> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (config: RagConfig) => updateRagConfig(config),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
-  });
-}
-
 export function useUpdateMcp(): UseMutationResult<Awaited<ReturnType<typeof updateMcpConfig>>, unknown, McpConfig> {
   const qc = useQueryClient();
   return useMutation({
@@ -211,36 +187,4 @@ export function useUpdateAdvanced(): UseMutationResult<
       updateAdvancedConfig(config),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
   });
-}
-
-export function useGenerateInviteCode(): UseMutationResult<Awaited<ReturnType<typeof generateInviteCode>>, unknown, void> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => generateInviteCode(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
-  });
-}
-
-export function useDeleteInviteCode(): UseMutationResult<Awaited<ReturnType<typeof deleteInviteCode>>, unknown, string> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (code: string) => deleteInviteCode(code),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
-  });
-}
-
-export function useDeleteTelegramAllowedUser(): UseMutationResult<
-  Awaited<ReturnType<typeof deleteTelegramAllowedUser>>,
-  unknown,
-  string
-> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (userId: string) => deleteTelegramAllowedUser(userId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
-  });
-}
-
-export function useRestartTelegram(): UseMutationResult<Awaited<ReturnType<typeof restartTelegram>>, unknown, void> {
-  return useMutation({ mutationFn: restartTelegram });
 }

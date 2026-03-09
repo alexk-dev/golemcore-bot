@@ -117,7 +117,7 @@ export default function SetupPage(): ReactElement {
           ? 'Routing models are compatible with configured providers.'
           : 'Select routing/tier models that use your configured provider(s).'}
         isDone={routingReady}
-        actionLabel="Open Models"
+        actionLabel="Open Model Router"
         onAction={() => navigate('/settings/models')}
       />
 

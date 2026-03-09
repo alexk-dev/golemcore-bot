@@ -1,5 +1,6 @@
 package me.golemcore.bot.domain.service;
 
+import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
@@ -22,6 +23,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * Emits and stores runtime events for the current turn.
  */
 @Service
+@Slf4j
 public class RuntimeEventService {
 
     private final Clock clock;
@@ -95,8 +97,8 @@ public class RuntimeEventService {
         try {
             channelPort.sendRuntimeEvent(chatId, event);
         } catch (Exception e) { // NOSONAR - runtime event streaming must be best effort
-            // Ignore channel transport errors, event remains in context list for
-            // observability.
+            log.debug("[RuntimeEventService] failed to forward runtime event: channel={}, chatId={}",
+                    channelType, chatId, e);
         }
     }
 
