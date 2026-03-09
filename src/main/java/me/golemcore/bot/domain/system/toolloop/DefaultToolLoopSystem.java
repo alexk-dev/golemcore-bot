@@ -146,7 +146,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
     @Override
     public ToolLoopTurnResult processTurn(AgentContext context) {
         ensureMessageLists(context);
-        emitRuntimeEvent(context, RuntimeEventType.TURN_STARTED, Map.of());
+        emitRuntimeEvent(context, RuntimeEventType.TURN_STARTED, eventPayload());
 
         int llmCalls = 0;
         int toolExecutions = 0;
@@ -170,7 +170,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         while (llmCalls < maxLlmCalls && toolExecutions < maxToolExecutions && clock.instant().isBefore(deadline)) {
             // 1) LLM call
             llmCalls++;
-            emitRuntimeEvent(context, RuntimeEventType.LLM_STARTED, Map.of("attempt", llmCalls));
+            emitRuntimeEvent(context, RuntimeEventType.LLM_STARTED, eventPayload("attempt", llmCalls));
             LlmResponse response;
             try {
                 response = llmPort.chat(buildRequest(context)).join();
@@ -189,15 +189,15 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 }
 
                 emitRuntimeEvent(context, RuntimeEventType.LLM_FINISHED,
-                        Map.of("attempt", llmCalls, "success", false, "code", code));
+                        eventPayload("attempt", llmCalls, "success", false, "code", code));
                 emitRuntimeEvent(context, RuntimeEventType.TURN_FAILED,
-                        Map.of("reason", "llm_error", "code", code));
+                        eventPayload("reason", "llm_error", "code", code));
                 return failLlmInvocation(context, e, llmCalls, toolExecutions);
             }
 
             if (retryAttempt > 0) {
                 emitRuntimeEvent(context, RuntimeEventType.RETRY_FINISHED,
-                        Map.of("attempt", retryAttempt, "success", true));
+                        eventPayload("attempt", retryAttempt, "success", true));
                 retryAttempt = 0;
             }
 
@@ -208,7 +208,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 log.info("[ToolLoop] Compatibility fallback applied: flattened tool history for LLM request");
             }
             emitRuntimeEvent(context, RuntimeEventType.LLM_FINISHED,
-                    Map.of("attempt", llmCalls, "success", true,
+                    eventPayload("attempt", llmCalls, "success", true,
                             "hasToolCalls", response != null && response.hasToolCalls()));
 
             // 2) Final answer (no tool calls)
@@ -222,7 +222,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                         continue;
                     }
                     emitRuntimeEvent(context, RuntimeEventType.TURN_FAILED,
-                            Map.of("reason", "empty_final_response", "code", emptyReasonCode));
+                            eventPayload("reason", "empty_final_response", "code", emptyReasonCode));
                     return failEmptyFinalResponse(context, response, emptyReasonCode, llmCalls, toolExecutions);
                 }
 
@@ -235,7 +235,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
                 applyAttachments(context, accumulatedAttachments);
                 emitRuntimeEvent(context, RuntimeEventType.TURN_FINISHED,
-                        Map.of("llmCalls", llmCalls, "toolExecutions", toolExecutions));
+                        eventPayload("llmCalls", llmCalls, "toolExecutions", toolExecutions));
                 return new ToolLoopTurnResult(context, true, llmCalls, toolExecutions);
             }
 
@@ -248,7 +248,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                     clearInterruptFlag(context);
                     applyAttachments(context, accumulatedAttachments);
                     emitRuntimeEvent(context, RuntimeEventType.TURN_FINISHED,
-                            Map.of("reason", "user_interrupt", "llmCalls", llmCalls,
+                            eventPayload("reason", "user_interrupt", "llmCalls", llmCalls,
                                     "toolExecutions", toolExecutions));
                     return stopTurn(context, context.getAttribute(ContextAttributes.LLM_RESPONSE),
                             response.getToolCalls(), "interrupted by user", llmCalls, toolExecutions);
@@ -277,7 +277,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 }
 
                 emitRuntimeEvent(context, RuntimeEventType.TOOL_STARTED,
-                        Map.of("toolCallId", tc.getId(), "tool", tc.getName()));
+                        eventPayload("toolCallId", tc.getId(), "tool", tc.getName()));
                 Instant toolStarted = clock.instant();
                 ToolExecutionOutcome outcome;
                 try {
@@ -289,7 +289,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 toolExecutions++;
                 long toolDuration = java.time.Duration.between(toolStarted, clock.instant()).toMillis();
                 emitRuntimeEvent(context, RuntimeEventType.TOOL_FINISHED,
-                        Map.of("toolCallId", tc.getId(), "tool", tc.getName(),
+                        eventPayload("toolCallId", tc.getId(), "tool", tc.getName(),
                                 "success", outcome != null && outcome.toolResult() != null
                                         && outcome.toolResult().isSuccess(),
                                 "durationMs", toolDuration));
@@ -313,14 +313,14 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                         if (stopOnConfirmationDenied && kind == ToolFailureKind.CONFIRMATION_DENIED) {
                             applyAttachments(context, accumulatedAttachments);
                             emitRuntimeEvent(context, RuntimeEventType.TURN_FINISHED,
-                                    Map.of("reason", "confirmation_denied"));
+                                    eventPayload("reason", "confirmation_denied"));
                             return stopTurn(context, context.getAttribute(ContextAttributes.LLM_RESPONSE),
                                     response.getToolCalls(), "confirmation denied", llmCalls, toolExecutions);
                         }
                         if (stopOnToolPolicyDenied && kind == ToolFailureKind.POLICY_DENIED) {
                             applyAttachments(context, accumulatedAttachments);
                             emitRuntimeEvent(context, RuntimeEventType.TURN_FINISHED,
-                                    Map.of("reason", "tool_policy_denied"));
+                                    eventPayload("reason", "tool_policy_denied"));
                             return stopTurn(context, context.getAttribute(ContextAttributes.LLM_RESPONSE),
                                     response.getToolCalls(), "tool denied by policy", llmCalls, toolExecutions);
                         }
@@ -328,7 +328,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                     if (stopOnToolFailure && outcome.toolResult() != null && !outcome.toolResult().isSuccess()) {
                         applyAttachments(context, accumulatedAttachments);
                         emitRuntimeEvent(context, RuntimeEventType.TURN_FINISHED,
-                                Map.of("reason", "tool_failure", "tool", outcome.toolName()));
+                                eventPayload("reason", "tool_failure", "tool", outcome.toolName()));
                         return stopTurn(context, context.getAttribute(ContextAttributes.LLM_RESPONSE),
                                 response.getToolCalls(),
                                 "tool failure (" + outcome.toolName() + ")", llmCalls, toolExecutions);
@@ -346,7 +346,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REACHED, true);
         context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REASON, stopReason);
         emitRuntimeEvent(context, RuntimeEventType.TURN_FINISHED,
-                Map.of("reason", "limit", "limit", stopReason.name()));
+                eventPayload("reason", "limit", "limit", stopReason.name()));
         return stopTurn(context, last, pending,
                 buildStopReasonMessage(stopReason, maxLlmCalls, maxToolExecutions), llmCalls, toolExecutions);
 
@@ -392,7 +392,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
     private void scheduleRetry(AgentContext context, int attempt, int maxAttempts, long baseDelayMs, String code) {
         long delayMs = (long) Math.min(3000, baseDelayMs * Math.pow(2, Math.max(0, attempt - 1)));
         emitRuntimeEvent(context, RuntimeEventType.RETRY_STARTED,
-                Map.of("attempt", attempt, "maxAttempts", maxAttempts, "delayMs", delayMs, "code", code));
+                eventPayload("attempt", attempt, "maxAttempts", maxAttempts, "delayMs", delayMs, "code", code));
         if (delayMs > 0) {
             try {
                 Thread.sleep(delayMs);
@@ -421,7 +421,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         }
 
         emitRuntimeEvent(context, RuntimeEventType.COMPACTION_STARTED,
-                Map.of("llmCall", llmCalls,
+                eventPayload("llmCall", llmCalls,
                         "messages", total - keepLast,
                         "keepLast", keepLast,
                         "reason", CompactionReason.CONTEXT_OVERFLOW_RECOVERY.name(),
@@ -448,7 +448,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         }
 
         emitRuntimeEvent(context, RuntimeEventType.COMPACTION_FINISHED,
-                Map.of("summaryLength",
+                eventPayload("summaryLength",
                         compactionResult.details() != null ? compactionResult.details().summaryLength() : 0,
                         "removed", compactionResult.removed(),
                         "kept", keepLast,
@@ -809,5 +809,24 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             return;
         }
         runtimeEventService.emit(context, type, payload);
+    }
+
+    private Map<String, Object> eventPayload(Object... entries) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        if (entries == null || entries.length == 0) {
+            return payload;
+        }
+        if (entries.length % 2 != 0) {
+            throw new IllegalArgumentException("Runtime event payload entries must be key/value pairs");
+        }
+
+        for (int index = 0; index < entries.length; index += 2) {
+            Object keyObject = entries[index];
+            if (!(keyObject instanceof String key) || key.isBlank()) {
+                throw new IllegalArgumentException("Runtime event payload keys must be non-blank strings");
+            }
+            payload.put(key, entries[index + 1]);
+        }
+        return payload;
     }
 }

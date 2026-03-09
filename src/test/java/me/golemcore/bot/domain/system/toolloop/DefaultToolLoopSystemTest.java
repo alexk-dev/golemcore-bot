@@ -7,10 +7,13 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
+import me.golemcore.bot.domain.model.RuntimeEvent;
+import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
+import me.golemcore.bot.domain.service.RuntimeEventService;
 import me.golemcore.bot.domain.system.LlmErrorClassifier;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationView;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
@@ -34,6 +37,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -133,6 +137,13 @@ class DefaultToolLoopSystemTest {
                 .name(name)
                 .arguments(Map.of("key", "value"))
                 .build();
+    }
+
+    private DefaultToolLoopSystem buildSystemWithRuntimeEvents() {
+        RuntimeEventService runtimeEventService = new RuntimeEventService(clock, List.of());
+        return new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, viewBuilder,
+                turnSettings, settings, modelSelectionService, planService,
+                null, null, runtimeEventService, clock);
     }
 
     // ==================== Final answer (no tool calls) ====================
@@ -297,6 +308,46 @@ class DefaultToolLoopSystemTest {
     }
 
     @Test
+    void shouldHandleMissingToolMetadataInRuntimeEventPayloads() {
+        DefaultToolLoopSystem runtimeEventSystem = buildSystemWithRuntimeEvents();
+        AgentContext context = buildContext();
+        Message.ToolCall tc = Message.ToolCall.builder()
+                .id(null)
+                .name(null)
+                .arguments(Map.of("query", "test"))
+                .build();
+
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(tc))))
+                .thenReturn(CompletableFuture.completedFuture(finalResponse(CONTENT_DONE)));
+
+        ToolExecutionOutcome outcome = new ToolExecutionOutcome(
+                null, null, ToolResult.success("ok"), "ok", false, null);
+        when(toolExecutor.execute(any(), any())).thenReturn(outcome);
+
+        ToolLoopTurnResult result = assertDoesNotThrow(() -> runtimeEventSystem.processTurn(context));
+
+        assertTrue(result.finalAnswerReady());
+        List<RuntimeEvent> events = context.getAttribute(ContextAttributes.RUNTIME_EVENTS);
+        assertNotNull(events);
+
+        RuntimeEvent toolStarted = events.stream()
+                .filter(event -> event.type() == RuntimeEventType.TOOL_STARTED)
+                .findFirst()
+                .orElseThrow();
+        assertTrue(toolStarted.payload().containsKey("toolCallId"));
+        assertNull(toolStarted.payload().get("toolCallId"));
+        assertNull(toolStarted.payload().get("tool"));
+
+        RuntimeEvent toolFinished = events.stream()
+                .filter(event -> event.type() == RuntimeEventType.TOOL_FINISHED)
+                .findFirst()
+                .orElseThrow();
+        assertNull(toolFinished.payload().get("toolCallId"));
+        assertNull(toolFinished.payload().get("tool"));
+    }
+
+    @Test
     void shouldHandleToolExecutionException() {
         AgentContext context = buildContext();
         Message.ToolCall tc = toolCall(TOOL_CALL_ID, TOOL_NAME);
@@ -405,6 +456,36 @@ class DefaultToolLoopSystemTest {
         ToolLoopTurnResult result = system.processTurn(context);
 
         assertTrue(result.finalAnswerReady());
+    }
+
+    @Test
+    void shouldStopOnToolFailureWhenOutcomeToolNameIsMissing() {
+        settings.setStopOnToolFailure(true);
+        DefaultToolLoopSystem runtimeEventSystem = buildSystemWithRuntimeEvents();
+        AgentContext context = buildContext();
+        Message.ToolCall tc = toolCall(TOOL_CALL_ID, TOOL_NAME);
+
+        LlmResponse withTools = toolCallResponse(List.of(tc));
+        when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(withTools));
+
+        ToolExecutionOutcome outcome = new ToolExecutionOutcome(
+                TOOL_CALL_ID, null,
+                ToolResult.failure(ToolFailureKind.EXECUTION_FAILED, "Failed"),
+                "Failed", false, null);
+        when(toolExecutor.execute(any(), any())).thenReturn(outcome);
+
+        ToolLoopTurnResult result = assertDoesNotThrow(() -> runtimeEventSystem.processTurn(context));
+
+        assertTrue(result.finalAnswerReady());
+        List<RuntimeEvent> events = context.getAttribute(ContextAttributes.RUNTIME_EVENTS);
+        assertNotNull(events);
+
+        RuntimeEvent turnFinished = events.stream()
+                .filter(event -> event.type() == RuntimeEventType.TURN_FINISHED)
+                .filter(event -> "tool_failure".equals(event.payload().get("reason")))
+                .findFirst()
+                .orElseThrow();
+        assertNull(turnFinished.payload().get("tool"));
     }
 
     @Test
