@@ -231,6 +231,26 @@ class UpdateServiceTest {
     }
 
     @Test
+    void shouldExposeTargetProgressAndStageMetadataWhenUpdateIsAvailable(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+        StubHttpClient httpClient = new StubHttpClient();
+        httpClient.enqueueStringResponse(200, releaseJson(
+                "v0.4.2",
+                "bot-0.4.2.jar",
+                "2026-02-22T10:00:00Z"));
+        TestableUpdateService service = createTestableService(httpClient);
+
+        service.check();
+        UpdateStatus status = service.getStatus();
+
+        assertNotNull(status.getTarget());
+        assertEquals(VERSION_PATCH, status.getTarget().getVersion());
+        assertEquals(Integer.valueOf(25), status.getProgressPercent());
+        assertEquals("Update available 0.4.2", status.getStageTitle());
+        assertTrue(status.getStageDescription().contains("compatible release"));
+    }
+
+    @Test
     void shouldPrepareAndApplyUpdateNow(@TempDir Path tempDir) throws Exception {
         enableUpdates(tempDir);
         byte[] jarBytes = "new-binary".getBytes(StandardCharsets.UTF_8);
@@ -361,6 +381,30 @@ class UpdateServiceTest {
     }
 
     @Test
+    void shouldPreserveTargetAndProgressWhenPrepareFails(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+        StubHttpClient httpClient = new StubHttpClient();
+        httpClient.enqueueStringResponse(200, releaseJson(
+                "v0.4.2",
+                "bot-0.4.2.jar",
+                "2026-02-22T10:00:00Z"));
+        httpClient.enqueueBinaryResponse(200, "jar-content".getBytes(StandardCharsets.UTF_8));
+        httpClient.enqueueStringResponse(200, "deadbeef bot-0.4.2.jar\n");
+        TestableUpdateService service = createTestableService(httpClient);
+
+        service.check();
+        service.updateNow();
+        UpdateStatus status = service.getStatus();
+
+        assertEquals(UpdateState.FAILED, status.getState());
+        assertNotNull(status.getTarget());
+        assertEquals(VERSION_PATCH, status.getTarget().getVersion());
+        assertEquals(Integer.valueOf(52), status.getProgressPercent());
+        assertEquals("Update failed", status.getStageTitle());
+        assertTrue(status.getStageDescription().contains("Checksum mismatch"));
+    }
+
+    @Test
     void shouldFailUpdateNowWithHelpfulMessageWhenUpdatesPathIsNotWritable(@TempDir Path tempDir) throws Exception {
         Path blockedPath = tempDir.resolve("updates-file");
         Files.writeString(blockedPath, "blocked", StandardCharsets.UTF_8);
@@ -411,6 +455,21 @@ class UpdateServiceTest {
     }
 
     @Test
+    void shouldRejectConcurrentOperationsWhileWorkflowIsRunning(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+        DeferredUpdateService service = createDeferredUpdateService(new StubHttpClient());
+
+        assertEquals("Update workflow started. Checking the latest release.", service.updateNow().getMessage());
+        assertEquals(UpdateState.CHECKING, service.getStatus().getState());
+
+        IllegalStateException checkError = assertThrows(IllegalStateException.class, service::check);
+        IllegalStateException updateError = assertThrows(IllegalStateException.class, service::updateNow);
+
+        assertEquals("Another update operation is already in progress", checkError.getMessage());
+        assertEquals("Another update operation is already in progress", updateError.getMessage());
+    }
+
+    @Test
     void shouldCoverVersionComparisonAndChecksumHelpersViaReflection(@TempDir Path tempDir) throws Exception {
         enableUpdates(tempDir);
         UpdateService service = createService();
@@ -451,6 +510,17 @@ class UpdateServiceTest {
 
     private TestableUpdateService createTestableService(StubHttpClient stubHttpClient) {
         return new TestableUpdateService(
+                botProperties,
+                buildPropertiesProvider,
+                new ObjectMapper(),
+                applicationContext,
+                clock,
+                jvmExitService,
+                stubHttpClient);
+    }
+
+    private DeferredUpdateService createDeferredUpdateService(StubHttpClient stubHttpClient) {
+        return new DeferredUpdateService(
                 botProperties,
                 buildPropertiesProvider,
                 new ObjectMapper(),
@@ -592,6 +662,40 @@ class UpdateServiceTest {
 
         private boolean isRestartRequested() {
             return restartRequested;
+        }
+    }
+
+    @SuppressWarnings("PMD.TestClassWithoutTestCases")
+    private static final class DeferredUpdateService extends UpdateService {
+
+        private final StubHttpClient stubHttpClient;
+
+        private DeferredUpdateService(
+                BotProperties botProperties,
+                ObjectProvider<BuildProperties> buildPropertiesProvider,
+                ObjectMapper objectMapper,
+                ApplicationContext applicationContext,
+                Clock clock,
+                JvmExitService jvmExitService,
+                StubHttpClient stubHttpClient) {
+            super(botProperties, buildPropertiesProvider, objectMapper, applicationContext, clock, jvmExitService);
+            this.stubHttpClient = stubHttpClient;
+        }
+
+        @Override
+        protected HttpClient buildHttpClient() {
+            return stubHttpClient;
+        }
+
+        @Override
+        protected void startUpdateTask(Runnable task) {
+            // Keep the workflow in a busy transient state so tests can verify
+            // duplicate-request guards.
+        }
+
+        @Override
+        protected void requestRestartAsync() {
+            // no-op
         }
     }
 

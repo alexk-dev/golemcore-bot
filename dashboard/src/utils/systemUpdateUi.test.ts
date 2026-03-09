@@ -88,8 +88,50 @@ describe('systemUpdateUi', () => {
     expect(hasPendingUpdate(availableStatus)).toBe(true);
     expect(getUpdateActionLabel(availableStatus)).toBe('Update to 0.4.2');
     expect(getUpdateActionLabel(stagedStatus)).toBe('Restart to apply 0.4.2');
+    expect(getUpdateActionLabel(buildStatus({ state: 'VERIFYING', target: { version: '0.4.2' } }))).toBe('Restarting...');
     expect(getUpdateSourceLabel('jar')).toBe('Local package');
     expect(getUpdateSourceLabel('image')).toBe('Container image');
+  });
+
+  it('shouldDeriveFailedWorkflowStepsAndFallbackProgress', () => {
+    const downloadFailure = buildStatus({
+      state: 'FAILED',
+      target: { version: '0.4.2' },
+      available: { version: '0.4.2' },
+      progressPercent: null,
+      stageTitle: null,
+      stageDescription: null,
+      lastError: 'Checksum mismatch',
+    });
+    const restartFailure = buildStatus({
+      state: 'FAILED',
+      target: { version: '0.4.2' },
+      staged: { version: '0.4.2' },
+      progressPercent: null,
+      stageTitle: null,
+      stageDescription: null,
+      lastError: 'Restart probe failed',
+    });
+
+    const downloadPresentation = getUpdateWorkflowPresentation(downloadFailure);
+    const restartPresentation = getUpdateWorkflowPresentation(restartFailure);
+
+    expect(downloadPresentation.progressPercent).toBe(52);
+    expect(downloadPresentation.title).toBe('Failed 0.4.2');
+    expect(downloadPresentation.steps).toEqual([
+      { key: 'check', label: 'Check', state: 'complete' },
+      { key: 'download', label: 'Download', state: 'error' },
+      { key: 'stage', label: 'Stage', state: 'upcoming' },
+      { key: 'restart', label: 'Restart', state: 'upcoming' },
+      { key: 'verify', label: 'Verify', state: 'upcoming' },
+    ]);
+    expect(restartPresentation.steps).toEqual([
+      { key: 'check', label: 'Check', state: 'complete' },
+      { key: 'download', label: 'Download', state: 'complete' },
+      { key: 'stage', label: 'Stage', state: 'complete' },
+      { key: 'restart', label: 'Restart', state: 'error' },
+      { key: 'verify', label: 'Verify', state: 'upcoming' },
+    ]);
   });
 
   it('shouldBuildSidebarBadgesForImportantStates', () => {
