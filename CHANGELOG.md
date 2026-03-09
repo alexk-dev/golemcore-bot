@@ -2,6 +2,22 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.20.1 - 2026-03-09
+#### Bug Fixes
+- improve update workflow visibility and reload behavior (#157) - (e510275) - Alex Kuleshov
+#### Documentation
+- refresh runtime guides for recent changes (#150) - (d3f4bb6) - Alex Kuleshov
+#### Miscellaneous
+- (**deps**) bump docker/login-action from 3.7.0 to 4.0.0 (#154) - (c6904e0) - dependabot[bot], *dependabot[bot]*, *Alex Kuleshov*
+- (**deps**) bump docker/build-push-action from 6.19.2 to 7.0.0 (#153) - (ce1677c) - dependabot[bot], *dependabot[bot]*
+- (**deps**) bump docker/setup-buildx-action from 3.12.0 to 4.0.0 (#152) - (c607ed7) - dependabot[bot], *dependabot[bot]*
+- (**deps**) bump actions/upload-artifact from 6 to 7 (#140) - (cb505f3) - dependabot[bot], *dependabot[bot]*, *Alex Kuleshov*
+- (**deps**) bump cocogitto/cocogitto-action from 4.1.0 to 4.2.0 (#151) - (c840cc7) - dependabot[bot], *dependabot[bot]*, *Alex Kuleshov*
+- (**deps**) bump feign.version from 13.9.2 to 13.9.3 (#156) - (077839b) - dependabot[bot]
+- (**deps**) bump the langchain4j group with 4 updates (#155) - (f8426e4) - dependabot[bot], *dependabot[bot]*
+
+- - -
+
 ## v0.12.0 - 2026-02-25
 #### Features
 - (**browser**) fetch Playwright driver bundle from Maven at runtime (#117) - (2121f20) - Alex Kuleshov
