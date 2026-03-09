@@ -5,6 +5,8 @@ import type { SystemUpdateStatusResponse } from '../api/system';
 import { useSystemDiagnostics, useSystemUpdateStatus } from '../hooks/useSystem';
 import {
   formatUpdateTimestamp,
+  formatVersionLabel,
+  getUpdateSourceLabel,
   getUpdateStateLabel,
   getUpdateStateVariant,
 } from '../utils/systemUpdateUi';
@@ -38,12 +40,21 @@ function UpdateSummary({ status, isLoading, isError }: UpdateSummaryProps): Reac
         <Badge bg={getUpdateStateVariant(status.state)}>{getUpdateStateLabel(status.state)}</Badge>
       </div>
       <div className="small text-body-secondary">
-        Current: <span className="text-body">{status.current?.version ?? 'N/A'}</span>
+        Current: <span className="text-body">{formatVersionLabel(status.current?.version)}</span>
         {' \u00b7 '}
-        Staged: <span className="text-body">{status.staged?.version ?? 'None'}</span>
+        Source: <span className="text-body">{getUpdateSourceLabel(status.current?.source)}</span>
         {' \u00b7 '}
-        Available: <span className="text-body">{status.available?.version ?? 'None'}</span>
+        Target: <span className="text-body">{formatVersionLabel(status.target?.version)}</span>
+        {' \u00b7 '}
+        Staged: <span className="text-body">{formatVersionLabel(status.staged?.version)}</span>
+        {' \u00b7 '}
+        Available: <span className="text-body">{formatVersionLabel(status.available?.version)}</span>
       </div>
+      {status.stageTitle != null && status.stageTitle.trim().length > 0 && (
+        <div className="small text-body-secondary">
+          Stage: <span className="text-body">{status.stageTitle}</span>
+        </div>
+      )}
       <div className="small text-body-secondary">
         Last check: <span className="text-body">{formatUpdateTimestamp(status.lastCheckAt)}</span>
       </div>
