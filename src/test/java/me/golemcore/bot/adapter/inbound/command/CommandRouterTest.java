@@ -1441,7 +1441,7 @@ class CommandRouterTest {
         Map<String, List<ModelSelectionService.AvailableModel>> grouped = new LinkedHashMap<>();
         grouped.put("openai", List.of(
                 new ModelSelectionService.AvailableModel("gpt-5.1", "openai", "GPT-5.1",
-                        true, List.of("low", "medium", "high"))));
+                        true, List.of("low", "medium", "high"), true)));
         when(modelSelectionService.getAvailableModelsGrouped()).thenReturn(grouped);
 
         CommandPort.CommandResult result = router.execute(CMD_MODEL, List.of("list"), CTX).get();
@@ -1483,7 +1483,7 @@ class CommandRouterTest {
                 UserPreferences.builder().tierOverrides(new HashMap<>()).build());
         when(modelSelectionService.getAvailableModels()).thenReturn(List.of(
                 new ModelSelectionService.AvailableModel("gpt-5.1", "openai", "GPT-5.1",
-                        true, List.of("low", "medium", "high"))));
+                        true, List.of("low", "medium", "high"), true)));
 
         CommandPort.CommandResult result = router.execute(CMD_MODEL,
                 List.of(TIER_CODING, "openai/gpt-5.1"), CTX).get();
@@ -1584,7 +1584,7 @@ class CommandRouterTest {
                 .thenReturn(new ModelSelectionService.ValidationResult(false, "level.not.available"));
         when(modelSelectionService.getAvailableModels()).thenReturn(List.of(
                 new ModelSelectionService.AvailableModel("gpt-5.1", "openai", "GPT-5.1",
-                        true, List.of("low", "medium", "high"))));
+                        true, List.of("low", "medium", "high"), true)));
 
         CommandPort.CommandResult result = router.execute(CMD_MODEL,
                 List.of(TIER_CODING, "reasoning", "xhigh"), CTX).get();

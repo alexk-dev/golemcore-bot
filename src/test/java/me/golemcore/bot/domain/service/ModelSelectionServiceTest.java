@@ -319,6 +319,7 @@ class ModelSelectionServiceTest {
         assertEquals("GPT-4o", result.get(0).displayName());
         assertFalse(result.get(0).hasReasoning());
         assertTrue(result.get(0).reasoningLevels().isEmpty());
+        assertTrue(result.get(0).supportsVision());
     }
 
     @Test
@@ -342,6 +343,7 @@ class ModelSelectionServiceTest {
         assertEquals(1, result.size());
         assertTrue(result.get(0).hasReasoning());
         assertEquals(List.of("low", "medium", "high"), result.get(0).reasoningLevels());
+        assertTrue(result.get(0).supportsVision());
     }
 
     @Test
