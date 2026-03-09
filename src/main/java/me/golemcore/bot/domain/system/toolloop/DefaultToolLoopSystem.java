@@ -812,14 +812,14 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
     }
 
     private Map<String, Object> eventPayload(Object... entries) {
+        Map<String, Object> payload = new LinkedHashMap<>();
         if (entries == null || entries.length == 0) {
-            return Map.of();
+            return payload;
         }
         if (entries.length % 2 != 0) {
             throw new IllegalArgumentException("Runtime event payload entries must be key/value pairs");
         }
 
-        Map<String, Object> payload = new LinkedHashMap<>();
         for (int index = 0; index < entries.length; index += 2) {
             Object keyObject = entries[index];
             if (!(keyObject instanceof String key) || key.isBlank()) {
