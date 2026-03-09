@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.20.0 - 2026-03-09
+#### Features
+- (**llm**) add provider-scoped model catalog (#149) - (5545122) - Alex Kuleshov
+#### Refactoring
+- (**dashboard**) refresh web ui styling (#148) - (d7767a3) - Alex Kuleshov
+
+- - -
+
 ## v0.12.0 - 2026-02-25
 #### Features
 - (**browser**) fetch Playwright driver bundle from Maven at runtime (#117) - (2121f20) - Alex Kuleshov
