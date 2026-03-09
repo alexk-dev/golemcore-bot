@@ -1,19 +1,13 @@
 import { type ReactElement, useEffect, useMemo, useState } from 'react';
-import { Badge, Button, Card, Col, Form, Row } from 'react-bootstrap';
 import toast from 'react-hot-toast';
 import HelpTip from '../../components/common/HelpTip';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
+import type { AvailableModel } from '../../api/models';
 import { useUpdateModelRouter } from '../../hooks/useSettings';
 import { useAvailableModels } from '../../hooks/useModels';
 import type { LlmConfig, ModelRouterConfig } from '../../api/settings';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
-
-interface AvailableModel {
-  id: string;
-  displayName: string;
-  hasReasoning: boolean;
-  reasoningLevels: string[];
-}
+import { Badge, Button, Card, Col, Form, Row } from '../../lib/react-bootstrap';
 
 interface ModelsTabProps {
   config: ModelRouterConfig;
@@ -30,6 +24,8 @@ interface TierModelCardProps {
   onModelChange: (value: string) => void;
   onReasoningChange: (value: string) => void;
 }
+
+const EMPTY_AVAILABLE_MODELS: Record<string, AvailableModel[]> = {};
 
 function hasDiff<T>(current: T, initial: T): boolean {
   return JSON.stringify(current) !== JSON.stringify(initial);
@@ -145,12 +141,11 @@ export default function ModelsTab({ config, llmConfig }: ModelsTabProps): ReactE
 
   const providers = useMemo(() => {
     if (available == null) {
-      return {} as Record<string, AvailableModel[]>;
+      return EMPTY_AVAILABLE_MODELS;
     }
-    const availableByProvider = available as Record<string, AvailableModel[]>;
     const readySet = new Set(readyProviderNames);
     return Object.fromEntries(
-      Object.entries(availableByProvider).filter(([providerName]) => readySet.has(providerName)),
+      Object.entries(available).filter(([providerName]) => readySet.has(providerName)),
     );
   }, [available, readyProviderNames]);
 

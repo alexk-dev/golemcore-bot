@@ -2,7 +2,7 @@ import type { IconType } from 'react-icons';
 import {
   FiSliders, FiCpu, FiTool, FiMic,
   FiGlobe, FiPlayCircle, FiShield, FiHardDrive, FiBarChart2,
-  FiTerminal, FiShuffle, FiKey, FiRefreshCw, FiPackage,
+  FiTerminal, FiShuffle, FiKey, FiRefreshCw, FiPackage, FiDatabase,
 } from 'react-icons/fi';
 
 export interface SettingsSectionMeta {
@@ -14,8 +14,9 @@ export interface SettingsSectionMeta {
 
 export const SETTINGS_SECTIONS = [
   { key: 'general', title: 'General', description: 'Preferences, account security, and MFA', icon: FiSliders },
-  { key: 'models', title: 'Model Router', description: 'Routing and tier model configuration', icon: FiCpu },
   { key: 'llm-providers', title: 'LLM Providers', description: 'Provider API keys and base URLs', icon: FiKey },
+  { key: 'model-catalog', title: 'Model Catalog', description: 'Edit model definitions and provider capability metadata', icon: FiDatabase },
+  { key: 'models', title: 'Model Router', description: 'Routing and tier model configuration', icon: FiCpu },
   { key: 'plugins-marketplace', title: 'Plugin Marketplace', description: 'Browse, install, and update official integrations', icon: FiPackage },
 
   { key: 'tool-filesystem', title: 'Filesystem Tool', description: 'Sandbox file read/write operations', icon: FiHardDrive },
@@ -51,7 +52,7 @@ export const SETTINGS_BLOCKS: SettingsBlock[] = [
     key: 'core',
     title: 'Core',
     description: 'Main runtime settings and access configuration',
-    sections: ['general', 'models', 'llm-providers'],
+    sections: ['general', 'llm-providers', 'model-catalog', 'models'],
   },
   {
     key: 'plugins',

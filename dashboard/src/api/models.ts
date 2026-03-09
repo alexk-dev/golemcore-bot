@@ -3,6 +3,7 @@ import client from './client';
 export interface ModelSettings {
   provider: string;
   displayName: string | null;
+  supportsVision: boolean;
   supportsTemperature: boolean;
   maxInputTokens: number;
   reasoning: ReasoningConfig | null;
@@ -23,6 +24,14 @@ export interface AvailableModel {
   displayName: string;
   hasReasoning: boolean;
   reasoningLevels: string[];
+  supportsVision: boolean;
+}
+
+export interface DiscoveredProviderModel {
+  provider: string;
+  id: string;
+  displayName: string;
+  ownedBy: string | null;
 }
 
 export async function getModelsConfig(): Promise<ModelsConfig> {
@@ -37,6 +46,11 @@ export async function replaceModelsConfig(config: ModelsConfig): Promise<ModelsC
 
 export async function getAvailableModels(): Promise<Record<string, AvailableModel[]>> {
   const { data } = await client.get<Record<string, AvailableModel[]>>('/models/available');
+  return data;
+}
+
+export async function discoverProviderModels(provider: string): Promise<DiscoveredProviderModel[]> {
+  const { data } = await client.get<DiscoveredProviderModel[]>(`/models/discover/${encodeURIComponent(provider)}`);
   return data;
 }
 

@@ -232,6 +232,13 @@ public class ModelConfigService {
     }
 
     /**
+     * Check if model supports vision/image inputs.
+     */
+    public boolean supportsVision(String modelName) {
+        return getModelSettings(modelName).isSupportsVision();
+    }
+
+    /**
      * Get maximum input tokens for a model. For reasoning models, returns the
      * maximum across all reasoning levels as a safe fallback.
      */
@@ -327,6 +334,7 @@ public class ModelConfigService {
     public static class ModelSettings {
         private String provider = PROVIDER_OPENAI;
         private String displayName;
+        private boolean supportsVision = true;
         private boolean supportsTemperature = true;
         /**
          * Maximum input tokens the model accepts. Used for non-reasoning models. For

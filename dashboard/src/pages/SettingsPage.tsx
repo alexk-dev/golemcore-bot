@@ -15,6 +15,7 @@ import WebhooksTab from './settings/WebhooksTab';
 import { AdvancedTab } from './settings/AdvancedTab';
 import ToolsTab from './settings/ToolsTab';
 import ModelsTab from './settings/ModelsTab';
+import { ModelCatalogTab } from './settings/ModelCatalogTab';
 import LlmProvidersTab from './settings/LlmProvidersTab';
 import VoiceRoutingTab from './settings/VoiceRoutingTab';
 import MemoryTab from './settings/MemoryTab';
@@ -265,6 +266,7 @@ export default function SettingsPage(): ReactElement {
       {staticSection === 'general' && <GeneralTab settings={settings} me={me} qc={qc} />}
       {staticSection === 'models' && rc != null && <ModelsTab config={rc.modelRouter} llmConfig={rc.llm} />}
       {staticSection === 'llm-providers' && rc != null && <LlmProvidersTab config={rc.llm} modelRouter={rc.modelRouter} />}
+      {staticSection === 'model-catalog' && rc != null && <ModelCatalogTab llmConfig={rc.llm} />}
       {staticSection === 'plugins-marketplace' && <PluginsMarketplaceTab />}
 
       {staticSection === 'tool-filesystem' && rc != null && <ToolsTab config={rc.tools} mode="filesystem" />}

@@ -138,7 +138,8 @@ public class SettingsController {
                 .getAvailableModelsGrouped();
         Map<String, List<ModelDto>> result = new LinkedHashMap<>();
         grouped.forEach((provider, models) -> result.put(provider, models.stream()
-                .map(m -> new ModelDto(m.id(), m.displayName(), m.hasReasoning(), m.reasoningLevels()))
+                .map(m -> new ModelDto(m.id(), m.displayName(), m.hasReasoning(),
+                        m.reasoningLevels(), m.supportsVision()))
                 .toList()));
         return Mono.just(ResponseEntity.ok(result));
     }
@@ -468,7 +469,8 @@ public class SettingsController {
 
     // ==================== DTOs ====================
 
-    private record ModelDto(String id, String displayName, boolean hasReasoning, List<String> reasoningLevels) {
+    private record ModelDto(String id, String displayName, boolean hasReasoning,
+            List<String> reasoningLevels, boolean supportsVision) {
     }
 
     private record AdvancedConfigRequest(
