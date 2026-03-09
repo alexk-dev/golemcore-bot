@@ -81,6 +81,7 @@ public class UpdateService {
     private Instant lastCheckAt;
     private String lastCheckError = "";
     private Optional<AvailableRelease> availableRelease = Optional.empty();
+    private UpdateVersionInfo activeTarget;
 
     public UpdateStatus getStatus() {
         synchronized (lock) {
@@ -88,17 +89,22 @@ public class UpdateService {
             UpdateVersionInfo current = resolveCurrentInfo();
             UpdateVersionInfo staged = resolveStagedInfo();
             UpdateVersionInfo available = resolveAvailableInfo();
-
             UpdateState effectiveState = resolveState(enabled, staged, available);
+            UpdateVersionInfo target = resolveTargetInfo(effectiveState, staged, available);
+            StagePresentation stagePresentation = buildStagePresentation(effectiveState, current, target);
 
             return UpdateStatus.builder()
                     .state(effectiveState)
                     .enabled(enabled)
                     .current(current)
+                    .target(target)
                     .staged(staged)
                     .available(available)
                     .lastCheckAt(lastCheckAt)
                     .lastError(lastCheckError == null || lastCheckError.isBlank() ? null : lastCheckError)
+                    .progressPercent(stagePresentation.progressPercent())
+                    .stageTitle(stagePresentation.title())
+                    .stageDescription(stagePresentation.description())
                     .build();
         }
     }
@@ -106,55 +112,18 @@ public class UpdateService {
     public UpdateActionResult check() {
         synchronized (lock) {
             ensureEnabled();
+            ensureNoBusyOperation();
+            activeTarget = null;
             transientState = UpdateState.CHECKING;
         }
 
         try {
-            AvailableRelease latestRelease = fetchLatestRelease();
-            Instant now = Instant.now(clock);
-            synchronized (lock) {
-                lastCheckAt = now;
-                lastCheckError = "";
-
-                if (latestRelease == null) {
-                    availableRelease = Optional.empty();
-                    transientState = UpdateState.IDLE;
-                    return UpdateActionResult.builder()
-                            .success(true)
-                            .message("No updates found")
-                            .build();
-                }
-
-                String currentVersion = getCurrentVersion();
-                if (!isRemoteVersionNewer(latestRelease.version(), currentVersion)) {
-                    availableRelease = Optional.empty();
-                    transientState = UpdateState.IDLE;
-                    return UpdateActionResult.builder()
-                            .success(true)
-                            .message("Already up to date")
-                            .version(currentVersion)
-                            .build();
-                }
-
-                if (!isSameMajorUpdate(currentVersion, latestRelease.version())) {
-                    availableRelease = Optional.empty();
-                    transientState = UpdateState.IDLE;
-                    return UpdateActionResult.builder()
-                            .success(true)
-                            .message("New major version found. Use Docker image upgrade.")
-                            .version(latestRelease.version())
-                            .build();
-                }
-
-                availableRelease = Optional.of(latestRelease);
-                transientState = UpdateState.IDLE;
-
-                return UpdateActionResult.builder()
-                        .success(true)
-                        .message("Update available: " + latestRelease.version())
-                        .version(latestRelease.version())
-                        .build();
-            }
+            CheckResolution resolution = resolveCheck();
+            return UpdateActionResult.builder()
+                    .success(true)
+                    .message(resolution.message())
+                    .version(resolution.version())
+                    .build();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw handleCheckFailure(e);
@@ -169,6 +138,7 @@ public class UpdateService {
             ensureEnabled();
             release = availableRelease
                     .orElseThrow(() -> new IllegalStateException("No available update. Run check first."));
+            activeTarget = toVersionInfo(release);
             transientState = UpdateState.PREPARING;
         }
 
@@ -196,6 +166,14 @@ public class UpdateService {
             cleanupOldJars();
 
             synchronized (lock) {
+                availableRelease = Optional.empty();
+                activeTarget = UpdateVersionInfo.builder()
+                        .version(release.version())
+                        .tag(release.tagName())
+                        .assetName(release.assetName())
+                        .preparedAt(Files.getLastModifiedTime(getStagedMarkerPath()).toInstant())
+                        .publishedAt(release.publishedAt())
+                        .build();
                 transientState = UpdateState.IDLE;
             }
 
@@ -213,43 +191,40 @@ public class UpdateService {
     }
 
     public UpdateActionResult updateNow() {
-        ensureUpdatePreparedForApply();
-        return applyStagedUpdate();
-    }
-
-    private void ensureUpdatePreparedForApply() {
-        if (hasStagedUpdate()) {
-            return;
-        }
-
-        UpdateActionResult checkResult = null;
-        if (!hasAvailableRelease()) {
-            checkResult = check();
-        }
-
-        if (hasStagedUpdate()) {
-            return;
-        }
-        if (!hasAvailableRelease()) {
-            String message = checkResult != null
-                    ? checkResult.getMessage()
-                    : "No available update. Run check first.";
-            throw new IllegalStateException(message);
-        }
-
-        prepare();
-    }
-
-    private boolean hasStagedUpdate() {
+        UpdateVersionInfo targetVersion;
         synchronized (lock) {
-            return resolveStagedInfo() != null;
-        }
-    }
+            ensureEnabled();
+            ensureNoBusyOperation();
+            lastCheckError = "";
 
-    private boolean hasAvailableRelease() {
-        synchronized (lock) {
-            return availableRelease.isPresent();
+            UpdateVersionInfo staged = resolveStagedInfo();
+            if (staged != null) {
+                activeTarget = copyVersionInfo(staged);
+                transientState = UpdateState.APPLYING;
+                targetVersion = copyVersionInfo(staged);
+            } else if (availableRelease.isPresent()) {
+                AvailableRelease release = availableRelease.orElseThrow();
+                activeTarget = toVersionInfo(release);
+                transientState = UpdateState.PREPARING;
+                targetVersion = copyVersionInfo(activeTarget);
+            } else {
+                activeTarget = null;
+                transientState = UpdateState.CHECKING;
+                targetVersion = null;
+            }
         }
+
+        startUpdateTask(this::runUpdateNowWorkflow);
+
+        String version = targetVersion != null ? targetVersion.getVersion() : null;
+        String message = version == null
+                ? "Update workflow started. Checking the latest release."
+                : "Update workflow started for " + version + ". Page will reload after restart.";
+        return UpdateActionResult.builder()
+                .success(true)
+                .message(message)
+                .version(version)
+                .build();
     }
 
     private UpdateActionResult applyStagedUpdate() {
@@ -261,6 +236,8 @@ public class UpdateService {
                 throw new IllegalStateException("No staged update to apply");
             }
 
+            activeTarget = copyVersionInfo(staged);
+            availableRelease = Optional.empty();
             writeMarker(getCurrentMarkerPath(), staged.getAssetName());
             deleteMarker(getStagedMarkerPath());
             transientState = UpdateState.APPLYING;
@@ -283,6 +260,9 @@ public class UpdateService {
         if (!enabled) {
             return UpdateState.DISABLED;
         }
+        if (transientState == UpdateState.FAILED) {
+            return UpdateState.FAILED;
+        }
         if (transientState == UpdateState.CHECKING
                 || transientState == UpdateState.PREPARING
                 || transientState == UpdateState.APPLYING
@@ -304,25 +284,23 @@ public class UpdateService {
     private UpdateVersionInfo resolveCurrentInfo() {
         String currentVersion = getCurrentVersion();
         String marker = readMarker(getCurrentMarkerPath());
-        if (marker == null) {
-            return UpdateVersionInfo.builder()
-                    .version(currentVersion)
-                    .source("image")
-                    .build();
-        }
-
-        try {
-            Path jarPath = resolveJarPath(marker);
-            if (Files.exists(jarPath)) {
-                String version = extractVersionFromAssetName(marker);
-                return UpdateVersionInfo.builder()
-                        .version(version != null ? version : currentVersion)
-                        .source("jar")
-                        .assetName(marker)
-                        .build();
+        if (marker != null) {
+            try {
+                Path jarPath = resolveJarPath(marker);
+                if (Files.exists(jarPath)) {
+                    String markerVersion = extractVersionFromAssetName(marker);
+                    if (markerVersion != null
+                            && normalizeVersion(markerVersion).equals(normalizeVersion(currentVersion))) {
+                        return UpdateVersionInfo.builder()
+                                .version(currentVersion)
+                                .source("jar")
+                                .assetName(marker)
+                                .build();
+                    }
+                }
+            } catch (IllegalArgumentException e) {
+                log.warn("[update] Invalid current marker value: {}", marker);
             }
-        } catch (IllegalArgumentException e) {
-            log.warn("[update] Invalid current marker value: {}", marker);
         }
 
         return UpdateVersionInfo.builder()
@@ -368,6 +346,51 @@ public class UpdateService {
     private void ensureEnabled() {
         if (!isEnabled()) {
             throw new IllegalStateException("Update feature is disabled");
+        }
+    }
+
+    private void ensureNoBusyOperation() {
+        if (transientState == UpdateState.CHECKING
+                || transientState == UpdateState.PREPARING
+                || transientState == UpdateState.APPLYING
+                || transientState == UpdateState.VERIFYING) {
+            throw new IllegalStateException("Another update operation is already in progress");
+        }
+    }
+
+    private CheckResolution resolveCheck() throws IOException, InterruptedException {
+        AvailableRelease latestRelease = fetchLatestRelease();
+        Instant now = Instant.now(clock);
+        synchronized (lock) {
+            lastCheckAt = now;
+            lastCheckError = "";
+            activeTarget = null;
+
+            if (latestRelease == null) {
+                availableRelease = Optional.empty();
+                transientState = UpdateState.IDLE;
+                return new CheckResolution(null, "No updates found", null);
+            }
+
+            String currentVersion = getCurrentVersion();
+            if (!isRemoteVersionNewer(latestRelease.version(), currentVersion)) {
+                availableRelease = Optional.empty();
+                transientState = UpdateState.IDLE;
+                return new CheckResolution(null, "Already up to date", currentVersion);
+            }
+
+            if (!isSameMajorUpdate(currentVersion, latestRelease.version())) {
+                availableRelease = Optional.empty();
+                transientState = UpdateState.IDLE;
+                return new CheckResolution(null, "New major version found. Use Docker image upgrade.",
+                        latestRelease.version());
+            }
+
+            availableRelease = Optional.of(latestRelease);
+            activeTarget = toVersionInfo(latestRelease);
+            transientState = UpdateState.IDLE;
+            return new CheckResolution(latestRelease, "Update available: " + latestRelease.version(),
+                    latestRelease.version());
         }
     }
 
@@ -838,11 +861,7 @@ public class UpdateService {
 
             String candidate = readVersionCandidate(assetName, i);
             if (candidate != null) {
-                String normalized = normalizeVersion(candidate);
-                if (normalized.endsWith(".jar")) {
-                    return normalized.substring(0, normalized.length() - ".jar".length());
-                }
-                return normalized;
+                return normalizeVersion(candidate);
             }
         }
         return null;
@@ -926,6 +945,16 @@ public class UpdateService {
         String normalized = version.trim();
         if (normalized.startsWith("v") || normalized.startsWith("V")) {
             normalized = normalized.substring(1);
+        }
+        if (normalized.endsWith(".jar")) {
+            normalized = normalized.substring(0, normalized.length() - ".jar".length());
+        }
+        if (normalized.endsWith("-exec")) {
+            String withoutClassifier = normalized.substring(0, normalized.length() - "-exec".length());
+            Matcher matcher = SEMVER_PATTERN.matcher(withoutClassifier);
+            if (matcher.matches()) {
+                normalized = withoutClassifier;
+            }
         }
         return normalized;
     }
@@ -1076,10 +1105,17 @@ public class UpdateService {
         restartThread.start();
     }
 
+    protected void startUpdateTask(Runnable task) {
+        Thread workerThread = new Thread(task, "update-workflow-thread");
+        workerThread.setDaemon(true);
+        workerThread.start();
+    }
+
     private IllegalStateException handleCheckFailure(Throwable throwable) {
         String message = "Failed to check updates: " + safeMessage(throwable);
         synchronized (lock) {
             lastCheckError = message;
+            activeTarget = null;
             transientState = UpdateState.FAILED;
         }
         return new IllegalStateException(message, throwable);
@@ -1088,6 +1124,15 @@ public class UpdateService {
     private IllegalStateException handlePrepareFailure(Path tempJar, Throwable throwable) {
         cleanupTempJar(tempJar);
         String message = "Failed to prepare update: " + safeMessage(throwable);
+        synchronized (lock) {
+            transientState = UpdateState.FAILED;
+            lastCheckError = message;
+        }
+        return new IllegalStateException(message, throwable);
+    }
+
+    private IllegalStateException handleApplyFailure(Throwable throwable) {
+        String message = "Failed to apply update: " + safeMessage(throwable);
         synchronized (lock) {
             transientState = UpdateState.FAILED;
             lastCheckError = message;
@@ -1121,7 +1166,173 @@ public class UpdateService {
         return throwable.getMessage();
     }
 
+    private void runUpdateNowWorkflow() {
+        try {
+            UpdateVersionInfo staged = null;
+            AvailableRelease release = null;
+            synchronized (lock) {
+                staged = resolveStagedInfo();
+                if (staged != null) {
+                    activeTarget = copyVersionInfo(staged);
+                } else {
+                    release = availableRelease.orElse(null);
+                }
+            }
+
+            if (staged != null) {
+                applyStagedUpdate();
+                return;
+            }
+
+            if (release == null) {
+                CheckResolution resolution = resolveCheck();
+                release = resolution.release();
+                if (release == null) {
+                    return;
+                }
+            }
+
+            prepare();
+            applyStagedUpdate();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            UpdateState state = transientState;
+            if (state == UpdateState.FAILED) {
+                return;
+            }
+            if (state == UpdateState.APPLYING || state == UpdateState.VERIFYING) {
+                handleApplyFailure(e);
+                return;
+            }
+            if (state == UpdateState.CHECKING) {
+                handleCheckFailure(e);
+                return;
+            }
+            handlePrepareFailure(null, e);
+        } catch (IOException | RuntimeException e) {
+            UpdateState state = transientState;
+            if (state == UpdateState.FAILED) {
+                return;
+            }
+            if (state == UpdateState.CHECKING) {
+                handleCheckFailure(e);
+                return;
+            }
+            if (state == UpdateState.APPLYING || state == UpdateState.VERIFYING) {
+                handleApplyFailure(e);
+                return;
+            }
+            handlePrepareFailure(null, e);
+        }
+    }
+
+    private UpdateVersionInfo resolveTargetInfo(UpdateState effectiveState, UpdateVersionInfo staged,
+            UpdateVersionInfo available) {
+        if (effectiveState == UpdateState.APPLYING
+                || effectiveState == UpdateState.VERIFYING
+                || effectiveState == UpdateState.PREPARING
+                || effectiveState == UpdateState.FAILED) {
+            if (activeTarget != null) {
+                return copyVersionInfo(activeTarget);
+            }
+        }
+        if (staged != null) {
+            return copyVersionInfo(staged);
+        }
+        if (available != null) {
+            return copyVersionInfo(available);
+        }
+        if (effectiveState == UpdateState.CHECKING && activeTarget != null) {
+            return copyVersionInfo(activeTarget);
+        }
+        return null;
+    }
+
+    private StagePresentation buildStagePresentation(
+            UpdateState state,
+            UpdateVersionInfo current,
+            UpdateVersionInfo target) {
+        String currentVersion = current != null ? current.getVersion() : null;
+        String targetVersion = target != null ? target.getVersion() : null;
+        return switch (state) {
+        case DISABLED -> new StagePresentation(
+                0,
+                "Updates disabled",
+                "Self-update is disabled in backend configuration.");
+        case CHECKING -> new StagePresentation(
+                10,
+                "Checking latest release",
+                "Looking up the newest compatible release before starting the update.");
+        case AVAILABLE -> new StagePresentation(
+                25,
+                buildVersionTitle("Update available", targetVersion),
+                "A compatible release is ready. Start update to download it and restart the service.");
+        case PREPARING -> new StagePresentation(
+                52,
+                buildVersionTitle("Downloading and verifying", targetVersion),
+                "The release package is being downloaded and validated before restart.");
+        case STAGED -> new StagePresentation(
+                72,
+                buildVersionTitle("Update staged", targetVersion),
+                "The release is ready locally. Restart the service to switch to the new version.");
+        case APPLYING -> new StagePresentation(
+                88,
+                buildVersionTitle("Scheduling restart", targetVersion),
+                "The new package is selected. The service is now restarting into the updated runtime.");
+        case VERIFYING -> new StagePresentation(
+                96,
+                buildVersionTitle("Waiting for service", targetVersion),
+                "The backend is restarting. This page should reconnect and reload automatically.");
+        case FAILED -> new StagePresentation(
+                targetVersion != null ? 52 : 12,
+                "Update failed",
+                lastCheckError == null || lastCheckError.isBlank()
+                        ? "The last update attempt failed."
+                        : lastCheckError);
+        case IDLE -> new StagePresentation(
+                0,
+                currentVersion == null ? "System ready" : "Running " + currentVersion,
+                "No update workflow is running.");
+        };
+    }
+
+    private String buildVersionTitle(String prefix, String version) {
+        if (version == null || version.isBlank()) {
+            return prefix;
+        }
+        return prefix + " " + version;
+    }
+
+    private UpdateVersionInfo toVersionInfo(AvailableRelease release) {
+        return UpdateVersionInfo.builder()
+                .version(release.version())
+                .tag(release.tagName())
+                .assetName(release.assetName())
+                .publishedAt(release.publishedAt())
+                .build();
+    }
+
+    private UpdateVersionInfo copyVersionInfo(UpdateVersionInfo value) {
+        if (value == null) {
+            return null;
+        }
+        return UpdateVersionInfo.builder()
+                .version(value.getVersion())
+                .source(value.getSource())
+                .tag(value.getTag())
+                .assetName(value.getAssetName())
+                .preparedAt(value.getPreparedAt())
+                .publishedAt(value.getPublishedAt())
+                .build();
+    }
+
     private record Semver(int major, int minor, int patch, String preRelease) {
+    }
+
+    private record CheckResolution(AvailableRelease release, String message, String version) {
+    }
+
+    private record StagePresentation(int progressPercent, String title, String description) {
     }
 
     private record AvailableRelease(

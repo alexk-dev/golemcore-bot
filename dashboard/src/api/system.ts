@@ -57,10 +57,14 @@ export interface SystemUpdateStatusResponse {
   state: string;
   enabled: boolean;
   current: SystemUpdateVersionInfo | null;
+  target: SystemUpdateVersionInfo | null;
   staged: SystemUpdateVersionInfo | null;
   available: SystemUpdateVersionInfo | null;
   lastCheckAt: string | null;
   lastError: string | null;
+  progressPercent: number | null;
+  stageTitle: string | null;
+  stageDescription: string | null;
 }
 
 export interface SystemUpdateActionResponse {

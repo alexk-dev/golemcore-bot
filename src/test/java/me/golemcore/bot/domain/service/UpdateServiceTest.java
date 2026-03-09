@@ -94,6 +94,7 @@ class UpdateServiceTest {
         assertEquals(UpdateState.DISABLED, status.getState());
         assertNotNull(status.getCurrent());
         assertEquals(VERSION_CURRENT, status.getCurrent().getVersion());
+        assertEquals("Updates disabled", status.getStageTitle());
     }
 
     @Test
@@ -134,9 +135,9 @@ class UpdateServiceTest {
         httpClient.enqueueStringResponse(404, "{}");
         TestableUpdateService service = createTestableService(httpClient);
 
-        IllegalStateException exception = assertThrows(IllegalStateException.class, service::updateNow);
-
-        assertEquals("No updates found", exception.getMessage());
+        assertEquals("Update workflow started. Checking the latest release.", service.updateNow().getMessage());
+        assertEquals(UpdateState.IDLE, service.getStatus().getState());
+        assertNull(service.getStatus().getAvailable());
     }
 
     @Test
@@ -163,6 +164,26 @@ class UpdateServiceTest {
 
         assertEquals("Already up to date", service.check().getMessage());
         assertNull(service.getStatus().getAvailable());
+    }
+
+    @Test
+    void shouldTreatExecClassifierAsTheSameVersion(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+
+        Properties props = new Properties();
+        props.setProperty("version", VERSION_PATCH + "-exec");
+        when(buildPropertiesProvider.getIfAvailable()).thenReturn(new BuildProperties(props));
+
+        StubHttpClient httpClient = new StubHttpClient();
+        httpClient.enqueueStringResponse(200, releaseJson(
+                "v0.4.2",
+                "bot-0.4.2-exec.jar",
+                "2026-02-22T10:00:00Z"));
+        TestableUpdateService service = createTestableService(httpClient);
+
+        assertEquals("Already up to date", service.check().getMessage());
+        assertNull(service.getStatus().getAvailable());
+        assertEquals(VERSION_PATCH, service.getStatus().getCurrent().getVersion());
     }
 
     @Test
@@ -210,6 +231,26 @@ class UpdateServiceTest {
     }
 
     @Test
+    void shouldExposeTargetProgressAndStageMetadataWhenUpdateIsAvailable(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+        StubHttpClient httpClient = new StubHttpClient();
+        httpClient.enqueueStringResponse(200, releaseJson(
+                "v0.4.2",
+                "bot-0.4.2.jar",
+                "2026-02-22T10:00:00Z"));
+        TestableUpdateService service = createTestableService(httpClient);
+
+        service.check();
+        UpdateStatus status = service.getStatus();
+
+        assertNotNull(status.getTarget());
+        assertEquals(VERSION_PATCH, status.getTarget().getVersion());
+        assertEquals(Integer.valueOf(25), status.getProgressPercent());
+        assertEquals("Update available 0.4.2", status.getStageTitle());
+        assertTrue(status.getStageDescription().contains("compatible release"));
+    }
+
+    @Test
     void shouldPrepareAndApplyUpdateNow(@TempDir Path tempDir) throws Exception {
         enableUpdates(tempDir);
         byte[] jarBytes = "new-binary".getBytes(StandardCharsets.UTF_8);
@@ -225,10 +266,12 @@ class UpdateServiceTest {
         TestableUpdateService service = createTestableService(httpClient);
 
         assertEquals("Update available: 0.4.2", service.check().getMessage());
-        assertEquals("Update 0.4.2 is being applied. JVM restart scheduled.", service.updateNow().getMessage());
+        assertEquals("Update workflow started for 0.4.2. Page will reload after restart.",
+                service.updateNow().getMessage());
 
         assertTrue(service.isRestartRequested());
         assertEquals(UpdateState.APPLYING, service.getStatus().getState());
+        assertEquals("Scheduling restart 0.4.2", service.getStatus().getStageTitle());
         assertTrue(Files.exists(tempDir.resolve("jars").resolve("bot-0.4.2.jar")));
         assertFalse(Files.exists(tempDir.resolve("staged.txt")));
         assertEquals("bot-0.4.2.jar", Files.readString(tempDir.resolve("current.txt"), StandardCharsets.UTF_8).trim());
@@ -260,7 +303,7 @@ class UpdateServiceTest {
         httpClient.enqueueStringResponse(200, checksum + "  bot-0.4.2.jar\n");
         TestableUpdateService service = createTestableService(httpClient);
 
-        assertEquals("Update 0.4.2 is being applied. JVM restart scheduled.", service.updateNow().getMessage());
+        assertEquals("Update workflow started. Checking the latest release.", service.updateNow().getMessage());
         assertTrue(service.isRestartRequested());
         assertTrue(Files.exists(tempDir.resolve("jars").resolve("bot-0.4.2.jar")));
     }
@@ -283,7 +326,7 @@ class UpdateServiceTest {
         httpClient.enqueueStringResponse(200, checksum + "  bot-0.4.2.jar\n");
         TestableUpdateService service = createTestableService(httpClient);
 
-        assertEquals("Update 0.4.2 is being applied. JVM restart scheduled.", service.updateNow().getMessage());
+        assertEquals("Update workflow started. Checking the latest release.", service.updateNow().getMessage());
         assertTrue(service.isRestartRequested());
         assertTrue(Files.exists(tempDir.resolve("jars").resolve("bot-0.4.2.jar")));
         assertFalse(Files.exists(tempDir.resolve("staged.txt")));
@@ -328,12 +371,37 @@ class UpdateServiceTest {
         TestableUpdateService service = createTestableService(httpClient);
         service.check();
 
-        IllegalStateException error = assertThrows(IllegalStateException.class, service::updateNow);
-
-        assertTrue(error.getMessage().contains("Checksum mismatch"));
+        assertEquals("Update workflow started for 0.4.2. Page will reload after restart.",
+                service.updateNow().getMessage());
         assertFalse(Files.exists(tempDir.resolve("jars").resolve("bot-0.4.2.jar.tmp")));
-        assertEquals(UpdateState.AVAILABLE, service.getStatus().getState());
+        assertEquals(UpdateState.FAILED, service.getStatus().getState());
         assertTrue(service.getStatus().getLastError().contains("Failed to prepare update"));
+        assertTrue(service.getStatus().getLastError().contains("Checksum mismatch"));
+        assertEquals("Update failed", service.getStatus().getStageTitle());
+    }
+
+    @Test
+    void shouldPreserveTargetAndProgressWhenPrepareFails(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+        StubHttpClient httpClient = new StubHttpClient();
+        httpClient.enqueueStringResponse(200, releaseJson(
+                "v0.4.2",
+                "bot-0.4.2.jar",
+                "2026-02-22T10:00:00Z"));
+        httpClient.enqueueBinaryResponse(200, "jar-content".getBytes(StandardCharsets.UTF_8));
+        httpClient.enqueueStringResponse(200, "deadbeef bot-0.4.2.jar\n");
+        TestableUpdateService service = createTestableService(httpClient);
+
+        service.check();
+        service.updateNow();
+        UpdateStatus status = service.getStatus();
+
+        assertEquals(UpdateState.FAILED, status.getState());
+        assertNotNull(status.getTarget());
+        assertEquals(VERSION_PATCH, status.getTarget().getVersion());
+        assertEquals(Integer.valueOf(52), status.getProgressPercent());
+        assertEquals("Update failed", status.getStageTitle());
+        assertTrue(status.getStageDescription().contains("Checksum mismatch"));
     }
 
     @Test
@@ -350,11 +418,11 @@ class UpdateServiceTest {
         TestableUpdateService service = createTestableService(httpClient);
         service.check();
 
-        IllegalStateException error = assertThrows(IllegalStateException.class, service::updateNow);
-
-        assertTrue(error.getMessage().contains("Update directory is not writable"));
-        assertTrue(error.getMessage().contains("Configure UPDATE_PATH"));
-        assertEquals(UpdateState.AVAILABLE, service.getStatus().getState());
+        assertEquals("Update workflow started for 0.4.2. Page will reload after restart.",
+                service.updateNow().getMessage());
+        assertTrue(service.getStatus().getLastError().contains("Update directory is not writable"));
+        assertTrue(service.getStatus().getLastError().contains("Configure UPDATE_PATH"));
+        assertEquals(UpdateState.FAILED, service.getStatus().getState());
     }
 
     @Test
@@ -387,6 +455,21 @@ class UpdateServiceTest {
     }
 
     @Test
+    void shouldRejectConcurrentOperationsWhileWorkflowIsRunning(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+        DeferredUpdateService service = createDeferredUpdateService(new StubHttpClient());
+
+        assertEquals("Update workflow started. Checking the latest release.", service.updateNow().getMessage());
+        assertEquals(UpdateState.CHECKING, service.getStatus().getState());
+
+        IllegalStateException checkError = assertThrows(IllegalStateException.class, service::check);
+        IllegalStateException updateError = assertThrows(IllegalStateException.class, service::updateNow);
+
+        assertEquals("Another update operation is already in progress", checkError.getMessage());
+        assertEquals("Another update operation is already in progress", updateError.getMessage());
+    }
+
+    @Test
     void shouldCoverVersionComparisonAndChecksumHelpersViaReflection(@TempDir Path tempDir) throws Exception {
         enableUpdates(tempDir);
         UpdateService service = createService();
@@ -396,6 +479,7 @@ class UpdateServiceTest {
         assertEquals(0, invokeCompareVersions(service, "v1.2.3+build.1", "1.2.3"));
         assertEquals("1.2.3", invokeExtractVersionFromAssetName(service, "bot-1.2.3.jar"));
         assertEquals("1.2.3-rc.1", invokeExtractVersionFromAssetName(service, "release-v1.2.3-rc.1.jar"));
+        assertEquals("1.2.3", invokeExtractVersionFromAssetName(service, "bot-1.2.3-exec.jar"));
         assertNull(invokeExtractVersionFromAssetName(service, "bot-latest.jar"));
 
         String checksumText = """
@@ -426,6 +510,17 @@ class UpdateServiceTest {
 
     private TestableUpdateService createTestableService(StubHttpClient stubHttpClient) {
         return new TestableUpdateService(
+                botProperties,
+                buildPropertiesProvider,
+                new ObjectMapper(),
+                applicationContext,
+                clock,
+                jvmExitService,
+                stubHttpClient);
+    }
+
+    private DeferredUpdateService createDeferredUpdateService(StubHttpClient stubHttpClient) {
+        return new DeferredUpdateService(
                 botProperties,
                 buildPropertiesProvider,
                 new ObjectMapper(),
@@ -560,8 +655,47 @@ class UpdateServiceTest {
             restartRequested = true;
         }
 
+        @Override
+        protected void startUpdateTask(Runnable task) {
+            task.run();
+        }
+
         private boolean isRestartRequested() {
             return restartRequested;
+        }
+    }
+
+    @SuppressWarnings("PMD.TestClassWithoutTestCases")
+    private static final class DeferredUpdateService extends UpdateService {
+
+        private final StubHttpClient stubHttpClient;
+
+        private DeferredUpdateService(
+                BotProperties botProperties,
+                ObjectProvider<BuildProperties> buildPropertiesProvider,
+                ObjectMapper objectMapper,
+                ApplicationContext applicationContext,
+                Clock clock,
+                JvmExitService jvmExitService,
+                StubHttpClient stubHttpClient) {
+            super(botProperties, buildPropertiesProvider, objectMapper, applicationContext, clock, jvmExitService);
+            this.stubHttpClient = stubHttpClient;
+        }
+
+        @Override
+        protected HttpClient buildHttpClient() {
+            return stubHttpClient;
+        }
+
+        @Override
+        protected void startUpdateTask(Runnable task) {
+            // Keep the workflow in a busy transient state so tests can verify
+            // duplicate-request guards.
+        }
+
+        @Override
+        protected void requestRestartAsync() {
+            // no-op
         }
     }
 

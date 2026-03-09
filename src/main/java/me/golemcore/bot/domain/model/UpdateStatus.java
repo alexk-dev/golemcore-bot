@@ -15,8 +15,12 @@ public class UpdateStatus {
     private UpdateState state;
     private boolean enabled;
     private UpdateVersionInfo current;
+    private UpdateVersionInfo target;
     private UpdateVersionInfo staged;
     private UpdateVersionInfo available;
     private Instant lastCheckAt;
     private String lastError;
+    private Integer progressPercent;
+    private String stageTitle;
+    private String stageDescription;
 }
