@@ -1,21 +1,22 @@
 # Dashboard Guide
 
-How to use the built-in web dashboard for chat, sessions, plans, logs, and embedded IDE workflows.
+How to use the built-in web dashboard for chat, setup, settings, scheduler management, sessions, logs, and embedded IDE workflows.
 
 ## Access
 
 - Base URL: `http://localhost:8080/dashboard`
-- WebSocket chat endpoint (UI): `/ws/chat?token=...`
-- WebSocket logs endpoint (Logs page): `/ws/logs?token=...&afterSeq=...`
+- WebSocket chat endpoint: `/ws/chat?token=...`
+- WebSocket logs endpoint: `/ws/logs?token=...&afterSeq=...`
 
 ### Main Routes
 
 - `/dashboard/chat` (also `/dashboard/`) - chat workspace
+- `/dashboard/setup` - startup setup wizard
+- `/dashboard/settings` - runtime config, model catalog, and integrations
+- `/dashboard/scheduler` - cron schedules for auto mode goals/tasks
 - `/dashboard/sessions` - browse and maintain sessions
 - `/dashboard/ide` - embedded code editor
 - `/dashboard/logs` - live and buffered logs
-- `/dashboard/settings` - runtime config and integrations
-- `/dashboard/setup` - startup setup wizard (recommended setup flow)
 - `/dashboard/skills` - skill library
 - `/dashboard/prompts` - prompt configuration
 - `/dashboard/analytics` - analytics view
@@ -26,54 +27,162 @@ How to use the built-in web dashboard for chat, sessions, plans, logs, and embed
 The dashboard uses a single admin account.
 
 - Username: `admin`
-- Credentials file (persisted in workspace): `preferences/admin.json`
+- Credentials file: `preferences/admin.json`
 
 ### First Run Password
 
-On first startup (when `preferences/admin.json` does not exist), the bot generates a temporary admin password and prints it in logs:
+On first startup, if `preferences/admin.json` does not exist, the bot generates a temporary admin password and prints it in logs:
 
 ```text
 DASHBOARD TEMPORARY PASSWORD (change after first login!)
 Password: <generated>
 ```
 
-### Provide a Known Password (Optional)
+### Provide a Known Password
 
-If you want a predefined password (no temporary password in logs), set a plaintext password:
+If you want a predefined password, set:
 
 - Spring property: `bot.dashboard.admin-password`
 - Env var: `BOT_DASHBOARD_ADMIN_PASSWORD`
 
-The password is hashed automatically at startup and then stored in `preferences/admin.json`.
+The password is hashed and then persisted in `preferences/admin.json`.
 
-## Runtime Configuration
+## Chat Transport
 
-Most bot settings are edited in the dashboard and persisted to:
+The dashboard chat is session-scoped and backed by `/ws/chat`. The web channel emits three message shapes:
 
-- `preferences/runtime-config.json`
-- API: `GET /api/settings/runtime`, `PUT /api/settings/runtime`
+- `assistant_chunk` - incremental text chunks
+- `assistant_done` - finalized assistant message
+- `system_event` - typing and runtime progress events
 
-Typical first setup:
+`system_event` now also carries runtime progress from the resilient tool loop. The payload includes `runtimeEventType` values such as:
 
-1. Configure provider API keys and API types in `llm.providers`.
-2. Choose tier models in `modelRouter`.
-3. Optionally enable Telegram (`telegram.enabled`, `telegram.token`).
+- `LLM_STARTED` / `LLM_FINISHED`
+- `TOOL_STARTED` / `TOOL_FINISHED`
+- `RETRY_STARTED` / `RETRY_FINISHED`
+- `COMPACTION_STARTED` / `COMPACTION_FINISHED`
+- `TURN_STARTED` / `TURN_FINISHED` / `TURN_FAILED`
 
-If startup setup is incomplete, chat remains available and dashboard shows a one-time session popup invitation to open `/dashboard/setup`.
+This is how the web UI can surface tool/LLM progress without waiting for the final reply.
+
+## Setup Wizard
+
+`/dashboard/setup` is the recommended first-run flow. It focuses on two required checks:
+
+1. Configure at least one LLM provider with an API key.
+2. Choose routing/tier models that match the configured providers.
+
+Chat remains available even if setup is incomplete, but the wizard is the fastest way to reach a valid routing configuration.
+
+## Settings Catalog
+
+The Settings page is now organized into catalog blocks instead of a flat tab list:
+
+- `Core` - general settings, LLM Providers, Model Catalog, Model Router
+- `Extensions` - Plugin Marketplace plus plugin-contributed settings pages
+- `Tools` - filesystem, shell, automation, goal management, voice routing
+- `Runtime` - memory, skills, turn budget, usage, MCP, auto mode, webhooks, updates
+- `Advanced` - rate limiting, security, compaction
+
+Plugin settings pages are discovered dynamically from `/api/plugins/settings/catalog`.
+
+### LLM Providers
+
+The `LLM Providers` section manages provider profiles under `llm.providers` in runtime config:
+
+- API key
+- `apiType`
+- `baseUrl`
+- request timeout
+
+These profiles are reused by both the Model Router and the Model Catalog.
+
+### Model Catalog
+
+The `Model Catalog` section edits `models/models.json` through `/api/models`.
+
+Available API endpoints:
+
+- `GET /api/models`
+- `PUT /api/models`
+- `POST /api/models/{id}`
+- `DELETE /api/models/{id}`
+- `POST /api/models/reload`
+- `GET /api/models/available`
+- `GET /api/models/discover/{provider}`
+
+Important behaviors:
+
+- The catalog is grouped by provider profile.
+- Live suggestions are fetched on demand from the selected provider API.
+- Discovery supports configured OpenAI-compatible, Anthropic, and Gemini provider profiles.
+- When the same raw model id exists under multiple providers, the UI can keep a provider-scoped id such as `provider/model`.
+
+### Model Router
+
+The `Model Router` section consumes only providers that are actually API-ready. The dashboard filters model pickers to providers with configured API keys and resolves tier models from `/api/models/available`.
+
+### Plugin Marketplace
+
+The `Plugin Marketplace` section is backed by:
+
+- `GET /api/plugins/marketplace`
+- `POST /api/plugins/marketplace/install`
+- `POST /api/plugins/reload`
+- `POST /api/plugins/{pluginId}/reload`
+- `GET /api/plugins/settings/catalog`
+- `GET /api/plugins/settings/sections/{routeKey}`
+- `PUT /api/plugins/settings/sections/{routeKey}`
+- `POST /api/plugins/settings/sections/{routeKey}/actions/{actionId}`
+
+Important behaviors:
+
+- Official integrations are installed as runtime plugins, not bundled core features.
+- Marketplace metadata comes from the configured local repository directory when present, otherwise from the configured remote repository.
+- Backend installation verifies the artifact, writes it into the plugin directory, and reloads the plugin runtime.
+- Plugin-specific configuration pages are exposed as normal Settings sections after installation.
+
+## Scheduler
+
+`/dashboard/scheduler` is the UI for cron-based auto mode schedules.
+
+Backend API:
+
+- `GET /api/scheduler`
+- `POST /api/scheduler/schedules`
+- `DELETE /api/scheduler/schedules/{scheduleId}`
+
+The UI lets you target either a goal or a task and create one of these schedule patterns:
+
+- `daily`
+- `weekdays`
+- `weekly`
+- `custom`
+
+Each schedule tracks:
+
+- target id and label
+- cron expression
+- `maxExecutions`
+- `executionCount`
+- `lastExecutedAt`
+- `nextExecutionAt`
+
+If auto mode is disabled in runtime config, the Scheduler page stays visible but creation is blocked.
 
 ## Sessions and Active Conversation
 
 Dashboard session APIs are under `/api/sessions`:
 
-- `GET /api/sessions` - list sessions
-- `GET /api/sessions/recent` - list recent sessions for a channel/client
-- `GET /api/sessions/active` - resolve active conversation key
-- `POST /api/sessions/active` - switch active conversation
-- `POST /api/sessions` - create web session
-- `GET /api/sessions/{id}` - session details/messages
-- `POST /api/sessions/{id}/compact` - compact history
-- `POST /api/sessions/{id}/clear` - clear messages
-- `DELETE /api/sessions/{id}` - delete session
+- `GET /api/sessions`
+- `GET /api/sessions/recent`
+- `GET /api/sessions/active`
+- `POST /api/sessions/active`
+- `POST /api/sessions`
+- `GET /api/sessions/{id}`
+- `POST /api/sessions/{id}/compact`
+- `POST /api/sessions/{id}/clear`
+- `DELETE /api/sessions/{id}`
 
 Notes:
 
@@ -92,7 +201,7 @@ The chat sidebar uses `/api/plans` endpoints with a required `sessionId`:
 - `POST /api/plans/{planId}/cancel`
 - `POST /api/plans/{planId}/resume`
 
-This keeps plan mode state and actions session-scoped in the dashboard.
+Plan mode stays session-scoped in the dashboard.
 
 ## Embedded IDE
 
@@ -119,14 +228,14 @@ The dashboard includes a lightweight IDE based on CodeMirror and React Arborist.
 
 All file endpoints require authenticated dashboard access.
 
-- `GET /api/files/tree?path=` - list nodes for directory (`path` empty means workspace root)
-- `GET /api/files/content?path=...` - get UTF-8 file content and metadata
-- `POST /api/files/content` - create file
-- `PUT /api/files/content` - save file
-- `POST /api/files/rename` - rename/move path
-- `DELETE /api/files?path=...` - delete file or directory recursively
+- `GET /api/files/tree?path=`
+- `GET /api/files/content?path=...`
+- `POST /api/files/content`
+- `PUT /api/files/content`
+- `POST /api/files/rename`
+- `DELETE /api/files?path=...`
 
-Example create/save payload:
+Example save payload:
 
 ```json
 {
@@ -135,33 +244,15 @@ Example create/save payload:
 }
 ```
 
-Rename payload:
-
-```json
-{
-  "sourcePath": "old/name.txt",
-  "targetPath": "new/name.txt"
-}
-```
-
 ### Files Security Model
 
-- Paths are resolved relative to filesystem workspace root
-- Absolute paths and path traversal are rejected
-- Existing ancestry is checked with `toRealPath()` against workspace root
+- Paths are resolved relative to the filesystem workspace root
+- Absolute paths and traversal are rejected
+- Existing ancestry is checked with `toRealPath()` against the workspace root
 - Symlinks are not traversed in tree listing
 - Workspace root cannot be renamed or deleted
 - Non-UTF-8 files are rejected for editor reads
 - Maximum editable file size is 2 MB
-
-### Architecture References
-
-- Backend: `src/main/java/me/golemcore/bot/adapter/inbound/web/controller/FilesController.java`
-- Backend service: `src/main/java/me/golemcore/bot/domain/service/DashboardFileService.java`
-- Frontend page: `dashboard/src/pages/IdePage.tsx`
-- Frontend hooks/api: `dashboard/src/hooks/useFiles.ts`, `dashboard/src/api/files.ts`
-
-See ADR: `docs/adr/0001-dashboard-embedded-ide.md`.
 
 ## Logs
 
@@ -182,7 +273,7 @@ Runtime options:
 
 Dashboard admin account supports TOTP MFA:
 
-- Status: `GET /api/auth/mfa-status`
-- Setup: `POST /api/auth/mfa/setup`
-- Enable: `POST /api/auth/mfa/enable`
-- Disable: `POST /api/auth/mfa/disable`
+- `GET /api/auth/mfa-status`
+- `POST /api/auth/mfa/setup`
+- `POST /api/auth/mfa/enable`
+- `POST /api/auth/mfa/disable`
