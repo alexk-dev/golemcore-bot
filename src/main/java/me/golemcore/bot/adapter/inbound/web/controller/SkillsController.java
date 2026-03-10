@@ -4,11 +4,15 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.adapter.inbound.web.dto.SkillDto;
 import me.golemcore.bot.domain.model.Skill;
+import me.golemcore.bot.domain.model.SkillInstallRequest;
+import me.golemcore.bot.domain.model.SkillInstallResult;
+import me.golemcore.bot.domain.model.SkillMarketplaceCatalog;
+import me.golemcore.bot.domain.service.SkillMarketplaceService;
 import me.golemcore.bot.domain.service.SkillService;
 import me.golemcore.bot.port.outbound.McpPort;
 import me.golemcore.bot.port.outbound.StoragePort;
-import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -38,6 +42,7 @@ public class SkillsController {
     private static final Pattern VALID_NAME = Pattern.compile("^[a-zA-Z0-9][a-zA-Z0-9-]*$");
 
     private final SkillService skillService;
+    private final SkillMarketplaceService skillMarketplaceService;
     private final McpPort mcpPort;
     private final StoragePort storagePort;
 
@@ -47,6 +52,16 @@ public class SkillsController {
                 .map(this::toDto)
                 .toList();
         return Mono.just(ResponseEntity.ok(skills));
+    }
+
+    @GetMapping("/marketplace")
+    public Mono<ResponseEntity<SkillMarketplaceCatalog>> getMarketplace() {
+        return Mono.just(ResponseEntity.ok(skillMarketplaceService.getCatalog()));
+    }
+
+    @PostMapping("/marketplace/install")
+    public Mono<ResponseEntity<SkillInstallResult>> installSkill(@RequestBody SkillInstallRequest request) {
+        return Mono.just(ResponseEntity.ok(skillMarketplaceService.install(request.getSkillId())));
     }
 
     @GetMapping("/{name}")

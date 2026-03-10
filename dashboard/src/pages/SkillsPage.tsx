@@ -1,9 +1,18 @@
 import { type ReactElement, useState } from 'react';
-import { Badge, Card, ListGroup, Row, Col, Button, Form, Spinner, Modal, Placeholder } from 'react-bootstrap';
-import { useSkills, useSkill, useCreateSkill, useUpdateSkill, useDeleteSkill } from '../hooks/useSkills';
+import { useSearchParams } from 'react-router-dom';
+import { Button, Card, Form, Modal, Placeholder } from 'react-bootstrap';
+import {
+  useCreateSkill,
+  useDeleteSkill,
+  useSkill,
+  useSkills,
+  useUpdateSkill,
+} from '../hooks/useSkills';
 import toast from 'react-hot-toast';
 import { extractErrorMessage } from '../utils/extractErrorMessage';
 import ConfirmModal from '../components/common/ConfirmModal';
+import { LocalSkillsPanel } from './skills/LocalSkillsPanel';
+import { SkillsMarketplacePanel } from './skills/SkillsMarketplacePanel';
 
 const SKILL_TEMPLATE = `---
 description: ""
@@ -13,8 +22,36 @@ model_tier: balanced
 
 `;
 const SKILL_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+const SKILLS_TAB_QUERY_PARAM = 'tab';
+
+type SkillsTabKey = 'local' | 'marketplace';
+
+const LOCAL_SKILLS_TAB: SkillsTabKey = 'local';
+const MARKETPLACE_SKILLS_TAB: SkillsTabKey = 'marketplace';
+
+function getSkillsTabClassName(tab: SkillsTabKey, activeTab: SkillsTabKey): string {
+  return activeTab === tab ? 'nav-link active' : 'nav-link';
+}
+
+function resolveSkillsTab(searchValue: string | null): SkillsTabKey {
+  if (searchValue === MARKETPLACE_SKILLS_TAB) {
+    return MARKETPLACE_SKILLS_TAB;
+  }
+  return LOCAL_SKILLS_TAB;
+}
+
+function createSkillsSearchParams(currentParams: URLSearchParams, nextTab: SkillsTabKey): URLSearchParams {
+  const nextParams = new URLSearchParams(currentParams);
+  if (nextTab === LOCAL_SKILLS_TAB) {
+    nextParams.delete(SKILLS_TAB_QUERY_PARAM);
+    return nextParams;
+  }
+  nextParams.set(SKILLS_TAB_QUERY_PARAM, MARKETPLACE_SKILLS_TAB);
+  return nextParams;
+}
 
 export default function SkillsPage(): ReactElement {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { data: skills, isLoading } = useSkills();
   const createMutation = useCreateSkill();
   const updateMutation = useUpdateSkill();
@@ -27,6 +64,7 @@ export default function SkillsPage(): ReactElement {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [newName, setNewName] = useState('');
 
+  const activeTab = resolveSkillsTab(searchParams.get(SKILLS_TAB_QUERY_PARAM));
   const { data: detail, isLoading: detailLoading, isError: detailError, refetch: refetchDetail } = useSkill(selected ?? '');
 
   if (isLoading) {
@@ -35,29 +73,13 @@ export default function SkillsPage(): ReactElement {
         <div className="section-header d-flex align-items-center justify-content-between">
           <h4 className="mb-0">Skills</h4>
         </div>
-        <Row className="g-3">
-          <Col md={4}>
-            <Card>
-              <Card.Body>
-                <Placeholder as="div" animation="glow" className="mb-2"><Placeholder xs={12} /></Placeholder>
-                <Placeholder as="div" animation="glow" className="mb-2"><Placeholder xs={12} /></Placeholder>
-                <Placeholder as="div" animation="glow"><Placeholder xs={10} /></Placeholder>
-              </Card.Body>
-            </Card>
-          </Col>
-          <Col md={8}>
-            <Card>
-              <Card.Body>
-                <Placeholder as="div" animation="glow" className="mb-2"><Placeholder xs={6} /></Placeholder>
-                <Placeholder as="div" animation="glow" className="mb-2"><Placeholder xs={12} /></Placeholder>
-                <Placeholder as="div" animation="glow" className="mb-2"><Placeholder xs={12} /></Placeholder>
-                <div className="d-flex justify-content-center pt-2">
-                  <Spinner size="sm" />
-                </div>
-              </Card.Body>
-            </Card>
-          </Col>
-        </Row>
+        <Card>
+          <Card.Body>
+            <Placeholder as="div" animation="glow" className="mb-2"><Placeholder xs={3} /></Placeholder>
+            <Placeholder as="div" animation="glow" className="mb-2"><Placeholder xs={12} /></Placeholder>
+            <Placeholder as="div" animation="glow" className="mb-2"><Placeholder xs={10} /></Placeholder>
+          </Card.Body>
+        </Card>
       </div>
     );
   }
@@ -68,6 +90,11 @@ export default function SkillsPage(): ReactElement {
 
   const handleSelect = (name: string): void => {
     setSelected(name);
+  };
+
+  const handleTabChange = (tab: SkillsTabKey): void => {
+    const nextParams = createSkillsSearchParams(searchParams, tab);
+    setSearchParams(nextParams, { replace: true });
   };
 
   // Sync editor content when detail loads
@@ -82,6 +109,10 @@ export default function SkillsPage(): ReactElement {
   const handleSelectAndLoad = (name: string): void => {
     handleSelect(name);
     setEditContent('');
+  };
+
+  const handleOpenMarketplaceTab = (): void => {
+    handleTabChange(MARKETPLACE_SKILLS_TAB);
   };
 
   const handleSave = async (): Promise<void> => {
@@ -139,105 +170,63 @@ export default function SkillsPage(): ReactElement {
     <div>
       <div className="section-header d-flex align-items-center justify-content-between">
         <h4 className="mb-0">Skills</h4>
-        <Button type="button" size="sm" variant="primary" onClick={() => setShowCreate(true)}>
-          + New Skill
-        </Button>
+        {activeTab === LOCAL_SKILLS_TAB ? (
+          <Button type="button" size="sm" variant="primary" onClick={() => setShowCreate(true)}>
+            + New Skill
+          </Button>
+        ) : (
+          <div className="small text-body-secondary">Discover and install reusable skills</div>
+        )}
       </div>
 
-      <Row className="g-3">
-        <Col md={4}>
-          <Form.Control
-            size="sm"
-            placeholder="Search skills..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="mb-2"
-          />
-          <ListGroup>
-            {filtered.map((s) => (
-              <ListGroup.Item
-                key={s.name}
-                active={selected === s.name}
-                action
-                onClick={() => handleSelectAndLoad(s.name)}
-                className="d-flex justify-content-between align-items-center"
-              >
-                <span className="text-truncate me-2">{s.name}</span>
-                <div className="d-flex gap-1 flex-shrink-0">
-                  <Badge bg={s.available ? 'success' : 'secondary'} className="small">
-                    {s.available ? 'on' : 'off'}
-                  </Badge>
-                  {s.hasMcp && <Badge bg="info">MCP</Badge>}
-                  {s.modelTier != null && s.modelTier.length > 0 && s.modelTier !== 'balanced' && (
-                    <Badge className="text-bg-warning">{s.modelTier}</Badge>
-                  )}
-                </div>
-              </ListGroup.Item>
-            ))}
-            {filtered.length === 0 && (
-              <ListGroup.Item className="text-body-secondary text-center">No skills found</ListGroup.Item>
-            )}
-          </ListGroup>
-        </Col>
-        <Col md={8}>
-          {selected != null && selected.length > 0 && detailLoading ? (
-            <Card className="text-center text-body-secondary py-5">
-              <Card.Body>
-                <Spinner size="sm" className="me-2" />
-                Loading skill...
-              </Card.Body>
-            </Card>
-          ) : selected != null && selected.length > 0 && detailError ? (
-            <Card className="text-center py-5">
-              <Card.Body>
-                <p className="text-danger mb-3">Failed to load selected skill.</p>
-                <Button type="button" size="sm" variant="secondary" onClick={() => { void refetchDetail(); }}>
-                  Retry
-                </Button>
-              </Card.Body>
-            </Card>
-          ) : selected != null && selected.length > 0 && detail != null ? (
-            <Card>
-              <Card.Header className="d-flex justify-content-between align-items-center">
-                <span className="fw-semibold">{selected}</span>
-                <div className="d-flex gap-1">
-                  {detail.hasMcp && <Badge bg="info">MCP</Badge>}
-                  {detail.modelTier != null && detail.modelTier.length > 0 && <Badge bg="secondary">{detail.modelTier}</Badge>}
-                </div>
-              </Card.Header>
-              <Card.Body>
-                <Form.Group className="mb-3">
-                  <Form.Label className="small text-body-secondary">SKILL.md Content</Form.Label>
-                  <Form.Control
-                    as="textarea"
-                    rows={18}
-                    value={editorContent}
-                    onChange={(e) => setEditContent(e.target.value)}
-                    className="code-text"
-                  />
-                </Form.Group>
-                <div className="d-flex gap-2">
-                  <Button type="button" size="sm" onClick={() => { void handleSave(); }} disabled={!isSkillDirty || updateMutation.isPending}>
-                    {updateMutation.isPending ? 'Saving...' : 'Save'}
-                  </Button>
-                  <Button type="button"
-                    size="sm"
-                    variant="danger"
-                    onClick={() => setShowDeleteConfirm(true)}
-                    disabled={deleteMutation.isPending}
-                  >
-                    Delete
-                  </Button>
-                </div>
-              </Card.Body>
-            </Card>
-          ) : (
-            <Card className="text-center text-body-secondary py-5">
-              <Card.Body>Select a skill to edit</Card.Body>
-            </Card>
-          )}
-        </Col>
-      </Row>
+      <Card className="settings-card mb-3">
+        <Card.Body className="py-2">
+          <div className="nav nav-tabs" role="tablist" aria-label="Skills sections">
+            <button
+              type="button"
+              className={getSkillsTabClassName(LOCAL_SKILLS_TAB, activeTab)}
+              role="tab"
+              aria-selected={activeTab === LOCAL_SKILLS_TAB}
+              onClick={() => handleTabChange(LOCAL_SKILLS_TAB)}
+            >
+              Installed
+            </button>
+            <button
+              type="button"
+              className={getSkillsTabClassName(MARKETPLACE_SKILLS_TAB, activeTab)}
+              role="tab"
+              aria-selected={activeTab === MARKETPLACE_SKILLS_TAB}
+              onClick={() => handleTabChange(MARKETPLACE_SKILLS_TAB)}
+            >
+              Marketplace
+            </button>
+          </div>
+        </Card.Body>
+      </Card>
+
+      {activeTab === MARKETPLACE_SKILLS_TAB ? (
+        <SkillsMarketplacePanel />
+      ) : (
+        <LocalSkillsPanel
+          detail={detail}
+          detailError={detailError}
+          detailLoading={detailLoading}
+          editorContent={editorContent}
+          filteredSkills={filtered}
+          isSkillDirty={isSkillDirty}
+          onDelete={() => setShowDeleteConfirm(true)}
+          onEditorChange={setEditContent}
+          onOpenMarketplace={handleOpenMarketplaceTab}
+          onRefetchDetail={() => { void refetchDetail(); }}
+          onSave={() => { void handleSave(); }}
+          onSearchChange={setSearch}
+          onSelectSkill={handleSelectAndLoad}
+          searchQuery={search}
+          selectedSkillName={selected}
+          updatePending={updateMutation.isPending}
+          deletePending={deleteMutation.isPending}
+        />
+      )}
 
       <Modal show={showCreate} onHide={() => setShowCreate(false)}>
         <Modal.Header closeButton>

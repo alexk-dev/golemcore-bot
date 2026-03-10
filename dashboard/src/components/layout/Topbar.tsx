@@ -28,7 +28,7 @@ export default function Topbar() {
       <Button
         type="button"
         variant="secondary"
-        className="topbar-icon-btn d-md-none"
+        className="topbar-icon-btn d-md-none d-flex align-items-center justify-content-center p-0"
         onClick={toggleMobile}
         aria-label={mobileOpen ? 'Close navigation' : 'Open navigation'}
         aria-controls="primary-navigation"
@@ -48,7 +48,7 @@ export default function Topbar() {
         >
           {theme === 'light' ? <FiMoon size={18} /> : <FiSun size={18} />}
         </Button>
-        <Button 
+        <Button
           type="button"
           variant="secondary"
           className="topbar-action-btn text-decoration-none d-flex align-items-center px-3"
