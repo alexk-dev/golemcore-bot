@@ -300,13 +300,12 @@ class SkillMarketplaceServiceTest {
 
     private record RemoteSkillsMarketplaceServer(HttpServer server, String baseUrl) implements AutoCloseable {
 
-        private String repositoryUrl() {
-            return baseUrl + "/alexk-dev/golemcore-skills/";
-        }
-
-        @Override
-        public void close() {
-            server.stop(0);
-        }
+    private String repositoryUrl() {
+        return baseUrl + "/alexk-dev/golemcore-skills/";
     }
-}
+
+    @Override
+    public void close() {
+        server.stop(0);
+    }
+}}
