@@ -366,6 +366,49 @@ class SchedulerControllerTest {
     }
 
     @Test
+    void createScheduleShouldSupportAdvancedCronMode() {
+        Goal goal = Goal.builder().id("goal-1").title("Goal").build();
+        ScheduleEntry created = ScheduleEntry.builder()
+                .id("sched-goal-advanced")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId("goal-1")
+                .cronExpression("0 */5 * * * *")
+                .enabled(true)
+                .maxExecutions(-1)
+                .executionCount(0)
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .build();
+
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
+        when(autoModeService.getGoals()).thenReturn(List.of(goal));
+        when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.GOAL), eq("goal-1"),
+                eq("0 */5 * * * *"), eq(-1)))
+                .thenReturn(created);
+
+        SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
+                "GOAL",
+                "goal-1",
+                null,
+                List.of(),
+                null,
+                null,
+                "advanced",
+                "0 */5 * * * *");
+
+        StepVerifier.create(controller.createSchedule(request))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.CREATED, response.getStatusCode());
+                    SchedulerController.ScheduleDto body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals("sched-goal-advanced", body.id());
+                    assertEquals("0 */5 * * * *", body.cronExpression());
+                })
+                .verifyComplete();
+    }
+
+    @Test
     void createScheduleShouldTranslateServiceErrors() {
         Goal goal = Goal.builder().id("goal-1").title("Goal").build();
 

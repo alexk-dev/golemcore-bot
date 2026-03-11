@@ -30,6 +30,8 @@ import me.golemcore.bot.domain.model.RoutingOutcome;
 import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.model.SkillTransitionRequest;
 import me.golemcore.bot.domain.model.TurnOutcome;
+import me.golemcore.bot.domain.service.AutoRunContextSupport;
+import me.golemcore.bot.domain.service.MdcSupport;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -116,76 +118,78 @@ public class AgentLoop {
     }
 
     public void processMessage(Message message) {
-        log.info("=== INCOMING MESSAGE ===");
-        log.info("Channel: {}, Chat: {}, Sender: {}",
-                message.getChannelType(), message.getChatId(), message.getSenderId());
-        log.debug("Content: {}", truncate(message.getContent(), 200));
+        try (MdcSupport.Scope ignored = MdcSupport.withContext(AutoRunContextSupport.buildMdcContext(message))) {
+            log.info("=== INCOMING MESSAGE ===");
+            log.info("Channel: {}, Chat: {}, Sender: {}",
+                    message.getChannelType(), message.getChatId(), message.getSenderId());
+            log.debug("Content: {}", truncate(message.getContent(), 200));
 
-        boolean isAuto = message.getMetadata() != null && Boolean.TRUE.equals(message.getMetadata().get("auto.mode"));
-        if (!isAuto) {
-            RateLimitResult rateLimit = rateLimiter.tryConsume();
-            if (!rateLimit.isAllowed()) {
-                log.warn("Rate limit exceeded");
-                notifyRateLimited(message);
-                return;
+            boolean isAuto = AutoRunContextSupport.isAutoMessage(message);
+            if (!isAuto) {
+                RateLimitResult rateLimit = rateLimiter.tryConsume();
+                if (!rateLimit.isAllowed()) {
+                    log.warn("Rate limit exceeded");
+                    notifyRateLimited(message);
+                    return;
+                }
             }
-        }
 
-        AgentSession session = sessionService.getOrCreate(
-                message.getChannelType(),
-                message.getChatId());
-        log.debug("Session: {}, messages in history: {}", session.getId(), session.getMessages().size());
+            AgentSession session = sessionService.getOrCreate(
+                    message.getChannelType(),
+                    message.getChatId());
+            log.debug("Session: {}, messages in history: {}", session.getId(), session.getMessages().size());
 
-        applySessionIdentityMetadata(session, message);
-        session.addMessage(message);
+            applySessionIdentityMetadata(session, message);
+            session.addMessage(message);
 
-        AgentContext context = AgentContext.builder()
-                .session(session)
-                .messages(new ArrayList<>(session.getMessages()))
-                .maxIterations(runtimeConfigService.getTurnMaxLlmCalls())
-                .currentIteration(0)
-                .build();
-        applyRuntimeAttributes(context, message, session);
+            AgentContext context = AgentContext.builder()
+                    .session(session)
+                    .messages(new ArrayList<>(session.getMessages()))
+                    .maxIterations(runtimeConfigService.getTurnMaxLlmCalls())
+                    .currentIteration(0)
+                    .build();
+            applyRuntimeAttributes(context, message, session);
 
-        // Initialize sorted systems + routingSystem (used by feedback guarantee).
-        getSortedSystems();
-        log.info("[AgentLoop] routingSystem resolved: {}",
-                routingSystem != null ? routingSystem.getClass().getName() : "<null>");
+            // Initialize sorted systems + routingSystem (used by feedback guarantee).
+            getSortedSystems();
+            log.info("[AgentLoop] routingSystem resolved: {}",
+                    routingSystem != null ? routingSystem.getClass().getName() : "<null>");
 
-        ChannelPort channel = channelRegistry.get(message.getChannelType()).orElse(null);
-        ScheduledFuture<?> typingTask = null;
-        String typingChatId = resolveTransportChatId(message);
-        if (channel != null && typingChatId != null && !typingChatId.isBlank()) {
-            String chatId = typingChatId;
-            sendTypingIndicator(channel, chatId);
-            typingTask = typingExecutor.scheduleAtFixedRate(
-                    () -> sendTypingIndicator(channel, chatId),
-                    TYPING_INTERVAL_SECONDS, TYPING_INTERVAL_SECONDS, TimeUnit.SECONDS);
-        }
-
-        log.debug("Starting agent loop (max iterations: {})", context.getMaxIterations());
-        try {
-            runLoop(context);
-            ensureFeedback(context);
-        } finally {
-            if (typingTask != null) {
-                typingTask.cancel(false);
+            ChannelPort channel = channelRegistry.get(message.getChannelType()).orElse(null);
+            ScheduledFuture<?> typingTask = null;
+            String typingChatId = resolveTransportChatId(message);
+            if (channel != null && typingChatId != null && !typingChatId.isBlank()) {
+                String chatId = typingChatId;
+                sendTypingIndicator(channel, chatId);
+                typingTask = typingExecutor.scheduleAtFixedRate(
+                        () -> sendTypingIndicator(channel, chatId),
+                        TYPING_INTERVAL_SECONDS, TYPING_INTERVAL_SECONDS, TimeUnit.SECONDS);
             }
-            // Guarantee ThreadLocal cleanup even if systems throw unexpectedly
-            AgentContextHolder.clear();
 
-            // Persist the session even if loop/routing fails unexpectedly.
-            // This prevents losing the last inbound message (and any history mutations
-            // already applied)
-            // on restart/crash.
+            log.debug("Starting agent loop (max iterations: {})", context.getMaxIterations());
             try {
-                sessionService.save(session);
-            } catch (Exception e) { // NOSONAR - last resort, must not break finally
-                log.error("Failed to persist session in finally: {}", session.getId(), e);
-            }
-        }
+                runLoop(context);
+                ensureFeedback(context);
+            } finally {
+                if (typingTask != null) {
+                    typingTask.cancel(false);
+                }
+                // Guarantee ThreadLocal cleanup even if systems throw unexpectedly
+                AgentContextHolder.clear();
 
-        log.info("=== MESSAGE PROCESSING COMPLETE ===");
+                // Persist the session even if loop/routing fails unexpectedly.
+                // This prevents losing the last inbound message (and any history mutations
+                // already applied)
+                // on restart/crash.
+                try {
+                    sessionService.save(session);
+                } catch (Exception e) { // NOSONAR - last resort, must not break finally
+                    log.error("Failed to persist session in finally: {}", session.getId(), e);
+                }
+            }
+
+            log.info("=== MESSAGE PROCESSING COMPLETE ===");
+        }
     }
 
     private String truncate(String text, int maxLen) {
@@ -281,8 +285,12 @@ public class AgentLoop {
             context.setAttribute(ContextAttributes.CONVERSATION_KEY, sessionIdentity.conversationKey());
         }
 
+        if (AutoRunContextSupport.isAutoMessage(message)) {
+            context.setAttribute(ContextAttributes.AUTO_MODE, true);
+        }
         copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_RUN_KIND);
         copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_RUN_ID);
+        copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_SCHEDULE_ID);
         copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_GOAL_ID);
         copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_TASK_ID);
     }
@@ -299,11 +307,7 @@ public class AgentLoop {
         if (message == null || message.getMetadata() == null || key == null || key.isBlank()) {
             return null;
         }
-        Object value = message.getMetadata().get(key);
-        if (value instanceof String) {
-            return (String) value;
-        }
-        return null;
+        return AutoRunContextSupport.readMetadataString(message.getMetadata(), key);
     }
 
     // Inbound messages are handled by SessionRunCoordinator via
@@ -551,7 +555,7 @@ public class AgentLoop {
             return false;
         }
         Message last = context.getMessages().get(context.getMessages().size() - 1);
-        return last.getMetadata() != null && Boolean.TRUE.equals(last.getMetadata().get("auto.mode"));
+        return last.getMetadata() != null && Boolean.TRUE.equals(last.getMetadata().get(ContextAttributes.AUTO_MODE));
     }
 
     private List<AgentSystem> getSortedSystems() {

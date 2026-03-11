@@ -724,8 +724,8 @@ public class CommandRouter implements CommandPort {
             case PAUSED -> "⏸️";
             case CANCELLED -> "❌";
             };
-            sb.append(String.format("%s **%s** [%s] (%d/%d tasks)%n",
-                    statusIcon, goal.getTitle(), goal.getStatus(), completed, total));
+            sb.append(String.format("%s **%s** [%s] (%d/%d tasks) `goal_id: %s`%n",
+                    statusIcon, goal.getTitle(), goal.getStatus(), completed, total, goal.getId()));
             if (goal.getDescription() != null && !goal.getDescription().isBlank()) {
                 sb.append("  ").append(goal.getDescription()).append("\n");
             }
@@ -772,7 +772,7 @@ public class CommandRouter implements CommandPort {
                 continue;
 
             sb.append(msg("command.tasks.goal", goal.getTitle()));
-            sb.append(" [").append(goal.getStatus()).append("]\n");
+            sb.append(" [").append(goal.getStatus()).append("] `goal_id: ").append(goal.getId()).append("`\n");
 
             List<AutoTask> sortedTasks = goal.getTasks().stream()
                     .sorted(Comparator.comparingInt(AutoTask::getOrder))
@@ -786,7 +786,8 @@ public class CommandRouter implements CommandPort {
                 case FAILED -> "[!]";
                 case SKIPPED -> "[-]";
                 };
-                sb.append("  ").append(icon).append(" ").append(task.getTitle()).append("\n");
+                sb.append("  ").append(icon).append(" ").append(task.getTitle())
+                        .append(" `task_id: ").append(task.getId()).append("`\n");
             }
             sb.append("\n");
         }

@@ -6,6 +6,7 @@ import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.ScheduleService;
+import me.golemcore.bot.domain.service.StringValueSupport;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -79,11 +80,9 @@ public class SchedulerController {
 
         ScheduleEntry.ScheduleType targetType = parseTargetType(request.targetType());
         String targetId = validateTargetId(request.targetId(), targetType);
-        Frequency frequency = parseFrequency(request.frequency());
-        Set<Integer> days = normalizeDays(request.days(), frequency);
-        TimeValue timeValue = parseTimeValue(request.time());
         int maxExecutions = normalizeMaxExecutions(request.maxExecutions());
-        String cronExpression = buildCronExpression(frequency, days, timeValue);
+        ScheduleMode mode = parseMode(request.mode(), request.cronExpression());
+        String cronExpression = buildRequestedCronExpression(request, mode);
 
         try {
             ScheduleEntry entry = scheduleService.createSchedule(targetType, targetId, cronExpression, maxExecutions);
@@ -236,6 +235,38 @@ public class SchedulerController {
         };
     }
 
+    private static ScheduleMode parseMode(String value, String cronExpression) {
+        if (!StringValueSupport.isBlank(value)) {
+            String normalized = value.trim().toLowerCase(Locale.ROOT);
+            if ("simple".equals(normalized)) {
+                return ScheduleMode.SIMPLE;
+            }
+            if ("advanced".equals(normalized)) {
+                return ScheduleMode.ADVANCED;
+            }
+            throw badRequest("Unsupported mode: " + value);
+        }
+
+        if (!StringValueSupport.isBlank(cronExpression)) {
+            return ScheduleMode.ADVANCED;
+        }
+        return ScheduleMode.SIMPLE;
+    }
+
+    private static String buildRequestedCronExpression(CreateScheduleRequest request, ScheduleMode mode) {
+        if (mode == ScheduleMode.ADVANCED) {
+            if (StringValueSupport.isBlank(request.cronExpression())) {
+                throw badRequest("cronExpression is required for advanced mode");
+            }
+            return request.cronExpression().trim();
+        }
+
+        Frequency frequency = parseFrequency(request.frequency());
+        Set<Integer> days = normalizeDays(request.days(), frequency);
+        TimeValue timeValue = parseTimeValue(request.time());
+        return buildCronExpression(frequency, days, timeValue);
+    }
+
     private static Set<Integer> normalizeDays(List<Integer> requestedDays, Frequency frequency) {
         if (frequency == Frequency.DAILY || frequency == Frequency.WEEKDAYS) {
             return Set.of();
@@ -351,6 +382,10 @@ public class SchedulerController {
         DAILY, WEEKDAYS, WEEKLY, CUSTOM
     }
 
+    private enum ScheduleMode {
+        SIMPLE, ADVANCED
+    }
+
     private record TimeValue(int hour, int minute) {
     }
 
@@ -360,7 +395,19 @@ public class SchedulerController {
             String frequency,
             List<Integer> days,
             String time,
-            Integer maxExecutions) {
+            Integer maxExecutions,
+            String mode,
+            String cronExpression) {
+
+        public CreateScheduleRequest(
+                String targetType,
+                String targetId,
+                String frequency,
+                List<Integer> days,
+                String time,
+                Integer maxExecutions) {
+            this(targetType, targetId, frequency, days, time, maxExecutions, null, null);
+        }
     }
 
     public record SchedulerStateResponse(

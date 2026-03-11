@@ -1,96 +1,193 @@
 import { type ReactElement, useMemo, useState } from 'react';
 import { Button, Card, Col, Row, Spinner } from 'react-bootstrap';
-import { useCreateSchedule, useDeleteSchedule, useSchedulerBusyState, useSchedulerState } from '../hooks/useScheduler';
+import {
+  useCreateSchedule,
+  useDeleteSchedule,
+  useSchedulerBusyState,
+  useSchedulerRun,
+  useSchedulerRuns,
+  useSchedulerState,
+} from '../hooks/useScheduler';
+import { useSchedulerForm } from '../hooks/useSchedulerForm';
 import { SchedulerCreateCard } from '../components/scheduler/SchedulerCreateCard';
+import { SchedulerRunLogsModal } from '../components/scheduler/SchedulerRunLogsModal';
 import { SchedulerSchedulesCard } from '../components/scheduler/SchedulerSchedulesCard';
 import { SchedulerStatusHeader } from '../components/scheduler/SchedulerStatusHeader';
-import type { ScheduleFormState, SchedulerFrequency, SchedulerTargetType } from '../components/scheduler/schedulerTypes';
-import { isValidTimeInput, normalizeTimeInput, parseLimitInput } from '../components/scheduler/schedulerFormUtils';
+import type { SchedulerRunDetail, SchedulerRunSummary, SchedulerSchedule, SchedulerStateResponse } from '../api/scheduler';
+
+interface SchedulerPageContentProps {
+  data: SchedulerStateResponse;
+  goals: SchedulerStateResponse['goals'];
+  form: ReturnType<typeof useSchedulerForm>['form'];
+  effectiveTargetId: string;
+  isTimeValid: boolean;
+  isCronValid: boolean;
+  isFormValid: boolean;
+  isCreating: boolean;
+  isBusy: boolean;
+  logsSchedule: SchedulerSchedule | null;
+  runs: SchedulerRunSummary[];
+  runsLoading: boolean;
+  selectedRunId: string | null;
+  runDetail: SchedulerRunDetail | undefined;
+  runDetailLoading: boolean;
+  onTargetTypeChange: ReturnType<typeof useSchedulerForm>['setTargetType'];
+  onTargetChange: ReturnType<typeof useSchedulerForm>['setTargetId'];
+  onModeChange: ReturnType<typeof useSchedulerForm>['setMode'];
+  onFrequencyChange: ReturnType<typeof useSchedulerForm>['setFrequency'];
+  onToggleDay: ReturnType<typeof useSchedulerForm>['toggleDay'];
+  onTimeChange: ReturnType<typeof useSchedulerForm>['setTime'];
+  onCronExpressionChange: ReturnType<typeof useSchedulerForm>['setCronExpression'];
+  onLimitInputChange: ReturnType<typeof useSchedulerForm>['setLimitInput'];
+  onSubmit: () => void;
+  onOpenLogs: (schedule: SchedulerSchedule) => void;
+  onCloseLogs: () => void;
+  onDeleteSchedule: (scheduleId: string) => void;
+  onSelectRun: (runId: string) => void;
+}
+
+function resolveEffectiveRunId(runs: SchedulerRunSummary[], selectedRunId: string | null): string | null {
+  const selectedRun = runs.find((run) => run.runId === selectedRunId);
+  if (selectedRun != null) {
+    return selectedRun.runId;
+  }
+  return runs[0]?.runId ?? null;
+}
+
+function SchedulerPageContent({
+  data,
+  goals,
+  form,
+  effectiveTargetId,
+  isTimeValid,
+  isCronValid,
+  isFormValid,
+  isCreating,
+  isBusy,
+  logsSchedule,
+  runs,
+  runsLoading,
+  selectedRunId,
+  runDetail,
+  runDetailLoading,
+  onTargetTypeChange,
+  onTargetChange,
+  onModeChange,
+  onFrequencyChange,
+  onToggleDay,
+  onTimeChange,
+  onCronExpressionChange,
+  onLimitInputChange,
+  onSubmit,
+  onOpenLogs,
+  onCloseLogs,
+  onDeleteSchedule,
+  onSelectRun,
+}: SchedulerPageContentProps): ReactElement {
+  return (
+    <div className="dashboard-main">
+      <SchedulerStatusHeader
+        featureEnabled={data.featureEnabled}
+        autoModeEnabled={data.autoModeEnabled}
+      />
+
+      {!data.featureEnabled && (
+        <Card className="mb-3">
+          <Card.Body className="text-body-secondary">
+            Scheduler is unavailable because auto mode feature is disabled in runtime config.
+          </Card.Body>
+        </Card>
+      )}
+
+      <Row className="g-3">
+        <Col xl={5}>
+          <SchedulerCreateCard
+            featureEnabled={data.featureEnabled}
+            goals={goals}
+            form={{ ...form, targetId: effectiveTargetId }}
+            isTimeValid={isTimeValid}
+            isCronValid={isCronValid}
+            isFormValid={isFormValid}
+            isCreating={isCreating}
+            onTargetTypeChange={onTargetTypeChange}
+            onTargetChange={onTargetChange}
+            onModeChange={onModeChange}
+            onFrequencyChange={onFrequencyChange}
+            onToggleDay={onToggleDay}
+            onTimeChange={onTimeChange}
+            onPresetTimeSelect={onTimeChange}
+            onCronExpressionChange={onCronExpressionChange}
+            onPresetCronSelect={onCronExpressionChange}
+            onLimitInputChange={onLimitInputChange}
+            onPresetLimitSelect={onLimitInputChange}
+            onSubmit={onSubmit}
+          />
+        </Col>
+
+        <Col xl={7}>
+          <SchedulerSchedulesCard
+            schedules={data.schedules}
+            busy={isBusy}
+            onViewLogs={onOpenLogs}
+            onDelete={onDeleteSchedule}
+          />
+        </Col>
+      </Row>
+
+      <SchedulerRunLogsModal
+        show={logsSchedule != null}
+        scheduleLabel={logsSchedule?.targetLabel ?? null}
+        scheduleId={logsSchedule?.id ?? null}
+        runs={runs}
+        runsLoading={runsLoading}
+        selectedRunId={selectedRunId}
+        runDetail={runDetail}
+        runDetailLoading={runDetailLoading}
+        onHide={onCloseLogs}
+        onSelectRun={onSelectRun}
+      />
+    </div>
+  );
+}
 
 export default function SchedulerPage(): ReactElement {
   const schedulerQuery = useSchedulerState();
   const createScheduleMutation = useCreateSchedule();
   const deleteScheduleMutation = useDeleteSchedule();
-
-  const [form, setForm] = useState<ScheduleFormState>({
-    targetType: 'GOAL',
-    targetId: '',
-    frequency: 'daily',
-    days: [1],
-    time: '09:00',
-    limitInput: '0',
-  });
+  const [logsSchedule, setLogsSchedule] = useState<SchedulerSchedule | null>(null);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
 
   const data = schedulerQuery.data;
   const goals = useMemo(() => data?.goals ?? [], [data?.goals]);
-
-  const targetOptions = useMemo(() => {
-    if (form.targetType === 'GOAL') {
-      return goals.map((goal) => ({ id: goal.id }));
-    }
-    return goals.flatMap((goal) => goal.tasks.map((task) => ({ id: task.id })));
-  }, [form.targetType, goals]);
-
-  const effectiveTargetId = useMemo(() => {
-    if (targetOptions.some((option) => option.id === form.targetId)) {
-      return form.targetId;
-    }
-    return targetOptions[0]?.id ?? '';
-  }, [form.targetId, targetOptions]);
-
-  const isWeeklyFrequency = form.frequency === 'weekly' || form.frequency === 'custom';
-  const normalizedTime = normalizeTimeInput(form.time);
-  const parsedLimit = parseLimitInput(form.limitInput);
-  const isTimeValid = isValidTimeInput(normalizedTime);
-  const hasValidDays = !isWeeklyFrequency || form.days.length > 0;
-  const hasValidTarget = effectiveTargetId.length > 0;
-  const isFormValid = isTimeValid && hasValidDays && hasValidTarget && parsedLimit != null;
+  const {
+    form,
+    effectiveTargetId,
+    isTimeValid,
+    isCronValid,
+    isFormValid,
+    setTargetId,
+    setMode,
+    setFrequency,
+    setTime,
+    setCronExpression,
+    setLimitInput,
+    setTargetType,
+    toggleDay,
+    buildCreateRequest,
+  } = useSchedulerForm(goals);
 
   const isBusy = useSchedulerBusyState([createScheduleMutation, deleteScheduleMutation]);
-
-  const handleTargetTypeChange = (targetType: SchedulerTargetType): void => {
-    setForm((current) => ({
-      ...current,
-      targetType,
-      targetId: '',
-    }));
-  };
-
-  const handleFrequencyChange = (frequency: SchedulerFrequency): void => {
-    setForm((current) => ({
-      ...current,
-      frequency,
-    }));
-  };
-
-  const handleToggleDay = (day: number): void => {
-    setForm((current) => {
-      if (current.days.includes(day)) {
-        return {
-          ...current,
-          days: current.days.filter((item) => item !== day),
-        };
-      }
-      return {
-        ...current,
-        days: [...current.days, day].sort((left, right) => left - right),
-      };
-    });
-  };
+  const runsQuery = useSchedulerRuns(logsSchedule?.id ?? null, logsSchedule != null);
+  const runs = runsQuery.data?.runs ?? [];
+  const effectiveRunId = resolveEffectiveRunId(runs, selectedRunId);
+  const runDetailQuery = useSchedulerRun(effectiveRunId, logsSchedule != null);
 
   const handleCreateSchedule = async (): Promise<void> => {
-    if (!isFormValid || parsedLimit == null) {
+    const request = buildCreateRequest();
+    if (request == null) {
       return;
     }
-
-    await createScheduleMutation.mutateAsync({
-      targetType: form.targetType,
-      targetId: effectiveTargetId,
-      frequency: form.frequency,
-      days: isWeeklyFrequency ? form.days : [],
-      time: normalizedTime,
-      maxExecutions: parsedLimit,
-    });
+    await createScheduleMutation.mutateAsync(request);
   };
 
   if (schedulerQuery.isLoading) {
@@ -120,51 +217,43 @@ export default function SchedulerPage(): ReactElement {
   }
 
   return (
-    <div className="dashboard-main">
-      <SchedulerStatusHeader
-        featureEnabled={data.featureEnabled}
-        autoModeEnabled={data.autoModeEnabled}
-      />
-
-      {!data.featureEnabled && (
-        <Card className="mb-3">
-          <Card.Body className="text-body-secondary">
-            Scheduler is unavailable because auto mode feature is disabled in runtime config.
-          </Card.Body>
-        </Card>
-      )}
-
-      <Row className="g-3">
-        <Col xl={5}>
-          <SchedulerCreateCard
-            featureEnabled={data.featureEnabled}
-            goals={goals}
-            form={{ ...form, targetId: effectiveTargetId }}
-            isTimeValid={isTimeValid}
-            isFormValid={isFormValid}
-            isCreating={createScheduleMutation.isPending}
-            onTargetTypeChange={handleTargetTypeChange}
-            onTargetChange={(targetId) => setForm((current) => ({ ...current, targetId }))}
-            onFrequencyChange={handleFrequencyChange}
-            onToggleDay={handleToggleDay}
-            onTimeChange={(value) => setForm((current) => ({ ...current, time: value }))}
-            onPresetTimeSelect={(value) => setForm((current) => ({ ...current, time: value }))}
-            onLimitInputChange={(value) => setForm((current) => ({ ...current, limitInput: value }))}
-            onPresetLimitSelect={(value) => setForm((current) => ({ ...current, limitInput: value }))}
-            onSubmit={() => { void handleCreateSchedule(); }}
-          />
-        </Col>
-
-        <Col xl={7}>
-          <SchedulerSchedulesCard
-            schedules={data.schedules}
-            busy={isBusy}
-            onDelete={(scheduleId) => {
-              void deleteScheduleMutation.mutateAsync(scheduleId);
-            }}
-          />
-        </Col>
-      </Row>
-    </div>
+    <SchedulerPageContent
+      data={data}
+      goals={goals}
+      form={form}
+      effectiveTargetId={effectiveTargetId}
+      isTimeValid={isTimeValid}
+      isCronValid={isCronValid}
+      isFormValid={isFormValid}
+      isCreating={createScheduleMutation.isPending}
+      isBusy={isBusy}
+      logsSchedule={logsSchedule}
+      runs={runs}
+      runsLoading={runsQuery.isLoading || runsQuery.isFetching}
+      selectedRunId={effectiveRunId}
+      runDetail={runDetailQuery.data}
+      runDetailLoading={runDetailQuery.isLoading || runDetailQuery.isFetching}
+      onTargetTypeChange={setTargetType}
+      onTargetChange={setTargetId}
+      onModeChange={setMode}
+      onFrequencyChange={setFrequency}
+      onToggleDay={toggleDay}
+      onTimeChange={setTime}
+      onCronExpressionChange={setCronExpression}
+      onLimitInputChange={setLimitInput}
+      onSubmit={() => { void handleCreateSchedule(); }}
+      onOpenLogs={(schedule) => {
+        setLogsSchedule(schedule);
+        setSelectedRunId(null);
+      }}
+      onCloseLogs={() => {
+        setLogsSchedule(null);
+        setSelectedRunId(null);
+      }}
+      onDeleteSchedule={(scheduleId) => {
+        void deleteScheduleMutation.mutateAsync(scheduleId);
+      }}
+      onSelectRun={setSelectedRunId}
+    />
   );
 }

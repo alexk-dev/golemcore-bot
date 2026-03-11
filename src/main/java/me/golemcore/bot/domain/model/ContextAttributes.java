@@ -147,11 +147,17 @@ public final class ContextAttributes {
     /** String ? conversation key from canonical session identity. */
     public static final String SESSION_IDENTITY_CONVERSATION = "session.identity.conversation";
 
+    /** Boolean ? marks an internally generated autonomous turn. */
+    public static final String AUTO_MODE = "auto.mode";
+
     /** String ? auto execution run kind (`GOAL_RUN` or `TASK_RUN`). */
     public static final String AUTO_RUN_KIND = "auto.run.kind";
 
     /** String ? unique auto execution run identifier. */
     public static final String AUTO_RUN_ID = "auto.run.id";
+
+    /** String ? source schedule identifier for the current auto execution. */
+    public static final String AUTO_SCHEDULE_ID = "auto.schedule.id";
 
     /** String ? active auto goal identifier for the turn. */
     public static final String AUTO_GOAL_ID = "auto.goal.id";

@@ -4,6 +4,7 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.service.AutoRunContextSupport;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -51,6 +52,7 @@ public class DefaultHistoryWriter implements HistoryWriter {
                 .toolCallId(outcome.toolCallId())
                 .toolName(outcome.toolName())
                 .content(outcome.messageContent())
+                .metadata(buildAssistantMetadata(context))
                 .timestamp(now())
                 .build();
 
@@ -101,6 +103,7 @@ public class DefaultHistoryWriter implements HistoryWriter {
             metadata.put("model", model);
         }
 
+        metadata.putAll(AutoRunContextSupport.buildAutoMessageMetadata(context));
         return metadata;
     }
 }

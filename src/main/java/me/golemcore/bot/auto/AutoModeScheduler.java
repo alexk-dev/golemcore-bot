@@ -26,6 +26,8 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ScheduleEntry;
+import me.golemcore.bot.domain.service.AutoRunContextSupport;
+import me.golemcore.bot.domain.service.MdcSupport;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
@@ -243,25 +245,34 @@ public class AutoModeScheduler {
     }
 
     private void processSchedule(ScheduleEntry schedule, int timeoutMinutes) {
-        try {
-            ScheduleMessage scheduleMessage = buildMessageForSchedule(schedule);
-            if (scheduleMessage == null) {
-                log.debug("[AutoScheduler] No action for schedule {}", schedule.getId());
-                return;
-            }
+        ScheduleMessage scheduleMessage = buildMessageForSchedule(schedule);
+        if (scheduleMessage == null) {
+            log.debug("[AutoScheduler] No action for schedule {}", schedule.getId());
+            return;
+        }
 
+        ChannelInfo info = channelInfo;
+        String sessionChatId = info != null ? info.sessionChatId() : "auto";
+        String transportChatId = info != null ? info.transportChatId() : sessionChatId;
+        String channelType = info != null ? info.channelType() : "auto";
+        String runId = UUID.randomUUID().toString();
+        Map<String, String> mdcContext = AutoRunContextSupport.buildMdcContext(
+                channelType,
+                sessionChatId,
+                transportChatId,
+                schedule.getId(),
+                runId,
+                scheduleMessage.goalId(),
+                scheduleMessage.taskId());
+
+        try (MdcSupport.Scope ignored = MdcSupport.withContext(mdcContext)) {
             log.info("[AutoScheduler] Processing schedule {}: {}", schedule.getId(), scheduleMessage.content());
 
-            ChannelInfo info = channelInfo;
-            String sessionChatId = info != null ? info.sessionChatId() : "auto";
-            String transportChatId = info != null ? info.transportChatId() : sessionChatId;
-            String channelType = info != null ? info.channelType() : "auto";
-            String runId = UUID.randomUUID().toString();
-
             Map<String, Object> metadata = new LinkedHashMap<>();
-            metadata.put("auto.mode", true);
+            metadata.put(ContextAttributes.AUTO_MODE, true);
             metadata.put(ContextAttributes.AUTO_RUN_KIND, scheduleMessage.runKind().name());
             metadata.put(ContextAttributes.AUTO_RUN_ID, runId);
+            metadata.put(ContextAttributes.AUTO_SCHEDULE_ID, schedule.getId());
             metadata.put(ContextAttributes.CONVERSATION_KEY, sessionChatId);
             metadata.put(ContextAttributes.TRANSPORT_CHAT_ID, transportChatId);
             if (scheduleMessage.goalId() != null && !scheduleMessage.goalId().isBlank()) {
@@ -281,8 +292,12 @@ public class AutoModeScheduler {
                     .timestamp(Instant.now())
                     .build();
 
-            CompletableFuture.runAsync(() -> agentLoop.processMessage(syntheticMessage))
-                    .get(timeoutMinutes, TimeUnit.MINUTES);
+            Map<String, String> asyncContext = MdcSupport.capture();
+            CompletableFuture.runAsync(() -> {
+                try (MdcSupport.Scope asyncIgnored = MdcSupport.withContext(asyncContext)) {
+                    agentLoop.processMessage(syntheticMessage);
+                }
+            }).get(timeoutMinutes, TimeUnit.MINUTES);
         } catch (TimeoutException e) {
             log.error("[AutoScheduler] Schedule {} timed out after {} minutes",
                     schedule.getId(), timeoutMinutes);
@@ -334,7 +349,7 @@ public class AutoModeScheduler {
                             + " (goal_id: " + goalId + ")",
                     AutoRunKind.GOAL_RUN,
                     goalId,
-                    goalId);
+                    null);
         }
 
         log.debug("[AutoScheduler] All tasks for goal {} are done, skipping", goalId);
