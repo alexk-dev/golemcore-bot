@@ -41,6 +41,7 @@ public class Goal {
     private String id;
     private String title;
     private String description;
+    private String prompt;
 
     @Builder.Default
     private GoalStatus status = GoalStatus.ACTIVE;
@@ -59,6 +60,17 @@ public class Goal {
         return tasks.stream()
                 .filter(t -> t.getStatus() == AutoTask.TaskStatus.COMPLETED)
                 .count();
+    }
+
+    /**
+     * Returns the prompt that should be used for autonomous execution.
+     */
+    @JsonIgnore
+    public String getExecutionPrompt() {
+        if (prompt != null && !prompt.isBlank()) {
+            return prompt;
+        }
+        return title;
     }
 
     /**

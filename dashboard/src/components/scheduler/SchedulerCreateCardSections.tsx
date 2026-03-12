@@ -61,6 +61,12 @@ interface RepeatLimitFieldProps {
   onPresetLimitSelect: (value: string) => void;
 }
 
+interface ScheduleEnabledFieldProps {
+  featureEnabled: boolean;
+  enabled: boolean;
+  onEnabledChange: (enabled: boolean) => void;
+}
+
 function isSchedulerFrequency(value: string): value is SchedulerFrequency {
   return value === 'daily' || value === 'weekdays' || value === 'weekly' || value === 'custom';
 }
@@ -297,6 +303,24 @@ export function RepeatLimitField({
         isInvalid={parsedLimit == null}
         disabled={!featureEnabled}
         placeholder="0 for unlimited"
+      />
+    </Form.Group>
+  );
+}
+
+export function ScheduleEnabledField({
+  featureEnabled,
+  enabled,
+  onEnabledChange,
+}: ScheduleEnabledFieldProps): ReactElement {
+  return (
+    <Form.Group className="mb-3">
+      <Form.Check
+        type="switch"
+        label="Schedule enabled"
+        checked={enabled}
+        disabled={!featureEnabled}
+        onChange={(event) => onEnabledChange(event.target.checked)}
       />
     </Form.Group>
   );

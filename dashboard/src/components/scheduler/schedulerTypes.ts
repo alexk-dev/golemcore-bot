@@ -11,4 +11,5 @@ export interface ScheduleFormState {
   time: string;
   cronExpression: string;
   limitInput: string;
+  enabled: boolean;
 }

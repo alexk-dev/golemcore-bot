@@ -1,7 +1,11 @@
 import type { ReactElement } from 'react';
 import { Button, Card } from 'react-bootstrap';
-import type { SchedulerGoal } from '../../api/scheduler';
-import type { SchedulerFrequency, SchedulerMode, SchedulerTargetType, ScheduleFormState } from './schedulerTypes';
+import type { SchedulerGoal, SchedulerTask, SchedulerTargetType } from '../../api/scheduler';
+import type {
+  SchedulerFrequency,
+  SchedulerMode,
+  ScheduleFormState,
+} from './schedulerTypes';
 import {
   buildGoalOptions,
   buildTaskOptions,
@@ -11,6 +15,7 @@ import {
 import {
   AdvancedCronFields,
   RepeatLimitField,
+  ScheduleEnabledField,
   SchedulerModeToggle,
   SimpleScheduleFields,
   TargetSelector,
@@ -20,11 +25,14 @@ import {
 interface SchedulerCreateCardProps {
   featureEnabled: boolean;
   goals: SchedulerGoal[];
+  standaloneTasks: SchedulerTask[];
   form: ScheduleFormState;
   isTimeValid: boolean;
   isCronValid: boolean;
   isFormValid: boolean;
   isCreating: boolean;
+  isEditing: boolean;
+  editingScheduleLabel: string | null;
   onTargetTypeChange: (targetType: SchedulerTargetType) => void;
   onTargetChange: (targetId: string) => void;
   onModeChange: (mode: SchedulerMode) => void;
@@ -36,7 +44,9 @@ interface SchedulerCreateCardProps {
   onPresetCronSelect: (value: string) => void;
   onLimitInputChange: (value: string) => void;
   onPresetLimitSelect: (value: string) => void;
+  onEnabledChange: (enabled: boolean) => void;
   onSubmit: () => void;
+  onCancelEdit: () => void;
 }
 
 interface SchedulerSubmitState {
@@ -47,11 +57,15 @@ interface SchedulerSubmitState {
   parsedLimit: number | null;
 }
 
-function resolveTargetOptions(targetType: SchedulerTargetType, goals: SchedulerGoal[]): SchedulerTargetOption[] {
+function resolveTargetOptions(
+  targetType: SchedulerTargetType,
+  goals: SchedulerGoal[],
+  standaloneTasks: SchedulerTask[],
+): SchedulerTargetOption[] {
   if (targetType === 'GOAL') {
     return buildGoalOptions(goals);
   }
-  return buildTaskOptions(goals);
+  return buildTaskOptions(goals, standaloneTasks);
 }
 
 function resolveEffectiveTargetId(options: SchedulerTargetOption[], targetId: string): string {
@@ -78,14 +92,28 @@ function shouldDisableSubmit(state: SchedulerSubmitState): boolean {
   return state.parsedLimit == null;
 }
 
+function resolveHeaderTitle(isEditing: boolean): string {
+  return isEditing ? 'Edit schedule' : 'Create schedule';
+}
+
+function resolveSubmitLabel(isEditing: boolean, isCreating: boolean): string {
+  if (isCreating) {
+    return isEditing ? 'Saving...' : 'Creating...';
+  }
+  return isEditing ? 'Save schedule' : 'Create schedule';
+}
+
 export function SchedulerCreateCard({
   featureEnabled,
   goals,
+  standaloneTasks,
   form,
   isTimeValid,
   isCronValid,
   isFormValid,
   isCreating,
+  isEditing,
+  editingScheduleLabel,
   onTargetTypeChange,
   onTargetChange,
   onModeChange,
@@ -97,9 +125,11 @@ export function SchedulerCreateCard({
   onPresetCronSelect,
   onLimitInputChange,
   onPresetLimitSelect,
+  onEnabledChange,
   onSubmit,
+  onCancelEdit,
 }: SchedulerCreateCardProps): ReactElement {
-  const targetOptions = resolveTargetOptions(form.targetType, goals);
+  const targetOptions = resolveTargetOptions(form.targetType, goals, standaloneTasks);
   const effectiveTargetId = resolveEffectiveTargetId(targetOptions, form.targetId);
   const parsedLimit = parseLimitInput(form.limitInput);
   const submitDisabled = shouldDisableSubmit({
@@ -112,8 +142,14 @@ export function SchedulerCreateCard({
 
   return (
     <Card className="h-100">
-      <Card.Header className="fw-semibold">Create schedule</Card.Header>
+      <Card.Header className="fw-semibold">{resolveHeaderTitle(isEditing)}</Card.Header>
       <Card.Body>
+        {isEditing && editingScheduleLabel != null && editingScheduleLabel.length > 0 && (
+          <div className="small text-body-secondary mb-3">
+            Editing target: <strong>{editingScheduleLabel}</strong>
+          </div>
+        )}
+
         <TargetTypeToggle selected={form.targetType} onChange={onTargetTypeChange} />
 
         <TargetSelector
@@ -154,15 +190,30 @@ export function SchedulerCreateCard({
           onPresetLimitSelect={onPresetLimitSelect}
         />
 
-        <Button
-          type="button"
-          variant="primary"
-          size="sm"
-          disabled={submitDisabled}
-          onClick={onSubmit}
-        >
-          {isCreating ? 'Creating...' : 'Create schedule'}
-        </Button>
+        {isEditing && (
+          <ScheduleEnabledField
+            featureEnabled={featureEnabled}
+            enabled={form.enabled}
+            onEnabledChange={onEnabledChange}
+          />
+        )}
+
+        <div className="d-flex gap-2">
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            disabled={submitDisabled}
+            onClick={onSubmit}
+          >
+            {resolveSubmitLabel(isEditing, isCreating)}
+          </Button>
+          {isEditing && (
+            <Button type="button" variant="secondary" size="sm" onClick={onCancelEdit}>
+              Cancel
+            </Button>
+          )}
+        </div>
       </Card.Body>
     </Card>
   );

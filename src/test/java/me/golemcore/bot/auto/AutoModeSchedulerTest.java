@@ -175,6 +175,38 @@ class AutoModeSchedulerTest {
     }
 
     @Test
+    void shouldUseGoalPromptWhenPlanningUnplannedGoal() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(GOAL_TITLE)
+                .prompt("Break the release down into concrete tasks")
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>())
+                .createdAt(Instant.now())
+                .build();
+        when(autoModeService.getGoal(GOAL_ID)).thenReturn(Optional.of(goal));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-goal-prompt")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId(GOAL_ID)
+                .cronExpression(TEST_CRON)
+                .enabled(true)
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        scheduler.tick();
+
+        ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
+        verify(agentLoop).processMessage(captor.capture());
+
+        Message sent = captor.getValue();
+        assertTrue(sent.getContent().contains("Break the release down into concrete tasks"));
+    }
+
+    @Test
     void shouldProcessTaskScheduleForSpecificTask() {
         when(autoModeService.isAutoModeEnabled()).thenReturn(true);
 
@@ -211,6 +243,86 @@ class AutoModeSchedulerTest {
         Message sent = captor.getValue();
         assertTrue(sent.getContent().contains("Implement feature X"));
         verify(scheduleService).recordExecution("sched-task-xyz");
+    }
+
+    @Test
+    void shouldUseTaskPromptWhenTaskHasCustomPrompt() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+
+        AutoTask task = AutoTask.builder()
+                .id(TASK_ID)
+                .goalId(GOAL_ID)
+                .title("Implement feature X")
+                .prompt("Implement feature X with migration, tests, and rollout notes")
+                .status(AutoTask.TaskStatus.PENDING)
+                .order(1)
+                .build();
+
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>(List.of(task)))
+                .build();
+        when(autoModeService.findGoalForTask(TASK_ID)).thenReturn(Optional.of(goal));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-task-prompt")
+                .type(ScheduleEntry.ScheduleType.TASK)
+                .targetId(TASK_ID)
+                .cronExpression("0 30 14 * * *")
+                .enabled(true)
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        scheduler.tick();
+
+        ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
+        verify(agentLoop).processMessage(captor.capture());
+
+        Message sent = captor.getValue();
+        assertTrue(sent.getContent().contains("migration, tests, and rollout notes"));
+    }
+
+    @Test
+    void shouldProcessStandaloneTaskScheduleStoredInInboxGoal() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+
+        AutoTask task = AutoTask.builder()
+                .id("task-standalone")
+                .goalId("inbox")
+                .title("Check support queue")
+                .prompt("   ")
+                .status(AutoTask.TaskStatus.PENDING)
+                .order(1)
+                .build();
+        Goal inbox = Goal.builder()
+                .id("inbox")
+                .title("Inbox")
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>(List.of(task)))
+                .build();
+        when(autoModeService.findGoalForTask("task-standalone")).thenReturn(Optional.of(inbox));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-task-standalone")
+                .type(ScheduleEntry.ScheduleType.TASK)
+                .targetId("task-standalone")
+                .cronExpression("0 0 15 * * *")
+                .enabled(true)
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        scheduler.tick();
+
+        ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
+        verify(agentLoop).processMessage(captor.capture());
+
+        Message sent = captor.getValue();
+        assertTrue(sent.getContent().contains("Check support queue"));
+        assertEquals("sched-task-standalone", sent.getMetadata().get(ContextAttributes.AUTO_SCHEDULE_ID));
+        assertEquals("task-standalone", sent.getMetadata().get(ContextAttributes.AUTO_TASK_ID));
+        verify(scheduleService).recordExecution("sched-task-standalone");
     }
 
     @Test

@@ -1,20 +1,20 @@
 import type { ReactElement } from 'react';
 import { Badge } from 'react-bootstrap';
 
-interface SchedulerStatusHeaderProps {
+interface GoalsStatusHeaderProps {
   featureEnabled: boolean;
   autoModeEnabled: boolean;
 }
 
-export function SchedulerStatusHeader({
+export function GoalsStatusHeader({
   featureEnabled,
   autoModeEnabled,
-}: SchedulerStatusHeaderProps): ReactElement {
+}: GoalsStatusHeaderProps): ReactElement {
   return (
     <div className="section-header d-flex align-items-center justify-content-between">
       <div>
-        <h4 className="mb-1">Scheduler</h4>
-        <p className="mb-0 text-body-secondary">Manage schedules, edit cron settings, and inspect autonomous run logs.</p>
+        <h4 className="mb-1">Goals & Tasks</h4>
+        <p className="mb-0 text-body-secondary">Create and manage goals, standalone tasks, and detailed execution prompts.</p>
       </div>
       <div className="d-flex align-items-center gap-2">
         <Badge bg={featureEnabled ? 'success' : 'secondary'}>

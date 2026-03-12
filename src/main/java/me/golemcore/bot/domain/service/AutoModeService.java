@@ -32,7 +32,13 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Core service for autonomous agent mode managing goals, tasks, diary entries,
@@ -54,6 +60,7 @@ public class AutoModeService {
 
     private static final String AUTO_DIR = "auto";
     private static final String GOAL_NOT_FOUND = "Goal not found: ";
+    private static final String TASK_NOT_FOUND = "Task not found: ";
     private static final String INBOX_GOAL_ID = "inbox";
     private static final String INBOX_GOAL_TITLE = "Inbox";
     private static final String INBOX_GOAL_DESCRIPTION = "System container for standalone tasks";
@@ -101,27 +108,34 @@ public class AutoModeService {
     // ==================== Goal management ====================
 
     public Goal createGoal(String title, String description) {
+        return createGoal(title, description, null);
+    }
+
+    public Goal createGoal(String title, String description, String prompt) {
         List<Goal> goals = getGoals();
 
         long activeCount = goals.stream()
+                .filter(g -> !isInboxGoal(g))
                 .filter(g -> g.getStatus() == Goal.GoalStatus.ACTIVE)
                 .count();
         if (activeCount >= runtimeConfigService.getAutoMaxGoals()) {
             throw new IllegalStateException("Maximum active goals reached: " + runtimeConfigService.getAutoMaxGoals());
         }
 
+        Instant now = Instant.now();
         Goal goal = Goal.builder()
                 .id(UUID.randomUUID().toString())
-                .title(title)
-                .description(description)
+                .title(requireTitle(title, "Goal title is required"))
+                .description(normalizeOptionalValue(description))
+                .prompt(normalizeOptionalValue(prompt))
                 .status(Goal.GoalStatus.ACTIVE)
-                .createdAt(Instant.now())
-                .updatedAt(Instant.now())
+                .createdAt(now)
+                .updatedAt(now)
                 .build();
 
         goals.add(goal);
         saveGoals(goals);
-        log.info("[AutoMode] Created goal '{}'", title);
+        log.info("[AutoMode] Created goal '{}'", goal.getTitle());
         return goal;
     }
 
@@ -144,30 +158,88 @@ public class AutoModeService {
                 .findFirst();
     }
 
-    public AutoTask addTask(String goalId, String title, String description, int order) {
+    public Goal updateGoal(String goalId, String title, String description, String prompt, Goal.GoalStatus status) {
         Goal goal = getGoal(goalId)
                 .orElseThrow(() -> new IllegalArgumentException(GOAL_NOT_FOUND + goalId));
 
-        if (goal.getTasks().size() >= MAX_TASKS_PER_GOAL) {
-            throw new IllegalStateException(
-                    "Maximum tasks per goal reached: " + MAX_TASKS_PER_GOAL);
+        if (isInboxGoal(goal)) {
+            throw new IllegalArgumentException("Inbox goal cannot be edited");
         }
 
+        Goal.GoalStatus resolvedStatus = status != null ? status : goal.getStatus();
+        long activeCount = getGoals().stream()
+                .filter(item -> !item.getId().equals(goalId))
+                .filter(item -> !isInboxGoal(item))
+                .filter(item -> item.getStatus() == Goal.GoalStatus.ACTIVE)
+                .count();
+        if (resolvedStatus == Goal.GoalStatus.ACTIVE && activeCount >= runtimeConfigService.getAutoMaxGoals()) {
+            throw new IllegalStateException("Maximum active goals reached: " + runtimeConfigService.getAutoMaxGoals());
+        }
+
+        Instant now = Instant.now();
+        goal.setTitle(requireTitle(title, "Goal title is required"));
+        goal.setDescription(normalizeOptionalValue(description));
+        goal.setPrompt(normalizeOptionalValue(prompt));
+        goal.setStatus(resolvedStatus);
+        goal.setUpdatedAt(now);
+        saveGoals(getGoals());
+
+        log.info("[AutoMode] Updated goal '{}'", goal.getTitle());
+        return goal;
+    }
+
+    public AutoTask addTask(String goalId, String title, String description, int order) {
+        return addTask(goalId, title, description, null, order);
+    }
+
+    public AutoTask addTask(String goalId, String title, String description, String prompt, int order) {
+        Goal goal = getGoal(goalId)
+                .orElseThrow(() -> new IllegalArgumentException(GOAL_NOT_FOUND + goalId));
+        validateTaskCapacity(goal);
+
+        Instant now = Instant.now();
         AutoTask task = AutoTask.builder()
                 .id(UUID.randomUUID().toString())
                 .goalId(goalId)
-                .title(title)
-                .description(description)
-                .order(order)
+                .title(requireTitle(title, "Task title is required"))
+                .description(normalizeOptionalValue(description))
+                .prompt(normalizeOptionalValue(prompt))
+                .order(order > 0 ? order : nextTaskOrder(goal))
                 .status(AutoTask.TaskStatus.PENDING)
-                .createdAt(Instant.now())
-                .updatedAt(Instant.now())
+                .createdAt(now)
+                .updatedAt(now)
                 .build();
 
         goal.getTasks().add(task);
-        goal.setUpdatedAt(Instant.now());
+        goal.setUpdatedAt(now);
+        rebalanceTaskOrders(goal);
         saveGoals(getGoals());
-        log.info("[AutoMode] Added task '{}' to goal '{}'", title, goal.getTitle());
+        log.info("[AutoMode] Added task '{}' to goal '{}'", task.getTitle(), goal.getTitle());
+        return task;
+    }
+
+    public AutoTask createTask(String goalId, String title, String description, String prompt,
+            AutoTask.TaskStatus status) {
+        Goal targetGoal = resolveTaskGoal(goalId);
+        validateTaskCapacity(targetGoal);
+
+        Instant now = Instant.now();
+        AutoTask task = AutoTask.builder()
+                .id(UUID.randomUUID().toString())
+                .goalId(targetGoal.getId())
+                .title(requireTitle(title, "Task title is required"))
+                .description(normalizeOptionalValue(description))
+                .prompt(normalizeOptionalValue(prompt))
+                .status(status != null ? status : AutoTask.TaskStatus.PENDING)
+                .order(nextTaskOrder(targetGoal))
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+
+        targetGoal.getTasks().add(task);
+        targetGoal.setUpdatedAt(now);
+        saveGoals(getGoals());
+        log.info("[AutoMode] Created task '{}' in goal '{}'", task.getTitle(), targetGoal.getTitle());
         return task;
     }
 
@@ -175,12 +247,11 @@ public class AutoModeService {
      * Add a standalone task to the system Inbox goal.
      */
     public AutoTask addStandaloneTask(String title, String description) {
-        Goal inboxGoal = getOrCreateInboxGoal();
-        int nextOrder = inboxGoal.getTasks().stream()
-                .mapToInt(AutoTask::getOrder)
-                .max()
-                .orElse(0) + 1;
-        return addTask(inboxGoal.getId(), title, description, nextOrder);
+        return addStandaloneTask(title, description, null);
+    }
+
+    public AutoTask addStandaloneTask(String title, String description, String prompt) {
+        return createTask(null, title, description, prompt, AutoTask.TaskStatus.PENDING);
     }
 
     public boolean isInboxGoal(Goal goal) {
@@ -225,7 +296,7 @@ public class AutoModeService {
         AutoTask task = goal.getTasks().stream()
                 .filter(t -> t.getId().equals(taskId))
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
+                .orElseThrow(() -> new IllegalArgumentException(TASK_NOT_FOUND + taskId));
 
         task.setStatus(status);
         task.setResult(result);
@@ -245,6 +316,47 @@ public class AutoModeService {
         }
 
         log.info("[AutoMode] Updated task '{}' status to {}", task.getTitle(), status);
+    }
+
+    public Optional<AutoTask> getTask(String taskId) {
+        return findTaskLocation(taskId).map(TaskLocation::task);
+    }
+
+    public AutoTask updateTask(
+            String taskId,
+            String title,
+            String description,
+            String prompt,
+            AutoTask.TaskStatus status) {
+        TaskLocation location = findTaskLocation(taskId)
+                .orElseThrow(() -> new IllegalArgumentException(TASK_NOT_FOUND + taskId));
+
+        Goal goal = location.goal();
+        AutoTask task = location.task();
+        AutoTask.TaskStatus previousStatus = task.getStatus();
+        AutoTask.TaskStatus resolvedStatus = status != null ? status : task.getStatus();
+        Instant now = Instant.now();
+
+        task.setTitle(requireTitle(title, "Task title is required"));
+        task.setDescription(normalizeOptionalValue(description));
+        task.setPrompt(normalizeOptionalValue(prompt));
+        task.setStatus(resolvedStatus);
+        task.setUpdatedAt(now);
+        goal.setUpdatedAt(now);
+        saveGoals(getGoals());
+
+        if (resolvedStatus == AutoTask.TaskStatus.COMPLETED && previousStatus != AutoTask.TaskStatus.COMPLETED) {
+            writeDiary(DiaryEntry.builder()
+                    .timestamp(now)
+                    .type(DiaryEntry.DiaryType.PROGRESS)
+                    .content("Completed task: " + task.getTitle())
+                    .goalId(goal.getId())
+                    .taskId(taskId)
+                    .build());
+        }
+
+        log.info("[AutoMode] Updated task '{}'", task.getTitle());
+        return task;
     }
 
     public Optional<AutoTask> getNextPendingTask() {
@@ -275,6 +387,10 @@ public class AutoModeService {
     }
 
     public void deleteGoal(String goalId) {
+        if (INBOX_GOAL_ID.equals(goalId)) {
+            throw new IllegalArgumentException("Inbox goal cannot be deleted");
+        }
+
         List<Goal> goals = getGoals();
         boolean removed = goals.removeIf(g -> g.getId().equals(goalId));
         if (!removed) {
@@ -298,12 +414,19 @@ public class AutoModeService {
 
         boolean removed = goal.getTasks().removeIf(t -> t.getId().equals(taskId));
         if (!removed) {
-            throw new IllegalArgumentException("Task not found: " + taskId);
+            throw new IllegalArgumentException(TASK_NOT_FOUND + taskId);
         }
 
         goal.setUpdatedAt(Instant.now());
+        rebalanceTaskOrders(goal);
         saveGoals(getGoals());
         log.info("[AutoMode] Deleted task '{}' from goal '{}'", taskId, goal.getTitle());
+    }
+
+    public void deleteTask(String taskId) {
+        TaskLocation location = findTaskLocation(taskId)
+                .orElseThrow(() -> new IllegalArgumentException(TASK_NOT_FOUND + taskId));
+        deleteTask(location.goal().getId(), taskId);
     }
 
     public int clearCompletedGoals() {
@@ -388,6 +511,9 @@ public class AutoModeService {
             if (goal.getDescription() != null && !goal.getDescription().isBlank()) {
                 sb.append("   Description: ").append(goal.getDescription()).append("\n");
             }
+            if (goal.getPrompt() != null && !goal.getPrompt().isBlank()) {
+                sb.append("   Prompt: ").append(goal.getPrompt()).append("\n");
+            }
         }
 
         Optional<AutoTask> nextTask = getNextPendingTask();
@@ -403,6 +529,9 @@ public class AutoModeService {
             sb.append("Status: ").append(task.getStatus()).append("\n");
             if (task.getDescription() != null && !task.getDescription().isBlank()) {
                 sb.append("Details: ").append(task.getDescription()).append("\n");
+            }
+            if (task.getPrompt() != null && !task.getPrompt().isBlank()) {
+                sb.append("Prompt: ").append(task.getPrompt()).append("\n");
             }
         }
 
@@ -487,5 +616,63 @@ public class AutoModeService {
         return getGoals().stream()
                 .filter(g -> g.getTasks().stream().anyMatch(t -> t.getId().equals(taskId)))
                 .findFirst();
+    }
+
+    private Goal resolveTaskGoal(String goalId) {
+        if (StringValueSupport.isBlank(goalId)) {
+            return getOrCreateInboxGoal();
+        }
+        return getGoal(goalId)
+                .orElseThrow(() -> new IllegalArgumentException(GOAL_NOT_FOUND + goalId));
+    }
+
+    private void validateTaskCapacity(Goal goal) {
+        if (goal.getTasks().size() >= MAX_TASKS_PER_GOAL) {
+            throw new IllegalStateException("Maximum tasks per goal reached: " + MAX_TASKS_PER_GOAL);
+        }
+    }
+
+    private int nextTaskOrder(Goal goal) {
+        return goal.getTasks().stream()
+                .mapToInt(AutoTask::getOrder)
+                .max()
+                .orElse(0) + 1;
+    }
+
+    private void rebalanceTaskOrders(Goal goal) {
+        List<AutoTask> orderedTasks = new ArrayList<>(goal.getTasks());
+        orderedTasks.sort(Comparator.comparingInt(AutoTask::getOrder)
+                .thenComparing(AutoTask::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())));
+        for (int index = 0; index < orderedTasks.size(); index++) {
+            orderedTasks.get(index).setOrder(index + 1);
+        }
+    }
+
+    private Optional<TaskLocation> findTaskLocation(String taskId) {
+        for (Goal goal : getGoals()) {
+            for (AutoTask task : goal.getTasks()) {
+                if (task.getId().equals(taskId)) {
+                    return Optional.of(new TaskLocation(goal, task));
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
+    private String normalizeOptionalValue(String value) {
+        if (StringValueSupport.isBlank(value)) {
+            return null;
+        }
+        return value.trim();
+    }
+
+    private String requireTitle(String value, String message) {
+        if (StringValueSupport.isBlank(value)) {
+            throw new IllegalArgumentException(message);
+        }
+        return value.trim();
+    }
+
+    private record TaskLocation(Goal goal, AutoTask task) {
     }
 }
