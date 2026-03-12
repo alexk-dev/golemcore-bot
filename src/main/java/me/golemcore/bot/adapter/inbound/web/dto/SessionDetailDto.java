@@ -35,6 +35,8 @@ public class SessionDetailDto {
         private boolean hasVoice;
         private String model;
         private String modelTier;
+        private String reasoning;
+        private String clientMessageId;
         private boolean autoMode;
         private String autoRunId;
         private String autoScheduleId;
