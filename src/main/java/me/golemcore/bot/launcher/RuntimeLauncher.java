@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Supervises the actual bot runtime so self-update can restart into a staged
@@ -204,7 +205,7 @@ public final class RuntimeLauncher {
 
     private static boolean isWindows() {
         String osName = System.getProperty("os.name", "");
-        return osName.toLowerCase().contains("win");
+        return osName.toLowerCase(Locale.ROOT).contains("win");
     }
 
     private static String safeMessage(Throwable throwable) {
