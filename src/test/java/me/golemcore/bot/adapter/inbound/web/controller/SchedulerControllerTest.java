@@ -142,6 +142,60 @@ class SchedulerControllerTest {
     }
 
     @Test
+    void getStateShouldResolveStandaloneTaskScheduleLabel() {
+        AutoTask standaloneTask = AutoTask.builder()
+                .id("task-standalone-1")
+                .goalId("inbox")
+                .title("Investigate flaky test")
+                .status(AutoTask.TaskStatus.PENDING)
+                .order(1)
+                .build();
+        Goal goal = Goal.builder()
+                .id("goal-1")
+                .title("Release v1")
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(List.of())
+                .createdAt(Instant.parse("2026-03-01T00:00:00Z"))
+                .build();
+        Goal inbox = Goal.builder()
+                .id("inbox")
+                .title("Inbox")
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(List.of(standaloneTask))
+                .createdAt(Instant.parse("2026-03-01T00:30:00Z"))
+                .build();
+        ScheduleEntry entry = ScheduleEntry.builder()
+                .id("sched-task-standalone")
+                .type(ScheduleEntry.ScheduleType.TASK)
+                .targetId("task-standalone-1")
+                .cronExpression("0 0 9 * * *")
+                .enabled(true)
+                .maxExecutions(3)
+                .executionCount(1)
+                .createdAt(Instant.parse("2026-03-01T01:00:00Z"))
+                .updatedAt(Instant.parse("2026-03-01T01:00:00Z"))
+                .build();
+
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+        when(autoModeService.getGoals()).thenReturn(List.of(goal, inbox));
+        when(autoModeService.isInboxGoal(goal)).thenReturn(false);
+        when(autoModeService.isInboxGoal(inbox)).thenReturn(true);
+        when(scheduleService.getSchedules()).thenReturn(List.of(entry));
+
+        StepVerifier.create(controller.getState())
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    SchedulerController.SchedulerStateResponse body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals(1, body.standaloneTasks().size());
+                    assertEquals("Investigate flaky test", body.standaloneTasks().get(0).title());
+                    assertEquals("Investigate flaky test", body.schedules().get(0).targetLabel());
+                })
+                .verifyComplete();
+    }
+
+    @Test
     void createScheduleShouldRejectWhenFeatureDisabled() {
         when(autoModeService.isFeatureEnabled()).thenReturn(false);
 
@@ -409,6 +463,46 @@ class SchedulerControllerTest {
     }
 
     @Test
+    void createScheduleShouldSortAndDeduplicateCustomDays() {
+        Goal goal = Goal.builder().id("goal-1").title("Goal").build();
+        ScheduleEntry created = ScheduleEntry.builder()
+                .id("sched-goal-custom")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId("goal-1")
+                .cronExpression("0 45 8 * * MON,WED,FRI")
+                .enabled(true)
+                .maxExecutions(1)
+                .executionCount(0)
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .build();
+
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
+        when(autoModeService.getGoals()).thenReturn(List.of(goal));
+        when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.GOAL), eq("goal-1"),
+                eq("0 45 8 * * MON,WED,FRI"), eq(1)))
+                .thenReturn(created);
+
+        SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
+                "GOAL",
+                "goal-1",
+                "custom",
+                List.of(5, 1, 5, 3),
+                "08:45",
+                1);
+
+        StepVerifier.create(controller.createSchedule(request))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.CREATED, response.getStatusCode());
+                    SchedulerController.ScheduleDto body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals("0 45 8 * * MON,WED,FRI", body.cronExpression());
+                })
+                .verifyComplete();
+    }
+
+    @Test
     void updateScheduleShouldUpdateExistingSchedule() {
         Goal goal = Goal.builder().id("goal-1").title("Goal").build();
         ScheduleEntry updated = ScheduleEntry.builder()
@@ -456,6 +550,79 @@ class SchedulerControllerTest {
                     assertEquals(false, body.enabled());
                 })
                 .verifyComplete();
+    }
+
+    @Test
+    void updateScheduleShouldDefaultEnabledToTrueWhenMissing() {
+        Goal goal = Goal.builder().id("goal-1").title("Goal").build();
+        ScheduleEntry updated = ScheduleEntry.builder()
+                .id("sched-goal-default-enabled")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId("goal-1")
+                .cronExpression("0 0 6 * * *")
+                .enabled(true)
+                .maxExecutions(2)
+                .executionCount(1)
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .build();
+
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
+        when(autoModeService.getGoals()).thenReturn(List.of(goal));
+        when(scheduleService.updateSchedule(
+                eq("sched-goal-default-enabled"),
+                eq(ScheduleEntry.ScheduleType.GOAL),
+                eq("goal-1"),
+                eq("0 0 6 * * *"),
+                eq(2),
+                eq(true)))
+                .thenReturn(updated);
+
+        SchedulerController.UpdateScheduleRequest request = new SchedulerController.UpdateScheduleRequest(
+                "GOAL",
+                "goal-1",
+                "daily",
+                List.of(),
+                "06:00",
+                2,
+                "simple",
+                null,
+                null);
+
+        StepVerifier.create(controller.updateSchedule("sched-goal-default-enabled", request))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    SchedulerController.ScheduleDto body = response.getBody();
+                    assertNotNull(body);
+                    assertTrue(body.enabled());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void updateScheduleShouldRejectAdvancedModeWithoutCronExpression() {
+        Goal goal = Goal.builder().id("goal-1").title("Goal").build();
+
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
+
+        SchedulerController.UpdateScheduleRequest request = new SchedulerController.UpdateScheduleRequest(
+                "GOAL",
+                "goal-1",
+                null,
+                List.of(),
+                null,
+                2,
+                "advanced",
+                " ",
+                true);
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> controller.updateSchedule("sched-goal-advanced", request));
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+        assertTrue(exception.getReason() != null && exception.getReason().contains("cronExpression is required"));
     }
 
     @Test

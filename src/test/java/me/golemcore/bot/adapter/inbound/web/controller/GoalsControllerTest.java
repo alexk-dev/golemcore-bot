@@ -156,6 +156,67 @@ class GoalsControllerTest {
     }
 
     @Test
+    void createTaskShouldRejectUnsupportedStatus() {
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+
+        GoalsController.CreateTaskRequest request = new GoalsController.CreateTaskRequest(
+                "goal-1",
+                "Review crash logs",
+                "Check prod errors",
+                null,
+                "done-ish");
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> controller.createTask(request));
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+        assertTrue(exception.getReason() != null && exception.getReason().contains("Unsupported task status"));
+    }
+
+    @Test
+    void updateTaskShouldMarkTaskAsStandaloneWhenInboxGoalOwnsIt() {
+        AutoTask task = AutoTask.builder()
+                .id("task-1")
+                .goalId("inbox")
+                .title("Review crash logs")
+                .description("Check prod errors")
+                .prompt(null)
+                .status(AutoTask.TaskStatus.COMPLETED)
+                .order(1)
+                .build();
+        Goal inbox = Goal.builder().id("inbox").title("Inbox").build();
+
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(autoModeService.updateTask(
+                "task-1",
+                "Review crash logs",
+                "Check prod errors",
+                null,
+                AutoTask.TaskStatus.COMPLETED))
+                .thenReturn(task);
+        when(autoModeService.findGoalForTask("task-1")).thenReturn(Optional.of(inbox));
+        when(autoModeService.isInboxGoal(inbox)).thenReturn(true);
+
+        GoalsController.UpdateTaskRequest request = new GoalsController.UpdateTaskRequest(
+                "Review crash logs",
+                "Check prod errors",
+                null,
+                "completed");
+
+        StepVerifier.create(controller.updateTask("task-1", request))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    GoalsController.TaskDto body = response.getBody();
+                    assertNotNull(body);
+                    assertTrue(body.standalone());
+                    assertNull(body.goalId());
+                    assertEquals("COMPLETED", body.status());
+                })
+                .verifyComplete();
+    }
+
+    @Test
     void updateGoalShouldRejectWhenFeatureDisabled() {
         when(autoModeService.isFeatureEnabled()).thenReturn(false);
 

@@ -285,6 +285,47 @@ class AutoModeSchedulerTest {
     }
 
     @Test
+    void shouldProcessStandaloneTaskScheduleStoredInInboxGoal() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+
+        AutoTask task = AutoTask.builder()
+                .id("task-standalone")
+                .goalId("inbox")
+                .title("Check support queue")
+                .prompt("   ")
+                .status(AutoTask.TaskStatus.PENDING)
+                .order(1)
+                .build();
+        Goal inbox = Goal.builder()
+                .id("inbox")
+                .title("Inbox")
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>(List.of(task)))
+                .build();
+        when(autoModeService.findGoalForTask("task-standalone")).thenReturn(Optional.of(inbox));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-task-standalone")
+                .type(ScheduleEntry.ScheduleType.TASK)
+                .targetId("task-standalone")
+                .cronExpression("0 0 15 * * *")
+                .enabled(true)
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        scheduler.tick();
+
+        ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
+        verify(agentLoop).processMessage(captor.capture());
+
+        Message sent = captor.getValue();
+        assertTrue(sent.getContent().contains("Check support queue"));
+        assertEquals("sched-task-standalone", sent.getMetadata().get(ContextAttributes.AUTO_SCHEDULE_ID));
+        assertEquals("task-standalone", sent.getMetadata().get(ContextAttributes.AUTO_TASK_ID));
+        verify(scheduleService).recordExecution("sched-task-standalone");
+    }
+
+    @Test
     void shouldSkipTickWhenExecutionInProgress() {
         when(autoModeService.isAutoModeEnabled()).thenReturn(true);
 

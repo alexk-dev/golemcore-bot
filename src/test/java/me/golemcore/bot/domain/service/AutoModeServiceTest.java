@@ -75,6 +75,27 @@ class AutoModeServiceTest {
     }
 
     @Test
+    void createGoal_shouldIgnoreInboxWhenCountingActiveGoalLimit() throws Exception {
+        when(runtimeConfigService.getAutoMaxGoals()).thenReturn(1);
+
+        Goal inbox = Goal.builder()
+                .id("inbox")
+                .title("Inbox")
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>())
+                .createdAt(Instant.now())
+                .build();
+        String goalsJson = objectMapper.writeValueAsString(List.of(inbox));
+        when(storagePort.getText(AUTO_DIR, GOALS_FILE))
+                .thenReturn(CompletableFuture.completedFuture(goalsJson));
+
+        Goal created = service.createGoal("Release v3", "Ship the release");
+
+        assertEquals("Release v3", created.getTitle());
+        verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq(GOALS_FILE), anyString());
+    }
+
+    @Test
     void createGoal_throwsWhenMaxActiveGoalsReached() throws Exception {
         // Pre-load 3 active goals
         List<Goal> existingGoals = new ArrayList<>();
@@ -176,6 +197,20 @@ class AutoModeServiceTest {
     }
 
     @Test
+    void createTask_withBlankGoalIdCreatesStandaloneInboxTaskAndNormalizesPrompt() throws Exception {
+        when(storagePort.getText(AUTO_DIR, GOALS_FILE))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        AutoTask task = service.createTask("   ", "Review alerts", "Investigate spikes", "   ", null);
+
+        assertEquals("inbox", task.getGoalId());
+        assertEquals("Review alerts", task.getTitle());
+        assertNull(task.getPrompt());
+        assertEquals(AutoTask.TaskStatus.PENDING, task.getStatus());
+        assertEquals(1, service.getOrCreateInboxGoal().getTasks().size());
+    }
+
+    @Test
     void updateGoal_updatesFieldsAndStatus() throws Exception {
         Goal goal = Goal.builder()
                 .id(GOAL_ID)
@@ -201,6 +236,26 @@ class AutoModeServiceTest {
         assertEquals("Execute updated prompt", updated.getPrompt());
         assertEquals(Goal.GoalStatus.PAUSED, updated.getStatus());
         verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq(GOALS_FILE), anyString());
+    }
+
+    @Test
+    void updateGoal_throwsWhenEditingInboxGoal() throws Exception {
+        Goal inbox = Goal.builder()
+                .id("inbox")
+                .title("Inbox")
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>())
+                .createdAt(Instant.now())
+                .build();
+        String goalsJson = objectMapper.writeValueAsString(List.of(inbox));
+        when(storagePort.getText(AUTO_DIR, GOALS_FILE))
+                .thenReturn(CompletableFuture.completedFuture(goalsJson));
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> service.updateGoal("inbox", "Inbox", "Desc", "Prompt", Goal.GoalStatus.ACTIVE));
+
+        assertEquals("Inbox goal cannot be edited", exception.getMessage());
     }
 
     @Test
@@ -486,6 +541,57 @@ class AutoModeServiceTest {
         List<Goal> savedGoals = objectMapper.readValue(captor.getValue(), new TypeReference<>() {
         });
         assertTrue(savedGoals.get(0).getTasks().isEmpty());
+    }
+
+    @Test
+    void deleteTask_byTaskIdRebalancesRemainingOrders() throws Exception {
+        AutoTask firstTask = AutoTask.builder()
+                .id("task-1")
+                .goalId(GOAL_ID)
+                .title("First")
+                .status(AutoTask.TaskStatus.PENDING)
+                .order(1)
+                .createdAt(Instant.now().minusSeconds(60))
+                .build();
+        AutoTask secondTask = AutoTask.builder()
+                .id("task-2")
+                .goalId(GOAL_ID)
+                .title("Second")
+                .status(AutoTask.TaskStatus.PENDING)
+                .order(2)
+                .createdAt(Instant.now().minusSeconds(30))
+                .build();
+        AutoTask thirdTask = AutoTask.builder()
+                .id("task-3")
+                .goalId(GOAL_ID)
+                .title("Third")
+                .status(AutoTask.TaskStatus.PENDING)
+                .order(3)
+                .createdAt(Instant.now())
+                .build();
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(TEST_GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>(List.of(firstTask, secondTask, thirdTask)))
+                .createdAt(Instant.now())
+                .build();
+        String goalsJson = objectMapper.writeValueAsString(List.of(goal));
+        when(storagePort.getText(AUTO_DIR, GOALS_FILE))
+                .thenReturn(CompletableFuture.completedFuture(goalsJson));
+
+        service.deleteTask("task-2");
+
+        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+        verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq(GOALS_FILE), captor.capture());
+        List<Goal> savedGoals = objectMapper.readValue(captor.getValue(), new TypeReference<>() {
+        });
+        List<AutoTask> savedTasks = savedGoals.get(0).getTasks();
+        assertEquals(2, savedTasks.size());
+        assertEquals("task-1", savedTasks.get(0).getId());
+        assertEquals(1, savedTasks.get(0).getOrder());
+        assertEquals("task-3", savedTasks.get(1).getId());
+        assertEquals(2, savedTasks.get(1).getOrder());
     }
 
     @Test

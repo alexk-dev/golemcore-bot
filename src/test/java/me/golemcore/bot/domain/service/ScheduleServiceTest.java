@@ -270,6 +270,27 @@ class ScheduleServiceTest {
     }
 
     @Test
+    void shouldKeepUpdatedScheduleDisabledWhenNewLimitIsAlreadyExhausted() {
+        service.createSchedule(ScheduleEntry.ScheduleType.GOAL, TARGET_GOAL_1,
+                CRON_DAILY_9AM, -1);
+
+        ScheduleEntry entry = service.getSchedules().get(0);
+        entry.setExecutionCount(2);
+
+        ScheduleEntry updated = service.updateSchedule(
+                entry.getId(),
+                ScheduleEntry.ScheduleType.GOAL,
+                TARGET_GOAL_1,
+                CRON_DAILY_NOON,
+                2,
+                true);
+
+        assertFalse(updated.isEnabled());
+        assertNull(updated.getNextExecutionAt());
+        assertEquals(2, updated.getExecutionCount());
+    }
+
+    @Test
     void shouldThrowWhenDeletingNonexistentSchedule() {
         assertThrows(IllegalArgumentException.class,
                 () -> service.deleteSchedule("nonexistent-id"));
