@@ -41,6 +41,7 @@ public class WebSocketChatHandler implements WebSocketHandler {
     private static final int MAX_IMAGE_ATTACHMENTS = 6;
     private static final int MAX_IMAGE_BYTES = 8 * 1024 * 1024;
     private static final String CHANNEL_TYPE = "web";
+    private static final String MESSAGE_TYPE_BIND = "bind";
 
     private final JwtTokenProvider jwtTokenProvider;
     private final WebChannelAdapter webChannelAdapter;
@@ -77,12 +78,18 @@ public class WebSocketChatHandler implements WebSocketHandler {
             @SuppressWarnings("unchecked")
             Map<String, Object> json = objectMapper.readValue(payload, Map.class);
 
+            String messageType = asString(json.get("type"));
             String text = (String) json.get("text");
             String sessionId = normalizeSessionId((String) json.get("sessionId"), connectionId);
             String clientInstanceId = normalizeClientInstanceId((String) json.get("clientInstanceId"));
+            String clientMessageId = normalizeClientMessageId(asString(json.get("clientMessageId")));
             List<Map<String, Object>> attachments = extractImageAttachments(json.get("attachments"));
             webChannelAdapter.bindConnectionToChatId(connectionId, sessionId);
             bindWebPointer(username, clientInstanceId, sessionId);
+
+            if (MESSAGE_TYPE_BIND.equals(messageType)) {
+                return;
+            }
 
             if ((text == null || text.isBlank()) && attachments.isEmpty()) {
                 return;
@@ -96,7 +103,14 @@ public class WebSocketChatHandler implements WebSocketHandler {
 
             Map<String, Object> metadata = null;
             if (!attachments.isEmpty()) {
-                metadata = Map.of("attachments", attachments);
+                metadata = new LinkedHashMap<>();
+                metadata.put("attachments", attachments);
+            }
+            if (clientMessageId != null) {
+                if (metadata == null) {
+                    metadata = new LinkedHashMap<>();
+                }
+                metadata.put("clientMessageId", clientMessageId);
             }
 
             Message message = Message.builder()
@@ -234,6 +248,14 @@ public class WebSocketChatHandler implements WebSocketHandler {
             return null;
         }
         String candidate = clientInstanceId.trim();
+        return candidate.isEmpty() ? null : candidate;
+    }
+
+    private String normalizeClientMessageId(String clientMessageId) {
+        if (StringValueSupport.isBlank(clientMessageId)) {
+            return null;
+        }
+        String candidate = clientMessageId.trim();
         return candidate.isEmpty() ? null : candidate;
     }
 

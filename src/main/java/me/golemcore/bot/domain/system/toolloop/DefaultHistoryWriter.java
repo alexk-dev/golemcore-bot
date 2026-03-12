@@ -103,6 +103,11 @@ public class DefaultHistoryWriter implements HistoryWriter {
             metadata.put("model", model);
         }
 
+        String reasoning = context.getAttribute(ContextAttributes.LLM_REASONING);
+        if (reasoning != null && !reasoning.isBlank() && !"none".equals(reasoning)) {
+            metadata.put("reasoning", reasoning);
+        }
+
         metadata.putAll(AutoRunContextSupport.buildAutoMessageMetadata(context));
         return metadata;
     }

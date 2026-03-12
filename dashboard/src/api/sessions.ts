@@ -36,6 +36,15 @@ export interface MessageInfo {
   hasVoice: boolean;
   model: string | null;
   modelTier: string | null;
+  reasoning: string | null;
+  clientMessageId: string | null;
+}
+
+export interface SessionMessagesPage {
+  sessionId: string;
+  messages: MessageInfo[];
+  hasMore: boolean;
+  oldestMessageId: string | null;
 }
 
 export interface ActiveSession {
@@ -81,6 +90,13 @@ export async function getActiveSession(channel: string, clientInstanceId: string
   return data;
 }
 
+export async function resolveSession(channel: string, conversationKey: string): Promise<SessionSummary> {
+  const { data } = await client.get<SessionSummary>('/sessions/resolve', {
+    params: { channel, conversationKey },
+  });
+  return data;
+}
+
 export async function setActiveSession(request: SetActiveSessionRequest): Promise<ActiveSession> {
   const { data } = await client.post<ActiveSession>('/sessions/active', request);
   return data;
@@ -93,6 +109,20 @@ export async function createSession(request: CreateSessionRequest): Promise<Sess
 
 export async function getSession(id: string): Promise<SessionDetail> {
   const { data } = await client.get<SessionDetail>(`/sessions/${encodeURIComponent(id)}`);
+  return data;
+}
+
+export async function getSessionMessages(
+  id: string,
+  limit = 50,
+  beforeMessageId?: string | null,
+): Promise<SessionMessagesPage> {
+  const { data } = await client.get<SessionMessagesPage>(`/sessions/${encodeURIComponent(id)}/messages`, {
+    params: {
+      limit,
+      ...(beforeMessageId != null && beforeMessageId.length > 0 ? { beforeMessageId } : {}),
+    },
+  });
   return data;
 }
 

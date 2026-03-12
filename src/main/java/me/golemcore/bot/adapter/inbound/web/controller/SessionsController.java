@@ -6,6 +6,7 @@ import me.golemcore.bot.adapter.inbound.web.dto.ActiveSessionRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.ActiveSessionResponse;
 import me.golemcore.bot.adapter.inbound.web.dto.CreateSessionRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionDetailDto;
+import me.golemcore.bot.adapter.inbound.web.dto.SessionMessagesPageDto;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionSummaryDto;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
@@ -50,6 +51,7 @@ public class SessionsController {
     private static final String CHANNEL_WEB = "web";
     private static final String CHANNEL_TELEGRAM = "telegram";
     private static final int MAX_RECENT_LIMIT = 20;
+    private static final int MAX_PAGE_LIMIT = 100;
     private static final int TITLE_MAX_LEN = 64;
     private static final int PREVIEW_MAX_LEN = 160;
     private static final int START_WITH_INDEX = 0;
@@ -72,6 +74,25 @@ public class SessionsController {
                 .map(session -> toSummary(session, false))
                 .toList();
         return Mono.just(ResponseEntity.ok(dtos));
+    }
+
+    @GetMapping("/resolve")
+    public Mono<ResponseEntity<SessionSummaryDto>> resolveSession(
+            @RequestParam(defaultValue = CHANNEL_WEB) String channel,
+            @RequestParam String conversationKey) {
+        String normalizedChannel = defaultIfBlank(channel, CHANNEL_WEB);
+        if (StringValueSupport.isBlank(conversationKey)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "conversationKey is required");
+        }
+
+        String normalizedConversationKey = conversationKey.trim();
+        Optional<AgentSession> match = sessionPort.listByChannelType(normalizedChannel).stream()
+                .filter(session -> matchesConversationKey(session, normalizedConversationKey))
+                .findFirst();
+        if (match.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found");
+        }
+        return Mono.just(ResponseEntity.ok(toSummary(match.get(), false)));
     }
 
     @GetMapping("/recent")
@@ -223,6 +244,33 @@ public class SessionsController {
         return Mono.just(ResponseEntity.ok(toDetail(session.get())));
     }
 
+    @GetMapping("/{id}/messages")
+    public Mono<ResponseEntity<SessionMessagesPageDto>> getSessionMessages(
+            @PathVariable String id,
+            @RequestParam(defaultValue = "50") int limit,
+            @RequestParam(required = false) String beforeMessageId) {
+        Optional<AgentSession> session = sessionPort.get(id);
+        if (session.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found");
+        }
+
+        int normalizedLimit = Math.max(1, Math.min(limit, MAX_PAGE_LIMIT));
+        List<Message> visibleMessages = getVisibleMessages(session.get());
+        int endExclusive = resolvePageEndExclusive(visibleMessages, beforeMessageId);
+        int startInclusive = Math.max(START_WITH_INDEX, endExclusive - normalizedLimit);
+        List<SessionDetailDto.MessageDto> page = visibleMessages.subList(startInclusive, endExclusive).stream()
+                .map(this::toMessageDto)
+                .toList();
+        String oldestMessageId = page.isEmpty() ? null : page.get(START_WITH_INDEX).getId();
+
+        return Mono.just(ResponseEntity.ok(SessionMessagesPageDto.builder()
+                .sessionId(id)
+                .messages(page)
+                .hasMore(startInclusive > START_WITH_INDEX)
+                .oldestMessageId(oldestMessageId)
+                .build()));
+    }
+
     @DeleteMapping("/{id}")
     public Mono<ResponseEntity<Void>> deleteSession(@PathVariable String id) {
         Optional<AgentSession> deletedSession = sessionPort.get(id);
@@ -290,6 +338,8 @@ public class SessionsController {
     private SessionDetailDto.MessageDto toMessageDto(Message msg) {
         String model = null;
         String modelTier = null;
+        String reasoning = null;
+        String clientMessageId = null;
         boolean autoMode = false;
         String autoRunId = null;
         String autoScheduleId = null;
@@ -303,6 +353,14 @@ public class SessionsController {
             Object tierValue = msg.getMetadata().get("modelTier");
             if (tierValue instanceof String) {
                 modelTier = (String) tierValue;
+            }
+            Object reasoningValue = msg.getMetadata().get("reasoning");
+            if (reasoningValue instanceof String) {
+                reasoning = (String) reasoningValue;
+            }
+            Object clientMessageIdValue = msg.getMetadata().get("clientMessageId");
+            if (clientMessageIdValue instanceof String) {
+                clientMessageId = (String) clientMessageIdValue;
             }
             autoMode = AutoRunContextSupport.isAutoMetadata(msg.getMetadata());
             autoRunId = AutoRunContextSupport.readMetadataString(msg.getMetadata(), ContextAttributes.AUTO_RUN_ID);
@@ -324,6 +382,8 @@ public class SessionsController {
                 .hasVoice(msg.hasVoice())
                 .model(model)
                 .modelTier(modelTier)
+                .reasoning(reasoning)
+                .clientMessageId(clientMessageId)
                 .autoMode(autoMode)
                 .autoRunId(autoRunId)
                 .autoScheduleId(autoScheduleId)
@@ -350,6 +410,46 @@ public class SessionsController {
                 .sessionId(channel + ":" + conversationKey)
                 .source(source)
                 .build();
+    }
+
+    private boolean matchesConversationKey(AgentSession session, String conversationKey) {
+        if (session == null || StringValueSupport.isBlank(conversationKey)) {
+            return false;
+        }
+        String resolvedConversationKey = SessionIdentitySupport.resolveConversationKey(session);
+        return conversationKey.equals(resolvedConversationKey) || conversationKey.equals(session.getChatId());
+    }
+
+    private List<Message> getVisibleMessages(AgentSession session) {
+        if (session == null || session.getMessages() == null) {
+            return List.of();
+        }
+        return session.getMessages().stream()
+                .filter(message -> message != null
+                        && ("user".equals(message.getRole()) || ROLE_ASSISTANT.equals(message.getRole()))
+                        && hasVisibleContent(message.getContent()))
+                .toList();
+    }
+
+    private int resolvePageEndExclusive(List<Message> messages, String beforeMessageId) {
+        if (messages == null || messages.isEmpty()) {
+            return START_WITH_INDEX;
+        }
+        if (StringValueSupport.isBlank(beforeMessageId)) {
+            return messages.size();
+        }
+        String normalizedBeforeMessageId = beforeMessageId.trim();
+        for (int index = START_WITH_INDEX; index < messages.size(); index++) {
+            Message message = messages.get(index);
+            if (message != null && normalizedBeforeMessageId.equals(message.getId())) {
+                return index;
+            }
+        }
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "beforeMessageId not found");
+    }
+
+    private boolean hasVisibleContent(String content) {
+        return content != null && !content.trim().isEmpty();
     }
 
     private String resolvePointerKey(
