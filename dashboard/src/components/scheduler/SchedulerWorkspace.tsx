@@ -38,6 +38,7 @@ export interface SchedulerWorkspaceProps {
   onCronExpressionChange: ReturnType<typeof useSchedulerForm>['setCronExpression'];
   onLimitInputChange: ReturnType<typeof useSchedulerForm>['setLimitInput'];
   onEnabledChange: ReturnType<typeof useSchedulerForm>['setEnabled'];
+  onClearContextBeforeRunChange: ReturnType<typeof useSchedulerForm>['setClearContextBeforeRun'];
   onSubmitSchedule: () => void;
   onCancelEditSchedule: () => void;
   onOpenLogs: (schedule: SchedulerSchedule) => void;
@@ -76,6 +77,7 @@ export function SchedulerWorkspace({
   onCronExpressionChange,
   onLimitInputChange,
   onEnabledChange,
+  onClearContextBeforeRunChange,
   onSubmitSchedule,
   onCancelEditSchedule,
   onOpenLogs,
@@ -128,6 +130,7 @@ export function SchedulerWorkspace({
               onLimitInputChange={onLimitInputChange}
               onPresetLimitSelect={onLimitInputChange}
               onEnabledChange={onEnabledChange}
+              onClearContextBeforeRunChange={onClearContextBeforeRunChange}
               onSubmit={onSubmitSchedule}
               onCancelEdit={onCancelEditSchedule}
             />

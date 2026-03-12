@@ -85,6 +85,15 @@ class ScheduleServiceTest {
     }
 
     @Test
+    void shouldCreateScheduleWithClearContextBeforeRunEnabled() {
+        ScheduleEntry entry = service.createSchedule(
+                ScheduleEntry.ScheduleType.GOAL, TARGET_GOAL_1,
+                CRON_DAILY_9AM, -1, true);
+
+        assertTrue(entry.isClearContextBeforeRun());
+    }
+
+    @Test
     void shouldCreateOneShotScheduleWithMaxExecutionsOne() {
         ScheduleEntry entry = service.createSchedule(
                 ScheduleEntry.ScheduleType.TASK, "task-789",
@@ -291,6 +300,43 @@ class ScheduleServiceTest {
     }
 
     @Test
+    void shouldPreserveClearContextBeforeRunWhenUpdateOmitsFlag() {
+        service.createSchedule(ScheduleEntry.ScheduleType.GOAL, TARGET_GOAL_1,
+                CRON_DAILY_9AM, -1, true);
+
+        ScheduleEntry entry = service.getSchedules().get(0);
+
+        ScheduleEntry updated = service.updateSchedule(
+                entry.getId(),
+                ScheduleEntry.ScheduleType.GOAL,
+                TARGET_GOAL_1,
+                CRON_DAILY_NOON,
+                -1,
+                true);
+
+        assertTrue(updated.isClearContextBeforeRun());
+    }
+
+    @Test
+    void shouldUpdateClearContextBeforeRunWhenProvided() {
+        service.createSchedule(ScheduleEntry.ScheduleType.GOAL, TARGET_GOAL_1,
+                CRON_DAILY_9AM, -1);
+
+        ScheduleEntry entry = service.getSchedules().get(0);
+
+        ScheduleEntry updated = service.updateSchedule(
+                entry.getId(),
+                ScheduleEntry.ScheduleType.GOAL,
+                TARGET_GOAL_1,
+                CRON_DAILY_NOON,
+                -1,
+                true,
+                true);
+
+        assertTrue(updated.isClearContextBeforeRun());
+    }
+
+    @Test
     void shouldThrowWhenDeletingNonexistentSchedule() {
         assertThrows(IllegalArgumentException.class,
                 () -> service.deleteSchedule("nonexistent-id"));
@@ -340,7 +386,7 @@ class ScheduleServiceTest {
     void shouldPersistAndLoadSchedulesRoundTrip() throws Exception {
         // Create a schedule
         service.createSchedule(ScheduleEntry.ScheduleType.GOAL, TARGET_GOAL_1,
-                CRON_WEEKDAYS_9AM, -1);
+                CRON_WEEKDAYS_9AM, -1, true);
 
         // Capture what was persisted
         org.mockito.ArgumentCaptor<String> jsonCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
@@ -359,5 +405,6 @@ class ScheduleServiceTest {
         assertEquals(TARGET_GOAL_1, loaded.get(0).getTargetId());
         assertEquals(ScheduleEntry.ScheduleType.GOAL, loaded.get(0).getType());
         assertEquals(CRON_WEEKDAYS_9AM, loaded.get(0).getCronExpression());
+        assertTrue(loaded.get(0).isClearContextBeforeRun());
     }
 }

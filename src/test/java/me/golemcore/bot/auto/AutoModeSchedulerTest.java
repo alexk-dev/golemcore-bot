@@ -3,6 +3,7 @@ package me.golemcore.bot.auto;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AutoModeChannelRegisteredEvent;
 import me.golemcore.bot.domain.model.AutoTask;
+import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.Message;
@@ -12,6 +13,7 @@ import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.tools.GoalManagementTool;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -50,6 +52,7 @@ class AutoModeSchedulerTest {
     private GoalManagementTool goalManagementTool;
     private ChannelPort channelPort;
     private RuntimeConfigService runtimeConfigService;
+    private SessionPort sessionPort;
     private AutoModeScheduler scheduler;
 
     @BeforeEach
@@ -59,6 +62,7 @@ class AutoModeSchedulerTest {
         agentLoop = mock(AgentLoop.class);
         goalManagementTool = mock(GoalManagementTool.class);
         channelPort = mock(ChannelPort.class);
+        sessionPort = mock(SessionPort.class);
 
         when(channelPort.getChannelType()).thenReturn(CHANNEL_TYPE_TELEGRAM);
         when(channelPort.sendMessage(anyString(), anyString()))
@@ -73,7 +77,7 @@ class AutoModeSchedulerTest {
 
         scheduler = new AutoModeScheduler(
                 autoModeService, scheduleService, agentLoop, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)));
+                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort);
     }
 
     @Test
@@ -390,6 +394,42 @@ class AutoModeSchedulerTest {
     }
 
     @Test
+    void shouldClearSessionContextBeforeRunWhenScheduleRequestsIt() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+        scheduler.registerChannel(CHANNEL_TYPE_TELEGRAM, "session-42", "transport-42");
+
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>())
+                .createdAt(Instant.now())
+                .build();
+        when(autoModeService.getGoal(GOAL_ID)).thenReturn(Optional.of(goal));
+        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, "session-42"))
+                .thenReturn(AgentSession.builder()
+                        .id(CHANNEL_TYPE_TELEGRAM + ":session-42")
+                        .channelType(CHANNEL_TYPE_TELEGRAM)
+                        .chatId("session-42")
+                        .build());
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-goal-clear")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId(GOAL_ID)
+                .cronExpression(TEST_CRON)
+                .enabled(true)
+                .clearContextBeforeRun(true)
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        scheduler.tick();
+
+        verify(sessionPort).clearMessages(CHANNEL_TYPE_TELEGRAM + ":session-42");
+        verify(agentLoop).processMessage(any(Message.class));
+    }
+
+    @Test
     void shouldSkipGoalScheduleWhenGoalNotFound() {
         when(autoModeService.isAutoModeEnabled()).thenReturn(true);
         when(autoModeService.getGoal("missing-goal")).thenReturn(Optional.empty());
@@ -612,7 +652,7 @@ class AutoModeSchedulerTest {
     void shutdownDoesNotThrowWhenNotInitialized() {
         AutoModeScheduler freshScheduler = new AutoModeScheduler(
                 autoModeService, scheduleService, agentLoop, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)));
+                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort);
 
         assertDoesNotThrow(freshScheduler::shutdown);
     }
@@ -626,7 +666,7 @@ class AutoModeSchedulerTest {
 
         AutoModeScheduler newScheduler = new AutoModeScheduler(
                 autoModeService, scheduleService, agentLoop, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)));
+                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort);
 
         newScheduler.init();
 
@@ -641,7 +681,7 @@ class AutoModeSchedulerTest {
 
         AutoModeScheduler newScheduler = new AutoModeScheduler(
                 autoModeService, scheduleService, agentLoop, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)));
+                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort);
 
         newScheduler.init();
 
@@ -657,7 +697,7 @@ class AutoModeSchedulerTest {
 
         AutoModeScheduler newScheduler = new AutoModeScheduler(
                 autoModeService, scheduleService, agentLoop, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)));
+                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort);
 
         newScheduler.init();
 
@@ -672,7 +712,7 @@ class AutoModeSchedulerTest {
 
         AutoModeScheduler newScheduler = new AutoModeScheduler(
                 autoModeService, scheduleService, agentLoop, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)));
+                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort);
 
         newScheduler.init();
 

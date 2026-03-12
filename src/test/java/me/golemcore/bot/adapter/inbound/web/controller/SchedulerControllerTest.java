@@ -84,6 +84,7 @@ class SchedulerControllerTest {
                     assertEquals(1, body.goals().size());
                     assertEquals(1, body.schedules().size());
                     assertEquals("Prepare notes", body.schedules().get(0).targetLabel());
+                    assertEquals(false, body.schedules().get(0).clearContextBeforeRun());
                 })
                 .verifyComplete();
     }
@@ -463,6 +464,54 @@ class SchedulerControllerTest {
     }
 
     @Test
+    void createScheduleShouldPassClearContextBeforeRunFlag() {
+        Goal goal = Goal.builder().id("goal-1").title("Goal").build();
+        ScheduleEntry created = ScheduleEntry.builder()
+                .id("sched-goal-clear")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId("goal-1")
+                .cronExpression("0 0 9 * * *")
+                .enabled(true)
+                .clearContextBeforeRun(true)
+                .maxExecutions(1)
+                .executionCount(0)
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .build();
+
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
+        when(autoModeService.getGoals()).thenReturn(List.of(goal));
+        when(scheduleService.createSchedule(
+                eq(ScheduleEntry.ScheduleType.GOAL),
+                eq("goal-1"),
+                eq("0 0 9 * * *"),
+                eq(1),
+                eq(true)))
+                .thenReturn(created);
+
+        SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
+                "GOAL",
+                "goal-1",
+                "daily",
+                List.of(),
+                "09:00",
+                1,
+                null,
+                null,
+                true);
+
+        StepVerifier.create(controller.createSchedule(request))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.CREATED, response.getStatusCode());
+                    SchedulerController.ScheduleDto body = response.getBody();
+                    assertNotNull(body);
+                    assertTrue(body.clearContextBeforeRun());
+                })
+                .verifyComplete();
+    }
+
+    @Test
     void createScheduleShouldSortAndDeduplicateCustomDays() {
         Goal goal = Goal.builder().id("goal-1").title("Goal").build();
         ScheduleEntry created = ScheduleEntry.builder()
@@ -596,6 +645,57 @@ class SchedulerControllerTest {
                     SchedulerController.ScheduleDto body = response.getBody();
                     assertNotNull(body);
                     assertTrue(body.enabled());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void updateScheduleShouldPassClearContextBeforeRunFlagWhenProvided() {
+        Goal goal = Goal.builder().id("goal-1").title("Goal").build();
+        ScheduleEntry updated = ScheduleEntry.builder()
+                .id("sched-goal-clear")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId("goal-1")
+                .cronExpression("0 0 6 * * *")
+                .enabled(true)
+                .clearContextBeforeRun(true)
+                .maxExecutions(2)
+                .executionCount(1)
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .build();
+
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
+        when(autoModeService.getGoals()).thenReturn(List.of(goal));
+        when(scheduleService.updateSchedule(
+                eq("sched-goal-clear"),
+                eq(ScheduleEntry.ScheduleType.GOAL),
+                eq("goal-1"),
+                eq("0 0 6 * * *"),
+                eq(2),
+                eq(true),
+                eq(true)))
+                .thenReturn(updated);
+
+        SchedulerController.UpdateScheduleRequest request = new SchedulerController.UpdateScheduleRequest(
+                "GOAL",
+                "goal-1",
+                "daily",
+                List.of(),
+                "06:00",
+                2,
+                "simple",
+                null,
+                true,
+                true);
+
+        StepVerifier.create(controller.updateSchedule("sched-goal-clear", request))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    SchedulerController.ScheduleDto body = response.getBody();
+                    assertNotNull(body);
+                    assertTrue(body.clearContextBeforeRun());
                 })
                 .verifyComplete();
     }

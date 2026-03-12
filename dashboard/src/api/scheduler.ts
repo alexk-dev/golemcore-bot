@@ -14,6 +14,7 @@ export interface SchedulerSchedule {
   targetLabel: string;
   cronExpression: string;
   enabled: boolean;
+  clearContextBeforeRun: boolean;
   maxExecutions: number;
   executionCount: number;
   createdAt: string | null;
@@ -39,6 +40,7 @@ export interface CreateScheduleRequest {
   maxExecutions: number | null;
   mode?: SchedulerMode;
   cronExpression?: string;
+  clearContextBeforeRun: boolean;
 }
 
 export interface UpdateScheduleRequest extends CreateScheduleRequest {

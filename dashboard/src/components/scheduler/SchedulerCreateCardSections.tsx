@@ -67,6 +67,12 @@ interface ScheduleEnabledFieldProps {
   onEnabledChange: (enabled: boolean) => void;
 }
 
+interface ClearContextFieldProps {
+  featureEnabled: boolean;
+  clearContextBeforeRun: boolean;
+  onChange: (clearContextBeforeRun: boolean) => void;
+}
+
 function isSchedulerFrequency(value: string): value is SchedulerFrequency {
   return value === 'daily' || value === 'weekdays' || value === 'weekly' || value === 'custom';
 }
@@ -322,6 +328,27 @@ export function ScheduleEnabledField({
         disabled={!featureEnabled}
         onChange={(event) => onEnabledChange(event.target.checked)}
       />
+    </Form.Group>
+  );
+}
+
+export function ClearContextField({
+  featureEnabled,
+  clearContextBeforeRun,
+  onChange,
+}: ClearContextFieldProps): ReactElement {
+  return (
+    <Form.Group className="mb-3">
+      <Form.Check
+        type="switch"
+        label="Clear session context before each run"
+        checked={clearContextBeforeRun}
+        disabled={!featureEnabled}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <Form.Text className="text-body-secondary">
+        Resets the schedule session transcript before execution. Previous run logs from that session will no longer appear.
+      </Form.Text>
     </Form.Group>
   );
 }

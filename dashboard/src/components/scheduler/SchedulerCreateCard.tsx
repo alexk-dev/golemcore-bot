@@ -14,6 +14,7 @@ import {
 } from './schedulerFormUtils';
 import {
   AdvancedCronFields,
+  ClearContextField,
   RepeatLimitField,
   ScheduleEnabledField,
   SchedulerModeToggle,
@@ -45,6 +46,7 @@ interface SchedulerCreateCardProps {
   onLimitInputChange: (value: string) => void;
   onPresetLimitSelect: (value: string) => void;
   onEnabledChange: (enabled: boolean) => void;
+  onClearContextBeforeRunChange: (clearContextBeforeRun: boolean) => void;
   onSubmit: () => void;
   onCancelEdit: () => void;
 }
@@ -126,6 +128,7 @@ export function SchedulerCreateCard({
   onLimitInputChange,
   onPresetLimitSelect,
   onEnabledChange,
+  onClearContextBeforeRunChange,
   onSubmit,
   onCancelEdit,
 }: SchedulerCreateCardProps): ReactElement {
@@ -188,6 +191,12 @@ export function SchedulerCreateCard({
           limitInput={form.limitInput}
           onLimitInputChange={onLimitInputChange}
           onPresetLimitSelect={onPresetLimitSelect}
+        />
+
+        <ClearContextField
+          featureEnabled={featureEnabled}
+          clearContextBeforeRun={form.clearContextBeforeRun}
+          onChange={onClearContextBeforeRunChange}
         />
 
         {isEditing && (

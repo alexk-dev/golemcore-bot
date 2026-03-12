@@ -69,7 +69,9 @@ public class SchedulerController {
                     mode,
                     request.cronExpression());
 
-            ScheduleEntry entry = scheduleService.createSchedule(targetType, targetId, cronExpression, maxExecutions);
+            ScheduleEntry entry = Boolean.TRUE.equals(request.clearContextBeforeRun())
+                    ? scheduleService.createSchedule(targetType, targetId, cronExpression, maxExecutions, true)
+                    : scheduleService.createSchedule(targetType, targetId, cronExpression, maxExecutions);
             String targetLabel = resolveTargetLabel(entry, autoModeService.getGoals());
             return Mono.just(ResponseEntity.status(HttpStatus.CREATED).body(toScheduleDto(entry, targetLabel)));
         } catch (IllegalArgumentException | IllegalStateException e) {
@@ -99,13 +101,22 @@ public class SchedulerController {
                     mode,
                     request.cronExpression());
 
-            ScheduleEntry entry = scheduleService.updateSchedule(
-                    normalizedScheduleId,
-                    targetType,
-                    targetId,
-                    cronExpression,
-                    maxExecutions,
-                    normalizeEnabled(request.enabled()));
+            ScheduleEntry entry = request.clearContextBeforeRun() != null
+                    ? scheduleService.updateSchedule(
+                            normalizedScheduleId,
+                            targetType,
+                            targetId,
+                            cronExpression,
+                            maxExecutions,
+                            normalizeEnabled(request.enabled()),
+                            request.clearContextBeforeRun())
+                    : scheduleService.updateSchedule(
+                            normalizedScheduleId,
+                            targetType,
+                            targetId,
+                            cronExpression,
+                            maxExecutions,
+                            normalizeEnabled(request.enabled()));
             String targetLabel = resolveTargetLabel(entry, autoModeService.getGoals());
             return Mono.just(ResponseEntity.ok(toScheduleDto(entry, targetLabel)));
         } catch (IllegalArgumentException | IllegalStateException e) {
@@ -223,6 +234,7 @@ public class SchedulerController {
                 targetLabel,
                 entry.getCronExpression(),
                 entry.isEnabled(),
+                entry.isClearContextBeforeRun(),
                 entry.getMaxExecutions(),
                 entry.getExecutionCount(),
                 entry.getCreatedAt(),
@@ -484,7 +496,8 @@ public class SchedulerController {
             String time,
             Integer maxExecutions,
             String mode,
-            String cronExpression) {
+            String cronExpression,
+            Boolean clearContextBeforeRun) {
 
         public CreateScheduleRequest(
                 String targetType,
@@ -493,7 +506,19 @@ public class SchedulerController {
                 List<Integer> days,
                 String time,
                 Integer maxExecutions) {
-            this(targetType, targetId, frequency, days, time, maxExecutions, null, null);
+            this(targetType, targetId, frequency, days, time, maxExecutions, null, null, null);
+        }
+
+        public CreateScheduleRequest(
+                String targetType,
+                String targetId,
+                String frequency,
+                List<Integer> days,
+                String time,
+                Integer maxExecutions,
+                String mode,
+                String cronExpression) {
+            this(targetType, targetId, frequency, days, time, maxExecutions, mode, cronExpression, null);
         }
     }
 
@@ -506,7 +531,21 @@ public class SchedulerController {
             Integer maxExecutions,
             String mode,
             String cronExpression,
-            Boolean enabled) {
+            Boolean enabled,
+            Boolean clearContextBeforeRun) {
+
+        public UpdateScheduleRequest(
+                String targetType,
+                String targetId,
+                String frequency,
+                List<Integer> days,
+                String time,
+                Integer maxExecutions,
+                String mode,
+                String cronExpression,
+                Boolean enabled) {
+            this(targetType, targetId, frequency, days, time, maxExecutions, mode, cronExpression, enabled, null);
+        }
     }
 
     public record SchedulerStateResponse(
@@ -546,6 +585,7 @@ public class SchedulerController {
             String targetLabel,
             String cronExpression,
             boolean enabled,
+            boolean clearContextBeforeRun,
             int maxExecutions,
             int executionCount,
             Instant createdAt,
