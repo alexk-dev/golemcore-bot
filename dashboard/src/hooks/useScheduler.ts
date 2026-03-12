@@ -10,9 +10,13 @@ import {
 import {
   createSchedule,
   deleteSchedule,
+  getSchedulerRun,
+  getSchedulerRuns,
   getSchedulerState,
   type CreateScheduleRequest,
   type DeleteScheduleResponse,
+  type SchedulerRunDetail,
+  type SchedulerRunsResponse,
   type SchedulerSchedule,
   type SchedulerStateResponse,
 } from '../api/scheduler';
@@ -24,6 +28,30 @@ export function useSchedulerState(): UseQueryResult<SchedulerStateResponse, unkn
   return useQuery({
     queryKey: SCHEDULER_QUERY_KEY,
     queryFn: getSchedulerState,
+    refetchInterval: 15000,
+  });
+}
+
+export function useSchedulerRuns(
+  scheduleId: string | null,
+  enabled = true,
+): UseQueryResult<SchedulerRunsResponse, unknown> {
+  return useQuery({
+    queryKey: ['scheduler', 'runs', scheduleId],
+    queryFn: () => getSchedulerRuns(scheduleId ?? undefined),
+    enabled: enabled && scheduleId != null && scheduleId.length > 0,
+    refetchInterval: 15000,
+  });
+}
+
+export function useSchedulerRun(
+  runId: string | null,
+  enabled = true,
+): UseQueryResult<SchedulerRunDetail, unknown> {
+  return useQuery({
+    queryKey: ['scheduler', 'run', runId],
+    queryFn: () => getSchedulerRun(runId ?? ''),
+    enabled: enabled && runId != null && runId.length > 0,
     refetchInterval: 15000,
   });
 }

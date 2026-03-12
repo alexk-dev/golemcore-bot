@@ -7,12 +7,14 @@ interface SchedulerSchedulesCardProps {
   schedules: SchedulerSchedule[];
   busy: boolean;
   onDelete: (scheduleId: string) => void;
+  onViewLogs: (schedule: SchedulerSchedule) => void;
 }
 
 export function SchedulerSchedulesCard({
   schedules,
   busy,
   onDelete,
+  onViewLogs,
 }: SchedulerSchedulesCardProps): ReactElement {
   return (
     <Card className="h-100">
@@ -36,12 +38,27 @@ export function SchedulerSchedulesCard({
                 <tr key={schedule.id}>
                   <td>
                     <div className="fw-semibold">{schedule.targetLabel}</div>
-                    <div className="small text-body-secondary">{schedule.type} · {schedule.id}</div>
+                    <div className="small text-body-secondary">
+                      {schedule.type} · target <code>{schedule.targetId}</code>
+                    </div>
+                    <div className="small text-body-secondary">
+                      schedule <code>{schedule.id}</code>
+                    </div>
                   </td>
                   <td><code>{schedule.cronExpression}</code></td>
                   <td>{schedule.executionCount} / {formatLimit(schedule.maxExecutions)}</td>
                   <td>{formatNextExecution(schedule.nextExecutionAt)}</td>
                   <td className="text-end">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      disabled={busy}
+                      className="me-2"
+                      onClick={() => onViewLogs(schedule)}
+                    >
+                      Logs
+                    </Button>
                     <Button
                       type="button"
                       size="sm"

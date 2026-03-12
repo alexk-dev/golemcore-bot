@@ -2,6 +2,7 @@ import client from './client';
 
 export type SchedulerTargetType = 'GOAL' | 'TASK';
 export type SchedulerFrequency = 'daily' | 'weekdays' | 'weekly' | 'custom';
+export type SchedulerMode = 'simple' | 'advanced';
 
 export interface SchedulerTask {
   id: string;
@@ -41,14 +42,55 @@ export interface SchedulerStateResponse {
 export interface CreateScheduleRequest {
   targetType: SchedulerTargetType;
   targetId: string;
-  frequency: SchedulerFrequency;
-  days: number[];
-  time: string;
+  frequency?: SchedulerFrequency;
+  days?: number[];
+  time?: string;
   maxExecutions: number | null;
+  mode?: SchedulerMode;
+  cronExpression?: string;
 }
 
 export interface DeleteScheduleResponse {
   scheduleId: string;
+}
+
+export interface SchedulerRunSummary {
+  runId: string;
+  sessionId: string;
+  channelType: string;
+  conversationKey: string;
+  transportChatId: string | null;
+  scheduleId: string | null;
+  scheduleTargetType: string | null;
+  scheduleTargetId: string | null;
+  scheduleTargetLabel: string | null;
+  goalId: string | null;
+  goalLabel: string | null;
+  taskId: string | null;
+  taskLabel: string | null;
+  status: string;
+  messageCount: number;
+  startedAt: string | null;
+  lastActivityAt: string | null;
+}
+
+export interface SchedulerRunMessage {
+  id: string;
+  role: string;
+  content: string;
+  timestamp: string | null;
+  hasToolCalls: boolean;
+  hasVoice: boolean;
+  model: string | null;
+  modelTier: string | null;
+}
+
+export interface SchedulerRunDetail extends SchedulerRunSummary {
+  messages: SchedulerRunMessage[];
+}
+
+export interface SchedulerRunsResponse {
+  runs: SchedulerRunSummary[];
 }
 
 export async function getSchedulerState(): Promise<SchedulerStateResponse> {
@@ -63,5 +105,16 @@ export async function createSchedule(request: CreateScheduleRequest): Promise<Sc
 
 export async function deleteSchedule(scheduleId: string): Promise<DeleteScheduleResponse> {
   const { data } = await client.delete<DeleteScheduleResponse>(`/scheduler/schedules/${encodeURIComponent(scheduleId)}`);
+  return data;
+}
+
+export async function getSchedulerRuns(scheduleId?: string): Promise<SchedulerRunsResponse> {
+  const params = scheduleId != null && scheduleId.length > 0 ? { scheduleId } : undefined;
+  const { data } = await client.get<SchedulerRunsResponse>('/scheduler/runs', { params });
+  return data;
+}
+
+export async function getSchedulerRun(runId: string): Promise<SchedulerRunDetail> {
+  const { data } = await client.get<SchedulerRunDetail>(`/scheduler/runs/${encodeURIComponent(runId)}`);
   return data;
 }

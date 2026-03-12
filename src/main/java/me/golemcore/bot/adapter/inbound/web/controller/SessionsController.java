@@ -8,8 +8,10 @@ import me.golemcore.bot.adapter.inbound.web.dto.CreateSessionRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionDetailDto;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionSummaryDto;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.ActiveSessionPointerService;
+import me.golemcore.bot.domain.service.AutoRunContextSupport;
 import me.golemcore.bot.domain.service.ConversationKeyValidator;
 import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import me.golemcore.bot.domain.service.StringValueSupport;
@@ -288,6 +290,11 @@ public class SessionsController {
     private SessionDetailDto.MessageDto toMessageDto(Message msg) {
         String model = null;
         String modelTier = null;
+        boolean autoMode = false;
+        String autoRunId = null;
+        String autoScheduleId = null;
+        String autoGoalId = null;
+        String autoTaskId = null;
         if (msg.getMetadata() != null) {
             Object modelValue = msg.getMetadata().get("model");
             if (modelValue instanceof String) {
@@ -297,6 +304,12 @@ public class SessionsController {
             if (tierValue instanceof String) {
                 modelTier = (String) tierValue;
             }
+            autoMode = AutoRunContextSupport.isAutoMetadata(msg.getMetadata());
+            autoRunId = AutoRunContextSupport.readMetadataString(msg.getMetadata(), ContextAttributes.AUTO_RUN_ID);
+            autoScheduleId = AutoRunContextSupport.readMetadataString(
+                    msg.getMetadata(), ContextAttributes.AUTO_SCHEDULE_ID);
+            autoGoalId = AutoRunContextSupport.readMetadataString(msg.getMetadata(), ContextAttributes.AUTO_GOAL_ID);
+            autoTaskId = AutoRunContextSupport.readMetadataString(msg.getMetadata(), ContextAttributes.AUTO_TASK_ID);
         }
         if (ROLE_ASSISTANT.equals(msg.getRole()) && (modelTier == null || modelTier.isBlank())) {
             modelTier = DEFAULT_MODEL_TIER;
@@ -311,6 +324,11 @@ public class SessionsController {
                 .hasVoice(msg.hasVoice())
                 .model(model)
                 .modelTier(modelTier)
+                .autoMode(autoMode)
+                .autoRunId(autoRunId)
+                .autoScheduleId(autoScheduleId)
+                .autoGoalId(autoGoalId)
+                .autoTaskId(autoTaskId)
                 .build();
     }
 

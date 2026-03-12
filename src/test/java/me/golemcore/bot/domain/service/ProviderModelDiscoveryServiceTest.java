@@ -54,10 +54,10 @@ class ProviderModelDiscoveryServiceTest {
         List<ProviderModelDiscoveryService.DiscoveredModel> models = service.discoverModels("xmesh");
 
         assertEquals(17, models.size());
-        assertTrue(models.stream().anyMatch(model -> model.id().equals("gpt-5.2")));
-        assertTrue(models.stream().anyMatch(model -> model.id().equals("gpt-5.3-codex-spark")));
-        assertTrue(models.stream().anyMatch(model -> model.id().equals("gemini-2.5-pro")));
-        assertTrue(models.stream().anyMatch(model -> model.id().equals("deepseek-coder-v2-lite")));
+        assertTrue(models.stream().anyMatch(model -> "gpt-5.2".equals(model.id())));
+        assertTrue(models.stream().anyMatch(model -> "gpt-5.3-codex-spark".equals(model.id())));
+        assertTrue(models.stream().anyMatch(model -> "gemini-2.5-pro".equals(model.id())));
+        assertTrue(models.stream().anyMatch(model -> "deepseek-coder-v2-lite".equals(model.id())));
 
         HttpRequest capturedRequest = service.getCapturedRequest();
         assertEquals(URI.create("https://model.xmesh.click/v1/models"), capturedRequest.uri());

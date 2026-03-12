@@ -218,7 +218,12 @@ export default function ContextPanel({ tier, tierForce, chatSessionId, onTierCha
           {activeGoals.map((goal) => (
             <div key={goal.id} className="goal-item">
               <div className="d-flex justify-content-between align-items-center">
-                <strong className="goal-title">{goal.title}</strong>
+                <div>
+                  <strong className="goal-title">{goal.title}</strong>
+                  <div className="small text-body-secondary">
+                    <code>{goal.id}</code>
+                  </div>
+                </div>
                 <small className="text-body-secondary">
                   {goal.completedTasks}/{goal.totalTasks}
                 </small>
@@ -228,9 +233,14 @@ export default function ContextPanel({ tier, tierForce, chatSessionId, onTierCha
                   {goal.tasks.map((task) => (
                     <li key={task.id} className={`task-item ${task.status.toLowerCase()}`}>
                       <span className={`task-status-icon ${task.status.toLowerCase()}`} />
-                      <span className={task.status === 'COMPLETED' ? 'text-decoration-line-through text-body-secondary' : ''}>
-                        {task.title}
-                      </span>
+                      <div>
+                        <div className={task.status === 'COMPLETED' ? 'text-decoration-line-through text-body-secondary' : ''}>
+                          {task.title}
+                        </div>
+                        <div className="small text-body-secondary">
+                          <code>{task.id}</code>
+                        </div>
+                      </div>
                     </li>
                   ))}
                 </ul>

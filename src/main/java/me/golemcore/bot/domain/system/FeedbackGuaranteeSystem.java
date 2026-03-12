@@ -118,7 +118,7 @@ public class FeedbackGuaranteeSystem implements AgentSystem {
             return false;
         }
         Message last = context.getMessages().get(context.getMessages().size() - 1);
-        return last.getMetadata() != null && Boolean.TRUE.equals(last.getMetadata().get("auto.mode"));
+        return last.getMetadata() != null && Boolean.TRUE.equals(last.getMetadata().get(ContextAttributes.AUTO_MODE));
     }
 
     private String describeLlmResponse(LlmResponse response) {

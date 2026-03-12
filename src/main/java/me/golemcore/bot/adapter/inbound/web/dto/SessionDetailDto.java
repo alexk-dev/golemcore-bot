@@ -35,5 +35,10 @@ public class SessionDetailDto {
         private boolean hasVoice;
         private String model;
         private String modelTier;
+        private boolean autoMode;
+        private String autoRunId;
+        private String autoScheduleId;
+        private String autoGoalId;
+        private String autoTaskId;
     }
 }

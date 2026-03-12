@@ -3,6 +3,7 @@ package me.golemcore.bot.auto;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AutoModeChannelRegisteredEvent;
 import me.golemcore.bot.domain.model.AutoTask;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ScheduleEntry;
@@ -24,6 +25,7 @@ import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyString;
@@ -132,7 +134,9 @@ class AutoModeSchedulerTest {
         Message sent = captor.getValue();
         assertTrue(sent.getContent().contains("Write unit tests"));
         assertEquals("user", sent.getRole());
-        assertEquals(true, sent.getMetadata().get("auto.mode"));
+        assertEquals(true, sent.getMetadata().get(ContextAttributes.AUTO_MODE));
+        assertEquals("sched-goal-abc", sent.getMetadata().get(ContextAttributes.AUTO_SCHEDULE_ID));
+        assertEquals(TASK_ID, sent.getMetadata().get(ContextAttributes.AUTO_TASK_ID));
         verify(scheduleService).recordExecution("sched-goal-abc");
     }
 
@@ -166,6 +170,8 @@ class AutoModeSchedulerTest {
         Message sent = captor.getValue();
         assertTrue(sent.getContent().contains("Plan tasks for goal"));
         assertTrue(sent.getContent().contains(GOAL_TITLE));
+        assertEquals("sched-goal-abc", sent.getMetadata().get(ContextAttributes.AUTO_SCHEDULE_ID));
+        assertNull(sent.getMetadata().get(ContextAttributes.AUTO_TASK_ID));
     }
 
     @Test

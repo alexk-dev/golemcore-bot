@@ -6,6 +6,7 @@ import me.golemcore.bot.adapter.inbound.web.dto.CreateSessionRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionDetailDto;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionSummaryDto;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.ActiveSessionPointerService;
 import me.golemcore.bot.port.outbound.SessionPort;
@@ -132,6 +133,44 @@ class SessionsControllerTest {
                     SessionDetailDto body = response.getBody();
                     assertNotNull(body);
                     assertEquals("balanced", body.getMessages().get(0).getModelTier());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldExposeAutoRunMetadataInSessionDetail() {
+        Message msg = Message.builder()
+                .id("m-auto")
+                .role("assistant")
+                .content("auto result")
+                .metadata(Map.of(
+                        ContextAttributes.AUTO_MODE, true,
+                        ContextAttributes.AUTO_RUN_ID, "run-1",
+                        ContextAttributes.AUTO_SCHEDULE_ID, "sched-1",
+                        ContextAttributes.AUTO_GOAL_ID, "goal-1",
+                        ContextAttributes.AUTO_TASK_ID, "task-1"))
+                .timestamp(Instant.now())
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("s-auto")
+                .channelType("web")
+                .chatId("123")
+                .createdAt(Instant.now())
+                .messages(List.of(msg))
+                .build();
+        when(sessionPort.get("s-auto")).thenReturn(Optional.of(session));
+
+        StepVerifier.create(controller.getSession("s-auto"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    SessionDetailDto body = response.getBody();
+                    assertNotNull(body);
+                    SessionDetailDto.MessageDto detailMessage = body.getMessages().get(0);
+                    assertTrue(detailMessage.isAutoMode());
+                    assertEquals("run-1", detailMessage.getAutoRunId());
+                    assertEquals("sched-1", detailMessage.getAutoScheduleId());
+                    assertEquals("goal-1", detailMessage.getAutoGoalId());
+                    assertEquals("task-1", detailMessage.getAutoTaskId());
                 })
                 .verifyComplete();
     }
