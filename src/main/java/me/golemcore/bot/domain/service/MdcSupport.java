@@ -32,6 +32,12 @@ public final class MdcSupport {
         return new Scope(previous);
     }
 
+    public static void runWithContext(Map<String, String> context, Runnable runnable) {
+        try (Scope ignored = withContext(context)) {
+            runnable.run();
+        }
+    }
+
     public static void restore(Map<String, String> context) {
         if (context == null || context.isEmpty()) {
             MDC.clear();

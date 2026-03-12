@@ -293,15 +293,17 @@ public class AutoModeScheduler {
                     .build();
 
             Map<String, String> asyncContext = MdcSupport.capture();
-            CompletableFuture.runAsync(() -> {
-                try (MdcSupport.Scope asyncIgnored = MdcSupport.withContext(asyncContext)) {
-                    agentLoop.processMessage(syntheticMessage);
-                }
-            }).get(timeoutMinutes, TimeUnit.MINUTES);
+            CompletableFuture.runAsync(() -> MdcSupport.runWithContext(
+                    asyncContext,
+                    () -> agentLoop.processMessage(syntheticMessage))).get(timeoutMinutes, TimeUnit.MINUTES);
         } catch (TimeoutException e) {
             log.error("[AutoScheduler] Schedule {} timed out after {} minutes",
                     schedule.getId(), timeoutMinutes);
-        } catch (Exception e) {
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("[AutoScheduler] Schedule {} interrupted: {}",
+                    schedule.getId(), e.getMessage(), e);
+        } catch (ExecutionException e) {
             log.error("[AutoScheduler] Failed to process schedule {}: {}",
                     schedule.getId(), e.getMessage(), e);
         }
