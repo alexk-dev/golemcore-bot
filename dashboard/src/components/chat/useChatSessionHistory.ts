@@ -13,6 +13,36 @@ interface UseChatSessionHistoryResult {
   reloadHistory: () => void;
 }
 
+interface PersistedHistoryState {
+  historyLoaded: boolean;
+  sessionRecordId: string | null;
+  messageCount: number;
+  running: boolean;
+  typing: boolean;
+}
+
+export function shouldLoadPersistedHistory(
+  sessionId: string,
+  persistedHistoryState: PersistedHistoryState,
+  reloadTick: number,
+): boolean {
+  if (!isLegacyCompatibleConversationKey(sessionId)) {
+    return false;
+  }
+  if (reloadTick > 0) {
+    return true;
+  }
+  if (!persistedHistoryState.historyLoaded) {
+    return true;
+  }
+  if (persistedHistoryState.sessionRecordId != null) {
+    return false;
+  }
+  return persistedHistoryState.messageCount > 0
+    || persistedHistoryState.running
+    || persistedHistoryState.typing;
+}
+
 function createFallbackSessionState(): ChatRuntimeSessionState {
   return {
     sessionRecordId: null,
@@ -75,6 +105,27 @@ export function useChatSessionHistory(sessionId: string): UseChatSessionHistoryR
     () => sessionState ?? createFallbackSessionState(),
     [sessionState],
   );
+  const persistedHistoryState = useMemo<PersistedHistoryState>(() => ({
+    historyLoaded: safeSessionState.historyLoaded,
+    sessionRecordId: safeSessionState.sessionRecordId,
+    messageCount: safeSessionState.messages.length,
+    running: safeSessionState.running,
+    typing: safeSessionState.typing,
+  }), [
+    safeSessionState.historyLoaded,
+    safeSessionState.messages.length,
+    safeSessionState.running,
+    safeSessionState.sessionRecordId,
+    safeSessionState.typing,
+  ]);
+  const shouldLoadHistory = useMemo(
+    () => shouldLoadPersistedHistory(sessionId, persistedHistoryState, reloadTick),
+    [
+      persistedHistoryState,
+      reloadTick,
+      sessionId,
+    ],
+  );
 
   const reloadHistory = useCallback((): void => {
     setReloadTick((value) => value + 1);
@@ -120,10 +171,7 @@ export function useChatSessionHistory(sessionId: string): UseChatSessionHistoryR
 
   useEffect(() => {
     // Load the latest persisted chat page once per conversation and on explicit retries.
-    if (!isLegacyCompatibleConversationKey(sessionId)) {
-      return;
-    }
-    if (safeSessionState.historyLoaded && reloadTick === 0) {
+    if (!shouldLoadHistory) {
       return;
     }
 
@@ -172,12 +220,17 @@ export function useChatSessionHistory(sessionId: string): UseChatSessionHistoryR
     };
   }, [
     hydrateHistory,
+    safeSessionState.messages.length,
     registerSessionRecord,
     reloadTick,
     safeSessionState.historyLoaded,
+    safeSessionState.running,
+    safeSessionState.sessionRecordId,
+    safeSessionState.typing,
     sessionId,
     setHistoryError,
     setHistoryLoading,
+    shouldLoadHistory,
   ]);
 
   return {

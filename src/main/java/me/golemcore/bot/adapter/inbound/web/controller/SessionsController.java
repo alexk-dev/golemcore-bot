@@ -376,7 +376,7 @@ public class SessionsController {
         return SessionDetailDto.MessageDto.builder()
                 .id(msg.getId())
                 .role(msg.getRole())
-                .content(msg.getContent())
+                .content(resolveMessageContent(msg))
                 .timestamp(msg.getTimestamp() != null ? msg.getTimestamp().toString() : null)
                 .hasToolCalls(msg.hasToolCalls())
                 .hasVoice(msg.hasVoice())
@@ -427,7 +427,7 @@ public class SessionsController {
         return session.getMessages().stream()
                 .filter(message -> message != null
                         && ("user".equals(message.getRole()) || ROLE_ASSISTANT.equals(message.getRole()))
-                        && hasVisibleContent(message.getContent()))
+                        && isVisibleMessage(message))
                 .toList();
     }
 
@@ -448,8 +448,41 @@ public class SessionsController {
         throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "beforeMessageId not found");
     }
 
+    private boolean isVisibleMessage(Message message) {
+        return hasVisibleContent(message.getContent()) || resolveAttachmentCount(message) > START_WITH_INDEX;
+    }
+
     private boolean hasVisibleContent(String content) {
         return content != null && !content.trim().isEmpty();
+    }
+
+    private String resolveMessageContent(Message message) {
+        if (message == null) {
+            return null;
+        }
+        if (hasVisibleContent(message.getContent())) {
+            return message.getContent();
+        }
+
+        int attachmentCount = resolveAttachmentCount(message);
+        if (attachmentCount <= START_WITH_INDEX) {
+            return message.getContent();
+        }
+
+        return attachmentCount == 1
+                ? "[1 image attachment]"
+                : "[" + attachmentCount + " image attachments]";
+    }
+
+    private int resolveAttachmentCount(Message message) {
+        if (message == null || message.getMetadata() == null) {
+            return START_WITH_INDEX;
+        }
+        Object attachmentsValue = message.getMetadata().get("attachments");
+        if (!(attachmentsValue instanceof List<?> attachments)) {
+            return START_WITH_INDEX;
+        }
+        return attachments.size();
     }
 
     private String resolvePointerKey(

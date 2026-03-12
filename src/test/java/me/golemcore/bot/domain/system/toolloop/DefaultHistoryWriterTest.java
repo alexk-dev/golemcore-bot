@@ -2,6 +2,7 @@ package me.golemcore.bot.domain.system.toolloop;
 
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolResult;
@@ -15,6 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -164,6 +166,28 @@ class DefaultHistoryWriterTest {
         assertNotNull(msg.getMetadata());
         assertEquals("balanced", msg.getMetadata().get("modelTier"));
         assertTrue(context.getSession().getMessages().get(0).getMetadata().containsKey("modelTier"));
+    }
+
+    @Test
+    void shouldPersistReasoningMetadataWhenAvailable() {
+        AgentContext context = buildContext(true);
+        context.setAttribute(ContextAttributes.LLM_REASONING, "high");
+
+        writer.appendFinalAssistantAnswer(context, null, "Final text");
+
+        Message message = context.getMessages().get(0);
+        assertEquals("high", message.getMetadata().get("reasoning"));
+    }
+
+    @Test
+    void shouldSkipReasoningMetadataWhenDisabled() {
+        AgentContext context = buildContext(true);
+        context.setAttribute(ContextAttributes.LLM_REASONING, "none");
+
+        writer.appendFinalAssistantAnswer(context, null, "Final text");
+
+        Message message = context.getMessages().get(0);
+        assertFalse(message.getMetadata().containsKey("reasoning"));
     }
 
     @Test
