@@ -68,6 +68,7 @@ describe('schedulerFormUtils', () => {
       targetLabel: 'Release v2',
       cronExpression: '0 0 9 * * *',
       enabled: true,
+      clearContextBeforeRun: false,
       maxExecutions: 0,
       executionCount: 0,
       createdAt: null,

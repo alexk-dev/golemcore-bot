@@ -37,6 +37,7 @@ interface SchedulerFormStateResult {
   setLimitInput: (value: string) => void;
   setTargetType: (targetType: SchedulerTargetType) => void;
   setEnabled: (enabled: boolean) => void;
+  setClearContextBeforeRun: (clearContextBeforeRun: boolean) => void;
   toggleDay: (day: number) => void;
   prepareCreateForTarget: (targetType: SchedulerTargetType, targetId: string) => void;
   startEditing: (schedule: SchedulerSchedule) => void;
@@ -56,6 +57,7 @@ function buildInitialFormState(): ScheduleFormState {
     cronExpression: '* * * * *',
     limitInput: '0',
     enabled: true,
+    clearContextBeforeRun: false,
   };
 }
 
@@ -110,6 +112,7 @@ function buildSimpleCreateRequest(
     days: isWeeklyFrequency ? form.days : [],
     time: normalizeTimeInput(form.time),
     maxExecutions,
+    clearContextBeforeRun: form.clearContextBeforeRun,
   };
 }
 
@@ -124,6 +127,7 @@ function buildAdvancedCreateRequest(
     mode: 'advanced',
     cronExpression: form.cronExpression.trim(),
     maxExecutions,
+    clearContextBeforeRun: form.clearContextBeforeRun,
   };
 }
 
@@ -183,6 +187,7 @@ function parseScheduleToFormState(schedule: SchedulerSchedule): ScheduleFormStat
       cronExpression: schedule.cronExpression,
       limitInput: schedule.maxExecutions > 0 ? String(schedule.maxExecutions) : '0',
       enabled: schedule.enabled,
+      clearContextBeforeRun: schedule.clearContextBeforeRun,
     };
   }
 
@@ -198,6 +203,7 @@ function parseScheduleToFormState(schedule: SchedulerSchedule): ScheduleFormStat
       cronExpression: schedule.cronExpression,
       limitInput: schedule.maxExecutions > 0 ? String(schedule.maxExecutions) : '0',
       enabled: schedule.enabled,
+      clearContextBeforeRun: schedule.clearContextBeforeRun,
     };
   }
 
@@ -215,6 +221,7 @@ function parseScheduleToFormState(schedule: SchedulerSchedule): ScheduleFormStat
         cronExpression: schedule.cronExpression,
         limitInput: schedule.maxExecutions > 0 ? String(schedule.maxExecutions) : '0',
         enabled: schedule.enabled,
+        clearContextBeforeRun: schedule.clearContextBeforeRun,
       };
     }
   }
@@ -229,6 +236,7 @@ function parseScheduleToFormState(schedule: SchedulerSchedule): ScheduleFormStat
     cronExpression: schedule.cronExpression,
     limitInput: schedule.maxExecutions > 0 ? String(schedule.maxExecutions) : '0',
     enabled: schedule.enabled,
+    clearContextBeforeRun: schedule.clearContextBeforeRun,
   };
 }
 
@@ -268,6 +276,7 @@ export function useSchedulerForm(
     setLimitInput: (limitInput) => setForm((current) => ({ ...current, limitInput })),
     setTargetType: (targetType) => setForm((current) => ({ ...current, targetType, targetId: '' })),
     setEnabled: (enabled) => setForm((current) => ({ ...current, enabled })),
+    setClearContextBeforeRun: (clearContextBeforeRun) => setForm((current) => ({ ...current, clearContextBeforeRun })),
     toggleDay: (day) => setForm((current) => ({ ...current, days: toggleDaySelection(current.days, day) })),
     prepareCreateForTarget: (targetType, targetId) => {
       setEditingScheduleId(null);

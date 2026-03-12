@@ -160,6 +160,7 @@ export default function SchedulerPage(): ReactElement {
       onCronExpressionChange={formState.setCronExpression}
       onLimitInputChange={formState.setLimitInput}
       onEnabledChange={formState.setEnabled}
+      onClearContextBeforeRunChange={formState.setClearContextBeforeRun}
       onSubmitSchedule={() => { void handleSubmitSchedule(); }}
       onCancelEditSchedule={formState.reset}
       onOpenLogs={(schedule) => {

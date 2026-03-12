@@ -12,4 +12,5 @@ export interface ScheduleFormState {
   cronExpression: string;
   limitInput: string;
   enabled: boolean;
+  clearContextBeforeRun: boolean;
 }

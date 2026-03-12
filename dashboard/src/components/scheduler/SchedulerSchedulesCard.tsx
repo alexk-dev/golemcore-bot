@@ -59,6 +59,9 @@ export function SchedulerSchedulesCard({
                         <Badge bg={resolveStatusVariant(schedule.enabled)}>
                           {schedule.enabled ? 'Enabled' : 'Disabled'}
                         </Badge>
+                        {schedule.clearContextBeforeRun && (
+                          <Badge bg="secondary">Clears context</Badge>
+                        )}
                       </div>
                       <div className="small text-body-secondary">
                         {schedule.type} · target <code>{schedule.targetId}</code>

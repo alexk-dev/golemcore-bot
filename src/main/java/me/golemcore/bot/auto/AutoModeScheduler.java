@@ -33,6 +33,7 @@ import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.tools.GoalManagementTool;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -89,6 +90,7 @@ public class AutoModeScheduler {
     private final RuntimeConfigService runtimeConfigService;
     private final GoalManagementTool goalManagementTool;
     private final ChannelRegistry channelRegistry;
+    private final SessionPort sessionPort;
     private final AtomicBoolean executing = new AtomicBoolean(false);
 
     // Single channel info for milestone notifications
@@ -99,13 +101,14 @@ public class AutoModeScheduler {
 
     public AutoModeScheduler(AutoModeService autoModeService, ScheduleService scheduleService,
             AgentLoop agentLoop, RuntimeConfigService runtimeConfigService,
-            GoalManagementTool goalManagementTool, ChannelRegistry channelRegistry) {
+            GoalManagementTool goalManagementTool, ChannelRegistry channelRegistry, SessionPort sessionPort) {
         this.autoModeService = autoModeService;
         this.scheduleService = scheduleService;
         this.agentLoop = agentLoop;
         this.runtimeConfigService = runtimeConfigService;
         this.goalManagementTool = goalManagementTool;
         this.channelRegistry = channelRegistry;
+        this.sessionPort = sessionPort;
     }
 
     @PostConstruct
@@ -256,6 +259,9 @@ public class AutoModeScheduler {
         String transportChatId = info != null ? info.transportChatId() : sessionChatId;
         String channelType = info != null ? info.channelType() : "auto";
         String runId = UUID.randomUUID().toString();
+        if (schedule.isClearContextBeforeRun()) {
+            clearSessionContext(channelType, sessionChatId, schedule.getId());
+        }
         Map<String, String> mdcContext = AutoRunContextSupport.buildMdcContext(
                 channelType,
                 sessionChatId,
@@ -307,6 +313,13 @@ public class AutoModeScheduler {
             log.error("[AutoScheduler] Failed to process schedule {}: {}",
                     schedule.getId(), e.getMessage(), e);
         }
+    }
+
+    private void clearSessionContext(String channelType, String sessionChatId, String scheduleId) {
+        String sessionId = sessionPort.getOrCreate(channelType, sessionChatId).getId();
+        sessionPort.clearMessages(sessionId);
+        log.info("[AutoScheduler] Cleared session context before schedule run: scheduleId={}, sessionId={}",
+                scheduleId, sessionId);
     }
 
     private ScheduleMessage buildMessageForSchedule(ScheduleEntry schedule) {
