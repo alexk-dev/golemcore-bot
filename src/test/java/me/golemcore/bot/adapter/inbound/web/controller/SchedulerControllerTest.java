@@ -409,6 +409,56 @@ class SchedulerControllerTest {
     }
 
     @Test
+    void updateScheduleShouldUpdateExistingSchedule() {
+        Goal goal = Goal.builder().id("goal-1").title("Goal").build();
+        ScheduleEntry updated = ScheduleEntry.builder()
+                .id("sched-goal-advanced")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId("goal-1")
+                .cronExpression("0 0 6 * * *")
+                .enabled(false)
+                .maxExecutions(2)
+                .executionCount(1)
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .build();
+
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
+        when(autoModeService.getGoals()).thenReturn(List.of(goal));
+        when(scheduleService.updateSchedule(
+                eq("sched-goal-advanced"),
+                eq(ScheduleEntry.ScheduleType.GOAL),
+                eq("goal-1"),
+                eq("0 0 6 * * *"),
+                eq(2),
+                eq(false)))
+                .thenReturn(updated);
+
+        SchedulerController.UpdateScheduleRequest request = new SchedulerController.UpdateScheduleRequest(
+                "GOAL",
+                "goal-1",
+                "daily",
+                List.of(),
+                "06:00",
+                2,
+                "simple",
+                null,
+                false);
+
+        StepVerifier.create(controller.updateSchedule("sched-goal-advanced", request))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    SchedulerController.ScheduleDto body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals("sched-goal-advanced", body.id());
+                    assertEquals("0 0 6 * * *", body.cronExpression());
+                    assertEquals(false, body.enabled());
+                })
+                .verifyComplete();
+    }
+
+    @Test
     void createScheduleShouldTranslateServiceErrors() {
         Goal goal = Goal.builder().id("goal-1").title("Goal").build();
 

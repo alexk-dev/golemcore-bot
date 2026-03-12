@@ -13,16 +13,18 @@ import {
   getSchedulerRun,
   getSchedulerRuns,
   getSchedulerState,
+  updateSchedule,
   type CreateScheduleRequest,
   type DeleteScheduleResponse,
   type SchedulerRunDetail,
   type SchedulerRunsResponse,
   type SchedulerSchedule,
   type SchedulerStateResponse,
+  type UpdateScheduleRequest,
 } from '../api/scheduler';
 import { extractErrorMessage } from '../utils/extractErrorMessage';
 
-const SCHEDULER_QUERY_KEY = ['scheduler'] as const;
+export const SCHEDULER_QUERY_KEY = ['scheduler'] as const;
 
 export function useSchedulerState(): UseQueryResult<SchedulerStateResponse, unknown> {
   return useQuery({
@@ -66,6 +68,25 @@ export function useCreateSchedule(): UseMutationResult<SchedulerSchedule, unknow
     },
     onError: (error: unknown) => {
       toast.error(`Failed to create schedule: ${extractErrorMessage(error)}`);
+    },
+  });
+}
+
+export interface UpdateScheduleVariables {
+  scheduleId: string;
+  request: UpdateScheduleRequest;
+}
+
+export function useUpdateSchedule(): UseMutationResult<SchedulerSchedule, unknown, UpdateScheduleVariables> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ scheduleId, request }: UpdateScheduleVariables) => updateSchedule(scheduleId, request),
+    onSuccess: async () => {
+      toast.success('Schedule updated');
+      await queryClient.invalidateQueries({ queryKey: SCHEDULER_QUERY_KEY });
+    },
+    onError: (error: unknown) => {
+      toast.error(`Failed to update schedule: ${extractErrorMessage(error)}`);
     },
   });
 }

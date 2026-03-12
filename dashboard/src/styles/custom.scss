@@ -29,6 +29,15 @@ textarea:focus-visible,
   min-height: 100dvh;
 }
 
+.app-shell > .sidebar {
+  flex: 0 0 var(--sidebar-width);
+  min-width: var(--sidebar-width);
+}
+
+.app-shell > .flex-grow-1 {
+  min-width: 0;
+}
+
 .skip-link {
   position: fixed;
   left: 0.75rem;
@@ -52,6 +61,7 @@ textarea:focus-visible,
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   overflow: hidden;
   transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 100;

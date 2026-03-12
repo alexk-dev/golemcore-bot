@@ -18,6 +18,7 @@ package me.golemcore.bot.domain.model;
  * Contact: alex@kuleshov.tech
  */
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -39,6 +40,7 @@ public class AutoTask {
     private String goalId;
     private String title;
     private String description;
+    private String prompt;
 
     @Builder.Default
     private TaskStatus status = TaskStatus.PENDING;
@@ -47,6 +49,17 @@ public class AutoTask {
     private int order;
     private Instant createdAt;
     private Instant updatedAt;
+
+    /**
+     * Returns the prompt that should be used for autonomous execution.
+     */
+    @JsonIgnore
+    public String getExecutionPrompt() {
+        if (prompt != null && !prompt.isBlank()) {
+            return prompt;
+        }
+        return title;
+    }
 
     public enum TaskStatus {
         PENDING, IN_PROGRESS, COMPLETED, FAILED, SKIPPED

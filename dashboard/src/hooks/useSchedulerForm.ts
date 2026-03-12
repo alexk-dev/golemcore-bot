@@ -1,7 +1,26 @@
 import { useMemo, useState } from 'react';
-import type { CreateScheduleRequest, SchedulerGoal } from '../api/scheduler';
-import type { ScheduleFormState, SchedulerFrequency, SchedulerMode, SchedulerTargetType } from '../components/scheduler/schedulerTypes';
-import { isValidTimeInput, normalizeTimeInput, parseLimitInput } from '../components/scheduler/schedulerFormUtils';
+import type {
+  CreateScheduleRequest,
+  SchedulerGoal,
+  SchedulerSchedule,
+  SchedulerTask,
+  UpdateScheduleRequest,
+} from '../api/scheduler';
+import type {
+  ScheduleFormState,
+  SchedulerFrequency,
+  SchedulerMode,
+  SchedulerTargetType,
+} from '../components/scheduler/schedulerTypes';
+import {
+  isValidTimeInput,
+  normalizeTimeInput,
+  parseLimitInput,
+} from '../components/scheduler/schedulerFormUtils';
+
+const CRON_DAILY_PATTERN = /^0 (\d{1,2}) (\d{1,2}) \* \* \*$/;
+const CRON_WEEKDAYS_PATTERN = /^0 (\d{1,2}) (\d{1,2}) \* \* MON-FRI$/;
+const CRON_SELECTED_DAYS_PATTERN = /^0 (\d{1,2}) (\d{1,2}) \* \* ([A-Z,]+)$/;
 
 interface SchedulerFormStateResult {
   form: ScheduleFormState;
@@ -9,6 +28,7 @@ interface SchedulerFormStateResult {
   isTimeValid: boolean;
   isCronValid: boolean;
   isFormValid: boolean;
+  editingScheduleId: string | null;
   setTargetId: (targetId: string) => void;
   setMode: (mode: SchedulerMode) => void;
   setFrequency: (frequency: SchedulerFrequency) => void;
@@ -16,8 +36,13 @@ interface SchedulerFormStateResult {
   setCronExpression: (value: string) => void;
   setLimitInput: (value: string) => void;
   setTargetType: (targetType: SchedulerTargetType) => void;
+  setEnabled: (enabled: boolean) => void;
   toggleDay: (day: number) => void;
+  prepareCreateForTarget: (targetType: SchedulerTargetType, targetId: string) => void;
+  startEditing: (schedule: SchedulerSchedule) => void;
+  reset: () => void;
   buildCreateRequest: () => CreateScheduleRequest | null;
+  buildUpdateRequest: () => { scheduleId: string; request: UpdateScheduleRequest } | null;
 }
 
 function buildInitialFormState(): ScheduleFormState {
@@ -30,6 +55,7 @@ function buildInitialFormState(): ScheduleFormState {
     time: '09:00',
     cronExpression: '* * * * *',
     limitInput: '0',
+    enabled: true,
   };
 }
 
@@ -42,10 +68,20 @@ function isLikelyCronExpression(value: string): boolean {
   return parts.length === 5 || parts.length === 6;
 }
 
-function resolveEffectiveTargetId(goals: SchedulerGoal[], form: ScheduleFormState): string {
+function collectTaskIds(goals: SchedulerGoal[], standaloneTasks: SchedulerTask[]): string[] {
+  const goalTaskIds = goals.flatMap((goal) => goal.tasks.map((task) => task.id));
+  const standaloneTaskIds = standaloneTasks.map((task) => task.id);
+  return [...goalTaskIds, ...standaloneTaskIds];
+}
+
+function resolveEffectiveTargetId(
+  goals: SchedulerGoal[],
+  standaloneTasks: SchedulerTask[],
+  form: ScheduleFormState,
+): string {
   const targetIds = form.targetType === 'GOAL'
     ? goals.map((goal) => goal.id)
-    : goals.flatMap((goal) => goal.tasks.map((task) => task.id));
+    : collectTaskIds(goals, standaloneTasks);
 
   if (targetIds.includes(form.targetId)) {
     return form.targetId;
@@ -91,10 +127,122 @@ function buildAdvancedCreateRequest(
   };
 }
 
-export function useSchedulerForm(goals: SchedulerGoal[]): SchedulerFormStateResult {
-  const [form, setForm] = useState<ScheduleFormState>(buildInitialFormState);
+function createUpdateRequest(form: ScheduleFormState, targetId: string, maxExecutions: number): UpdateScheduleRequest {
+  const baseRequest = form.mode === 'advanced'
+    ? buildAdvancedCreateRequest(form, targetId, maxExecutions)
+    : buildSimpleCreateRequest(form, targetId, maxExecutions);
+  return {
+    ...baseRequest,
+    enabled: form.enabled,
+  };
+}
 
-  const effectiveTargetId = useMemo(() => resolveEffectiveTargetId(goals, form), [form, goals]);
+function formatTime(hour: string, minute: string): string {
+  return `${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;
+}
+
+function cronDaysToFrequency(daysPart: string): { frequency: SchedulerFrequency; days: number[] } | null {
+  const dayMap: Record<string, number> = {
+    MON: 1,
+    TUE: 2,
+    WED: 3,
+    THU: 4,
+    FRI: 5,
+    SAT: 6,
+    SUN: 7,
+  };
+
+  const segments = daysPart.split(',');
+  const days: number[] = [];
+  for (const segment of segments) {
+    const normalizedSegment = segment.trim().toUpperCase();
+    const day = dayMap[normalizedSegment];
+    if (day == null) {
+      return null;
+    }
+    days.push(day);
+  }
+
+  const sortedDays = [...days].sort((left, right) => left - right);
+  return {
+    frequency: sortedDays.length === 1 ? 'weekly' : 'custom',
+    days: sortedDays,
+  };
+}
+
+function parseScheduleToFormState(schedule: SchedulerSchedule): ScheduleFormState {
+  const dailyMatch = CRON_DAILY_PATTERN.exec(schedule.cronExpression);
+  if (dailyMatch != null) {
+    return {
+      targetType: schedule.type,
+      targetId: schedule.targetId,
+      mode: 'simple',
+      frequency: 'daily',
+      days: [1],
+      time: formatTime(dailyMatch[2], dailyMatch[1]),
+      cronExpression: schedule.cronExpression,
+      limitInput: schedule.maxExecutions > 0 ? String(schedule.maxExecutions) : '0',
+      enabled: schedule.enabled,
+    };
+  }
+
+  const weekdaysMatch = CRON_WEEKDAYS_PATTERN.exec(schedule.cronExpression);
+  if (weekdaysMatch != null) {
+    return {
+      targetType: schedule.type,
+      targetId: schedule.targetId,
+      mode: 'simple',
+      frequency: 'weekdays',
+      days: [1, 2, 3, 4, 5],
+      time: formatTime(weekdaysMatch[2], weekdaysMatch[1]),
+      cronExpression: schedule.cronExpression,
+      limitInput: schedule.maxExecutions > 0 ? String(schedule.maxExecutions) : '0',
+      enabled: schedule.enabled,
+    };
+  }
+
+  const selectedDaysMatch = CRON_SELECTED_DAYS_PATTERN.exec(schedule.cronExpression);
+  if (selectedDaysMatch != null) {
+    const parsedDays = cronDaysToFrequency(selectedDaysMatch[3]);
+    if (parsedDays != null) {
+      return {
+        targetType: schedule.type,
+        targetId: schedule.targetId,
+        mode: 'simple',
+        frequency: parsedDays.frequency,
+        days: parsedDays.days,
+        time: formatTime(selectedDaysMatch[2], selectedDaysMatch[1]),
+        cronExpression: schedule.cronExpression,
+        limitInput: schedule.maxExecutions > 0 ? String(schedule.maxExecutions) : '0',
+        enabled: schedule.enabled,
+      };
+    }
+  }
+
+  return {
+    targetType: schedule.type,
+    targetId: schedule.targetId,
+    mode: 'advanced',
+    frequency: 'daily',
+    days: [1],
+    time: '09:00',
+    cronExpression: schedule.cronExpression,
+    limitInput: schedule.maxExecutions > 0 ? String(schedule.maxExecutions) : '0',
+    enabled: schedule.enabled,
+  };
+}
+
+export function useSchedulerForm(
+  goals: SchedulerGoal[],
+  standaloneTasks: SchedulerTask[],
+): SchedulerFormStateResult {
+  const [form, setForm] = useState<ScheduleFormState>(buildInitialFormState);
+  const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
+
+  const effectiveTargetId = useMemo(
+    () => resolveEffectiveTargetId(goals, standaloneTasks, form),
+    [form, goals, standaloneTasks],
+  );
   const isTimeValid = form.mode === 'advanced' || isValidTimeInput(normalizeTimeInput(form.time));
   const isCronValid = form.mode === 'simple' || isLikelyCronExpression(form.cronExpression);
   const isWeeklyFrequency = form.frequency === 'weekly' || form.frequency === 'custom';
@@ -111,6 +259,7 @@ export function useSchedulerForm(goals: SchedulerGoal[]): SchedulerFormStateResu
     isTimeValid,
     isCronValid,
     isFormValid,
+    editingScheduleId,
     setTargetId: (targetId) => setForm((current) => ({ ...current, targetId })),
     setMode: (mode) => setForm((current) => ({ ...current, mode })),
     setFrequency: (frequency) => setForm((current) => ({ ...current, frequency })),
@@ -118,7 +267,24 @@ export function useSchedulerForm(goals: SchedulerGoal[]): SchedulerFormStateResu
     setCronExpression: (cronExpression) => setForm((current) => ({ ...current, cronExpression })),
     setLimitInput: (limitInput) => setForm((current) => ({ ...current, limitInput })),
     setTargetType: (targetType) => setForm((current) => ({ ...current, targetType, targetId: '' })),
+    setEnabled: (enabled) => setForm((current) => ({ ...current, enabled })),
     toggleDay: (day) => setForm((current) => ({ ...current, days: toggleDaySelection(current.days, day) })),
+    prepareCreateForTarget: (targetType, targetId) => {
+      setEditingScheduleId(null);
+      setForm({
+        ...buildInitialFormState(),
+        targetType,
+        targetId,
+      });
+    },
+    startEditing: (schedule) => {
+      setEditingScheduleId(schedule.id);
+      setForm(parseScheduleToFormState(schedule));
+    },
+    reset: () => {
+      setEditingScheduleId(null);
+      setForm(buildInitialFormState());
+    },
     buildCreateRequest: () => {
       if (!isFormValid || parsedLimit == null) {
         return null;
@@ -127,6 +293,15 @@ export function useSchedulerForm(goals: SchedulerGoal[]): SchedulerFormStateResu
         return buildAdvancedCreateRequest(form, effectiveTargetId, parsedLimit);
       }
       return buildSimpleCreateRequest(form, effectiveTargetId, parsedLimit);
+    },
+    buildUpdateRequest: () => {
+      if (editingScheduleId == null || !isFormValid || parsedLimit == null) {
+        return null;
+      }
+      return {
+        scheduleId: editingScheduleId,
+        request: createUpdateRequest(form, effectiveTargetId, parsedLimit),
+      };
     },
   };
 }

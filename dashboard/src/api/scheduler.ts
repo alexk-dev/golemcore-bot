@@ -1,21 +1,11 @@
+import type { Goal, GoalTask } from './goals';
 import client from './client';
 
 export type SchedulerTargetType = 'GOAL' | 'TASK';
 export type SchedulerFrequency = 'daily' | 'weekdays' | 'weekly' | 'custom';
 export type SchedulerMode = 'simple' | 'advanced';
-
-export interface SchedulerTask {
-  id: string;
-  title: string;
-  status: string;
-}
-
-export interface SchedulerGoal {
-  id: string;
-  title: string;
-  status: string;
-  tasks: SchedulerTask[];
-}
+export type SchedulerGoal = Goal;
+export type SchedulerTask = GoalTask;
 
 export interface SchedulerSchedule {
   id: string;
@@ -36,6 +26,7 @@ export interface SchedulerStateResponse {
   featureEnabled: boolean;
   autoModeEnabled: boolean;
   goals: SchedulerGoal[];
+  standaloneTasks: SchedulerTask[];
   schedules: SchedulerSchedule[];
 }
 
@@ -48,6 +39,10 @@ export interface CreateScheduleRequest {
   maxExecutions: number | null;
   mode?: SchedulerMode;
   cronExpression?: string;
+}
+
+export interface UpdateScheduleRequest extends CreateScheduleRequest {
+  enabled: boolean;
 }
 
 export interface DeleteScheduleResponse {
@@ -100,6 +95,14 @@ export async function getSchedulerState(): Promise<SchedulerStateResponse> {
 
 export async function createSchedule(request: CreateScheduleRequest): Promise<SchedulerSchedule> {
   const { data } = await client.post<SchedulerSchedule>('/scheduler/schedules', request);
+  return data;
+}
+
+export async function updateSchedule(scheduleId: string, request: UpdateScheduleRequest): Promise<SchedulerSchedule> {
+  const { data } = await client.put<SchedulerSchedule>(
+    `/scheduler/schedules/${encodeURIComponent(scheduleId)}`,
+    request,
+  );
   return data;
 }
 

@@ -14,6 +14,7 @@ const SessionsPage = lazy(() => import('./pages/SessionsPage'));
 const DiagnosticsPage = lazy(() => import('./pages/DiagnosticsPage'));
 const IdePage = lazy(() => import('./pages/IdePage'));
 const LogsPage = lazy(() => import('./pages/LogsPage'));
+const GoalsPage = lazy(() => import('./pages/GoalsPage'));
 const SchedulerPage = lazy(() => import('./pages/SchedulerPage'));
 
 function RouteFallback() {
@@ -53,6 +54,7 @@ export default function App() {
                   <Route path="/prompts" element={<PromptsPage />} />
                   <Route path="/skills" element={<SkillsPage />} />
                   <Route path="/sessions" element={<SessionsPage />} />
+                  <Route path="/goals" element={<GoalsPage />} />
                   <Route path="/diagnostics" element={<DiagnosticsPage />} />
                   <Route path="/ide" element={<IdePage />} />
                   <Route path="/logs" element={<LogsPage />} />

@@ -1,4 +1,5 @@
 import type { SchedulerSchedule } from '../../api/scheduler';
+import type { GoalTask } from '../../api/goals';
 
 const HHMM_COLON_PATTERN = /^(\d{1,2}):(\d{1,2})$/;
 
@@ -83,11 +84,18 @@ export function buildGoalOptions(goals: Array<{ id: string; title: string; statu
 export function buildTaskOptions(goals: Array<{
   title: string;
   tasks: Array<{ id: string; title: string }>;
-}>): SchedulerTargetOption[] {
-  return goals.flatMap((goal) => goal.tasks.map((task) => ({
+}>, standaloneTasks: GoalTask[]): SchedulerTargetOption[] {
+  const goalTaskOptions = goals.flatMap((goal) => goal.tasks.map((task) => ({
     id: task.id,
     label: `${task.title} — ${goal.title} · ${task.id}`,
   })));
+
+  const standaloneOptions = standaloneTasks.map((task) => ({
+    id: task.id,
+    label: `${task.title} — Standalone task · ${task.id}`,
+  }));
+
+  return [...goalTaskOptions, ...standaloneOptions];
 }
 
 export function isScheduleUnlimited(schedule: SchedulerSchedule): boolean {

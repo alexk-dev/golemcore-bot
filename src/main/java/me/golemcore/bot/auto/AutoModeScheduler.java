@@ -338,8 +338,8 @@ public class AutoModeScheduler {
         if (nextTask.isPresent()) {
             AutoTask task = nextTask.get();
             return new ScheduleMessage(
-                    "[AUTO] Continue working on task: " + task.getTitle()
-                            + " (goal: " + goal.getTitle() + ", goal_id: " + goalId + ")",
+                    buildTaskPrompt("Continue working on task", task.getExecutionPrompt(), goal.getTitle(),
+                            goalId, task.getId()),
                     AutoRunKind.GOAL_RUN,
                     goalId,
                     task.getId());
@@ -347,8 +347,7 @@ public class AutoModeScheduler {
 
         if (goal.getTasks().isEmpty()) {
             return new ScheduleMessage(
-                    "[AUTO] Plan tasks for goal: " + goal.getTitle()
-                            + " (goal_id: " + goalId + ")",
+                    buildGoalPrompt("Plan tasks for goal", goal.getExecutionPrompt(), goalId),
                     AutoRunKind.GOAL_RUN,
                     goalId,
                     null);
@@ -382,11 +381,19 @@ public class AutoModeScheduler {
         }
 
         return new ScheduleMessage(
-                "[AUTO] Work on task: " + task.getTitle()
-                        + " (goal: " + goal.getTitle() + ", task_id: " + taskId + ")",
+                buildTaskPrompt("Work on task", task.getExecutionPrompt(), goal.getTitle(), goal.getId(), taskId),
                 AutoRunKind.GOAL_RUN,
                 goal.getId(),
                 taskId);
+    }
+
+    private String buildGoalPrompt(String prefix, String prompt, String goalId) {
+        return "[AUTO] " + prefix + ": " + prompt + " (goal_id: " + goalId + ")";
+    }
+
+    private String buildTaskPrompt(String prefix, String prompt, String goalTitle, String goalId, String taskId) {
+        return "[AUTO] " + prefix + ": " + prompt + " (goal: " + goalTitle
+                + ", goal_id: " + goalId + ", task_id: " + taskId + ")";
     }
 
     public record ChannelInfo(String channelType, String sessionChatId, String transportChatId) {

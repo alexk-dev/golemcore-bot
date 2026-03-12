@@ -67,6 +67,14 @@ class AutoModeServiceTest {
     }
 
     @Test
+    void createGoal_withPromptPersistsPrompt() throws Exception {
+        Goal goal = service.createGoal("Release v2", "Prepare release train", "Ship version 2 with checklist");
+
+        assertEquals("Ship version 2 with checklist", goal.getPrompt());
+        verify(storagePort).putText(eq(AUTO_DIR), eq(GOALS_FILE), anyString());
+    }
+
+    @Test
     void createGoal_throwsWhenMaxActiveGoalsReached() throws Exception {
         // Pre-load 3 active goals
         List<Goal> existingGoals = new ArrayList<>();
@@ -168,6 +176,34 @@ class AutoModeServiceTest {
     }
 
     @Test
+    void updateGoal_updatesFieldsAndStatus() throws Exception {
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title("Old title")
+                .description("Old description")
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>())
+                .createdAt(Instant.now())
+                .build();
+        String goalsJson = objectMapper.writeValueAsString(List.of(goal));
+        when(storagePort.getText(AUTO_DIR, GOALS_FILE))
+                .thenReturn(CompletableFuture.completedFuture(goalsJson));
+
+        Goal updated = service.updateGoal(
+                GOAL_ID,
+                "New title",
+                "New description",
+                "Execute updated prompt",
+                Goal.GoalStatus.PAUSED);
+
+        assertEquals("New title", updated.getTitle());
+        assertEquals("New description", updated.getDescription());
+        assertEquals("Execute updated prompt", updated.getPrompt());
+        assertEquals(Goal.GoalStatus.PAUSED, updated.getStatus());
+        verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq(GOALS_FILE), anyString());
+    }
+
+    @Test
     void updateTaskStatus_updatesStatusAndWritesDiaryOnCompleted() throws Exception {
         AutoTask task = AutoTask.builder()
                 .id(TASK_ID)
@@ -205,6 +241,43 @@ class AutoModeServiceTest {
         assertThrows(IllegalArgumentException.class,
                 () -> service.updateTaskStatus("no-goal", "no-task",
                         AutoTask.TaskStatus.COMPLETED, "result"));
+    }
+
+    @Test
+    void updateTask_updatesPromptAndStatusAndWritesDiaryWhenCompleted() throws Exception {
+        AutoTask task = AutoTask.builder()
+                .id(TASK_ID)
+                .goalId(GOAL_ID)
+                .title("Old task")
+                .description("Old description")
+                .status(AutoTask.TaskStatus.PENDING)
+                .order(1)
+                .createdAt(Instant.now())
+                .build();
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(TEST_GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>(List.of(task)))
+                .createdAt(Instant.now())
+                .build();
+        String goalsJson = objectMapper.writeValueAsString(List.of(goal));
+        when(storagePort.getText(AUTO_DIR, GOALS_FILE))
+                .thenReturn(CompletableFuture.completedFuture(goalsJson));
+
+        AutoTask updated = service.updateTask(
+                TASK_ID,
+                "New task",
+                "New description",
+                "Run the deeper task prompt",
+                AutoTask.TaskStatus.COMPLETED);
+
+        assertEquals("New task", updated.getTitle());
+        assertEquals("New description", updated.getDescription());
+        assertEquals("Run the deeper task prompt", updated.getPrompt());
+        assertEquals(AutoTask.TaskStatus.COMPLETED, updated.getStatus());
+        verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq(GOALS_FILE), anyString());
+        verify(storagePort).appendText(eq(AUTO_DIR), contains(DIARY_PREFIX), anyString());
     }
 
     @Test

@@ -246,6 +246,30 @@ class ScheduleServiceTest {
     }
 
     @Test
+    void shouldUpdateScheduleAndRecomputeNextExecution() {
+        service.createSchedule(ScheduleEntry.ScheduleType.GOAL, TARGET_GOAL_1,
+                CRON_DAILY_9AM, -1);
+
+        ScheduleEntry entry = service.getSchedules().get(0);
+        String id = entry.getId();
+
+        ScheduleEntry updated = service.updateSchedule(
+                id,
+                ScheduleEntry.ScheduleType.TASK,
+                "task-2",
+                CRON_DAILY_NOON,
+                3,
+                true);
+
+        assertEquals(ScheduleEntry.ScheduleType.TASK, updated.getType());
+        assertEquals("task-2", updated.getTargetId());
+        assertEquals(CRON_DAILY_NOON, updated.getCronExpression());
+        assertEquals(3, updated.getMaxExecutions());
+        assertTrue(updated.isEnabled());
+        assertEquals(Instant.parse("2026-02-11T12:00:00Z"), updated.getNextExecutionAt());
+    }
+
+    @Test
     void shouldThrowWhenDeletingNonexistentSchedule() {
         assertThrows(IllegalArgumentException.class,
                 () -> service.deleteSchedule("nonexistent-id"));

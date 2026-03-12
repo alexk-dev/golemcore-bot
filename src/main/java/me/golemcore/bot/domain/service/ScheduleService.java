@@ -103,6 +103,40 @@ public class ScheduleService {
     }
 
     /**
+     * Update an existing schedule entry.
+     */
+    public ScheduleEntry updateSchedule(
+            String id,
+            ScheduleEntry.ScheduleType type,
+            String targetId,
+            String cronExpression,
+            int maxExecutions,
+            boolean enabled) {
+        ScheduleEntry entry = findSchedule(id)
+                .orElseThrow(() -> new IllegalArgumentException("Schedule not found: " + id));
+
+        String normalizedCron = normalizeCronExpression(cronExpression);
+        Instant now = clock.instant();
+        boolean exhausted = maxExecutions > 0 && entry.getExecutionCount() >= maxExecutions;
+
+        entry.setType(type);
+        entry.setTargetId(targetId);
+        entry.setCronExpression(normalizedCron);
+        entry.setMaxExecutions(maxExecutions);
+        entry.setUpdatedAt(now);
+        entry.setEnabled(enabled && !exhausted);
+        if (entry.isEnabled()) {
+            entry.setNextExecutionAt(computeNextExecution(normalizedCron, now));
+        } else {
+            entry.setNextExecutionAt(null);
+        }
+
+        saveSchedules(getSchedules());
+        log.info("[Schedule] Updated schedule {} for target {}: {}", id, targetId, normalizedCron);
+        return entry;
+    }
+
+    /**
      * Get all schedules (cached, loaded on first access).
      */
     public synchronized List<ScheduleEntry> getSchedules() {
