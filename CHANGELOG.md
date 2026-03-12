@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.22.1 - 2026-03-12
+#### Bug Fixes
+- relaunch updated runtime after self-update (#162) - (5909b6d) - Alex Kuleshov
+
+- - -
+
 ## v0.12.0 - 2026-02-25
 #### Features
 - (**browser**) fetch Playwright driver bundle from Maven at runtime (#117) - (2121f20) - Alex Kuleshov
