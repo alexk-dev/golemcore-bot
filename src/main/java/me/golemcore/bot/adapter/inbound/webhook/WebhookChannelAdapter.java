@@ -53,6 +53,7 @@ public class WebhookChannelAdapter implements ChannelPort {
     private static final String CHANNEL_TYPE = "webhook";
 
     private final WebhookCallbackSender callbackSender;
+    private final WebhookDeliveryTracker deliveryTracker;
 
     /**
      * Pending agent run futures keyed by chatId. When {@code sendMessage} is called
@@ -105,7 +106,7 @@ public class WebhookChannelAdapter implements ChannelPort {
                     .model(metadata.model())
                     .durationMs(durationMs)
                     .build();
-            callbackSender.send(metadata.callbackUrl(), payload);
+            sendCallback(metadata.callbackUrl(), payload, metadata.deliveryId(), false);
         }
 
         return CompletableFuture.completedFuture(null);
@@ -148,9 +149,18 @@ public class WebhookChannelAdapter implements ChannelPort {
      */
     public CompletableFuture<String> registerPendingRun(String chatId, String runId,
             String callbackUrl, String model) {
+        return registerPendingRun(chatId, runId, callbackUrl, model, null);
+    }
+
+    /**
+     * Registers a pending agent run and binds an optional delivery timeline id for
+     * callback observability.
+     */
+    public CompletableFuture<String> registerPendingRun(String chatId, String runId,
+            String callbackUrl, String model, String deliveryId) {
         CompletableFuture<String> future = new CompletableFuture<>();
         pendingResponses.put(chatId, future);
-        runMetadata.put(chatId, new RunMetadata(runId, callbackUrl, model, System.currentTimeMillis()));
+        runMetadata.put(chatId, new RunMetadata(runId, callbackUrl, model, System.currentTimeMillis(), deliveryId));
         return future;
     }
 
@@ -172,13 +182,23 @@ public class WebhookChannelAdapter implements ChannelPort {
                     .error("Run cancelled or timed out")
                     .durationMs(durationMs)
                     .build();
-            callbackSender.send(metadata.callbackUrl(), payload);
+            sendCallback(metadata.callbackUrl(), payload, metadata.deliveryId(), false);
         }
+    }
+
+    private void sendCallback(String callbackUrl, CallbackPayload payload, String deliveryId, boolean manualRetry) {
+        if (deliveryId == null || deliveryId.isBlank()) {
+            callbackSender.send(callbackUrl, payload);
+            return;
+        }
+
+        deliveryTracker.capturePayload(deliveryId, payload, manualRetry);
+        callbackSender.send(callbackUrl, payload, deliveryTracker.createObserver(deliveryId));
     }
 
     /**
      * Metadata for a pending agent run.
      */
-    record RunMetadata(String runId, String callbackUrl, String model, long startTimeMs) {
+    record RunMetadata(String runId, String callbackUrl, String model, long startTimeMs, String deliveryId) {
     }
 }

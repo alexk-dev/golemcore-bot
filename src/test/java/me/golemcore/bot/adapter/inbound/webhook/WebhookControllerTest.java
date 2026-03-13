@@ -19,8 +19,16 @@ import org.springframework.http.ResponseEntity;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class WebhookControllerTest {
 
@@ -31,6 +39,7 @@ class WebhookControllerTest {
     private WebhookAuthenticator authenticator;
     private WebhookChannelAdapter channelAdapter;
     private WebhookPayloadTransformer transformer;
+    private WebhookDeliveryTracker deliveryTracker;
     private ApplicationEventPublisher eventPublisher;
     private InputSanitizer inputSanitizer;
     private WebhookController controller;
@@ -41,12 +50,13 @@ class WebhookControllerTest {
         authenticator = mock(WebhookAuthenticator.class);
         channelAdapter = mock(WebhookChannelAdapter.class);
         transformer = mock(WebhookPayloadTransformer.class);
+        deliveryTracker = mock(WebhookDeliveryTracker.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
         inputSanitizer = new InputSanitizer();
 
         controller = new WebhookController(
                 preferencesService, authenticator, channelAdapter,
-                transformer, eventPublisher, inputSanitizer);
+                transformer, deliveryTracker, eventPublisher, inputSanitizer);
 
         when(preferencesService.getPreferences()).thenReturn(buildEnabledPrefs());
         when(authenticator.authenticateBearer(any())).thenReturn(true);
@@ -176,11 +186,36 @@ class WebhookControllerTest {
                 .callbackUrl("https://example.com/callback")
                 .model("coding")
                 .build();
+        when(deliveryTracker.registerPendingDelivery(anyString(), anyString(), anyString(), anyString()))
+                .thenReturn("delivery-1");
 
         controller.agent(request, new HttpHeaders()).block();
 
-        verify(channelAdapter).registerPendingRun(anyString(), anyString(),
+        verify(deliveryTracker).validateCallbackUrl("https://example.com/callback");
+        verify(deliveryTracker).registerPendingDelivery(anyString(), anyString(),
                 eq("https://example.com/callback"), eq("coding"));
+        verify(channelAdapter).registerPendingRun(anyString(), anyString(),
+                eq("https://example.com/callback"), eq("coding"), eq("delivery-1"));
+    }
+
+    @Test
+    void agentShouldReturnBadRequestWhenCallbackUrlIsInvalid() {
+        AgentRequest request = AgentRequest.builder()
+                .message("Test msg")
+                .callbackUrl("ftp://example.com/callback")
+                .build();
+        when(deliveryTracker.validateCallbackUrl("ftp://example.com/callback"))
+                .thenThrow(new IllegalArgumentException("callbackUrl must be a valid http(s) URL"));
+
+        ResponseEntity<WebhookResponse> response = controller.agent(request, new HttpHeaders()).block();
+
+        assertNotNull(response);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertEquals("error", response.getBody().getStatus());
+        assertEquals("callbackUrl must be a valid http(s) URL", response.getBody().getErrorMessage());
+
+        verify(channelAdapter, never()).registerPendingRun(anyString(), anyString(), anyString(), anyString(),
+                anyString());
     }
 
     // ==================== /{name} (custom mapping) ====================

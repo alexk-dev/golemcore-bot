@@ -27,12 +27,14 @@ class WebhookChannelAdapterTest {
     private static final String RESPONSE_TEXT = "Agent response content";
 
     private WebhookCallbackSender callbackSender;
+    private WebhookDeliveryTracker deliveryTracker;
     private WebhookChannelAdapter adapter;
 
     @BeforeEach
     void setUp() {
         callbackSender = mock(WebhookCallbackSender.class);
-        adapter = new WebhookChannelAdapter(callbackSender);
+        deliveryTracker = mock(WebhookDeliveryTracker.class);
+        adapter = new WebhookChannelAdapter(callbackSender, deliveryTracker);
     }
 
     // --- ChannelPort basics ---
@@ -86,6 +88,20 @@ class WebhookChannelAdapterTest {
         assertEquals(MODEL, payload.getModel());
         assertTrue(payload.getDurationMs() >= 0);
         assertNull(payload.getError());
+    }
+
+    @Test
+    void shouldSendTrackedCallbackWhenDeliveryIdPresent() {
+        adapter.registerPendingRun(CHAT_ID, RUN_ID, CALLBACK_URL, MODEL, "delivery-1");
+
+        adapter.sendMessage(CHAT_ID, RESPONSE_TEXT);
+
+        verify(deliveryTracker).capturePayload(eq("delivery-1"),
+                org.mockito.ArgumentMatchers.any(CallbackPayload.class),
+                eq(false));
+        verify(deliveryTracker).createObserver("delivery-1");
+        verify(callbackSender).send(eq(CALLBACK_URL), org.mockito.ArgumentMatchers.any(CallbackPayload.class),
+                org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -145,6 +161,19 @@ class WebhookChannelAdapterTest {
         assertEquals("failed", payload.getStatus());
         assertEquals("Run cancelled or timed out", payload.getError());
         assertNull(payload.getResponse());
+    }
+
+    @Test
+    void shouldSendTrackedFailureCallbackOnCancelWhenDeliveryIdPresent() {
+        adapter.registerPendingRun(CHAT_ID, RUN_ID, CALLBACK_URL, MODEL, "delivery-cancel");
+
+        adapter.cancelPendingRun(CHAT_ID);
+
+        verify(deliveryTracker).capturePayload(eq("delivery-cancel"),
+                org.mockito.ArgumentMatchers.any(CallbackPayload.class),
+                eq(false));
+        verify(callbackSender).send(eq(CALLBACK_URL), org.mockito.ArgumentMatchers.any(CallbackPayload.class),
+                org.mockito.ArgumentMatchers.any());
     }
 
     @Test

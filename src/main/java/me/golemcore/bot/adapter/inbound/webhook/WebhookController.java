@@ -81,6 +81,7 @@ public class WebhookController {
     private final WebhookAuthenticator authenticator;
     private final WebhookChannelAdapter channelAdapter;
     private final WebhookPayloadTransformer transformer;
+    private final WebhookDeliveryTracker deliveryTracker;
     private final ApplicationEventPublisher eventPublisher;
     private final InputSanitizer inputSanitizer;
 
@@ -172,7 +173,21 @@ public class WebhookController {
                 metadata.put("webhook.deliver.to", request.getTo());
             }
 
-            channelAdapter.registerPendingRun(chatId, runId, request.getCallbackUrl(), request.getModel());
+            String deliveryId = null;
+            if (request.getCallbackUrl() != null && !request.getCallbackUrl().isBlank()) {
+                try {
+                    deliveryTracker.validateCallbackUrl(request.getCallbackUrl());
+                } catch (IllegalArgumentException e) {
+                    return badRequest(e.getMessage());
+                }
+                deliveryId = deliveryTracker.registerPendingDelivery(
+                        runId,
+                        chatId,
+                        request.getCallbackUrl(),
+                        request.getModel());
+            }
+
+            channelAdapter.registerPendingRun(chatId, runId, request.getCallbackUrl(), request.getModel(), deliveryId);
 
             Message message = buildMessage(chatId, safeMessage, metadata);
             eventPublisher.publishEvent(new AgentLoop.InboundMessageEvent(message));
@@ -262,7 +277,7 @@ public class WebhookController {
             metadata.put("webhook.deliver.to", mapping.getTo());
         }
 
-        channelAdapter.registerPendingRun(chatId, runId, null, mapping.getModel());
+        channelAdapter.registerPendingRun(chatId, runId, null, mapping.getModel(), null);
 
         Message message = buildMessage(chatId, text, metadata);
         eventPublisher.publishEvent(new AgentLoop.InboundMessageEvent(message));

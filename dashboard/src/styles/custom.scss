@@ -356,6 +356,19 @@ textarea:focus-visible,
   border-radius: 0.5rem;
 }
 
+.topbar-mobile-menu-btn {
+  position: relative;
+  color: var(--bs-emphasis-color);
+}
+
+.topbar-mobile-menu-icon {
+  width: 1.2rem;
+  height: 1.2rem;
+  color: currentColor;
+  display: block;
+}
+
+
 .main-content {
   background-color: var(--bs-body-bg);
   min-height: 100vh;
@@ -2320,6 +2333,19 @@ textarea:focus-visible,
     height: 2.75rem;
   }
 
+  .topbar-mobile-menu-btn {
+    border: 1px solid rgba(var(--bs-border-color-rgb), 0.95);
+    background-color: rgba(var(--bs-body-bg-rgb), 0.92);
+  }
+
+  .topbar-mobile-menu-btn:hover,
+  .topbar-mobile-menu-btn:focus-visible {
+    border-color: rgba(var(--bs-primary-rgb), 0.55);
+    background-color: rgba(var(--bs-primary-rgb), 0.14);
+    color: var(--bs-emphasis-color);
+  }
+
+
   .topbar-center-slot {
     justify-content: flex-start;
     padding: 0 0.5rem;
@@ -2914,4 +2940,26 @@ textarea:focus-visible,
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 0.45rem;
+}
+
+// ==================== Webhooks ====================
+
+.webhook-quickstart-card {
+  background:
+    radial-gradient(circle at top right, rgba(var(--bs-primary-rgb), 0.12), transparent 42%),
+    linear-gradient(160deg, rgba(var(--bs-tertiary-bg-rgb), 0.95), rgba(var(--bs-body-bg-rgb), 0.96));
+}
+
+.webhook-code-block {
+  border: 1px solid rgba(var(--bs-border-color-rgb), 0.9);
+  border-radius: 0.65rem;
+  padding: 0.65rem;
+  background-color: rgba(var(--bs-body-bg-rgb), 0.8);
+  font-size: 0.75rem;
+  line-height: 1.45;
+  overflow-x: auto;
+}
+
+.webhook-endpoint-badge {
+  max-width: 100%;
 }

@@ -13,6 +13,7 @@ How to use the built-in web dashboard for chat, setup, settings, scheduler manag
 - `/dashboard/chat` (also `/dashboard/`) - chat workspace
 - `/dashboard/setup` - startup setup wizard
 - `/dashboard/settings` - runtime config, model catalog, and integrations
+- `/dashboard/webhooks` - webhook runtime settings and delivery tracking
 - `/dashboard/scheduler` - cron schedules for auto mode goals/tasks
 - `/dashboard/sessions` - browse and maintain sessions
 - `/dashboard/ide` - embedded code editor
@@ -81,7 +82,7 @@ The Settings page is now organized into catalog blocks instead of a flat tab lis
 - `Core` - general settings, LLM Providers, Model Catalog, Model Router
 - `Extensions` - Plugin Marketplace plus plugin-contributed settings pages
 - `Tools` - filesystem, shell, automation, goal management, voice routing
-- `Runtime` - memory, skills, turn budget, usage, MCP, auto mode, webhooks, updates
+- `Runtime` - memory, skills, turn budget, usage, MCP, auto mode, updates
 - `Advanced` - rate limiting, security, compaction
 
 Plugin settings pages are discovered dynamically from `/api/plugins/settings/catalog`.
@@ -141,6 +142,19 @@ Important behaviors:
 - Marketplace metadata comes from the configured local repository directory when present, otherwise from the configured remote repository.
 - Backend installation verifies the artifact, writes it into the plugin directory, and reloads the plugin runtime.
 - Plugin-specific configuration pages are exposed as normal Settings sections after installation.
+
+## Webhooks Page
+
+`/dashboard/webhooks` is a dedicated workspace (outside Settings) for:
+
+- enabling/disabling webhook runtime,
+- managing bearer token / payload limits / timeout,
+- creating custom mappings (`/api/hooks/{name}`),
+- monitoring callback delivery attempts,
+- retrying failed callback deliveries,
+- sending test callback payloads.
+
+Delivery data uses authenticated dashboard APIs under `/api/webhooks/deliveries*`.
 
 ## Scheduler
 

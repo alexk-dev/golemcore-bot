@@ -86,13 +86,13 @@ export default function Topbar() {
       <Button
         type="button"
         variant="secondary"
-        className="topbar-icon-btn d-md-none"
+        className="topbar-icon-btn topbar-mobile-menu-btn d-md-none d-flex align-items-center justify-content-center p-0"
         onClick={toggleMobile}
         aria-label={mobileOpen ? 'Close navigation' : 'Open navigation'}
         aria-controls="primary-navigation"
         aria-expanded={mobileOpen}
       >
-        <FiMenu size={18} />
+        <FiMenu className="topbar-mobile-menu-icon" aria-hidden="true" />
       </Button>
       <div className="topbar-center-slot">
         {chatStatus.statusCopy != null && (

@@ -1,7 +1,7 @@
 import type { IconType } from 'react-icons';
 import {
   FiSliders, FiCpu, FiTool, FiMic,
-  FiGlobe, FiPlayCircle, FiShield, FiHardDrive, FiBarChart2,
+  FiPlayCircle, FiShield, FiHardDrive, FiBarChart2,
   FiTerminal, FiShuffle, FiKey, FiRefreshCw, FiPackage, FiDatabase,
 } from 'react-icons/fi';
 
@@ -30,7 +30,6 @@ export const SETTINGS_SECTIONS = [
   { key: 'turn', title: 'Turn Budget', description: 'Runtime limits for LLM/tool calls and deadline', icon: FiCpu },
   { key: 'usage', title: 'Usage Tracking', description: 'Enable/disable analytics usage tracking', icon: FiBarChart2 },
   { key: 'mcp', title: 'MCP', description: 'Model Context Protocol runtime defaults', icon: FiTool },
-  { key: 'webhooks', title: 'Webhooks', description: 'Incoming hooks, auth, and delivery actions', icon: FiGlobe },
   { key: 'auto', title: 'Auto Mode', description: 'Autonomous run behavior and constraints', icon: FiPlayCircle },
   { key: 'updates', title: 'Updates', description: 'Check and install latest patch update', icon: FiRefreshCw },
   { key: 'advanced-rate-limit', title: 'Rate Limit', description: 'Request throttling configuration', icon: FiShield },
@@ -70,7 +69,7 @@ export const SETTINGS_BLOCKS: SettingsBlock[] = [
     key: 'runtime',
     title: 'Runtime',
     description: 'Agent execution, memory, usage, and autonomy',
-    sections: ['memory', 'skills', 'turn', 'usage', 'mcp', 'auto', 'webhooks', 'updates'],
+    sections: ['memory', 'skills', 'turn', 'usage', 'mcp', 'auto', 'updates'],
   },
   {
     key: 'advanced',
