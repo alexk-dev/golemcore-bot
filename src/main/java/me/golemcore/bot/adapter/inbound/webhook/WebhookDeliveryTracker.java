@@ -131,10 +131,12 @@ public class WebhookDeliveryTracker {
             state.setPayloadModel(payload.getModel());
             state.setPayloadDurationMs(payload.getDurationMs());
             state.setPayloadError(payload.getError());
-            state.setPayloadResponse(truncate(payload.getResponse(), DEFAULT_MAX_PAYLOAD_RESPONSE_CHARS));
+            state.setPayloadResponse(payload.getResponse());
             state.setUpdatedAt(Instant.now());
 
             if (manualRetry) {
+                state.setStatus(STATUS_IN_PROGRESS);
+                state.setLastError(null);
                 state.appendEvent(EVENT_RETRY_REQUESTED, state.getStatus(), null,
                         "Manual retry requested from dashboard");
             }
@@ -228,6 +230,9 @@ public class WebhookDeliveryTracker {
         synchronized (lock) {
             DeliveryState state = deliveriesById.get(deliveryId);
             if (state == null) {
+                return Optional.empty();
+            }
+            if (!isRetryableStatus(state.getStatus())) {
                 return Optional.empty();
             }
 
@@ -384,7 +389,11 @@ public class WebhookDeliveryTracker {
         throw new IllegalArgumentException("payloadStatus must be completed or failed");
     }
 
-    private String truncate(String value, int maxChars) {
+    private boolean isRetryableStatus(String status) {
+        return STATUS_SUCCESS.equals(status) || STATUS_FAILED.equals(status);
+    }
+
+    private static String truncate(String value, int maxChars) {
         if (value == null || value.length() <= maxChars) {
             return value;
         }
@@ -526,7 +535,7 @@ public class WebhookDeliveryTracker {
         private DeliveryDetail toDetail() {
             PayloadSnapshot payloadSnapshot = new PayloadSnapshot(
                     payloadStatus,
-                    payloadResponse,
+                    truncate(payloadResponse, DEFAULT_MAX_PAYLOAD_RESPONSE_CHARS),
                     payloadModel,
                     payloadDurationMs,
                     payloadError);

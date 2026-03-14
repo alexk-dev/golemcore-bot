@@ -60,7 +60,7 @@ public class WebhookDeliveriesController {
 
         DeliveryDetail detail = webhookDeliveryTracker.retryDelivery(deliveryId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "Delivery cannot be retried (missing callback URL or payload)"));
+                        "Delivery cannot be retried (requires SUCCESS or FAILED state with stored callback URL and payload)"));
         return Mono.just(ResponseEntity.ok(detail));
     }
 

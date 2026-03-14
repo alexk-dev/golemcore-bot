@@ -35,7 +35,8 @@ export function DeliveryDetailCard({ detail, loading, onRetry, retryPending }: D
     );
   }
 
-  const retryDisabled = detail.callbackUrl == null || detail.payload.status == null || retryPending;
+  const retryableStatus = detail.status === 'SUCCESS' || detail.status === 'FAILED';
+  const retryDisabled = !retryableStatus || detail.callbackUrl == null || detail.payload.status == null || retryPending;
 
   return (
     <Card className="settings-card">

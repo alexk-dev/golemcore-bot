@@ -105,6 +105,7 @@ public class SettingsController {
                 .modelTier(prefs.getModelTier())
                 .tierForce(prefs.isTierForce())
                 .tierOverrides(overrideDtos)
+                .webhooks(redactWebhookConfig(prefs.getWebhooks()))
                 .build();
         return Mono.just(ResponseEntity.ok(response));
     }
@@ -868,6 +869,45 @@ public class SettingsController {
                 mapping.setHmacSecret(mergeSecret(existing.getHmacSecret(), mapping.getHmacSecret()));
             }
         }
+    }
+
+    private UserPreferences.WebhookConfig redactWebhookConfig(UserPreferences.WebhookConfig webhookConfig) {
+        if (webhookConfig == null) {
+            return new UserPreferences.WebhookConfig();
+        }
+
+        List<UserPreferences.HookMapping> redactedMappings = new ArrayList<>();
+        if (webhookConfig.getMappings() != null) {
+            for (UserPreferences.HookMapping mapping : webhookConfig.getMappings()) {
+                if (mapping != null) {
+                    redactedMappings.add(redactHookMapping(mapping));
+                }
+            }
+        }
+
+        return UserPreferences.WebhookConfig.builder()
+                .enabled(webhookConfig.isEnabled())
+                .token(Secret.redacted(webhookConfig.getToken()))
+                .maxPayloadSize(webhookConfig.getMaxPayloadSize())
+                .defaultTimeoutSeconds(webhookConfig.getDefaultTimeoutSeconds())
+                .mappings(redactedMappings)
+                .build();
+    }
+
+    private UserPreferences.HookMapping redactHookMapping(UserPreferences.HookMapping mapping) {
+        return UserPreferences.HookMapping.builder()
+                .name(mapping.getName())
+                .action(mapping.getAction())
+                .authMode(mapping.getAuthMode())
+                .hmacHeader(mapping.getHmacHeader())
+                .hmacSecret(Secret.redacted(mapping.getHmacSecret()))
+                .hmacPrefix(mapping.getHmacPrefix())
+                .messageTemplate(mapping.getMessageTemplate())
+                .model(mapping.getModel())
+                .deliver(mapping.isDeliver())
+                .channel(mapping.getChannel())
+                .to(mapping.getTo())
+                .build();
     }
 
     private Secret mergeSecret(Secret current, Secret incoming) {

@@ -22,6 +22,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.eq;
@@ -204,8 +205,8 @@ class WebhookControllerTest {
                 .message("Test msg")
                 .callbackUrl("ftp://example.com/callback")
                 .build();
-        when(deliveryTracker.validateCallbackUrl("ftp://example.com/callback"))
-                .thenThrow(new IllegalArgumentException("callbackUrl must be a valid http(s) URL"));
+        doThrow(new IllegalArgumentException("callbackUrl must be a valid http(s) URL"))
+                .when(deliveryTracker).validateCallbackUrl("ftp://example.com/callback");
 
         ResponseEntity<WebhookResponse> response = controller.agent(request, new HttpHeaders()).block();
 

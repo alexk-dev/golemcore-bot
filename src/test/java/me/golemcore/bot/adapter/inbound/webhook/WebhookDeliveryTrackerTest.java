@@ -4,16 +4,20 @@ import me.golemcore.bot.adapter.inbound.webhook.dto.CallbackPayload;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 class WebhookDeliveryTrackerTest {
@@ -77,10 +81,42 @@ class WebhookDeliveryTrackerTest {
                 "chat-retry",
                 "https://example.com/callback",
                 "smart");
+        String longResponse = "x".repeat(2500);
 
         CallbackPayload payload = CallbackPayload.builder()
                 .runId("run-retry")
                 .chatId("chat-retry")
+                .status("completed")
+                .response(longResponse)
+                .model("smart")
+                .durationMs(200)
+                .build();
+        tracker.capturePayload(deliveryId, payload, false);
+        tracker.createObserver(deliveryId).onFailure("https://example.com/callback", payload, 1,
+                new IllegalStateException("network"));
+
+        WebhookDeliveryTracker.DeliveryDetail detail = tracker.retryDelivery(deliveryId).orElseThrow();
+
+        ArgumentCaptor<CallbackPayload> payloadCaptor = ArgumentCaptor.forClass(CallbackPayload.class);
+        verify(callbackSender).send(eq("https://example.com/callback"), payloadCaptor.capture(),
+                any(WebhookCallbackSender.DeliveryObserver.class));
+        assertEquals(longResponse, payloadCaptor.getValue().getResponse());
+        assertEquals("IN_PROGRESS", detail.status());
+        assertNull(detail.lastError());
+        assertTrue(detail.payload().response().length() < longResponse.length());
+    }
+
+    @Test
+    void shouldRejectRetryWhenDeliveryIsInProgress() {
+        String deliveryId = tracker.registerPendingDelivery(
+                "run-progress",
+                "chat-progress",
+                "https://example.com/callback",
+                "smart");
+
+        CallbackPayload payload = CallbackPayload.builder()
+                .runId("run-progress")
+                .chatId("chat-progress")
                 .status("completed")
                 .response("done")
                 .model("smart")
@@ -88,9 +124,11 @@ class WebhookDeliveryTrackerTest {
                 .build();
         tracker.capturePayload(deliveryId, payload, false);
 
-        tracker.retryDelivery(deliveryId);
+        WebhookCallbackSender.DeliveryObserver observer = tracker.createObserver(deliveryId);
+        observer.onAttempt("https://example.com/callback", payload, 1);
 
-        verify(callbackSender).send(any(String.class), any(CallbackPayload.class),
+        assertFalse(tracker.retryDelivery(deliveryId).isPresent());
+        verify(callbackSender, never()).send(any(String.class), any(CallbackPayload.class),
                 any(WebhookCallbackSender.DeliveryObserver.class));
     }
 

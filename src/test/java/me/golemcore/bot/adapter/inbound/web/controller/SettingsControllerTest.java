@@ -97,6 +97,40 @@ class SettingsControllerTest {
     }
 
     @Test
+    void shouldGetSettingsWithRedactedWebhookSecrets() {
+        UserPreferences prefs = new UserPreferences();
+        prefs.setWebhooks(UserPreferences.WebhookConfig.builder()
+                .enabled(true)
+                .token(Secret.of("bearer-secret"))
+                .mappings(List.of(UserPreferences.HookMapping.builder()
+                        .name("github-push")
+                        .action("agent")
+                        .authMode("hmac")
+                        .hmacSecret(Secret.of("hmac-secret"))
+                        .messageTemplate("Push to {repository.name}")
+                        .build()))
+                .build());
+        when(preferencesService.getPreferences()).thenReturn(prefs);
+
+        StepVerifier.create(controller.getSettings())
+                .assertNext(response -> {
+                    SettingsResponse body = response.getBody();
+                    assertNotNull(body);
+                    assertNotNull(body.getWebhooks());
+                    assertTrue(body.getWebhooks().isEnabled());
+                    assertNotNull(body.getWebhooks().getToken());
+                    assertTrue(Boolean.TRUE.equals(body.getWebhooks().getToken().getPresent()));
+                    assertNull(body.getWebhooks().getToken().getValue());
+                    assertEquals(1, body.getWebhooks().getMappings().size());
+                    assertNotNull(body.getWebhooks().getMappings().get(0).getHmacSecret());
+                    assertTrue(
+                            Boolean.TRUE.equals(body.getWebhooks().getMappings().get(0).getHmacSecret().getPresent()));
+                    assertNull(body.getWebhooks().getMappings().get(0).getHmacSecret().getValue());
+                })
+                .verifyComplete();
+    }
+
+    @Test
     void shouldGetMemoryPresets() {
         MemoryPreset preset = MemoryPreset.builder()
                 .id("coding_balanced")
