@@ -1,6 +1,6 @@
 import { type ReactElement, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import { FiFolder, FiPackage, FiSave, FiSearch } from 'react-icons/fi';
+import { FiChevronDown, FiFolder, FiPackage, FiSave, FiSearch } from 'react-icons/fi';
 import type { SkillMarketplaceCatalogResponse, SkillMarketplaceItem } from '../../api/skills';
 import type { SkillsConfig } from '../../api/settings';
 import { Alert } from '../../components/ui/alert';
@@ -101,6 +101,7 @@ export function SkillsMarketplacePanel(): ReactElement {
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<MarketplaceFilter>('all');
   const [sourceForm, setSourceForm] = useState<MarketplaceSourceForm>(() => buildSourceForm(undefined, undefined));
+  const [isSourceEditorOpen, setIsSourceEditorOpen] = useState(false);
   const lastSyncedSourceSignatureRef = useRef<string | null>(null);
 
   const deferredSearch = useDeferredValue(searchQuery.trim().toLowerCase());
@@ -212,107 +213,148 @@ export function SkillsMarketplacePanel(): ReactElement {
           </Badge>
         </CardHeader>
         <CardContent className="space-y-5">
-          <div className="grid gap-3 xl:grid-cols-[18rem_minmax(0,1fr)_14rem]">
-            <div className="space-y-2">
-              <span className="text-sm font-medium text-foreground">Source type</span>
-              <div className="grid grid-cols-2 gap-2">
-                {([
-                  { key: 'repository', label: 'Repository' },
-                  { key: 'directory', label: 'Local path' },
-                ] as const).map((option) => (
-                  <button
-                    key={option.key}
-                    type="button"
-                    className={cn(
-                      'rounded-2xl border px-3 py-3 text-sm font-medium transition-all duration-200',
-                      sourceForm.marketplaceSourceType === option.key
-                        ? 'border-primary/35 bg-primary/10 text-foreground shadow-glow'
-                        : 'border-border/70 bg-card/60 text-muted-foreground hover:border-primary/20 hover:bg-card',
-                    )}
-                    onClick={() => setSourceForm((current) => ({
-                      ...current,
-                      marketplaceSourceType: option.key,
-                    }))}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              {sourceForm.marketplaceSourceType === 'directory' ? (
-                <div className="space-y-2">
-                  <label htmlFor="skills-marketplace-directory" className="text-sm font-medium text-foreground">
-                    Repository path
-                  </label>
-                  <div className="relative">
-                    <FiFolder className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
-                    <Input
-                      id="skills-marketplace-directory"
-                      type="text"
-                      placeholder="/absolute/path/to/golemcore-skills"
-                      value={sourceForm.marketplaceRepositoryDirectory}
-                      onChange={(event) => setSourceForm((current) => ({
-                        ...current,
-                        marketplaceRepositoryDirectory: event.target.value,
-                      }))}
-                      className="pl-10"
-                    />
+          <div className="flex flex-col gap-4 rounded-2xl border border-border/70 bg-muted/10 p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0 space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={catalog.sourceType === 'directory' ? 'info' : 'secondary'}>
+                    {catalog.sourceType === 'directory' ? 'Local path' : 'Repository'}
+                  </Badge>
+                  {isSourceDirty && (
+                    <Badge variant="warning">Unsaved</Badge>
+                  )}
+                </div>
+                <div className="rounded-2xl border border-border/70 bg-background/80 px-4 py-3 text-sm leading-6 text-muted-foreground">
+                  <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                    Current source
                   </div>
+                  <div className="mt-1 break-all text-foreground">{sourceSummaryLabel(catalog)}</div>
+                  {sourceForm.marketplaceSourceType === 'repository' && sourceForm.marketplaceBranch.trim().length > 0 && (
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      Branch: <span className="font-medium text-foreground">{sourceForm.marketplaceBranch.trim()}</span>
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div className="space-y-2">
-                  <label htmlFor="skills-marketplace-repository-url" className="text-sm font-medium text-foreground">
-                    Repository URL
-                  </label>
-                  <Input
-                    id="skills-marketplace-repository-url"
-                    type="url"
-                    placeholder={DEFAULT_SKILLS_REPOSITORY}
-                    value={sourceForm.marketplaceRepositoryUrl}
-                    onChange={(event) => setSourceForm((current) => ({
-                      ...current,
-                      marketplaceRepositoryUrl: event.target.value,
-                    }))}
-                  />
-                </div>
-              )}
-
-              <div className="rounded-2xl border border-border/70 bg-muted/20 px-4 py-3 text-sm leading-6 text-muted-foreground">
-                {sourceSummaryLabel(catalog)}
               </div>
-            </div>
 
-            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] xl:grid-cols-1">
-              <div className="space-y-2">
-                <label htmlFor="skills-marketplace-branch" className="text-sm font-medium text-foreground">
-                  Branch
-                </label>
-                <Input
-                  id="skills-marketplace-branch"
-                  type="text"
-                  value={sourceForm.marketplaceBranch}
-                  onChange={(event) => setSourceForm((current) => ({
-                    ...current,
-                    marketplaceBranch: event.target.value,
-                  }))}
-                />
-              </div>
               <Button
                 type="button"
-                className="sm:self-end xl:w-full"
-                disabled={!isSourceDirty || updateSkillsMutation.isPending}
-                onClick={() => { void handleSaveSource(); }}
+                variant="secondary"
+                aria-expanded={isSourceEditorOpen}
+                onClick={() => setIsSourceEditorOpen((current) => !current)}
               >
-                {updateSkillsMutation.isPending ? (
-                  <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-r-transparent" />
-                ) : (
-                  <FiSave size={14} />
-                )}
-                {updateSkillsMutation.isPending ? 'Saving...' : 'Save source'}
+                <FiChevronDown
+                  size={14}
+                  className={cn('transition-transform duration-200', isSourceEditorOpen && 'rotate-180')}
+                />
+                {isSourceEditorOpen ? 'Hide source settings' : 'Edit source'}
               </Button>
             </div>
+
+            {isSourceEditorOpen && (
+              <div className="grid gap-3 border-t border-border/70 pt-4 xl:grid-cols-[18rem_minmax(0,1fr)_14rem]">
+                <div className="space-y-2">
+                  <span className="text-sm font-medium text-foreground">Source type</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    {([
+                      { key: 'repository', label: 'Repository' },
+                      { key: 'directory', label: 'Local path' },
+                    ] as const).map((option) => (
+                      <button
+                        key={option.key}
+                        type="button"
+                        className={cn(
+                          'rounded-2xl border px-3 py-3 text-sm font-medium transition-all duration-200',
+                          sourceForm.marketplaceSourceType === option.key
+                            ? 'border-primary/35 bg-primary/10 text-foreground shadow-glow'
+                            : 'border-border/70 bg-card/60 text-muted-foreground hover:border-primary/20 hover:bg-card',
+                        )}
+                        onClick={() => setSourceForm((current) => ({
+                          ...current,
+                          marketplaceSourceType: option.key,
+                        }))}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {sourceForm.marketplaceSourceType === 'directory' ? (
+                    <div className="space-y-2">
+                      <label htmlFor="skills-marketplace-directory" className="text-sm font-medium text-foreground">
+                        Repository path
+                      </label>
+                      <div className="relative">
+                        <FiFolder className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
+                        <Input
+                          id="skills-marketplace-directory"
+                          type="text"
+                          placeholder="/absolute/path/to/golemcore-skills"
+                          value={sourceForm.marketplaceRepositoryDirectory}
+                          onChange={(event) => setSourceForm((current) => ({
+                            ...current,
+                            marketplaceRepositoryDirectory: event.target.value,
+                          }))}
+                          className="pl-10"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <label htmlFor="skills-marketplace-repository-url" className="text-sm font-medium text-foreground">
+                        Repository URL
+                      </label>
+                      <Input
+                        id="skills-marketplace-repository-url"
+                        type="url"
+                        placeholder={DEFAULT_SKILLS_REPOSITORY}
+                        value={sourceForm.marketplaceRepositoryUrl}
+                        onChange={(event) => setSourceForm((current) => ({
+                          ...current,
+                          marketplaceRepositoryUrl: event.target.value,
+                        }))}
+                      />
+                    </div>
+                  )}
+
+                  <div className="rounded-2xl border border-border/70 bg-muted/20 px-4 py-3 text-sm leading-6 text-muted-foreground">
+                    {sourceSummaryLabel(catalog)}
+                  </div>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] xl:grid-cols-1">
+                  <div className="space-y-2">
+                    <label htmlFor="skills-marketplace-branch" className="text-sm font-medium text-foreground">
+                      Branch
+                    </label>
+                    <Input
+                      id="skills-marketplace-branch"
+                      type="text"
+                      value={sourceForm.marketplaceBranch}
+                      onChange={(event) => setSourceForm((current) => ({
+                        ...current,
+                        marketplaceBranch: event.target.value,
+                      }))}
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    className="sm:self-end xl:w-full"
+                    disabled={!isSourceDirty || updateSkillsMutation.isPending}
+                    onClick={() => { void handleSaveSource(); }}
+                  >
+                    {updateSkillsMutation.isPending ? (
+                      <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-r-transparent" />
+                    ) : (
+                      <FiSave size={14} />
+                    )}
+                    {updateSkillsMutation.isPending ? 'Saving...' : 'Save source'}
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
