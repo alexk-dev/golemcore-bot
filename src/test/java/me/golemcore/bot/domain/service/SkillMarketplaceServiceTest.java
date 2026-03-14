@@ -450,6 +450,46 @@ class SkillMarketplaceServiceTest {
         verify(storagePort).deleteObject("skills", "marketplace/golemcore/devops-pack/skills/incident-triage/SKILL.md");
     }
 
+    @Test
+    void shouldResolveManagedSkillStoragePathFromSkillNameWhenLocationIsMissing() {
+        StoragePort storagePort = mock(StoragePort.class);
+        SkillService skillService = mock(SkillService.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(RuntimeConfig.builder()
+                .skills(new RuntimeConfig.SkillsConfig())
+                .build());
+
+        SkillMarketplaceService service = createService(
+                botProperties("http://127.0.0.1:1"),
+                storagePort,
+                skillService,
+                runtimeConfigService);
+
+        String path = service.resolveManagedSkillStoragePath(Skill.builder()
+                .name("golemcore/code-reviewer")
+                .build());
+
+        assertEquals("golemcore/code-reviewer/SKILL.md", path);
+    }
+
+    @Test
+    void shouldRejectNullSkillWhenResolvingManagedSkillStoragePath() {
+        StoragePort storagePort = mock(StoragePort.class);
+        SkillService skillService = mock(SkillService.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(RuntimeConfig.builder()
+                .skills(new RuntimeConfig.SkillsConfig())
+                .build());
+
+        SkillMarketplaceService service = createService(
+                botProperties("http://127.0.0.1:1"),
+                storagePort,
+                skillService,
+                runtimeConfigService);
+
+        assertThrows(NullPointerException.class, () -> service.resolveManagedSkillStoragePath(null));
+    }
+
     private Path createLocalRegistry(Path tempDir) throws IOException {
         Path repoRoot = tempDir.resolve("golemcore-skills");
         Files.createDirectories(repoRoot.resolve("registry/golemcore/code-reviewer"));

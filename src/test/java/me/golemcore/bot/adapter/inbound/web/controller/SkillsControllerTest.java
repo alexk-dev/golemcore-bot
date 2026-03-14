@@ -207,6 +207,18 @@ class SkillsControllerTest {
     }
 
     @Test
+    void shouldRejectUpdateWithMetadataNameContainingEmptySegment() {
+        when(skillService.findByName("test")).thenReturn(Optional.of(Skill.builder().name("test").build()));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.updateSkill("test", Map.of(
+                        "content", "body",
+                        "metadata", Map.of("name", "golemcore//reviewer"))));
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertEquals("Skill metadata name must match [a-z0-9][a-z0-9-]*(/[a-z0-9][a-z0-9-]*)*", ex.getReason());
+    }
+
+    @Test
     void shouldRejectCreateWithUppercaseName() {
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> controller.createSkill(Map.of("name", "MySkill", "content", "body")));

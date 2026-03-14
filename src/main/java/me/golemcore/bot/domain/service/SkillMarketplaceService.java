@@ -726,11 +726,16 @@ public class SkillMarketplaceService {
     }
 
     public String resolveManagedSkillStoragePath(Skill skill) {
-        Path location = skill != null ? skill.getLocation() : null;
+        Skill managedSkill = Objects.requireNonNull(skill, "skill must not be null");
+        Path location = managedSkill.getLocation();
         if (location != null) {
             return location.toString().replace('\\', '/');
         }
-        return skill.getName() + "/" + SKILL_FILE;
+        String skillName = managedSkill.getName();
+        if (skillName == null || skillName.isBlank()) {
+            throw new IllegalArgumentException("skill must define name or location");
+        }
+        return skillName + "/" + SKILL_FILE;
     }
 
     public Optional<String> resolveMarketplaceInstallBase(Path location) {

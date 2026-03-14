@@ -28,7 +28,6 @@ import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
-import java.util.regex.Pattern;
 
 /**
  * Skills management endpoints.
@@ -39,8 +38,6 @@ import java.util.regex.Pattern;
 public class SkillsController {
 
     private static final String SKILLS_DIR = "skills";
-    private static final Pattern VALID_NAME = Pattern.compile("^[a-z0-9][a-z0-9-]*$");
-    private static final Pattern VALID_METADATA_NAME = Pattern.compile("^[a-z0-9][a-z0-9-]*(/[a-z0-9][a-z0-9-]*)*$");
 
     private final SkillService skillService;
     private final SkillMarketplaceService skillMarketplaceService;
@@ -87,7 +84,7 @@ public class SkillsController {
     public Mono<ResponseEntity<SkillDto>> createSkill(@RequestBody Map<String, String> body) {
         String name = body.get("name");
         String content = body.get("content");
-        if (name == null || name.isBlank() || !VALID_NAME.matcher(name).matches()) {
+        if (name == null || name.isBlank() || !isValidMetadataName(name.trim()) || name.contains("/")) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Skill name is required and must match [a-z0-9][a-z0-9-]*");
         }
@@ -255,11 +252,52 @@ public class SkillsController {
             return;
         }
         String normalizedName = name.toString().trim();
-        if (!VALID_METADATA_NAME.matcher(normalizedName).matches()) {
+        if (!isValidMetadataName(normalizedName)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Skill metadata name must match [a-z0-9][a-z0-9-]*(/[a-z0-9][a-z0-9-]*)*");
         }
         metadata.put("name", normalizedName);
+    }
+
+    private boolean isValidMetadataName(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+
+        int segmentStart = 0;
+        for (int index = 0; index <= value.length(); index++) {
+            boolean atSeparator = index < value.length() && value.charAt(index) == '/';
+            boolean atEnd = index == value.length();
+            if (!atSeparator && !atEnd) {
+                continue;
+            }
+            if (!isValidMetadataSegment(value, segmentStart, index)) {
+                return false;
+            }
+            segmentStart = index + 1;
+        }
+        return true;
+    }
+
+    private boolean isValidMetadataSegment(String value, int startInclusive, int endExclusive) {
+        if (startInclusive >= endExclusive) {
+            return false;
+        }
+        char first = value.charAt(startInclusive);
+        if (!isLowercaseLetterOrDigit(first)) {
+            return false;
+        }
+        for (int index = startInclusive + 1; index < endExclusive; index++) {
+            char current = value.charAt(index);
+            if (!isLowercaseLetterOrDigit(current) && current != '-') {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean isLowercaseLetterOrDigit(char value) {
+        return (value >= 'a' && value <= 'z') || (value >= '0' && value <= '9');
     }
 
     private Map<String, Object> copyMetadata(Map<String, Object> metadata) {
