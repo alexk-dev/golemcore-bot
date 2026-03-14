@@ -101,7 +101,7 @@ interface HookExampleCardsProps {
 export function HookExampleCards({ bearerToken, showBearerToken }: HookExampleCardsProps) {
   const hasBearerToken = bearerToken != null && bearerToken.length > 0;
   const tokenPreview = hasBearerToken
-    ? (showBearerToken ? bearerToken : '{TOKEN}')
+    ? (showBearerToken ? bearerToken : '<YOUR_TOKEN>')
     : '<YOUR_TOKEN>';
 
   return (
