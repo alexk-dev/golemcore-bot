@@ -1,4 +1,4 @@
-import { type ReactElement, useEffect, useMemo, useState } from 'react';
+import { type ReactElement, type ReactNode, useEffect, useMemo, useState } from 'react';
 import {
   FiArrowRight,
   FiCpu,
@@ -12,6 +12,7 @@ import {
   FiX,
 } from 'react-icons/fi';
 import type { SkillInfo, SkillUpdateRequest } from '../../api/skills';
+import HelpTip from '../../components/common/HelpTip';
 import { Alert } from '../../components/ui/alert';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
@@ -166,7 +167,7 @@ function FieldStack({
   hint,
   children,
 }: {
-  label: string;
+  label: ReactNode;
   hint?: string;
   children: ReactElement;
 }): ReactElement {
@@ -444,28 +445,31 @@ function LocalSkillDetailPane({
               description="One entry per line. These fields stay in frontmatter as `requires.env`, `requires.binary`, and `requires.skills`."
               icon={<FiSettings size={16} />}
             >
-              <FieldStack label="Required environment variables">
+              <FieldStack
+                label={<>Required environment variables <HelpTip text="One variable name per line. Use only env variable keys such as GITHUB_TOKEN or OPENAI_API_KEY." /></>}
+              >
                 <Textarea
                   rows={4}
                   value={draft.requirementEnv}
                   onChange={(event) => updateDraft((current) => ({ ...current, requirementEnv: event.target.value }))}
-                  placeholder="GITHUB_TOKEN"
                 />
               </FieldStack>
-              <FieldStack label="Required binaries">
+              <FieldStack
+                label={<>Required binaries <HelpTip text="One executable per line. Use command names that must exist in PATH, for example git, node, or docker." /></>}
+              >
                 <Textarea
                   rows={4}
                   value={draft.requirementBinary}
                   onChange={(event) => updateDraft((current) => ({ ...current, requirementBinary: event.target.value }))}
-                  placeholder="git"
                 />
               </FieldStack>
-              <FieldStack label="Required skills">
+              <FieldStack
+                label={<>Required skills <HelpTip text="One skill runtime name per line. Use the exact installed skill id, for example golemcore/review-summary." /></>}
+              >
                 <Textarea
                   rows={4}
                   value={draft.requirementSkills}
                   onChange={(event) => updateDraft((current) => ({ ...current, requirementSkills: event.target.value }))}
-                  placeholder="golemcore/review-summary"
                 />
               </FieldStack>
             </SectionCard>
