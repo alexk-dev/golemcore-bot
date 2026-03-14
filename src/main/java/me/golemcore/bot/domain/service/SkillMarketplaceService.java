@@ -365,13 +365,19 @@ public class SkillMarketplaceService {
         }
         ArtifactManifest manifest = parseArtifactManifest(content);
 
-        Path artifactDir = manifestPath.getParent();
-        if (artifactDir == null || artifactDir.getParent() == null) {
-            throw new IllegalStateException("Artifact manifest must live under registry/<maintainer>/<artifact>");
+        Path artifactDir = Objects.requireNonNull(manifestPath.getParent(),
+                "Artifact manifest must live under registry/<maintainer>/<artifact>");
+        Path maintainerDir = Objects.requireNonNull(artifactDir.getParent(),
+                "Artifact manifest must live under registry/<maintainer>/<artifact>");
+        String maintainerFileName = fileNameOrEmpty(maintainerDir);
+        String artifactFileName = fileNameOrEmpty(artifactDir);
+        Path registryParent = registryRoot.getParent();
+        if (maintainerFileName.isBlank() || artifactFileName.isBlank() || registryParent == null) {
+            throw new IllegalStateException("Artifact manifest path is invalid: " + manifestPath);
         }
 
-        String maintainerId = normalizeMaintainerId(manifest, artifactDir.getParent().getFileName().toString());
-        String artifactId = normalizeArtifactId(manifest, artifactDir.getFileName().toString());
+        String maintainerId = normalizeMaintainerId(manifest, maintainerFileName);
+        String artifactId = normalizeArtifactId(manifest, artifactFileName);
         validateManifestOwnership(manifest, maintainerId, artifactId);
 
         MaintainerInfo maintainer = maintainers.getOrDefault(maintainerId,
@@ -394,7 +400,7 @@ public class SkillMarketplaceService {
             skillContentEntries.add(runtimeName + "\n" + skillContent);
             skills.add(new RegistrySkill(
                     manifestSkill.id(),
-                    registryRoot.getParent().relativize(skillPath).toString().replace('\\', '/'),
+                    registryParent.relativize(skillPath).toString().replace('\\', '/'),
                     runtimeName,
                     skillMetadata.name(),
                     skillMetadata.description(),
@@ -410,7 +416,7 @@ public class SkillMarketplaceService {
                 trimToNull(manifest.getVersion()),
                 trimToNull(manifest.getTitle()),
                 trimToNull(manifest.getDescription()),
-                registryRoot.getParent().relativize(manifestPath).toString().replace('\\', '/'),
+                registryParent.relativize(manifestPath).toString().replace('\\', '/'),
                 buildArtifactContentHash(content, skillContentEntries),
                 List.copyOf(skills));
     }
@@ -560,7 +566,11 @@ public class SkillMarketplaceService {
             return declared;
         }
         if (TYPE_SKILL.equals(type)) {
-            return List.of(new ArtifactSkillEntry(normalizeSlug(artifactDir.getFileName().toString()), SKILL_FILE));
+            Path artifactFileName = artifactDir.getFileName();
+            if (artifactFileName == null) {
+                throw new IllegalStateException("Artifact directory is invalid: " + artifactDir);
+            }
+            return List.of(new ArtifactSkillEntry(normalizeSlug(artifactFileName.toString()), SKILL_FILE));
         }
 
         try (Stream<Path> stream = Files.walk(artifactDir.resolve("skills"))) {
@@ -1158,7 +1168,11 @@ public class SkillMarketplaceService {
     }
 
     private String fileNameOrEmpty(Path path) {
-        return path != null && path.getFileName() != null ? path.getFileName().toString() : "";
+        if (path == null) {
+            return "";
+        }
+        Path fileName = path.getFileName();
+        return fileName != null ? fileName.toString() : "";
     }
 
     private String resolveDeleteScope(Path location, String storagePath) {

@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.eq;
@@ -239,8 +240,14 @@ class SkillsControllerTest {
                 .thenReturn(Optional.of(renamedSkill));
         when(skillMarketplaceService.resolveManagedSkillStoragePath(skill))
                 .thenReturn("marketplace/golemcore/devops-pack/skills/deploy-review/SKILL.md");
-        when(storagePort.putText(eq("skills"), eq("marketplace/golemcore/devops-pack/skills/deploy-review/SKILL.md"),
-                anyString()))
+        when(skillService.renderSkillDocument(anyMap(), eq("new"))).thenReturn("""
+                ---
+                name: golemcore/devops-pack/deploy-review-v2
+                description: Deploy review v2
+                model_tier: smart
+                ---
+                new""");
+        when(storagePort.putText(anyString(), anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
         StepVerifier
@@ -278,7 +285,14 @@ class SkillsControllerTest {
         when(skillService.findByName("test-skill")).thenReturn(Optional.of(skill));
         when(skillService.findByLocation("test-skill/SKILL.md")).thenReturn(Optional.of(skill));
         when(skillMarketplaceService.resolveManagedSkillStoragePath(skill)).thenReturn("test-skill/SKILL.md");
-        when(storagePort.putText(eq("skills"), eq("test-skill/SKILL.md"), anyString()))
+        when(skillService.renderSkillDocument(anyMap(), eq("updated body"))).thenReturn("""
+                ---
+                description: Keep me
+                model_tier: coding
+                next_skill: follow-up
+                ---
+                updated body""");
+        when(storagePort.putText(anyString(), anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
         StepVerifier.create(controller.updateSkillByQuery("test-skill", Map.of("content", "updated body")))
