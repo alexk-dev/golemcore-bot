@@ -13,7 +13,7 @@ describe('LocalSkillsPanel', () => {
         onDelete={vi.fn()}
         onOpenMarketplace={vi.fn()}
         onRefetchDetail={vi.fn()}
-        onSave={vi.fn(async () => ({
+        onSave={vi.fn(() => Promise.resolve({
           name: 'test-skill',
           description: '',
           available: true,
@@ -51,7 +51,7 @@ describe('LocalSkillsPanel', () => {
         onDelete={vi.fn()}
         onOpenMarketplace={vi.fn()}
         onRefetchDetail={vi.fn()}
-        onSave={vi.fn(async () => ({
+        onSave={vi.fn(() => Promise.resolve({
           name: 'golemcore/code-reviewer',
           description: 'Review changes',
           available: true,

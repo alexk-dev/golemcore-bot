@@ -483,7 +483,6 @@ function LocalSkillDetailPane({
                 <Input
                   value={draft.nextSkill}
                   onChange={(event) => updateDraft((current) => ({ ...current, nextSkill: event.target.value }))}
-                  placeholder="follow-up-skill"
                 />
               </FieldStack>
               <div className="space-y-3">
