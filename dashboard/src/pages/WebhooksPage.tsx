@@ -25,6 +25,7 @@ import {
   type WebhookConfig,
   validateWebhookConfig,
 } from '../api/webhooks';
+import { useRuntimeConfig } from '../hooks/useSettings';
 import { useUpdateWebhookConfig, useWebhookConfig } from '../hooks/useWebhooks';
 import { copyTextToClipboard } from '../utils/clipboard';
 import { extractErrorMessage } from '../utils/extractErrorMessage';
@@ -63,11 +64,13 @@ function ErrorState({ onRetry }: ErrorStateProps): ReactElement {
 
 export default function WebhooksPage(): ReactElement {
   const webhookConfigQuery = useWebhookConfig();
+  const runtimeConfigQuery = useRuntimeConfig();
   const updateWebhookConfigMutation = useUpdateWebhookConfig();
 
   const [form, setForm] = useState<WebhookConfig>(DEFAULT_CONFIG);
   const [activeEditIndex, setActiveEditIndex] = useState<number | null>(null);
   const [deleteMappingIndex, setDeleteMappingIndex] = useState<number | null>(null);
+  const [showWebhookToken, setShowWebhookToken] = useState(false);
 
   const config = webhookConfigQuery.data ?? DEFAULT_CONFIG;
 
@@ -79,6 +82,11 @@ export default function WebhooksPage(): ReactElement {
   const validation = useMemo(() => validateWebhookConfig(form), [form]);
   const summary = useMemo(() => buildWebhookSummary(form), [form]);
   const isDirty = useMemo(() => hasWebhookConfigChanges(form, config), [form, config]);
+  const linkedTelegramUserId = useMemo(() => {
+    const allowedUsers = runtimeConfigQuery.data?.telegram?.allowedUsers ?? [];
+    const userId = allowedUsers.find((value) => value.trim().length > 0);
+    return userId ?? null;
+  }, [runtimeConfigQuery.data?.telegram?.allowedUsers]);
 
   const saveDisabled = !isDirty || updateWebhookConfigMutation.isPending || !validation.valid;
 
@@ -134,11 +142,16 @@ export default function WebhooksPage(): ReactElement {
 
       <Row className="g-3 mb-3">
         <Col lg={8}>
-          <WebhookRuntimeCard form={form} onChange={setForm} />
+          <WebhookRuntimeCard
+            form={form}
+            onChange={setForm}
+            showToken={showWebhookToken}
+            onToggleShowToken={() => setShowWebhookToken((current) => !current)}
+          />
         </Col>
 
         <Col lg={4}>
-          <HookExampleCards bearerToken={form.token} />
+          <HookExampleCards bearerToken={form.token} showBearerToken={showWebhookToken} />
         </Col>
       </Row>
 
@@ -150,6 +163,7 @@ export default function WebhooksPage(): ReactElement {
         onAdd={handleAddMapping}
         onUpdate={handleUpdateMapping}
         onCopyEndpoint={(name) => { void handleCopyHookUrl(name); }}
+        linkedTelegramUserId={linkedTelegramUserId}
       />
 
       <ValidationIssuesAlert validation={validation} />

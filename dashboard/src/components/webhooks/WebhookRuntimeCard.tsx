@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react';
 import { Button, Card, Col, Form, InputGroup, Row } from 'react-bootstrap';
+import { FiEye, FiEyeOff } from 'react-icons/fi';
 import type { WebhookConfig } from '../../api/webhooks';
 
 const DEFAULT_MAX_PAYLOAD_SIZE = 65536;
@@ -8,6 +9,8 @@ const DEFAULT_TIMEOUT_SECONDS = 300;
 interface WebhookRuntimeCardProps {
   form: WebhookConfig;
   onChange: (next: WebhookConfig) => void;
+  showToken: boolean;
+  onToggleShowToken: () => void;
 }
 
 function toNullableString(value: string): string | null {
@@ -29,7 +32,14 @@ function generateSecureToken(): string {
   return Array.from(array, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-export function WebhookRuntimeCard({ form, onChange }: WebhookRuntimeCardProps): ReactElement {
+export function WebhookRuntimeCard({
+  form,
+  onChange,
+  showToken,
+  onToggleShowToken,
+}: WebhookRuntimeCardProps): ReactElement {
+  const tokenToggleLabel = showToken ? 'Hide bearer token' : 'Show bearer token';
+
   return (
     <Card className="settings-card h-100">
       <Card.Body>
@@ -47,7 +57,7 @@ export function WebhookRuntimeCard({ form, onChange }: WebhookRuntimeCardProps):
               <Form.Label className="small fw-medium">Bearer Token</Form.Label>
               <InputGroup size="sm">
                 <Form.Control
-                  type="password"
+                  type={showToken ? 'text' : 'password'}
                   value={form.token ?? ''}
                   onChange={(event) => onChange({ ...form, token: toNullableString(event.target.value) })}
                   autoComplete="new-password"
@@ -56,6 +66,16 @@ export function WebhookRuntimeCard({ form, onChange }: WebhookRuntimeCardProps):
                   spellCheck={false}
                   placeholder="Paste token or generate"
                 />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  aria-label={tokenToggleLabel}
+                  title={tokenToggleLabel}
+                  aria-pressed={showToken}
+                  onClick={onToggleShowToken}
+                >
+                  {showToken ? <FiEyeOff /> : <FiEye />}
+                </Button>
                 <Button
                   type="button"
                   variant="secondary"

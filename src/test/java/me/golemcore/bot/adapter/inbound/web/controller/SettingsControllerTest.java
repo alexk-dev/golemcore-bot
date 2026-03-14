@@ -97,7 +97,7 @@ class SettingsControllerTest {
     }
 
     @Test
-    void shouldGetSettingsWithRedactedWebhookSecrets() {
+    void shouldGetSettingsWithWebhookTokensExposed() {
         UserPreferences prefs = new UserPreferences();
         prefs.setWebhooks(UserPreferences.WebhookConfig.builder()
                 .enabled(true)
@@ -119,13 +119,10 @@ class SettingsControllerTest {
                     assertNotNull(body.getWebhooks());
                     assertTrue(body.getWebhooks().isEnabled());
                     assertNotNull(body.getWebhooks().getToken());
-                    assertTrue(Boolean.TRUE.equals(body.getWebhooks().getToken().getPresent()));
-                    assertNull(body.getWebhooks().getToken().getValue());
+                    assertEquals("bearer-secret", body.getWebhooks().getToken().getValue());
                     assertEquals(1, body.getWebhooks().getMappings().size());
                     assertNotNull(body.getWebhooks().getMappings().get(0).getHmacSecret());
-                    assertTrue(
-                            Boolean.TRUE.equals(body.getWebhooks().getMappings().get(0).getHmacSecret().getPresent()));
-                    assertNull(body.getWebhooks().getMappings().get(0).getHmacSecret().getValue());
+                    assertEquals("hmac-secret", body.getWebhooks().getMappings().get(0).getHmacSecret().getValue());
                 })
                 .verifyComplete();
     }

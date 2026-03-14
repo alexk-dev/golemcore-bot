@@ -12,6 +12,7 @@ interface HookMappingsCardProps {
   onAdd: () => void;
   onUpdate: (index: number, mapping: HookMapping) => void;
   onCopyEndpoint: (name: string) => void;
+  linkedTelegramUserId?: string | null;
 }
 
 export function HookMappingsCard({
@@ -22,6 +23,7 @@ export function HookMappingsCard({
   onAdd,
   onUpdate,
   onCopyEndpoint,
+  linkedTelegramUserId,
 }: HookMappingsCardProps): ReactElement {
   return (
     <Card className="settings-card mb-3">
@@ -51,6 +53,7 @@ export function HookMappingsCard({
               mapping={mappings[activeEditIndex]}
               onChange={(nextMapping) => onUpdate(activeEditIndex, nextMapping)}
               onCopyEndpoint={onCopyEndpoint}
+              linkedTelegramUserId={linkedTelegramUserId}
             />
           </div>
         )}

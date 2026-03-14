@@ -65,6 +65,17 @@ function toNullableString(value: unknown): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
+function toNullableSecretValue(value: unknown): string | null {
+  if (typeof value === 'string') {
+    return toNullableString(value);
+  }
+  if (value == null || typeof value !== 'object') {
+    return null;
+  }
+  const record = value as UnknownRecord;
+  return toNullableString(record.value);
+}
+
 function toNumberOrDefault(value: unknown, fallback: number): number {
   if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
     return Math.floor(value);
@@ -89,7 +100,7 @@ function normalizeMapping(raw: unknown): HookMapping {
     action: toHookAction(record.action),
     authMode: toHookAuthMode(record.authMode),
     hmacHeader: toNullableString(record.hmacHeader),
-    hmacSecret: toNullableString(hmacSecretRaw),
+    hmacSecret: toNullableSecretValue(hmacSecretRaw),
     hmacSecretPresent: hasSecretValue(hmacSecretRaw),
     hmacPrefix: toNullableString(record.hmacPrefix),
     messageTemplate: toNullableString(record.messageTemplate),
@@ -123,7 +134,7 @@ function parseWebhookConfig(raw: unknown): WebhookConfig {
 
   return {
     enabled: Boolean(record.enabled),
-    token: toNullableString(tokenRaw),
+    token: toNullableSecretValue(tokenRaw),
     tokenPresent: hasSecretValue(tokenRaw),
     maxPayloadSize: toNumberOrDefault(record.maxPayloadSize, DEFAULT_MAX_PAYLOAD_SIZE),
     defaultTimeoutSeconds: toNumberOrDefault(record.defaultTimeoutSeconds, DEFAULT_TIMEOUT_SECONDS),

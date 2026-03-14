@@ -26,13 +26,7 @@ export function DeliveryDetailCard({ detail, loading, onRetry, retryPending }: D
   }
 
   if (detail == null) {
-    return (
-      <Card className="settings-card">
-        <Card.Body className="text-body-secondary small">
-          Select a delivery attempt to inspect status timeline and payload.
-        </Card.Body>
-      </Card>
-    );
+    return <></>;
   }
 
   const retryableStatus = detail.status === 'SUCCESS' || detail.status === 'FAILED';

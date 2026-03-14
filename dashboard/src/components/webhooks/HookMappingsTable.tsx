@@ -95,10 +95,14 @@ export function HookMappingsTable({
 
 interface HookExampleCardsProps {
   bearerToken: string | null;
+  showBearerToken: boolean;
 }
 
-export function HookExampleCards({ bearerToken }: HookExampleCardsProps) {
-  const tokenPreview = bearerToken != null && bearerToken.length > 0 ? bearerToken : '<YOUR_TOKEN>';
+export function HookExampleCards({ bearerToken, showBearerToken }: HookExampleCardsProps) {
+  const hasBearerToken = bearerToken != null && bearerToken.length > 0;
+  const tokenPreview = hasBearerToken
+    ? (showBearerToken ? bearerToken : '{TOKEN}')
+    : '<YOUR_TOKEN>';
 
   return (
     <Card className="webhook-quickstart-card border">

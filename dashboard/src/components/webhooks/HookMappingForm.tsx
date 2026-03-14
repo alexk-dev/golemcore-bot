@@ -1,4 +1,6 @@
+import { useEffect, useRef, useState } from 'react';
 import { Badge, Button, Card, Col, Form, InputGroup, Row } from 'react-bootstrap';
+import { FiEye, FiEyeOff } from 'react-icons/fi';
 import HelpTip from '../common/HelpTip';
 import type { HookAction, HookAuthMode, HookMappingDraft } from '../../api/webhooks';
 
@@ -6,6 +8,7 @@ interface HookMappingFormProps {
   mapping: HookMappingDraft;
   onChange: (nextMapping: HookMappingDraft) => void;
   onCopyEndpoint: (name: string) => void;
+  linkedTelegramUserId?: string | null;
 }
 
 const ACTION_DESCRIPTIONS: Record<HookAction, string> = {
@@ -31,6 +34,14 @@ function resolveHookAuthMode(value: string): HookAuthMode {
   return value === 'hmac' ? 'hmac' : 'bearer';
 }
 
+function normalizeChannel(value: string | null | undefined): string | null {
+  if (value == null) {
+    return null;
+  }
+  const normalized = value.trim().toLowerCase();
+  return normalized.length > 0 ? normalized : null;
+}
+
 function HookIdentitySection({
   mapping,
   onChange,
@@ -41,7 +52,7 @@ function HookIdentitySection({
   return (
     <Row className="g-3">
       <Col md={4}>
-        <Form.Group>
+        <Form.Group className="h-100">
           <Form.Label className="small fw-medium">
             Hook Name
             <HelpTip text="Endpoint path segment: /api/hooks/{name}. Use lowercase letters, digits, and hyphens." />
@@ -76,7 +87,7 @@ function HookIdentitySection({
       </Col>
 
       <Col md={4}>
-        <Form.Group>
+        <Form.Group className="h-100">
           <Form.Label className="small fw-medium">
             Action
             <HelpTip text="Choose wake for lightweight event ingestion or agent for full reasoning/tool execution." />
@@ -94,7 +105,7 @@ function HookIdentitySection({
       </Col>
 
       <Col md={4}>
-        <Form.Group>
+        <Form.Group className="h-100">
           <Form.Label className="small fw-medium">
             Auth Mode
             <HelpTip text="Bearer is easiest. HMAC is recommended for third-party webhooks (GitHub, Stripe, etc.)." />
@@ -112,7 +123,7 @@ function HookIdentitySection({
       </Col>
 
       <Col md={12}>
-        <Form.Group>
+        <Form.Group className="h-100">
           <Form.Label className="small fw-medium">
             Message Template
             <HelpTip text="Template for message sent to the bot. Use {field.path} placeholders from JSON payload. If empty, raw payload is used." />
@@ -137,14 +148,18 @@ interface HookSecuritySectionProps {
 }
 
 function HookSecuritySection({ mapping, onChange }: HookSecuritySectionProps) {
+  const [showHmacSecret, setShowHmacSecret] = useState(false);
+
   if (mapping.authMode !== 'hmac') {
     return null;
   }
 
+  const hmacToggleLabel = showHmacSecret ? 'Hide HMAC secret' : 'Show HMAC secret';
+
   return (
     <Row className="g-3 mt-0">
       <Col md={4}>
-        <Form.Group>
+        <Form.Group className="h-100">
           <Form.Label className="small fw-medium">
             Signature Header
             <HelpTip text="Header containing signature from provider (e.g. x-hub-signature-256)." />
@@ -159,24 +174,36 @@ function HookSecuritySection({ mapping, onChange }: HookSecuritySectionProps) {
       </Col>
 
       <Col md={4}>
-        <Form.Group>
+        <Form.Group className="h-100">
           <Form.Label className="small fw-medium">
             HMAC Secret
             <HelpTip text="Shared secret used to verify payload integrity." />
           </Form.Label>
-          <Form.Control
-            size="sm"
-            type="password"
-            value={mapping.hmacSecret ?? ''}
-            onChange={(event) => onChange({ ...mapping, hmacSecret: toNullableString(event.target.value) })}
-            autoComplete="new-password"
-            placeholder={mapping.hmacSecretPresent === true ? 'Configured (hidden)' : ''}
-          />
+          <InputGroup size="sm">
+            <Form.Control
+              size="sm"
+              type={showHmacSecret ? 'text' : 'password'}
+              value={mapping.hmacSecret ?? ''}
+              onChange={(event) => onChange({ ...mapping, hmacSecret: toNullableString(event.target.value) })}
+              autoComplete="new-password"
+              placeholder={mapping.hmacSecretPresent === true ? 'Configured' : 'Enter HMAC secret'}
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              aria-label={hmacToggleLabel}
+              title={hmacToggleLabel}
+              aria-pressed={showHmacSecret}
+              onClick={() => setShowHmacSecret((current) => !current)}
+            >
+              {showHmacSecret ? <FiEyeOff /> : <FiEye />}
+            </Button>
+          </InputGroup>
         </Form.Group>
       </Col>
 
       <Col md={4}>
-        <Form.Group>
+        <Form.Group className="h-100">
           <Form.Label className="small fw-medium">
             Signature Prefix
             <HelpTip text="Optional prefix stripped from header before compare (e.g. sha256=)." />
@@ -196,17 +223,75 @@ function HookSecuritySection({ mapping, onChange }: HookSecuritySectionProps) {
 interface HookAgentSectionProps {
   mapping: HookMappingDraft;
   onChange: (nextMapping: HookMappingDraft) => void;
+  linkedTelegramUserId?: string | null;
 }
 
-function HookAgentSection({ mapping, onChange }: HookAgentSectionProps) {
-  if (mapping.action !== 'agent') {
+function HookAgentSection({ mapping, onChange, linkedTelegramUserId }: HookAgentSectionProps) {
+  const telegramAutofillKeyRef = useRef<string | null>(null);
+  const normalizedChannel = normalizeChannel(mapping.channel);
+  const isTelegramDelivery = normalizedChannel === 'telegram';
+  const isAgentMapping = mapping.action === 'agent';
+  const telegramTarget = linkedTelegramUserId ?? null;
+  const shouldAutoFillTelegramTarget = isAgentMapping
+    && mapping.deliver
+    && isTelegramDelivery
+    && telegramTarget != null
+    && (mapping.to == null || mapping.to.trim().length === 0);
+  const telegramAutofillKey = shouldAutoFillTelegramTarget
+    ? `${mapping.name}|${normalizedChannel}|${telegramTarget}`
+    : null;
+
+  useEffect(() => {
+    if (telegramAutofillKey == null) {
+      telegramAutofillKeyRef.current = null;
+      return;
+    }
+    if (telegramAutofillKeyRef.current === telegramAutofillKey) {
+      return;
+    }
+    telegramAutofillKeyRef.current = telegramAutofillKey;
+    onChange({ ...mapping, to: telegramTarget });
+  }, [telegramAutofillKey, mapping, onChange, telegramTarget]);
+
+  if (!isAgentMapping) {
     return null;
   }
 
+  const handleDeliverChange = (deliver: boolean): void => {
+    const shouldPopulateTelegramTarget = deliver
+      && isTelegramDelivery
+      && telegramTarget != null
+      && (mapping.to == null || mapping.to.trim().length === 0);
+
+    onChange({
+      ...mapping,
+      deliver,
+      to: shouldPopulateTelegramTarget ? telegramTarget : mapping.to,
+    });
+  };
+
+  const handleChannelChange = (rawValue: string): void => {
+    const channel = toNullableString(rawValue);
+    const shouldPopulateTelegramTarget = mapping.deliver
+      && normalizeChannel(channel) === 'telegram'
+      && telegramTarget != null
+      && (mapping.to == null || mapping.to.trim().length === 0);
+
+    onChange({
+      ...mapping,
+      channel,
+      to: shouldPopulateTelegramTarget ? telegramTarget : mapping.to,
+    });
+  };
+
+  const targetPlaceholder = isTelegramDelivery && telegramTarget != null
+    ? telegramTarget
+    : 'chat id';
+
   return (
     <Row className="g-3 mt-0">
-      <Col md={4}>
-        <Form.Group>
+      <Col xl={3} md={6}>
+        <Form.Group className="h-100">
           <Form.Label className="small fw-medium">
             Model Tier
             <HelpTip text="Optional tier override for this hook: balanced, smart, coding, deep." />
@@ -225,59 +310,75 @@ function HookAgentSection({ mapping, onChange }: HookAgentSectionProps) {
         </Form.Group>
       </Col>
 
-      <Col md={4}>
-        <Form.Check
-          type="switch"
-          className="mt-md-4 mt-2"
-          label={
-            <>
-              Deliver to channel
-              <HelpTip text="Forward completed agent response to a channel (e.g. Telegram)." />
-            </>
-          }
-          checked={mapping.deliver}
-          onChange={(event) => onChange({ ...mapping, deliver: event.target.checked })}
-        />
+      <Col xl={3} md={6}>
+        <Form.Group className="h-100">
+          <Form.Label className="small fw-medium">
+            Delivery
+            <HelpTip text="Forward completed agent response to a messaging channel such as Telegram." />
+          </Form.Label>
+          <div className="h-100 border rounded px-3 py-2 bg-body-tertiary d-flex align-items-center">
+            <Form.Check
+              type="switch"
+              className="mb-0"
+              label="Deliver to channel"
+              checked={mapping.deliver}
+              onChange={(event) => handleDeliverChange(event.target.checked)}
+            />
+          </div>
+        </Form.Group>
       </Col>
 
-      {mapping.deliver && (
-        <>
-          <Col md={2}>
-            <Form.Group>
-              <Form.Label className="small fw-medium">Channel</Form.Label>
-              <Form.Control
-                size="sm"
-                value={mapping.channel ?? ''}
-                onChange={(event) => onChange({ ...mapping, channel: toNullableString(event.target.value) })}
-                placeholder="telegram"
-              />
-            </Form.Group>
-          </Col>
+      <Col xl={3} md={6}>
+        <Form.Group className="h-100">
+          <Form.Label className="small fw-medium">
+            Channel
+            <HelpTip text="Target delivery channel type. Use telegram to route the response into the linked Telegram chat." />
+          </Form.Label>
+          <Form.Control
+            size="sm"
+            value={mapping.channel ?? ''}
+            disabled={!mapping.deliver}
+            onChange={(event) => handleChannelChange(event.target.value)}
+            placeholder="telegram"
+          />
+        </Form.Group>
+      </Col>
 
-          <Col md={2}>
-            <Form.Group>
-              <Form.Label className="small fw-medium">To</Form.Label>
-              <Form.Control
-                size="sm"
-                value={mapping.to ?? ''}
-                onChange={(event) => onChange({ ...mapping, to: toNullableString(event.target.value) })}
-                placeholder="chat id"
-              />
-            </Form.Group>
-          </Col>
-        </>
-      )}
+      <Col xl={3} md={6}>
+        <Form.Group className="h-100">
+          <Form.Label className="small fw-medium">
+            Target ID
+            <HelpTip text="Target chat or user id on the selected delivery channel. For Telegram, the linked user id is used automatically when available." />
+          </Form.Label>
+          <Form.Control
+            size="sm"
+            value={mapping.to ?? ''}
+            disabled={!mapping.deliver}
+            onChange={(event) => onChange({ ...mapping, to: toNullableString(event.target.value) })}
+            placeholder={targetPlaceholder}
+          />
+        </Form.Group>
+      </Col>
     </Row>
   );
 }
 
-export function HookMappingForm({ mapping, onChange, onCopyEndpoint }: HookMappingFormProps) {
+export function HookMappingForm({
+  mapping,
+  onChange,
+  onCopyEndpoint,
+  linkedTelegramUserId,
+}: HookMappingFormProps) {
   return (
     <Card className="webhook-editor-card border">
       <Card.Body className="p-3">
         <HookIdentitySection mapping={mapping} onChange={onChange} onCopyEndpoint={onCopyEndpoint} />
         <HookSecuritySection mapping={mapping} onChange={onChange} />
-        <HookAgentSection mapping={mapping} onChange={onChange} />
+        <HookAgentSection
+          mapping={mapping}
+          onChange={onChange}
+          linkedTelegramUserId={linkedTelegramUserId}
+        />
       </Card.Body>
     </Card>
   );
