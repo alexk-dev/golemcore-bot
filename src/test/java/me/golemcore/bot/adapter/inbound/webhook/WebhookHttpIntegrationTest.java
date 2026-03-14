@@ -26,6 +26,9 @@ import static org.mockito.Mockito.when;
 class WebhookHttpIntegrationTest {
 
     private static final String TOKEN = "test-token-value";
+    private static final String JSON_BODY = """
+            {"text":"Deploy finished","chatId":"webhook:ci"}
+            """;
 
     private WebTestClient webTestClient;
 
@@ -78,9 +81,7 @@ class WebhookHttpIntegrationTest {
                 .uri("/api/hooks/test")
                 .header(HttpHeaders.AUTHORIZATION, "Bearer wrong-token")
                 .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue("""
-                        {"text":"Deploy finished","chatId":"webhook:ci"}
-                        """)
+                .bodyValue(JSON_BODY)
                 .exchange()
                 .expectStatus().isUnauthorized();
     }
@@ -91,10 +92,41 @@ class WebhookHttpIntegrationTest {
                 .uri("/api/hooks/test")
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
                 .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue("""
-                        {"text":"Deploy finished","chatId":"webhook:ci"}
-                        """)
+                .bodyValue(JSON_BODY)
                 .exchange()
                 .expectStatus().isOk();
+    }
+
+    @Test
+    void customHookShouldAcceptAlternativeTokenHeader() {
+        webTestClient.post()
+                .uri("/api/hooks/test")
+                .header("X-Golemcore-Token", TOKEN)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(JSON_BODY)
+                .exchange()
+                .expectStatus().isOk();
+    }
+
+    @Test
+    void wakeShouldReturn401BeforeBodyValidationWhenTokenIsWrong() {
+        webTestClient.post()
+                .uri("/api/hooks/wake")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer wrong-token")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{")
+                .exchange()
+                .expectStatus().isUnauthorized();
+    }
+
+    @Test
+    void agentShouldReturn401BeforeBodyValidationWhenTokenIsWrong() {
+        webTestClient.post()
+                .uri("/api/hooks/agent")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer wrong-token")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{")
+                .exchange()
+                .expectStatus().isUnauthorized();
     }
 }
