@@ -1,5 +1,6 @@
 package me.golemcore.bot.adapter.inbound.webhook;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.adapter.inbound.webhook.dto.AgentRequest;
 import me.golemcore.bot.adapter.inbound.webhook.dto.WakeRequest;
 import me.golemcore.bot.adapter.inbound.webhook.dto.WebhookResponse;
@@ -19,18 +20,29 @@ import org.springframework.http.ResponseEntity;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class WebhookControllerTest {
 
     private static final String TOKEN = "test-token-value";
     private static final String SAMPLE_TEXT = "sample-input";
 
+    private final ObjectMapper objectMapper = new ObjectMapper();
     private UserPreferencesService preferencesService;
     private WebhookAuthenticator authenticator;
     private WebhookChannelAdapter channelAdapter;
     private WebhookPayloadTransformer transformer;
+    private WebhookDeliveryTracker deliveryTracker;
     private ApplicationEventPublisher eventPublisher;
     private InputSanitizer inputSanitizer;
     private WebhookController controller;
@@ -41,12 +53,13 @@ class WebhookControllerTest {
         authenticator = mock(WebhookAuthenticator.class);
         channelAdapter = mock(WebhookChannelAdapter.class);
         transformer = mock(WebhookPayloadTransformer.class);
+        deliveryTracker = mock(WebhookDeliveryTracker.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
         inputSanitizer = new InputSanitizer();
 
         controller = new WebhookController(
                 preferencesService, authenticator, channelAdapter,
-                transformer, eventPublisher, inputSanitizer);
+                transformer, deliveryTracker, eventPublisher, inputSanitizer);
 
         when(preferencesService.getPreferences()).thenReturn(buildEnabledPrefs());
         when(authenticator.authenticateBearer(any())).thenReturn(true);
@@ -61,7 +74,7 @@ class WebhookControllerTest {
                 .chatId("webhook:ci")
                 .build();
 
-        ResponseEntity<WebhookResponse> response = controller.wake(request, new HttpHeaders()).block();
+        ResponseEntity<WebhookResponse> response = controller.wake(toJsonBytes(request), new HttpHeaders()).block();
 
         assertNotNull(response);
         assertEquals(HttpStatus.OK, response.getStatusCode());
@@ -85,7 +98,7 @@ class WebhookControllerTest {
 
         WakeRequest request = WakeRequest.builder().text(SAMPLE_TEXT).build();
 
-        ResponseEntity<WebhookResponse> response = controller.wake(request, new HttpHeaders()).block();
+        ResponseEntity<WebhookResponse> response = controller.wake(toJsonBytes(request), new HttpHeaders()).block();
 
         assertNotNull(response);
         assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
@@ -97,7 +110,17 @@ class WebhookControllerTest {
 
         WakeRequest request = WakeRequest.builder().text(SAMPLE_TEXT).build();
 
-        ResponseEntity<WebhookResponse> response = controller.wake(request, new HttpHeaders()).block();
+        ResponseEntity<WebhookResponse> response = controller.wake(toJsonBytes(request), new HttpHeaders()).block();
+
+        assertNotNull(response);
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+    }
+
+    @Test
+    void wakeShouldReturnUnauthorizedBeforeMalformedJsonWhenTokenIsBad() {
+        when(authenticator.authenticateBearer(any())).thenReturn(false);
+
+        ResponseEntity<WebhookResponse> response = controller.wake("{".getBytes(), new HttpHeaders()).block();
 
         assertNotNull(response);
         assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
@@ -107,7 +130,7 @@ class WebhookControllerTest {
     void wakeShouldReturnBadRequestWhenTextMissing() {
         WakeRequest request = WakeRequest.builder().text(null).build();
 
-        ResponseEntity<WebhookResponse> response = controller.wake(request, new HttpHeaders()).block();
+        ResponseEntity<WebhookResponse> response = controller.wake(toJsonBytes(request), new HttpHeaders()).block();
 
         assertNotNull(response);
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
@@ -117,7 +140,7 @@ class WebhookControllerTest {
     void wakeShouldWrapPayloadWithSafetyMarkers() {
         WakeRequest request = WakeRequest.builder().text("External event").build();
 
-        controller.wake(request, new HttpHeaders()).block();
+        controller.wake(toJsonBytes(request), new HttpHeaders()).block();
 
         ArgumentCaptor<AgentLoop.InboundMessageEvent> captor = ArgumentCaptor
                 .forClass(AgentLoop.InboundMessageEvent.class);
@@ -137,7 +160,7 @@ class WebhookControllerTest {
                 .model("smart")
                 .build();
 
-        ResponseEntity<WebhookResponse> response = controller.agent(request, new HttpHeaders()).block();
+        ResponseEntity<WebhookResponse> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
 
         assertNotNull(response);
         assertEquals(HttpStatus.ACCEPTED, response.getStatusCode());
@@ -153,7 +176,7 @@ class WebhookControllerTest {
                 .chatId("my-session")
                 .build();
 
-        ResponseEntity<WebhookResponse> response = controller.agent(request, new HttpHeaders()).block();
+        ResponseEntity<WebhookResponse> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
 
         assertNotNull(response);
         assertEquals("my-session", response.getBody().getChatId());
@@ -163,7 +186,7 @@ class WebhookControllerTest {
     void agentShouldReturnBadRequestWhenMessageMissing() {
         AgentRequest request = AgentRequest.builder().message(null).build();
 
-        ResponseEntity<WebhookResponse> response = controller.agent(request, new HttpHeaders()).block();
+        ResponseEntity<WebhookResponse> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
 
         assertNotNull(response);
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
@@ -176,11 +199,36 @@ class WebhookControllerTest {
                 .callbackUrl("https://example.com/callback")
                 .model("coding")
                 .build();
+        when(deliveryTracker.registerPendingDelivery(anyString(), anyString(), anyString(), anyString()))
+                .thenReturn("delivery-1");
 
-        controller.agent(request, new HttpHeaders()).block();
+        controller.agent(toJsonBytes(request), new HttpHeaders()).block();
 
-        verify(channelAdapter).registerPendingRun(anyString(), anyString(),
+        verify(deliveryTracker).validateCallbackUrl("https://example.com/callback");
+        verify(deliveryTracker).registerPendingDelivery(anyString(), anyString(),
                 eq("https://example.com/callback"), eq("coding"));
+        verify(channelAdapter).registerPendingRun(anyString(), anyString(),
+                eq("https://example.com/callback"), eq("coding"), eq("delivery-1"));
+    }
+
+    @Test
+    void agentShouldReturnBadRequestWhenCallbackUrlIsInvalid() {
+        AgentRequest request = AgentRequest.builder()
+                .message("Test msg")
+                .callbackUrl("ftp://example.com/callback")
+                .build();
+        doThrow(new IllegalArgumentException("callbackUrl must be a valid http(s) URL"))
+                .when(deliveryTracker).validateCallbackUrl("ftp://example.com/callback");
+
+        ResponseEntity<WebhookResponse> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
+
+        assertNotNull(response);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertEquals("error", response.getBody().getStatus());
+        assertEquals("callbackUrl must be a valid http(s) URL", response.getBody().getErrorMessage());
+
+        verify(channelAdapter, never()).registerPendingRun(anyString(), anyString(), anyString(), anyString(),
+                anyString());
     }
 
     // ==================== /{name} (custom mapping) ====================
@@ -295,5 +343,13 @@ class WebhookControllerTest {
                         .mappings(List.of(mapping))
                         .build())
                 .build();
+    }
+
+    private byte[] toJsonBytes(Object value) {
+        try {
+            return objectMapper.writeValueAsBytes(value);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to serialize test payload", e);
+        }
     }
 }

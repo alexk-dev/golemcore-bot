@@ -11,7 +11,6 @@ import { usePluginMarketplace, usePluginSettingsCatalog } from '../hooks/usePlug
 import { useMe } from '../hooks/useAuth';
 import { useQueryClient } from '@tanstack/react-query';
 import GeneralTab from './settings/GeneralTab';
-import WebhooksTab from './settings/WebhooksTab';
 import { AdvancedTab } from './settings/AdvancedTab';
 import ToolsTab from './settings/ToolsTab';
 import ModelsTab from './settings/ModelsTab';
@@ -280,7 +279,6 @@ export default function SettingsPage(): ReactElement {
       {staticSection === 'turn' && rc != null && <TurnTab config={rc.turn} />}
       {staticSection === 'usage' && rc != null && <UsageTab config={rc.usage} />}
       {staticSection === 'mcp' && rc != null && <McpTab config={rc.mcp} />}
-      {staticSection === 'webhooks' && <WebhooksTab />}
       {staticSection === 'auto' && rc != null && <AutoModeTab config={rc.autoMode} />}
       {staticSection === 'updates' && <UpdatesTab />}
 

@@ -42,6 +42,7 @@ public class ScheduleEntry {
     private String targetId;
     private String cronExpression;
     private boolean enabled;
+    private boolean clearContextBeforeRun;
 
     @Builder.Default
     private int maxExecutions = -1;

@@ -1,37 +1,54 @@
 import type { ReactElement } from 'react';
-import { Button, Card, Form } from 'react-bootstrap';
-import type { SchedulerGoal } from '../../api/scheduler';
-import type { SchedulerFrequency, SchedulerTargetType, ScheduleFormState } from './schedulerTypes';
-import { buildGoalOptions, buildTaskOptions, normalizeTimeInput, parseLimitInput, type SchedulerTargetOption } from './schedulerFormUtils';
-
-const PRESET_TIMES: readonly string[] = ['09:00', '12:00', '18:00', '21:00'];
-const PRESET_LIMITS: readonly number[] = [1, 3, 5, 10];
-const WEEKDAY_OPTIONS: ReadonlyArray<{ value: number; label: string }> = [
-  { value: 1, label: 'Mon' },
-  { value: 2, label: 'Tue' },
-  { value: 3, label: 'Wed' },
-  { value: 4, label: 'Thu' },
-  { value: 5, label: 'Fri' },
-  { value: 6, label: 'Sat' },
-  { value: 7, label: 'Sun' },
-];
+import { Button, Card } from 'react-bootstrap';
+import type { SchedulerGoal, SchedulerTask, SchedulerTargetType } from '../../api/scheduler';
+import type {
+  SchedulerFrequency,
+  SchedulerMode,
+  ScheduleFormState,
+} from './schedulerTypes';
+import {
+  buildGoalOptions,
+  buildTaskOptions,
+  parseLimitInput,
+  type SchedulerTargetOption,
+} from './schedulerFormUtils';
+import {
+  AdvancedCronFields,
+  ClearContextField,
+  RepeatLimitField,
+  ScheduleEnabledField,
+  SchedulerModeToggle,
+  SimpleScheduleFields,
+  TargetSelector,
+  TargetTypeToggle,
+} from './SchedulerCreateCardSections';
 
 interface SchedulerCreateCardProps {
   featureEnabled: boolean;
   goals: SchedulerGoal[];
+  standaloneTasks: SchedulerTask[];
   form: ScheduleFormState;
   isTimeValid: boolean;
+  isCronValid: boolean;
   isFormValid: boolean;
   isCreating: boolean;
+  isEditing: boolean;
+  editingScheduleLabel: string | null;
   onTargetTypeChange: (targetType: SchedulerTargetType) => void;
   onTargetChange: (targetId: string) => void;
+  onModeChange: (mode: SchedulerMode) => void;
   onFrequencyChange: (frequency: SchedulerFrequency) => void;
   onToggleDay: (day: number) => void;
   onTimeChange: (value: string) => void;
   onPresetTimeSelect: (value: string) => void;
+  onCronExpressionChange: (value: string) => void;
+  onPresetCronSelect: (value: string) => void;
   onLimitInputChange: (value: string) => void;
   onPresetLimitSelect: (value: string) => void;
+  onEnabledChange: (enabled: boolean) => void;
+  onClearContextBeforeRunChange: (clearContextBeforeRun: boolean) => void;
   onSubmit: () => void;
+  onCancelEdit: () => void;
 }
 
 interface SchedulerSubmitState {
@@ -42,19 +59,15 @@ interface SchedulerSubmitState {
   parsedLimit: number | null;
 }
 
-function isSchedulerFrequency(value: string): value is SchedulerFrequency {
-  return value === 'daily' || value === 'weekdays' || value === 'weekly' || value === 'custom';
-}
-
-function toSchedulerFrequency(value: string, fallback: SchedulerFrequency): SchedulerFrequency {
-  return isSchedulerFrequency(value) ? value : fallback;
-}
-
-function resolveTargetOptions(targetType: SchedulerTargetType, goals: SchedulerGoal[]): SchedulerTargetOption[] {
+function resolveTargetOptions(
+  targetType: SchedulerTargetType,
+  goals: SchedulerGoal[],
+  standaloneTasks: SchedulerTask[],
+): SchedulerTargetOption[] {
   if (targetType === 'GOAL') {
     return buildGoalOptions(goals);
   }
-  return buildTaskOptions(goals);
+  return buildTaskOptions(goals, standaloneTasks);
 }
 
 function resolveEffectiveTargetId(options: SchedulerTargetOption[], targetId: string): string {
@@ -63,10 +76,6 @@ function resolveEffectiveTargetId(options: SchedulerTargetOption[], targetId: st
     return targetId;
   }
   return options[0]?.id ?? '';
-}
-
-function isWeeklyOrCustom(frequency: SchedulerFrequency): boolean {
-  return frequency === 'weekly' || frequency === 'custom';
 }
 
 function shouldDisableSubmit(state: SchedulerSubmitState): boolean {
@@ -85,29 +94,47 @@ function shouldDisableSubmit(state: SchedulerSubmitState): boolean {
   return state.parsedLimit == null;
 }
 
+function resolveHeaderTitle(isEditing: boolean): string {
+  return isEditing ? 'Edit schedule' : 'Create schedule';
+}
+
+function resolveSubmitLabel(isEditing: boolean, isCreating: boolean): string {
+  if (isCreating) {
+    return isEditing ? 'Saving...' : 'Creating...';
+  }
+  return isEditing ? 'Save schedule' : 'Create schedule';
+}
+
 export function SchedulerCreateCard({
   featureEnabled,
   goals,
+  standaloneTasks,
   form,
   isTimeValid,
+  isCronValid,
   isFormValid,
   isCreating,
+  isEditing,
+  editingScheduleLabel,
   onTargetTypeChange,
   onTargetChange,
+  onModeChange,
   onFrequencyChange,
   onToggleDay,
   onTimeChange,
   onPresetTimeSelect,
+  onCronExpressionChange,
+  onPresetCronSelect,
   onLimitInputChange,
   onPresetLimitSelect,
+  onEnabledChange,
+  onClearContextBeforeRunChange,
   onSubmit,
+  onCancelEdit,
 }: SchedulerCreateCardProps): ReactElement {
-  const targetOptions = resolveTargetOptions(form.targetType, goals);
+  const targetOptions = resolveTargetOptions(form.targetType, goals, standaloneTasks);
   const effectiveTargetId = resolveEffectiveTargetId(targetOptions, form.targetId);
-  const isWeeklyFrequency = isWeeklyOrCustom(form.frequency);
-  const normalizedTime = normalizeTimeInput(form.time);
   const parsedLimit = parseLimitInput(form.limitInput);
-
   const submitDisabled = shouldDisableSubmit({
     featureEnabled,
     isFormValid,
@@ -118,149 +145,84 @@ export function SchedulerCreateCard({
 
   return (
     <Card className="h-100">
-      <Card.Header className="fw-semibold">Create schedule</Card.Header>
+      <Card.Header className="fw-semibold">{resolveHeaderTitle(isEditing)}</Card.Header>
       <Card.Body>
-        <Form.Group className="mb-3">
-          <Form.Label>Target type</Form.Label>
-          <div className="d-flex gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant={form.targetType === 'GOAL' ? 'primary' : 'secondary'}
-              onClick={() => onTargetTypeChange('GOAL')}
-            >
-              Goal
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={form.targetType === 'TASK' ? 'primary' : 'secondary'}
-              onClick={() => onTargetTypeChange('TASK')}
-            >
-              Task
-            </Button>
+        {isEditing && editingScheduleLabel != null && editingScheduleLabel.length > 0 && (
+          <div className="small text-body-secondary mb-3">
+            Editing target: <strong>{editingScheduleLabel}</strong>
           </div>
-        </Form.Group>
-
-        <Form.Group className="mb-3">
-          <Form.Label>Target</Form.Label>
-          <Form.Select
-            size="sm"
-            value={effectiveTargetId}
-            onChange={(event) => onTargetChange(event.target.value)}
-            disabled={!featureEnabled || targetOptions.length === 0}
-          >
-            {targetOptions.length === 0 && <option value="">No targets available</option>}
-            {targetOptions.map((option) => (
-              <option key={option.id} value={option.id}>{option.label}</option>
-            ))}
-          </Form.Select>
-        </Form.Group>
-
-        <Form.Group className="mb-3">
-          <Form.Label>Frequency</Form.Label>
-          <Form.Select
-            size="sm"
-            value={form.frequency}
-            onChange={(event) => onFrequencyChange(toSchedulerFrequency(event.target.value, form.frequency))}
-            disabled={!featureEnabled}
-          >
-            <option value="daily">Daily</option>
-            <option value="weekdays">Weekdays (Mon-Fri)</option>
-            <option value="weekly">Weekly (selected days)</option>
-            <option value="custom">Custom days</option>
-          </Form.Select>
-        </Form.Group>
-
-        {isWeeklyFrequency && (
-          <Form.Group className="mb-3">
-            <Form.Label>Days</Form.Label>
-            <div className="scheduler-day-grid">
-              {WEEKDAY_OPTIONS.map((option) => (
-                <Button
-                  key={option.value}
-                  type="button"
-                  size="sm"
-                  variant={form.days.includes(option.value) ? 'primary' : 'secondary'}
-                  onClick={() => onToggleDay(option.value)}
-                >
-                  {option.label}
-                </Button>
-              ))}
-            </div>
-          </Form.Group>
         )}
 
-        <Form.Group className="mb-3">
-          <Form.Label>Time (UTC)</Form.Label>
-          <div className="d-flex flex-wrap gap-2 mb-2">
-            {PRESET_TIMES.map((time) => (
-              <Button
-                key={time}
-                type="button"
-                size="sm"
-                variant={normalizedTime === time ? 'primary' : 'secondary'}
-                onClick={() => onPresetTimeSelect(time)}
-              >
-                {time}
-              </Button>
-            ))}
-          </div>
-          <Form.Control
-            size="sm"
-            value={form.time}
-            onChange={(event) => onTimeChange(event.target.value)}
-            isInvalid={!isTimeValid}
-            disabled={!featureEnabled}
-            placeholder="HH:mm or HHmm"
-          />
-          <Form.Text className={!isTimeValid ? 'text-danger' : 'text-body-secondary'}>
-            Use HH:mm (09:30) or HHmm (0930).
-          </Form.Text>
-        </Form.Group>
+        <TargetTypeToggle selected={form.targetType} onChange={onTargetTypeChange} />
 
-        <Form.Group className="mb-3">
-          <Form.Label>Repeat limit</Form.Label>
-          <div className="d-flex flex-wrap gap-2 mb-2">
-            {PRESET_LIMITS.map((limit) => (
-              <Button
-                key={limit}
-                type="button"
-                size="sm"
-                variant={form.limitInput === String(limit) ? 'primary' : 'secondary'}
-                onClick={() => onPresetLimitSelect(String(limit))}
-              >
-                {limit}
-              </Button>
-            ))}
-            <Button
-              type="button"
-              size="sm"
-              variant={form.limitInput === '0' ? 'primary' : 'secondary'}
-              onClick={() => onPresetLimitSelect('0')}
-            >
-              Unlimited
+        <TargetSelector
+          featureEnabled={featureEnabled}
+          targetOptions={targetOptions}
+          effectiveTargetId={effectiveTargetId}
+          onTargetChange={onTargetChange}
+        />
+
+        <SchedulerModeToggle selected={form.mode} onChange={onModeChange} />
+
+        {form.mode === 'simple' ? (
+          <SimpleScheduleFields
+            featureEnabled={featureEnabled}
+            frequency={form.frequency}
+            days={form.days}
+            time={form.time}
+            isTimeValid={isTimeValid}
+            onFrequencyChange={onFrequencyChange}
+            onToggleDay={onToggleDay}
+            onTimeChange={onTimeChange}
+            onPresetTimeSelect={onPresetTimeSelect}
+          />
+        ) : (
+          <AdvancedCronFields
+            featureEnabled={featureEnabled}
+            cronExpression={form.cronExpression}
+            isCronValid={isCronValid}
+            onCronExpressionChange={onCronExpressionChange}
+            onPresetCronSelect={onPresetCronSelect}
+          />
+        )}
+
+        <RepeatLimitField
+          featureEnabled={featureEnabled}
+          limitInput={form.limitInput}
+          onLimitInputChange={onLimitInputChange}
+          onPresetLimitSelect={onPresetLimitSelect}
+        />
+
+        <ClearContextField
+          featureEnabled={featureEnabled}
+          clearContextBeforeRun={form.clearContextBeforeRun}
+          onChange={onClearContextBeforeRunChange}
+        />
+
+        {isEditing && (
+          <ScheduleEnabledField
+            featureEnabled={featureEnabled}
+            enabled={form.enabled}
+            onEnabledChange={onEnabledChange}
+          />
+        )}
+
+        <div className="d-flex gap-2">
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            disabled={submitDisabled}
+            onClick={onSubmit}
+          >
+            {resolveSubmitLabel(isEditing, isCreating)}
+          </Button>
+          {isEditing && (
+            <Button type="button" variant="secondary" size="sm" onClick={onCancelEdit}>
+              Cancel
             </Button>
-          </div>
-          <Form.Control
-            size="sm"
-            value={form.limitInput}
-            onChange={(event) => onLimitInputChange(event.target.value)}
-            isInvalid={parsedLimit == null}
-            disabled={!featureEnabled}
-            placeholder="0 for unlimited"
-          />
-        </Form.Group>
-
-        <Button
-          type="button"
-          variant="primary"
-          size="sm"
-          disabled={submitDisabled}
-          onClick={onSubmit}
-        >
-          {isCreating ? 'Creating...' : 'Create schedule'}
-        </Button>
+          )}
+        </div>
       </Card.Body>
     </Card>
   );

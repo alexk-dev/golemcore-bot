@@ -3,6 +3,8 @@ package me.golemcore.bot.auto;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AutoModeChannelRegisteredEvent;
 import me.golemcore.bot.domain.model.AutoTask;
+import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ScheduleEntry;
@@ -11,6 +13,7 @@ import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.tools.GoalManagementTool;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,6 +27,7 @@ import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyString;
@@ -48,6 +52,7 @@ class AutoModeSchedulerTest {
     private GoalManagementTool goalManagementTool;
     private ChannelPort channelPort;
     private RuntimeConfigService runtimeConfigService;
+    private SessionPort sessionPort;
     private AutoModeScheduler scheduler;
 
     @BeforeEach
@@ -57,6 +62,7 @@ class AutoModeSchedulerTest {
         agentLoop = mock(AgentLoop.class);
         goalManagementTool = mock(GoalManagementTool.class);
         channelPort = mock(ChannelPort.class);
+        sessionPort = mock(SessionPort.class);
 
         when(channelPort.getChannelType()).thenReturn(CHANNEL_TYPE_TELEGRAM);
         when(channelPort.sendMessage(anyString(), anyString()))
@@ -71,7 +77,7 @@ class AutoModeSchedulerTest {
 
         scheduler = new AutoModeScheduler(
                 autoModeService, scheduleService, agentLoop, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)));
+                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort);
     }
 
     @Test
@@ -132,7 +138,9 @@ class AutoModeSchedulerTest {
         Message sent = captor.getValue();
         assertTrue(sent.getContent().contains("Write unit tests"));
         assertEquals("user", sent.getRole());
-        assertEquals(true, sent.getMetadata().get("auto.mode"));
+        assertEquals(true, sent.getMetadata().get(ContextAttributes.AUTO_MODE));
+        assertEquals("sched-goal-abc", sent.getMetadata().get(ContextAttributes.AUTO_SCHEDULE_ID));
+        assertEquals(TASK_ID, sent.getMetadata().get(ContextAttributes.AUTO_TASK_ID));
         verify(scheduleService).recordExecution("sched-goal-abc");
     }
 
@@ -166,6 +174,40 @@ class AutoModeSchedulerTest {
         Message sent = captor.getValue();
         assertTrue(sent.getContent().contains("Plan tasks for goal"));
         assertTrue(sent.getContent().contains(GOAL_TITLE));
+        assertEquals("sched-goal-abc", sent.getMetadata().get(ContextAttributes.AUTO_SCHEDULE_ID));
+        assertNull(sent.getMetadata().get(ContextAttributes.AUTO_TASK_ID));
+    }
+
+    @Test
+    void shouldUseGoalPromptWhenPlanningUnplannedGoal() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(GOAL_TITLE)
+                .prompt("Break the release down into concrete tasks")
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>())
+                .createdAt(Instant.now())
+                .build();
+        when(autoModeService.getGoal(GOAL_ID)).thenReturn(Optional.of(goal));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-goal-prompt")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId(GOAL_ID)
+                .cronExpression(TEST_CRON)
+                .enabled(true)
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        scheduler.tick();
+
+        ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
+        verify(agentLoop).processMessage(captor.capture());
+
+        Message sent = captor.getValue();
+        assertTrue(sent.getContent().contains("Break the release down into concrete tasks"));
     }
 
     @Test
@@ -205,6 +247,86 @@ class AutoModeSchedulerTest {
         Message sent = captor.getValue();
         assertTrue(sent.getContent().contains("Implement feature X"));
         verify(scheduleService).recordExecution("sched-task-xyz");
+    }
+
+    @Test
+    void shouldUseTaskPromptWhenTaskHasCustomPrompt() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+
+        AutoTask task = AutoTask.builder()
+                .id(TASK_ID)
+                .goalId(GOAL_ID)
+                .title("Implement feature X")
+                .prompt("Implement feature X with migration, tests, and rollout notes")
+                .status(AutoTask.TaskStatus.PENDING)
+                .order(1)
+                .build();
+
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>(List.of(task)))
+                .build();
+        when(autoModeService.findGoalForTask(TASK_ID)).thenReturn(Optional.of(goal));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-task-prompt")
+                .type(ScheduleEntry.ScheduleType.TASK)
+                .targetId(TASK_ID)
+                .cronExpression("0 30 14 * * *")
+                .enabled(true)
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        scheduler.tick();
+
+        ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
+        verify(agentLoop).processMessage(captor.capture());
+
+        Message sent = captor.getValue();
+        assertTrue(sent.getContent().contains("migration, tests, and rollout notes"));
+    }
+
+    @Test
+    void shouldProcessStandaloneTaskScheduleStoredInInboxGoal() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+
+        AutoTask task = AutoTask.builder()
+                .id("task-standalone")
+                .goalId("inbox")
+                .title("Check support queue")
+                .prompt("   ")
+                .status(AutoTask.TaskStatus.PENDING)
+                .order(1)
+                .build();
+        Goal inbox = Goal.builder()
+                .id("inbox")
+                .title("Inbox")
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>(List.of(task)))
+                .build();
+        when(autoModeService.findGoalForTask("task-standalone")).thenReturn(Optional.of(inbox));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-task-standalone")
+                .type(ScheduleEntry.ScheduleType.TASK)
+                .targetId("task-standalone")
+                .cronExpression("0 0 15 * * *")
+                .enabled(true)
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        scheduler.tick();
+
+        ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
+        verify(agentLoop).processMessage(captor.capture());
+
+        Message sent = captor.getValue();
+        assertTrue(sent.getContent().contains("Check support queue"));
+        assertEquals("sched-task-standalone", sent.getMetadata().get(ContextAttributes.AUTO_SCHEDULE_ID));
+        assertEquals("task-standalone", sent.getMetadata().get(ContextAttributes.AUTO_TASK_ID));
+        verify(scheduleService).recordExecution("sched-task-standalone");
     }
 
     @Test
@@ -269,6 +391,42 @@ class AutoModeSchedulerTest {
         scheduler.tick();
 
         verify(scheduleService).recordExecution("sched-goal-rec");
+    }
+
+    @Test
+    void shouldClearSessionContextBeforeRunWhenScheduleRequestsIt() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+        scheduler.registerChannel(CHANNEL_TYPE_TELEGRAM, "session-42", "transport-42");
+
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>())
+                .createdAt(Instant.now())
+                .build();
+        when(autoModeService.getGoal(GOAL_ID)).thenReturn(Optional.of(goal));
+        when(sessionPort.getOrCreate(CHANNEL_TYPE_TELEGRAM, "session-42"))
+                .thenReturn(AgentSession.builder()
+                        .id(CHANNEL_TYPE_TELEGRAM + ":session-42")
+                        .channelType(CHANNEL_TYPE_TELEGRAM)
+                        .chatId("session-42")
+                        .build());
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-goal-clear")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId(GOAL_ID)
+                .cronExpression(TEST_CRON)
+                .enabled(true)
+                .clearContextBeforeRun(true)
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        scheduler.tick();
+
+        verify(sessionPort).clearMessages(CHANNEL_TYPE_TELEGRAM + ":session-42");
+        verify(agentLoop).processMessage(any(Message.class));
     }
 
     @Test
@@ -494,7 +652,7 @@ class AutoModeSchedulerTest {
     void shutdownDoesNotThrowWhenNotInitialized() {
         AutoModeScheduler freshScheduler = new AutoModeScheduler(
                 autoModeService, scheduleService, agentLoop, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)));
+                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort);
 
         assertDoesNotThrow(freshScheduler::shutdown);
     }
@@ -508,7 +666,7 @@ class AutoModeSchedulerTest {
 
         AutoModeScheduler newScheduler = new AutoModeScheduler(
                 autoModeService, scheduleService, agentLoop, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)));
+                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort);
 
         newScheduler.init();
 
@@ -523,7 +681,7 @@ class AutoModeSchedulerTest {
 
         AutoModeScheduler newScheduler = new AutoModeScheduler(
                 autoModeService, scheduleService, agentLoop, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)));
+                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort);
 
         newScheduler.init();
 
@@ -539,7 +697,7 @@ class AutoModeSchedulerTest {
 
         AutoModeScheduler newScheduler = new AutoModeScheduler(
                 autoModeService, scheduleService, agentLoop, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)));
+                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort);
 
         newScheduler.init();
 
@@ -554,7 +712,7 @@ class AutoModeSchedulerTest {
 
         AutoModeScheduler newScheduler = new AutoModeScheduler(
                 autoModeService, scheduleService, agentLoop, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)));
+                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort);
 
         newScheduler.init();
 

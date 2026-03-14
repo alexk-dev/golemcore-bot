@@ -6,6 +6,8 @@ import {
   FiCalendar,
   FiCode,
   FiFileText,
+  FiFlag,
+  FiGlobe,
   FiList,
   FiMessageSquare,
   FiSettings,
@@ -27,7 +29,9 @@ const RECENT_SESSIONS_LIMIT = 5;
 const links = [
   { to: '/', icon: <FiMessageSquare size={20} />, label: 'Chat' },
   { to: '/sessions', icon: <FiList size={20} />, label: 'Sessions' },
+  { to: '/goals', icon: <FiFlag size={20} />, label: 'Goals & Tasks' },
   { to: '/scheduler', icon: <FiCalendar size={20} />, label: 'Scheduler' },
+  { to: '/webhooks', icon: <FiGlobe size={20} />, label: 'Webhooks' },
   { to: '/analytics', icon: <FiBarChart2 size={20} />, label: 'Analytics' },
   { to: '/prompts', icon: <FiFileText size={20} />, label: 'Prompts' },
   { to: '/skills', icon: <FiZap size={20} />, label: 'Skills' },

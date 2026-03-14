@@ -130,6 +130,31 @@ class WebSocketChatHandlerTest {
     }
 
     @Test
+    void shouldPersistClientMessageIdInInboundMetadata() {
+        String token = tokenProvider.generateAccessToken("admin");
+
+        WebSocketSession session = mock(WebSocketSession.class);
+        HandshakeInfo handshakeInfo = mock(HandshakeInfo.class);
+        when(session.getHandshakeInfo()).thenReturn(handshakeInfo);
+        when(handshakeInfo.getUri()).thenReturn(URI.create("ws://localhost/ws/chat?token=" + token));
+        when(session.getId()).thenReturn("session-client-message");
+
+        WebSocketMessage wsMessage = mock(WebSocketMessage.class);
+        when(wsMessage.getPayloadAsText())
+                .thenReturn("{\"text\":\"hello\",\"sessionId\":\"chat-1\",\"clientMessageId\":\"client-msg-1\"}");
+
+        when(session.receive()).thenReturn(Flux.just(wsMessage));
+
+        StepVerifier.create(handler.handle(session))
+                .verifyComplete();
+
+        ArgumentCaptor<AgentLoop.InboundMessageEvent> captor = ArgumentCaptor
+                .forClass(AgentLoop.InboundMessageEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertEquals("client-msg-1", captor.getValue().message().getMetadata().get("clientMessageId"));
+    }
+
+    @Test
     void shouldBindWebActivePointerFromSocketPayload() {
         String token = tokenProvider.generateAccessToken("admin");
 
@@ -148,6 +173,28 @@ class WebSocketChatHandlerTest {
                 .verifyComplete();
 
         verify(pointerService).setActiveConversationKey("web|admin|client-1", "chat-1");
+    }
+
+    @Test
+    void shouldBindSocketWithoutPublishingInboundMessage() {
+        String token = tokenProvider.generateAccessToken("admin");
+
+        WebSocketSession session = mock(WebSocketSession.class);
+        HandshakeInfo handshakeInfo = mock(HandshakeInfo.class);
+        when(session.getHandshakeInfo()).thenReturn(handshakeInfo);
+        when(handshakeInfo.getUri()).thenReturn(URI.create("ws://localhost/ws/chat?token=" + token));
+        when(session.getId()).thenReturn("session-bind");
+
+        WebSocketMessage wsMessage = mock(WebSocketMessage.class);
+        when(wsMessage.getPayloadAsText())
+                .thenReturn("{\"type\":\"bind\",\"sessionId\":\"chat-bind\",\"clientInstanceId\":\"client-9\"}");
+        when(session.receive()).thenReturn(Flux.just(wsMessage));
+
+        StepVerifier.create(handler.handle(session))
+                .verifyComplete();
+
+        verify(pointerService).setActiveConversationKey("web|admin|client-9", "chat-bind");
+        verify(eventPublisher, never()).publishEvent(any(AgentLoop.InboundMessageEvent.class));
     }
 
     @Test

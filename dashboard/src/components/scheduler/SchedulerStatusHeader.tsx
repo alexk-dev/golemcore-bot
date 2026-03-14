@@ -14,7 +14,7 @@ export function SchedulerStatusHeader({
     <div className="section-header d-flex align-items-center justify-content-between">
       <div>
         <h4 className="mb-1">Scheduler</h4>
-        <p className="mb-0 text-body-secondary">Manage goal/task schedules with the same options as Telegram wizard.</p>
+        <p className="mb-0 text-body-secondary">Manage schedules, edit cron settings, and inspect autonomous run logs.</p>
       </div>
       <div className="d-flex align-items-center gap-2">
         <Badge bg={featureEnabled ? 'success' : 'secondary'}>

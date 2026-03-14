@@ -9,6 +9,8 @@ interface Props {
   model?: string | null;
   tier?: string | null;
   reasoning?: string | null;
+  modelLabel?: string;
+  modelTitle?: string;
   clientStatus?: 'pending' | 'failed';
   onRetry?: () => void;
 }
@@ -84,16 +86,6 @@ function parseLeadingCommand(content: string): { command: string; args: string }
   return { command, args };
 }
 
-function formatModelLabel(model: string | null | undefined, reasoning: string | null | undefined): string {
-  if (!model) {
-    return 'Model unavailable';
-  }
-  if (reasoning) {
-    return `${model}:${reasoning}`;
-  }
-  return model;
-}
-
 function renderUserContent(content: string, leadingCommand: { command: string; args: string } | null) {
   if (leadingCommand == null) {
     return content;
@@ -130,47 +122,61 @@ function UserDeliveryState({ clientStatus, onRetry }: UserDeliveryStateProps) {
   );
 }
 
-export default function MessageBubble({ role, content, model, tier, reasoning, clientStatus, onRetry }: Props) {
-  const safeContent = content ?? '';
-  const isAssistant = role === 'assistant';
+interface AssistantMessageProps {
+  content: string;
+  tier?: string | null;
+  modelLabel?: string;
+  modelTitle?: string;
+}
+
+function AssistantMessageBubble({ content, tier, modelLabel, modelTitle }: AssistantMessageProps) {
   const normalizedTier = (tier ?? '').toLowerCase();
   const tierMeta = TIER_META[normalizedTier] ?? null;
-  const leadingCommand = parseLeadingCommand(safeContent);
 
-  if (isAssistant) {
-    const { text, tools } = parseToolCalls(safeContent);
+  const { text, tools } = parseToolCalls(content);
 
-    return (
-      <div className="message-row message-row--assistant fade-in">
-        <div className="message-bubble assistant">
-          <div className="assistant-message-header">
-            <div className="assistant-message-meta">
-              <span className="assistant-message-avatar" aria-hidden="true">
-                <FiCpu size={13} />
-              </span>
-              <div className="assistant-message-title-group">
-                <span className="assistant-message-title">Assistant</span>
-                <small className="assistant-model-label">{formatModelLabel(model, reasoning)}</small>
-              </div>
-            </div>
-            <span className={`badge assistant-tier-chip ${tierMeta?.className ?? 'text-bg-secondary'}`}>
-              {tierMeta?.label ?? (tier ?? 'Unknown tier')}
+  return (
+    <div className="message-row message-row--assistant fade-in">
+      <div className="message-bubble assistant">
+        <div className="assistant-message-header">
+          <div className="assistant-message-meta">
+            <span className="assistant-message-avatar" aria-hidden="true">
+              <FiCpu size={13} />
             </span>
-          </div>
-          {tools.map((t, i) => (
-            <ToolCallCard key={`${t.tool}-${i}`} tool={t.tool} result={t.result} />
-          ))}
-          {text && (
-            <div className="assistant-message-body">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {text}
-              </ReactMarkdown>
+            <div className="assistant-message-title-group">
+              <span className="assistant-message-title">Assistant</span>
+              <small className="assistant-model-label" title={modelTitle}>
+                {modelLabel ?? 'Model unavailable'}
+              </small>
             </div>
-          )}
+          </div>
+          <span className={`badge assistant-tier-chip ${tierMeta?.className ?? 'text-bg-secondary'}`}>
+            {tierMeta?.label ?? (tier ?? 'Unknown tier')}
+          </span>
         </div>
+        {tools.map((tool) => (
+          <ToolCallCard key={`${tool.tool}-${tool.result}`} tool={tool.tool} result={tool.result} />
+        ))}
+        {text && (
+          <div className="assistant-message-body">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {text}
+            </ReactMarkdown>
+          </div>
+        )}
       </div>
-    );
-  }
+    </div>
+  );
+}
+
+interface UserMessageProps {
+  content: string;
+  clientStatus?: 'pending' | 'failed';
+  onRetry?: () => void;
+}
+
+function UserMessageBubble({ content, clientStatus, onRetry }: UserMessageProps) {
+  const leadingCommand = parseLeadingCommand(content);
 
   return (
     <div className="message-row message-row--user fade-in">
@@ -182,10 +188,26 @@ export default function MessageBubble({ role, content, model, tier, reasoning, c
           </span>
         </div>
         <div className="user-message-body">
-          {renderUserContent(safeContent, leadingCommand)}
+          {renderUserContent(content, leadingCommand)}
         </div>
         <UserDeliveryState clientStatus={clientStatus} onRetry={onRetry} />
       </div>
     </div>
   );
+}
+
+export default function MessageBubble({ role, content, tier, modelLabel, modelTitle, clientStatus, onRetry }: Props) {
+  const safeContent = content ?? '';
+  if (role === 'assistant') {
+    return (
+      <AssistantMessageBubble
+        content={safeContent}
+        tier={tier}
+        modelLabel={modelLabel}
+        modelTitle={modelTitle}
+      />
+    );
+  }
+
+  return <UserMessageBubble content={safeContent} clientStatus={clientStatus} onRetry={onRetry} />;
 }

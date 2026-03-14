@@ -41,6 +41,10 @@ TEXT_EXTENSIONS = {
     ".py",
 }
 
+EXCLUDED_PATHS = {
+    "src/main/resources/messages_ru.properties",
+}
+
 
 def run_git_command(args: List[str]) -> str:
     result = subprocess.run(["git", *args], check=True, capture_output=True, text=True)
@@ -85,6 +89,8 @@ def list_changed_files(diff_range: str) -> List[Path]:
             continue
         path = Path(raw)
         if not path.exists() or path.is_dir():
+            continue
+        if path.as_posix() in EXCLUDED_PATHS:
             continue
         if path.suffix.lower() in TEXT_EXTENSIONS:
             changed_paths.append(path)

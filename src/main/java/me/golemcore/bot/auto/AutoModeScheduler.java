@@ -26,11 +26,14 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ScheduleEntry;
+import me.golemcore.bot.domain.service.AutoRunContextSupport;
+import me.golemcore.bot.domain.service.MdcSupport;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.tools.GoalManagementTool;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -87,6 +90,7 @@ public class AutoModeScheduler {
     private final RuntimeConfigService runtimeConfigService;
     private final GoalManagementTool goalManagementTool;
     private final ChannelRegistry channelRegistry;
+    private final SessionPort sessionPort;
     private final AtomicBoolean executing = new AtomicBoolean(false);
 
     // Single channel info for milestone notifications
@@ -97,13 +101,14 @@ public class AutoModeScheduler {
 
     public AutoModeScheduler(AutoModeService autoModeService, ScheduleService scheduleService,
             AgentLoop agentLoop, RuntimeConfigService runtimeConfigService,
-            GoalManagementTool goalManagementTool, ChannelRegistry channelRegistry) {
+            GoalManagementTool goalManagementTool, ChannelRegistry channelRegistry, SessionPort sessionPort) {
         this.autoModeService = autoModeService;
         this.scheduleService = scheduleService;
         this.agentLoop = agentLoop;
         this.runtimeConfigService = runtimeConfigService;
         this.goalManagementTool = goalManagementTool;
         this.channelRegistry = channelRegistry;
+        this.sessionPort = sessionPort;
     }
 
     @PostConstruct
@@ -243,25 +248,37 @@ public class AutoModeScheduler {
     }
 
     private void processSchedule(ScheduleEntry schedule, int timeoutMinutes) {
-        try {
-            ScheduleMessage scheduleMessage = buildMessageForSchedule(schedule);
-            if (scheduleMessage == null) {
-                log.debug("[AutoScheduler] No action for schedule {}", schedule.getId());
-                return;
-            }
+        ScheduleMessage scheduleMessage = buildMessageForSchedule(schedule);
+        if (scheduleMessage == null) {
+            log.debug("[AutoScheduler] No action for schedule {}", schedule.getId());
+            return;
+        }
 
+        ChannelInfo info = channelInfo;
+        String sessionChatId = info != null ? info.sessionChatId() : "auto";
+        String transportChatId = info != null ? info.transportChatId() : sessionChatId;
+        String channelType = info != null ? info.channelType() : "auto";
+        String runId = UUID.randomUUID().toString();
+        if (schedule.isClearContextBeforeRun()) {
+            clearSessionContext(channelType, sessionChatId, schedule.getId());
+        }
+        Map<String, String> mdcContext = AutoRunContextSupport.buildMdcContext(
+                channelType,
+                sessionChatId,
+                transportChatId,
+                schedule.getId(),
+                runId,
+                scheduleMessage.goalId(),
+                scheduleMessage.taskId());
+
+        try (MdcSupport.Scope ignored = MdcSupport.withContext(mdcContext)) {
             log.info("[AutoScheduler] Processing schedule {}: {}", schedule.getId(), scheduleMessage.content());
 
-            ChannelInfo info = channelInfo;
-            String sessionChatId = info != null ? info.sessionChatId() : "auto";
-            String transportChatId = info != null ? info.transportChatId() : sessionChatId;
-            String channelType = info != null ? info.channelType() : "auto";
-            String runId = UUID.randomUUID().toString();
-
             Map<String, Object> metadata = new LinkedHashMap<>();
-            metadata.put("auto.mode", true);
+            metadata.put(ContextAttributes.AUTO_MODE, true);
             metadata.put(ContextAttributes.AUTO_RUN_KIND, scheduleMessage.runKind().name());
             metadata.put(ContextAttributes.AUTO_RUN_ID, runId);
+            metadata.put(ContextAttributes.AUTO_SCHEDULE_ID, schedule.getId());
             metadata.put(ContextAttributes.CONVERSATION_KEY, sessionChatId);
             metadata.put(ContextAttributes.TRANSPORT_CHAT_ID, transportChatId);
             if (scheduleMessage.goalId() != null && !scheduleMessage.goalId().isBlank()) {
@@ -281,15 +298,28 @@ public class AutoModeScheduler {
                     .timestamp(Instant.now())
                     .build();
 
-            CompletableFuture.runAsync(() -> agentLoop.processMessage(syntheticMessage))
-                    .get(timeoutMinutes, TimeUnit.MINUTES);
+            Map<String, String> asyncContext = MdcSupport.capture();
+            CompletableFuture.runAsync(() -> MdcSupport.runWithContext(
+                    asyncContext,
+                    () -> agentLoop.processMessage(syntheticMessage))).get(timeoutMinutes, TimeUnit.MINUTES);
         } catch (TimeoutException e) {
             log.error("[AutoScheduler] Schedule {} timed out after {} minutes",
                     schedule.getId(), timeoutMinutes);
-        } catch (Exception e) {
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("[AutoScheduler] Schedule {} interrupted: {}",
+                    schedule.getId(), e.getMessage(), e);
+        } catch (ExecutionException e) {
             log.error("[AutoScheduler] Failed to process schedule {}: {}",
                     schedule.getId(), e.getMessage(), e);
         }
+    }
+
+    private void clearSessionContext(String channelType, String sessionChatId, String scheduleId) {
+        String sessionId = sessionPort.getOrCreate(channelType, sessionChatId).getId();
+        sessionPort.clearMessages(sessionId);
+        log.info("[AutoScheduler] Cleared session context before schedule run: scheduleId={}, sessionId={}",
+                scheduleId, sessionId);
     }
 
     private ScheduleMessage buildMessageForSchedule(ScheduleEntry schedule) {
@@ -321,8 +351,8 @@ public class AutoModeScheduler {
         if (nextTask.isPresent()) {
             AutoTask task = nextTask.get();
             return new ScheduleMessage(
-                    "[AUTO] Continue working on task: " + task.getTitle()
-                            + " (goal: " + goal.getTitle() + ", goal_id: " + goalId + ")",
+                    buildTaskPrompt("Continue working on task", task.getExecutionPrompt(), goal.getTitle(),
+                            goalId, task.getId()),
                     AutoRunKind.GOAL_RUN,
                     goalId,
                     task.getId());
@@ -330,11 +360,10 @@ public class AutoModeScheduler {
 
         if (goal.getTasks().isEmpty()) {
             return new ScheduleMessage(
-                    "[AUTO] Plan tasks for goal: " + goal.getTitle()
-                            + " (goal_id: " + goalId + ")",
+                    buildGoalPrompt("Plan tasks for goal", goal.getExecutionPrompt(), goalId),
                     AutoRunKind.GOAL_RUN,
                     goalId,
-                    goalId);
+                    null);
         }
 
         log.debug("[AutoScheduler] All tasks for goal {} are done, skipping", goalId);
@@ -365,11 +394,19 @@ public class AutoModeScheduler {
         }
 
         return new ScheduleMessage(
-                "[AUTO] Work on task: " + task.getTitle()
-                        + " (goal: " + goal.getTitle() + ", task_id: " + taskId + ")",
+                buildTaskPrompt("Work on task", task.getExecutionPrompt(), goal.getTitle(), goal.getId(), taskId),
                 AutoRunKind.GOAL_RUN,
                 goal.getId(),
                 taskId);
+    }
+
+    private String buildGoalPrompt(String prefix, String prompt, String goalId) {
+        return "[AUTO] " + prefix + ": " + prompt + " (goal_id: " + goalId + ")";
+    }
+
+    private String buildTaskPrompt(String prefix, String prompt, String goalTitle, String goalId, String taskId) {
+        return "[AUTO] " + prefix + ": " + prompt + " (goal: " + goalTitle
+                + ", goal_id: " + goalId + ", task_id: " + taskId + ")";
     }
 
     public record ChannelInfo(String channelType, String sessionChatId, String transportChatId) {

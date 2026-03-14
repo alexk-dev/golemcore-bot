@@ -75,6 +75,15 @@ public class ScheduleService {
      */
     public ScheduleEntry createSchedule(ScheduleEntry.ScheduleType type, String targetId,
             String cronExpression, int maxExecutions) {
+        return createSchedule(type, targetId, cronExpression, maxExecutions, false);
+    }
+
+    /**
+     * Create a new schedule entry. Validates the cron expression, computes the next
+     * execution time, and persists.
+     */
+    public ScheduleEntry createSchedule(ScheduleEntry.ScheduleType type, String targetId,
+            String cronExpression, int maxExecutions, boolean clearContextBeforeRun) {
         String normalizedCron = normalizeCronExpression(cronExpression);
 
         Instant now = clock.instant();
@@ -87,6 +96,7 @@ public class ScheduleService {
                 .targetId(targetId)
                 .cronExpression(normalizedCron)
                 .enabled(true)
+                .clearContextBeforeRun(clearContextBeforeRun)
                 .maxExecutions(maxExecutions)
                 .executionCount(0)
                 .createdAt(now)
@@ -99,6 +109,57 @@ public class ScheduleService {
         saveSchedules(schedules);
 
         log.info("[Schedule] Created {} schedule for target {}: {}", type, targetId, normalizedCron);
+        return entry;
+    }
+
+    /**
+     * Update an existing schedule entry.
+     */
+    public ScheduleEntry updateSchedule(
+            String id,
+            ScheduleEntry.ScheduleType type,
+            String targetId,
+            String cronExpression,
+            int maxExecutions,
+            boolean enabled) {
+        return updateSchedule(id, type, targetId, cronExpression, maxExecutions, enabled, null);
+    }
+
+    /**
+     * Update an existing schedule entry.
+     */
+    public ScheduleEntry updateSchedule(
+            String id,
+            ScheduleEntry.ScheduleType type,
+            String targetId,
+            String cronExpression,
+            int maxExecutions,
+            boolean enabled,
+            Boolean clearContextBeforeRun) {
+        ScheduleEntry entry = findSchedule(id)
+                .orElseThrow(() -> new IllegalArgumentException("Schedule not found: " + id));
+
+        String normalizedCron = normalizeCronExpression(cronExpression);
+        Instant now = clock.instant();
+        boolean exhausted = maxExecutions > 0 && entry.getExecutionCount() >= maxExecutions;
+
+        entry.setType(type);
+        entry.setTargetId(targetId);
+        entry.setCronExpression(normalizedCron);
+        entry.setMaxExecutions(maxExecutions);
+        entry.setUpdatedAt(now);
+        entry.setEnabled(enabled && !exhausted);
+        if (clearContextBeforeRun != null) {
+            entry.setClearContextBeforeRun(clearContextBeforeRun);
+        }
+        if (entry.isEnabled()) {
+            entry.setNextExecutionAt(computeNextExecution(normalizedCron, now));
+        } else {
+            entry.setNextExecutionAt(null);
+        }
+
+        saveSchedules(getSchedules());
+        log.info("[Schedule] Updated schedule {} for target {}: {}", id, targetId, normalizedCron);
         return entry;
     }
 

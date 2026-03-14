@@ -1,4 +1,5 @@
 import type { SchedulerSchedule } from '../../api/scheduler';
+import type { GoalTask } from '../../api/goals';
 
 const HHMM_COLON_PATTERN = /^(\d{1,2}):(\d{1,2})$/;
 
@@ -54,7 +55,18 @@ export function formatNextExecution(value: string | null): string {
   if (Number.isNaN(date.getTime())) {
     return value;
   }
-  return `${date.toLocaleString()} UTC`;
+  return date.toLocaleString();
+}
+
+export function formatTimestamp(value: string | null): string {
+  if (value == null) {
+    return '—';
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString();
 }
 
 export interface SchedulerTargetOption {
@@ -65,18 +77,25 @@ export interface SchedulerTargetOption {
 export function buildGoalOptions(goals: Array<{ id: string; title: string; status: string }>): SchedulerTargetOption[] {
   return goals.map((goal) => ({
     id: goal.id,
-    label: `${goal.title} (${goal.status})`,
+    label: `${goal.title} (${goal.status}) · ${goal.id}`,
   }));
 }
 
 export function buildTaskOptions(goals: Array<{
   title: string;
   tasks: Array<{ id: string; title: string }>;
-}>): SchedulerTargetOption[] {
-  return goals.flatMap((goal) => goal.tasks.map((task) => ({
+}>, standaloneTasks: GoalTask[]): SchedulerTargetOption[] {
+  const goalTaskOptions = goals.flatMap((goal) => goal.tasks.map((task) => ({
     id: task.id,
-    label: `${task.title} — ${goal.title}`,
+    label: `${task.title} — ${goal.title} · ${task.id}`,
   })));
+
+  const standaloneOptions = standaloneTasks.map((task) => ({
+    id: task.id,
+    label: `${task.title} — Standalone task · ${task.id}`,
+  }));
+
+  return [...goalTaskOptions, ...standaloneOptions];
 }
 
 export function isScheduleUnlimited(schedule: SchedulerSchedule): boolean {

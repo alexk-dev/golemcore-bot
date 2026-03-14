@@ -6,6 +6,7 @@ import me.golemcore.bot.adapter.inbound.web.dto.CreateSessionRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionDetailDto;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionSummaryDto;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.ActiveSessionPointerService;
 import me.golemcore.bot.port.outbound.SessionPort;
@@ -87,6 +88,29 @@ class SessionsControllerTest {
     }
 
     @Test
+    void shouldResolveSessionByChatIdAlias() {
+        AgentSession session = AgentSession.builder()
+                .id("web:conv-1")
+                .channelType("web")
+                .chatId("legacy-chat-id")
+                .metadata(Map.of(ContextAttributes.CONVERSATION_KEY, "conv-1"))
+                .createdAt(Instant.now())
+                .messages(List.of())
+                .build();
+        when(sessionPort.listByChannelType("web")).thenReturn(List.of(session));
+
+        StepVerifier.create(controller.resolveSession("web", "legacy-chat-id"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    SessionSummaryDto body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals("web:conv-1", body.getId());
+                    assertEquals("conv-1", body.getConversationKey());
+                })
+                .verifyComplete();
+    }
+
+    @Test
     void shouldGetSessionById() {
         Message msg = Message.builder()
                 .id("m1").role("user").content("hello")
@@ -106,6 +130,88 @@ class SessionsControllerTest {
                     assertEquals("hello", body.getMessages().get(0).getContent());
                 })
                 .verifyComplete();
+    }
+
+    @Test
+    void shouldPageVisibleMessagesAndKeepAttachmentOnlyEntries() {
+        Message attachmentOnly = Message.builder()
+                .id("m-1")
+                .role("user")
+                .content("")
+                .metadata(Map.of(
+                        "attachments", List.of(Map.of("type", "image", "name", "diagram.png")),
+                        "clientMessageId", "client-msg-1"))
+                .timestamp(Instant.now())
+                .build();
+        Message assistant = Message.builder()
+                .id("m-2")
+                .role("assistant")
+                .content("Reasoned reply")
+                .metadata(Map.of(
+                        "model", "openai/o3-mini",
+                        "modelTier", "smart",
+                        "reasoning", "high"))
+                .timestamp(Instant.now())
+                .build();
+        Message finalAssistant = Message.builder()
+                .id("m-3")
+                .role("assistant")
+                .content("Final answer")
+                .timestamp(Instant.now())
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("s-page")
+                .channelType("web")
+                .chatId("chat-page")
+                .createdAt(Instant.now())
+                .messages(List.of(attachmentOnly, assistant, finalAssistant))
+                .build();
+        when(sessionPort.get("s-page")).thenReturn(Optional.of(session));
+
+        StepVerifier.create(controller.getSessionMessages("s-page", 2, null))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertEquals(2, response.getBody().getMessages().size());
+                    assertTrue(response.getBody().isHasMore());
+                    assertEquals("m-2", response.getBody().getOldestMessageId());
+                    assertEquals("high", response.getBody().getMessages().get(0).getReasoning());
+                    assertEquals("Final answer", response.getBody().getMessages().get(1).getContent());
+                })
+                .verifyComplete();
+
+        StepVerifier.create(controller.getSessionMessages("s-page", 2, "m-2"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertEquals(1, response.getBody().getMessages().size());
+                    SessionDetailDto.MessageDto message = response.getBody().getMessages().get(0);
+                    assertEquals("[1 image attachment]", message.getContent());
+                    assertEquals("client-msg-1", message.getClientMessageId());
+                    assertFalse(response.getBody().isHasMore());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldRejectUnknownBeforeMessageIdWhenPagingMessages() {
+        AgentSession session = AgentSession.builder()
+                .id("s-page")
+                .channelType("web")
+                .chatId("chat-page")
+                .createdAt(Instant.now())
+                .messages(List.of(Message.builder()
+                        .id("m-1")
+                        .role("user")
+                        .content("hello")
+                        .timestamp(Instant.now())
+                        .build()))
+                .build();
+        when(sessionPort.get("s-page")).thenReturn(Optional.of(session));
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> controller.getSessionMessages("s-page", 50, "missing-message"));
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+        assertEquals("beforeMessageId not found", exception.getReason());
     }
 
     @Test
@@ -132,6 +238,44 @@ class SessionsControllerTest {
                     SessionDetailDto body = response.getBody();
                     assertNotNull(body);
                     assertEquals("balanced", body.getMessages().get(0).getModelTier());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldExposeAutoRunMetadataInSessionDetail() {
+        Message msg = Message.builder()
+                .id("m-auto")
+                .role("assistant")
+                .content("auto result")
+                .metadata(Map.of(
+                        ContextAttributes.AUTO_MODE, true,
+                        ContextAttributes.AUTO_RUN_ID, "run-1",
+                        ContextAttributes.AUTO_SCHEDULE_ID, "sched-1",
+                        ContextAttributes.AUTO_GOAL_ID, "goal-1",
+                        ContextAttributes.AUTO_TASK_ID, "task-1"))
+                .timestamp(Instant.now())
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("s-auto")
+                .channelType("web")
+                .chatId("123")
+                .createdAt(Instant.now())
+                .messages(List.of(msg))
+                .build();
+        when(sessionPort.get("s-auto")).thenReturn(Optional.of(session));
+
+        StepVerifier.create(controller.getSession("s-auto"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    SessionDetailDto body = response.getBody();
+                    assertNotNull(body);
+                    SessionDetailDto.MessageDto detailMessage = body.getMessages().get(0);
+                    assertTrue(detailMessage.isAutoMode());
+                    assertEquals("run-1", detailMessage.getAutoRunId());
+                    assertEquals("sched-1", detailMessage.getAutoScheduleId());
+                    assertEquals("goal-1", detailMessage.getAutoGoalId());
+                    assertEquals("task-1", detailMessage.getAutoTaskId());
                 })
                 .verifyComplete();
     }

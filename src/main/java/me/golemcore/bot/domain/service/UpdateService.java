@@ -81,7 +81,7 @@ public class UpdateService {
     private Instant lastCheckAt;
     private String lastCheckError = "";
     private Optional<AvailableRelease> availableRelease = Optional.empty();
-    private UpdateVersionInfo activeTarget;
+    private Optional<UpdateVersionInfo> activeTarget = Optional.empty();
 
     public UpdateStatus getStatus() {
         synchronized (lock) {
@@ -113,7 +113,7 @@ public class UpdateService {
         synchronized (lock) {
             ensureEnabled();
             ensureNoBusyOperation();
-            activeTarget = null;
+            activeTarget = Optional.empty();
             transientState = UpdateState.CHECKING;
         }
 
@@ -138,7 +138,7 @@ public class UpdateService {
             ensureEnabled();
             release = availableRelease
                     .orElseThrow(() -> new IllegalStateException("No available update. Run check first."));
-            activeTarget = toVersionInfo(release);
+            activeTarget = Optional.of(toVersionInfo(release));
             transientState = UpdateState.PREPARING;
         }
 
@@ -167,13 +167,13 @@ public class UpdateService {
 
             synchronized (lock) {
                 availableRelease = Optional.empty();
-                activeTarget = UpdateVersionInfo.builder()
+                activeTarget = Optional.of(UpdateVersionInfo.builder()
                         .version(release.version())
                         .tag(release.tagName())
                         .assetName(release.assetName())
                         .preparedAt(Files.getLastModifiedTime(getStagedMarkerPath()).toInstant())
                         .publishedAt(release.publishedAt())
-                        .build();
+                        .build());
                 transientState = UpdateState.IDLE;
             }
 
@@ -191,7 +191,7 @@ public class UpdateService {
     }
 
     public UpdateActionResult updateNow() {
-        UpdateVersionInfo targetVersion;
+        Optional<UpdateVersionInfo> targetVersion = Optional.empty();
         synchronized (lock) {
             ensureEnabled();
             ensureNoBusyOperation();
@@ -199,24 +199,24 @@ public class UpdateService {
 
             UpdateVersionInfo staged = resolveStagedInfo();
             if (staged != null) {
-                activeTarget = copyVersionInfo(staged);
+                activeTarget = Optional.of(copyVersionInfo(staged));
                 transientState = UpdateState.APPLYING;
-                targetVersion = copyVersionInfo(staged);
+                targetVersion = Optional.of(copyVersionInfo(staged));
             } else if (availableRelease.isPresent()) {
                 AvailableRelease release = availableRelease.orElseThrow();
-                activeTarget = toVersionInfo(release);
+                UpdateVersionInfo availableTarget = toVersionInfo(release);
+                activeTarget = Optional.of(availableTarget);
                 transientState = UpdateState.PREPARING;
-                targetVersion = copyVersionInfo(activeTarget);
+                targetVersion = Optional.of(copyVersionInfo(availableTarget));
             } else {
-                activeTarget = null;
+                activeTarget = Optional.empty();
                 transientState = UpdateState.CHECKING;
-                targetVersion = null;
             }
         }
 
         startUpdateTask(this::runUpdateNowWorkflow);
 
-        String version = targetVersion != null ? targetVersion.getVersion() : null;
+        String version = targetVersion.map(UpdateVersionInfo::getVersion).orElse(null);
         String message = version == null
                 ? "Update workflow started. Checking the latest release."
                 : "Update workflow started for " + version + ". Page will reload after restart.";
@@ -236,7 +236,7 @@ public class UpdateService {
                 throw new IllegalStateException("No staged update to apply");
             }
 
-            activeTarget = copyVersionInfo(staged);
+            activeTarget = Optional.of(copyVersionInfo(staged));
             availableRelease = Optional.empty();
             writeMarker(getCurrentMarkerPath(), staged.getAssetName());
             deleteMarker(getStagedMarkerPath());
@@ -364,7 +364,7 @@ public class UpdateService {
         synchronized (lock) {
             lastCheckAt = now;
             lastCheckError = "";
-            activeTarget = null;
+            activeTarget = Optional.empty();
 
             if (latestRelease == null) {
                 availableRelease = Optional.empty();
@@ -387,7 +387,7 @@ public class UpdateService {
             }
 
             availableRelease = Optional.of(latestRelease);
-            activeTarget = toVersionInfo(latestRelease);
+            activeTarget = Optional.of(toVersionInfo(latestRelease));
             transientState = UpdateState.IDLE;
             return new CheckResolution(latestRelease, "Update available: " + latestRelease.version(),
                     latestRelease.version());
@@ -1115,7 +1115,7 @@ public class UpdateService {
         String message = "Failed to check updates: " + safeMessage(throwable);
         synchronized (lock) {
             lastCheckError = message;
-            activeTarget = null;
+            activeTarget = Optional.empty();
             transientState = UpdateState.FAILED;
         }
         return new IllegalStateException(message, throwable);
@@ -1168,14 +1168,13 @@ public class UpdateService {
 
     private void runUpdateNowWorkflow() {
         try {
-            UpdateVersionInfo staged = null;
-            AvailableRelease release = null;
+            UpdateVersionInfo staged;
+            AvailableRelease release;
             synchronized (lock) {
                 staged = resolveStagedInfo();
+                release = availableRelease.orElse(null);
                 if (staged != null) {
-                    activeTarget = copyVersionInfo(staged);
-                } else {
-                    release = availableRelease.orElse(null);
+                    activeTarget = Optional.of(copyVersionInfo(staged));
                 }
             }
 
@@ -1232,8 +1231,8 @@ public class UpdateService {
                 || effectiveState == UpdateState.VERIFYING
                 || effectiveState == UpdateState.PREPARING
                 || effectiveState == UpdateState.FAILED) {
-            if (activeTarget != null) {
-                return copyVersionInfo(activeTarget);
+            if (activeTarget.isPresent()) {
+                return copyVersionInfo(activeTarget.orElseThrow());
             }
         }
         if (staged != null) {
@@ -1242,8 +1241,8 @@ public class UpdateService {
         if (available != null) {
             return copyVersionInfo(available);
         }
-        if (effectiveState == UpdateState.CHECKING && activeTarget != null) {
-            return copyVersionInfo(activeTarget);
+        if (effectiveState == UpdateState.CHECKING && activeTarget.isPresent()) {
+            return copyVersionInfo(activeTarget.orElseThrow());
         }
         return null;
     }

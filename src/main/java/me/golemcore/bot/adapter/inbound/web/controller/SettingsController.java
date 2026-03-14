@@ -105,6 +105,7 @@ public class SettingsController {
                 .modelTier(prefs.getModelTier())
                 .tierForce(prefs.isTierForce())
                 .tierOverrides(overrideDtos)
+                .webhooks(prefs.getWebhooks())
                 .build();
         return Mono.just(ResponseEntity.ok(response));
     }
