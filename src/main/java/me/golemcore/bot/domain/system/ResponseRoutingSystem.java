@@ -38,6 +38,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -52,6 +54,11 @@ import java.util.concurrent.TimeoutException;
 @Component
 @Slf4j
 public class ResponseRoutingSystem implements AgentSystem {
+
+    private static final String CHANNEL_WEBHOOK = "webhook";
+    private static final String WEBHOOK_DELIVER_FLAG = "webhook.deliver";
+    private static final String WEBHOOK_DELIVER_CHANNEL = "webhook.deliver.channel";
+    private static final String WEBHOOK_DELIVER_TO = "webhook.deliver.to";
 
     private final ChannelRegistry channelRegistry;
     private final java.util.Map<String, ChannelPort> overrides = new ConcurrentHashMap<>();
@@ -190,6 +197,18 @@ public class ResponseRoutingSystem implements AgentSystem {
             return null;
         }
         String chatId = SessionIdentitySupport.resolveTransportChatId(session);
+        CrossChannelDelivery crossChannelDelivery = resolveWebhookCrossChannelDelivery(context);
+        String errorMessage = sendText(channel, chatId, outgoing);
+        if (crossChannelDelivery != null) {
+            String deliveryError = sendText(crossChannelDelivery.channel(), crossChannelDelivery.chatId(), outgoing);
+            if (errorMessage == null) {
+                errorMessage = deliveryError;
+            }
+        }
+        return errorMessage;
+    }
+
+    private String sendText(ChannelPort channel, String chatId, OutgoingResponse outgoing) {
         try {
             channel.sendMessage(chatId, outgoing.getText(), outgoing.getHints()).get(30, TimeUnit.SECONDS);
             return null;
@@ -224,12 +243,15 @@ public class ResponseRoutingSystem implements AgentSystem {
         }
 
         AgentSession session = context.getSession();
-        ChannelPort channel = resolveChannel(session);
+        CrossChannelDelivery crossChannelDelivery = resolveWebhookCrossChannelDelivery(context);
+        ChannelPort channel = crossChannelDelivery != null ? crossChannelDelivery.channel() : resolveChannel(session);
         if (channel == null) {
             return false;
         }
 
-        String chatId = SessionIdentitySupport.resolveTransportChatId(session);
+        String chatId = crossChannelDelivery != null
+                ? crossChannelDelivery.chatId()
+                : SessionIdentitySupport.resolveTransportChatId(session);
         log.debug("[Response] Sending voice for OutgoingResponse: {} chars, chatId={}", textToSpeak.length(), chatId);
         VoiceSendResult result = voiceHandler.trySendVoice(channel, chatId, textToSpeak);
         if (result == VoiceSendResult.QUOTA_EXCEEDED) {
@@ -248,13 +270,16 @@ public class ResponseRoutingSystem implements AgentSystem {
         }
 
         AgentSession session = context.getSession();
-        ChannelPort channel = resolveChannel(session);
+        CrossChannelDelivery crossChannelDelivery = resolveWebhookCrossChannelDelivery(context);
+        ChannelPort channel = crossChannelDelivery != null ? crossChannelDelivery.channel() : resolveChannel(session);
         if (channel == null) {
             return 0;
         }
 
         int sent = 0;
-        String chatId = SessionIdentitySupport.resolveTransportChatId(session);
+        String chatId = crossChannelDelivery != null
+                ? crossChannelDelivery.chatId()
+                : SessionIdentitySupport.resolveTransportChatId(session);
         for (Attachment attachment : outgoing.getAttachments()) {
             try {
                 if (attachment.getType() == Attachment.Type.IMAGE) {
@@ -278,6 +303,91 @@ public class ResponseRoutingSystem implements AgentSystem {
             }
         }
         return sent;
+    }
+
+    private CrossChannelDelivery resolveWebhookCrossChannelDelivery(AgentContext context) {
+        AgentSession session = context.getSession();
+        if (session == null || !CHANNEL_WEBHOOK.equalsIgnoreCase(session.getChannelType())) {
+            return null;
+        }
+
+        WebhookDeliveryTarget target = findWebhookDeliveryTarget(context.getMessages());
+        if (target == null) {
+            target = findWebhookDeliveryTarget(session.getMessages());
+        }
+        if (target == null) {
+            return null;
+        }
+
+        ChannelPort channel = channelRegistry.get(target.channelType()).orElse(null);
+        if (channel == null) {
+            log.warn("[Response] Webhook delivery target channel is not registered: {}", target.channelType());
+            return null;
+        }
+
+        return new CrossChannelDelivery(channel, target.chatId());
+    }
+
+    private WebhookDeliveryTarget findWebhookDeliveryTarget(List<Message> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return null;
+        }
+
+        for (int index = messages.size() - 1; index >= 0; index--) {
+            Message message = messages.get(index);
+            if (message == null || !message.isUserMessage()) {
+                continue;
+            }
+
+            Map<String, Object> metadata = message.getMetadata();
+            if (!isWebhookDeliveryEnabled(metadata)) {
+                continue;
+            }
+
+            String channelType = readMetadataString(metadata, WEBHOOK_DELIVER_CHANNEL);
+            String chatId = readMetadataString(metadata, WEBHOOK_DELIVER_TO);
+            if (channelType == null || chatId == null) {
+                return null;
+            }
+
+            String normalizedChannel = channelType.trim().toLowerCase(Locale.ROOT);
+            if (normalizedChannel.isEmpty() || CHANNEL_WEBHOOK.equals(normalizedChannel)) {
+                return null;
+            }
+
+            return new WebhookDeliveryTarget(normalizedChannel, chatId);
+        }
+
+        return null;
+    }
+
+    private boolean isWebhookDeliveryEnabled(Map<String, Object> metadata) {
+        if (metadata == null) {
+            return false;
+        }
+
+        Object value = metadata.get(WEBHOOK_DELIVER_FLAG);
+        if (value instanceof Boolean booleanValue) {
+            return booleanValue;
+        }
+        if (value instanceof String stringValue) {
+            return Boolean.parseBoolean(stringValue.trim());
+        }
+        return false;
+    }
+
+    private String readMetadataString(Map<String, Object> metadata, String key) {
+        if (metadata == null || key == null || key.isBlank()) {
+            return null;
+        }
+
+        Object value = metadata.get(key);
+        if (!(value instanceof String stringValue)) {
+            return null;
+        }
+
+        String normalized = stringValue.trim();
+        return normalized.isEmpty() ? null : normalized;
     }
 
     // --- Channel resolution ---
@@ -336,5 +446,11 @@ public class ResponseRoutingSystem implements AgentSystem {
         }
         Message last = context.getMessages().get(context.getMessages().size() - 1);
         return last.getMetadata() != null && Boolean.TRUE.equals(last.getMetadata().get(ContextAttributes.AUTO_MODE));
+    }
+
+    private record WebhookDeliveryTarget(String channelType, String chatId) {
+    }
+
+    private record CrossChannelDelivery(ChannelPort channel, String chatId) {
     }
 }

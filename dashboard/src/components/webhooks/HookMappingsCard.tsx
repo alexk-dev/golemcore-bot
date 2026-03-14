@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react';
 import { Button, Card } from 'react-bootstrap';
+import type { SystemChannelResponse } from '../../api/system';
 import type { HookMapping } from '../../api/webhooks';
 import { HookMappingForm } from './HookMappingForm';
 import { HookMappingsTable } from './HookMappingsTable';
@@ -13,6 +14,8 @@ interface HookMappingsCardProps {
   onUpdate: (index: number, mapping: HookMapping) => void;
   onCopyEndpoint: (name: string) => void;
   linkedTelegramUserId?: string | null;
+  availableChannels: SystemChannelResponse[];
+  channelsLoading: boolean;
 }
 
 export function HookMappingsCard({
@@ -24,6 +27,8 @@ export function HookMappingsCard({
   onUpdate,
   onCopyEndpoint,
   linkedTelegramUserId,
+  availableChannels,
+  channelsLoading,
 }: HookMappingsCardProps): ReactElement {
   return (
     <Card className="settings-card mb-3">
@@ -54,6 +59,8 @@ export function HookMappingsCard({
               onChange={(nextMapping) => onUpdate(activeEditIndex, nextMapping)}
               onCopyEndpoint={onCopyEndpoint}
               linkedTelegramUserId={linkedTelegramUserId}
+              availableChannels={availableChannels}
+              channelsLoading={channelsLoading}
             />
           </div>
         )}

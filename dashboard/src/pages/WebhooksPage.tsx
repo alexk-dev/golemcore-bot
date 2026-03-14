@@ -26,6 +26,7 @@ import {
   validateWebhookConfig,
 } from '../api/webhooks';
 import { useRuntimeConfig } from '../hooks/useSettings';
+import { useSystemChannels } from '../hooks/useSystem';
 import { useUpdateWebhookConfig, useWebhookConfig } from '../hooks/useWebhooks';
 import { copyTextToClipboard } from '../utils/clipboard';
 import { extractErrorMessage } from '../utils/extractErrorMessage';
@@ -65,6 +66,7 @@ function ErrorState({ onRetry }: ErrorStateProps): ReactElement {
 export default function WebhooksPage(): ReactElement {
   const webhookConfigQuery = useWebhookConfig();
   const runtimeConfigQuery = useRuntimeConfig();
+  const systemChannelsQuery = useSystemChannels();
   const updateWebhookConfigMutation = useUpdateWebhookConfig();
 
   const [form, setForm] = useState<WebhookConfig>(DEFAULT_CONFIG);
@@ -87,6 +89,28 @@ export default function WebhooksPage(): ReactElement {
     const userId = allowedUsers.find((value) => value.trim().length > 0);
     return userId ?? null;
   }, [runtimeConfigQuery.data?.telegram?.allowedUsers]);
+  const availableDeliveryChannels = useMemo(() => {
+    const seen = new Set<string>();
+    return (systemChannelsQuery.data ?? [])
+      .map((channel) => ({ ...channel, type: channel.type.trim().toLowerCase() }))
+      .filter((channel) => channel.type.length > 0 && channel.type !== 'web' && channel.type !== 'webhook')
+      .filter((channel) => {
+        if (seen.has(channel.type)) {
+          return false;
+        }
+        seen.add(channel.type);
+        return true;
+      })
+      .sort((left, right) => {
+        if (left.type === 'telegram') {
+          return -1;
+        }
+        if (right.type === 'telegram') {
+          return 1;
+        }
+        return left.type.localeCompare(right.type);
+      });
+  }, [systemChannelsQuery.data]);
 
   const saveDisabled = !isDirty || updateWebhookConfigMutation.isPending || !validation.valid;
 
@@ -164,6 +188,8 @@ export default function WebhooksPage(): ReactElement {
         onUpdate={handleUpdateMapping}
         onCopyEndpoint={(name) => { void handleCopyHookUrl(name); }}
         linkedTelegramUserId={linkedTelegramUserId}
+        availableChannels={availableDeliveryChannels}
+        channelsLoading={systemChannelsQuery.isLoading}
       />
 
       <ValidationIssuesAlert validation={validation} />

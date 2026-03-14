@@ -65,6 +65,13 @@ function toNullableString(value: unknown): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
+function toNullableTemplate(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  return value.length > 0 ? value : null;
+}
+
 function toNullableSecretValue(value: unknown): string | null {
   if (typeof value === 'string') {
     return toNullableString(value);
@@ -103,7 +110,7 @@ function normalizeMapping(raw: unknown): HookMapping {
     hmacSecret: toNullableSecretValue(hmacSecretRaw),
     hmacSecretPresent: hasSecretValue(hmacSecretRaw),
     hmacPrefix: toNullableString(record.hmacPrefix),
-    messageTemplate: toNullableString(record.messageTemplate),
+    messageTemplate: toNullableTemplate(record.messageTemplate),
     model: toNullableString(record.model),
     deliver: Boolean(record.deliver),
     channel: toNullableString(record.channel),
@@ -119,7 +126,7 @@ function toBackendMapping(mapping: HookMapping): UnknownRecord {
     hmacHeader: toNullableString(mapping.hmacHeader),
     hmacSecret: toSecretPayload(mapping.hmacSecret),
     hmacPrefix: toNullableString(mapping.hmacPrefix),
-    messageTemplate: toNullableString(mapping.messageTemplate),
+    messageTemplate: toNullableTemplate(mapping.messageTemplate),
     model: toNullableString(mapping.model),
     deliver: mapping.deliver,
     channel: toNullableString(mapping.channel),
