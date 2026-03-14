@@ -126,12 +126,6 @@ export default function SkillsPage(): ReactElement {
   const activeTab = resolveSkillsTab(searchParams.get(SKILLS_TAB_QUERY_PARAM));
   const { data: detail, isLoading: detailLoading, isError: detailError, refetch: refetchDetail } = useSkill(selected ?? '');
 
-  if (isLoading) {
-    return <LoadingSkeleton />;
-  }
-
-  const filtered = (skills ?? []).filter((skill) => skill.name.toLowerCase().includes(search.toLowerCase()));
-
   const handleTabChange = (tab: SkillsTabKey): void => {
     const nextParams = createSkillsSearchParams(searchParams, tab);
     setSearchParams(nextParams, { replace: true });
@@ -151,6 +145,12 @@ export default function SkillsPage(): ReactElement {
       setEditorInitializedFor(selected);
     }
   }, [detail?.content, detail?.name, editorInitializedFor, selected]);
+
+  if (isLoading) {
+    return <LoadingSkeleton />;
+  }
+
+  const filtered = (skills ?? []).filter((skill) => skill.name.toLowerCase().includes(search.toLowerCase()));
 
   const handleSelectSkill = (name: string): void => {
     if (selected === name) {
