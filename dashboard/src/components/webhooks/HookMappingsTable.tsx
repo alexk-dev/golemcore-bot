@@ -1,5 +1,6 @@
 import { Badge, Button, Card } from 'react-bootstrap';
 import type { HookMapping } from '../../api/webhooks';
+import { createAbsoluteHookUrl } from './webhookConfigUtils';
 
 interface HookMappingsTableProps {
   mappings: HookMapping[];
@@ -96,25 +97,41 @@ export function HookMappingsTable({
 interface HookExampleCardsProps {
   bearerToken: string | null;
   showBearerToken: boolean;
+  activeMapping?: HookMapping | null;
 }
 
-export function HookExampleCards({ bearerToken, showBearerToken }: HookExampleCardsProps) {
+export function HookExampleCards({ bearerToken, showBearerToken, activeMapping }: HookExampleCardsProps) {
   const hasBearerToken = bearerToken != null && bearerToken.length > 0;
   const tokenPreview = hasBearerToken
     ? (showBearerToken ? bearerToken : '<YOUR_TOKEN>')
     : '<YOUR_TOKEN>';
+  const activeHookName = activeMapping?.name?.trim() ?? '';
+  const endpoint = createAbsoluteHookUrl(activeHookName);
+  const sampleBody = '{"event":"Deploy finished","chatId":"webhook:ci"}';
+  const isHmacMapping = activeMapping?.authMode === 'hmac';
+  const hmacHeader = activeMapping?.hmacHeader?.trim() || 'x-signature';
+  const hmacPrefix = activeMapping?.hmacPrefix ?? '';
+  const description = activeMapping != null
+    ? `Test the hook currently open in the editor with ${isHmacMapping ? 'HMAC' : 'Bearer'} auth.`
+    : 'Open a hook mapping to preview its exact endpoint and auth mode.';
+  const command = isHmacMapping
+    ? `curl -X POST ${endpoint} \\
+  -H "Content-Type: application/json" \\
+  -H "${hmacHeader}: ${hmacPrefix}<YOUR_HMAC_SHA256>" \\
+  -d '${sampleBody}'`
+    : `curl -X POST ${endpoint} \\
+  -H "Authorization: Bearer ${tokenPreview}" \\
+  -H "Content-Type: application/json" \\
+  -d '${sampleBody}'`;
 
   return (
     <Card className="webhook-quickstart-card border">
       <Card.Body className="p-3">
         <h3 className="h6 mb-2">Quick Test</h3>
         <div className="small text-body-secondary mb-2">
-          Test your endpoint from terminal with Bearer auth.
+          {description}
         </div>
-        <pre className="mb-0 webhook-code-block"><code>{`curl -X POST http://localhost:8080/api/hooks/wake \\
-  -H "Authorization: Bearer ${tokenPreview}" \\
-  -H "Content-Type: application/json" \\
-  -d '{"text":"Deploy finished","chatId":"webhook:ci"}'`}</code></pre>
+        <pre className="mb-0 webhook-code-block"><code>{command}</code></pre>
       </Card.Body>
     </Card>
   );

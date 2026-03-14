@@ -111,6 +111,7 @@ export default function WebhooksPage(): ReactElement {
         return left.type.localeCompare(right.type);
       });
   }, [systemChannelsQuery.data]);
+  const activeMapping = activeEditIndex != null ? (form.mappings[activeEditIndex] ?? null) : null;
 
   const saveDisabled = !isDirty || updateWebhookConfigMutation.isPending || !validation.valid;
 
@@ -175,7 +176,11 @@ export default function WebhooksPage(): ReactElement {
         </Col>
 
         <Col lg={4}>
-          <HookExampleCards bearerToken={form.token} showBearerToken={showWebhookToken} />
+          <HookExampleCards
+            bearerToken={form.token}
+            showBearerToken={showWebhookToken}
+            activeMapping={activeMapping}
+          />
         </Col>
       </Row>
 
