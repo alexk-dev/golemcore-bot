@@ -16,6 +16,7 @@ const IdePage = lazy(() => import('./pages/IdePage'));
 const LogsPage = lazy(() => import('./pages/LogsPage'));
 const GoalsPage = lazy(() => import('./pages/GoalsPage'));
 const SchedulerPage = lazy(() => import('./pages/SchedulerPage'));
+const WebhooksPage = lazy(() => import('./pages/WebhooksPage'));
 
 function RouteFallback() {
   return <div className="dashboard-main text-secondary">Loading...</div>;
@@ -59,6 +60,7 @@ export default function App() {
                   <Route path="/ide" element={<IdePage />} />
                   <Route path="/logs" element={<LogsPage />} />
                   <Route path="/scheduler" element={<SchedulerPage />} />
+                  <Route path="/webhooks" element={<WebhooksPage />} />
                 </Routes>
               </Suspense>
             </DashboardLayout>

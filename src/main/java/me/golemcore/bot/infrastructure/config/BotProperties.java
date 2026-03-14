@@ -68,6 +68,7 @@ public class BotProperties {
     private ToolLoopProperties toolLoop = new ToolLoopProperties();
     private PlanProperties plan = new PlanProperties();
     private DashboardProperties dashboard = new DashboardProperties();
+    private WebhooksProperties webhooks = new WebhooksProperties();
     private UpdateProperties update = new UpdateProperties();
     private PluginsProperties plugins = new PluginsProperties();
 
@@ -245,6 +246,13 @@ public class BotProperties {
         private int maxPageSize = 1000;
         private int maxMessageChars = 8000;
         private int maxExceptionChars = 16000;
+    }
+
+    // ==================== WEBHOOKS ====================
+
+    @Data
+    public static class WebhooksProperties {
+        private int deliveryHistoryMaxEntries = 500;
     }
 
     // ==================== SELF-UPDATE ====================

@@ -1,9 +1,11 @@
 import { type UseMutationResult, type UseQueryResult, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  type SystemChannelResponse,
   type SystemHealthResponse,
   type SystemUpdateActionResponse,
   type SystemUpdateStatusResponse,
   checkSystemUpdate,
+  getSystemChannels,
   getSystemDiagnostics,
   getSystemHealth,
   getSystemUpdateStatus,
@@ -20,6 +22,10 @@ export function useSystemHealth(): UseQueryResult<SystemHealthResponse, unknown>
 
 export function useSystemDiagnostics(): UseQueryResult<Awaited<ReturnType<typeof getSystemDiagnostics>>, unknown> {
   return useQuery({ queryKey: ['system', 'diagnostics'], queryFn: getSystemDiagnostics, refetchInterval: 10000 });
+}
+
+export function useSystemChannels(): UseQueryResult<SystemChannelResponse[], unknown> {
+  return useQuery({ queryKey: ['system', 'channels'], queryFn: getSystemChannels, refetchInterval: 30000 });
 }
 
 export function useSystemUpdateStatus(): UseQueryResult<SystemUpdateStatusResponse, unknown> {

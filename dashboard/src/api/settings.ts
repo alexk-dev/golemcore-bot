@@ -157,23 +157,11 @@ function toBackendRuntimeConfig(config: RuntimeConfig): UnknownRecord {
   return payload;
 }
 
-function toBackendWebhookConfig(config: WebhookConfig): UnknownRecord {
-  return {
-    ...config,
-    token: toSecretPayload(config.token ?? null),
-    mappings: (config.mappings ?? []).map((mapping) => ({
-      ...mapping,
-      hmacSecret: toSecretPayload(mapping.hmacSecret ?? null),
-    })),
-  };
-}
-
 export interface SettingsResponse extends Record<string, unknown> {
   language?: string;
   timezone?: string;
   modelTier?: string | null;
   tierForce?: boolean;
-  webhooks?: WebhookConfig;
 }
 
 export async function getSettings(): Promise<SettingsResponse> {
@@ -368,28 +356,6 @@ export interface CompactionConfig {
   keepLastMessages: number | null;
 }
 
-export interface WebhookConfig {
-  enabled: boolean;
-  token: string | null;
-  maxPayloadSize: number;
-  defaultTimeoutSeconds: number;
-  mappings: HookMapping[];
-}
-
-export interface HookMapping {
-  name: string;
-  action: string;
-  authMode: string;
-  hmacHeader: string | null;
-  hmacSecret: string | null;
-  hmacPrefix: string | null;
-  messageTemplate: string | null;
-  model: string | null;
-  deliver: boolean;
-  channel: string | null;
-  to: string | null;
-}
-
 export async function getRuntimeConfig(): Promise<RuntimeConfig> {
   const { data } = await client.get<RuntimeConfigUiRecord>('/settings/runtime');
   return toUiRuntimeConfig(data);
@@ -494,10 +460,6 @@ export async function updateUsageConfig(config: UsageConfig): Promise<RuntimeCon
 export async function updateMcpConfig(config: McpConfig): Promise<RuntimeConfig> {
   const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/mcp', config);
   return toUiRuntimeConfig(data);
-}
-
-export async function updateWebhooksConfig(config: WebhookConfig): Promise<void> {
-  await client.put('/settings/runtime/webhooks', toBackendWebhookConfig(config));
 }
 
 export async function updateAutoConfig(config: AutoModeConfig): Promise<RuntimeConfig> {

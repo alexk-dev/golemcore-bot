@@ -15,7 +15,6 @@ import {
   type RateLimitConfig,
   type SecurityConfig,
   type CompactionConfig,
-  type WebhookConfig,
   getSettings,
   updatePreferences,
   getModels,
@@ -33,7 +32,6 @@ import {
   updateTurnConfig,
   updateUsageConfig,
   updateMcpConfig,
-  updateWebhooksConfig,
   updateAutoConfig,
   updateAdvancedConfig,
 } from '../api/settings';
@@ -156,14 +154,6 @@ export function useUpdateMcp(): UseMutationResult<Awaited<ReturnType<typeof upda
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: McpConfig) => updateMcpConfig(config),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
-  });
-}
-
-export function useUpdateWebhooks(): UseMutationResult<Awaited<ReturnType<typeof updateWebhooksConfig>>, unknown, WebhookConfig> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (config: WebhookConfig) => updateWebhooksConfig(config),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
   });
 }

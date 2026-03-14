@@ -9,6 +9,11 @@ export interface SystemHealthResponse {
   channels: Record<string, { type: string; running: boolean; enabled: boolean }>;
 }
 
+export interface SystemChannelResponse {
+  type: string;
+  running: boolean;
+}
+
 export interface SystemDiagnosticsResponse {
   storage: {
     configuredBasePath: string;
@@ -80,6 +85,11 @@ export async function getSystemHealth(): Promise<SystemHealthResponse> {
 
 export async function getSystemDiagnostics(): Promise<SystemDiagnosticsResponse> {
   const { data } = await client.get<SystemDiagnosticsResponse>('/system/diagnostics');
+  return data;
+}
+
+export async function getSystemChannels(): Promise<SystemChannelResponse[]> {
+  const { data } = await client.get<SystemChannelResponse[]>('/system/channels');
   return data;
 }
 

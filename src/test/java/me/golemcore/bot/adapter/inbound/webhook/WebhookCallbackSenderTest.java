@@ -66,6 +66,11 @@ class WebhookCallbackSenderTest {
             public void send(String callbackUrl, CallbackPayload payload) {
                 buildSendMono(callbackUrl, payload).block(Duration.ofSeconds(3));
             }
+
+            @Override
+            public void send(String callbackUrl, CallbackPayload payload, DeliveryObserver observer) {
+                buildSendMono(callbackUrl, payload, observer).block(Duration.ofSeconds(3));
+            }
         };
     }
 
@@ -151,5 +156,64 @@ class WebhookCallbackSenderTest {
         verify(requestBodyUriSpec, times(1)).uri(eq(CALLBACK_URL));
         verify(requestBodyUriSpec, times(1)).bodyValue(eq(payload));
         assertTrue(attempts.get() >= 2);
+    }
+
+    @Test
+    void shouldNotifyObserverAcrossAttemptLifecycle() {
+        AtomicInteger attempts = new AtomicInteger();
+        when(responseSpec.toBodilessEntity()).thenReturn(Mono.defer(() -> {
+            int currentAttempt = attempts.incrementAndGet();
+            if (currentAttempt == 1) {
+                return Mono.error(WebClientResponseException.create(
+                        503,
+                        "Service Unavailable",
+                        HttpHeaders.EMPTY,
+                        new byte[0],
+                        StandardCharsets.UTF_8));
+            }
+            return Mono.just(ResponseEntity.ok().build());
+        }));
+
+        CallbackPayload payload = CallbackPayload.builder()
+                .runId(RUN_ID)
+                .chatId(CHAT_ID)
+                .status("completed")
+                .response("ok")
+                .durationMs(10)
+                .build();
+
+        AtomicInteger observerAttemptCalls = new AtomicInteger();
+        AtomicInteger observerSuccessCalls = new AtomicInteger();
+        AtomicInteger observerFailureCalls = new AtomicInteger();
+        AtomicInteger observerSuccessAttempts = new AtomicInteger();
+
+        WebhookCallbackSender.DeliveryObserver observer = new WebhookCallbackSender.DeliveryObserver() {
+            @Override
+            public void onAttempt(String callbackUrl, CallbackPayload callbackPayload, int attemptNumber) {
+                observerAttemptCalls.incrementAndGet();
+                assertEquals(CALLBACK_URL, callbackUrl);
+                assertTrue(attemptNumber >= 1);
+            }
+
+            @Override
+            public void onSuccess(String callbackUrl, CallbackPayload callbackPayload, int totalAttempts) {
+                observerSuccessCalls.incrementAndGet();
+                observerSuccessAttempts.set(totalAttempts);
+            }
+
+            @Override
+            public void onFailure(String callbackUrl, CallbackPayload callbackPayload, int totalAttempts,
+                    Throwable error) {
+                observerFailureCalls.incrementAndGet();
+            }
+        };
+
+        sender.send(CALLBACK_URL, payload, observer);
+
+        assertEquals(2, attempts.get());
+        assertEquals(2, observerAttemptCalls.get());
+        assertEquals(1, observerSuccessCalls.get());
+        assertEquals(0, observerFailureCalls.get());
+        assertEquals(2, observerSuccessAttempts.get());
     }
 }
