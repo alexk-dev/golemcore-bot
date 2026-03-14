@@ -8,18 +8,17 @@ import lombok.NoArgsConstructor;
 import java.util.List;
 
 /**
- * Public marketplace view used by the dashboard for skills.
+ * Public ClawHub catalog view for the dashboard.
  */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class SkillMarketplaceCatalog {
+public class ClawHubSkillCatalog {
 
     private boolean available;
     private String message;
-    private String sourceType;
-    private String sourceDirectory;
+    private String siteUrl;
     @Builder.Default
-    private List<SkillMarketplaceItem> items = List.of();
+    private List<ClawHubSkillItem> items = List.of();
 }

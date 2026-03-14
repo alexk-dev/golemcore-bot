@@ -3,10 +3,14 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.adapter.inbound.web.dto.SkillDto;
+import me.golemcore.bot.domain.model.ClawHubInstallRequest;
+import me.golemcore.bot.domain.model.ClawHubInstallResult;
+import me.golemcore.bot.domain.model.ClawHubSkillCatalog;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.SkillInstallRequest;
 import me.golemcore.bot.domain.model.SkillInstallResult;
 import me.golemcore.bot.domain.model.SkillMarketplaceCatalog;
+import me.golemcore.bot.domain.service.ClawHubSkillService;
 import me.golemcore.bot.domain.service.SkillMarketplaceService;
 import me.golemcore.bot.domain.service.SkillService;
 import me.golemcore.bot.port.outbound.McpPort;
@@ -19,6 +23,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
@@ -39,10 +44,11 @@ import java.util.regex.Pattern;
 public class SkillsController {
 
     private static final String SKILLS_DIR = "skills";
-    private static final Pattern VALID_NAME = Pattern.compile("^[a-zA-Z0-9][a-zA-Z0-9-]*$");
+    private static final Pattern VALID_NAME = Pattern.compile("^[a-z0-9][a-z0-9-]*$");
 
     private final SkillService skillService;
     private final SkillMarketplaceService skillMarketplaceService;
+    private final ClawHubSkillService clawHubSkillService;
     private final McpPort mcpPort;
     private final StoragePort storagePort;
 
@@ -59,13 +65,34 @@ public class SkillsController {
         return Mono.just(ResponseEntity.ok(skillMarketplaceService.getCatalog()));
     }
 
+    @GetMapping("/clawhub")
+    public Mono<ResponseEntity<ClawHubSkillCatalog>> getClawHubCatalog(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) Integer limit) {
+        return Mono.just(ResponseEntity.ok(clawHubSkillService.getCatalog(q, limit)));
+    }
+
     @PostMapping("/marketplace/install")
     public Mono<ResponseEntity<SkillInstallResult>> installSkill(@RequestBody SkillInstallRequest request) {
         return Mono.just(ResponseEntity.ok(skillMarketplaceService.install(request.getSkillId())));
     }
 
+    @PostMapping("/clawhub/install")
+    public Mono<ResponseEntity<ClawHubInstallResult>> installClawHubSkill(@RequestBody ClawHubInstallRequest request) {
+        return Mono.just(ResponseEntity.ok(clawHubSkillService.install(request.getSlug(), request.getVersion())));
+    }
+
+    @GetMapping("/detail")
+    public Mono<ResponseEntity<SkillDto>> getSkillByQuery(@RequestParam String name) {
+        return getSkillResponse(name);
+    }
+
     @GetMapping("/{name}")
     public Mono<ResponseEntity<SkillDto>> getSkill(@PathVariable String name) {
+        return getSkillResponse(name);
+    }
+
+    private Mono<ResponseEntity<SkillDto>> getSkillResponse(String name) {
         Optional<Skill> skill = skillService.findByName(name);
         if (skill.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Skill '" + name + "' not found");
@@ -79,7 +106,7 @@ public class SkillsController {
         String content = body.get("content");
         if (name == null || name.isBlank() || !VALID_NAME.matcher(name).matches()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Skill name is required and must match [a-zA-Z0-9][a-zA-Z0-9-]*");
+                    "Skill name is required and must match [a-z0-9][a-z0-9-]*");
         }
         if (content == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill content is required");
@@ -98,15 +125,27 @@ public class SkillsController {
                 }));
     }
 
+    @PutMapping("/detail")
+    public Mono<ResponseEntity<SkillDto>> updateSkillByQuery(
+            @RequestParam String name, @RequestBody Map<String, String> body) {
+        return updateSkillInternal(name, body);
+    }
+
     @PutMapping("/{name}")
     public Mono<ResponseEntity<SkillDto>> updateSkill(
             @PathVariable String name, @RequestBody Map<String, String> body) {
+        return updateSkillInternal(name, body);
+    }
+
+    private Mono<ResponseEntity<SkillDto>> updateSkillInternal(String name, Map<String, String> body) {
         String content = body.get("content");
         if (content == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill content is required");
         }
-        String path = name + "/SKILL.md";
-        return Mono.fromFuture(storagePort.putText(SKILLS_DIR, path, content))
+        Skill skill = skillService.findByName(name)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Skill '" + name + "' not found"));
+        String path = skillMarketplaceService.resolveManagedSkillStoragePath(skill);
+        return Mono.fromFuture(storagePort.putText("skills", path, content))
                 .then(Mono.fromRunnable(skillService::reload))
                 .then(Mono.defer(() -> {
                     Optional<Skill> updated = skillService.findByName(name);
@@ -118,23 +157,50 @@ public class SkillsController {
 
     @PostMapping("/{name}/reload")
     public Mono<ResponseEntity<Map<String, String>>> reloadSkill(@PathVariable String name) {
+        return reloadSkillInternal(name);
+    }
+
+    @PostMapping("/detail/reload")
+    public Mono<ResponseEntity<Map<String, String>>> reloadSkillByQuery(@RequestParam String name) {
+        return reloadSkillInternal(name);
+    }
+
+    private Mono<ResponseEntity<Map<String, String>>> reloadSkillInternal(String name) {
+        skillService.findByName(name)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Skill '" + name + "' not found"));
         skillService.reload();
         return Mono.just(ResponseEntity.ok(Map.of("status", "reloaded")));
     }
 
+    @DeleteMapping("/detail")
+    public Mono<ResponseEntity<Void>> deleteSkillByQuery(@RequestParam String name) {
+        return deleteSkillInternal(name);
+    }
+
     @DeleteMapping("/{name}")
     public Mono<ResponseEntity<Void>> deleteSkill(@PathVariable String name) {
-        if (skillService.findByName(name).isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Skill '" + name + "' not found");
-        }
-        String path = name + "/SKILL.md";
-        return Mono.fromFuture(storagePort.deleteObject(SKILLS_DIR, path))
+        return deleteSkillInternal(name);
+    }
+
+    private Mono<ResponseEntity<Void>> deleteSkillInternal(String name) {
+        Skill skill = skillService.findByName(name)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Skill '" + name + "' not found"));
+        return Mono.fromRunnable(() -> skillMarketplaceService.deleteManagedSkill(skill))
                 .then(Mono.fromRunnable(skillService::reload))
                 .then(Mono.just(ResponseEntity.noContent().<Void>build()));
     }
 
+    @GetMapping("/detail/mcp-status")
+    public Mono<ResponseEntity<Map<String, Object>>> getMcpStatusByQuery(@RequestParam String name) {
+        return getMcpStatusInternal(name);
+    }
+
     @GetMapping("/{name}/mcp-status")
     public Mono<ResponseEntity<Map<String, Object>>> getMcpStatus(@PathVariable String name) {
+        return getMcpStatusInternal(name);
+    }
+
+    private Mono<ResponseEntity<Map<String, Object>>> getMcpStatusInternal(String name) {
         Optional<Skill> skill = skillService.findByName(name);
         if (skill.isEmpty() || !skill.get().hasMcp()) {
             return Mono.just(ResponseEntity.ok(Map.of("hasMcp", false)));

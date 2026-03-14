@@ -17,8 +17,16 @@ public class SkillMarketplaceItem {
     private String id;
     private String name;
     private String description;
+    private String maintainer;
+    private String maintainerDisplayName;
+    private String artifactId;
+    private String artifactType;
+    private String version;
     private String modelTier;
     private String sourcePath;
+    @Builder.Default
+    private java.util.List<String> skillRefs = java.util.List.of();
+    private int skillCount;
     private boolean installed;
     private boolean updateAvailable;
 }

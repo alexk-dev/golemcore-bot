@@ -143,6 +143,43 @@ Important behaviors:
 - Backend installation verifies the artifact, writes it into the plugin directory, and reloads the plugin runtime.
 - Plugin-specific configuration pages are exposed as normal Settings sections after installation.
 
+## Skills Page
+
+`/dashboard/skills` is split into two workspaces:
+
+- `Installed` for editing loaded skills
+- `Marketplace` for browsing and installing skill artifacts
+- `ClawHub` for browsing and installing public skills from `clawhub.ai`
+
+Backend API:
+
+- `GET /api/skills`
+- `GET /api/skills/detail?name=...`
+- `PUT /api/skills/detail?name=...`
+- `DELETE /api/skills/detail?name=...`
+- `GET /api/skills/detail/mcp-status?name=...`
+- `GET /api/skills/marketplace`
+- `POST /api/skills/marketplace/install`
+- `GET /api/skills/clawhub`
+- `POST /api/skills/clawhub/install`
+
+Important behaviors:
+
+- The marketplace is artifact-based, not file-based.
+- Each artifact belongs to a maintainer namespace such as `golemcore/code-reviewer`.
+- Artifacts can be either `skill` or `pack`.
+- Pack artifacts install multiple runtime skills such as `golemcore/devops-pack/deploy-review`.
+- The marketplace source can be changed directly in the UI:
+  - local repository path on disk
+  - remote repository URL + branch
+- Local directory mode accepts either the repository root or the `registry/` directory itself.
+- Repository mode defaults to the configured `golemcore-skills` repository.
+- Remote repository mode currently expects a GitHub repository URL.
+- Installed marketplace artifacts are written under `workspace/skills/marketplace/...` and reloaded immediately.
+- The `Installed` tab can edit both manual skills and marketplace-installed skills because the backend resolves updates by stored skill location, not by assuming `name/SKILL.md`.
+- The `ClawHub` tab installs public skills under `workspace/skills/clawhub/<slug>/...`.
+- Imported ClawHub skills are rewritten to namespaced runtime ids such as `clawhub/pr-review`.
+
 ## Webhooks Page
 
 `/dashboard/webhooks` is a dedicated workspace (outside Settings) for:

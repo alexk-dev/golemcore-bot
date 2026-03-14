@@ -113,11 +113,14 @@ public class BotProperties {
         private String workspacePath = "workspace/skills";
         private String builtinPath = "classpath:skills/";
         private boolean marketplaceEnabled = true;
+        private String marketplaceRepositoryDirectory = "";
         private String marketplaceRepositoryUrl = "https://github.com/alexk-dev/golemcore-skills";
         private String marketplaceBranch = "main";
         private String marketplaceApiBaseUrl = "https://api.github.com";
         private String marketplaceRawBaseUrl = "https://raw.githubusercontent.com";
         private java.time.Duration marketplaceRemoteCacheTtl = java.time.Duration.ofMinutes(5);
+        private boolean clawHubEnabled = true;
+        private String clawHubBaseUrl = "https://clawhub.ai";
     }
 
     @Data

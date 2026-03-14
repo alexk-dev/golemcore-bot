@@ -1,7 +1,10 @@
 package me.golemcore.bot.domain.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.SkillInstallResult;
 import me.golemcore.bot.domain.model.SkillMarketplaceCatalog;
@@ -9,15 +12,20 @@ import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.ArgumentCaptor;
 
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -25,176 +33,347 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class SkillMarketplaceServiceTest {
 
-    @Test
-    void shouldListMarketplaceItemsFromRemoteRepository(@TempDir Path tempDir) throws Exception {
-        StoragePort storagePort = mock(StoragePort.class);
-        SkillService skillService = mock(SkillService.class);
-        when(skillService.getAllSkills()).thenReturn(List.of());
+    private static final ObjectMapper JSON_MAPPER = new ObjectMapper().registerModule(new JavaTimeModule());
 
-        try (RemoteSkillsMarketplaceServer server = startRemoteSkillsMarketplaceServer(skillMarkdown())) {
+    @Test
+    void shouldListStandaloneArtifactsFromRemoteRepository(@TempDir Path tempDir) throws Exception {
+        StoragePort storagePort = mock(StoragePort.class);
+        when(storagePort.listObjects(eq("skills"), eq("marketplace")))
+                .thenReturn(CompletableFuture.completedFuture(List.of()));
+
+        SkillService skillService = mock(SkillService.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(RuntimeConfig.builder()
+                .skills(RuntimeConfig.SkillsConfig.builder()
+                        .marketplaceSourceType("repository")
+                        .marketplaceBranch("main")
+                        .build())
+                .build());
+
+        try (RemoteSkillsMarketplaceServer server = startRemoteRegistryServer(Map.of(
+                "registry/golemcore/maintainer.yaml", maintainerYaml(),
+                "registry/golemcore/code-reviewer/artifact.yaml", standaloneArtifactYaml(),
+                "registry/golemcore/code-reviewer/SKILL.md", standaloneSkillMarkdown()))) {
             BotProperties properties = botProperties(server.baseUrl());
-            SkillMarketplaceService service = new SkillMarketplaceService(properties, storagePort, skillService);
+            properties.getSkills().setMarketplaceRepositoryUrl(server.repositoryUrl());
+            SkillMarketplaceService service = new SkillMarketplaceService(
+                    properties,
+                    storagePort,
+                    skillService,
+                    runtimeConfigService);
 
             SkillMarketplaceCatalog catalog = service.getCatalog();
 
             assertTrue(catalog.isAvailable());
-            assertEquals(server.repositoryUrl(), catalog.getSourceDirectory());
+            assertEquals("repository", catalog.getSourceType());
+            assertEquals(server.repositoryUrl() + "/", catalog.getSourceDirectory());
             assertEquals(1, catalog.getItems().size());
-            assertEquals("code-reviewer", catalog.getItems().getFirst().getId());
-            assertEquals("Code review skill", catalog.getItems().getFirst().getDescription());
+            assertEquals("golemcore/code-reviewer", catalog.getItems().getFirst().getId());
+            assertEquals("skill", catalog.getItems().getFirst().getArtifactType());
+            assertEquals(1, catalog.getItems().getFirst().getSkillCount());
             assertEquals("smart", catalog.getItems().getFirst().getModelTier());
         }
     }
 
     @Test
-    void shouldMarkUpdateAvailableWhenInstalledSkillDiffers(@TempDir Path tempDir) throws Exception {
+    void shouldListPackArtifactsFromLocalDirectory(@TempDir Path tempDir) throws Exception {
+        Path repoRoot = createLocalRegistry(tempDir);
+
         StoragePort storagePort = mock(StoragePort.class);
+        when(storagePort.listObjects(eq("skills"), eq("marketplace")))
+                .thenReturn(CompletableFuture.completedFuture(List.of()));
+
         SkillService skillService = mock(SkillService.class);
-        when(skillService.getAllSkills()).thenReturn(List.of(Skill.builder()
-                .name("code-reviewer")
-                .description("Old description")
-                .modelTier("balanced")
-                .build()));
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(RuntimeConfig.builder()
+                .skills(RuntimeConfig.SkillsConfig.builder()
+                        .marketplaceSourceType("directory")
+                        .marketplaceRepositoryDirectory(repoRoot.toString())
+                        .build())
+                .build());
 
-        try (RemoteSkillsMarketplaceServer server = startRemoteSkillsMarketplaceServer(skillMarkdown())) {
-            BotProperties properties = botProperties(server.baseUrl());
-            SkillMarketplaceService service = new SkillMarketplaceService(properties, storagePort, skillService);
+        SkillMarketplaceService service = new SkillMarketplaceService(
+                botProperties("http://127.0.0.1:1"),
+                storagePort,
+                skillService,
+                runtimeConfigService);
 
-            SkillMarketplaceCatalog catalog = service.getCatalog();
+        SkillMarketplaceCatalog catalog = service.getCatalog();
 
-            assertTrue(catalog.isAvailable());
-            assertEquals(1, catalog.getItems().size());
-            assertTrue(catalog.getItems().getFirst().isInstalled());
-            assertTrue(catalog.getItems().getFirst().isUpdateAvailable());
-        }
+        assertTrue(catalog.isAvailable());
+        assertEquals("directory", catalog.getSourceType());
+        assertEquals(repoRoot.toString(), catalog.getSourceDirectory());
+        assertEquals(2, catalog.getItems().size());
+        assertEquals("golemcore/devops-pack", catalog.getItems().stream()
+                .filter(item -> "pack".equals(item.getArtifactType()))
+                .findFirst()
+                .orElseThrow()
+                .getId());
     }
 
     @Test
-    void shouldInstallSkillFromMarketplace(@TempDir Path tempDir) throws Exception {
+    void shouldUseDirectorySourceWhenConfiguredPathPointsDirectlyAtRegistryRoot(@TempDir Path tempDir)
+            throws Exception {
+        Path repoRoot = createLocalRegistry(tempDir);
+        Path registryRoot = repoRoot.resolve("registry");
+
         StoragePort storagePort = mock(StoragePort.class);
-        when(storagePort.putText(eq("skills"), eq("code-reviewer/SKILL.md"), eq(skillMarkdown())))
+        when(storagePort.listObjects(eq("skills"), eq("marketplace")))
+                .thenReturn(CompletableFuture.completedFuture(List.of()));
+
+        SkillService skillService = mock(SkillService.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(RuntimeConfig.builder()
+                .skills(RuntimeConfig.SkillsConfig.builder()
+                        .marketplaceRepositoryDirectory(registryRoot.toString())
+                        .build())
+                .build());
+
+        SkillMarketplaceService service = new SkillMarketplaceService(
+                botProperties("http://127.0.0.1:1"),
+                storagePort,
+                skillService,
+                runtimeConfigService);
+
+        SkillMarketplaceCatalog catalog = service.getCatalog();
+
+        assertTrue(catalog.isAvailable());
+        assertEquals("directory", catalog.getSourceType());
+        assertEquals(repoRoot.toString(), catalog.getSourceDirectory());
+        assertEquals(2, catalog.getItems().size());
+    }
+
+    @Test
+    void shouldInstallPackArtifactFromLocalDirectoryAndRewriteRuntimeNames(@TempDir Path tempDir) throws Exception {
+        Path repoRoot = createLocalRegistry(tempDir);
+
+        StoragePort storagePort = mock(StoragePort.class);
+        when(storagePort.listObjects(eq("skills"), eq("marketplace")))
+                .thenReturn(CompletableFuture.completedFuture(List.of()));
+        when(storagePort.listObjects(eq("skills"), eq("marketplace/golemcore/devops-pack")))
+                .thenReturn(CompletableFuture.completedFuture(List.of()));
+        when(storagePort.putText(anyString(), anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
         SkillService skillService = mock(SkillService.class);
-        when(skillService.getAllSkills()).thenReturn(List.of());
-        when(skillService.findByName("code-reviewer"))
-                .thenReturn(Optional.empty())
-                .thenReturn(Optional.of(Skill.builder()
-                        .name("code-reviewer")
-                        .description("Code review skill")
-                        .modelTier("smart")
-                        .build()));
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(RuntimeConfig.builder()
+                .skills(RuntimeConfig.SkillsConfig.builder()
+                        .marketplaceSourceType("directory")
+                        .marketplaceRepositoryDirectory(repoRoot.toString())
+                        .build())
+                .build());
 
-        try (RemoteSkillsMarketplaceServer server = startRemoteSkillsMarketplaceServer(skillMarkdown())) {
-            BotProperties properties = botProperties(server.baseUrl());
-            SkillMarketplaceService service = new SkillMarketplaceService(properties, storagePort, skillService);
+        SkillMarketplaceService service = new SkillMarketplaceService(
+                botProperties("http://127.0.0.1:1"),
+                storagePort,
+                skillService,
+                runtimeConfigService);
 
-            SkillInstallResult result = service.install("code-reviewer");
+        SkillInstallResult result = service.install("golemcore/devops-pack");
 
-            assertEquals("installed", result.getStatus());
-            assertTrue(result.getMessage().contains("installed"));
-            assertNotNull(result.getSkill());
-            assertEquals("code-reviewer", result.getSkill().getId());
-            assertTrue(result.getSkill().isInstalled());
-            verify(storagePort).putText("skills", "code-reviewer/SKILL.md", skillMarkdown());
-            verify(skillService).reload();
+        assertEquals("installed", result.getStatus());
+        assertNotNull(result.getSkill());
+        assertEquals("golemcore/devops-pack", result.getSkill().getId());
+        assertEquals("pack", result.getSkill().getArtifactType());
+
+        ArgumentCaptor<String> pathCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> contentCaptor = ArgumentCaptor.forClass(String.class);
+        verify(storagePort, atLeastOnce()).putText(eq("skills"), pathCaptor.capture(), contentCaptor.capture());
+
+        Map<String, String> writesByPath = new LinkedHashMap<>();
+        for (int index = 0; index < pathCaptor.getAllValues().size(); index++) {
+            writesByPath.put(pathCaptor.getAllValues().get(index), contentCaptor.getAllValues().get(index));
         }
+
+        assertTrue(writesByPath.containsKey("marketplace/golemcore/devops-pack/skills/deploy-review/SKILL.md"));
+        assertTrue(writesByPath.containsKey("marketplace/golemcore/devops-pack/skills/incident-triage/SKILL.md"));
+        assertTrue(writesByPath.containsKey("marketplace/golemcore/devops-pack/.marketplace-install.json"));
+
+        String deployReview = writesByPath.get("marketplace/golemcore/devops-pack/skills/deploy-review/SKILL.md");
+        assertTrue(deployReview.contains("golemcore/devops-pack/deploy-review"));
+        assertTrue(deployReview.contains("golemcore/devops-pack/incident-triage"));
+
+        verify(skillService).reload();
     }
 
     @Test
-    void shouldReturnAlreadyInstalledWhenSkillContentMatches(@TempDir Path tempDir) throws Exception {
-        StoragePort storagePort = mock(StoragePort.class);
-        when(storagePort.putText(eq("skills"), eq("code-reviewer/SKILL.md"), eq(skillMarkdown())))
-                .thenReturn(CompletableFuture.completedFuture(null));
+    void shouldMarkUpdateAvailableWhenInstalledMetadataVersionDiffers(@TempDir Path tempDir) throws Exception {
+        Path repoRoot = createLocalRegistry(tempDir);
 
-        Skill existing = Skill.builder()
-                .name("code-reviewer")
-                .description("Code review skill")
-                .modelTier("smart")
-                .build();
+        StoragePort storagePort = mock(StoragePort.class);
+        when(storagePort.listObjects(eq("skills"), eq("marketplace")))
+                .thenReturn(CompletableFuture
+                        .completedFuture(List.of("marketplace/golemcore/code-reviewer/.marketplace-install.json")));
+        when(storagePort.getText(eq("skills"), eq("marketplace/golemcore/code-reviewer/.marketplace-install.json")))
+                .thenReturn(CompletableFuture.completedFuture(JSON_MAPPER.writeValueAsString(Map.of(
+                        "artifactRef", "golemcore/code-reviewer",
+                        "version", "0.9.0",
+                        "sourceType", "directory",
+                        "sourceLocation", repoRoot.toString(),
+                        "installedSkillNames", List.of("golemcore/code-reviewer"),
+                        "installedAt", Instant.parse("2026-03-14T00:00:00Z")))));
+        when(storagePort.listObjects(eq("skills"), eq("marketplace/golemcore/code-reviewer")))
+                .thenReturn(CompletableFuture.completedFuture(List.of("marketplace/golemcore/code-reviewer/SKILL.md",
+                        "marketplace/golemcore/code-reviewer/.marketplace-install.json")));
+        when(storagePort.getText(eq("skills"), eq("marketplace/golemcore/code-reviewer/SKILL.md")))
+                .thenReturn(CompletableFuture.completedFuture(standaloneSkillMarkdown()));
 
         SkillService skillService = mock(SkillService.class);
-        when(skillService.getAllSkills()).thenReturn(List.of(existing));
-        when(skillService.findByName("code-reviewer"))
-                .thenReturn(Optional.of(existing))
-                .thenReturn(Optional.of(existing));
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(RuntimeConfig.builder()
+                .skills(RuntimeConfig.SkillsConfig.builder()
+                        .marketplaceSourceType("directory")
+                        .marketplaceRepositoryDirectory(repoRoot.toString())
+                        .build())
+                .build());
 
-        try (RemoteSkillsMarketplaceServer server = startRemoteSkillsMarketplaceServer(skillMarkdown())) {
-            BotProperties properties = botProperties(server.baseUrl());
-            SkillMarketplaceService service = new SkillMarketplaceService(properties, storagePort, skillService);
+        SkillMarketplaceService service = new SkillMarketplaceService(
+                botProperties("http://127.0.0.1:1"),
+                storagePort,
+                skillService,
+                runtimeConfigService);
 
-            SkillInstallResult result = service.install("code-reviewer");
+        SkillMarketplaceCatalog catalog = service.getCatalog();
 
-            assertEquals("already-installed", result.getStatus());
-            assertTrue(result.getMessage().contains("already"));
-        }
+        assertTrue(catalog.isAvailable());
+        assertTrue(catalog.getItems().stream()
+                .filter(item -> "golemcore/code-reviewer".equals(item.getId()))
+                .findFirst()
+                .orElseThrow()
+                .isUpdateAvailable());
     }
 
     @Test
-    void shouldReturnUpdatedWhenMarketplaceDescriptionWasRemoved(@TempDir Path tempDir) throws Exception {
-        StoragePort storagePort = mock(StoragePort.class);
-        String noDescriptionMarkdown = """
-                ---
-                model_tier: smart
-                ---
+    void shouldNotMarkUpdateAvailableWhenInstalledArtifactMatchesCurrentVersionAndContent(@TempDir Path tempDir)
+            throws Exception {
+        Path repoRoot = createLocalRegistry(tempDir);
 
-                Review code for security, correctness, and maintainability.
-                """;
-        when(storagePort.putText(eq("skills"), eq("code-reviewer/SKILL.md"), eq(noDescriptionMarkdown)))
-                .thenReturn(CompletableFuture.completedFuture(null));
-
-        Skill existing = Skill.builder()
-                .name("code-reviewer")
-                .description("Code review skill")
-                .modelTier("smart")
-                .build();
-
+        InMemoryStoragePort storagePort = new InMemoryStoragePort();
         SkillService skillService = mock(SkillService.class);
-        when(skillService.getAllSkills()).thenReturn(List.of(existing));
-        when(skillService.findByName("code-reviewer"))
-                .thenReturn(Optional.of(existing))
-                .thenReturn(Optional.of(existing));
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(RuntimeConfig.builder()
+                .skills(RuntimeConfig.SkillsConfig.builder()
+                        .marketplaceSourceType("directory")
+                        .marketplaceRepositoryDirectory(repoRoot.toString())
+                        .build())
+                .build());
 
-        try (RemoteSkillsMarketplaceServer server = startRemoteSkillsMarketplaceServer(noDescriptionMarkdown)) {
-            BotProperties properties = botProperties(server.baseUrl());
-            SkillMarketplaceService service = new SkillMarketplaceService(properties, storagePort, skillService);
+        SkillMarketplaceService service = new SkillMarketplaceService(
+                botProperties("http://127.0.0.1:1"),
+                storagePort,
+                skillService,
+                runtimeConfigService);
 
-            SkillInstallResult result = service.install("code-reviewer");
+        SkillInstallResult firstInstall = service.install("golemcore/code-reviewer");
+        SkillMarketplaceCatalog catalog = service.getCatalog();
+        SkillInstallResult secondInstall = service.install("golemcore/code-reviewer");
 
-            assertEquals("updated", result.getStatus());
-            assertTrue(result.getMessage().contains("updated"));
-        }
+        assertEquals("installed", firstInstall.getStatus());
+        assertFalse(catalog.getItems().stream()
+                .filter(item -> "golemcore/code-reviewer".equals(item.getId()))
+                .findFirst()
+                .orElseThrow()
+                .isUpdateAvailable());
+        assertEquals("already-installed", secondInstall.getStatus());
     }
 
     @Test
-    void shouldRejectUnknownSkill(@TempDir Path tempDir) throws Exception {
+    void shouldMarkUpdateAvailableWhenInstalledContentDriftsWithoutVersionChange(@TempDir Path tempDir)
+            throws Exception {
+        Path repoRoot = createLocalRegistry(tempDir);
+
+        StoragePort storagePort = mock(StoragePort.class);
+        when(storagePort.listObjects(eq("skills"), eq("marketplace")))
+                .thenReturn(CompletableFuture
+                        .completedFuture(List.of("marketplace/golemcore/code-reviewer/.marketplace-install.json")));
+        when(storagePort.getText(eq("skills"), eq("marketplace/golemcore/code-reviewer/.marketplace-install.json")))
+                .thenReturn(CompletableFuture.completedFuture(JSON_MAPPER.writeValueAsString(Map.of(
+                        "artifactRef", "golemcore/code-reviewer",
+                        "version", "1.0.0",
+                        "sourceType", "directory",
+                        "sourceLocation", repoRoot.toString(),
+                        "installedSkillNames", List.of("golemcore/code-reviewer"),
+                        "installedAt", Instant.parse("2026-03-14T00:00:00Z")))));
+        when(storagePort.listObjects(eq("skills"), eq("marketplace/golemcore/code-reviewer")))
+                .thenReturn(CompletableFuture.completedFuture(List.of("marketplace/golemcore/code-reviewer/SKILL.md",
+                        "marketplace/golemcore/code-reviewer/.marketplace-install.json")));
+        when(storagePort.getText(eq("skills"), eq("marketplace/golemcore/code-reviewer/SKILL.md")))
+                .thenReturn(CompletableFuture.completedFuture("""
+                        ---
+                        name: golemcore/code-reviewer
+                        description: Code review skill
+                        model_tier: smart
+                        ---
+
+                        This local copy was modified after installation.
+                        """));
+
+        SkillService skillService = mock(SkillService.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(RuntimeConfig.builder()
+                .skills(RuntimeConfig.SkillsConfig.builder()
+                        .marketplaceSourceType("directory")
+                        .marketplaceRepositoryDirectory(repoRoot.toString())
+                        .build())
+                .build());
+
+        SkillMarketplaceService service = new SkillMarketplaceService(
+                botProperties("http://127.0.0.1:1"),
+                storagePort,
+                skillService,
+                runtimeConfigService);
+
+        SkillMarketplaceCatalog catalog = service.getCatalog();
+
+        assertTrue(catalog.isAvailable());
+        assertTrue(catalog.getItems().stream()
+                .filter(item -> "golemcore/code-reviewer".equals(item.getId()))
+                .findFirst()
+                .orElseThrow()
+                .isUpdateAvailable());
+    }
+
+    @Test
+    void shouldRejectInvalidArtifactRef(@TempDir Path tempDir) {
         StoragePort storagePort = mock(StoragePort.class);
         SkillService skillService = mock(SkillService.class);
-        when(skillService.getAllSkills()).thenReturn(List.of());
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(RuntimeConfig.builder()
+                .skills(new RuntimeConfig.SkillsConfig())
+                .build());
 
-        try (RemoteSkillsMarketplaceServer server = startRemoteSkillsMarketplaceServer(skillMarkdown())) {
-            BotProperties properties = botProperties(server.baseUrl());
-            SkillMarketplaceService service = new SkillMarketplaceService(properties, storagePort, skillService);
+        SkillMarketplaceService service = new SkillMarketplaceService(
+                botProperties("http://127.0.0.1:1"),
+                storagePort,
+                skillService,
+                runtimeConfigService);
 
-            assertThrows(IllegalArgumentException.class, () -> service.install("unknown-skill"));
-        }
+        assertThrows(IllegalArgumentException.class, () -> service.install("../etc/passwd"));
     }
 
     @Test
     void shouldReturnUnavailableCatalogWhenMarketplaceDisabled(@TempDir Path tempDir) {
         StoragePort storagePort = mock(StoragePort.class);
         SkillService skillService = mock(SkillService.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(RuntimeConfig.builder()
+                .skills(new RuntimeConfig.SkillsConfig())
+                .build());
 
         BotProperties properties = botProperties("http://127.0.0.1:1");
         properties.getSkills().setMarketplaceEnabled(false);
-        SkillMarketplaceService service = new SkillMarketplaceService(properties, storagePort, skillService);
+        SkillMarketplaceService service = new SkillMarketplaceService(properties, storagePort, skillService,
+                runtimeConfigService);
 
         SkillMarketplaceCatalog catalog = service.getCatalog();
 
@@ -203,41 +382,60 @@ class SkillMarketplaceServiceTest {
     }
 
     @Test
-    void shouldRejectInvalidSkillId(@TempDir Path tempDir) throws Exception {
+    void shouldDeleteWholeInstalledArtifactForPackSkill() {
         StoragePort storagePort = mock(StoragePort.class);
+        when(storagePort.listObjects(eq("skills"), eq("marketplace/golemcore/devops-pack")))
+                .thenReturn(CompletableFuture.completedFuture(List.of(
+                        "marketplace/golemcore/devops-pack/.marketplace-install.json",
+                        "marketplace/golemcore/devops-pack/skills/deploy-review/SKILL.md",
+                        "marketplace/golemcore/devops-pack/skills/incident-triage/SKILL.md")));
+        when(storagePort.deleteObject(anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
         SkillService skillService = mock(SkillService.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(RuntimeConfig.builder()
+                .skills(new RuntimeConfig.SkillsConfig())
+                .build());
 
-        try (RemoteSkillsMarketplaceServer server = startRemoteSkillsMarketplaceServer(skillMarkdown())) {
-            BotProperties properties = botProperties(server.baseUrl());
-            SkillMarketplaceService service = new SkillMarketplaceService(properties, storagePort, skillService);
+        SkillMarketplaceService service = new SkillMarketplaceService(
+                botProperties("http://127.0.0.1:1"),
+                storagePort,
+                skillService,
+                runtimeConfigService);
 
-            assertThrows(IllegalArgumentException.class, () -> service.install("../etc/passwd"));
-        }
+        service.deleteManagedSkill(Skill.builder()
+                .name("golemcore/devops-pack/deploy-review")
+                .location(Path.of("marketplace/golemcore/devops-pack/skills/deploy-review/SKILL.md"))
+                .build());
+
+        verify(storagePort).deleteObject("skills", "marketplace/golemcore/devops-pack/.marketplace-install.json");
+        verify(storagePort).deleteObject("skills", "marketplace/golemcore/devops-pack/skills/deploy-review/SKILL.md");
+        verify(storagePort).deleteObject("skills", "marketplace/golemcore/devops-pack/skills/incident-triage/SKILL.md");
     }
 
-    @Test
-    void shouldIgnoreNestedSkillPath(@TempDir Path tempDir) throws Exception {
-        StoragePort storagePort = mock(StoragePort.class);
-        SkillService skillService = mock(SkillService.class);
-        when(skillService.getAllSkills()).thenReturn(List.of());
+    private Path createLocalRegistry(Path tempDir) throws IOException {
+        Path repoRoot = tempDir.resolve("golemcore-skills");
+        Files.createDirectories(repoRoot.resolve("registry/golemcore/code-reviewer"));
+        Files.createDirectories(repoRoot.resolve("registry/golemcore/devops-pack/skills/deploy-review"));
+        Files.createDirectories(repoRoot.resolve("registry/golemcore/devops-pack/skills/incident-triage"));
 
-        try (RemoteSkillsMarketplaceServer server = startRemoteSkillsMarketplaceServer(
-                skillMarkdown(),
-                "nested/code-reviewer/SKILL.md")) {
-            BotProperties properties = botProperties(server.baseUrl());
-            SkillMarketplaceService service = new SkillMarketplaceService(properties, storagePort, skillService);
-
-            SkillMarketplaceCatalog catalog = service.getCatalog();
-
-            assertTrue(catalog.isAvailable());
-            assertTrue(catalog.getItems().isEmpty());
-        }
+        Files.writeString(repoRoot.resolve("registry/golemcore/maintainer.yaml"), maintainerYaml());
+        Files.writeString(repoRoot.resolve("registry/golemcore/code-reviewer/artifact.yaml"), standaloneArtifactYaml());
+        Files.writeString(repoRoot.resolve("registry/golemcore/code-reviewer/SKILL.md"), standaloneSkillMarkdown());
+        Files.writeString(repoRoot.resolve("registry/golemcore/devops-pack/artifact.yaml"), packArtifactYaml());
+        Files.writeString(repoRoot.resolve("registry/golemcore/devops-pack/skills/deploy-review/SKILL.md"),
+                deployReviewMarkdown());
+        Files.writeString(repoRoot.resolve("registry/golemcore/devops-pack/skills/incident-triage/SKILL.md"),
+                incidentTriageMarkdown());
+        return repoRoot;
     }
 
     private BotProperties botProperties(String baseUrl) {
         BotProperties properties = new BotProperties();
         properties.getSkills().setMarketplaceEnabled(true);
         properties.getSkills().setMarketplaceRepositoryUrl(baseUrl + "/alexk-dev/golemcore-skills");
+        properties.getSkills().setMarketplaceRepositoryDirectory("");
         properties.getSkills().setMarketplaceApiBaseUrl(baseUrl + "/api");
         properties.getSkills().setMarketplaceRawBaseUrl(baseUrl + "/raw");
         properties.getSkills().setMarketplaceBranch("main");
@@ -245,28 +443,90 @@ class SkillMarketplaceServiceTest {
         return properties;
     }
 
-    private RemoteSkillsMarketplaceServer startRemoteSkillsMarketplaceServer(String markdown) throws IOException {
-        return startRemoteSkillsMarketplaceServer(markdown, "code-reviewer/SKILL.md");
+    private static String maintainerYaml() {
+        return """
+                schema: v1
+                id: golemcore
+                display_name: Golemcore
+                """;
     }
 
-    private RemoteSkillsMarketplaceServer startRemoteSkillsMarketplaceServer(String markdown, String treePath)
-            throws IOException {
-        String treeJson = """
-                {
-                  "tree": [
-                    {
-                      "path": "%s",
-                      "type": "blob"
-                    }
-                  ]
-                }
-                """.formatted(treePath);
+    private static String standaloneArtifactYaml() {
+        return """
+                schema: v1
+                type: skill
+                maintainer: golemcore
+                id: code-reviewer
+                version: 1.0.0
+                title: Code Reviewer
+                description: Review code for correctness, risks, and maintainability.
+                """;
+    }
+
+    private static String packArtifactYaml() {
+        return """
+                schema: v1
+                type: pack
+                maintainer: golemcore
+                id: devops-pack
+                version: 1.2.0
+                title: DevOps Pack
+                description: Delivery and incident response skills.
+                skills:
+                  - id: deploy-review
+                    path: skills/deploy-review/SKILL.md
+                  - id: incident-triage
+                    path: skills/incident-triage/SKILL.md
+                """;
+    }
+
+    private static String standaloneSkillMarkdown() {
+        return """
+                ---
+                name: code-reviewer
+                description: Code review skill
+                model_tier: smart
+                ---
+
+                Review code for security, correctness, and maintainability.
+                """;
+    }
+
+    private static String deployReviewMarkdown() {
+        return """
+                ---
+                name: deploy-review
+                description: Review deploy plans before rollout.
+                model_tier: balanced
+                next_skill: incident-triage
+                ---
+
+                Review deployment checklists and verify risk areas.
+                """;
+    }
+
+    private static String incidentTriageMarkdown() {
+        return """
+                ---
+                name: incident-triage
+                description: Triage incidents and identify the next operator action.
+                model_tier: smart
+                ---
+
+                Summarize signals and recommend the next operational step.
+                """;
+    }
+
+    private RemoteSkillsMarketplaceServer startRemoteRegistryServer(Map<String, String> files) throws IOException {
+        String treeJson = buildTreeJson(files.keySet().stream().sorted().toList());
 
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
         server.createContext("/api/repos/alexk-dev/golemcore-skills/git/trees/main",
                 exchange -> respond(exchange, 200, "application/json", treeJson));
-        server.createContext("/raw/alexk-dev/golemcore-skills/main/" + treePath,
-                exchange -> respond(exchange, 200, "text/plain; charset=utf-8", markdown));
+        for (Map.Entry<String, String> entry : files.entrySet()) {
+            server.createContext("/raw/alexk-dev/golemcore-skills/main/" + entry.getKey(),
+                    exchange -> respond(exchange, 200, "text/plain; charset=utf-8", entry.getValue()));
+        }
         server.start();
 
         int port = server.getAddress().getPort();
@@ -274,15 +534,19 @@ class SkillMarketplaceServiceTest {
         return new RemoteSkillsMarketplaceServer(server, baseUrl);
     }
 
-    private static String skillMarkdown() {
-        return """
-                ---
-                description: "Code review skill"
-                model_tier: smart
-                ---
-
-                Review code for security, correctness, and maintainability.
-                """;
+    private String buildTreeJson(List<String> files) {
+        StringBuilder treeBuilder = new StringBuilder();
+        treeBuilder.append("{\"tree\":[");
+        for (int index = 0; index < files.size(); index++) {
+            if (index > 0) {
+                treeBuilder.append(',');
+            }
+            treeBuilder.append("{\"path\":\"")
+                    .append(files.get(index))
+                    .append("\",\"type\":\"blob\"}");
+        }
+        treeBuilder.append("]}");
+        return treeBuilder.toString();
     }
 
     private void respond(HttpExchange exchange, int statusCode, String contentType, String body) throws IOException {
@@ -301,11 +565,88 @@ class SkillMarketplaceServiceTest {
     private record RemoteSkillsMarketplaceServer(HttpServer server, String baseUrl) implements AutoCloseable {
 
     private String repositoryUrl() {
-        return baseUrl + "/alexk-dev/golemcore-skills/";
+        return baseUrl + "/alexk-dev/golemcore-skills";
     }
 
     @Override
     public void close() {
         server.stop(0);
+    }
+}
+
+private static final class InMemoryStoragePort implements StoragePort {
+
+    private final Map<String, byte[]> objects = new LinkedHashMap<>();
+
+    @Override
+    public CompletableFuture<Void> putObject(String directory, String path, byte[] content) {
+        objects.put(key(directory, path), content);
+        return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
+    public CompletableFuture<Void> putText(String directory, String path, String content) {
+        return putObject(directory, path,
+                content == null ? new byte[0] : content.getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Override
+    public CompletableFuture<byte[]> getObject(String directory, String path) {
+        return CompletableFuture.completedFuture(objects.get(key(directory, path)));
+    }
+
+    @Override
+    public CompletableFuture<String> getText(String directory, String path) {
+        byte[] value = objects.get(key(directory, path));
+        return CompletableFuture.completedFuture(
+                value == null ? null : new String(value, StandardCharsets.UTF_8));
+    }
+
+    @Override
+    public CompletableFuture<Boolean> exists(String directory, String path) {
+        return CompletableFuture.completedFuture(objects.containsKey(key(directory, path)));
+    }
+
+    @Override
+    public CompletableFuture<Void> deleteObject(String directory, String path) {
+        objects.remove(key(directory, path));
+        return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
+    public CompletableFuture<List<String>> listObjects(String directory, String prefix) {
+        String normalizedPrefix = key(directory, prefix);
+        List<String> matches = new ArrayList<>();
+        for (String key : objects.keySet()) {
+            if (!key.startsWith(directory + "/")) {
+                continue;
+            }
+            if (!key.startsWith(normalizedPrefix)) {
+                continue;
+            }
+            matches.add(key.substring(directory.length() + 1));
+        }
+        matches.sort(String::compareTo);
+        return CompletableFuture.completedFuture(matches);
+    }
+
+    @Override
+    public CompletableFuture<Void> appendText(String directory, String path, String content) {
+        String current = getText(directory, path).join();
+        return putText(directory, path, (current == null ? "" : current) + content);
+    }
+
+    @Override
+    public CompletableFuture<Void> putTextAtomic(String directory, String path, String content, boolean backup) {
+        return putText(directory, path, content);
+    }
+
+    @Override
+    public CompletableFuture<Void> ensureDirectory(String directory) {
+        return CompletableFuture.completedFuture(null);
+    }
+
+    private String key(String directory, String path) {
+        return directory + "/" + path;
     }
 }}

@@ -232,6 +232,7 @@ public class SkillService implements SkillComponent {
                 .name(name)
                 .description(description)
                 .content(body.trim())
+                .location(java.nio.file.Path.of(path))
                 .metadata(metadata)
                 .available(available)
                 .variableDefinitions(new ArrayList<>(variableDefinitions))

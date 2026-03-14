@@ -1,11 +1,16 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
 import me.golemcore.bot.adapter.inbound.web.dto.SkillDto;
+import me.golemcore.bot.domain.model.ClawHubInstallRequest;
+import me.golemcore.bot.domain.model.ClawHubInstallResult;
+import me.golemcore.bot.domain.model.ClawHubSkillCatalog;
+import me.golemcore.bot.domain.model.ClawHubSkillItem;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.SkillInstallRequest;
 import me.golemcore.bot.domain.model.SkillInstallResult;
 import me.golemcore.bot.domain.model.SkillMarketplaceCatalog;
 import me.golemcore.bot.domain.model.SkillMarketplaceItem;
+import me.golemcore.bot.domain.service.ClawHubSkillService;
 import me.golemcore.bot.domain.service.SkillMarketplaceService;
 import me.golemcore.bot.domain.service.SkillService;
 import me.golemcore.bot.port.outbound.McpPort;
@@ -19,18 +24,21 @@ import reactor.test.StepVerifier;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class SkillsControllerTest {
 
     private SkillService skillService;
     private SkillMarketplaceService skillMarketplaceService;
+    private ClawHubSkillService clawHubSkillService;
     private McpPort mcpPort;
     private StoragePort storagePort;
     private SkillsController controller;
@@ -39,9 +47,11 @@ class SkillsControllerTest {
     void setUp() {
         skillService = mock(SkillService.class);
         skillMarketplaceService = mock(SkillMarketplaceService.class);
+        clawHubSkillService = mock(ClawHubSkillService.class);
         mcpPort = mock(McpPort.class);
         storagePort = mock(StoragePort.class);
-        controller = new SkillsController(skillService, skillMarketplaceService, mcpPort, storagePort);
+        controller = new SkillsController(skillService, skillMarketplaceService, clawHubSkillService, mcpPort,
+                storagePort);
     }
 
     @Test
@@ -69,11 +79,17 @@ class SkillsControllerTest {
     void shouldGetMarketplaceCatalog() {
         SkillMarketplaceCatalog catalog = SkillMarketplaceCatalog.builder()
                 .available(true)
+                .sourceType("repository")
                 .sourceDirectory("https://github.com/alexk-dev/golemcore-skills")
                 .items(List.of(SkillMarketplaceItem.builder()
-                        .id("code-reviewer")
-                        .name("code-reviewer")
+                        .id("golemcore/code-reviewer")
+                        .artifactId("code-reviewer")
+                        .artifactType("skill")
+                        .maintainer("golemcore")
+                        .name("Code Reviewer")
                         .description("Review code")
+                        .skillCount(1)
+                        .skillRefs(List.of("golemcore/code-reviewer"))
                         .installed(false)
                         .build()))
                 .build();
@@ -86,7 +102,7 @@ class SkillsControllerTest {
                     assertNotNull(body);
                     assertTrue(body.isAvailable());
                     assertEquals(1, body.getItems().size());
-                    assertEquals("code-reviewer", body.getItems().getFirst().getId());
+                    assertEquals("golemcore/code-reviewer", body.getItems().getFirst().getId());
                 })
                 .verifyComplete();
     }
@@ -95,17 +111,69 @@ class SkillsControllerTest {
     void shouldInstallSkillFromMarketplace() {
         SkillInstallResult result = new SkillInstallResult(
                 "installed",
-                "Skill 'code-reviewer' installed from marketplace.",
-                SkillMarketplaceItem.builder().id("code-reviewer").name("code-reviewer").installed(true).build());
-        when(skillMarketplaceService.install("code-reviewer")).thenReturn(result);
+                "Skill artifact 'golemcore/code-reviewer' installed from marketplace.",
+                SkillMarketplaceItem.builder()
+                        .id("golemcore/code-reviewer")
+                        .artifactId("code-reviewer")
+                        .artifactType("skill")
+                        .skillCount(1)
+                        .skillRefs(List.of("golemcore/code-reviewer"))
+                        .name("Code Reviewer")
+                        .installed(true)
+                        .build());
+        when(skillMarketplaceService.install("golemcore/code-reviewer")).thenReturn(result);
 
-        StepVerifier.create(controller.installSkill(new SkillInstallRequest("code-reviewer")))
+        StepVerifier.create(controller.installSkill(new SkillInstallRequest("golemcore/code-reviewer")))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
                     SkillInstallResult body = response.getBody();
                     assertNotNull(body);
                     assertEquals("installed", body.getStatus());
-                    assertEquals("code-reviewer", body.getSkill().getId());
+                    assertEquals("golemcore/code-reviewer", body.getSkill().getId());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldLoadClawHubCatalog() {
+        ClawHubSkillCatalog catalog = ClawHubSkillCatalog.builder()
+                .available(true)
+                .siteUrl("https://clawhub.ai")
+                .items(List.of(ClawHubSkillItem.builder()
+                        .slug("pr-review")
+                        .displayName("PR Review")
+                        .runtimeName("clawhub/pr-review")
+                        .installed(false)
+                        .build()))
+                .build();
+        when(clawHubSkillService.getCatalog("review", 10)).thenReturn(catalog);
+
+        StepVerifier.create(controller.getClawHubCatalog("review", 10))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertEquals("pr-review", response.getBody().getItems().getFirst().getSlug());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldInstallClawHubSkill() {
+        ClawHubInstallResult result = new ClawHubInstallResult(
+                "installed",
+                "ClawHub skill 'pr-review' installed.",
+                ClawHubSkillItem.builder()
+                        .slug("pr-review")
+                        .displayName("PR Review")
+                        .runtimeName("clawhub/pr-review")
+                        .installed(true)
+                        .build());
+        when(clawHubSkillService.install("pr-review", "1.0.0")).thenReturn(result);
+
+        StepVerifier.create(controller.installClawHubSkill(new ClawHubInstallRequest("pr-review", "1.0.0")))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertEquals("installed", response.getBody().getStatus());
+                    assertEquals("pr-review", response.getBody().getSkill().getSlug());
                 })
                 .verifyComplete();
     }
@@ -132,6 +200,26 @@ class SkillsControllerTest {
     }
 
     @Test
+    void shouldGetSkillByQueryForNamespacedSkill() {
+        Skill skill = Skill.builder()
+                .name("golemcore/devops-pack/deploy-review")
+                .description("Deploy review")
+                .content("# Deploy review\nContent")
+                .available(true)
+                .build();
+        when(skillService.findByName("golemcore/devops-pack/deploy-review")).thenReturn(Optional.of(skill));
+
+        StepVerifier.create(controller.getSkillByQuery("golemcore/devops-pack/deploy-review"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    SkillDto body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals("golemcore/devops-pack/deploy-review", body.getName());
+                })
+                .verifyComplete();
+    }
+
+    @Test
     void shouldReturn404ForMissingSkill() {
         when(skillService.findByName("unknown")).thenReturn(Optional.empty());
 
@@ -150,12 +238,68 @@ class SkillsControllerTest {
     }
 
     @Test
+    void shouldRejectCreateWithUppercaseName() {
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.createSkill(Map.of("name", "MySkill", "content", "body")));
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertEquals("Skill name is required and must match [a-z0-9][a-z0-9-]*", ex.getReason());
+    }
+
+    @Test
+    void shouldUpdateNamespacedSkillByQueryUsingStoredLocation() {
+        Skill skill = Skill.builder()
+                .name("golemcore/devops-pack/deploy-review")
+                .location(java.nio.file.Path.of("marketplace/golemcore/devops-pack/skills/deploy-review/SKILL.md"))
+                .content("old")
+                .build();
+        when(skillService.findByName("golemcore/devops-pack/deploy-review"))
+                .thenReturn(Optional.of(skill))
+                .thenReturn(Optional.of(skill));
+        when(skillMarketplaceService.resolveManagedSkillStoragePath(skill))
+                .thenReturn("marketplace/golemcore/devops-pack/skills/deploy-review/SKILL.md");
+        when(storagePort.putText("skills", "marketplace/golemcore/devops-pack/skills/deploy-review/SKILL.md", "new"))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        StepVerifier
+                .create(controller.updateSkillByQuery("golemcore/devops-pack/deploy-review", Map.of("content", "new")))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldDeleteNamespacedSkillByQueryUsingStoredLocation() {
+        Skill skill = Skill.builder()
+                .name("golemcore/devops-pack/deploy-review")
+                .location(java.nio.file.Path.of("marketplace/golemcore/devops-pack/skills/deploy-review/SKILL.md"))
+                .build();
+        when(skillService.findByName("golemcore/devops-pack/deploy-review")).thenReturn(Optional.of(skill));
+
+        StepVerifier.create(controller.deleteSkillByQuery("golemcore/devops-pack/deploy-review"))
+                .assertNext(response -> assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode()))
+                .verifyComplete();
+
+        verify(skillMarketplaceService).deleteManagedSkill(skill);
+    }
+
+    @Test
     void shouldReloadSkill() {
+        when(skillService.findByName("test")).thenReturn(Optional.of(Skill.builder().name("test").build()));
+
         StepVerifier.create(controller.reloadSkill("test"))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
                     assertEquals("reloaded", response.getBody().get("status"));
                 })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldReloadNamespacedSkillByQuery() {
+        when(skillService.findByName("golemcore/devops-pack/deploy-review"))
+                .thenReturn(Optional.of(Skill.builder().name("golemcore/devops-pack/deploy-review").build()));
+
+        StepVerifier.create(controller.reloadSkillByQuery("golemcore/devops-pack/deploy-review"))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
                 .verifyComplete();
     }
 

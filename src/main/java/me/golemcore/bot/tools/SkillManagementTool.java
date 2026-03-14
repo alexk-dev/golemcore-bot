@@ -23,6 +23,7 @@ import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.service.SkillMarketplaceService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.StoragePort;
 import lombok.extern.slf4j.Slf4j;
@@ -95,12 +96,14 @@ public class SkillManagementTool implements ToolComponent {
     private final StoragePort storagePort;
     private final SkillComponent skillComponent;
     private final RuntimeConfigService runtimeConfigService;
+    private final SkillMarketplaceService skillMarketplaceService;
 
     public SkillManagementTool(RuntimeConfigService runtimeConfigService, StoragePort storagePort,
-            SkillComponent skillComponent) {
+            SkillComponent skillComponent, SkillMarketplaceService skillMarketplaceService) {
         this.runtimeConfigService = runtimeConfigService;
         this.storagePort = storagePort;
         this.skillComponent = skillComponent;
+        this.skillMarketplaceService = skillMarketplaceService;
         log.info("SkillManagementTool initialized");
     }
 
@@ -276,9 +279,8 @@ public class SkillManagementTool implements ToolComponent {
         }
 
         // Delete from storage
-        String path = name + "/SKILL.md";
         try {
-            storagePort.deleteObject(SKILLS_DIR, path).join();
+            skillMarketplaceService.deleteManagedSkill(existing.get());
             skillComponent.reload();
             log.info("[SkillManagement] Deleted skill: {}", name);
             return ToolResult.success("Skill '" + name + "' deleted successfully.");

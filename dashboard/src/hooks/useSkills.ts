@@ -1,11 +1,15 @@
 import { type UseMutationResult, type UseQueryResult, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  getClawHubSkills,
   createSkill,
   deleteSkill,
   getMcpStatus,
   getSkill,
   getSkillMarketplace,
+  installClawHubSkill,
   installSkillFromMarketplace,
+  type ClawHubInstallResult,
+  type ClawHubSkillCatalogResponse,
   listSkills,
   type SkillInstallResult,
   type SkillMarketplaceCatalogResponse,
@@ -17,6 +21,7 @@ function invalidateSkillsQueries(queryClient: ReturnType<typeof useQueryClient>)
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: ['skills'] }),
     queryClient.invalidateQueries({ queryKey: ['skill-marketplace'] }),
+    queryClient.invalidateQueries({ queryKey: ['clawhub-skills'] }),
   ]);
 }
 
@@ -47,6 +52,13 @@ export function useSkillMarketplace(): UseQueryResult<SkillMarketplaceCatalogRes
   });
 }
 
+export function useClawHubSkills(query: string): UseQueryResult<ClawHubSkillCatalogResponse, unknown> {
+  return useQuery({
+    queryKey: ['clawhub-skills', query],
+    queryFn: () => getClawHubSkills(query, 24),
+  });
+}
+
 export function useInstallSkillFromMarketplace(): UseMutationResult<
   SkillInstallResult,
   unknown,
@@ -55,6 +67,18 @@ export function useInstallSkillFromMarketplace(): UseMutationResult<
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ skillId }: { skillId: string }) => installSkillFromMarketplace(skillId),
+    onSuccess: () => invalidateSkillsQueries(queryClient),
+  });
+}
+
+export function useInstallClawHubSkill(): UseMutationResult<
+  ClawHubInstallResult,
+  unknown,
+  { slug: string; version?: string | null }
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ slug, version }: { slug: string; version?: string | null }) => installClawHubSkill(slug, version),
     onSuccess: () => invalidateSkillsQueries(queryClient),
   });
 }
