@@ -185,7 +185,7 @@ function Toggle({
   checked,
   onChange,
 }: {
-  label: string;
+  label: ReactNode;
   checked: boolean;
   onChange: (checked: boolean) => void;
 }): ReactElement {
@@ -285,8 +285,16 @@ function VariableRow({
         <Input value={row.description} onChange={(event) => onChange({ ...row, description: event.target.value })} placeholder="Describe what this variable configures" />
       </FieldStack>
       <div className="flex flex-wrap items-center gap-2">
-        <Toggle label="Required" checked={row.required} onChange={(checked) => onChange({ ...row, required: checked })} />
-        <Toggle label="Secret" checked={row.secret} onChange={(checked) => onChange({ ...row, secret: checked })} />
+        <Toggle
+          label={<>Required <HelpTip text="Required variables must be provided for the skill to be considered ready to run." /></>}
+          checked={row.required}
+          onChange={(checked) => onChange({ ...row, required: checked })}
+        />
+        <Toggle
+          label={<>Secret <HelpTip text="Secret variables contain sensitive values such as API keys or tokens and should be masked in the UI." /></>}
+          checked={row.secret}
+          onChange={(checked) => onChange({ ...row, secret: checked })}
+        />
         {resolvedValue != null && resolvedValue.length > 0 && (
           <Badge variant="secondary">Resolved: {row.secret ? '***' : resolvedValue}</Badge>
         )}
