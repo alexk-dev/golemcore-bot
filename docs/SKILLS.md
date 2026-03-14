@@ -14,7 +14,6 @@ Skills can come from two sources:
 
 - **manual workspace skills** created directly under `workspace/skills/`
 - **marketplace artifacts** installed from a local or remote skills registry
-- **ClawHub skills** installed from the public `clawhub.ai` registry
 
 Marketplace installs are artifact-oriented:
 
@@ -25,7 +24,6 @@ Runtime skill ids are namespaced when loaded from the marketplace:
 
 - standalone artifact: `golemcore/code-reviewer`
 - pack skill: `golemcore/devops-pack/deploy-review`
-- ClawHub skill: `clawhub/pr-review`
 
 ```
 workspace/skills/
@@ -46,10 +44,6 @@ workspace/skills/
 │           └── skills/
 │               ├── deploy-review/SKILL.md
 │               └── incident-triage/SKILL.md
-├── clawhub/
-│   └── pr-review/
-│       ├── .clawhub-install.json
-│       └── SKILL.md
 └── variables.json          # global variables
 ```
 
@@ -79,6 +73,7 @@ That's it. The bot will automatically discover this skill on the next reload (or
 
 The dashboard `Skills -> Marketplace` page can install skills from:
 
+- a registry checkout inside the sandbox workspace
 - a local registry checkout on disk
 - a remote GitHub repository
 
@@ -86,6 +81,7 @@ By default, repository mode points at the canonical `golemcore-skills` repositor
 
 - `Repository URL`
 - `Local path`
+- `Sandbox path`
 
 Each marketplace entry is an **artifact** with a maintainer namespace and an artifact type:
 
@@ -97,16 +93,6 @@ Examples:
 - artifact ref: `golemcore/code-reviewer`
 - artifact ref: `golemcore/devops-pack`
 - runtime skill ref inside a pack: `golemcore/devops-pack/deploy-review`
-
-### ClawHub Skills
-
-The dashboard `Skills -> ClawHub` page installs public zip-packaged skills from `https://clawhub.ai`.
-
-Behavior:
-
-- installs are written under `workspace/skills/clawhub/<slug>/...`
-- the imported `SKILL.md` is rewritten to runtime name `clawhub/<slug>`
-- ClawHub installs are standalone skills, not packs
 
 ### Registry Layout
 

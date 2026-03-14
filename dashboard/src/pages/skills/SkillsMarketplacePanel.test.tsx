@@ -28,6 +28,7 @@ vi.mock('../../hooks/useSettings', () => ({
         progressiveLoading: true,
         marketplaceSourceType: 'repository',
         marketplaceRepositoryDirectory: null,
+        marketplaceSandboxPath: null,
         marketplaceRepositoryUrl: 'https://github.com/alexk-dev/golemcore-skills',
         marketplaceBranch: 'main',
       },
@@ -44,6 +45,7 @@ describe('SkillsMarketplacePanel', () => {
     const html = renderToStaticMarkup(<SkillsMarketplacePanel />);
 
     expect(html).toContain('Marketplace Source');
+    expect(html).toContain('Choose a sandbox path, local path, or remote repository.');
     expect(html).toContain('Edit source');
     expect(html).toContain('Current source');
     expect(html).not.toContain('Source type');

@@ -65,6 +65,15 @@ public class SkillService implements SkillComponent {
 
     private final Map<String, Skill> skillRegistry = new ConcurrentHashMap<>();
     private final ObjectMapper yamlMapper = new ObjectMapper(new YAMLFactory());
+    private static final List<String> FRONTMATTER_KEY_ORDER = List.of(
+            "name",
+            "description",
+            "model_tier",
+            "requires",
+            "vars",
+            "mcp",
+            "next_skill",
+            "conditional_next_skills");
 
     @PostConstruct
     public void init() {
@@ -97,6 +106,15 @@ public class SkillService implements SkillComponent {
             return Optional.empty();
         }
         return Optional.ofNullable(skillRegistry.get(name));
+    }
+
+    public Optional<Skill> findByLocation(String location) {
+        if (!runtimeConfigService.isSkillsEnabled() || location == null || location.isBlank()) {
+            return Optional.empty();
+        }
+        return skillRegistry.values().stream()
+                .filter(skill -> skill.getLocation() != null && location.equals(skill.getLocation().toString()))
+                .findFirst();
     }
 
     @Override
@@ -174,7 +192,7 @@ public class SkillService implements SkillComponent {
         String name = extractNameFromPath(path);
         String description = "";
         String body = content;
-        Map<String, Object> metadata = new HashMap<>();
+        Map<String, Object> metadata = new LinkedHashMap<>();
 
         if (matcher.matches()) {
             String frontmatter = matcher.group(1);
@@ -186,7 +204,7 @@ public class SkillService implements SkillComponent {
 
                 name = (String) yaml.getOrDefault("name", name);
                 description = (String) yaml.getOrDefault("description", "");
-                metadata = yaml;
+                metadata = new LinkedHashMap<>(yaml);
 
             } catch (IOException | RuntimeException e) {
                 log.warn("Failed to parse skill frontmatter: {}", path, e);
@@ -227,6 +245,7 @@ public class SkillService implements SkillComponent {
 
         // Parse model tier
         String modelTier = (String) metadata.get("model_tier");
+        Skill.SkillRequirements requirements = parseRequirements(metadata);
 
         return Skill.builder()
                 .name(name)
@@ -234,6 +253,7 @@ public class SkillService implements SkillComponent {
                 .content(body.trim())
                 .location(java.nio.file.Path.of(path))
                 .metadata(metadata)
+                .requirements(requirements)
                 .available(available)
                 .variableDefinitions(new ArrayList<>(variableDefinitions))
                 .resolvedVariables(new HashMap<>(resolvedVariables))
@@ -316,6 +336,38 @@ public class SkillService implements SkillComponent {
                 .build();
     }
 
+    public String renderSkillDocument(Map<String, Object> metadata, String body) {
+        String normalizedBody = body != null ? body : "";
+        Map<String, Object> orderedMetadata = orderMetadata(metadata);
+        if (orderedMetadata.isEmpty()) {
+            return normalizedBody;
+        }
+        try {
+            String yaml = yamlMapper.writeValueAsString(orderedMetadata).stripTrailing();
+            return "---\n" + yaml + "\n---\n" + normalizedBody;
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to serialize skill metadata", e);
+        }
+    }
+
+    private Map<String, Object> orderMetadata(Map<String, Object> metadata) {
+        if (metadata == null || metadata.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Object> ordered = new LinkedHashMap<>();
+        for (String key : FRONTMATTER_KEY_ORDER) {
+            if (metadata.containsKey(key)) {
+                ordered.put(key, metadata.get(key));
+            }
+        }
+        for (Map.Entry<String, Object> entry : metadata.entrySet()) {
+            if (!ordered.containsKey(entry.getKey())) {
+                ordered.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return ordered;
+    }
+
     private String resolveEnvPlaceholders(String value, Map<String, String> resolvedVariables) {
         if (value == null || !value.contains("${")) {
             return value;
@@ -366,6 +418,38 @@ public class SkillService implements SkillComponent {
         }
 
         return true;
+    }
+
+    @SuppressWarnings(SUPPRESS_UNCHECKED)
+    private Skill.SkillRequirements parseRequirements(Map<String, Object> metadata) {
+        Object reqObj = metadata.get("requires");
+        if (!(reqObj instanceof Map<?, ?> reqMap)) {
+            return null;
+        }
+
+        List<String> envVars = toStringList(((Map<String, Object>) reqMap).get("env"));
+        List<String> binaries = toStringList(((Map<String, Object>) reqMap).get("binary"));
+        List<String> skills = toStringList(((Map<String, Object>) reqMap).get("skills"));
+
+        if (envVars.isEmpty() && binaries.isEmpty() && skills.isEmpty()) {
+            return null;
+        }
+
+        return Skill.SkillRequirements.builder()
+                .envVars(envVars)
+                .binaries(binaries)
+                .skills(skills)
+                .build();
+    }
+
+    private List<String> toStringList(Object value) {
+        if (!(value instanceof List<?> list)) {
+            return List.of();
+        }
+        return list.stream()
+                .filter(Objects::nonNull)
+                .map(Object::toString)
+                .toList();
     }
 
     private String getSkillsDirectory() {

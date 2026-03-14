@@ -1,7 +1,8 @@
-import { type ReactElement, useEffect, useState } from 'react';
+import { type ReactElement, useState } from 'react';
 import { FiCompass, FiPackage, FiPlus } from 'react-icons/fi';
 import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import type { SkillInfo, SkillUpdateRequest } from '../api/skills';
 import ConfirmModal from '../components/common/ConfirmModal';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/field';
@@ -16,13 +17,11 @@ import {
   useUpdateSkill,
 } from '../hooks/useSkills';
 import { extractErrorMessage } from '../utils/extractErrorMessage';
-import { ClawHubSkillsPanel } from './skills/ClawHubSkillsPanel';
 import { LocalSkillsPanel } from './skills/LocalSkillsPanel';
 import { SkillsMarketplacePanel } from './skills/SkillsMarketplacePanel';
 
 const SKILL_TEMPLATE = `---
 description: ""
-available: true
 model_tier: balanced
 ---
 
@@ -30,11 +29,10 @@ model_tier: balanced
 const SKILL_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 const SKILLS_TAB_QUERY_PARAM = 'tab';
 
-type SkillsTabKey = 'local' | 'marketplace' | 'clawhub';
+type SkillsTabKey = 'local' | 'marketplace';
 
 const LOCAL_SKILLS_TAB: SkillsTabKey = 'local';
 const MARKETPLACE_SKILLS_TAB: SkillsTabKey = 'marketplace';
-const CLAWHUB_SKILLS_TAB: SkillsTabKey = 'clawhub';
 
 const SKILLS_TABS: Array<{
   key: SkillsTabKey;
@@ -54,20 +52,11 @@ const SKILLS_TABS: Array<{
     description: 'Install maintained artifacts from a registry directory or repository.',
     icon: FiCompass,
   },
-  {
-    key: CLAWHUB_SKILLS_TAB,
-    label: 'ClawHub',
-    description: 'Browse the public ClawHub catalog and import external skills.',
-    icon: FiCompass,
-  },
 ];
 
 function resolveSkillsTab(searchValue: string | null): SkillsTabKey {
   if (searchValue === MARKETPLACE_SKILLS_TAB) {
     return MARKETPLACE_SKILLS_TAB;
-  }
-  if (searchValue === CLAWHUB_SKILLS_TAB) {
-    return CLAWHUB_SKILLS_TAB;
   }
   return LOCAL_SKILLS_TAB;
 }
@@ -116,8 +105,6 @@ export default function SkillsPage(): ReactElement {
   const deleteMutation = useDeleteSkill();
 
   const [selected, setSelected] = useState<string | null>(null);
-  const [editContent, setEditContent] = useState('');
-  const [editorInitializedFor, setEditorInitializedFor] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -131,20 +118,10 @@ export default function SkillsPage(): ReactElement {
     setSearchParams(nextParams, { replace: true });
   };
 
-  const currentContent = selected === detail?.name ? (detail?.content ?? '') : '';
-  const editorContent = selected === detail?.name ? editContent : '';
-  const isSkillDirty = selected === detail?.name && editorContent !== currentContent;
   const normalizedNewName = newName.trim().toLowerCase();
   const newNameInvalid = normalizedNewName.length > 0 && !SKILL_NAME_PATTERN.test(normalizedNewName);
   const newNameExists = normalizedNewName.length > 0 && (skills ?? []).some((skill) => skill.name === normalizedNewName);
   const canCreate = normalizedNewName.length > 0 && !newNameInvalid && !newNameExists;
-
-  useEffect(() => {
-    if (selected != null && detail?.name === selected && editorInitializedFor !== selected) {
-      setEditContent(detail.content ?? '');
-      setEditorInitializedFor(selected);
-    }
-  }, [detail?.content, detail?.name, editorInitializedFor, selected]);
 
   if (isLoading) {
     return <LoadingSkeleton />;
@@ -157,19 +134,22 @@ export default function SkillsPage(): ReactElement {
       return;
     }
     setSelected(name);
-    setEditContent('');
-    setEditorInitializedFor(null);
   };
 
-  const handleSave = async (): Promise<void> => {
-    if (selected == null || selected.length === 0 || !isSkillDirty) {
-      return;
+  const handleSave = async (request: SkillUpdateRequest): Promise<SkillInfo> => {
+    if (selected == null || selected.length === 0) {
+      throw new Error('No skill selected');
     }
     try {
-      await updateMutation.mutateAsync({ name: selected, content: editorContent });
+      const updated = await updateMutation.mutateAsync({ name: selected, request });
+      if (updated.name !== selected) {
+        setSelected(updated.name);
+      }
       toast.success('Skill saved');
+      return updated;
     } catch (err: unknown) {
       toast.error(`Failed to save skill: ${extractErrorMessage(err)}`);
+      throw err;
     }
   };
 
@@ -180,8 +160,6 @@ export default function SkillsPage(): ReactElement {
     try {
       await deleteMutation.mutateAsync(selected);
       setSelected(null);
-      setEditContent('');
-      setEditorInitializedFor(null);
       setShowDeleteConfirm(false);
       toast.success('Skill deleted');
     } catch (err: unknown) {
@@ -206,8 +184,6 @@ export default function SkillsPage(): ReactElement {
       setShowCreate(false);
       setNewName('');
       setSelected(normalizedNewName);
-      setEditContent('');
-      setEditorInitializedFor(null);
       toast.success('Skill created');
     } catch (err: unknown) {
       toast.error(`Failed to create skill: ${extractErrorMessage(err)}`);
@@ -226,7 +202,7 @@ export default function SkillsPage(): ReactElement {
           <div>
             <h1 className="text-3xl font-semibold tracking-tight text-foreground">Skills</h1>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
-              Manage local skills, install maintained packs, and import external catalog entries from one workspace.
+              Manage local skills and install maintained artifacts from one workspace.
             </p>
           </div>
         </div>
@@ -245,7 +221,7 @@ export default function SkillsPage(): ReactElement {
 
       <Card>
         <CardContent className="p-3">
-          <div className="grid gap-2 md:grid-cols-3" role="tablist" aria-label="Skills sections">
+          <div className="grid gap-2 md:grid-cols-2" role="tablist" aria-label="Skills sections">
             {SKILLS_TABS.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.key;
@@ -284,21 +260,16 @@ export default function SkillsPage(): ReactElement {
 
       {activeTab === MARKETPLACE_SKILLS_TAB ? (
         <SkillsMarketplacePanel />
-      ) : activeTab === CLAWHUB_SKILLS_TAB ? (
-        <ClawHubSkillsPanel />
       ) : (
         <LocalSkillsPanel
           detail={detail}
           detailError={detailError}
           detailLoading={detailLoading}
-          editorContent={editorContent}
           filteredSkills={filtered}
-          isSkillDirty={isSkillDirty}
           onDelete={() => setShowDeleteConfirm(true)}
-          onEditorChange={setEditContent}
           onOpenMarketplace={() => handleTabChange(MARKETPLACE_SKILLS_TAB)}
           onRefetchDetail={() => { void refetchDetail(); }}
-          onSave={() => { void handleSave(); }}
+          onSave={handleSave}
           onSearchChange={setSearch}
           onSelectSkill={handleSelectSkill}
           searchQuery={search}

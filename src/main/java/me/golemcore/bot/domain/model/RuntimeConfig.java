@@ -311,6 +311,7 @@ public class RuntimeConfig {
         private Boolean progressiveLoading = true;
         private String marketplaceSourceType;
         private String marketplaceRepositoryDirectory;
+        private String marketplaceSandboxPath;
         private String marketplaceRepositoryUrl;
         private String marketplaceBranch;
     }

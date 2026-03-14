@@ -90,7 +90,6 @@ Optional next steps in Settings:
 Optional next steps outside Settings:
 
 - `Skills -> Marketplace` to install standalone skills or packs from a local `golemcore-skills` checkout, a direct `registry/` path, or the default remote repository
-- `Skills -> ClawHub` to install public standalone skills from `clawhub.ai`
 
 ## Your First Conversation
 

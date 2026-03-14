@@ -64,6 +64,7 @@ public class SkillMarketplaceService {
     private static final String INSTALL_METADATA_FILE = ".marketplace-install.json";
     private static final String SOURCE_REPOSITORY = "repository";
     private static final String SOURCE_DIRECTORY = "directory";
+    private static final String SOURCE_SANDBOX = "sandbox";
     private static final String TYPE_SKILL = "skill";
     private static final String TYPE_PACK = "pack";
     private static final String DEFAULT_REPOSITORY_URL = "https://github.com/alexk-dev/golemcore-skills";
@@ -77,6 +78,7 @@ public class SkillMarketplaceService {
     private final StoragePort storagePort;
     private final SkillService skillService;
     private final RuntimeConfigService runtimeConfigService;
+    private final WorkspacePathService workspacePathService;
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .followRedirects(HttpClient.Redirect.NORMAL)
@@ -291,7 +293,7 @@ public class SkillMarketplaceService {
     }
 
     private Map<String, RegistryArtifact> loadArtifacts(MarketplaceSource source) {
-        return SOURCE_DIRECTORY.equals(source.type())
+        return (SOURCE_DIRECTORY.equals(source.type()) || SOURCE_SANDBOX.equals(source.type()))
                 ? loadLocalArtifacts(source)
                 : loadRemoteArtifacts(source);
     }
@@ -750,7 +752,7 @@ public class SkillMarketplaceService {
     }
 
     private String readSkillContent(MarketplaceSource source, String sourcePath) {
-        if (SOURCE_DIRECTORY.equals(source.type())) {
+        if (SOURCE_DIRECTORY.equals(source.type()) || SOURCE_SANDBOX.equals(source.type())) {
             Path root = source.localRepositoryRoot();
             if (root == null) {
                 throw new IllegalStateException("Local marketplace repository is not configured");
@@ -802,6 +804,9 @@ public class SkillMarketplaceService {
         String configuredDirectory = firstNonBlank(
                 trimToNull(skillsConfig.getMarketplaceRepositoryDirectory()),
                 trimToNull(botProperties.getSkills().getMarketplaceRepositoryDirectory()));
+        String configuredSandboxPath = firstNonBlank(
+                trimToNull(skillsConfig.getMarketplaceSandboxPath()),
+                trimToNull(botProperties.getSkills().getMarketplaceSandboxPath()));
         String configuredRepositoryUrl = firstNonBlank(
                 trimToNull(skillsConfig.getMarketplaceRepositoryUrl()),
                 trimToNull(botProperties.getSkills().getMarketplaceRepositoryUrl()),
@@ -811,11 +816,11 @@ public class SkillMarketplaceService {
                 trimToNull(botProperties.getSkills().getMarketplaceBranch()),
                 DEFAULT_BRANCH);
 
-        String sourceType = normalizeSourceType(configuredSourceType, configuredDirectory);
+        String sourceType = normalizeSourceType(configuredSourceType, configuredDirectory, configuredSandboxPath);
         if (SOURCE_DIRECTORY.equals(sourceType)) {
             if (configuredDirectory == null) {
                 throw new IllegalStateException(
-                        "Local marketplace source is selected but no repository path is configured.");
+                        "Local marketplace source is selected but no local path is configured.");
             }
             Path requestedPath = resolveConfiguredPath(configuredDirectory);
             Path repositoryRoot = resolveLocalRepositoryRoot(requestedPath)
@@ -824,19 +829,43 @@ public class SkillMarketplaceService {
             return new MarketplaceSource(sourceType, repositoryRoot.toString(), configuredRepositoryUrl,
                     configuredBranch, repositoryRoot);
         }
+        if (SOURCE_SANDBOX.equals(sourceType)) {
+            if (configuredSandboxPath == null) {
+                throw new IllegalStateException(
+                        "Sandbox marketplace source is selected but no sandbox path is configured.");
+            }
+            Path requestedPath = resolveSandboxConfiguredPath(configuredSandboxPath);
+            Path repositoryRoot = resolveLocalRepositoryRoot(requestedPath)
+                    .orElseThrow(() -> new IllegalStateException(
+                            "Marketplace repository was not found at sandbox path " + configuredSandboxPath));
+            return new MarketplaceSource(sourceType, sandboxDisplayPath(repositoryRoot), configuredRepositoryUrl,
+                    configuredBranch, repositoryRoot);
+        }
 
         String repositoryUrl = configuredRepositoryUrl != null ? configuredRepositoryUrl : DEFAULT_REPOSITORY_URL;
         return new MarketplaceSource(sourceType, remoteRepositoryUrl(repositoryUrl).toString(), repositoryUrl,
                 configuredBranch, null);
     }
 
-    private String normalizeSourceType(String configuredSourceType, String configuredDirectory) {
+    private String normalizeSourceType(
+            String configuredSourceType,
+            String configuredDirectory,
+            String configuredSandboxPath) {
         if (configuredSourceType == null) {
-            return configuredDirectory != null ? SOURCE_DIRECTORY : SOURCE_REPOSITORY;
+            if (configuredDirectory != null) {
+                return SOURCE_DIRECTORY;
+            }
+            if (configuredSandboxPath != null) {
+                return SOURCE_SANDBOX;
+            }
+            return SOURCE_REPOSITORY;
         }
         String normalized = configuredSourceType.trim().toLowerCase(Locale.ROOT);
         if (SOURCE_DIRECTORY.equals(normalized)) {
             return SOURCE_DIRECTORY;
+        }
+        if (SOURCE_SANDBOX.equals(normalized)) {
+            return SOURCE_SANDBOX;
         }
         return SOURCE_REPOSITORY;
     }
@@ -852,6 +881,14 @@ public class SkillMarketplaceService {
         return Path.of(expanded).toAbsolutePath().normalize();
     }
 
+    private Path resolveSandboxConfiguredPath(String configuredPath) {
+        try {
+            return workspacePathService.resolveSafePath(configuredPath);
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalStateException("Invalid sandbox path: " + ex.getMessage(), ex);
+        }
+    }
+
     private Optional<Path> resolveLocalRepositoryRoot(Path configuredPath) {
         if (!Files.isDirectory(configuredPath)) {
             return Optional.empty();
@@ -863,6 +900,11 @@ public class SkillMarketplaceService {
             return Optional.of(configuredPath);
         }
         return Optional.empty();
+    }
+
+    private String sandboxDisplayPath(Path repositoryRoot) {
+        String relativePath = workspacePathService.toRelativePath(repositoryRoot);
+        return relativePath.isBlank() ? "." : relativePath;
     }
 
     private Optional<Path> locateRegistryRoot(Path repositoryRoot) {

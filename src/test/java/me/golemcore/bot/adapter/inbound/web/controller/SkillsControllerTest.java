@@ -1,22 +1,18 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
 import me.golemcore.bot.adapter.inbound.web.dto.SkillDto;
-import me.golemcore.bot.domain.model.ClawHubInstallRequest;
-import me.golemcore.bot.domain.model.ClawHubInstallResult;
-import me.golemcore.bot.domain.model.ClawHubSkillCatalog;
-import me.golemcore.bot.domain.model.ClawHubSkillItem;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.SkillInstallRequest;
 import me.golemcore.bot.domain.model.SkillInstallResult;
 import me.golemcore.bot.domain.model.SkillMarketplaceCatalog;
 import me.golemcore.bot.domain.model.SkillMarketplaceItem;
-import me.golemcore.bot.domain.service.ClawHubSkillService;
 import me.golemcore.bot.domain.service.SkillMarketplaceService;
 import me.golemcore.bot.domain.service.SkillService;
 import me.golemcore.bot.port.outbound.McpPort;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.test.StepVerifier;
@@ -30,7 +26,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -38,7 +36,6 @@ class SkillsControllerTest {
 
     private SkillService skillService;
     private SkillMarketplaceService skillMarketplaceService;
-    private ClawHubSkillService clawHubSkillService;
     private McpPort mcpPort;
     private StoragePort storagePort;
     private SkillsController controller;
@@ -47,11 +44,9 @@ class SkillsControllerTest {
     void setUp() {
         skillService = mock(SkillService.class);
         skillMarketplaceService = mock(SkillMarketplaceService.class);
-        clawHubSkillService = mock(ClawHubSkillService.class);
         mcpPort = mock(McpPort.class);
         storagePort = mock(StoragePort.class);
-        controller = new SkillsController(skillService, skillMarketplaceService, clawHubSkillService, mcpPort,
-                storagePort);
+        controller = new SkillsController(skillService, skillMarketplaceService, mcpPort, storagePort);
     }
 
     @Test
@@ -135,56 +130,16 @@ class SkillsControllerTest {
     }
 
     @Test
-    void shouldLoadClawHubCatalog() {
-        ClawHubSkillCatalog catalog = ClawHubSkillCatalog.builder()
-                .available(true)
-                .siteUrl("https://clawhub.ai")
-                .items(List.of(ClawHubSkillItem.builder()
-                        .slug("pr-review")
-                        .displayName("PR Review")
-                        .runtimeName("clawhub/pr-review")
-                        .installed(false)
-                        .build()))
-                .build();
-        when(clawHubSkillService.getCatalog("review", 10)).thenReturn(catalog);
-
-        StepVerifier.create(controller.getClawHubCatalog("review", 10))
-                .assertNext(response -> {
-                    assertEquals(HttpStatus.OK, response.getStatusCode());
-                    assertEquals("pr-review", response.getBody().getItems().getFirst().getSlug());
-                })
-                .verifyComplete();
-    }
-
-    @Test
-    void shouldInstallClawHubSkill() {
-        ClawHubInstallResult result = new ClawHubInstallResult(
-                "installed",
-                "ClawHub skill 'pr-review' installed.",
-                ClawHubSkillItem.builder()
-                        .slug("pr-review")
-                        .displayName("PR Review")
-                        .runtimeName("clawhub/pr-review")
-                        .installed(true)
-                        .build());
-        when(clawHubSkillService.install("pr-review", "1.0.0")).thenReturn(result);
-
-        StepVerifier.create(controller.installClawHubSkill(new ClawHubInstallRequest("pr-review", "1.0.0")))
-                .assertNext(response -> {
-                    assertEquals(HttpStatus.OK, response.getStatusCode());
-                    assertEquals("installed", response.getBody().getStatus());
-                    assertEquals("pr-review", response.getBody().getSkill().getSlug());
-                })
-                .verifyComplete();
-    }
-
-    @Test
     void shouldGetSkillByName() {
         Skill skill = Skill.builder()
                 .name("test-skill")
                 .description("A test skill")
                 .content("# Test Skill\nContent here")
                 .available(true)
+                .metadata(Map.of(
+                        "name", "test-skill",
+                        "description", "A test skill",
+                        "model_tier", "coding"))
                 .build();
         when(skillService.findByName("test-skill")).thenReturn(Optional.of(skill));
 
@@ -195,6 +150,7 @@ class SkillsControllerTest {
                     assertNotNull(body);
                     assertEquals("test-skill", body.getName());
                     assertEquals("# Test Skill\nContent here", body.getContent());
+                    assertEquals("coding", body.getMetadata().get("model_tier"));
                 })
                 .verifyComplete();
     }
@@ -238,6 +194,18 @@ class SkillsControllerTest {
     }
 
     @Test
+    void shouldRejectUpdateWithInvalidMetadataName() {
+        when(skillService.findByName("test")).thenReturn(Optional.of(Skill.builder().name("test").build()));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.updateSkill("test", Map.of(
+                        "content", "body",
+                        "metadata", Map.of("name", "BadName"))));
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertEquals("Skill metadata name must match [a-z0-9][a-z0-9-]*(/[a-z0-9][a-z0-9-]*)*", ex.getReason());
+    }
+
+    @Test
     void shouldRejectCreateWithUppercaseName() {
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> controller.createSkill(Map.of("name", "MySkill", "content", "body")));
@@ -250,20 +218,79 @@ class SkillsControllerTest {
         Skill skill = Skill.builder()
                 .name("golemcore/devops-pack/deploy-review")
                 .location(java.nio.file.Path.of("marketplace/golemcore/devops-pack/skills/deploy-review/SKILL.md"))
+                .metadata(Map.of(
+                        "name", "golemcore/devops-pack/deploy-review",
+                        "description", "Deploy review",
+                        "model_tier", "coding"))
                 .content("old")
                 .build();
+        Skill renamedSkill = Skill.builder()
+                .name("golemcore/devops-pack/deploy-review-v2")
+                .location(java.nio.file.Path.of("marketplace/golemcore/devops-pack/skills/deploy-review/SKILL.md"))
+                .metadata(Map.of(
+                        "name", "golemcore/devops-pack/deploy-review-v2",
+                        "description", "Deploy review v2",
+                        "model_tier", "smart"))
+                .content("new")
+                .build();
         when(skillService.findByName("golemcore/devops-pack/deploy-review"))
-                .thenReturn(Optional.of(skill))
                 .thenReturn(Optional.of(skill));
+        when(skillService.findByLocation("marketplace/golemcore/devops-pack/skills/deploy-review/SKILL.md"))
+                .thenReturn(Optional.of(renamedSkill));
         when(skillMarketplaceService.resolveManagedSkillStoragePath(skill))
                 .thenReturn("marketplace/golemcore/devops-pack/skills/deploy-review/SKILL.md");
-        when(storagePort.putText("skills", "marketplace/golemcore/devops-pack/skills/deploy-review/SKILL.md", "new"))
+        when(storagePort.putText(eq("skills"), eq("marketplace/golemcore/devops-pack/skills/deploy-review/SKILL.md"),
+                anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
         StepVerifier
-                .create(controller.updateSkillByQuery("golemcore/devops-pack/deploy-review", Map.of("content", "new")))
+                .create(controller.updateSkillByQuery("golemcore/devops-pack/deploy-review", Map.of(
+                        "content", "new",
+                        "metadata", Map.of(
+                                "name", "golemcore/devops-pack/deploy-review-v2",
+                                "description", "Deploy review v2",
+                                "model_tier", "smart"))))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertEquals("golemcore/devops-pack/deploy-review-v2", response.getBody().getName());
+                })
+                .verifyComplete();
+
+        ArgumentCaptor<String> documentCaptor = ArgumentCaptor.forClass(String.class);
+        verify(storagePort).putText(eq("skills"), eq("marketplace/golemcore/devops-pack/skills/deploy-review/SKILL.md"),
+                documentCaptor.capture());
+        assertTrue(documentCaptor.getValue().contains("name: golemcore/devops-pack/deploy-review-v2"));
+        assertTrue(documentCaptor.getValue().contains("model_tier: smart"));
+        assertTrue(documentCaptor.getValue().contains("\nnew"));
+    }
+
+    @Test
+    void shouldPreserveExistingMetadataWhenUpdatePayloadOmitsMetadata() {
+        Skill skill = Skill.builder()
+                .name("test-skill")
+                .location(java.nio.file.Path.of("test-skill/SKILL.md"))
+                .metadata(Map.of(
+                        "description", "Keep me",
+                        "model_tier", "coding",
+                        "next_skill", "follow-up"))
+                .content("old body")
+                .build();
+        when(skillService.findByName("test-skill")).thenReturn(Optional.of(skill));
+        when(skillService.findByLocation("test-skill/SKILL.md")).thenReturn(Optional.of(skill));
+        when(skillMarketplaceService.resolveManagedSkillStoragePath(skill)).thenReturn("test-skill/SKILL.md");
+        when(storagePort.putText(eq("skills"), eq("test-skill/SKILL.md"), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        StepVerifier.create(controller.updateSkillByQuery("test-skill", Map.of("content", "updated body")))
                 .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
                 .verifyComplete();
+
+        ArgumentCaptor<String> documentCaptor = ArgumentCaptor.forClass(String.class);
+        verify(storagePort).putText(eq("skills"), eq("test-skill/SKILL.md"), documentCaptor.capture());
+        assertTrue(documentCaptor.getValue().contains("description: Keep me"));
+        assertTrue(documentCaptor.getValue().contains("model_tier: coding"));
+        assertTrue(documentCaptor.getValue().contains("next_skill: follow-up"));
+        assertTrue(documentCaptor.getValue().contains("\nupdated body"));
     }
 
     @Test

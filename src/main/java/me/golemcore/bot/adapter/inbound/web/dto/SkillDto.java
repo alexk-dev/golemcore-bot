@@ -18,6 +18,7 @@ public class SkillDto {
     private String content;
     private String modelTier;
     private boolean hasMcp;
+    private Map<String, Object> metadata;
     private Map<String, Object> requirements;
     private Map<String, String> resolvedVariables;
 }

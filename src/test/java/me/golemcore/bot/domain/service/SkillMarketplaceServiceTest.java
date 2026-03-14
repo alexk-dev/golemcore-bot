@@ -65,7 +65,7 @@ class SkillMarketplaceServiceTest {
                 "registry/golemcore/code-reviewer/SKILL.md", standaloneSkillMarkdown()))) {
             BotProperties properties = botProperties(server.baseUrl());
             properties.getSkills().setMarketplaceRepositoryUrl(server.repositoryUrl());
-            SkillMarketplaceService service = new SkillMarketplaceService(
+            SkillMarketplaceService service = createService(
                     properties,
                     storagePort,
                     skillService,
@@ -101,7 +101,7 @@ class SkillMarketplaceServiceTest {
                         .build())
                 .build());
 
-        SkillMarketplaceService service = new SkillMarketplaceService(
+        SkillMarketplaceService service = createService(
                 botProperties("http://127.0.0.1:1"),
                 storagePort,
                 skillService,
@@ -138,7 +138,7 @@ class SkillMarketplaceServiceTest {
                         .build())
                 .build());
 
-        SkillMarketplaceService service = new SkillMarketplaceService(
+        SkillMarketplaceService service = createService(
                 botProperties("http://127.0.0.1:1"),
                 storagePort,
                 skillService,
@@ -149,6 +149,42 @@ class SkillMarketplaceServiceTest {
         assertTrue(catalog.isAvailable());
         assertEquals("directory", catalog.getSourceType());
         assertEquals(repoRoot.toString(), catalog.getSourceDirectory());
+        assertEquals(2, catalog.getItems().size());
+    }
+
+    @Test
+    void shouldUseSandboxSourceWhenConfiguredPathPointsInsideWorkspace(@TempDir Path tempDir) throws Exception {
+        Path repoRoot = createLocalRegistry(tempDir);
+
+        StoragePort storagePort = mock(StoragePort.class);
+        when(storagePort.listObjects(eq("skills"), eq("marketplace")))
+                .thenReturn(CompletableFuture.completedFuture(List.of()));
+
+        SkillService skillService = mock(SkillService.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(RuntimeConfig.builder()
+                .skills(RuntimeConfig.SkillsConfig.builder()
+                        .marketplaceSourceType("sandbox")
+                        .marketplaceSandboxPath("repos/golemcore-skills")
+                        .build())
+                .build());
+
+        WorkspacePathService workspacePathService = mock(WorkspacePathService.class);
+        when(workspacePathService.resolveSafePath("repos/golemcore-skills")).thenReturn(repoRoot);
+        when(workspacePathService.toRelativePath(repoRoot)).thenReturn("repos/golemcore-skills");
+
+        SkillMarketplaceService service = createService(
+                botProperties("http://127.0.0.1:1"),
+                storagePort,
+                skillService,
+                runtimeConfigService,
+                workspacePathService);
+
+        SkillMarketplaceCatalog catalog = service.getCatalog();
+
+        assertTrue(catalog.isAvailable());
+        assertEquals("sandbox", catalog.getSourceType());
+        assertEquals("repos/golemcore-skills", catalog.getSourceDirectory());
         assertEquals(2, catalog.getItems().size());
     }
 
@@ -173,7 +209,7 @@ class SkillMarketplaceServiceTest {
                         .build())
                 .build());
 
-        SkillMarketplaceService service = new SkillMarketplaceService(
+        SkillMarketplaceService service = createService(
                 botProperties("http://127.0.0.1:1"),
                 storagePort,
                 skillService,
@@ -237,7 +273,7 @@ class SkillMarketplaceServiceTest {
                         .build())
                 .build());
 
-        SkillMarketplaceService service = new SkillMarketplaceService(
+        SkillMarketplaceService service = createService(
                 botProperties("http://127.0.0.1:1"),
                 storagePort,
                 skillService,
@@ -268,7 +304,7 @@ class SkillMarketplaceServiceTest {
                         .build())
                 .build());
 
-        SkillMarketplaceService service = new SkillMarketplaceService(
+        SkillMarketplaceService service = createService(
                 botProperties("http://127.0.0.1:1"),
                 storagePort,
                 skillService,
@@ -327,7 +363,7 @@ class SkillMarketplaceServiceTest {
                         .build())
                 .build());
 
-        SkillMarketplaceService service = new SkillMarketplaceService(
+        SkillMarketplaceService service = createService(
                 botProperties("http://127.0.0.1:1"),
                 storagePort,
                 skillService,
@@ -352,7 +388,7 @@ class SkillMarketplaceServiceTest {
                 .skills(new RuntimeConfig.SkillsConfig())
                 .build());
 
-        SkillMarketplaceService service = new SkillMarketplaceService(
+        SkillMarketplaceService service = createService(
                 botProperties("http://127.0.0.1:1"),
                 storagePort,
                 skillService,
@@ -372,7 +408,7 @@ class SkillMarketplaceServiceTest {
 
         BotProperties properties = botProperties("http://127.0.0.1:1");
         properties.getSkills().setMarketplaceEnabled(false);
-        SkillMarketplaceService service = new SkillMarketplaceService(properties, storagePort, skillService,
+        SkillMarketplaceService service = createService(properties, storagePort, skillService,
                 runtimeConfigService);
 
         SkillMarketplaceCatalog catalog = service.getCatalog();
@@ -398,7 +434,7 @@ class SkillMarketplaceServiceTest {
                 .skills(new RuntimeConfig.SkillsConfig())
                 .build());
 
-        SkillMarketplaceService service = new SkillMarketplaceService(
+        SkillMarketplaceService service = createService(
                 botProperties("http://127.0.0.1:1"),
                 storagePort,
                 skillService,
@@ -436,11 +472,31 @@ class SkillMarketplaceServiceTest {
         properties.getSkills().setMarketplaceEnabled(true);
         properties.getSkills().setMarketplaceRepositoryUrl(baseUrl + "/alexk-dev/golemcore-skills");
         properties.getSkills().setMarketplaceRepositoryDirectory("");
+        properties.getSkills().setMarketplaceSandboxPath("");
         properties.getSkills().setMarketplaceApiBaseUrl(baseUrl + "/api");
         properties.getSkills().setMarketplaceRawBaseUrl(baseUrl + "/raw");
         properties.getSkills().setMarketplaceBranch("main");
         properties.getSkills().setMarketplaceRemoteCacheTtl(Duration.ofSeconds(30));
         return properties;
+    }
+
+    private SkillMarketplaceService createService(
+            BotProperties properties,
+            StoragePort storagePort,
+            SkillService skillService,
+            RuntimeConfigService runtimeConfigService) {
+        return createService(properties, storagePort, skillService, runtimeConfigService,
+                mock(WorkspacePathService.class));
+    }
+
+    private SkillMarketplaceService createService(
+            BotProperties properties,
+            StoragePort storagePort,
+            SkillService skillService,
+            RuntimeConfigService runtimeConfigService,
+            WorkspacePathService workspacePathService) {
+        return new SkillMarketplaceService(properties, storagePort, skillService, runtimeConfigService,
+                workspacePathService);
     }
 
     private static String maintainerYaml() {

@@ -1,16 +1,11 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.adapter.inbound.web.dto.SkillDto;
-import me.golemcore.bot.domain.model.ClawHubInstallRequest;
-import me.golemcore.bot.domain.model.ClawHubInstallResult;
-import me.golemcore.bot.domain.model.ClawHubSkillCatalog;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.SkillInstallRequest;
 import me.golemcore.bot.domain.model.SkillInstallResult;
 import me.golemcore.bot.domain.model.SkillMarketplaceCatalog;
-import me.golemcore.bot.domain.service.ClawHubSkillService;
 import me.golemcore.bot.domain.service.SkillMarketplaceService;
 import me.golemcore.bot.domain.service.SkillService;
 import me.golemcore.bot.port.outbound.McpPort;
@@ -30,6 +25,7 @@ import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
@@ -40,15 +36,14 @@ import java.util.regex.Pattern;
 @RestController
 @RequestMapping("/api/skills")
 @RequiredArgsConstructor
-@Slf4j
 public class SkillsController {
 
     private static final String SKILLS_DIR = "skills";
     private static final Pattern VALID_NAME = Pattern.compile("^[a-z0-9][a-z0-9-]*$");
+    private static final Pattern VALID_METADATA_NAME = Pattern.compile("^[a-z0-9][a-z0-9-]*(/[a-z0-9][a-z0-9-]*)*$");
 
     private final SkillService skillService;
     private final SkillMarketplaceService skillMarketplaceService;
-    private final ClawHubSkillService clawHubSkillService;
     private final McpPort mcpPort;
     private final StoragePort storagePort;
 
@@ -65,21 +60,9 @@ public class SkillsController {
         return Mono.just(ResponseEntity.ok(skillMarketplaceService.getCatalog()));
     }
 
-    @GetMapping("/clawhub")
-    public Mono<ResponseEntity<ClawHubSkillCatalog>> getClawHubCatalog(
-            @RequestParam(required = false) String q,
-            @RequestParam(required = false) Integer limit) {
-        return Mono.just(ResponseEntity.ok(clawHubSkillService.getCatalog(q, limit)));
-    }
-
     @PostMapping("/marketplace/install")
     public Mono<ResponseEntity<SkillInstallResult>> installSkill(@RequestBody SkillInstallRequest request) {
         return Mono.just(ResponseEntity.ok(skillMarketplaceService.install(request.getSkillId())));
-    }
-
-    @PostMapping("/clawhub/install")
-    public Mono<ResponseEntity<ClawHubInstallResult>> installClawHubSkill(@RequestBody ClawHubInstallRequest request) {
-        return Mono.just(ResponseEntity.ok(clawHubSkillService.install(request.getSlug(), request.getVersion())));
     }
 
     @GetMapping("/detail")
@@ -127,28 +110,32 @@ public class SkillsController {
 
     @PutMapping("/detail")
     public Mono<ResponseEntity<SkillDto>> updateSkillByQuery(
-            @RequestParam String name, @RequestBody Map<String, String> body) {
+            @RequestParam String name, @RequestBody Map<String, Object> body) {
         return updateSkillInternal(name, body);
     }
 
     @PutMapping("/{name}")
     public Mono<ResponseEntity<SkillDto>> updateSkill(
-            @PathVariable String name, @RequestBody Map<String, String> body) {
+            @PathVariable String name, @RequestBody Map<String, Object> body) {
         return updateSkillInternal(name, body);
     }
 
-    private Mono<ResponseEntity<SkillDto>> updateSkillInternal(String name, Map<String, String> body) {
-        String content = body.get("content");
+    private Mono<ResponseEntity<SkillDto>> updateSkillInternal(String name, Map<String, Object> body) {
+        String content = extractContent(body);
         if (content == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill content is required");
         }
         Skill skill = skillService.findByName(name)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Skill '" + name + "' not found"));
+        Map<String, Object> metadata = extractMetadata(body)
+                .orElseGet(() -> copyMetadata(skill.getMetadata()));
+        validateMetadata(metadata);
         String path = skillMarketplaceService.resolveManagedSkillStoragePath(skill);
-        return Mono.fromFuture(storagePort.putText("skills", path, content))
+        String document = skillService.renderSkillDocument(metadata, content);
+        return Mono.fromFuture(storagePort.putText(SKILLS_DIR, path, document))
                 .then(Mono.fromRunnable(skillService::reload))
                 .then(Mono.defer(() -> {
-                    Optional<Skill> updated = skillService.findByName(name);
+                    Optional<Skill> updated = skillService.findByLocation(path);
                     return updated
                             .map(s -> Mono.just(ResponseEntity.ok(toDetailDto(s))))
                             .orElse(Mono.just(ResponseEntity.notFound().build()));
@@ -226,7 +213,76 @@ public class SkillsController {
     private SkillDto toDetailDto(Skill skill) {
         SkillDto dto = toDto(skill);
         dto.setContent(skill.getContent());
+        dto.setMetadata(copyMetadata(skill.getMetadata()));
+        dto.setRequirements(toRequirementsMap(skill));
         dto.setResolvedVariables(skill.getResolvedVariables());
         return dto;
+    }
+
+    private String extractContent(Map<String, Object> body) {
+        Object content = body.get("content");
+        if (content == null) {
+            return null;
+        }
+        if (!(content instanceof String stringContent)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill content must be a string");
+        }
+        return stringContent;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Optional<Map<String, Object>> extractMetadata(Map<String, Object> body) {
+        if (!body.containsKey("metadata")) {
+            return Optional.empty();
+        }
+        Object metadata = body.get("metadata");
+        if (metadata == null) {
+            return Optional.of(new LinkedHashMap<>());
+        }
+        if (!(metadata instanceof Map<?, ?> rawMetadata)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill metadata must be an object");
+        }
+        Map<String, Object> copied = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : rawMetadata.entrySet()) {
+            copied.put(String.valueOf(entry.getKey()), entry.getValue());
+        }
+        return Optional.of(copied);
+    }
+
+    private void validateMetadata(Map<String, Object> metadata) {
+        Object name = metadata.get("name");
+        if (name == null) {
+            return;
+        }
+        String normalizedName = name.toString().trim();
+        if (!VALID_METADATA_NAME.matcher(normalizedName).matches()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Skill metadata name must match [a-z0-9][a-z0-9-]*(/[a-z0-9][a-z0-9-]*)*");
+        }
+        metadata.put("name", normalizedName);
+    }
+
+    private Map<String, Object> copyMetadata(Map<String, Object> metadata) {
+        if (metadata == null || metadata.isEmpty()) {
+            return new LinkedHashMap<>();
+        }
+        return new LinkedHashMap<>(metadata);
+    }
+
+    private Map<String, Object> toRequirementsMap(Skill skill) {
+        if (skill.getRequirements() == null) {
+            return null;
+        }
+        Map<String, Object> requirements = new LinkedHashMap<>();
+        if (skill.getRequirements().getEnvVars() != null && !skill.getRequirements().getEnvVars().isEmpty()) {
+            requirements.put("env", skill.getRequirements().getEnvVars());
+        }
+        if (skill.getRequirements().getBinaries() != null && !skill.getRequirements().getBinaries().isEmpty()) {
+            requirements.put("binary", skill.getRequirements().getBinaries());
+        }
+        if (skill.getRequirements().getSkills() != null && !skill.getRequirements().getSkills().isEmpty()) {
+            requirements.put("skills", skill.getRequirements().getSkills());
+        }
+        return requirements.isEmpty() ? null : requirements;
     }
 }

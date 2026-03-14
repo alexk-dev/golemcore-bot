@@ -149,7 +149,6 @@ Important behaviors:
 
 - `Installed` for editing loaded skills
 - `Marketplace` for browsing and installing skill artifacts
-- `ClawHub` for browsing and installing public skills from `clawhub.ai`
 
 Backend API:
 
@@ -160,8 +159,6 @@ Backend API:
 - `GET /api/skills/detail/mcp-status?name=...`
 - `GET /api/skills/marketplace`
 - `POST /api/skills/marketplace/install`
-- `GET /api/skills/clawhub`
-- `POST /api/skills/clawhub/install`
 
 Important behaviors:
 
@@ -170,15 +167,16 @@ Important behaviors:
 - Artifacts can be either `skill` or `pack`.
 - Pack artifacts install multiple runtime skills such as `golemcore/devops-pack/deploy-review`.
 - The marketplace source can be changed directly in the UI:
+  - sandbox path inside the tool workspace
   - local repository path on disk
   - remote repository URL + branch
+- Sandbox mode accepts a path relative to the bot sandbox workspace.
+- Sandbox mode accepts either the repository root or the `registry/` directory itself.
 - Local directory mode accepts either the repository root or the `registry/` directory itself.
 - Repository mode defaults to the configured `golemcore-skills` repository.
 - Remote repository mode currently expects a GitHub repository URL.
 - Installed marketplace artifacts are written under `workspace/skills/marketplace/...` and reloaded immediately.
 - The `Installed` tab can edit both manual skills and marketplace-installed skills because the backend resolves updates by stored skill location, not by assuming `name/SKILL.md`.
-- The `ClawHub` tab installs public skills under `workspace/skills/clawhub/<slug>/...`.
-- Imported ClawHub skills are rewritten to namespaced runtime ids such as `clawhub/pr-review`.
 
 ## Webhooks Page
 

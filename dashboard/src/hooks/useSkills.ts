@@ -1,19 +1,16 @@
 import { type UseMutationResult, type UseQueryResult, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  getClawHubSkills,
   createSkill,
   deleteSkill,
   getMcpStatus,
   getSkill,
   getSkillMarketplace,
-  installClawHubSkill,
   installSkillFromMarketplace,
-  type ClawHubInstallResult,
-  type ClawHubSkillCatalogResponse,
   listSkills,
   type SkillInstallResult,
   type SkillMarketplaceCatalogResponse,
   type SkillInfo,
+  type SkillUpdateRequest,
   updateSkill,
 } from '../api/skills';
 
@@ -21,7 +18,6 @@ function invalidateSkillsQueries(queryClient: ReturnType<typeof useQueryClient>)
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: ['skills'] }),
     queryClient.invalidateQueries({ queryKey: ['skill-marketplace'] }),
-    queryClient.invalidateQueries({ queryKey: ['clawhub-skills'] }),
   ]);
 }
 
@@ -52,13 +48,6 @@ export function useSkillMarketplace(): UseQueryResult<SkillMarketplaceCatalogRes
   });
 }
 
-export function useClawHubSkills(query: string): UseQueryResult<ClawHubSkillCatalogResponse, unknown> {
-  return useQuery({
-    queryKey: ['clawhub-skills', query],
-    queryFn: () => getClawHubSkills(query, 24),
-  });
-}
-
 export function useInstallSkillFromMarketplace(): UseMutationResult<
   SkillInstallResult,
   unknown,
@@ -71,18 +60,6 @@ export function useInstallSkillFromMarketplace(): UseMutationResult<
   });
 }
 
-export function useInstallClawHubSkill(): UseMutationResult<
-  ClawHubInstallResult,
-  unknown,
-  { slug: string; version?: string | null }
-> {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ slug, version }: { slug: string; version?: string | null }) => installClawHubSkill(slug, version),
-    onSuccess: () => invalidateSkillsQueries(queryClient),
-  });
-}
-
 export function useCreateSkill(): UseMutationResult<SkillInfo, unknown, { name: string; content: string }> {
   const queryClient = useQueryClient();
   return useMutation({
@@ -91,10 +68,10 @@ export function useCreateSkill(): UseMutationResult<SkillInfo, unknown, { name: 
   });
 }
 
-export function useUpdateSkill(): UseMutationResult<SkillInfo, unknown, { name: string; content: string }> {
+export function useUpdateSkill(): UseMutationResult<SkillInfo, unknown, { name: string; request: SkillUpdateRequest }> {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ name, content }: { name: string; content: string }) => updateSkill(name, content),
+    mutationFn: ({ name, request }: { name: string; request: SkillUpdateRequest }) => updateSkill(name, request),
     onSuccess: () => invalidateSkillsQueries(queryClient),
   });
 }

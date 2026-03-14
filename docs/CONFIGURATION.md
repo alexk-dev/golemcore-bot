@@ -468,7 +468,6 @@ Some settings are still controlled via Spring properties (application config), t
 - Plugin runtime: `BOT_PLUGINS_ENABLED`, `BOT_PLUGINS_DIRECTORY`, `BOT_PLUGINS_AUTO_START`, `BOT_PLUGINS_AUTO_RELOAD`, `BOT_PLUGINS_POLL_INTERVAL`
 - Skills marketplace source defaults: `BOT_SKILLS_MARKETPLACE_REPOSITORY_DIRECTORY`, `BOT_SKILLS_MARKETPLACE_REPOSITORY_URL`, `BOT_SKILLS_MARKETPLACE_BRANCH`
 - Skills marketplace HTTP fallback: `BOT_SKILLS_MARKETPLACE_API_BASE_URL`, `BOT_SKILLS_MARKETPLACE_RAW_BASE_URL`, `BOT_SKILLS_MARKETPLACE_REMOTE_CACHE_TTL`
-- ClawHub integration: `BOT_SKILLS_CLAWHUB_ENABLED`, `BOT_SKILLS_CLAWHUB_BASE_URL`
 - Plugin marketplace source: `BOT_PLUGINS_MARKETPLACE_REPOSITORY_DIRECTORY`, `BOT_PLUGINS_MARKETPLACE_REPOSITORY_URL`, `BOT_PLUGINS_MARKETPLACE_BRANCH`
 - Plugin marketplace HTTP fallback: `BOT_PLUGINS_MARKETPLACE_API_BASE_URL`, `BOT_PLUGINS_MARKETPLACE_RAW_BASE_URL`, `BOT_PLUGINS_MARKETPLACE_REMOTE_CACHE_TTL`
 - Self-update controls: `BOT_UPDATE_ENABLED`, `UPDATE_PATH`, `BOT_UPDATE_MAX_KEPT_VERSIONS`, `BOT_UPDATE_CHECK_INTERVAL`
@@ -512,13 +511,12 @@ Important properties:
 
 - `bot.skills.marketplace-enabled` / `BOT_SKILLS_MARKETPLACE_ENABLED`
 - `bot.skills.marketplace-repository-directory` / `BOT_SKILLS_MARKETPLACE_REPOSITORY_DIRECTORY`
+- `bot.skills.marketplace-sandbox-path` / `BOT_SKILLS_MARKETPLACE_SANDBOX_PATH`
 - `bot.skills.marketplace-repository-url` / `BOT_SKILLS_MARKETPLACE_REPOSITORY_URL`
 - `bot.skills.marketplace-branch` / `BOT_SKILLS_MARKETPLACE_BRANCH`
 - `bot.skills.marketplace-api-base-url` / `BOT_SKILLS_MARKETPLACE_API_BASE_URL`
 - `bot.skills.marketplace-raw-base-url` / `BOT_SKILLS_MARKETPLACE_RAW_BASE_URL`
 - `bot.skills.marketplace-remote-cache-ttl` / `BOT_SKILLS_MARKETPLACE_REMOTE_CACHE_TTL`
-- `bot.skills.claw-hub-enabled` / `BOT_SKILLS_CLAWHUB_ENABLED`
-- `bot.skills.claw-hub-base-url` / `BOT_SKILLS_CLAWHUB_BASE_URL`
 
 Runtime config fields exposed in the dashboard:
 
@@ -529,6 +527,7 @@ Runtime config fields exposed in the dashboard:
     "progressiveLoading": true,
     "marketplaceSourceType": "repository",
     "marketplaceRepositoryDirectory": null,
+    "marketplaceSandboxPath": null,
     "marketplaceRepositoryUrl": "https://github.com/alexk-dev/golemcore-skills",
     "marketplaceBranch": "main"
   }
@@ -537,16 +536,17 @@ Runtime config fields exposed in the dashboard:
 
 Behavior:
 
-- The dashboard `Skills -> Marketplace` page can switch the source between `repository` and `directory`.
+- The dashboard `Skills -> Marketplace` page can switch the source between `repository`, `directory`, and `sandbox`.
 - Runtime config values take precedence over Spring defaults when present.
 - If source type is `directory`, the configured path may point either to the repository root or directly to its `registry/` directory.
 - If source type is `directory` and the configured path points at a valid `golemcore-skills` checkout, metadata is loaded from disk.
+- If source type is `sandbox`, the configured path is resolved relative to the configured tool workspace and must stay inside that sandbox.
+- If source type is `sandbox`, the configured path may point either to the repository root or directly to its `registry/` directory.
 - Otherwise the backend reads the configured remote repository through the GitHub tree/raw endpoints.
 - Remote repository mode currently supports GitHub-style repository URLs such as `https://github.com/alexk-dev/golemcore-skills`.
 - Installed skill artifacts are written into `skills/marketplace/<maintainer>/<artifact>/...` and then the skill registry is reloaded.
 - Standalone marketplace artifacts install one runtime skill; pack artifacts install multiple runtime skills with namespaced runtime ids.
 - The registry format is manifest-driven: `registry/<maintainer>/maintainer.yaml` plus `registry/<maintainer>/<artifact>/artifact.yaml`.
-- Public ClawHub installs use a separate distribution path under `skills/clawhub/<slug>/...` and rewrite runtime ids to `clawhub/<slug>`.
 
 ### Self-Update (Core)
 

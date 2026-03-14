@@ -6,6 +6,7 @@ import type { SkillsConfig } from '../../api/settings';
 import { Alert } from '../../components/ui/alert';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
+import { Form, InputGroup } from '../../components/ui/bootstrap-form';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Input } from '../../components/ui/field';
 import { useInstallSkillFromMarketplace, useSkillMarketplace } from '../../hooks/useSkills';
@@ -17,13 +18,42 @@ import { SkillMarketplaceCard } from './SkillMarketplaceCard';
 const DEFAULT_SKILLS_REPOSITORY = 'https://github.com/alexk-dev/golemcore-skills';
 
 type MarketplaceFilter = 'all' | 'installed' | 'updates';
-type MarketplaceSourceType = 'repository' | 'directory';
+type MarketplaceSourceType = 'repository' | 'directory' | 'sandbox';
 
 interface MarketplaceSourceForm {
   marketplaceSourceType: MarketplaceSourceType;
   marketplaceRepositoryDirectory: string;
+  marketplaceSandboxPath: string;
   marketplaceRepositoryUrl: string;
   marketplaceBranch: string;
+}
+
+function sourceTypeLabel(sourceType: MarketplaceSourceType | null | undefined): string {
+  if (sourceType === 'directory') {
+    return 'Local path';
+  }
+  if (sourceType === 'sandbox') {
+    return 'Sandbox path';
+  }
+  return 'Repository';
+}
+
+function sourceTypeBadgeVariant(sourceType: MarketplaceSourceType | null | undefined): 'info' | 'secondary' {
+  return sourceType === 'repository' ? 'secondary' : 'info';
+}
+
+function isPathSourceType(sourceType: MarketplaceSourceType): boolean {
+  return sourceType === 'directory' || sourceType === 'sandbox';
+}
+
+function pathInputLabel(sourceType: MarketplaceSourceType): string {
+  return sourceType === 'sandbox' ? 'Sandbox path' : 'Local path';
+}
+
+function pathInputPlaceholder(sourceType: MarketplaceSourceType): string {
+  return sourceType === 'sandbox'
+    ? 'repos/golemcore-skills'
+    : '/absolute/path/to/golemcore-skills';
 }
 
 function matchesFilter(item: SkillMarketplaceItem, filter: MarketplaceFilter): boolean {
@@ -53,9 +83,13 @@ function buildSourceForm(
   const effectiveSourceType = config?.marketplaceSourceType ?? catalog?.sourceType ?? 'repository';
 
   return {
-    marketplaceSourceType: effectiveSourceType === 'directory' ? 'directory' : 'repository',
+    marketplaceSourceType: effectiveSourceType === 'directory' || effectiveSourceType === 'sandbox'
+      ? effectiveSourceType
+      : 'repository',
     marketplaceRepositoryDirectory: config?.marketplaceRepositoryDirectory
       ?? (catalog?.sourceType === 'directory' ? catalog.sourceDirectory ?? '' : ''),
+    marketplaceSandboxPath: config?.marketplaceSandboxPath
+      ?? (catalog?.sourceType === 'sandbox' ? catalog.sourceDirectory ?? '' : ''),
     marketplaceRepositoryUrl: config?.marketplaceRepositoryUrl
       ?? (catalog?.sourceType === 'repository' ? catalog.sourceDirectory ?? '' : DEFAULT_SKILLS_REPOSITORY),
     marketplaceBranch: config?.marketplaceBranch ?? 'main',
@@ -63,13 +97,17 @@ function buildSourceForm(
 }
 
 function sourceSummaryLabel(catalog: SkillMarketplaceCatalogResponse | undefined): string {
-  if (catalog == null || catalog.sourceDirectory == null || catalog.sourceDirectory.length === 0) {
+  const sourceDirectory = catalog?.sourceDirectory ?? '';
+  if (sourceDirectory.length === 0) {
     return 'Marketplace source has not been resolved yet.';
   }
-  if (catalog.sourceType === 'directory') {
-    return `Resolved local path: ${catalog.sourceDirectory}`;
+  if (catalog?.sourceType === 'directory') {
+    return `Resolved local path: ${sourceDirectory}`;
   }
-  return `Resolved repository: ${catalog.sourceDirectory}`;
+  if (catalog?.sourceType === 'sandbox') {
+    return `Resolved sandbox path: ${sourceDirectory}`;
+  }
+  return `Resolved repository: ${sourceDirectory}`;
 }
 
 function StatCard({ label, value }: { label: string; value: number }): ReactElement {
@@ -153,6 +191,7 @@ export function SkillsMarketplacePanel(): ReactElement {
     const normalizedSourceForm: MarketplaceSourceForm = {
       ...sourceForm,
       marketplaceRepositoryDirectory: sourceForm.marketplaceRepositoryDirectory.trim(),
+      marketplaceSandboxPath: sourceForm.marketplaceSandboxPath.trim(),
       marketplaceRepositoryUrl: sourceForm.marketplaceRepositoryUrl.trim(),
       marketplaceBranch: sourceForm.marketplaceBranch.trim(),
     };
@@ -161,6 +200,7 @@ export function SkillsMarketplacePanel(): ReactElement {
         ...skillsConfig,
         marketplaceSourceType: normalizedSourceForm.marketplaceSourceType,
         marketplaceRepositoryDirectory: normalizedSourceForm.marketplaceRepositoryDirectory || null,
+        marketplaceSandboxPath: normalizedSourceForm.marketplaceSandboxPath || null,
         marketplaceRepositoryUrl: normalizedSourceForm.marketplaceRepositoryUrl || null,
         marketplaceBranch: normalizedSourceForm.marketplaceBranch || null,
       });
@@ -205,11 +245,11 @@ export function SkillsMarketplacePanel(): ReactElement {
             </div>
             <CardTitle className="text-lg">Artifact registry input</CardTitle>
             <CardDescription>
-              Choose a local directory or a remote repository. Repository mode defaults to the canonical `golemcore-skills` source.
+              Choose a sandbox path, local path, or remote repository. Repository mode defaults to the canonical `golemcore-skills` source.
             </CardDescription>
           </div>
-          <Badge variant={catalog.sourceType === 'directory' ? 'info' : 'secondary'}>
-            {catalog.sourceType === 'directory' ? 'Local path' : 'Repository'}
+          <Badge variant={sourceTypeBadgeVariant(catalog.sourceType)}>
+            {sourceTypeLabel(catalog.sourceType)}
           </Badge>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -217,8 +257,8 @@ export function SkillsMarketplacePanel(): ReactElement {
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div className="min-w-0 space-y-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant={catalog.sourceType === 'directory' ? 'info' : 'secondary'}>
-                    {catalog.sourceType === 'directory' ? 'Local path' : 'Repository'}
+                  <Badge variant={sourceTypeBadgeVariant(catalog.sourceType)}>
+                    {sourceTypeLabel(catalog.sourceType)}
                   </Badge>
                   {isSourceDirty && (
                     <Badge variant="warning">Unsaved</Badge>
@@ -255,10 +295,11 @@ export function SkillsMarketplacePanel(): ReactElement {
               <div className="grid gap-3 border-t border-border/70 pt-4 xl:grid-cols-[18rem_minmax(0,1fr)_14rem]">
                 <div className="space-y-2">
                   <span className="text-sm font-medium text-foreground">Source type</span>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
                     {([
                       { key: 'repository', label: 'Repository' },
                       { key: 'directory', label: 'Local path' },
+                      { key: 'sandbox', label: 'Sandbox path' },
                     ] as const).map((option) => (
                       <button
                         key={option.key}
@@ -281,25 +322,36 @@ export function SkillsMarketplacePanel(): ReactElement {
                 </div>
 
                 <div className="space-y-3">
-                  {sourceForm.marketplaceSourceType === 'directory' ? (
+                  {isPathSourceType(sourceForm.marketplaceSourceType) ? (
                     <div className="space-y-2">
                       <label htmlFor="skills-marketplace-directory" className="text-sm font-medium text-foreground">
-                        Repository path
+                        {pathInputLabel(sourceForm.marketplaceSourceType)}
                       </label>
-                      <div className="relative">
-                        <FiFolder className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
-                        <Input
+                      <InputGroup className="overflow-hidden">
+                        <InputGroup.Text className="border-0 bg-muted/30">
+                          <FiFolder size={16} aria-hidden="true" />
+                        </InputGroup.Text>
+                        <Form.Control
                           id="skills-marketplace-directory"
                           type="text"
-                          placeholder="/absolute/path/to/golemcore-skills"
-                          value={sourceForm.marketplaceRepositoryDirectory}
+                          placeholder={pathInputPlaceholder(sourceForm.marketplaceSourceType)}
+                          value={sourceForm.marketplaceSourceType === 'sandbox'
+                            ? sourceForm.marketplaceSandboxPath
+                            : sourceForm.marketplaceRepositoryDirectory}
                           onChange={(event) => setSourceForm((current) => ({
                             ...current,
-                            marketplaceRepositoryDirectory: event.target.value,
+                            ...(current.marketplaceSourceType === 'sandbox'
+                              ? { marketplaceSandboxPath: event.target.value }
+                              : { marketplaceRepositoryDirectory: event.target.value }),
                           }))}
-                          className="pl-10"
+                          aria-label={pathInputLabel(sourceForm.marketplaceSourceType)}
                         />
-                      </div>
+                      </InputGroup>
+                      {sourceForm.marketplaceSourceType === 'sandbox' && (
+                        <p className="text-xs leading-5 text-muted-foreground">
+                          Relative to the bot sandbox workspace.
+                        </p>
+                      )}
                     </div>
                   ) : (
                     <div className="space-y-2">
@@ -389,11 +441,11 @@ export function SkillsMarketplacePanel(): ReactElement {
                 <FiSearch className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
                 <Input
                   id="skill-marketplace-search"
-                  type="search"
+                  type="text"
                   placeholder="Search by name, maintainer, or description"
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
-                  className="pl-10"
+                  className="pl-11"
                 />
               </div>
             </div>
