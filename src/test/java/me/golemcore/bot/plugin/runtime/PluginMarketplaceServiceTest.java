@@ -134,6 +134,93 @@ class PluginMarketplaceServiceTest {
     }
 
     @Test
+    void shouldUninstallPluginArtifactsAndUnloadRuntime(@TempDir Path tempDir) throws Exception {
+        Path repositoryRoot = tempDir.resolve("golemcore-plugins");
+        Path installRoot = tempDir.resolve("installed-plugins");
+        Path artifactPath = createPluginArtifact(repositoryRoot, "golemcore/browser", "1.0.0",
+                "Playwright-backed browser automation tool with screenshot support.");
+        writeRegistryEntry(repositoryRoot, "golemcore/browser", "1.0.0", artifactPath);
+
+        Path installedOldVersion = installRoot.resolve("golemcore/browser/0.9.0/browser-old.jar");
+        Path installedCurrentVersion = installRoot.resolve("golemcore/browser/1.0.0/browser-current.jar");
+        Files.createDirectories(installedOldVersion.getParent());
+        Files.createDirectories(installedCurrentVersion.getParent());
+        Files.writeString(installedOldVersion, "old-version", StandardCharsets.UTF_8);
+        Files.writeString(installedCurrentVersion, "current-version", StandardCharsets.UTF_8);
+
+        PluginManager pluginManager = mock(PluginManager.class);
+        when(pluginManager.unloadPlugin("golemcore/browser")).thenReturn(true);
+        when(pluginManager.reloadPlugin("golemcore/browser")).thenReturn(false);
+
+        PluginMarketplaceService service = new PluginMarketplaceService(
+                botProperties(repositoryRoot, installRoot),
+                buildPropertiesProvider("0.0.0-SNAPSHOT"),
+                pluginManager,
+                mock(PluginSettingsRegistry.class));
+
+        PluginUninstallResult result = service.uninstall("golemcore/browser");
+
+        assertEquals("uninstalled", result.getStatus());
+        assertTrue(result.getMessage().contains("uninstalled and unloaded"));
+        assertFalse(Files.exists(installRoot.resolve("golemcore/browser")));
+        verify(pluginManager).unloadPlugin("golemcore/browser");
+        verify(pluginManager).reloadPlugin("golemcore/browser");
+    }
+
+    @Test
+    void shouldReturnNotInstalledWhenPluginArtifactsAreMissing(@TempDir Path tempDir) throws Exception {
+        Path repositoryRoot = tempDir.resolve("golemcore-plugins");
+        Path installRoot = tempDir.resolve("installed-plugins");
+        Path artifactPath = createPluginArtifact(repositoryRoot, "golemcore/browser", "1.0.0",
+                "Playwright-backed browser automation tool with screenshot support.");
+        writeRegistryEntry(repositoryRoot, "golemcore/browser", "1.0.0", artifactPath);
+
+        PluginManager pluginManager = mock(PluginManager.class);
+        PluginMarketplaceService service = new PluginMarketplaceService(
+                botProperties(repositoryRoot, installRoot),
+                buildPropertiesProvider("0.0.0-SNAPSHOT"),
+                pluginManager,
+                mock(PluginSettingsRegistry.class));
+
+        PluginUninstallResult result = service.uninstall("golemcore/browser");
+
+        assertEquals("not-installed", result.getStatus());
+        assertTrue(result.getMessage().contains("not installed"));
+        verify(pluginManager, never()).unloadPlugin("golemcore/browser");
+        verify(pluginManager, never()).reloadPlugin("golemcore/browser");
+    }
+
+    @Test
+    void shouldReportRemainingArtifactWhenPluginReloadsAfterUninstall(@TempDir Path tempDir) throws Exception {
+        Path repositoryRoot = tempDir.resolve("golemcore-plugins");
+        Path installRoot = tempDir.resolve("installed-plugins");
+        Path artifactPath = createPluginArtifact(repositoryRoot, "golemcore/browser", "1.0.0",
+                "Playwright-backed browser automation tool with screenshot support.");
+        writeRegistryEntry(repositoryRoot, "golemcore/browser", "1.0.0", artifactPath);
+
+        Path installedVersion = installRoot.resolve("golemcore/browser/1.0.0/browser-current.jar");
+        Files.createDirectories(installedVersion.getParent());
+        Files.writeString(installedVersion, "current-version", StandardCharsets.UTF_8);
+
+        PluginManager pluginManager = mock(PluginManager.class);
+        when(pluginManager.unloadPlugin("golemcore/browser")).thenReturn(true);
+        when(pluginManager.reloadPlugin("golemcore/browser")).thenReturn(true);
+
+        PluginMarketplaceService service = new PluginMarketplaceService(
+                botProperties(repositoryRoot, installRoot),
+                buildPropertiesProvider("0.0.0-SNAPSHOT"),
+                pluginManager,
+                mock(PluginSettingsRegistry.class));
+
+        PluginUninstallResult result = service.uninstall("golemcore/browser");
+
+        assertEquals("uninstalled", result.getStatus());
+        assertTrue(result.getMessage().contains("Another artifact remains loaded"));
+        verify(pluginManager).unloadPlugin("golemcore/browser");
+        verify(pluginManager).reloadPlugin("golemcore/browser");
+    }
+
+    @Test
     void shouldReturnUnavailableCatalogWhenRepositoryIsMissing(@TempDir Path tempDir) {
         Path installRoot = tempDir.resolve("installed-plugins");
 

@@ -4,6 +4,7 @@ import {
   type PluginMarketplaceCatalogResponse,
   type PluginSettingsCatalogItem,
   type PluginSettingsSection,
+  type PluginUninstallResult,
   type VoiceProvidersResponse,
   executePluginSettingsAction,
   getPluginMarketplace,
@@ -12,6 +13,7 @@ import {
   getVoiceProviders,
   installPluginFromMarketplace,
   savePluginSettingsSection,
+  uninstallPluginFromMarketplace,
 } from '../api/plugins';
 import { type UseMutationResult, type UseQueryResult, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -89,6 +91,18 @@ export function useInstallPluginFromMarketplace(): UseMutationResult<
   return useMutation({
     mutationFn: ({ pluginId, version }: { pluginId: string; version?: string | null }) =>
       installPluginFromMarketplace(pluginId, version ?? null),
+    onSuccess: () => invalidatePluginQueries(qc),
+  });
+}
+
+export function useUninstallPluginFromMarketplace(): UseMutationResult<
+  PluginUninstallResult,
+  unknown,
+  { pluginId: string }
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ pluginId }: { pluginId: string }) => uninstallPluginFromMarketplace(pluginId),
     onSuccess: () => invalidatePluginQueries(qc),
   });
 }
