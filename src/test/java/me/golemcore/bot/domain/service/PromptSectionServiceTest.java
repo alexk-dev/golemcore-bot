@@ -159,6 +159,27 @@ class PromptSectionServiceTest {
     }
 
     @Test
+    void getAllSections_includesDisabledAndSortsByOrder() {
+        String enabled = "---\norder: 30\n---\nEnabled";
+        String disabled = "---\nenabled: false\norder: 10\n---\nDisabled";
+        String middle = "---\norder: 20\n---\nMiddle";
+
+        when(storagePort.listObjects(PROMPTS_DIR, ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of("ENABLED.md", "DISABLED.md", "MIDDLE.md")));
+        when(storagePort.getText(PROMPTS_DIR, "ENABLED.md")).thenReturn(CompletableFuture.completedFuture(enabled));
+        when(storagePort.getText(PROMPTS_DIR, "DISABLED.md")).thenReturn(CompletableFuture.completedFuture(disabled));
+        when(storagePort.getText(PROMPTS_DIR, "MIDDLE.md")).thenReturn(CompletableFuture.completedFuture(middle));
+
+        service.reload();
+
+        List<PromptSection> sections = service.getAllSections();
+        assertEquals(3, sections.size());
+        assertEquals("disabled", sections.get(0).getName());
+        assertEquals("middle", sections.get(1).getName());
+        assertEquals("enabled", sections.get(2).getName());
+    }
+
+    @Test
     void getSection_byName() {
         String content = "---\norder: 10\n---\nIdentity content";
 
@@ -176,6 +197,14 @@ class PromptSectionServiceTest {
 
         // Non-existent
         assertFalse(service.getSection("nonexistent").isPresent());
+    }
+
+    @Test
+    void isProtectedSection_matchesBuiltInsOnly() {
+        assertTrue(service.isProtectedSection("identity"));
+        assertTrue(service.isProtectedSection("RULES"));
+        assertFalse(service.isProtectedSection("voice"));
+        assertFalse(service.isProtectedSection("custom"));
     }
 
     @Test
