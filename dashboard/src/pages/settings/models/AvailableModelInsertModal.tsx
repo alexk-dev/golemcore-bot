@@ -112,7 +112,7 @@ function DiscoveryResults({
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
           placeholder={`Search ${providerName} models`}
-          className="pl-9"
+          className="pl-11"
         />
       </div>
 

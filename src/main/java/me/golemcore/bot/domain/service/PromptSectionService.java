@@ -53,6 +53,7 @@ import java.util.regex.Pattern;
 public class PromptSectionService {
 
     static final String PROMPTS_DIR = "prompts";
+    private static final Set<String> PROTECTED_SECTION_NAMES = Set.of("identity", "rules");
 
     private static final Pattern FRONTMATTER_PATTERN = Pattern.compile(
             "^---\\s*\\n(.*?)\\n---\\s*\\n(.*)$", Pattern.DOTALL);
@@ -153,17 +154,27 @@ public class PromptSectionService {
     }
 
     /**
+     * Returns all sections sorted by order (ascending), then by name.
+     *
+     * @return ordered list of all prompt sections
+     */
+    public List<PromptSection> getAllSections() {
+        return sectionRegistry.values().stream()
+                .sorted(Comparator.comparingInt(PromptSection::getOrder)
+                        .thenComparing(PromptSection::getName))
+                .toList();
+    }
+
+    /**
      * Returns all enabled sections sorted by order (ascending), then by name.
      *
      * @return ordered list of enabled prompt sections
      */
     public List<PromptSection> getEnabledSections() {
         boolean voiceEnabled = runtimeConfigService.isVoiceEnabled();
-        return sectionRegistry.values().stream()
+        return getAllSections().stream()
                 .filter(PromptSection::isEnabled)
                 .filter(s -> voiceEnabled || !"voice".equals(s.getName()))
-                .sorted(Comparator.comparingInt(PromptSection::getOrder)
-                        .thenComparing(PromptSection::getName))
                 .toList();
     }
 
@@ -175,7 +186,16 @@ public class PromptSectionService {
      * @return an Optional containing the section if found
      */
     public Optional<PromptSection> getSection(String name) {
-        return Optional.ofNullable(sectionRegistry.get(name));
+        String normalizedName = normalizeSectionName(name);
+        if (normalizedName == null) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(sectionRegistry.get(normalizedName));
+    }
+
+    public boolean isProtectedSection(String name) {
+        String normalizedName = normalizeSectionName(name);
+        return normalizedName != null && PROTECTED_SECTION_NAMES.contains(normalizedName);
     }
 
     /**
@@ -311,5 +331,13 @@ public class PromptSectionService {
             filename = filename.substring(0, filename.length() - 3);
         }
         return filename.toLowerCase(Locale.ROOT);
+    }
+
+    private String normalizeSectionName(String name) {
+        if (name == null) {
+            return null;
+        }
+        String normalized = name.trim().toLowerCase(Locale.ROOT);
+        return normalized.isBlank() ? null : normalized;
     }
 }

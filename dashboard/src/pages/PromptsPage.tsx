@@ -1,163 +1,138 @@
-import { type ReactElement, useState } from 'react';
-import { Card, ListGroup, Row, Col, Button, Form, Badge, Spinner, Placeholder } from 'react-bootstrap';
-import { usePrompts, useUpdatePrompt } from '../hooks/usePrompts';
-import { previewPrompt } from '../api/prompts';
-import toast from 'react-hot-toast';
+import type { ReactElement } from 'react';
+import { PromptDeleteDialog, PromptUnsavedChangesDialog } from '../components/prompts/PromptDialogs';
+import { PromptEditor } from '../components/prompts/PromptEditor';
+import { PromptsSidebar } from '../components/prompts/PromptsSidebar';
+import { Alert } from '../components/ui/alert';
+import { Card, CardContent } from '../components/ui/card';
+import { Skeleton } from '../components/ui/skeleton';
+import { usePromptsWorkspace } from '../hooks/usePromptsWorkspace';
+import { extractErrorMessage } from '../utils/extractErrorMessage';
+
+function PromptsPageSkeleton(): ReactElement {
+  return (
+    <div className="grid gap-6 xl:grid-cols-[22rem_minmax(0,1fr)]">
+      <Card>
+        <CardContent className="space-y-3 p-5">
+          <Skeleton className="h-8 w-32" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-28 w-full rounded-3xl" />
+          <Skeleton className="h-28 w-full rounded-3xl" />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent className="space-y-4 p-5">
+          <Skeleton className="h-8 w-44" />
+          <Skeleton className="h-12 w-full" />
+          <Skeleton className="h-12 w-full" />
+          <Skeleton className="h-[28rem] w-full rounded-3xl" />
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function EmptyPromptState(): ReactElement {
+  return (
+    <Card>
+      <CardContent className="flex min-h-[28rem] items-center justify-center p-6">
+        <div className="max-w-md text-center">
+          <h2 className="text-lg font-semibold text-foreground">No prompt selected</h2>
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">
+            Choose a section from the catalog or create a new one to start editing.
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function PromptsPage(): ReactElement {
-  const { data: sections, isLoading } = usePrompts();
-  const updateMutation = useUpdatePrompt();
+  const workspace = usePromptsWorkspace();
 
-  const [selected, setSelected] = useState<string | null>(null);
-  const [editContent, setEditContent] = useState('');
-  const [editDesc, setEditDesc] = useState('');
-  const [editOrder, setEditOrder] = useState(100);
-  const [preview, setPreview] = useState('');
-
-  if (isLoading) {
-    return (
-      <div>
-        <div className="section-header d-flex align-items-center justify-content-between">
-          <h4 className="mb-0">Prompts</h4>
-        </div>
-        <Row className="g-3">
-          <Col md={4}>
-            <Card>
-              <Card.Body>
-                <Placeholder as="div" animation="glow" className="mb-2"><Placeholder xs={12} /></Placeholder>
-                <Placeholder as="div" animation="glow" className="mb-2"><Placeholder xs={12} /></Placeholder>
-                <Placeholder as="div" animation="glow"><Placeholder xs={10} /></Placeholder>
-              </Card.Body>
-            </Card>
-          </Col>
-          <Col md={8}>
-            <Card>
-              <Card.Body>
-                <Placeholder as="div" animation="glow" className="mb-2"><Placeholder xs={6} /></Placeholder>
-                <Placeholder as="div" animation="glow" className="mb-2"><Placeholder xs={12} /></Placeholder>
-                <Placeholder as="div" animation="glow" className="mb-2"><Placeholder xs={12} /></Placeholder>
-                <div className="d-flex justify-content-center pt-2">
-                  <Spinner size="sm" />
-                </div>
-              </Card.Body>
-            </Card>
-          </Col>
-        </Row>
-      </div>
-    );
+  if (workspace.isLoading) {
+    return <PromptsPageSkeleton />;
   }
 
-  const current = sections?.find((s) => s.name === selected);
-
-  const handleSelect = (name: string): void => {
-    const section = sections?.find((s) => s.name === name);
-    if (section != null) {
-      setSelected(name);
-      setEditContent(section.content);
-      setEditDesc(section.description);
-      setEditOrder(section.order);
-      setPreview('');
-    }
-  };
-
-  const handleSave = async (): Promise<void> => {
-    if (selected == null || selected.length === 0) {
-      return;
-    }
-    await updateMutation.mutateAsync({
-      name: selected,
-      section: { content: editContent, description: editDesc, order: editOrder, enabled: true },
-    });
-    toast.success('Saved');
-  };
-
-  const handlePreview = async (): Promise<void> => {
-    if (selected == null || selected.length === 0) {
-      return;
-    }
-    const result = await previewPrompt(selected);
-    setPreview(result.rendered);
-  };
-
   return (
-    <div>
-      <div className="section-header d-flex align-items-center justify-content-between">
-        <h4 className="mb-0">Prompts</h4>
+    <>
+      <div className="space-y-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h1 className="font-display text-3xl font-semibold tracking-tight text-foreground">Prompts</h1>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+              Prompt sections are injected into the system prompt by ascending priority. Lower values execute earlier.
+            </p>
+          </div>
+          <Alert variant="secondary" className="max-w-xl">
+            `identity` and `rules` remain editable but protected. Their delete action is intentionally disabled.
+          </Alert>
+        </div>
+
+        {workspace.isError && (
+          <Alert variant="danger">
+            Failed to load prompts: {extractErrorMessage(workspace.error)}
+          </Alert>
+        )}
+
+        <div className="grid gap-6 xl:grid-cols-[22rem_minmax(0,1fr)]">
+          <PromptsSidebar
+            sections={workspace.sections}
+            selectedName={workspace.selectedName}
+            isCreating={workspace.isCreating}
+            isReordering={workspace.isReordering}
+            hasUnsavedChanges={workspace.isDirty}
+            createResetToken={workspace.createResetToken}
+            onCreate={workspace.requestCreate}
+            onReorder={workspace.requestReorder}
+            onSelect={workspace.requestSelect}
+          />
+
+          {workspace.draft != null ? (
+            <PromptEditor
+              draft={workspace.draft}
+              preview={workspace.preview}
+              previewError={workspace.previewError}
+              isDirty={workspace.isDirty}
+              isSaving={workspace.isSaving}
+              isPreviewing={workspace.isPreviewing}
+              isDeleting={workspace.isDeleting}
+              priorityConflictName={workspace.priorityConflictName}
+              onChange={workspace.updateDraft}
+              onReset={workspace.resetDraft}
+              onSave={() => {
+                void workspace.saveDraft();
+              }}
+              onPreview={() => {
+                void workspace.previewDraft();
+              }}
+              onDelete={workspace.requestDelete}
+            />
+          ) : (
+            <EmptyPromptState />
+          )}
+        </div>
       </div>
 
-      <Row className="g-3">
-        <Col md={4}>
-          <ListGroup>
-            {sections?.map((s) => (
-              <ListGroup.Item
-                key={s.name}
-                active={selected === s.name}
-                action
-                onClick={() => handleSelect(s.name)}
-                className="d-flex justify-content-between align-items-center"
-              >
-                {s.name}
-                <Badge bg="secondary">{s.order}</Badge>
-              </ListGroup.Item>
-            ))}
-          </ListGroup>
-        </Col>
-        <Col md={8}>
-          {current != null ? (
-            <Card>
-              <Card.Body>
-                <Form.Group className="mb-2">
-                  <Form.Label className="small">Description</Form.Label>
-                  <Form.Control
-                    size="sm"
-                    value={editDesc}
-                    onChange={(e) => setEditDesc(e.target.value)}
-                  />
-                </Form.Group>
-                <Form.Group className="mb-2">
-                  <Form.Label className="small">Order</Form.Label>
-                  <Form.Control
-                    size="sm"
-                    type="number"
-                    value={editOrder}
-                    onChange={(e) => setEditOrder(Number(e.target.value))}
-                  />
-                </Form.Group>
-                <Form.Group className="mb-3">
-                  <Form.Label className="small">Content</Form.Label>
-                  <Form.Control
-                    as="textarea"
-                    rows={12}
-                    value={editContent}
-                    onChange={(e) => setEditContent(e.target.value)}
-                    className="code-text"
-                  />
-                </Form.Group>
-                <div className="d-flex gap-2">
-                  <Button type="button" size="sm" onClick={() => { void handleSave(); }}>Save</Button>
-                  <Button type="button" size="sm" variant="secondary" onClick={() => { void handlePreview(); }}>Preview</Button>
-                </div>
-                <small className="text-body-secondary d-block mt-2">
-                  System prompts are built-in and cannot be deleted.
-                </small>
-                {preview.length > 0 && (
-                  <Card className="mt-3 bg-body-tertiary">
-                    <Card.Body>
-                      <pre className="mb-0 sessions-message code-text">
-                        {preview}
-                      </pre>
-                    </Card.Body>
-                  </Card>
-                )}
-              </Card.Body>
-            </Card>
-          ) : (
-            <Card className="text-center text-body-secondary py-5">
-              <Card.Body>Select a section to edit</Card.Body>
-            </Card>
-          )}
-        </Col>
-      </Row>
-    </div>
+      <PromptDeleteDialog
+        show={workspace.isDeleteDialogOpen}
+        promptName={workspace.draft?.name ?? ''}
+        isProcessing={workspace.isDeleting}
+        onConfirm={() => {
+          void workspace.confirmDelete();
+        }}
+        onCancel={workspace.closeDeleteDialog}
+      />
+
+      <PromptUnsavedChangesDialog
+        show={workspace.isUnsavedDialogOpen}
+        promptName={workspace.draft?.name ?? ''}
+        isSaving={workspace.isSaving}
+        onSaveAndContinue={() => {
+          void workspace.saveAndContinue();
+        }}
+        onDiscardAndContinue={workspace.discardAndContinue}
+        onCancel={workspace.closeUnsavedDialog}
+      />
+    </>
   );
 }
