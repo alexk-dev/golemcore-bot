@@ -117,6 +117,11 @@ export interface PluginInstallResult {
   plugin?: PluginMarketplaceItem | null;
 }
 
+export interface PluginUninstallResult {
+  status: string;
+  message: string;
+}
+
 export interface VoiceProvidersResponse {
   stt: Record<string, string>;
   tts: Record<string, string>;
@@ -144,6 +149,13 @@ export async function installPluginFromMarketplace(
   const { data } = await client.post<PluginInstallResult>('/plugins/marketplace/install', {
     pluginId,
     version: version ?? null,
+  });
+  return data;
+}
+
+export async function uninstallPluginFromMarketplace(pluginId: string): Promise<PluginUninstallResult> {
+  const { data } = await client.post<PluginUninstallResult>('/plugins/marketplace/uninstall', {
+    pluginId,
   });
   return data;
 }

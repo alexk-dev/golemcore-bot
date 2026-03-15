@@ -91,6 +91,20 @@ class PluginManagerTest {
     }
 
     @Test
+    void shouldUnloadPluginById(@TempDir Path tempDir) throws Exception {
+        Path pluginsDir = tempDir.resolve("plugins");
+        Path pluginJar = createPluginJar(pluginsDir, "golemcore/browser", "1.0.0", ">=1.0.0 <2.0.0");
+        manager = createManager(pluginsDir, "1.0.0");
+        manager.reloadAll();
+
+        boolean unloaded = manager.unloadPlugin("  GOLEMCORE/BROWSER  ");
+
+        assertTrue(unloaded);
+        assertTrue(manager.listPlugins().isEmpty());
+        assertTrue(Files.isRegularFile(pluginJar));
+    }
+
+    @Test
     void shouldPreferNewestPluginArtifactAcrossMultipleVersions(@TempDir Path tempDir) throws Exception {
         Path pluginsDir = tempDir.resolve("plugins");
         createPluginJar(pluginsDir, "golemcore/browser", "1.0.0", ">=1.0.0 <2.0.0");

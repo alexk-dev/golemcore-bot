@@ -13,16 +13,27 @@ import {
   FiPackage,
   FiSearch,
   FiSettings,
+  FiTrash2,
   FiVolume2,
 } from 'react-icons/fi';
 
 import type { PluginMarketplaceItem } from '../../api/plugins';
+import {
+  compatibilityLabel,
+  compatibilityVariant,
+  installLabel,
+  installVariant,
+  isPendingForItem,
+  type MarketplacePendingAction,
+  uninstallLabel,
+} from './pluginMarketplaceUi';
 
 interface PluginMarketplaceCardProps {
   item: PluginMarketplaceItem;
-  isPending: boolean;
+  pendingAction: MarketplacePendingAction;
   pendingPluginId: string | null;
   onInstall: (item: PluginMarketplaceItem) => void;
+  onUninstall: (item: PluginMarketplaceItem) => void;
   onOpenSettings: (routeKey: string) => void;
 }
 
@@ -63,67 +74,16 @@ function pluginIcon(pluginId: string): IconType {
   return FiPackage;
 }
 
-function installLabel(item: PluginMarketplaceItem, pendingPluginId: string | null): string {
-  if (pendingPluginId === item.id) {
-    return item.updateAvailable ? 'Updating...' : 'Installing...';
-  }
-  if (item.updateAvailable) {
-    return `Update to ${item.version}`;
-  }
-  if (item.installed) {
-    return 'Installed';
-  }
-  return 'Install';
-}
-
-function installVariant(item: PluginMarketplaceItem): string {
-  if (item.installed && !item.updateAvailable) {
-    return 'secondary';
-  }
-  return 'primary';
-}
-
-function compatibilityLabel(item: PluginMarketplaceItem): string {
-  if (!item.compatible) {
-    return 'Incompatible';
-  }
-  if (!item.artifactAvailable) {
-    return 'Artifact missing';
-  }
-  if (item.updateAvailable) {
-    return 'Update available';
-  }
-  if (item.loaded) {
-    return 'Loaded';
-  }
-  if (item.installed) {
-    return 'Installed';
-  }
-  return 'Available';
-}
-
-function compatibilityVariant(item: PluginMarketplaceItem): string {
-  if (!item.compatible || !item.artifactAvailable) {
-    return 'danger';
-  }
-  if (item.updateAvailable) {
-    return 'warning';
-  }
-  if (item.loaded) {
-    return 'success';
-  }
-  return 'secondary';
-}
-
 interface PluginMarketplaceMetaProps {
   item: PluginMarketplaceItem;
 }
 
 interface PluginMarketplaceActionsProps {
   item: PluginMarketplaceItem;
-  isPending: boolean;
+  pendingAction: MarketplacePendingAction;
   pendingPluginId: string | null;
   onInstall: (item: PluginMarketplaceItem) => void;
+  onUninstall: (item: PluginMarketplaceItem) => void;
   onOpenSettings: (routeKey: string) => void;
 }
 
@@ -165,9 +125,10 @@ function PluginMarketplaceAvailabilityAlert({ item }: PluginMarketplaceMetaProps
 
 function PluginMarketplaceInstallIcon({
   item,
+  pendingAction,
   pendingPluginId,
-}: Pick<PluginMarketplaceActionsProps, 'item' | 'pendingPluginId'>): ReactElement {
-  if (pendingPluginId === item.id) {
+}: Pick<PluginMarketplaceActionsProps, 'item' | 'pendingAction' | 'pendingPluginId'>): ReactElement {
+  if (isPendingForItem(item, pendingAction, pendingPluginId, 'install')) {
     return <Spinner size="sm" animation="border" className="me-1" />;
   }
 
@@ -180,14 +141,17 @@ function PluginMarketplaceInstallIcon({
 
 function PluginMarketplaceActions({
   item,
-  isPending,
+  pendingAction,
   pendingPluginId,
   onInstall,
+  onUninstall,
   onOpenSettings,
 }: PluginMarketplaceActionsProps): ReactElement {
   const settingsRouteKey = item.settingsRouteKey ?? null;
-  const canInstall = item.compatible && item.artifactAvailable && !isPending;
+  const isMutating = pendingAction != null;
+  const canInstall = item.compatible && item.artifactAvailable && !isMutating;
   const showOpenSettings = item.installed && settingsRouteKey != null;
+  const showUninstall = item.installed;
 
   return (
     <div className="mt-auto d-flex flex-wrap gap-2">
@@ -196,10 +160,28 @@ function PluginMarketplaceActions({
           type="button"
           variant="secondary"
           size="sm"
+          disabled={isMutating}
           onClick={() => onOpenSettings(settingsRouteKey)}
         >
           <FiSettings size={14} className="me-1" />
           Open settings
+        </Button>
+      )}
+
+      {showUninstall && (
+        <Button
+          type="button"
+          variant="danger"
+          size="sm"
+          disabled={isMutating}
+          onClick={() => onUninstall(item)}
+        >
+          {isPendingForItem(item, pendingAction, pendingPluginId, 'uninstall') ? (
+            <Spinner size="sm" animation="border" className="me-1" />
+          ) : (
+            <FiTrash2 size={14} className="me-1" />
+          )}
+          {uninstallLabel(item, pendingAction, pendingPluginId)}
         </Button>
       )}
 
@@ -210,8 +192,12 @@ function PluginMarketplaceActions({
         disabled={(item.installed && !item.updateAvailable) || !canInstall}
         onClick={() => onInstall(item)}
       >
-        <PluginMarketplaceInstallIcon item={item} pendingPluginId={pendingPluginId} />
-        {installLabel(item, pendingPluginId)}
+        <PluginMarketplaceInstallIcon
+          item={item}
+          pendingAction={pendingAction}
+          pendingPluginId={pendingPluginId}
+        />
+        {installLabel(item, pendingAction, pendingPluginId)}
       </Button>
     </div>
   );
@@ -219,9 +205,10 @@ function PluginMarketplaceActions({
 
 export function PluginMarketplaceCard({
   item,
-  isPending,
+  pendingAction,
   pendingPluginId,
   onInstall,
+  onUninstall,
   onOpenSettings,
 }: PluginMarketplaceCardProps): ReactElement {
   const Icon = pluginIcon(item.id);
@@ -258,9 +245,10 @@ export function PluginMarketplaceCard({
         <PluginMarketplaceAvailabilityAlert item={item} />
         <PluginMarketplaceActions
           item={item}
-          isPending={isPending}
+          pendingAction={pendingAction}
           pendingPluginId={pendingPluginId}
           onInstall={onInstall}
+          onUninstall={onUninstall}
           onOpenSettings={onOpenSettings}
         />
       </Card.Body>

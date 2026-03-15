@@ -42,6 +42,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
+import java.io.IOException;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
@@ -324,7 +325,7 @@ public class WebhookController {
                 return objectMapper.readValue("{}", type);
             }
             return objectMapper.readValue(requestBody, type);
-        } catch (Exception e) {
+        } catch (IOException ex) {
             throw new IllegalArgumentException("Malformed JSON payload");
         }
     }
