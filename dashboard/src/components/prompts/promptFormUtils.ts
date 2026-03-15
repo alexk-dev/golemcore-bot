@@ -9,12 +9,6 @@ export interface PromptDraft extends PromptSectionPayload {
   deletable: boolean;
 }
 
-export interface PromptMetrics {
-  total: number;
-  enabled: number;
-  protected: number;
-}
-
 export interface PromptReorderRequest {
   name: string;
   section: PromptSectionPayload;
@@ -77,17 +71,6 @@ export function findPriorityConflictName(
 ): string | null {
   const conflict = sections.find((section) => section.name !== draft.name && section.order === draft.order);
   return conflict?.name ?? null;
-}
-
-export function buildPromptMetrics(sections: PromptSection[]): PromptMetrics {
-  return sections.reduce<PromptMetrics>(
-    (metrics, section) => ({
-      total: metrics.total + 1,
-      enabled: metrics.enabled + (section.enabled ? 1 : 0),
-      protected: metrics.protected + (!section.deletable ? 1 : 0),
-    }),
-    { total: 0, enabled: 0, protected: 0 }
-  );
 }
 
 export function reorderPromptSections(

@@ -27,27 +27,28 @@ interface PromptPreviewPanelProps {
   preview: string;
   previewError: string | null;
   isPreviewing: boolean;
+  onPreview: () => void;
 }
 
 function PromptPreviewPanel({
   preview,
   previewError,
   isPreviewing,
+  onPreview,
 }: PromptPreviewPanelProps): ReactElement {
   return (
     <div className="space-y-3 rounded-[1.5rem] border border-border/80 bg-slate-950/95 p-4 text-slate-100 xl:sticky xl:top-6">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <div className="text-sm font-semibold text-slate-100">Live Preview</div>
+          <div className="text-sm font-semibold text-slate-100">Preview</div>
           <p className="mt-1 text-sm leading-6 text-slate-400">
-            Updates automatically from the current draft.
+            Render the current draft when you want to inspect the final payload.
           </p>
         </div>
-        {isPreviewing && (
-          <Badge variant="info" className="border-cyan-400/20 bg-cyan-400/10 text-cyan-200">
-            updating
-          </Badge>
-        )}
+        <Button variant="secondary" onClick={onPreview} disabled={isPreviewing}>
+          <FiEye size={14} />
+          {isPreviewing ? 'Rendering...' : 'Preview'}
+        </Button>
       </div>
 
       {previewError != null && (
@@ -62,7 +63,7 @@ function PromptPreviewPanel({
         </pre>
       ) : (
         <div className="flex min-h-[24rem] items-center justify-center rounded-2xl border border-dashed border-slate-800 bg-slate-950/70 px-6 text-center text-sm leading-6 text-slate-400">
-          {isPreviewing ? 'Rendering preview…' : 'Preview appears here as soon as the draft is rendered.'}
+          {isPreviewing ? 'Rendering preview…' : 'Preview appears here after you render the current draft.'}
         </div>
       )}
     </div>
@@ -101,15 +102,64 @@ function PromptEditorAlerts({ draft, priorityConflictName }: PromptEditorAlertsP
   );
 }
 
+interface PromptEditorMetadataBarProps {
+  draft: PromptDraft;
+  onChange: (nextDraft: PromptDraft) => void;
+}
+
+function PromptEditorMetadataBar({
+  draft,
+  onChange,
+}: PromptEditorMetadataBarProps): ReactElement {
+  return (
+    <div className="grid gap-3 rounded-[1.5rem] border border-border/80 bg-muted/20 p-4 lg:grid-cols-[minmax(0,1fr)_10rem_auto]">
+      <div className="space-y-2">
+        <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          Description
+        </label>
+        <Input
+          value={draft.description}
+          onChange={(event) => onChange(updateDraftField(draft, 'description', event.target.value))}
+          placeholder="Short summary for operators"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          Priority
+        </label>
+        <Input
+          type="number"
+          value={draft.order}
+          onChange={(event) =>
+            onChange(updateDraftField(draft, 'order', parsePromptOrder(event.target.value, draft.order)))
+          }
+        />
+      </div>
+
+      <label className="flex items-center justify-between gap-4 rounded-2xl border border-border/70 bg-card/80 px-4 py-3 lg:self-end">
+        <div>
+          <div className="text-sm font-semibold text-foreground">Enabled</div>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">Inject this section into the final system prompt.</p>
+        </div>
+        <input
+          type="checkbox"
+          checked={draft.enabled}
+          onChange={(event) => onChange(updateDraftField(draft, 'enabled', event.target.checked))}
+          className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
+        />
+      </label>
+    </div>
+  );
+}
+
 interface PromptEditorActionBarProps {
   deleteHelpText: string;
   isDirty: boolean;
   isSaving: boolean;
-  isPreviewing: boolean;
   isDeleting: boolean;
   isDeletable: boolean;
   onReset: () => void;
-  onPreview: () => void;
   onSave: () => void;
   onDelete: () => void;
 }
@@ -118,11 +168,9 @@ function PromptEditorActionBar({
   deleteHelpText,
   isDirty,
   isSaving,
-  isPreviewing,
   isDeleting,
   isDeletable,
   onReset,
-  onPreview,
   onSave,
   onDelete,
 }: PromptEditorActionBarProps): ReactElement {
@@ -139,14 +187,6 @@ function PromptEditorActionBar({
           disabled={!isDirty || isSaving}
         >
           Reset
-        </Button>
-        <Button
-          variant="secondary"
-          onClick={onPreview}
-          disabled={isPreviewing || isDeleting}
-        >
-          <FiEye size={14} />
-          {isPreviewing ? 'Refreshing...' : 'Refresh'}
         </Button>
         <Button
           onClick={onSave}
@@ -214,52 +254,13 @@ export function PromptEditor({
                 </Badge>
               )}
             </div>
-            <CardDescription>
-              Lower priority numbers are injected earlier into the system prompt.
-            </CardDescription>
+            <CardDescription>Lower priority numbers are injected earlier into the system prompt.</CardDescription>
           </div>
         </CardHeader>
         <CardContent className="space-y-5">
           <PromptEditorAlerts draft={draft} priorityConflictName={priorityConflictName} />
 
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_11rem_12rem]">
-            <div className="space-y-2">
-              <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                Description
-              </label>
-              <Input
-                value={draft.description}
-                onChange={(event) => onChange(updateDraftField(draft, 'description', event.target.value))}
-                placeholder="Short summary for operators"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                Priority
-              </label>
-              <Input
-                type="number"
-                value={draft.order}
-                onChange={(event) =>
-                  onChange(updateDraftField(draft, 'order', parsePromptOrder(event.target.value, draft.order)))
-                }
-              />
-            </div>
-
-            <label className="flex items-center justify-between rounded-2xl border border-border/80 bg-muted/20 px-4 py-3">
-              <div>
-                <div className="text-sm font-semibold text-foreground">Enabled</div>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">Inactive prompts stay stored but are not injected.</p>
-              </div>
-              <input
-                type="checkbox"
-                checked={draft.enabled}
-                onChange={(event) => onChange(updateDraftField(draft, 'enabled', event.target.checked))}
-                className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
-              />
-            </label>
-          </div>
+          <PromptEditorMetadataBar draft={draft} onChange={onChange} />
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(20rem,0.95fr)]">
             <div className="space-y-2">
@@ -279,6 +280,7 @@ export function PromptEditor({
               preview={preview}
               previewError={previewError}
               isPreviewing={isPreviewing}
+              onPreview={onPreview}
             />
           </div>
 
@@ -286,11 +288,9 @@ export function PromptEditor({
             deleteHelpText={deleteHelpText}
             isDirty={isDirty}
             isSaving={isSaving}
-            isPreviewing={isPreviewing}
             isDeleting={isDeleting}
             isDeletable={draft.deletable}
             onReset={onReset}
-            onPreview={onPreview}
             onSave={onSave}
             onDelete={onDelete}
           />
