@@ -14,5 +14,6 @@ public class PromptSectionDto {
     private String description;
     private int order;
     private boolean enabled;
+    private boolean deletable;
     private String content;
 }
