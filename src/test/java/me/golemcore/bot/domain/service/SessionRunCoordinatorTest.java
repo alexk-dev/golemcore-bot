@@ -13,12 +13,16 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -156,6 +160,50 @@ class SessionRunCoordinatorTest {
 
             verify(agentLoop, times(1)).processMessage(a);
             verify(agentLoop, times(1)).processMessage(b);
+        }
+    }
+
+    @Test
+    void shouldCompleteSubmittedRunAfterQueuedSessionWorkFinishes() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService);
+
+            Message a = user("A");
+            Message auto = auto("AUTO");
+
+            Gate gateA = new Gate();
+            CountDownLatch autoProcessed = new CountDownLatch(1);
+
+            org.mockito.Mockito.doAnswer(invocation -> {
+                Message inbound = invocation.getArgument(0);
+                if ("A".equals(inbound.getContent())) {
+                    gateA.await();
+                }
+                if ("AUTO".equals(inbound.getContent())) {
+                    autoProcessed.countDown();
+                }
+                return null;
+            }).when(agentLoop).processMessage(any(Message.class));
+
+            coordinator.enqueue(a);
+            gateA.awaitStarted();
+
+            CompletableFuture<Void> completion = coordinator.submit(auto);
+            assertFalse(completion.isDone());
+
+            gateA.release();
+
+            completion.get(2, TimeUnit.SECONDS);
+            assertTrue(autoProcessed.await(2, TimeUnit.SECONDS));
+
+            verify(agentLoop, times(1)).processMessage(a);
+            verify(agentLoop, times(1)).processMessage(auto);
         }
     }
 
@@ -536,6 +584,61 @@ class SessionRunCoordinatorTest {
     }
 
     @Test
+    void shouldFailSubmittedRunWhenFlushedAfterStop() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService);
+
+            AgentSession session = AgentSession.builder()
+                    .id("s-submit-stop")
+                    .channelType(CHANNEL_TYPE)
+                    .chatId(CHAT_ID)
+                    .messages(new ArrayList<>())
+                    .build();
+            when(sessionPort.getOrCreate(CHANNEL_TYPE, CHAT_ID)).thenReturn(session);
+
+            Message a = user("A");
+            Message auto = auto("AUTO");
+            Message resume = user("RESUME");
+
+            Gate gateA = new Gate();
+            CountDownLatch resumeProcessed = new CountDownLatch(1);
+
+            org.mockito.Mockito.doAnswer(invocation -> {
+                Message inbound = invocation.getArgument(0);
+                if ("A".equals(inbound.getContent())) {
+                    gateA.await();
+                }
+                if ("RESUME".equals(inbound.getContent())) {
+                    resumeProcessed.countDown();
+                }
+                return null;
+            }).when(agentLoop).processMessage(any(Message.class));
+
+            coordinator.enqueue(a);
+            gateA.awaitStarted();
+
+            CompletableFuture<Void> completion = coordinator.submit(auto);
+
+            coordinator.requestStop(CHANNEL_TYPE, CHAT_ID);
+            coordinator.enqueue(resume);
+            gateA.release();
+
+            assertTrue(resumeProcessed.await(2, TimeUnit.SECONDS));
+
+            ExecutionException exception = assertThrows(ExecutionException.class,
+                    () -> completion.get(2, TimeUnit.SECONDS));
+            assertTrue(exception.getCause() instanceof IllegalStateException);
+            assertEquals("Skipped after stop request", exception.getCause().getMessage());
+        }
+    }
+
+    @Test
     void shouldEvictRunnerWhenSessionBecomesIdle() throws Exception {
         SessionPort sessionPort = mock(SessionPort.class);
         AgentLoop agentLoop = mock(AgentLoop.class);
@@ -634,6 +737,21 @@ class SessionRunCoordinatorTest {
 
     private static Message userAt(String content, Instant timestamp) {
         return user(content, null, timestamp);
+    }
+
+    private static Message auto(String content) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put(ContextAttributes.AUTO_MODE, true);
+        metadata.put(ContextAttributes.AUTO_RUN_ID, "run-" + content);
+        return Message.builder()
+                .role("user")
+                .content(content)
+                .channelType(CHANNEL_TYPE)
+                .chatId(CHAT_ID)
+                .senderId("auto")
+                .timestamp(Instant.EPOCH)
+                .metadata(metadata)
+                .build();
     }
 
     private static Message user(String content, Map<String, Object> metadata, Instant timestamp) {
