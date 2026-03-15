@@ -38,8 +38,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
@@ -71,9 +69,6 @@ public class SkillMarketplaceService {
     private static final String DEFAULT_API_BASE_URL = "https://api.github.com";
     private static final String DEFAULT_RAW_BASE_URL = "https://raw.githubusercontent.com";
     private static final String DEFAULT_BRANCH = "main";
-    private static final Pattern FRONTMATTER_PATTERN = Pattern.compile("^---\\s*\\n(.*?)\\n---\\s*\\n?(.*)$",
-            Pattern.DOTALL);
-
     private final BotProperties botProperties;
     private final StoragePort storagePort;
     private final SkillService skillService;
@@ -1072,20 +1067,105 @@ public class SkillMarketplaceService {
         if (content == null) {
             return new FrontmatterDocument(Map.of(), "");
         }
-        Matcher matcher = FRONTMATTER_PATTERN.matcher(content);
-        if (!matcher.matches()) {
+        FrontmatterSections sections = splitFrontmatter(content);
+        if (sections == null) {
             return new FrontmatterDocument(Map.of(), content);
         }
 
-        String frontmatter = matcher.group(1);
-        String body = matcher.group(2);
+        String frontmatter = sections.frontmatter();
+        if (frontmatter.isBlank()) {
+            return new FrontmatterDocument(Map.of(), sections.body());
+        }
         try {
             @SuppressWarnings("unchecked")
             Map<String, Object> yaml = YAML_MAPPER.readValue(frontmatter, LinkedHashMap.class);
-            return new FrontmatterDocument(yaml != null ? yaml : Map.of(), body);
+            return new FrontmatterDocument(yaml != null ? yaml : Map.of(), sections.body());
         } catch (IOException ex) {
             throw new IllegalStateException("Failed to parse skill frontmatter", ex);
         }
+    }
+
+    private FrontmatterSections splitFrontmatter(String content) {
+        int openingLineEnd = findLineEnd(content, 0);
+        if (!isFrontmatterDelimiterLine(content, 0, openingLineEnd)) {
+            return null;
+        }
+
+        int currentIndex = advancePastLineEnding(content, openingLineEnd);
+        if (currentIndex >= content.length()) {
+            return null;
+        }
+
+        int frontmatterStart = currentIndex;
+        while (currentIndex < content.length()) {
+            int lineEnd = findLineEnd(content, currentIndex);
+            if (isFrontmatterDelimiterLine(content, currentIndex, lineEnd)) {
+                String frontmatter = content.substring(frontmatterStart, currentIndex);
+                int bodyStart = skipBlankLines(content, advancePastLineEnding(content, lineEnd));
+                return new FrontmatterSections(frontmatter, content.substring(bodyStart));
+            }
+            currentIndex = advancePastLineEnding(content, lineEnd);
+        }
+        return null;
+    }
+
+    private boolean isFrontmatterDelimiterLine(String content, int start, int end) {
+        if (end - start < 3
+                || content.charAt(start) != '-'
+                || content.charAt(start + 1) != '-'
+                || content.charAt(start + 2) != '-') {
+            return false;
+        }
+        for (int index = start + 3; index < end; index++) {
+            if (!Character.isWhitespace(content.charAt(index))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private int findLineEnd(String content, int start) {
+        int index = start;
+        while (index < content.length()) {
+            char ch = content.charAt(index);
+            if (ch == '\n' || ch == '\r') {
+                return index;
+            }
+            index++;
+        }
+        return index;
+    }
+
+    private int advancePastLineEnding(String content, int index) {
+        int currentIndex = index;
+        if (currentIndex < content.length() && content.charAt(currentIndex) == '\r') {
+            currentIndex++;
+        }
+        if (currentIndex < content.length() && content.charAt(currentIndex) == '\n') {
+            currentIndex++;
+        }
+        return currentIndex;
+    }
+
+    private int skipBlankLines(String content, int start) {
+        int currentIndex = start;
+        while (currentIndex < content.length()) {
+            int lineEnd = findLineEnd(content, currentIndex);
+            if (!isBlankLine(content, currentIndex, lineEnd)) {
+                return currentIndex;
+            }
+            currentIndex = advancePastLineEnding(content, lineEnd);
+        }
+        return currentIndex;
+    }
+
+    private boolean isBlankLine(String content, int start, int end) {
+        for (int index = start; index < end; index++) {
+            if (!Character.isWhitespace(content.charAt(index))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private boolean isRemoteArtifactManifestPath(String path) {
@@ -1318,6 +1398,9 @@ public class SkillMarketplaceService {
     }
 
     private record FrontmatterDocument(Map<String, Object> metadata, String body) {
+    }
+
+    private record FrontmatterSections(String frontmatter, String body) {
     }
 
     private record SkillMetadata(String name, String description, String modelTier) {

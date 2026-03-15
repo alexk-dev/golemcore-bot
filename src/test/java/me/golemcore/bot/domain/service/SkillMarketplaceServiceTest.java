@@ -244,6 +244,45 @@ class SkillMarketplaceServiceTest {
     }
 
     @Test
+    void shouldParseFrontmatterWithWhitespaceDelimitedSeparators(@TempDir Path tempDir) throws Exception {
+        Path repoRoot = createLocalRegistry(tempDir, """
+                ---
+                name: code-reviewer
+                description: Code review skill
+                model_tier: smart
+                ---
+
+                  Review code for security, correctness, and maintainability.
+                """);
+
+        InMemoryStoragePort storagePort = new InMemoryStoragePort();
+        SkillService skillService = mock(SkillService.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(RuntimeConfig.builder()
+                .skills(RuntimeConfig.SkillsConfig.builder()
+                        .marketplaceSourceType("directory")
+                        .marketplaceRepositoryDirectory(repoRoot.toString())
+                        .build())
+                .build());
+
+        SkillMarketplaceService service = createService(
+                botProperties("http://127.0.0.1:1"),
+                storagePort,
+                skillService,
+                runtimeConfigService);
+
+        SkillMarketplaceCatalog catalog = service.getCatalog();
+        SkillInstallResult result = service.install("golemcore/code-reviewer");
+        String installedContent = storagePort.getText("skills", "marketplace/golemcore/code-reviewer/SKILL.md").join();
+
+        assertEquals("smart", catalog.getItems().getFirst().getModelTier());
+        assertEquals("installed", result.getStatus());
+        assertNotNull(installedContent);
+        assertTrue(installedContent.contains("name: golemcore/code-reviewer"));
+        assertTrue(installedContent.contains("\n\n  Review code for security, correctness, and maintainability.\n"));
+    }
+
+    @Test
     void shouldCleanupPartialInstallWhenSkillWriteFails(@TempDir Path tempDir) throws Exception {
         Path repoRoot = createLocalRegistry(tempDir);
 
@@ -584,6 +623,10 @@ class SkillMarketplaceServiceTest {
     }
 
     private Path createLocalRegistry(Path tempDir) throws IOException {
+        return createLocalRegistry(tempDir, standaloneSkillMarkdown());
+    }
+
+    private Path createLocalRegistry(Path tempDir, String standaloneSkillContent) throws IOException {
         Path repoRoot = tempDir.resolve("golemcore-skills");
         Files.createDirectories(repoRoot.resolve("registry/golemcore/code-reviewer"));
         Files.createDirectories(repoRoot.resolve("registry/golemcore/devops-pack/skills/deploy-review"));
@@ -591,7 +634,7 @@ class SkillMarketplaceServiceTest {
 
         Files.writeString(repoRoot.resolve("registry/golemcore/maintainer.yaml"), maintainerYaml());
         Files.writeString(repoRoot.resolve("registry/golemcore/code-reviewer/artifact.yaml"), standaloneArtifactYaml());
-        Files.writeString(repoRoot.resolve("registry/golemcore/code-reviewer/SKILL.md"), standaloneSkillMarkdown());
+        Files.writeString(repoRoot.resolve("registry/golemcore/code-reviewer/SKILL.md"), standaloneSkillContent);
         Files.writeString(repoRoot.resolve("registry/golemcore/devops-pack/artifact.yaml"), packArtifactYaml());
         Files.writeString(repoRoot.resolve("registry/golemcore/devops-pack/skills/deploy-review/SKILL.md"),
                 deployReviewMarkdown());
