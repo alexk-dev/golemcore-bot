@@ -1,12 +1,14 @@
-import { Button } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { useChatRuntimeStore } from '../../store/chatRuntimeStore';
 import { useChatSessionStore } from '../../store/chatSessionStore';
 import { useThemeStore } from '../../store/themeStore';
 import { useSidebarStore } from '../../store/sidebarStore';
+import { useBackgroundSystemUpdateCheck } from '../../hooks/useBackgroundSystemUpdateCheck';
+import { useSystemUpdateStatus } from '../../hooks/useSystem';
 import { logout } from '../../api/auth';
-import { FiLogOut, FiSun, FiMoon, FiMenu } from 'react-icons/fi';
+import { type TopbarUpdateNotice, getTopbarUpdateNotice } from '../../utils/systemUpdateUi';
+import { FiAlertCircle, FiArrowUpCircle, FiLogOut, FiMenu, FiMoon, FiRefreshCw, FiSun } from 'react-icons/fi';
 
 interface ChatStatusState {
   trackedSessionId: string | null;
@@ -51,6 +53,40 @@ function resolveChatStatus(
   };
 }
 
+function renderUpdateIcon(notice: TopbarUpdateNotice) {
+  if (notice.busy) {
+    return <FiRefreshCw size={17} aria-hidden="true" />;
+  }
+  if (notice.tone === 'danger') {
+    return <FiAlertCircle size={17} aria-hidden="true" />;
+  }
+  return <FiArrowUpCircle size={17} aria-hidden="true" />;
+}
+
+function TopbarUpdateShortcut({ notice, onClick }: { notice: TopbarUpdateNotice; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className={`topbar-update-btn topbar-update-btn--${notice.tone}${notice.emphasis ? ' topbar-update-btn--emphasis' : ''}`}
+      onClick={onClick}
+      title={notice.title}
+      aria-label={`${notice.title}. Open Settings updates.`}
+    >
+      <span className={`topbar-update-icon${notice.busy ? ' topbar-update-icon--busy' : ''}`}>
+        {renderUpdateIcon(notice)}
+      </span>
+      <span className="topbar-update-label">Updates</span>
+      <span className={`topbar-update-badge topbar-update-badge--${notice.tone}`} aria-hidden="true">
+        {notice.badge}
+      </span>
+      <span
+        className={`topbar-update-dot topbar-update-dot--${notice.tone}${notice.emphasis ? ' topbar-update-dot--emphasis' : ''}`}
+        aria-hidden="true"
+      />
+    </button>
+  );
+}
+
 export default function Topbar() {
   const nav = useNavigate();
   const doLogout = useAuthStore((s) => s.logout);
@@ -63,7 +99,11 @@ export default function Topbar() {
   const connectionState = useChatRuntimeStore((s) => s.connectionState);
   const activeSession = useChatRuntimeStore((s) => s.sessions[activeSessionId]);
   const runningSessionId = useChatRuntimeStore((s) => resolveRunningSessionId(s.sessions));
+  const { data: updateStatus } = useSystemUpdateStatus();
   const chatStatus = resolveChatStatus(activeSessionId, activeSession, runningSessionId, connectionState);
+  const updateNotice = getTopbarUpdateNotice(updateStatus);
+
+  useBackgroundSystemUpdateCheck(updateStatus);
 
   const handleLogout = async () => {
     try {
@@ -81,11 +121,14 @@ export default function Topbar() {
     nav('/');
   };
 
+  const handleOpenUpdates = () => {
+    nav('/settings/updates');
+  };
+
   return (
     <header className="topbar d-flex align-items-center justify-content-between px-3 px-md-4 py-2">
-      <Button
+      <button
         type="button"
-        variant="secondary"
         className="topbar-icon-btn topbar-mobile-menu-btn d-md-none d-flex align-items-center justify-content-center p-0"
         onClick={toggleMobile}
         aria-label={mobileOpen ? 'Close navigation' : 'Open navigation'}
@@ -93,7 +136,7 @@ export default function Topbar() {
         aria-expanded={mobileOpen}
       >
         <FiMenu className="topbar-mobile-menu-icon" aria-hidden="true" />
-      </Button>
+      </button>
       <div className="topbar-center-slot">
         {chatStatus.statusCopy != null && (
           <button
@@ -111,25 +154,26 @@ export default function Topbar() {
         )}
       </div>
       <div className="d-flex align-items-center gap-2">
-        <Button
+        {updateNotice != null && (
+          <TopbarUpdateShortcut notice={updateNotice} onClick={handleOpenUpdates} />
+        )}
+        <button
           type="button"
-          variant="secondary"
           className="topbar-icon-btn text-decoration-none d-flex align-items-center justify-content-center p-0"
           onClick={toggleTheme}
           title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
           aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
         >
           {theme === 'light' ? <FiMoon size={18} /> : <FiSun size={18} />}
-        </Button>
-        <Button
+        </button>
+        <button
           type="button"
-          variant="secondary"
           className="topbar-action-btn text-decoration-none d-flex align-items-center px-3"
           onClick={handleLogout}
         >
-          <FiLogOut size={16} className="me-2" />
-          <span className="fw-medium small">Logout</span>
-        </Button>
+          <FiLogOut size={16} className="me-0 me-md-2" />
+          <span className="fw-medium small d-none d-md-inline">Logout</span>
+        </button>
       </div>
     </header>
   );

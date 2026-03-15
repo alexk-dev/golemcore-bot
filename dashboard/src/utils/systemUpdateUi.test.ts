@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { SystemUpdateStatusResponse } from '../api/system';
 import {
+  AUTO_UPDATE_CHECK_INTERVAL_MS,
+  type BackgroundUpdateCheckStatus,
   formatUpdateTimestamp,
   formatVersionLabel,
   getSidebarUpdateBadge,
+  getTopbarUpdateNotice,
   getUpdateActionLabel,
   getUpdateSourceLabel,
   getUpdateStateDescription,
@@ -11,6 +14,7 @@ import {
   getUpdateStateVariant,
   getUpdateWorkflowPresentation,
   hasPendingUpdate,
+  shouldCheckSystemUpdateInBackground,
 } from './systemUpdateUi';
 
 function buildStatus(overrides: Partial<SystemUpdateStatusResponse> = {}): SystemUpdateStatusResponse {
@@ -26,6 +30,17 @@ function buildStatus(overrides: Partial<SystemUpdateStatusResponse> = {}): Syste
     progressPercent: 0,
     stageTitle: 'Running 0.4.0',
     stageDescription: 'No update workflow is running.',
+    ...overrides,
+  };
+}
+
+function buildCheckStatus(overrides: Partial<BackgroundUpdateCheckStatus> = {}): BackgroundUpdateCheckStatus {
+  return {
+    enabled: true,
+    state: 'IDLE',
+    targetVersion: null,
+    stagedVersion: null,
+    availableVersion: null,
     ...overrides,
   };
 }
@@ -160,5 +175,66 @@ describe('systemUpdateUi', () => {
       title: 'Last update operation failed',
     });
     expect(getSidebarUpdateBadge('IDLE')).toBeNull();
+  });
+
+  it('shouldBuildTopbarNoticesForUpdateStates', () => {
+    expect(getTopbarUpdateNotice(buildStatus({
+      state: 'AVAILABLE',
+      target: { version: '0.4.2' },
+      available: { version: '0.4.2' },
+    }))).toEqual({
+      badge: 'NEW',
+      tone: 'warning',
+      title: 'Update 0.4.2 is available',
+      busy: false,
+      emphasis: true,
+    });
+
+    expect(getTopbarUpdateNotice(buildStatus({
+      state: 'PREPARING',
+      target: { version: '0.4.2' },
+      available: { version: '0.4.2' },
+    }))).toEqual({
+      badge: 'UPD',
+      tone: 'info',
+      title: 'Updating to 0.4.2',
+      busy: true,
+      emphasis: false,
+    });
+
+    expect(getTopbarUpdateNotice(buildStatus({ state: 'FAILED' }))).toEqual({
+      badge: 'ERR',
+      tone: 'danger',
+      title: 'Last update attempt failed',
+      busy: false,
+      emphasis: true,
+    });
+
+    expect(getTopbarUpdateNotice(buildStatus())).toBeNull();
+  });
+
+  it('shouldScheduleBackgroundChecksOnlyWhenDueAndSafe', () => {
+    const now = 1_000_000;
+    const idleStatus = buildCheckStatus();
+    const availableStatus = buildCheckStatus({
+      state: 'AVAILABLE',
+      targetVersion: '0.4.2',
+      availableVersion: '0.4.2',
+    });
+
+    expect(shouldCheckSystemUpdateInBackground(idleStatus, null, now, false)).toBe(true);
+    expect(shouldCheckSystemUpdateInBackground(idleStatus, now - 1_000, now, false)).toBe(false);
+    expect(
+      shouldCheckSystemUpdateInBackground(
+        idleStatus,
+        now - AUTO_UPDATE_CHECK_INTERVAL_MS,
+        now,
+        false,
+      ),
+    ).toBe(true);
+    expect(shouldCheckSystemUpdateInBackground(idleStatus, null, now, true)).toBe(false);
+    expect(shouldCheckSystemUpdateInBackground(buildCheckStatus({ enabled: false }), null, now, false)).toBe(false);
+    expect(shouldCheckSystemUpdateInBackground(buildCheckStatus({ state: 'CHECKING' }), null, now, false)).toBe(false);
+    expect(shouldCheckSystemUpdateInBackground(availableStatus, null, now, false)).toBe(false);
   });
 });
