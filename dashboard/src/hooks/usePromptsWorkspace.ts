@@ -27,7 +27,7 @@ import {
   INITIAL_PROMPTS_WORKSPACE_STATE,
   promptsWorkspaceReducer,
 } from './promptsWorkspaceState';
-import { useCatalogSelectionSync, useDraftPreviewSync } from './promptsWorkspaceEffects';
+import { useCatalogSelectionSync } from './promptsWorkspaceEffects';
 
 const EMPTY_PROMPTS: PromptSection[] = [];
 
@@ -88,11 +88,6 @@ export function usePromptsWorkspace(): UsePromptsWorkspaceResult {
     selectedSection,
     selectedName: state.selectedName,
     draft: state.draft,
-    dispatch,
-  });
-  useDraftPreviewSync({
-    draft: state.draft,
-    previewMutation,
     dispatch,
   });
 
