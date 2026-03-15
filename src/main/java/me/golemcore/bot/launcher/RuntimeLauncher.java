@@ -1,13 +1,18 @@
 package me.golemcore.bot.launcher;
 
 import java.io.IOException;
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.CodeSource;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
+import java.util.stream.Stream;
 
 /**
  * Supervises the actual bot runtime so self-update can restart into a staged
@@ -24,26 +29,40 @@ public final class RuntimeLauncher {
     static final String STORAGE_PATH_PROPERTY = "bot.storage.local.base-path";
     static final String UPDATE_PATH_ENV = "UPDATE_PATH";
     static final String UPDATE_PATH_PROPERTY = "bot.update.updates-path";
+    static final String BUNDLED_JAR_ENV = "GOLEMCORE_BUNDLED_JAR";
+    static final String BUNDLED_JAR_PROPERTY = "golemcore.launcher.bundled-jar";
+    static final String SERVER_PORT_PROPERTY = "server.port";
+
+    private static final List<String> FORWARDED_SYSTEM_PROPERTIES = List.of(
+            STORAGE_PATH_PROPERTY,
+            UPDATE_PATH_PROPERTY,
+            SERVER_PORT_PROPERTY);
 
     private final String javaCommand;
     private final ProcessStarter processStarter;
     private final EnvironmentReader environmentReader;
+    private final PropertyReader propertyReader;
     private final LauncherOutput output;
+    private final BundledRuntimeResolver bundledRuntimeResolver;
 
     public RuntimeLauncher() {
         this(resolveJavaCommand(), new DefaultProcessStarter(), new SystemEnvironmentReader(),
-                new ConsoleLauncherOutput());
+                new SystemPropertyReader(), new ConsoleLauncherOutput(), new DefaultBundledRuntimeResolver());
     }
 
     RuntimeLauncher(
             String javaCommand,
             ProcessStarter processStarter,
             EnvironmentReader environmentReader,
-            LauncherOutput output) {
+            PropertyReader propertyReader,
+            LauncherOutput output,
+            BundledRuntimeResolver bundledRuntimeResolver) {
         this.javaCommand = javaCommand;
         this.processStarter = processStarter;
         this.environmentReader = environmentReader;
+        this.propertyReader = propertyReader;
         this.output = output;
+        this.bundledRuntimeResolver = bundledRuntimeResolver;
     }
 
     public static void main(String[] args) {
@@ -92,20 +111,30 @@ public final class RuntimeLauncher {
 
     LaunchCommand resolveLaunchCommand(String[] args) {
         Path currentJar = resolveCurrentJar(args);
+        List<String> applicationArgs = resolveApplicationArgs(args);
         List<String> command = new ArrayList<>();
         command.add(javaCommand);
+        command.addAll(resolveForwardedJavaOptions(args));
 
         if (currentJar != null) {
             command.add("-jar");
             command.add(currentJar.toString());
-            command.addAll(Arrays.asList(args));
+            command.addAll(applicationArgs);
             return new LaunchCommand(List.copyOf(command), "updated runtime " + currentJar);
+        }
+
+        Path bundledJar = resolveBundledJar();
+        if (bundledJar != null) {
+            command.add("-jar");
+            command.add(bundledJar.toString());
+            command.addAll(applicationArgs);
+            return new LaunchCommand(List.copyOf(command), "bundled runtime jar " + bundledJar);
         }
 
         command.add("-cp");
         command.add("@" + JIB_CLASSPATH_FILE);
         command.add(APPLICATION_MAIN_CLASS);
-        command.addAll(Arrays.asList(args));
+        command.addAll(applicationArgs);
         return new LaunchCommand(List.copyOf(command), "bundled runtime from image classpath");
     }
 
@@ -146,7 +175,8 @@ public final class RuntimeLauncher {
     Path resolveUpdatesDir(String[] args) {
         String configuredUpdatesPath = firstNonBlank(
                 extractPropertyArg(args, UPDATE_PATH_PROPERTY),
-                System.getProperty(UPDATE_PATH_PROPERTY),
+                extractSystemPropertyArg(args, UPDATE_PATH_PROPERTY),
+                propertyReader.get(UPDATE_PATH_PROPERTY),
                 environmentReader.get(UPDATE_PATH_ENV));
         if (configuredUpdatesPath != null) {
             return normalizePath(configuredUpdatesPath);
@@ -154,7 +184,8 @@ public final class RuntimeLauncher {
 
         String storageBasePath = firstNonBlank(
                 extractPropertyArg(args, STORAGE_PATH_PROPERTY),
-                System.getProperty(STORAGE_PATH_PROPERTY),
+                extractSystemPropertyArg(args, STORAGE_PATH_PROPERTY),
+                propertyReader.get(STORAGE_PATH_PROPERTY),
                 environmentReader.get(STORAGE_PATH_ENV));
         if (storageBasePath != null) {
             return normalizePath(storageBasePath).resolve("updates").normalize();
@@ -163,6 +194,172 @@ public final class RuntimeLauncher {
         return Path.of(System.getProperty("user.home"), ".golemcore", "workspace", "updates")
                 .toAbsolutePath()
                 .normalize();
+    }
+
+    Path resolveBundledJar() {
+        String configuredBundledJar = firstNonBlank(
+                propertyReader.get(BUNDLED_JAR_PROPERTY),
+                environmentReader.get(BUNDLED_JAR_ENV));
+        if (configuredBundledJar != null) {
+            Path configuredPath = normalizePath(configuredBundledJar);
+            if (isRuntimeJar(configuredPath)) {
+                return configuredPath;
+            }
+            output.error("Ignoring missing bundled runtime jar: " + configuredPath);
+            return null;
+        }
+
+        Path resolvedLocation = bundledRuntimeResolver.resolve();
+        if (resolvedLocation == null) {
+            return null;
+        }
+
+        Path normalizedLocation = resolvedLocation.toAbsolutePath().normalize();
+        if (isBundledRuntimeJar(normalizedLocation)) {
+            return normalizedLocation;
+        }
+
+        Path siblingJar = findBundledRuntimeJar(normalizedLocation);
+        if (siblingJar != null) {
+            return siblingJar;
+        }
+
+        Path nearbyJar = findBundledRuntimeJarInCommonRuntimeDirs(normalizedLocation);
+        if (nearbyJar != null) {
+            return nearbyJar;
+        }
+        return null;
+    }
+
+    private List<String> resolveForwardedJavaOptions(String[] args) {
+        List<String> forwardedOptions = new ArrayList<>();
+        Set<String> explicitSystemPropertyNames = new LinkedHashSet<>();
+        for (String arg : args) {
+            if (!isSystemPropertyArg(arg)) {
+                continue;
+            }
+            forwardedOptions.add(arg);
+            explicitSystemPropertyNames.add(extractSystemPropertyName(arg));
+        }
+
+        for (String propertyName : FORWARDED_SYSTEM_PROPERTIES) {
+            if (explicitSystemPropertyNames.contains(propertyName)) {
+                continue;
+            }
+            if (extractPropertyArg(args, propertyName) != null) {
+                continue;
+            }
+
+            String propertyValue = propertyReader.get(propertyName);
+            if (propertyValue != null && !propertyValue.isBlank()) {
+                forwardedOptions.add(buildSystemPropertyOption(propertyName, propertyValue));
+            }
+        }
+        return forwardedOptions;
+    }
+
+    private List<String> resolveApplicationArgs(String[] args) {
+        List<String> applicationArgs = new ArrayList<>();
+        for (String arg : args) {
+            if (isSystemPropertyArg(arg)) {
+                continue;
+            }
+            applicationArgs.add(arg);
+        }
+        return applicationArgs;
+    }
+
+    private static boolean isSystemPropertyArg(String arg) {
+        return arg != null && arg.startsWith("-D") && arg.indexOf('=') > 2;
+    }
+
+    private static String extractSystemPropertyName(String arg) {
+        int equalsIndex = arg.indexOf('=');
+        return arg.substring(2, equalsIndex);
+    }
+
+    private static String buildSystemPropertyOption(String propertyName, String value) {
+        return "-D" + propertyName + "=" + value;
+    }
+
+    private Path findBundledRuntimeJarInCommonRuntimeDirs(Path resolvedLocation) {
+        Path currentDirectory = Files.isDirectory(resolvedLocation)
+                ? resolvedLocation
+                : resolvedLocation.getParent();
+        if (currentDirectory == null) {
+            return null;
+        }
+
+        Set<Path> searchDirectories = new LinkedHashSet<>();
+        addSearchDirectory(searchDirectories, currentDirectory.resolve("runtime"));
+        addSearchDirectory(searchDirectories, currentDirectory.resolve("lib").resolve("runtime"));
+
+        Path parentDirectory = currentDirectory.getParent();
+        if (parentDirectory != null) {
+            addSearchDirectory(searchDirectories, parentDirectory);
+            addSearchDirectory(searchDirectories, parentDirectory.resolve("runtime"));
+            addSearchDirectory(searchDirectories, parentDirectory.resolve("lib").resolve("runtime"));
+        }
+
+        for (Path searchDirectory : searchDirectories) {
+            Path bundledJar = findBundledRuntimeJar(searchDirectory);
+            if (bundledJar != null) {
+                return bundledJar;
+            }
+        }
+        return null;
+    }
+
+    private static void addSearchDirectory(Set<Path> searchDirectories, Path directory) {
+        if (directory != null) {
+            searchDirectories.add(directory.toAbsolutePath().normalize());
+        }
+    }
+
+    private Path findBundledRuntimeJar(Path resolvedLocation) {
+        Path searchDirectory = Files.isDirectory(resolvedLocation)
+                ? resolvedLocation
+                : resolvedLocation.getParent();
+        if (searchDirectory == null || !Files.isDirectory(searchDirectory)) {
+            return null;
+        }
+
+        try (Stream<Path> stream = Files.list(searchDirectory)) {
+            return stream
+                    .map(Path::toAbsolutePath)
+                    .map(Path::normalize)
+                    .filter(this::isBundledRuntimeJar)
+                    .sorted()
+                    .findFirst()
+                    .orElse(null);
+        } catch (IOException e) {
+            output.error("Failed to inspect bundled runtime directory: " + safeMessage(e));
+            return null;
+        }
+    }
+
+    private boolean isBundledRuntimeJar(Path path) {
+        if (!isRuntimeJar(path)) {
+            return false;
+        }
+        Path fileNamePath = path.getFileName();
+        if (fileNamePath == null) {
+            return false;
+        }
+        String fileName = fileNamePath.toString().toLowerCase(Locale.ROOT);
+        return fileName.startsWith("bot-") && !fileName.endsWith(".jar.original");
+    }
+
+    private boolean isRuntimeJar(Path path) {
+        if (path == null || !Files.isRegularFile(path)) {
+            return false;
+        }
+        Path fileNamePath = path.getFileName();
+        if (fileNamePath == null) {
+            return false;
+        }
+        String fileName = fileNamePath.toString().toLowerCase(Locale.ROOT);
+        return fileName.endsWith(".jar");
     }
 
     private static Path normalizePath(String value) {
@@ -181,6 +378,21 @@ public final class RuntimeLauncher {
                 String value = arg.substring(prefix.length()).trim();
                 return value.isBlank() ? null : value;
             }
+        }
+        return null;
+    }
+
+    private static String extractSystemPropertyArg(String[] args, String propertyName) {
+        for (String arg : args) {
+            if (!isSystemPropertyArg(arg)) {
+                continue;
+            }
+            if (!extractSystemPropertyName(arg).equals(propertyName)) {
+                continue;
+            }
+            int equalsIndex = arg.indexOf('=');
+            String value = arg.substring(equalsIndex + 1).trim();
+            return value.isBlank() ? null : value;
         }
         return null;
     }
@@ -240,10 +452,18 @@ public final class RuntimeLauncher {
         String get(String name);
     }
 
+    interface PropertyReader {
+        String get(String name);
+    }
+
     interface LauncherOutput {
         void info(String message);
 
         void error(String message);
+    }
+
+    interface BundledRuntimeResolver {
+        Path resolve();
     }
 
     private static final class DefaultProcessStarter implements ProcessStarter {
@@ -286,6 +506,14 @@ public final class RuntimeLauncher {
         }
     }
 
+    private static final class SystemPropertyReader implements PropertyReader {
+
+        @Override
+        public String get(String name) {
+            return System.getProperty(name);
+        }
+    }
+
     private static final class ConsoleLauncherOutput implements LauncherOutput {
 
         @Override
@@ -296,6 +524,22 @@ public final class RuntimeLauncher {
         @Override
         public void error(String message) {
             System.err.println("[launcher] " + message);
+        }
+    }
+
+    private static final class DefaultBundledRuntimeResolver implements BundledRuntimeResolver {
+
+        @Override
+        public Path resolve() {
+            try {
+                CodeSource codeSource = RuntimeLauncher.class.getProtectionDomain().getCodeSource();
+                if (codeSource == null || codeSource.getLocation() == null) {
+                    return null;
+                }
+                return Path.of(codeSource.getLocation().toURI()).toAbsolutePath().normalize();
+            } catch (URISyntaxException | IllegalArgumentException e) {
+                return null;
+            }
         }
     }
 }

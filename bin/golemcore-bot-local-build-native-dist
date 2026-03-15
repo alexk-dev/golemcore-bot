@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+find_project_root() {
+  local current_dir="${PWD}"
+  while [[ "${current_dir}" != "/" ]]; do
+    if [[ -f "${current_dir}/pom.xml" && -f "${current_dir}/.github/scripts/build-native-distribution.sh" ]]; then
+      printf '%s\n' "${current_dir}"
+      return 0
+    fi
+    current_dir="$(dirname "${current_dir}")"
+  done
+  return 1
+}
+
+PROJECT_ROOT="${GOLEMCORE_PROJECT_DIR:-}"
+if [[ -z "${PROJECT_ROOT}" ]]; then
+  PROJECT_ROOT="$(find_project_root || true)"
+fi
+
+if [[ -z "${PROJECT_ROOT}" ]]; then
+  echo "Unable to locate a golemcore-bot checkout from the current directory." >&2
+  echo "Run this command inside the repository or set GOLEMCORE_PROJECT_DIR explicitly." >&2
+  exit 1
+fi
+
+exec "${PROJECT_ROOT}/.github/scripts/build-native-distribution.sh" "$@"
