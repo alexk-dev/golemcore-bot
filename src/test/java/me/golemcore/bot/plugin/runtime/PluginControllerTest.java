@@ -65,6 +65,19 @@ class PluginControllerTest {
     }
 
     @Test
+    void shouldUninstallPluginFromRequest() {
+        PluginUninstallResult result = new PluginUninstallResult("uninstalled", "Browser uninstalled.");
+        when(pluginMarketplaceService.uninstall("golemcore/browser")).thenReturn(result);
+
+        StepVerifier.create(controller.uninstallPlugin(new PluginUninstallRequest("golemcore/browser")))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertEquals("uninstalled", response.getBody().getStatus());
+                })
+                .verifyComplete();
+    }
+
+    @Test
     void shouldReturnMarketplaceCatalog() {
         when(pluginMarketplaceService.getCatalog()).thenReturn(PluginMarketplaceCatalog.builder()
                 .available(true)

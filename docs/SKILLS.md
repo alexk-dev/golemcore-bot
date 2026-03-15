@@ -10,6 +10,21 @@ How to create, configure, and orchestrate skills for the bot.
 
 A **skill** is a markdown file with YAML frontmatter that defines the bot's behavior for a specific task. Skills control the system prompt, required variables, tool integrations (including MCP servers), and pipeline transitions.
 
+Skills can come from two sources:
+
+- **manual workspace skills** created directly under `workspace/skills/`
+- **marketplace artifacts** installed from a local or remote skills registry
+
+Marketplace installs are artifact-oriented:
+
+- a **standalone artifact** installs one runtime skill
+- a **pack artifact** installs multiple runtime skills together
+
+Runtime skill ids are namespaced when loaded from the marketplace:
+
+- standalone artifact: `golemcore/code-reviewer`
+- pack skill: `golemcore/devops-pack/deploy-review`
+
 ```
 workspace/skills/
 ├── greeting/
@@ -19,6 +34,16 @@ workspace/skills/
 │   └── vars.json          # per-skill variables
 ├── research/
 │   └── SKILL.md
+├── marketplace/
+│   └── golemcore/
+│       ├── code-reviewer/
+│       │   ├── .marketplace-install.json
+│       │   └── SKILL.md
+│       └── devops-pack/
+│           ├── .marketplace-install.json
+│           └── skills/
+│               ├── deploy-review/SKILL.md
+│               └── incident-triage/SKILL.md
 └── variables.json          # global variables
 ```
 
@@ -43,6 +68,88 @@ respond warmly and ask how you can help today.
 ```
 
 That's it. The bot will automatically discover this skill on the next reload (or call `/skills` to verify).
+
+### Marketplace Artifacts
+
+The dashboard `Skills -> Marketplace` page can install skills from:
+
+- a registry checkout inside the sandbox workspace
+- a local registry checkout on disk
+- a remote GitHub repository
+
+By default, repository mode points at the canonical `golemcore-skills` repository. The page can switch between:
+
+- `Repository URL`
+- `Local path`
+- `Sandbox path`
+
+Each marketplace entry is an **artifact** with a maintainer namespace and an artifact type:
+
+- `skill` for standalone installs
+- `pack` for grouped multi-skill installs
+
+Examples:
+
+- artifact ref: `golemcore/code-reviewer`
+- artifact ref: `golemcore/devops-pack`
+- runtime skill ref inside a pack: `golemcore/devops-pack/deploy-review`
+
+### Registry Layout
+
+The marketplace expects an artifact registry layout under `registry/`:
+
+```text
+registry/
+└── golemcore/
+    ├── maintainer.yaml
+    ├── code-reviewer/
+    │   ├── artifact.yaml
+    │   └── SKILL.md
+    └── devops-pack/
+        ├── artifact.yaml
+        └── skills/
+            ├── deploy-review/SKILL.md
+            └── incident-triage/SKILL.md
+```
+
+The local source path can point to either:
+
+- the repository root that contains `registry/`
+- the `registry/` directory itself
+
+Each maintainer may define optional metadata in `maintainer.yaml`:
+
+```yaml
+schema: v1
+id: golemcore
+display_name: GolemCore
+github: golemcore
+contact: team@golemcore.dev
+```
+
+Each installable artifact must define `artifact.yaml`:
+
+```yaml
+schema: v1
+type: pack # skill | pack
+maintainer: golemcore
+id: devops-pack
+version: 1.2.0
+title: DevOps Pack
+description: Curated set of operational skills
+skills:
+  - id: deploy-review
+    path: skills/deploy-review/SKILL.md
+  - id: incident-triage
+    path: skills/incident-triage/SKILL.md
+```
+
+Notes:
+
+- `type: skill` installs one runtime skill and usually points at `SKILL.md`
+- `type: pack` installs multiple runtime skills from `skills/<skill-id>/SKILL.md`
+- if `skills:` is omitted, standalone artifacts fall back to `SKILL.md`, while packs auto-discover `skills/*/SKILL.md`
+- artifact refs always use `<maintainer>/<artifact>`
 
 ### Reload Skills
 
@@ -84,6 +191,13 @@ model_tier: coding           # Optional: preferred model tier (balanced/smart/co
 ```
 
 If `name` is omitted, it's extracted from the directory path (e.g., `skills/code-review/SKILL.md` becomes `code-review`).
+
+For marketplace-installed artifacts, install-time rewriting enforces namespaced runtime ids so that multiple maintainers and packs can coexist safely. In practice:
+
+- standalone artifacts are rewritten to `<maintainer>/<artifact>`
+- pack members are rewritten to `<maintainer>/<artifact>/<skill>`
+
+This also means pack-local pipeline references such as `next_skill` are rewritten during installation to their fully qualified runtime names.
 
 The `model_tier` field sets the preferred model tier when this skill is active. It is overridden if the user has `tierForce` enabled via `/tier <tier> force`. See [Model Routing Guide](MODEL_ROUTING.md#skill-model_tier-override).
 
@@ -400,6 +514,15 @@ The LLM can activate a skill using the `skill_transition` tool:
 }
 ```
 
+For marketplace-installed skills, use the namespaced runtime id:
+
+```json
+{
+  "target_skill": "golemcore/devops-pack/deploy-review",
+  "reason": "User wants the deploy review workflow"
+}
+```
+
 ### Pipeline Transitions
 
 Skills can chain to the next skill automatically via `next_skill` or conditionally via `conditional_next_skills`. See [Skill Pipelines](#skill-pipelines).
@@ -440,6 +563,12 @@ The LLM can create and manage skills dynamically via the `skill_management` tool
 - Cannot overwrite existing skills
 
 After creation or deletion, the skill registry is automatically reloaded.
+
+Notes:
+
+- The tool is intended for manual workspace skills.
+- Marketplace-installed skills can still be viewed and edited from the dashboard, but their storage path may live under `skills/marketplace/...`.
+- Namespaced marketplace skills use their full runtime name for lookup, for example `golemcore/code-reviewer`.
 
 ---
 
@@ -510,10 +639,12 @@ You are a code reviewer. Use the GitHub MCP tools to:
 ## Configuration Reference
 
 ```properties
-# Skills
-bot.skills.enabled=true
+# Skills storage / marketplace defaults
 bot.skills.directory=skills
-bot.skills.progressive-loading=true
+bot.skills.marketplace-enabled=true
+bot.skills.marketplace-repository-directory=
+bot.skills.marketplace-repository-url=https://github.com/alexk-dev/golemcore-skills
+bot.skills.marketplace-branch=main
 
 # Skill tools
 bot.tools.skill-management.enabled=true
@@ -525,3 +656,5 @@ bot.mcp.enabled=true
 bot.mcp.default-startup-timeout=30
 bot.mcp.default-idle-timeout=5
 ```
+
+Runtime toggles such as `enabled`, `progressiveLoading`, and marketplace source selection are persisted in runtime config and can be changed from the dashboard.

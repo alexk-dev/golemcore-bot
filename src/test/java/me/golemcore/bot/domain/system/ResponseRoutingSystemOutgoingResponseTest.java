@@ -43,7 +43,7 @@ class ResponseRoutingSystemOutgoingResponseTest {
         UserPreferencesService preferences = mock(UserPreferencesService.class);
         when(preferences.getMessage(any())).thenReturn("error");
 
-        ResponseRoutingSystem system = new ResponseRoutingSystem(new ChannelRegistry(java.util.List.of(channel)),
+        ResponseRoutingSystem system = new ResponseRoutingSystem(new ChannelRegistry(List.of(channel)),
                 preferences, voiceHandler);
         system.registerChannel(channel);
 
@@ -79,7 +79,7 @@ class ResponseRoutingSystemOutgoingResponseTest {
         UserPreferencesService preferences = mock(UserPreferencesService.class);
         when(preferences.getMessage(any())).thenReturn("error");
 
-        ResponseRoutingSystem system = new ResponseRoutingSystem(new ChannelRegistry(java.util.List.of(channel)),
+        ResponseRoutingSystem system = new ResponseRoutingSystem(new ChannelRegistry(List.of(channel)),
                 preferences, voiceHandler);
         system.registerChannel(channel);
 
@@ -117,7 +117,7 @@ class ResponseRoutingSystemOutgoingResponseTest {
         UserPreferencesService preferences = mock(UserPreferencesService.class);
         when(preferences.getMessage(any())).thenReturn("error");
 
-        ResponseRoutingSystem system = new ResponseRoutingSystem(new ChannelRegistry(java.util.List.of(channel)),
+        ResponseRoutingSystem system = new ResponseRoutingSystem(new ChannelRegistry(List.of(channel)),
                 preferences, voiceHandler);
 
         AgentSession session = AgentSession.builder()

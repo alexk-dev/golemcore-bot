@@ -130,6 +130,16 @@ public class PluginManager {
         return pluginsById.containsKey(normalizedPluginId);
     }
 
+    public synchronized boolean unloadPlugin(String pluginId) {
+        String normalizedPluginId = normalizePluginId(pluginId);
+        LoadedPlugin loadedPlugin = pluginsById.get(normalizedPluginId);
+        if (loadedPlugin == null) {
+            return false;
+        }
+        removeLoadedPlugin(loadedPlugin);
+        return true;
+    }
+
     public synchronized List<PluginRuntimeInfo> listPlugins() {
         return pluginsById.values().stream()
                 .map(plugin -> PluginRuntimeInfo.builder()

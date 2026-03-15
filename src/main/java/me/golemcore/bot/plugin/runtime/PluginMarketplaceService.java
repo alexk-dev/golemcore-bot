@@ -202,6 +202,28 @@ public class PluginMarketplaceService {
         return new PluginInstallResult(status, message, plugin);
     }
 
+    public PluginUninstallResult uninstall(String pluginId) {
+        PluginCoordinates requestedPlugin = normalizePluginCoordinates(pluginId);
+        if (requestedPlugin == null) {
+            throw new IllegalArgumentException("pluginId is required");
+        }
+
+        String normalizedPluginId = requestedPlugin.id();
+        String installedVersion = findInstalledVersion(requestedPlugin);
+        String pluginName = humanizePluginName(requestedPlugin.name());
+        if (installedVersion == null) {
+            return new PluginUninstallResult("not-installed", pluginName + " is not installed.");
+        }
+
+        Path pluginsRoot = pluginDirectoryRoot();
+        Path pluginDir = installedPluginDirectory(pluginsRoot, requestedPlugin);
+        boolean unloaded = pluginManager.unloadPlugin(normalizedPluginId);
+        deleteRecursively(pluginsRoot, pluginDir, "installed plugin directory");
+        boolean reloaded = pluginManager.reloadPlugin(normalizedPluginId);
+        String message = buildUninstallMessage(pluginName, unloaded, reloaded);
+        return new PluginUninstallResult("uninstalled", message);
+    }
+
     private List<PluginMarketplaceItem> loadMarketplaceItems(
             Map<String, TrustedPluginRecord> trustedPlugins,
             Map<String, PluginRuntimeInfo> loadedById,
@@ -1095,9 +1117,7 @@ public class PluginMarketplaceService {
 
     private String findInstalledVersion(PluginCoordinates coordinates) {
         Path pluginsRoot = pluginDirectoryRoot();
-        Path pluginDir = ensureContainedInRoot(pluginsRoot,
-                pluginsRoot.resolve(coordinates.owner()).resolve(coordinates.name()),
-                "installed plugin directory");
+        Path pluginDir = installedPluginDirectory(pluginsRoot, coordinates);
         if (!Files.isDirectory(pluginDir)) {
             return null;
         }
@@ -1121,11 +1141,32 @@ public class PluginMarketplaceService {
         }
     }
 
+    private Path installedPluginDirectory(Path pluginsRoot, PluginCoordinates coordinates) {
+        return ensureContainedInRoot(pluginsRoot,
+                pluginsRoot.resolve(coordinates.owner()).resolve(coordinates.name()),
+                "installed plugin directory");
+    }
+
     private boolean hasJarFile(Path versionDir) {
         try (Stream<Path> stream = Files.list(versionDir)) {
             return stream.anyMatch(path -> Files.isRegularFile(path) && fileNameOrEmpty(path).endsWith(".jar"));
         } catch (IOException ex) {
             return false;
+        }
+    }
+
+    private void deleteRecursively(Path root, Path directory, String label) {
+        Path containedDirectory = ensureContainedInRoot(root, directory, label);
+        if (!Files.exists(containedDirectory)) {
+            return;
+        }
+        try (Stream<Path> stream = Files.walk(containedDirectory)) {
+            List<Path> pathsToDelete = stream.sorted(Comparator.reverseOrder()).toList();
+            for (Path current : pathsToDelete) {
+                Files.deleteIfExists(current);
+            }
+        } catch (IOException ex) {
+            throw new IllegalStateException("Failed to delete " + label + " " + containedDirectory, ex);
         }
     }
 
@@ -1192,6 +1233,16 @@ public class PluginMarketplaceService {
         default -> plugin.getName() + " installed";
         };
         return loaded ? prefix + " and reloaded." : prefix + ". Artifact copied, but runtime load should be checked.";
+    }
+
+    private String buildUninstallMessage(String pluginName, boolean unloaded, boolean reloaded) {
+        if (reloaded) {
+            return pluginName + " marketplace files removed. Another artifact remains loaded.";
+        }
+        if (unloaded) {
+            return pluginName + " uninstalled and unloaded.";
+        }
+        return pluginName + " uninstalled.";
     }
 
     private String normalizePluginId(String pluginId) {
