@@ -189,6 +189,68 @@ class PromptsControllerTest {
     }
 
     @Test
+    void shouldRejectDuplicateSectionCreate() {
+        PromptSection existing = PromptSection.builder()
+                .name("custom")
+                .build();
+        PromptCreateRequest request = new PromptCreateRequest("custom", "Custom section", 40, true, "Custom body");
+
+        when(promptSectionService.getSection("custom")).thenReturn(Optional.of(existing));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.createSection(request));
+        assertEquals(HttpStatus.CONFLICT, ex.getStatusCode());
+        assertEquals("Prompt section 'custom' already exists", ex.getReason());
+    }
+
+    @Test
+    void shouldRejectInvalidSectionCreateName() {
+        PromptCreateRequest request = new PromptCreateRequest("Custom Prompt", "Custom section", 40, true,
+                "Custom body");
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.createSection(request));
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertEquals("Prompt name is required and must match [a-z0-9][a-z0-9-]*", ex.getReason());
+    }
+
+    @Test
+    void shouldUpdateSection() {
+        PromptSection existing = PromptSection.builder()
+                .name("custom")
+                .description("Old section")
+                .order(40)
+                .enabled(true)
+                .content("Old body")
+                .build();
+        PromptSection updated = PromptSection.builder()
+                .name("custom")
+                .description("Updated section")
+                .order(50)
+                .enabled(false)
+                .content("Updated body")
+                .build();
+        PromptCreateRequest request = new PromptCreateRequest("ignored-body-name", "Updated section", 50, false,
+                "Updated body");
+
+        when(promptSectionService.getSection("custom")).thenReturn(Optional.of(existing), Optional.of(updated));
+        when(promptSectionService.isProtectedSection("custom")).thenReturn(false);
+
+        StepVerifier.create(controller.updateSection("custom", request))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertEquals("custom", response.getBody().getName());
+                    assertEquals("Updated section", response.getBody().getDescription());
+                    assertEquals(50, response.getBody().getOrder());
+                    assertEquals(false, response.getBody().isEnabled());
+                    assertEquals(true, response.getBody().isDeletable());
+                })
+                .verifyComplete();
+
+        verify(storagePort).putText(eq("prompts"), eq("CUSTOM.md"), anyString());
+    }
+
+    @Test
     void shouldDeleteSection() {
         PromptSection section = PromptSection.builder()
                 .name("custom")
@@ -203,6 +265,16 @@ class PromptsControllerTest {
                 .verifyComplete();
 
         verify(storagePort).deleteObject("prompts", "CUSTOM.md");
+    }
+
+    @Test
+    void shouldReturn404ForMissingDelete() {
+        when(promptSectionService.getSection("custom")).thenReturn(Optional.empty());
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.deleteSection("custom"));
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+        assertEquals("Prompt section 'custom' not found", ex.getReason());
     }
 
     @Test
