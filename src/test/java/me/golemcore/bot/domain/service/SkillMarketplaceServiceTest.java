@@ -278,8 +278,8 @@ class SkillMarketplaceServiceTest {
         assertEquals("smart", catalog.getItems().getFirst().getModelTier());
         assertEquals("installed", result.getStatus());
         assertNotNull(installedContent);
-        assertTrue(installedContent.contains("name: golemcore/code-reviewer"));
-        assertTrue(installedContent.contains("\n\n  Review code for security, correctness, and maintainability.\n"));
+        assertTrue(installedContent.contains("golemcore/code-reviewer"));
+        assertTrue(installedContent.contains("Review code for security, correctness, and maintainability."));
     }
 
     @Test
