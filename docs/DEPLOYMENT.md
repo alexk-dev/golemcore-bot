@@ -7,7 +7,8 @@ Production deployment guide for GolemCore Bot.
 1. **Docker** — Containerized deployment (recommended)
 2. **Docker Compose** — Multi-container orchestration (recommended for production)
 3. **JAR** — Standalone Java application (development/testing)
-4. **systemd** — Linux service for JAR deployment
+4. **Native app-image** — Local desktop/server bundle built with `jpackage`
+5. **systemd** — Linux service for JAR deployment
 
 ---
 
@@ -110,7 +111,23 @@ docker-compose up -d
 ./mvnw clean package -DskipTests
 ```
 
-### 2. Create systemd Service
+### 2. Run directly
+
+```bash
+java -jar target/bot-<version>.jar
+```
+
+This uses the standard Spring Boot executable jar.
+
+To override the HTTP port:
+
+```bash
+java -jar target/bot-<version>.jar --server.port=9090
+# or
+java -Dserver.port=9090 -jar target/bot-<version>.jar
+```
+
+### 3. Create systemd Service
 
 `/etc/systemd/system/golemcore-bot.service`:
 
@@ -139,7 +156,7 @@ EnvironmentFile=/opt/golemcore-bot/.env
 WantedBy=multi-user.target
 ```
 
-### 3. Install
+### 4. Install
 
 ```bash
 # Create user
@@ -150,7 +167,7 @@ sudo mkdir -p /opt/golemcore-bot
 sudo chown golemcore:golemcore /opt/golemcore-bot
 
 # Copy JAR
-sudo cp target/golemcore-bot-0.1.0-SNAPSHOT.jar /opt/golemcore-bot/golemcore-bot.jar
+sudo cp target/bot-<version>.jar /opt/golemcore-bot/golemcore-bot.jar
 
 # Create .env file
 sudo nano /opt/golemcore-bot/.env
@@ -167,6 +184,65 @@ sudo journalctl -u golemcore-bot -f
 
 ---
 
+## Native app-image Deployment
+
+This mode is intended for **local machine installs** or lightweight server deployments where you want a bundled launcher instead of invoking `java -jar` manually.
+
+### Build the archive
+
+```bash
+./mvnw clean package -DskipTests -DskipGitHooks=true
+npx golemcore-bot-local-build-native-dist
+```
+
+Output:
+
+```text
+target/native-dist/golemcore-bot-<version>-<platform>-<arch>.tar.gz
+```
+
+### Extract and run
+
+```bash
+mkdir -p /opt/golemcore-bot-native
+tar -xzf target/native-dist/golemcore-bot-<version>-<platform>-<arch>.tar.gz -C /opt/golemcore-bot-native
+/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot
+```
+
+### Override server port and other runtime properties
+
+The native launcher forwards JVM system properties to the spawned runtime process.
+
+Examples:
+
+```bash
+/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot -Dserver.port=9090
+/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot -Dserver.port=9090 --spring.profiles.active=prod
+```
+
+Spring application arguments also continue to work:
+
+```bash
+/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot --server.port=9090
+```
+
+### How the launcher behaves
+
+The native bundle wraps `RuntimeLauncher`, which now resolves runtime in this order:
+
+1. staged update selected by `updates/current.txt`
+2. bundled runtime jar from the app-image under `lib/runtime/`
+3. legacy Jib/classpath fallback
+
+That means the existing self-update flow still works for local bundles.
+
+### Notes
+
+- `jpackage` from JDK 25 is required to build the app-image.
+- The generated archive is platform-specific.
+- The release workflow attaches these native archives to GitHub Releases together with the executable JAR.
+
+---
 
 ## Environment Variables (Production)
 
