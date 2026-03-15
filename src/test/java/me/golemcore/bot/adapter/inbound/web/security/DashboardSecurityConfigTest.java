@@ -34,7 +34,7 @@ class DashboardSecurityConfigTest {
         SecurityWebFilterChain securityWebFilterChain = securityConfig
                 .securityWebFilterChain(ServerHttpSecurity.http());
 
-        webTestClient = WebTestClient.bindToController(new TestController())
+        webTestClient = WebTestClient.bindToController(new SecurityTestEndpointController())
                 .webFilter(new WebFilterChainProxy(securityWebFilterChain))
                 .configureClient()
                 .build();
@@ -72,7 +72,7 @@ class DashboardSecurityConfigTest {
     }
 
     @RestController
-    static class TestController {
+    static class SecurityTestEndpointController {
 
         @PostMapping("/api/hooks/test")
         Mono<String> hook() {

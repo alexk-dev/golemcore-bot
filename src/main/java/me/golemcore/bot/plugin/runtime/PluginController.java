@@ -42,6 +42,12 @@ public class PluginController {
                 pluginMarketplaceService.install(request.getPluginId(), request.getVersion())));
     }
 
+    @PostMapping("/marketplace/uninstall")
+    public Mono<ResponseEntity<PluginUninstallResult>> uninstallPlugin(@RequestBody PluginUninstallRequest request) {
+        return Mono.just(ResponseEntity.ok(
+                pluginMarketplaceService.uninstall(request.getPluginId())));
+    }
+
     @PostMapping("/reload")
     public Mono<ResponseEntity<Map<String, String>>> reloadAll() {
         pluginManager.reloadAll();

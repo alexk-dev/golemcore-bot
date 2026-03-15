@@ -61,7 +61,7 @@ public class ResponseRoutingSystem implements AgentSystem {
     private static final String WEBHOOK_DELIVER_TO = "webhook.deliver.to";
 
     private final ChannelRegistry channelRegistry;
-    private final java.util.Map<String, ChannelPort> overrides = new ConcurrentHashMap<>();
+    private final Map<String, ChannelPort> overrides = new ConcurrentHashMap<>();
     private final UserPreferencesService preferencesService;
     private final VoiceResponseHandler voiceHandler;
 
@@ -333,7 +333,9 @@ public class ResponseRoutingSystem implements AgentSystem {
             return null;
         }
 
-        for (int index = messages.size() - 1; index >= 0; index--) {
+        WebhookDeliveryTarget deliveryTarget = null;
+        boolean webhookDeliveryCandidateSeen = false;
+        for (int index = messages.size() - 1; index >= 0 && !webhookDeliveryCandidateSeen; index--) {
             Message message = messages.get(index);
             if (message == null || !message.isUserMessage()) {
                 continue;
@@ -343,22 +345,23 @@ public class ResponseRoutingSystem implements AgentSystem {
             if (!isWebhookDeliveryEnabled(metadata)) {
                 continue;
             }
+            webhookDeliveryCandidateSeen = true;
 
             String channelType = readMetadataString(metadata, WEBHOOK_DELIVER_CHANNEL);
             String chatId = readMetadataString(metadata, WEBHOOK_DELIVER_TO);
             if (channelType == null || chatId == null) {
-                return null;
+                continue;
             }
 
             String normalizedChannel = channelType.trim().toLowerCase(Locale.ROOT);
             if (normalizedChannel.isEmpty() || CHANNEL_WEBHOOK.equals(normalizedChannel)) {
-                return null;
+                continue;
             }
 
-            return new WebhookDeliveryTarget(normalizedChannel, chatId);
+            deliveryTarget = new WebhookDeliveryTarget(normalizedChannel, chatId);
         }
 
-        return null;
+        return deliveryTarget;
     }
 
     private boolean isWebhookDeliveryEnabled(Map<String, Object> metadata) {

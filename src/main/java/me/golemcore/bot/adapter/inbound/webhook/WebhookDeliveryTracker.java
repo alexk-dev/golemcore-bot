@@ -32,6 +32,7 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -272,7 +273,7 @@ public class WebhookDeliveryTracker {
                 .response(command.response())
                 .model(command.model())
                 .durationMs(command.durationMs() > 0 ? command.durationMs() : 1)
-                .error(payloadStatus.equals("failed") ? nullToDefault(command.errorMessage(), "Test failure") : null)
+                .error("failed".equals(payloadStatus) ? nullToDefault(command.errorMessage(), "Test failure") : null)
                 .build();
 
         String deliveryId = registerPendingDelivery(runId, chatId, command.callbackUrl(), command.model(), SOURCE_TEST);
@@ -368,7 +369,7 @@ public class WebhookDeliveryTracker {
     }
 
     private String normalizeStatus(String status) {
-        String normalized = status.trim().toUpperCase();
+        String normalized = status.trim().toUpperCase(Locale.ROOT);
         if (STATUS_PENDING.equals(normalized)
                 || STATUS_IN_PROGRESS.equals(normalized)
                 || STATUS_SUCCESS.equals(normalized)
@@ -382,7 +383,7 @@ public class WebhookDeliveryTracker {
         if (status == null || status.isBlank()) {
             return "completed";
         }
-        String normalized = status.trim().toLowerCase();
+        String normalized = status.trim().toLowerCase(Locale.ROOT);
         if ("completed".equals(normalized) || "failed".equals(normalized)) {
             return normalized;
         }
