@@ -320,6 +320,43 @@ class SkillsControllerTest {
     }
 
     @Test
+    void shouldClearManagedMetadataWhenExplicitMetadataPayloadIsEmpty() {
+        Skill skill = Skill.builder()
+                .name("test-skill")
+                .location(java.nio.file.Path.of("test-skill/SKILL.md"))
+                .metadata(Map.of(
+                        "description", "Old description",
+                        "model_tier", "coding",
+                        "next_skill", "follow-up"))
+                .content("old body")
+                .build();
+        Skill updatedSkill = Skill.builder()
+                .name("test-skill")
+                .location(java.nio.file.Path.of("test-skill/SKILL.md"))
+                .metadata(Map.of())
+                .content("updated body")
+                .build();
+        when(skillService.findByName("test-skill")).thenReturn(Optional.of(skill));
+        when(skillService.findByLocation("test-skill/SKILL.md")).thenReturn(Optional.of(updatedSkill));
+        when(skillMarketplaceService.resolveManagedSkillStoragePath(skill)).thenReturn("test-skill/SKILL.md");
+        when(skillService.renderSkillDocument(anyMap(), eq("updated body"))).thenReturn("updated body");
+        when(storagePort.putText(anyString(), anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        StepVerifier.create(controller.updateSkillByQuery("test-skill", Map.of(
+                "content", "updated body",
+                "metadata", Map.of())))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> metadataCaptor = ArgumentCaptor
+                .forClass((Class<Map<String, Object>>) (Class<?>) Map.class);
+        verify(skillService).renderSkillDocument(metadataCaptor.capture(), eq("updated body"));
+        assertTrue(metadataCaptor.getValue().isEmpty());
+    }
+
+    @Test
     void shouldDeleteNamespacedSkillByQueryUsingStoredLocation() {
         Skill skill = Skill.builder()
                 .name("golemcore/devops-pack/deploy-review")

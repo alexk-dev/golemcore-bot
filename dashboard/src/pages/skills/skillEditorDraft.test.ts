@@ -150,4 +150,66 @@ describe('skillEditorDraft', () => {
       custom_key: 'preserved',
     });
   });
+
+  it('drops managed metadata sections when the editor clears them explicitly', () => {
+    const draft = createSkillEditorDraft({
+      name: 'golemcore/code-reviewer',
+      description: 'Review code',
+      available: true,
+      hasMcp: true,
+      content: 'Review every diff.',
+      metadata: {
+        name: 'golemcore/code-reviewer',
+        description: 'Review code',
+        model_tier: 'coding',
+        requires: {
+          env: ['GITHUB_TOKEN'],
+          binary: ['git'],
+          skills: ['golemcore/review-summary'],
+        },
+        vars: {
+          GITHUB_TOKEN: {
+            description: 'GitHub access token',
+            default: 'local-token',
+            required: true,
+            secret: true,
+          },
+        },
+        mcp: {
+          command: 'npx server',
+          env: {
+            TOKEN: '${GITHUB_TOKEN}',
+          },
+          startup_timeout: 30,
+          idle_timeout: 5,
+        },
+        next_skill: 'golemcore/review-summary',
+        conditional_next_skills: {
+          success: 'golemcore/review-summary',
+        },
+        custom_key: 'preserved',
+      },
+    });
+
+    draft.description = '';
+    draft.modelTier = '';
+    draft.requirementEnv = '';
+    draft.requirementBinary = '';
+    draft.requirementSkills = '';
+    draft.variables = [];
+    draft.mcpEnabled = false;
+    draft.mcpCommand = '';
+    draft.mcpStartupTimeout = '';
+    draft.mcpIdleTimeout = '';
+    draft.mcpEnv = [];
+    draft.nextSkill = '';
+    draft.conditionalNextSkills = [];
+
+    const request = buildSkillUpdateRequest(draft);
+
+    expect(request.metadata).toEqual({
+      name: 'golemcore/code-reviewer',
+      custom_key: 'preserved',
+    });
+  });
 });

@@ -37,6 +37,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -240,6 +241,70 @@ class SkillMarketplaceServiceTest {
         assertTrue(deployReview.contains("golemcore/devops-pack/incident-triage"));
 
         verify(skillService).reload();
+    }
+
+    @Test
+    void shouldCleanupPartialInstallWhenSkillWriteFails(@TempDir Path tempDir) throws Exception {
+        Path repoRoot = createLocalRegistry(tempDir);
+
+        FailingStoragePort storagePort = new FailingStoragePort(
+                "marketplace/golemcore/devops-pack/skills/incident-triage/SKILL.md");
+        SkillService skillService = mock(SkillService.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(RuntimeConfig.builder()
+                .skills(RuntimeConfig.SkillsConfig.builder()
+                        .marketplaceSourceType("directory")
+                        .marketplaceRepositoryDirectory(repoRoot.toString())
+                        .build())
+                .build());
+
+        SkillMarketplaceService service = createService(
+                botProperties("http://127.0.0.1:1"),
+                storagePort,
+                skillService,
+                runtimeConfigService);
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> service.install("golemcore/devops-pack"));
+
+        assertTrue(ex.getMessage().contains("Failed to install skill artifact: golemcore/devops-pack"));
+        assertFalse(
+                storagePort.exists("skills", "marketplace/golemcore/devops-pack/skills/deploy-review/SKILL.md").join());
+        assertFalse(storagePort.exists("skills", "marketplace/golemcore/devops-pack/skills/incident-triage/SKILL.md")
+                .join());
+        assertFalse(storagePort.exists("skills", "marketplace/golemcore/devops-pack/.marketplace-install.json").join());
+        verify(skillService, never()).reload();
+    }
+
+    @Test
+    void shouldCleanupPartialInstallWhenMetadataWriteFails(@TempDir Path tempDir) throws Exception {
+        Path repoRoot = createLocalRegistry(tempDir);
+
+        FailingStoragePort storagePort = new FailingStoragePort(
+                "marketplace/golemcore/code-reviewer/.marketplace-install.json");
+        SkillService skillService = mock(SkillService.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(RuntimeConfig.builder()
+                .skills(RuntimeConfig.SkillsConfig.builder()
+                        .marketplaceSourceType("directory")
+                        .marketplaceRepositoryDirectory(repoRoot.toString())
+                        .build())
+                .build());
+
+        SkillMarketplaceService service = createService(
+                botProperties("http://127.0.0.1:1"),
+                storagePort,
+                skillService,
+                runtimeConfigService);
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> service.install("golemcore/code-reviewer"));
+
+        assertTrue(ex.getMessage().contains("Failed to install skill artifact: golemcore/code-reviewer"));
+        assertFalse(storagePort.exists("skills", "marketplace/golemcore/code-reviewer/SKILL.md").join());
+        assertFalse(
+                storagePort.exists("skills", "marketplace/golemcore/code-reviewer/.marketplace-install.json").join());
+        verify(skillService, never()).reload();
     }
 
     @Test
@@ -448,6 +513,34 @@ class SkillMarketplaceServiceTest {
         verify(storagePort).deleteObject("skills", "marketplace/golemcore/devops-pack/.marketplace-install.json");
         verify(storagePort).deleteObject("skills", "marketplace/golemcore/devops-pack/skills/deploy-review/SKILL.md");
         verify(storagePort).deleteObject("skills", "marketplace/golemcore/devops-pack/skills/incident-triage/SKILL.md");
+    }
+
+    @Test
+    void shouldDeleteSingleSkillFileWhenDeleteScopeHasNoChildren() {
+        StoragePort storagePort = mock(StoragePort.class);
+        when(storagePort.listObjects(eq("skills"), eq("my-skill")))
+                .thenReturn(CompletableFuture.completedFuture(List.of()));
+        when(storagePort.deleteObject(anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        SkillService skillService = mock(SkillService.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(RuntimeConfig.builder()
+                .skills(new RuntimeConfig.SkillsConfig())
+                .build());
+
+        SkillMarketplaceService service = createService(
+                botProperties("http://127.0.0.1:1"),
+                storagePort,
+                skillService,
+                runtimeConfigService);
+
+        service.deleteManagedSkill(Skill.builder()
+                .name("my-skill")
+                .location(Path.of("my-skill/SKILL.md"))
+                .build());
+
+        verify(storagePort).deleteObject("skills", "my-skill/SKILL.md");
     }
 
     @Test
@@ -670,7 +763,7 @@ class SkillMarketplaceServiceTest {
     }
 }
 
-private static final class InMemoryStoragePort implements StoragePort {
+private static class InMemoryStoragePort implements StoragePort {
 
     private final Map<String, byte[]> objects = new LinkedHashMap<>();
 
@@ -744,5 +837,22 @@ private static final class InMemoryStoragePort implements StoragePort {
 
     private String key(String directory, String path) {
         return directory + "/" + path;
+    }
+}
+
+private static final class FailingStoragePort extends InMemoryStoragePort {
+
+    private final String failingPath;
+
+    private FailingStoragePort(String failingPath) {
+        this.failingPath = failingPath;
+    }
+
+    @Override
+    public CompletableFuture<Void> putText(String directory, String path, String content) {
+        if ("skills".equals(directory) && failingPath.equals(path)) {
+            return CompletableFuture.failedFuture(new IllegalStateException("boom"));
+        }
+        return super.putText(directory, path, content);
     }
 }}

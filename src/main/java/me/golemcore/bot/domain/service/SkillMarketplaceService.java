@@ -141,10 +141,29 @@ public class SkillMarketplaceService {
         String artifactHash = artifact.contentHash();
         String installedContentHash = buildInstalledContentHash(payloads);
 
-        deleteInstalledArtifact(installBasePath);
-        for (InstalledSkillPayload payload : payloads) {
-            storagePort.putText(SKILLS_DIR, payload.storagePath(), payload.content()).join();
+        try {
+            deleteInstalledArtifact(installBasePath);
+            for (InstalledSkillPayload payload : payloads) {
+                storagePort.putText(SKILLS_DIR, payload.storagePath(), payload.content()).join();
+            }
+
+            InstalledArtifactMetadata metadata = new InstalledArtifactMetadata(
+                    artifact.artifactRef(),
+                    artifact.version(),
+                    source.type(),
+                    source.displayValue(),
+                    artifactHash,
+                    installedContentHash,
+                    installedContentHash,
+                    artifact.skills().stream().map(RegistrySkill::runtimeName).toList(),
+                    Instant.now());
+            writeInstalledMetadata(installBasePath, metadata);
+        } catch (RuntimeException ex) {
+            deleteInstalledArtifact(installBasePath);
+            throw new IllegalStateException("Failed to install skill artifact: " + artifactRef, ex);
         }
+
+        skillService.reload();
 
         InstalledArtifactMetadata metadata = new InstalledArtifactMetadata(
                 artifact.artifactRef(),
@@ -156,10 +175,6 @@ public class SkillMarketplaceService {
                 installedContentHash,
                 artifact.skills().stream().map(RegistrySkill::runtimeName).toList(),
                 Instant.now());
-        writeInstalledMetadata(installBasePath, metadata);
-
-        skillService.reload();
-
         SkillMarketplaceItem installedItem = toMarketplaceItem(artifact, metadata);
         String status = resolveInstallStatus(existing, artifact);
         String message = switch (status) {
@@ -711,8 +726,9 @@ public class SkillMarketplaceService {
     }
 
     public void deleteManagedSkill(Skill skill) {
-        Path location = skill != null ? skill.getLocation() : null;
-        String storagePath = resolveManagedSkillStoragePath(skill);
+        Skill managedSkill = Objects.requireNonNull(skill, "skill");
+        Path location = managedSkill.getLocation();
+        String storagePath = resolveManagedSkillStoragePath(managedSkill);
         String deleteScope = resolveDeleteScope(location, storagePath);
 
         List<String> keys = storagePort.listObjects(SKILLS_DIR, deleteScope).join();
