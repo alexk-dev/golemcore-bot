@@ -1,5 +1,4 @@
 import type { ReactElement } from 'react';
-import { Alert, Card, Spinner } from 'react-bootstrap';
 import { CodeEditor } from '../components/ide/CodeEditor';
 import { EditorContentState, EditorStatusBar } from '../components/ide/EditorStatusBar';
 import { EditorTabs } from '../components/ide/EditorTabs';
@@ -14,7 +13,7 @@ export default function IdePage(): ReactElement {
   const ide = useIdeWorkspace();
 
   return (
-    <div className="ide-page h-100 d-flex flex-column">
+    <div className="ide-page flex h-full flex-col">
       <IdeHeader
         hasDirtyTabs={ide.hasDirtyTabs}
         dirtyTabsCount={ide.dirtyTabsCount}
@@ -30,15 +29,27 @@ export default function IdePage(): ReactElement {
         onDecreaseSidebarWidth={ide.decreaseSidebarWidth}
       />
 
-      <div className="ide-layout flex-grow-1 d-flex overflow-hidden">
-        <Card className="ide-sidebar-card h-100" aria-label="File explorer">
-          <Card.Body className="p-2 h-100">
+      <div className="ide-layout flex min-h-0 flex-1 overflow-hidden">
+        <section
+          className="ide-sidebar-card h-full rounded-[1.25rem] border border-border/80 bg-card/95 shadow-[0_18px_50px_rgba(15,23,42,0.08)]"
+          aria-label="File explorer"
+        >
+          <div className="h-full p-2">
             {ide.treeQuery.isLoading ? (
-              <div className="d-flex align-items-center justify-content-center h-100">
-                <Spinner animation="border" size="sm" />
+              <div className="flex h-full items-center justify-center">
+                <span
+                  className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-primary"
+                  role="status"
+                  aria-label="Loading file tree"
+                />
               </div>
             ) : ide.treeQuery.isError ? (
-              <Alert variant="danger" className="mb-0 small">Failed to load file tree.</Alert>
+              <div
+                className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+                role="alert"
+              >
+                Failed to load file tree.
+              </div>
             ) : (
               <FileTreePanel
                 nodes={ide.treeQuery.data ?? []}
@@ -51,8 +62,8 @@ export default function IdePage(): ReactElement {
                 onRequestDelete={ide.requestDeleteFromTree}
               />
             )}
-          </Card.Body>
-        </Card>
+          </div>
+        </section>
 
         <div
           className="ide-sidebar-resizer"
@@ -68,10 +79,10 @@ export default function IdePage(): ReactElement {
           }}
         />
 
-        <Card className="ide-editor-card h-100">
-          <Card.Body className="p-0 d-flex flex-column h-100 overflow-hidden">
+        <section className="ide-editor-card h-full rounded-[1.25rem] border border-border/80 bg-card/95 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
+          <div className="flex h-full flex-col overflow-hidden">
             <EditorTabs
-              tabs={ide.openedTabs.map((tab) => ({ path: tab.path, title: tab.title, dirty: tab.isDirty }))}
+              tabs={ide.editorTabs}
               activePath={ide.activePath}
               onSelectTab={ide.setActivePath}
               onCloseTab={ide.requestCloseTab}
@@ -101,8 +112,8 @@ export default function IdePage(): ReactElement {
                 />
               </EditorContentState>
             </div>
-          </Card.Body>
-        </Card>
+          </div>
+        </section>
       </div>
 
       <QuickOpenModal
@@ -117,7 +128,7 @@ export default function IdePage(): ReactElement {
 
       <UnsavedChangesModal
         show={ide.closeCandidate != null}
-        fileTitle={ide.closeCandidate?.title ?? ''}
+        fileTitle={ide.closeCandidateLabel}
         isProcessing={ide.isCloseWithSavePending}
         onCancel={ide.cancelCloseCandidate}
         onCloseWithoutSaving={ide.closeCandidateWithoutSaving}

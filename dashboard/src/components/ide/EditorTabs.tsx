@@ -1,10 +1,12 @@
 import type { ReactElement } from 'react';
-import { Badge, Button } from 'react-bootstrap';
 import { FiX } from 'react-icons/fi';
+import { cn } from '../../lib/utils';
 
 export interface EditorTab {
   path: string;
   title: string;
+  context: string | null;
+  fullTitle: string;
   dirty: boolean;
 }
 
@@ -26,9 +28,14 @@ export function EditorTabs({ tabs, activePath, onSelectTab, onCloseTab }: Editor
       {tabs.map((tab) => {
         const isActive = tab.path === activePath;
         const tabButtonId = buildTabButtonId(tab.path);
+        const closeLabel = `Close ${tab.fullTitle}`;
 
         return (
-          <div key={tab.path} className={`ide-tab ${isActive ? 'active' : ''}`} role="presentation">
+          <div
+            key={tab.path}
+            className={cn('ide-tab', isActive && 'active')}
+            role="presentation"
+          >
             <button
               id={tabButtonId}
               type="button"
@@ -37,22 +44,23 @@ export function EditorTabs({ tabs, activePath, onSelectTab, onCloseTab }: Editor
               aria-selected={isActive}
               aria-controls="ide-editor-panel"
               onClick={() => onSelectTab(tab.path)}
-              title={tab.path}
+              title={tab.fullTitle}
             >
-              <span className="ide-tab-title">{tab.title}</span>
-              {tab.dirty && <Badge bg="warning" text="dark" pill className="ide-tab-dirty">●</Badge>}
+              <span className="ide-tab-label">
+                <span className="ide-tab-title">{tab.title}</span>
+                {tab.context != null && <span className="ide-tab-context">· {tab.context}</span>}
+              </span>
+              {tab.dirty && <span className="ide-tab-dirty" aria-label="Unsaved changes" />}
             </button>
-            <Button
+            <button
               type="button"
-              variant="link"
-              size="sm"
               className="ide-tab-close"
               onClick={() => onCloseTab(tab.path)}
-              aria-label={`Close ${tab.title}`}
-              title={`Close ${tab.title}`}
+              aria-label={closeLabel}
+              title={closeLabel}
             >
               <FiX size={12} />
-            </Button>
+            </button>
           </div>
         );
       })}
