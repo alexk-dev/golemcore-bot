@@ -130,7 +130,10 @@ export function useUpdateSkills(): UseMutationResult<Awaited<ReturnType<typeof u
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: SkillsConfig) => updateSkillsConfig(config),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+    onSuccess: () => Promise.all([
+      qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+      qc.invalidateQueries({ queryKey: ['skill-marketplace'] }),
+    ]),
   });
 }
 

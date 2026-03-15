@@ -454,6 +454,8 @@ class SkillServiceTest {
         Optional<Skill> skill = service.findByName("needsenv");
         assertTrue(skill.isPresent());
         assertFalse(skill.get().isAvailable());
+        assertNotNull(skill.get().getRequirements());
+        assertEquals(List.of("VERY_UNLIKELY_ENV_VAR_12345"), skill.get().getRequirements().getEnvVars());
     }
 
     @Test
@@ -561,6 +563,32 @@ class SkillServiceTest {
         service.reload();
 
         assertEquals("Test content here", service.getSkillContent("test"));
+    }
+
+    @Test
+    void findByLocationReturnsLoadedSkill() {
+        loadSkills("test/" + SKILL_FILE);
+        stubSkillContent("test/" + SKILL_FILE, """
+                ---
+                name: test
+                description: Test
+                requires:
+                  binary:
+                    - git
+                  skills:
+                    - helper
+                ---
+                Test content here
+                """);
+
+        service.reload();
+
+        Optional<Skill> byLocation = service.findByLocation("test/SKILL.md");
+        assertTrue(byLocation.isPresent());
+        assertEquals("test", byLocation.get().getName());
+        assertNotNull(byLocation.get().getRequirements());
+        assertEquals(List.of("git"), byLocation.get().getRequirements().getBinaries());
+        assertEquals(List.of("helper"), byLocation.get().getRequirements().getSkills());
     }
 
     @Test

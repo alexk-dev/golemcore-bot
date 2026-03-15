@@ -243,6 +243,11 @@ export interface MemoryPreset {
 export interface SkillsConfig {
   enabled: boolean | null;
   progressiveLoading: boolean | null;
+  marketplaceSourceType: 'repository' | 'directory' | 'sandbox' | null;
+  marketplaceRepositoryDirectory: string | null;
+  marketplaceSandboxPath: string | null;
+  marketplaceRepositoryUrl: string | null;
+  marketplaceBranch: string | null;
 }
 
 export interface TurnConfig {
