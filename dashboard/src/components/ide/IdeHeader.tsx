@@ -1,81 +1,97 @@
 import type { ReactElement } from 'react';
-import { Badge, Button, Form, InputGroup } from 'react-bootstrap';
-import { FiCommand, FiMinus, FiPlus, FiRefreshCw, FiSave, FiSearch } from 'react-icons/fi';
+import { FiCommand, FiFolder, FiMinus, FiPlus, FiSave } from 'react-icons/fi';
+import { Badge } from '../ui/badge';
+import { Button } from '../ui/button';
 
 export interface IdeHeaderProps {
+  activeFileLabel: string | null;
+  isMobileLayout: boolean;
   hasDirtyTabs: boolean;
   dirtyTabsCount: number;
-  isRefreshingTree: boolean;
   canSaveActiveTab: boolean;
   isSaving: boolean;
-  treeSearchQuery: string;
-  onTreeSearchQueryChange: (value: string) => void;
-  onRefreshTree: () => void;
   onSaveActiveTab: () => void;
   onOpenQuickOpen: () => void;
+  onOpenExplorer: () => void;
   onIncreaseSidebarWidth: () => void;
   onDecreaseSidebarWidth: () => void;
 }
 
 export function IdeHeader({
+  activeFileLabel,
+  isMobileLayout,
   hasDirtyTabs,
   dirtyTabsCount,
-  isRefreshingTree,
   canSaveActiveTab,
   isSaving,
-  treeSearchQuery,
-  onTreeSearchQueryChange,
-  onRefreshTree,
   onSaveActiveTab,
   onOpenQuickOpen,
+  onOpenExplorer,
   onIncreaseSidebarWidth,
   onDecreaseSidebarWidth,
 }: IdeHeaderProps): ReactElement {
   return (
-    <div className="section-header d-flex align-items-start justify-content-between gap-3 flex-wrap">
-      <div>
+    <div className="section-header flex flex-wrap items-start justify-between gap-3">
+      <div className="min-w-0 flex-1">
         <h4 className="mb-1">IDE</h4>
-        <p className="mb-0 text-body-secondary small">
-          Browse workspace files, edit code with syntax highlighting, and save back to the bot workspace.
+        <p className="text-sm text-muted-foreground">
+          Open a file, make a quick change, and save it back to the workspace.
         </p>
+        {isMobileLayout && (
+          <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="font-semibold uppercase tracking-[0.16em]">Current file</span>
+            <span
+              className="max-w-full truncate rounded-full border border-border/80 bg-background/80 px-3 py-1 text-foreground"
+              title={activeFileLabel ?? 'No file selected'}
+            >
+              {activeFileLabel ?? 'No file selected'}
+            </span>
+          </div>
+        )}
       </div>
 
-      <div className="d-flex align-items-center gap-2 flex-wrap ide-toolbar">
-        <InputGroup size="sm" className="ide-search-group">
-          <InputGroup.Text>
-            <FiSearch size={14} />
-          </InputGroup.Text>
-          <Form.Control
-            value={treeSearchQuery}
-            onChange={(event) => onTreeSearchQueryChange(event.target.value)}
-            placeholder="Search in file tree"
-            aria-label="Search in file tree"
-          />
-        </InputGroup>
+      <div className="ide-toolbar flex flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          variant="secondary"
+          className="lg:hidden"
+          onClick={onOpenExplorer}
+          aria-label="Open file explorer"
+        >
+          <FiFolder size={14} />
+          Files
+        </Button>
 
         <Button size="sm" variant="secondary" onClick={onOpenQuickOpen} title="Quick Open (Ctrl/Cmd+P)">
-          <FiCommand size={14} className="me-1" />
+          <FiCommand size={14} />
           Quick Open
         </Button>
 
-        <Button size="sm" variant="secondary" onClick={onDecreaseSidebarWidth} aria-label="Decrease file tree width">
+        <Button
+          size="sm"
+          variant="secondary"
+          className="hidden lg:inline-flex"
+          onClick={onDecreaseSidebarWidth}
+          aria-label="Decrease file tree width"
+        >
           <FiMinus size={14} />
         </Button>
-        <Button size="sm" variant="secondary" onClick={onIncreaseSidebarWidth} aria-label="Increase file tree width">
+        <Button
+          size="sm"
+          variant="secondary"
+          className="hidden lg:inline-flex"
+          onClick={onIncreaseSidebarWidth}
+          aria-label="Increase file tree width"
+        >
           <FiPlus size={14} />
         </Button>
 
-        <Badge bg={hasDirtyTabs ? 'warning' : 'secondary'} text={hasDirtyTabs ? 'dark' : 'light'}>
+        <Badge variant={hasDirtyTabs ? 'warning' : 'secondary'}>
           {dirtyTabsCount} unsaved
         </Badge>
 
-        <Button size="sm" variant="secondary" onClick={onRefreshTree} disabled={isRefreshingTree}>
-          <FiRefreshCw size={14} className="me-1" />
-          {isRefreshingTree ? 'Refreshing...' : 'Refresh tree'}
-        </Button>
-
         <Button size="sm" onClick={onSaveActiveTab} disabled={!canSaveActiveTab}>
-          <FiSave size={14} className="me-1" />
+          <FiSave size={14} />
           {isSaving ? 'Saving...' : 'Save'}
         </Button>
       </div>

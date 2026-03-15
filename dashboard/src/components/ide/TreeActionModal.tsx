@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactElement } from 'react';
-import { Button, Form, Modal } from 'react-bootstrap';
 import type { TreeActionState } from '../../hooks/useIdeTreeActions';
+import { Button } from '../ui/button';
+import { Modal } from '../ui/bootstrap-overlay';
+import { Input } from '../ui/field';
 
 export interface TreeActionModalProps {
   action: TreeActionState | null;
@@ -50,11 +52,11 @@ function buildInputLabel(action: TreeActionState | null): string {
   }
 
   if (action.mode === 'create') {
-    return 'File name';
+    return 'File path';
   }
 
   if (action.mode === 'rename') {
-    return 'New name';
+    return 'New path';
   }
 
   return '';
@@ -76,22 +78,23 @@ export function TreeActionModal({
   }, [action]);
 
   return (
-    <Modal show={action != null} onHide={onCancel} centered>
+    <Modal show={action != null} onHide={onCancel} centered size="sm">
       <Modal.Header closeButton>
         <Modal.Title>{buildTitle(action)}</Modal.Title>
       </Modal.Header>
       <Modal.Body>
-        <div className="text-body-secondary mb-3">{buildMessage(action)}</div>
+        <div className="mb-3 text-sm leading-6 text-muted-foreground">{buildMessage(action)}</div>
         {action != null && action.mode !== 'delete' && (
-          <Form.Group controlId="ide-tree-action-input">
-            <Form.Label>{buildInputLabel(action)}</Form.Label>
-            <Form.Control
+          <label htmlFor="ide-tree-action-input" className="block">
+            <span className="mb-2 block text-sm font-medium text-foreground">{buildInputLabel(action)}</span>
+            <Input
+              id="ide-tree-action-input"
               autoFocus
               value={inputValue}
               onChange={(event) => setInputValue(event.target.value)}
-              placeholder={action.mode === 'create' ? 'example.txt' : 'new-name.ext'}
+              placeholder={action.mode === 'create' ? 'src/example.ts' : 'src/new-name.ts'}
             />
-          </Form.Group>
+          </label>
         )}
       </Modal.Body>
       <Modal.Footer>
@@ -99,7 +102,7 @@ export function TreeActionModal({
           Cancel
         </Button>
         <Button
-          variant={action?.mode === 'delete' ? 'danger' : 'primary'}
+          variant={action?.mode === 'delete' ? 'destructive' : 'default'}
           disabled={isProcessing}
           onClick={() => {
             if (action == null) {

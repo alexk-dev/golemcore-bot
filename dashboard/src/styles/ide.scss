@@ -124,7 +124,7 @@
   display: flex;
   align-items: center;
   gap: 0.25rem;
-  padding: 0.35rem;
+  padding: 0.4rem;
   border-bottom: 1px solid var(--bs-border-color);
   overflow-x: auto;
 }
@@ -132,10 +132,12 @@
 .ide-tab {
   display: inline-flex;
   align-items: center;
+  min-width: 0;
+  max-width: min(24rem, 100%);
   border: 1px solid var(--bs-border-color);
   background: var(--bs-body-bg);
   color: var(--bs-body-color);
-  border-radius: 0.5rem;
+  border-radius: 0.85rem;
   padding: 0;
   white-space: nowrap;
 }
@@ -143,11 +145,12 @@
 .ide-tab-main {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.5rem;
+  min-width: 0;
   border: none;
   background: transparent;
   color: inherit;
-  padding: 0.2rem 0.35rem 0.2rem 0.6rem;
+  padding: 0.32rem 0.45rem 0.32rem 0.75rem;
 }
 
 .ide-tab-main:focus-visible,
@@ -162,22 +165,51 @@
   background: rgba(var(--bs-primary-rgb), 0.12);
 }
 
+.ide-tab-label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
 .ide-tab-title {
   font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ide-tab-context {
+  max-width: 11rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--bs-secondary-color);
+  font-size: 0.78rem;
 }
 
 .ide-tab-dirty {
-  font-size: 0.6rem;
-  line-height: 1;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--bs-warning);
+  flex: none;
 }
 
 .ide-tab-close {
-  --bs-btn-padding-y: 0;
-  --bs-btn-padding-x: 0.35rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  margin-right: 0.15rem;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
   color: var(--bs-secondary-color);
+  transition: background 0.18s ease, color 0.18s ease;
 }
 
 .ide-tab-close:hover {
+  background: rgba(var(--bs-primary-rgb), 0.12);
   color: var(--bs-emphasis-color);
 }
 
@@ -218,17 +250,12 @@
 }
 
 @media (max-width: 991.98px) {
-  .ide-layout {
-    flex-direction: column;
-    gap: 0.75rem;
+  .ide-page {
+    padding: 0.75rem;
   }
 
-  .ide-sidebar-card {
-    width: 100%;
-    max-width: none;
-    min-width: 0;
-    height: 240px;
-    border-radius: var(--bs-card-border-radius);
+  .ide-layout {
+    gap: 0;
   }
 
   .ide-editor-card {
@@ -237,5 +264,28 @@
 
   .ide-sidebar-resizer {
     display: none;
+  }
+
+  .ide-tabs {
+    padding: 0.35rem;
+    gap: 0.35rem;
+  }
+
+  .ide-tab {
+    max-width: 18rem;
+  }
+
+  .ide-tab-context {
+    max-width: 6.5rem;
+  }
+
+  .ide-tab-close {
+    width: 1.75rem;
+    height: 1.75rem;
+  }
+
+  .ide-editor .cm-minimap,
+  .ide-editor-minimap {
+    display: none !important;
   }
 }

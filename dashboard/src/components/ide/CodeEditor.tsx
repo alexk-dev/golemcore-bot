@@ -159,7 +159,7 @@ export function CodeEditor({
   }, [filePath, onCursorChange, showMinimap]);
 
   return (
-    <div className="ide-editor h-100" id="ide-editor-panel" role="tabpanel" aria-label="Code editor">
+    <div className="ide-editor h-full" id="ide-editor-panel" role="tabpanel" aria-label="Code editor">
       <CodeMirror
         value={value}
         height="100%"
