@@ -110,12 +110,12 @@ export function QuickOpenModal({
       <Modal.Body className="p-0">
         <div className="border-b border-border/80 px-5 pb-3 pt-5">
           <label className="relative block">
-            <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
               <FiSearch size={14} />
             </span>
             <Input
               ref={inputRef}
-              className="h-10 rounded-xl border-border/80 bg-background/80 pl-9 pr-3 text-sm shadow-none"
+              className="h-10 rounded-xl border-border/80 bg-background/80 pl-11 pr-3 text-sm shadow-none"
               value={query}
               onChange={(event) => onQueryChange(event.target.value)}
               onKeyDown={handleKeyDown}

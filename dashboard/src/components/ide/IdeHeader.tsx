@@ -44,11 +44,11 @@ export function IdeHeader({
 
       <div className="ide-toolbar flex flex-wrap items-center gap-2">
         <label className="ide-search-group relative block">
-          <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
             <FiSearch size={14} />
           </span>
           <Input
-            className="h-9 rounded-xl border-border/80 bg-background/80 pl-9 pr-3 text-sm shadow-none"
+            className="h-9 rounded-xl border-border/80 bg-background/80 pl-11 pr-3 text-sm shadow-none"
             value={treeSearchQuery}
             onChange={(event) => onTreeSearchQueryChange(event.target.value)}
             placeholder="Search in file tree"
