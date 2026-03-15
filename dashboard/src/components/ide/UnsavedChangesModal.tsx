@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react';
-import { Button, Modal } from 'react-bootstrap';
+import { Button } from '../ui/button';
+import { Modal } from '../ui/bootstrap-overlay';
 
 export interface UnsavedChangesModalProps {
   show: boolean;
@@ -19,22 +20,22 @@ export function UnsavedChangesModal({
   onCancel,
 }: UnsavedChangesModalProps): ReactElement {
   return (
-    <Modal show={show} onHide={onCancel} centered>
+    <Modal show={show} onHide={onCancel} centered size="sm">
       <Modal.Header closeButton>
         <Modal.Title>Unsaved changes</Modal.Title>
       </Modal.Header>
-      <Modal.Body className="text-body-secondary">
-        File <strong className="text-body">{fileTitle}</strong> has unsaved changes.
+      <Modal.Body className="text-sm leading-6 text-muted-foreground">
+        File <strong className="text-foreground">{fileTitle}</strong> has unsaved changes.
         Do you want to save before closing?
       </Modal.Body>
       <Modal.Footer>
         <Button variant="secondary" onClick={onCancel} disabled={isProcessing}>
           Cancel
         </Button>
-        <Button variant="outline-danger" onClick={onCloseWithoutSaving} disabled={isProcessing}>
+        <Button variant="destructive" onClick={onCloseWithoutSaving} disabled={isProcessing}>
           Close without saving
         </Button>
-        <Button variant="primary" onClick={onSaveAndClose} disabled={isProcessing}>
+        <Button variant="default" onClick={onSaveAndClose} disabled={isProcessing}>
           {isProcessing ? 'Saving...' : 'Save and close'}
         </Button>
       </Modal.Footer>

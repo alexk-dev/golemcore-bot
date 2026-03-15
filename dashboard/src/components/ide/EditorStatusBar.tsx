@@ -22,40 +22,15 @@ function formatFileSize(fileSizeBytes: number): string {
 
 function formatUpdatedAt(updatedAt: string | null): string {
   if (updatedAt == null || updatedAt.length === 0) {
-    return 'not saved';
+    return 'Unsaved';
   }
 
   const parsed = new Date(updatedAt);
   if (Number.isNaN(parsed.getTime())) {
-    return 'not saved';
+    return 'Unsaved';
   }
 
   return parsed.toLocaleString();
-}
-
-function getLanguageIcon(language: string): string {
-  const icons: Record<string, string> = {
-    java: '☕',
-    typescript: '🔷',
-    javascript: '🟨',
-    json: '🧩',
-    markdown: '📝',
-    yaml: '📘',
-    xml: '🧷',
-    html: '🌐',
-    css: '🎨',
-    scss: '🎨',
-    bash: '💻',
-    python: '🐍',
-    go: '🐹',
-    rust: '🦀',
-    kotlin: '🟣',
-    sql: '🗄️',
-    toml: '⚙️',
-    ini: '⚙️',
-  };
-
-  return icons[language] ?? '📄';
 }
 
 export function EditorStatusBar({
@@ -67,18 +42,20 @@ export function EditorStatusBar({
   updatedAt,
 }: EditorStatusBarProps): ReactElement {
   return (
-    <div className="ide-statusbar d-flex align-items-center justify-content-between px-3 py-2 border-bottom small">
-      <div className="text-truncate pe-2" title={activePath ?? ''}>
+    <div className="ide-statusbar flex min-h-[2.5rem] items-center justify-between gap-3 border-b border-border/80 px-4 py-2 text-xs text-muted-foreground">
+      <div className="min-w-0 truncate pr-2" title={activePath ?? ''}>
         {activePath ?? 'No file selected'}
       </div>
-      <div className="text-body-secondary d-flex align-items-center gap-3">
-        <span title={language}>{getLanguageIcon(language)} {language.toUpperCase()}</span>
+      <div className="flex items-center gap-3 whitespace-nowrap">
+        <span className="rounded-full border border-border/80 bg-background/80 px-2 py-1 font-medium text-foreground" title={language}>
+          {language.toUpperCase()}
+        </span>
         <span>{formatFileSize(fileSizeBytes)}</span>
-        <span title={updatedAt ?? ''}>Updated: {formatUpdatedAt(updatedAt)}</span>
+        <span title={updatedAt ?? ''}>Saved: {formatUpdatedAt(updatedAt)}</span>
         <span>
           Ln {line}, Col {column}
         </span>
-        <span className="d-flex align-items-center gap-1">
+        <span className="hidden items-center gap-1 xl:inline-flex">
           <FiInfo size={14} />
           <span>Ctrl/Cmd + S save · Ctrl/Cmd + P quick open</span>
         </span>
@@ -104,8 +81,12 @@ export function EditorContentState({
 }: EditorContentStateProps): ReactElement {
   if (isFileOpening) {
     return (
-      <div className="h-100 d-flex align-items-center justify-content-center text-body-secondary gap-2">
-        <span className="spinner-border spinner-border-sm" role="status" aria-hidden />
+      <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
+        <span
+          className="h-4 w-4 animate-spin rounded-full border-2 border-border border-t-primary"
+          role="status"
+          aria-hidden
+        />
         <span>Opening file...</span>
       </div>
     );
@@ -113,9 +94,16 @@ export function EditorContentState({
 
   if (hasFileLoadError) {
     return (
-      <div className="alert alert-danger m-3 d-flex align-items-center justify-content-between gap-3" role="alert">
+      <div
+        className="m-4 flex items-center justify-between gap-3 rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+        role="alert"
+      >
         <span>Failed to load file content.</span>
-        <button type="button" className="btn btn-sm btn-outline-danger" onClick={onRetry}>
+        <button
+          type="button"
+          className="inline-flex h-8 items-center justify-center rounded-lg border border-destructive/40 px-3 text-xs font-semibold text-destructive transition-colors hover:bg-destructive/10"
+          onClick={onRetry}
+        >
           Retry
         </button>
       </div>
@@ -124,7 +112,7 @@ export function EditorContentState({
 
   if (!hasActiveTab) {
     return (
-      <div className="h-100 d-flex align-items-center justify-content-center text-body-secondary">
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
         Open a file from the tree to start editing.
       </div>
     );
