@@ -349,6 +349,11 @@ textarea:focus-visible,
   width: 2.125rem;
   height: 2.125rem;
   border-radius: 0.5rem;
+
+  svg {
+    display: block;
+    color: currentColor;
+  }
 }
 
 .topbar-action-btn {

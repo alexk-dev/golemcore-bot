@@ -309,6 +309,11 @@ public class RuntimeConfig {
         private Boolean enabled = true;
         @Builder.Default
         private Boolean progressiveLoading = true;
+        private String marketplaceSourceType;
+        private String marketplaceRepositoryDirectory;
+        private String marketplaceSandboxPath;
+        private String marketplaceRepositoryUrl;
+        private String marketplaceBranch;
     }
 
     @Data

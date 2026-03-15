@@ -87,6 +87,10 @@ Optional next steps in Settings:
 - `Plugin Marketplace` to install official integrations such as browser, search, mail, weather, LightRAG, and voice providers
 - `Auto Mode` plus `/dashboard/scheduler` to create cron-based autonomous runs for goals/tasks
 
+Optional next steps outside Settings:
+
+- `Skills -> Marketplace` to install standalone skills or packs from a local `golemcore-skills` checkout, a direct `registry/` path, or the default remote repository
+
 ## Your First Conversation
 
 Use the dashboard chat UI.
