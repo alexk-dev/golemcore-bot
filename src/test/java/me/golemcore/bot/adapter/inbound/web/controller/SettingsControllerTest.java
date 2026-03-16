@@ -61,6 +61,7 @@ class SettingsControllerTest {
         registerSttProvider("golemcore/elevenlabs", "elevenlabs");
         registerSttProvider("golemcore/whisper", "whisper");
         registerTtsProvider("golemcore/elevenlabs", "elevenlabs");
+        registerTtsProvider("golemcore/whisper", "whisper");
         controller = new SettingsController(preferencesService, modelSelectionService, runtimeConfigService,
                 memoryPresetService, sttProviderRegistry, ttsProviderRegistry);
         when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(RuntimeConfig.builder().build());
@@ -1045,7 +1046,7 @@ class SettingsControllerTest {
     }
 
     @Test
-    void shouldRejectWhisperSttWithoutUrl() {
+    void shouldAllowWhisperAsBothSttAndTtsWithoutLegacyUrl() {
         RuntimeConfig runtimeConfig = RuntimeConfig.builder()
                 .voice(RuntimeConfig.VoiceConfig.builder().build())
                 .build();
@@ -1053,11 +1054,17 @@ class SettingsControllerTest {
 
         RuntimeConfig.VoiceConfig incoming = RuntimeConfig.VoiceConfig.builder()
                 .sttProvider("whisper")
+                .ttsProvider("whisper")
                 .build();
 
-        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                () -> controller.updateVoiceConfig(incoming));
-        assertTrue(error.getMessage().contains("voice.whisperSttUrl is required"));
+        StepVerifier.create(controller.updateVoiceConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        RuntimeConfig.VoiceConfig saved = runtimeConfig.getVoice();
+        assertEquals("golemcore/whisper", saved.getSttProvider());
+        assertEquals("golemcore/whisper", saved.getTtsProvider());
+        assertNull(saved.getWhisperSttUrl());
     }
 
     @Test
@@ -1069,7 +1076,7 @@ class SettingsControllerTest {
 
         RuntimeConfig.VoiceConfig incoming = RuntimeConfig.VoiceConfig.builder()
                 .sttProvider("elevenlabs")
-                .ttsProvider("whisper")
+                .ttsProvider("google")
                 .build();
 
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
@@ -1140,8 +1147,7 @@ class SettingsControllerTest {
 
         RuntimeConfig.VoiceConfig incoming = RuntimeConfig.VoiceConfig.builder()
                 .sttProvider("  WHISPER  ")
-                .ttsProvider("  ELEVENLABS  ")
-                .whisperSttUrl("http://localhost:5092")
+                .ttsProvider("  WHISPER  ")
                 .build();
 
         StepVerifier.create(controller.updateVoiceConfig(incoming))
@@ -1150,7 +1156,7 @@ class SettingsControllerTest {
 
         RuntimeConfig.VoiceConfig saved = runtimeConfig.getVoice();
         assertEquals("golemcore/whisper", saved.getSttProvider());
-        assertEquals("golemcore/elevenlabs", saved.getTtsProvider());
+        assertEquals("golemcore/whisper", saved.getTtsProvider());
     }
 
     @Test
@@ -1171,21 +1177,30 @@ class SettingsControllerTest {
     }
 
     @Test
-    void shouldRejectWhisperSttWithInvalidUrl() {
+    void shouldAllowRuntimeConfigUpdateWhenLegacyWhisperUrlIsInvalid() {
         RuntimeConfig runtimeConfig = RuntimeConfig.builder()
-                .voice(RuntimeConfig.VoiceConfig.builder().build())
+                .voice(RuntimeConfig.VoiceConfig.builder()
+                        .whisperSttUrl("ftp://localhost:5092")
+                        .build())
                 .build();
         when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
 
-        RuntimeConfig.VoiceConfig incoming = RuntimeConfig.VoiceConfig.builder()
-                .sttProvider("whisper")
-                .ttsProvider("elevenlabs")
-                .whisperSttUrl("ftp://localhost:5092")
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .voice(RuntimeConfig.VoiceConfig.builder()
+                        .sttProvider("whisper")
+                        .ttsProvider("whisper")
+                        .build())
                 .build();
 
-        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                () -> controller.updateVoiceConfig(incoming));
-        assertTrue(error.getMessage().contains("voice.whisperSttUrl must be a valid http(s) URL"));
+        StepVerifier.create(controller.updateRuntimeConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        RuntimeConfig saved = captor.getValue();
+        assertEquals("golemcore/whisper", saved.getVoice().getSttProvider());
+        assertEquals("golemcore/whisper", saved.getVoice().getTtsProvider());
     }
 
     @Test
@@ -1283,7 +1298,7 @@ class SettingsControllerTest {
     }
 
     @Test
-    void shouldValidateVoiceConfigInRuntimeUpdate() {
+    void shouldAllowWhisperVoiceConfigInRuntimeUpdate() {
         RuntimeConfig current = RuntimeConfig.builder()
                 .voice(RuntimeConfig.VoiceConfig.builder().build())
                 .build();
@@ -1291,14 +1306,20 @@ class SettingsControllerTest {
 
         RuntimeConfig incoming = RuntimeConfig.builder()
                 .voice(RuntimeConfig.VoiceConfig.builder()
-                        .sttProvider("elevenlabs")
+                        .sttProvider("whisper")
                         .ttsProvider("whisper")
                         .build())
                 .build();
 
-        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                () -> controller.updateRuntimeConfig(incoming));
-        assertTrue(error.getMessage().contains("voice.ttsProvider must resolve to a loaded TTS provider"));
+        StepVerifier.create(controller.updateRuntimeConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        RuntimeConfig saved = captor.getValue();
+        assertEquals("golemcore/whisper", saved.getVoice().getSttProvider());
+        assertEquals("golemcore/whisper", saved.getVoice().getTtsProvider());
     }
 
     private void registerSttProvider(String providerId, String alias) {

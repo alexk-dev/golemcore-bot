@@ -87,7 +87,7 @@ public class PluginVoicePort implements VoicePort {
                         && ttsProviderRegistry.find(ttsProviderId).map(TtsProvider::isAvailable).orElse(false));
     }
 
-    private String normalizeProviderId(String rawProviderId, boolean stt) {
+    private String normalizeProviderId(String rawProviderId) {
         if (rawProviderId == null || rawProviderId.isBlank()) {
             return null;
         }
@@ -95,14 +95,14 @@ public class PluginVoicePort implements VoicePort {
         if (LEGACY_ELEVENLABS_PROVIDER.equals(normalized)) {
             return CANONICAL_ELEVENLABS_PROVIDER;
         }
-        if (stt && LEGACY_WHISPER_PROVIDER.equals(normalized)) {
+        if (LEGACY_WHISPER_PROVIDER.equals(normalized)) {
             return DEFAULT_WHISPER_PROVIDER;
         }
         return normalized;
     }
 
     private String resolveSttProviderId() {
-        String configuredProviderId = normalizeProviderId(runtimeConfigService.getSttProvider(), true);
+        String configuredProviderId = normalizeProviderId(runtimeConfigService.getSttProvider());
         if (configuredProviderId != null) {
             return configuredProviderId;
         }
@@ -110,7 +110,7 @@ public class PluginVoicePort implements VoicePort {
     }
 
     private String resolveTtsProviderId() {
-        String configuredProviderId = normalizeProviderId(runtimeConfigService.getTtsProvider(), false);
+        String configuredProviderId = normalizeProviderId(runtimeConfigService.getTtsProvider());
         if (configuredProviderId != null) {
             return configuredProviderId;
         }
