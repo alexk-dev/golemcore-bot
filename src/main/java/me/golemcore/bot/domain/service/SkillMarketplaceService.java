@@ -351,8 +351,7 @@ public class SkillMarketplaceService {
                             MaintainerManifest manifest = parseMaintainerManifest(Files.readString(path));
                             String maintainerId = normalizeSlug(firstNonBlank(
                                     trimToNull(manifest.getId()),
-                                    trimToNull(path.getParent() != null ? path.getParent().getFileName().toString()
-                                            : null)));
+                                    trimToNull(parentDirectoryNameOrNull(path))));
                             maintainers.putIfAbsent(maintainerId, new MaintainerInfo(
                                     maintainerId,
                                     firstNonBlank(trimToNull(manifest.getDisplayName()), maintainerId)));
@@ -591,7 +590,7 @@ public class SkillMarketplaceService {
                     .filter(path -> SKILL_FILE.equals(fileNameOrEmpty(path)))
                     .sorted()
                     .map(path -> {
-                        String skillId = normalizeSlug(path.getParent().getFileName().toString());
+                        String skillId = normalizeSlug(requireParentDirectoryName(path));
                         String relativePath = artifactDir.relativize(path).toString().replace('\\', '/');
                         return new ArtifactSkillEntry(skillId, relativePath);
                     })
@@ -1022,6 +1021,29 @@ public class SkillMarketplaceService {
             }
         }
         return normalized;
+    }
+
+    private String parentDirectoryNameOrNull(Path path) {
+        if (path == null) {
+            return null;
+        }
+        Path parent = path.getParent();
+        if (parent == null) {
+            return null;
+        }
+        Path fileName = parent.getFileName();
+        if (fileName == null) {
+            return null;
+        }
+        return fileName.toString();
+    }
+
+    private String requireParentDirectoryName(Path path) {
+        String value = parentDirectoryNameOrNull(path);
+        if (value == null || value.isBlank()) {
+            throw new IllegalStateException("Path has no parent directory name: " + path);
+        }
+        return value;
     }
 
     private String normalizeArtifactType(String value) {

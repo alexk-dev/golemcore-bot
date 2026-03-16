@@ -1,6 +1,5 @@
 package me.golemcore.bot.auto;
 
-import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AutoModeChannelRegisteredEvent;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.AgentSession;
@@ -11,6 +10,7 @@ import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
+import me.golemcore.bot.domain.service.SessionRunCoordinator;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.SessionPort;
@@ -24,6 +24,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -48,7 +51,7 @@ class AutoModeSchedulerTest {
 
     private AutoModeService autoModeService;
     private ScheduleService scheduleService;
-    private AgentLoop agentLoop;
+    private SessionRunCoordinator sessionRunCoordinator;
     private GoalManagementTool goalManagementTool;
     private ChannelPort channelPort;
     private RuntimeConfigService runtimeConfigService;
@@ -59,7 +62,7 @@ class AutoModeSchedulerTest {
     void setUp() {
         autoModeService = mock(AutoModeService.class);
         scheduleService = mock(ScheduleService.class);
-        agentLoop = mock(AgentLoop.class);
+        sessionRunCoordinator = mock(SessionRunCoordinator.class);
         goalManagementTool = mock(GoalManagementTool.class);
         channelPort = mock(ChannelPort.class);
         sessionPort = mock(SessionPort.class);
@@ -68,6 +71,7 @@ class AutoModeSchedulerTest {
         when(channelPort.sendMessage(anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
         when(scheduleService.getDueSchedules()).thenReturn(List.of());
+        when(sessionRunCoordinator.submit(any(Message.class))).thenReturn(CompletableFuture.completedFuture(null));
 
         runtimeConfigService = mock(RuntimeConfigService.class);
         when(runtimeConfigService.isAutoModeEnabled()).thenReturn(true);
@@ -76,7 +80,7 @@ class AutoModeSchedulerTest {
         when(runtimeConfigService.isAutoStartEnabled()).thenReturn(false);
 
         scheduler = new AutoModeScheduler(
-                autoModeService, scheduleService, agentLoop, runtimeConfigService,
+                autoModeService, scheduleService, sessionRunCoordinator, runtimeConfigService,
                 goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort);
     }
 
@@ -86,7 +90,7 @@ class AutoModeSchedulerTest {
 
         scheduler.tick();
 
-        verify(agentLoop, never()).processMessage(any(Message.class));
+        verify(sessionRunCoordinator, never()).submit(any(Message.class));
         verify(scheduleService, never()).getDueSchedules();
     }
 
@@ -97,7 +101,7 @@ class AutoModeSchedulerTest {
 
         scheduler.tick();
 
-        verify(agentLoop, never()).processMessage(any(Message.class));
+        verify(sessionRunCoordinator, never()).submit(any(Message.class));
     }
 
     @Test
@@ -133,7 +137,7 @@ class AutoModeSchedulerTest {
         scheduler.tick();
 
         ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
-        verify(agentLoop).processMessage(captor.capture());
+        verify(sessionRunCoordinator).submit(captor.capture());
 
         Message sent = captor.getValue();
         assertTrue(sent.getContent().contains("Write unit tests"));
@@ -169,7 +173,7 @@ class AutoModeSchedulerTest {
         scheduler.tick();
 
         ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
-        verify(agentLoop).processMessage(captor.capture());
+        verify(sessionRunCoordinator).submit(captor.capture());
 
         Message sent = captor.getValue();
         assertTrue(sent.getContent().contains("Plan tasks for goal"));
@@ -204,7 +208,7 @@ class AutoModeSchedulerTest {
         scheduler.tick();
 
         ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
-        verify(agentLoop).processMessage(captor.capture());
+        verify(sessionRunCoordinator).submit(captor.capture());
 
         Message sent = captor.getValue();
         assertTrue(sent.getContent().contains("Break the release down into concrete tasks"));
@@ -242,7 +246,7 @@ class AutoModeSchedulerTest {
         scheduler.tick();
 
         ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
-        verify(agentLoop).processMessage(captor.capture());
+        verify(sessionRunCoordinator).submit(captor.capture());
 
         Message sent = captor.getValue();
         assertTrue(sent.getContent().contains("Implement feature X"));
@@ -282,7 +286,7 @@ class AutoModeSchedulerTest {
         scheduler.tick();
 
         ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
-        verify(agentLoop).processMessage(captor.capture());
+        verify(sessionRunCoordinator).submit(captor.capture());
 
         Message sent = captor.getValue();
         assertTrue(sent.getContent().contains("migration, tests, and rollout notes"));
@@ -320,7 +324,7 @@ class AutoModeSchedulerTest {
         scheduler.tick();
 
         ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
-        verify(agentLoop).processMessage(captor.capture());
+        verify(sessionRunCoordinator).submit(captor.capture());
 
         Message sent = captor.getValue();
         assertTrue(sent.getContent().contains("Check support queue"));
@@ -363,7 +367,7 @@ class AutoModeSchedulerTest {
         scheduler.tick();
 
         // Both ticks should have processed (no concurrent blocking in sequential test)
-        verify(agentLoop, org.mockito.Mockito.times(2)).processMessage(any(Message.class));
+        verify(sessionRunCoordinator, org.mockito.Mockito.times(2)).submit(any(Message.class));
     }
 
     @Test
@@ -391,6 +395,52 @@ class AutoModeSchedulerTest {
         scheduler.tick();
 
         verify(scheduleService).recordExecution("sched-goal-rec");
+    }
+
+    @Test
+    void shouldWaitForCoordinatorCompletionBeforeRecordingExecution() throws Exception {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>())
+                .createdAt(Instant.now())
+                .build();
+        when(autoModeService.getGoal(GOAL_ID)).thenReturn(Optional.of(goal));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-goal-await")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId(GOAL_ID)
+                .cronExpression(TEST_CRON)
+                .enabled(true)
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        CompletableFuture<Void> completion = new CompletableFuture<>();
+        CountDownLatch submitted = new CountDownLatch(1);
+        when(sessionRunCoordinator.submit(any(Message.class))).thenAnswer(invocation -> {
+            submitted.countDown();
+            return completion;
+        });
+
+        AtomicBoolean finished = new AtomicBoolean(false);
+        Thread tickThread = new Thread(() -> {
+            scheduler.tick();
+            finished.set(true);
+        });
+        tickThread.start();
+
+        assertTrue(submitted.await(1, TimeUnit.SECONDS));
+        verify(scheduleService, never()).recordExecution("sched-goal-await");
+
+        completion.complete(null);
+        tickThread.join(1000);
+
+        assertTrue(finished.get());
+        verify(scheduleService).recordExecution("sched-goal-await");
     }
 
     @Test
@@ -426,7 +476,7 @@ class AutoModeSchedulerTest {
         scheduler.tick();
 
         verify(sessionPort).clearMessages(CHANNEL_TYPE_TELEGRAM + ":session-42");
-        verify(agentLoop).processMessage(any(Message.class));
+        verify(sessionRunCoordinator).submit(any(Message.class));
     }
 
     @Test
@@ -445,7 +495,7 @@ class AutoModeSchedulerTest {
 
         scheduler.tick();
 
-        verify(agentLoop, never()).processMessage(any(Message.class));
+        verify(sessionRunCoordinator, never()).submit(any(Message.class));
         verify(scheduleService).recordExecution("sched-goal-missing");
     }
 
@@ -472,7 +522,7 @@ class AutoModeSchedulerTest {
 
         scheduler.tick();
 
-        verify(agentLoop, never()).processMessage(any(Message.class));
+        verify(sessionRunCoordinator, never()).submit(any(Message.class));
     }
 
     @Test
@@ -506,7 +556,7 @@ class AutoModeSchedulerTest {
 
         scheduler.tick();
 
-        verify(agentLoop, never()).processMessage(any(Message.class));
+        verify(sessionRunCoordinator, never()).submit(any(Message.class));
     }
 
     // ===== Channel registration =====
@@ -607,7 +657,7 @@ class AutoModeSchedulerTest {
         scheduler.tick();
 
         ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
-        verify(agentLoop).processMessage(captor.capture());
+        verify(sessionRunCoordinator).submit(captor.capture());
 
         Message sent = captor.getValue();
         assertEquals("chat-999", sent.getChatId());
@@ -639,7 +689,7 @@ class AutoModeSchedulerTest {
         scheduler.tick();
 
         ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
-        verify(agentLoop).processMessage(captor.capture());
+        verify(sessionRunCoordinator).submit(captor.capture());
 
         Message sent = captor.getValue();
         assertEquals("auto", sent.getChatId());
@@ -651,7 +701,7 @@ class AutoModeSchedulerTest {
     @Test
     void shutdownDoesNotThrowWhenNotInitialized() {
         AutoModeScheduler freshScheduler = new AutoModeScheduler(
-                autoModeService, scheduleService, agentLoop, runtimeConfigService,
+                autoModeService, scheduleService, sessionRunCoordinator, runtimeConfigService,
                 goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort);
 
         assertDoesNotThrow(freshScheduler::shutdown);
@@ -665,7 +715,7 @@ class AutoModeSchedulerTest {
         when(autoModeService.isAutoModeEnabled()).thenReturn(false);
 
         AutoModeScheduler newScheduler = new AutoModeScheduler(
-                autoModeService, scheduleService, agentLoop, runtimeConfigService,
+                autoModeService, scheduleService, sessionRunCoordinator, runtimeConfigService,
                 goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort);
 
         newScheduler.init();
@@ -680,7 +730,7 @@ class AutoModeSchedulerTest {
         when(runtimeConfigService.isAutoStartEnabled()).thenReturn(false);
 
         AutoModeScheduler newScheduler = new AutoModeScheduler(
-                autoModeService, scheduleService, agentLoop, runtimeConfigService,
+                autoModeService, scheduleService, sessionRunCoordinator, runtimeConfigService,
                 goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort);
 
         newScheduler.init();
@@ -696,7 +746,7 @@ class AutoModeSchedulerTest {
         when(autoModeService.isAutoModeEnabled()).thenReturn(true);
 
         AutoModeScheduler newScheduler = new AutoModeScheduler(
-                autoModeService, scheduleService, agentLoop, runtimeConfigService,
+                autoModeService, scheduleService, sessionRunCoordinator, runtimeConfigService,
                 goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort);
 
         newScheduler.init();
@@ -711,7 +761,7 @@ class AutoModeSchedulerTest {
         when(runtimeConfigService.isAutoModeEnabled()).thenReturn(false);
 
         AutoModeScheduler newScheduler = new AutoModeScheduler(
-                autoModeService, scheduleService, agentLoop, runtimeConfigService,
+                autoModeService, scheduleService, sessionRunCoordinator, runtimeConfigService,
                 goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort);
 
         newScheduler.init();
@@ -730,7 +780,7 @@ class AutoModeSchedulerTest {
         scheduler.tick();
 
         verify(scheduleService, never()).getDueSchedules();
-        verify(agentLoop, never()).processMessage(any(Message.class));
+        verify(sessionRunCoordinator, never()).submit(any(Message.class));
     }
 
     @Test
@@ -759,6 +809,6 @@ class AutoModeSchedulerTest {
         scheduler.tick();
         scheduler.tick();
 
-        verify(agentLoop, org.mockito.Mockito.times(1)).processMessage(any(Message.class));
+        verify(sessionRunCoordinator, org.mockito.Mockito.times(1)).submit(any(Message.class));
     }
 }

@@ -309,7 +309,7 @@ public class SkillsController {
 
     private Map<String, Object> toRequirementsMap(Skill skill) {
         if (skill.getRequirements() == null) {
-            return null;
+            return new LinkedHashMap<>();
         }
         Map<String, Object> requirements = new LinkedHashMap<>();
         if (skill.getRequirements().getEnvVars() != null && !skill.getRequirements().getEnvVars().isEmpty()) {
@@ -321,6 +321,6 @@ public class SkillsController {
         if (skill.getRequirements().getSkills() != null && !skill.getRequirements().getSkills().isEmpty()) {
             requirements.put("skills", skill.getRequirements().getSkills());
         }
-        return requirements.isEmpty() ? null : requirements;
+        return requirements;
     }
 }

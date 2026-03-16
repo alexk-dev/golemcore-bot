@@ -18,7 +18,6 @@ package me.golemcore.bot.auto;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AutoRunKind;
 import me.golemcore.bot.domain.model.AutoModeChannelRegisteredEvent;
 import me.golemcore.bot.domain.model.AutoTask;
@@ -26,11 +25,10 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ScheduleEntry;
-import me.golemcore.bot.domain.service.AutoRunContextSupport;
-import me.golemcore.bot.domain.service.MdcSupport;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
+import me.golemcore.bot.domain.service.SessionRunCoordinator;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.SessionPort;
@@ -47,7 +45,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -65,7 +62,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * <ul>
  * <li>Ticks at a configurable interval (default 30 seconds)</li>
  * <li>Checks for due schedules via {@link ScheduleService}</li>
- * <li>Sends synthetic messages to the agent loop for due goals/tasks</li>
+ * <li>Submits synthetic messages through {@link SessionRunCoordinator} for due
+ * goals/tasks</li>
  * <li>Sends milestone notifications to configured channels</li>
  * </ul>
  *
@@ -86,7 +84,7 @@ public class AutoModeScheduler {
 
     private final AutoModeService autoModeService;
     private final ScheduleService scheduleService;
-    private final AgentLoop agentLoop;
+    private final SessionRunCoordinator sessionRunCoordinator;
     private final RuntimeConfigService runtimeConfigService;
     private final GoalManagementTool goalManagementTool;
     private final ChannelRegistry channelRegistry;
@@ -100,11 +98,11 @@ public class AutoModeScheduler {
     private ScheduledFuture<?> tickTask;
 
     public AutoModeScheduler(AutoModeService autoModeService, ScheduleService scheduleService,
-            AgentLoop agentLoop, RuntimeConfigService runtimeConfigService,
+            SessionRunCoordinator sessionRunCoordinator, RuntimeConfigService runtimeConfigService,
             GoalManagementTool goalManagementTool, ChannelRegistry channelRegistry, SessionPort sessionPort) {
         this.autoModeService = autoModeService;
         this.scheduleService = scheduleService;
-        this.agentLoop = agentLoop;
+        this.sessionRunCoordinator = sessionRunCoordinator;
         this.runtimeConfigService = runtimeConfigService;
         this.goalManagementTool = goalManagementTool;
         this.channelRegistry = channelRegistry;
@@ -262,16 +260,8 @@ public class AutoModeScheduler {
         if (schedule.isClearContextBeforeRun()) {
             clearSessionContext(channelType, sessionChatId, schedule.getId());
         }
-        Map<String, String> mdcContext = AutoRunContextSupport.buildMdcContext(
-                channelType,
-                sessionChatId,
-                transportChatId,
-                schedule.getId(),
-                runId,
-                scheduleMessage.goalId(),
-                scheduleMessage.taskId());
 
-        try (MdcSupport.Scope ignored = MdcSupport.withContext(mdcContext)) {
+        try {
             log.info("[AutoScheduler] Processing schedule {}: {}", schedule.getId(), scheduleMessage.content());
 
             Map<String, Object> metadata = new LinkedHashMap<>();
@@ -298,10 +288,7 @@ public class AutoModeScheduler {
                     .timestamp(Instant.now())
                     .build();
 
-            Map<String, String> asyncContext = MdcSupport.capture();
-            CompletableFuture.runAsync(() -> MdcSupport.runWithContext(
-                    asyncContext,
-                    () -> agentLoop.processMessage(syntheticMessage))).get(timeoutMinutes, TimeUnit.MINUTES);
+            sessionRunCoordinator.submit(syntheticMessage).get(timeoutMinutes, TimeUnit.MINUTES);
         } catch (TimeoutException e) {
             log.error("[AutoScheduler] Schedule {} timed out after {} minutes",
                     schedule.getId(), timeoutMinutes);

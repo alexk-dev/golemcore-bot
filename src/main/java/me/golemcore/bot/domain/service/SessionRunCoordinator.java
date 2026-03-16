@@ -31,14 +31,17 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.Deque;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
@@ -51,6 +54,8 @@ import java.util.concurrent.Future;
  * </p>
  * <ul>
  * <li>Accept inbound messages while a run is executing (queued).</li>
+ * <li>Expose awaitable submissions for background producers such as auto
+ * mode.</li>
  * <li>/stop: interrupt the current run and pause processing until the next
  * inbound.</li>
  * <li>After /stop, flush queued user messages into raw history before
@@ -71,11 +76,27 @@ public class SessionRunCoordinator {
     private final RuntimeConfigService runtimeConfigService;
 
     private final Map<SessionKey, SessionRunner> runners = new ConcurrentHashMap<>();
+    private final Map<Message, List<CompletableFuture<Void>>> pendingCompletions = Collections
+            .synchronizedMap(new IdentityHashMap<>());
 
     public void enqueue(Message inbound) {
         SessionKey key = new SessionKey(inbound.getChannelType(), inbound.getChatId());
         SessionRunner runner = runners.computeIfAbsent(key, SessionRunner::new);
         runner.enqueue(inbound);
+    }
+
+    /**
+     * Submit a message through the same per-session queue used by external inbound
+     * traffic and return a future that completes when that specific turn is
+     * processed or discarded.
+     */
+    public CompletableFuture<Void> submit(Message inbound) {
+        Objects.requireNonNull(inbound, "inbound");
+
+        CompletableFuture<Void> completion = new CompletableFuture<>();
+        registerPendingCompletion(inbound, completion);
+        enqueue(inbound);
+        return completion;
     }
 
     public void requestStop(String channelType, String chatId) {
@@ -171,11 +192,13 @@ public class SessionRunCoordinator {
             List<Message> queued = new ArrayList<>();
             while (!queuedFollowUpMessages.isEmpty()) {
                 Message followUp = queuedFollowUpMessages.removeFirst();
+                rejectPendingCompletion(followUp, "Skipped after stop request");
                 markQueueKind(followUp, ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP);
                 queued.add(followUp);
             }
             while (!queuedSteeringMessages.isEmpty()) {
                 Message steering = queuedSteeringMessages.removeFirst();
+                rejectPendingCompletion(steering, "Skipped after stop request");
                 markQueueKind(steering, ContextAttributes.TURN_QUEUE_KIND_STEERING);
                 queued.add(steering);
             }
@@ -201,8 +224,10 @@ public class SessionRunCoordinator {
                         flushQueuedMessages(runKey, prefix);
                     }
                     agentLoop.processMessage(inbound);
+                    completePendingCompletion(inbound);
                 } catch (Exception e) { // NOSONAR - must not kill executor thread
                     handleRunFailure(inbound, e);
+                    failPendingCompletion(inbound, e);
                 } finally {
                     onRunComplete();
                 }
@@ -269,7 +294,10 @@ public class SessionRunCoordinator {
                 return;
             }
 
-            queuedSteeringMessages.clear();
+            while (!queuedSteeringMessages.isEmpty()) {
+                Message replaced = queuedSteeringMessages.removeFirst();
+                rejectPendingCompletion(replaced, "Replaced by a newer steering message");
+            }
             queuedSteeringMessages.addLast(inbound);
             log.debug("[SessionRunCoordinator] steering queue mode one-at-a-time: replaced pending steering messages");
         }
@@ -283,7 +311,8 @@ public class SessionRunCoordinator {
             if (queuedFollowUpMessages.isEmpty()) {
                 queuedFollowUpMessages.addLast(inbound);
             } else {
-                queuedFollowUpMessages.removeFirst();
+                Message replaced = queuedFollowUpMessages.removeFirst();
+                rejectPendingCompletion(replaced, "Replaced by a newer follow-up message");
                 queuedFollowUpMessages.addLast(inbound);
                 log.debug(
                         "[SessionRunCoordinator] follow-up queue mode one-at-a-time: replaced pending follow-up message");
@@ -292,7 +321,9 @@ public class SessionRunCoordinator {
 
         private void enqueueWithBound(Deque<Message> queue, Message inbound, String queueLabel) {
             if (queue.size() >= MAX_QUEUED_MESSAGES_PER_SESSION) {
-                queue.removeFirst();
+                Message dropped = queue.removeFirst();
+                rejectPendingCompletion(dropped,
+                        "Dropped oldest pending " + queueLabel + " message due to queue limit");
                 log.warn(
                         "[SessionRunCoordinator] {} queue limit reached ({}), dropped oldest message: channel={}, chatId={}",
                         queueLabel,
@@ -307,10 +338,6 @@ public class SessionRunCoordinator {
             Message first = queue.removeFirst();
             StringBuilder builder = new StringBuilder();
             appendMergedChunk(builder, first.getContent());
-            while (!queue.isEmpty()) {
-                Message next = queue.removeFirst();
-                appendMergedChunk(builder, next.getContent());
-            }
             Message merged = Message.builder()
                     .id(first.getId())
                     .role(first.getRole())
@@ -321,6 +348,13 @@ public class SessionRunCoordinator {
                     .timestamp(first.getTimestamp())
                     .metadata(first.getMetadata() != null ? new LinkedHashMap<>(first.getMetadata()) : null)
                     .build();
+            transferPendingCompletions(first, merged);
+            while (!queue.isEmpty()) {
+                Message next = queue.removeFirst();
+                appendMergedChunk(builder, next.getContent());
+                transferPendingCompletions(next, merged);
+            }
+            merged.setContent(builder.toString());
             markQueueKind(merged, queueKind);
             return merged;
         }
@@ -388,6 +422,49 @@ public class SessionRunCoordinator {
             }
             log.info("[SessionRunCoordinator] flushed {} queued messages ({} -> {})",
                     prefix.size(), before, session.getMessages().size());
+        }
+    }
+
+    private void registerPendingCompletion(Message message, CompletableFuture<Void> completion) {
+        synchronized (pendingCompletions) {
+            pendingCompletions.computeIfAbsent(message, ignored -> new ArrayList<>()).add(completion);
+        }
+    }
+
+    private void transferPendingCompletions(Message source, Message target) {
+        List<CompletableFuture<Void>> completions = removePendingCompletions(source);
+        if (completions.isEmpty()) {
+            return;
+        }
+
+        synchronized (pendingCompletions) {
+            pendingCompletions.computeIfAbsent(target, ignored -> new ArrayList<>()).addAll(completions);
+        }
+    }
+
+    private void completePendingCompletion(Message message) {
+        for (CompletableFuture<Void> completion : removePendingCompletions(message)) {
+            completion.complete(null);
+        }
+    }
+
+    private void failPendingCompletion(Message message, Throwable failure) {
+        for (CompletableFuture<Void> completion : removePendingCompletions(message)) {
+            completion.completeExceptionally(failure);
+        }
+    }
+
+    private void rejectPendingCompletion(Message message, String reason) {
+        failPendingCompletion(message, new IllegalStateException(reason));
+    }
+
+    private List<CompletableFuture<Void>> removePendingCompletions(Message message) {
+        synchronized (pendingCompletions) {
+            List<CompletableFuture<Void>> completions = pendingCompletions.remove(message);
+            if (completions == null || completions.isEmpty()) {
+                return List.of();
+            }
+            return new ArrayList<>(completions);
         }
     }
 
