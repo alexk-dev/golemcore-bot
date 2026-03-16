@@ -8,7 +8,7 @@ import { useBackgroundSystemUpdateCheck } from '../../hooks/useBackgroundSystemU
 import { useSystemUpdateStatus } from '../../hooks/useSystem';
 import { logout } from '../../api/auth';
 import { type TopbarUpdateNotice, getTopbarUpdateNotice } from '../../utils/systemUpdateUi';
-import { FiAlertCircle, FiArrowUpCircle, FiLogOut, FiMenu, FiMoon, FiRefreshCw, FiSun } from 'react-icons/fi';
+import { FiArrowUpCircle, FiLogOut, FiMenu, FiMoon, FiSun } from 'react-icons/fi';
 
 interface ChatStatusState {
   trackedSessionId: string | null;
@@ -53,36 +53,17 @@ function resolveChatStatus(
   };
 }
 
-function renderUpdateIcon(notice: TopbarUpdateNotice) {
-  if (notice.busy) {
-    return <FiRefreshCw size={17} aria-hidden="true" />;
-  }
-  if (notice.tone === 'danger') {
-    return <FiAlertCircle size={17} aria-hidden="true" />;
-  }
-  return <FiArrowUpCircle size={17} aria-hidden="true" />;
-}
-
 function TopbarUpdateShortcut({ notice, onClick }: { notice: TopbarUpdateNotice; onClick: () => void }) {
   return (
     <button
       type="button"
-      className={`topbar-update-btn topbar-update-btn--${notice.tone}${notice.emphasis ? ' topbar-update-btn--emphasis' : ''}`}
+      className="topbar-icon-btn topbar-update-btn d-flex align-items-center justify-content-center p-0"
       onClick={onClick}
       title={notice.title}
       aria-label={`${notice.title}. Open Settings updates.`}
     >
-      <span className={`topbar-update-icon${notice.busy ? ' topbar-update-icon--busy' : ''}`}>
-        {renderUpdateIcon(notice)}
-      </span>
-      <span className="topbar-update-label">Updates</span>
-      <span className={`topbar-update-badge topbar-update-badge--${notice.tone}`} aria-hidden="true">
-        {notice.badge}
-      </span>
-      <span
-        className={`topbar-update-dot topbar-update-dot--${notice.tone}${notice.emphasis ? ' topbar-update-dot--emphasis' : ''}`}
-        aria-hidden="true"
-      />
+      <FiArrowUpCircle size={17} aria-hidden="true" />
+      <span className="topbar-update-dot" aria-hidden="true" />
     </button>
   );
 }

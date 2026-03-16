@@ -381,114 +381,21 @@ textarea:focus-visible,
 
 .topbar-update-btn {
   position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.55rem;
-  min-width: 0;
-  height: 2.125rem;
-  padding: 0 0.8rem;
-  border: 1px solid rgba(var(--bs-border-color-rgb), 0.92);
-  border-radius: 999px;
-  background:
-    linear-gradient(180deg, rgba(var(--bs-tertiary-bg-rgb), 0.98), rgba(var(--bs-body-bg-rgb), 0.96));
-  color: var(--bs-emphasis-color);
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
-  transition: border-color 0.16s ease, background-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
-}
-
-.topbar-update-btn:hover,
-.topbar-update-btn:focus-visible {
-  transform: translateY(-1px);
-}
-
-.topbar-update-btn--warning {
   border-color: rgba(var(--bs-warning-rgb), 0.42);
-  background:
-    linear-gradient(180deg, rgba(var(--bs-warning-rgb), 0.18), rgba(var(--bs-body-bg-rgb), 0.98));
-}
-
-.topbar-update-btn--warning:hover,
-.topbar-update-btn--warning:focus-visible {
-  border-color: rgba(var(--bs-warning-rgb), 0.6);
+  background-color: rgba(var(--bs-warning-rgb), 0.12);
   box-shadow: 0 12px 28px rgba(var(--bs-warning-rgb), 0.16);
 }
 
-.topbar-update-btn--info {
-  border-color: rgba(var(--bs-info-rgb), 0.34);
-  background:
-    linear-gradient(180deg, rgba(var(--bs-info-rgb), 0.14), rgba(var(--bs-body-bg-rgb), 0.98));
-}
-
-.topbar-update-btn--info:hover,
-.topbar-update-btn--info:focus-visible {
-  border-color: rgba(var(--bs-info-rgb), 0.48);
-  box-shadow: 0 12px 28px rgba(var(--bs-info-rgb), 0.14);
-}
-
-.topbar-update-btn--danger {
-  border-color: rgba(var(--bs-danger-rgb), 0.34);
-  background:
-    linear-gradient(180deg, rgba(var(--bs-danger-rgb), 0.13), rgba(var(--bs-body-bg-rgb), 0.98));
-}
-
-.topbar-update-btn--danger:hover,
-.topbar-update-btn--danger:focus-visible {
-  border-color: rgba(var(--bs-danger-rgb), 0.48);
-  box-shadow: 0 12px 28px rgba(var(--bs-danger-rgb), 0.15);
-}
-
-.topbar-update-btn--emphasis {
-  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
-}
-
-.topbar-update-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.topbar-update-icon--busy svg {
-  animation: spin 1s linear infinite;
-}
-
-.topbar-update-label {
-  font-size: 0.76rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.topbar-update-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 2.35rem;
-  padding: 0.14rem 0.42rem;
-  border-radius: 999px;
-  font-size: 0.64rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.topbar-update-badge--warning {
-  background-color: rgba(var(--bs-warning-rgb), 0.2);
-  color: rgba(var(--bs-warning-rgb), 1);
-}
-
-.topbar-update-badge--info {
-  background-color: rgba(var(--bs-info-rgb), 0.18);
-  color: rgba(var(--bs-info-rgb), 1);
-}
-
-.topbar-update-badge--danger {
-  background-color: rgba(var(--bs-danger-rgb), 0.16);
-  color: rgba(var(--bs-danger-rgb), 1);
-}
-
 .topbar-update-dot {
-  display: none;
+  position: absolute;
+  top: 0.34rem;
+  right: 0.34rem;
+  width: 0.52rem;
+  height: 0.52rem;
+  border-radius: 999px;
+  background-color: rgba(var(--bs-warning-rgb), 1);
+  box-shadow: 0 0 0 0.18rem rgba(var(--bs-warning-rgb), 0.2);
+  animation: status-pulse 1.8s infinite ease-in-out;
 }
 
 .topbar-mobile-menu-btn {
@@ -2470,48 +2377,12 @@ textarea:focus-visible,
   }
 
   .topbar-update-btn {
-    justify-content: center;
-    padding: 0;
     border-radius: 0.75rem;
   }
 
   .topbar-action-btn {
     justify-content: center;
     padding: 0;
-  }
-
-  .topbar-update-label,
-  .topbar-update-badge {
-    display: none;
-  }
-
-  .topbar-update-dot {
-    display: block;
-    position: absolute;
-    top: 0.48rem;
-    right: 0.48rem;
-    width: 0.48rem;
-    height: 0.48rem;
-    border-radius: 999px;
-  }
-
-  .topbar-update-dot--warning {
-    background-color: rgba(var(--bs-warning-rgb), 1);
-    box-shadow: 0 0 0 0.18rem rgba(var(--bs-warning-rgb), 0.22);
-  }
-
-  .topbar-update-dot--info {
-    background-color: rgba(var(--bs-info-rgb), 1);
-    box-shadow: 0 0 0 0.18rem rgba(var(--bs-info-rgb), 0.2);
-  }
-
-  .topbar-update-dot--danger {
-    background-color: rgba(var(--bs-danger-rgb), 1);
-    box-shadow: 0 0 0 0.18rem rgba(var(--bs-danger-rgb), 0.2);
-  }
-
-  .topbar-update-dot--emphasis {
-    animation: status-pulse 1.8s infinite ease-in-out;
   }
 
   .topbar-mobile-menu-btn {

@@ -183,31 +183,20 @@ describe('systemUpdateUi', () => {
       target: { version: '0.4.2' },
       available: { version: '0.4.2' },
     }))).toEqual({
-      badge: 'NEW',
-      tone: 'warning',
-      title: 'Update 0.4.2 is available',
-      busy: false,
-      emphasis: true,
+      title: 'Update 0.4.2 available',
     });
 
     expect(getTopbarUpdateNotice(buildStatus({
       state: 'PREPARING',
       target: { version: '0.4.2' },
       available: { version: '0.4.2' },
-    }))).toEqual({
-      badge: 'UPD',
-      tone: 'info',
-      title: 'Updating to 0.4.2',
-      busy: true,
-      emphasis: false,
-    });
+    }))).toBeNull();
 
-    expect(getTopbarUpdateNotice(buildStatus({ state: 'FAILED' }))).toEqual({
-      badge: 'ERR',
-      tone: 'danger',
-      title: 'Last update attempt failed',
-      busy: false,
-      emphasis: true,
+    expect(getTopbarUpdateNotice(buildStatus({
+      state: 'FAILED',
+      target: { version: '0.4.2' },
+    }))).toEqual({
+      title: 'Update 0.4.2 available',
     });
 
     expect(getTopbarUpdateNotice(buildStatus())).toBeNull();

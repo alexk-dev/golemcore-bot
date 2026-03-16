@@ -72,11 +72,7 @@ export interface SidebarUpdateBadge {
 }
 
 export interface TopbarUpdateNotice {
-  badge: string;
-  tone: 'warning' | 'info' | 'danger';
   title: string;
-  busy: boolean;
-  emphasis: boolean;
 }
 
 export interface BackgroundUpdateCheckStatus {
@@ -229,53 +225,18 @@ export function getSidebarUpdateBadge(state: string): SidebarUpdateBadge | null 
 }
 
 export function getTopbarUpdateNotice(status: SystemUpdateStatusResponse | null | undefined): TopbarUpdateNotice | null {
-  if (status == null) {
+  if (status?.enabled !== true) {
     return null;
   }
 
   const version = getPrimaryUpdateVersion(status);
-
-  if (status.state === 'AVAILABLE') {
-    return {
-      badge: 'NEW',
-      tone: 'warning',
-      title: version == null ? 'A new update is available' : `Update ${version} is available`,
-      busy: false,
-      emphasis: true,
-    };
+  if (UPDATE_BUSY_STATES.has(status.state) || version == null) {
+    return null;
   }
 
-  if (status.state === 'STAGED') {
-    return {
-      badge: 'READY',
-      tone: 'info',
-      title: version == null ? 'An update is ready to apply' : `Update ${version} is ready to apply`,
-      busy: false,
-      emphasis: true,
-    };
-  }
-
-  if (status.state === 'PREPARING' || status.state === 'APPLYING' || status.state === 'VERIFYING') {
-    return {
-      badge: 'UPD',
-      tone: 'info',
-      title: version == null ? 'An update is currently in progress' : `Updating to ${version}`,
-      busy: true,
-      emphasis: false,
-    };
-  }
-
-  if (status.state === 'FAILED') {
-    return {
-      badge: 'ERR',
-      tone: 'danger',
-      title: 'Last update attempt failed',
-      busy: false,
-      emphasis: true,
-    };
-  }
-
-  return null;
+  return {
+    title: `Update ${version} available`,
+  };
 }
 
 export function shouldCheckSystemUpdateInBackground(
