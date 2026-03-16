@@ -299,7 +299,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             // Handle per-request model/reasoning override
             ChatModel modelToUse = getModelForRequest(request);
             boolean geminiApiType = isGeminiRequest(request);
-            List<ChatMessage> messages = convertMessages(request, geminiApiType);
+            List<ChatMessage> messages = convertMessages(request);
             List<ToolSpecification> tools = convertTools(request);
             boolean compatibilityFlatteningApplied = false;
 
@@ -336,7 +336,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                         }
                     } else if (!compatibilityFlatteningApplied && isUnsupportedFunctionRoleError(e)) {
                         compatibilityFlatteningApplied = true;
-                        messages = convertMessagesWithFlattenedToolHistory(request, geminiApiType);
+                        messages = convertMessagesWithFlattenedToolHistory(request);
                         log.warn(
                                 "[LLM] Retrying request with flattened tool history due to unsupported function/tool role");
                     } else {
@@ -831,18 +831,18 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 .usage(usage)
                 .model(currentModel)
                 .finishReason(response.finishReason() != null ? response.finishReason().name() : "stop")
-                .providerMetadata(providerMetadata)
+                .providerMetadata(providerMetadata.isEmpty() ? null : providerMetadata)
                 .compatibilityFlatteningApplied(compatibilityFlatteningApplied)
                 .build();
     }
 
     private Map<String, Object> extractProviderMetadata(AiMessage aiMessage, boolean geminiApiType) {
         if (!geminiApiType || aiMessage == null || !aiMessage.hasToolExecutionRequests()) {
-            return null;
+            return Collections.emptyMap();
         }
         String thinkingSignature = aiMessage.attribute(GEMINI_THINKING_SIGNATURE_KEY, String.class);
         if (thinkingSignature == null || thinkingSignature.isBlank()) {
-            return null;
+            return Collections.emptyMap();
         }
         return Map.of(GEMINI_THINKING_SIGNATURE_KEY, thinkingSignature);
     }
