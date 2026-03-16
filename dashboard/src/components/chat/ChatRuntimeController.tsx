@@ -21,6 +21,7 @@ export function ChatRuntimeController(): ReactElement | null {
   const clearTransport = useChatRuntimeStore((state) => state.clearTransport);
   const resetAllRuntime = useChatRuntimeStore((state) => state.resetAll);
   const markFirstPendingAsSent = useChatRuntimeStore((state) => state.markFirstPendingAsSent);
+  const markPendingMessagesAsFailed = useChatRuntimeStore((state) => state.markPendingMessagesAsFailed);
   const setTyping = useChatRuntimeStore((state) => state.setTyping);
   const setRunning = useChatRuntimeStore((state) => state.setRunning);
   const applyTurnMetadataPatch = useChatRuntimeStore((state) => state.applyTurnMetadataPatch);
@@ -120,6 +121,7 @@ export function ChatRuntimeController(): ReactElement | null {
     clearReconnectTimer,
     clearAllTypingTimers,
     clearTransport,
+    markPendingMessagesAsFailed,
     registerTransport,
     resetAllRuntime,
     setConnectionState,

@@ -48,7 +48,7 @@ class SessionServiceTest {
         objectMapper.registerModule(new JavaTimeModule());
         objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         clock = Clock.fixed(FIXED_TIME, ZoneOffset.UTC);
-        service = new SessionService(storagePort, objectMapper, clock);
+        service = new SessionService(storagePort, clock);
         sessionProtoMapper = new SessionProtoMapper();
 
         when(storagePort.getObject(anyString(), anyString()))
@@ -88,28 +88,11 @@ class SessionServiceTest {
         assertSame(first, second);
     }
 
-    @Test
-    void getOrCreateCreatesNewWhenStorageLoadFails() {
-        // Corrupt JSON in storage — service should gracefully create new session
-        when(storagePort.getObject(SESSIONS_DIR, "telegram:200.pb"))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
-        when(storagePort.getText(SESSIONS_DIR, "telegram:200.json"))
-                .thenReturn(CompletableFuture.completedFuture("{corrupt json}"));
-
-        AgentSession session = service.getOrCreate(CHANNEL_TELEGRAM, "200");
-
-        assertNotNull(session);
-        assertEquals("telegram:200", session.getId());
-        assertEquals(FIXED_TIME, session.getCreatedAt());
-    }
-
     // ==================== get ====================
 
     @Test
     void getReturnsEmptyForUnknownSession() {
         when(storagePort.getObject(SESSIONS_DIR, "unknown.pb"))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
-        when(storagePort.getText(SESSIONS_DIR, "unknown.json"))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
 
         Optional<AgentSession> result = service.get("unknown");
@@ -154,42 +137,6 @@ class SessionServiceTest {
         assertEquals(1, result.get().getMessages().size());
         assertEquals("openai/gpt-5.3-codex", result.get().getMessages().get(0).getMetadata().get("model"));
         assertEquals("coding", result.get().getMessages().get(0).getMetadata().get("modelTier"));
-    }
-
-    @Test
-    void getReturnsEmptyWhenStorageJsonIsCorrupt() {
-        when(storagePort.getObject(SESSIONS_DIR, "telegram:456.pb"))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
-        when(storagePort.getText(SESSIONS_DIR, "telegram:456.json"))
-                .thenReturn(CompletableFuture.completedFuture("{corrupt}"));
-
-        Optional<AgentSession> result = service.get("telegram:456");
-
-        assertTrue(result.isEmpty());
-    }
-
-    @Test
-    void getReturnsEmptyForBlankJson() {
-        when(storagePort.getObject(SESSIONS_DIR, "blank.pb"))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
-        when(storagePort.getText(SESSIONS_DIR, "blank.json"))
-                .thenReturn(CompletableFuture.completedFuture("  "));
-
-        Optional<AgentSession> result = service.get("blank");
-
-        assertTrue(result.isEmpty());
-    }
-
-    @Test
-    void getReturnsEmptyForNullJson() {
-        when(storagePort.getObject(SESSIONS_DIR, "nulljson.pb"))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
-        when(storagePort.getText(SESSIONS_DIR, "nulljson.json"))
-                .thenReturn(CompletableFuture.completedFuture(null));
-
-        Optional<AgentSession> result = service.get("nulljson");
-
-        assertTrue(result.isEmpty());
     }
 
     // ==================== save ====================
@@ -419,8 +366,8 @@ class SessionServiceTest {
     @Test
     void listAllScansStorageDirectory() {
         when(storagePort.listObjects(anyString(), anyString()))
-                .thenReturn(CompletableFuture.completedFuture(List.of("web:999.json")));
-        when(storagePort.getText(SESSIONS_DIR, "web:999.json"))
+                .thenReturn(CompletableFuture.completedFuture(List.of("web:999.pb")));
+        when(storagePort.getObject(SESSIONS_DIR, "web:999.pb"))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("not found")));
 
         List<AgentSession> all = service.listAll();
@@ -437,40 +384,6 @@ class SessionServiceTest {
 
         List<AgentSession> all = service.listAll();
         assertNotNull(all);
-    }
-
-    @Test
-    void listAllLoadsSessionWithUnknownComputedFields() {
-        String jsonWithUnknowns = """
-                {
-                  "id": "telegram:456",
-                  "channelType": "telegram",
-                  "chatId": "456",
-                  "messages": [
-                    {
-                      "id": "m1",
-                      "role": "user",
-                      "content": "hello",
-                      "timestamp": "2026-01-15T10:00:00Z",
-                      "userMessage": true,
-                      "assistantMessage": false
-                    }
-                  ],
-                  "state": "ACTIVE",
-                  "createdAt": "2026-01-15T10:00:00Z",
-                  "updatedAt": "2026-01-15T10:00:00Z"
-                }
-                """;
-        when(storagePort.listObjects(SESSIONS_DIR, ""))
-                .thenReturn(CompletableFuture.completedFuture(List.of("telegram:456.json")));
-        when(storagePort.getText(SESSIONS_DIR, "telegram:456.json"))
-                .thenReturn(CompletableFuture.completedFuture(jsonWithUnknowns));
-
-        List<AgentSession> all = service.listAll();
-
-        assertEquals(1, all.size());
-        assertEquals("telegram:456", all.get(0).getId());
-        assertEquals(1, all.get(0).getMessages().size());
     }
 
     @Test
@@ -509,28 +422,6 @@ class SessionServiceTest {
         assertEquals("telegram:conv-1", owned.get(0).getId());
     }
 
-    @Test
-    void migrateLegacySessionsAtStartupConvertsJsonToProtobuf() throws Exception {
-        AgentSession legacy = AgentSession.builder()
-                .id("telegram:777")
-                .channelType(CHANNEL_TELEGRAM)
-                .chatId("777")
-                .createdAt(FIXED_TIME)
-                .updatedAt(FIXED_TIME)
-                .build();
-        String legacyJson = objectMapper.writeValueAsString(legacy);
-
-        when(storagePort.listObjects(SESSIONS_DIR, ""))
-                .thenReturn(CompletableFuture.completedFuture(List.of("telegram:777.json")));
-        when(storagePort.getText(SESSIONS_DIR, "telegram:777.json"))
-                .thenReturn(CompletableFuture.completedFuture(legacyJson));
-
-        service.migrateLegacySessionsAtStartup();
-
-        verify(storagePort).putObject(eq(SESSIONS_DIR), eq("telegram:777.pb"), any(byte[].class));
-        verify(storagePort).deleteObject(SESSIONS_DIR, "telegram:777.json");
-    }
-
     // ==================== getMessageCount ====================
 
     @Test
@@ -548,107 +439,6 @@ class SessionServiceTest {
         session.addMessage(Message.builder().role("assistant").content("b").timestamp(Instant.now()).build());
 
         assertEquals(2, service.getMessageCount(SESSION_ID));
-    }
-
-    // ==================== parseSessionFromJsonTree with tool fields
-    // ====================
-
-    @Test
-    void shouldParseToolFieldsFromLegacyJson() {
-        String jsonWithToolFields = """
-                {
-                  "id": "telegram:500",
-                  "channelType": "telegram",
-                  "chatId": "500",
-                  "messages": [
-                    {
-                      "id": "m1",
-                      "role": "user",
-                      "content": "list files",
-                      "timestamp": "2026-01-15T10:00:00Z"
-                    },
-                    {
-                      "id": "m2",
-                      "role": "assistant",
-                      "toolCalls": [
-                        {
-                          "id": "call_abc",
-                          "name": "shell",
-                          "arguments": {"command": "ls -la"}
-                        }
-                      ],
-                      "timestamp": "2026-01-15T10:00:01Z"
-                    },
-                    {
-                      "id": "m3",
-                      "role": "tool",
-                      "content": "file1.txt\\nfile2.txt",
-                      "toolCallId": "call_abc",
-                      "toolName": "shell",
-                      "timestamp": "2026-01-15T10:00:02Z"
-                    }
-                  ],
-                  "state": "ACTIVE",
-                  "createdAt": "2026-01-15T10:00:00Z",
-                  "updatedAt": "2026-01-15T10:00:02Z"
-                }
-                """;
-
-        when(storagePort.getObject(SESSIONS_DIR, "telegram:500.pb"))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
-        when(storagePort.getText(SESSIONS_DIR, "telegram:500.json"))
-                .thenReturn(CompletableFuture.completedFuture(jsonWithToolFields));
-
-        Optional<AgentSession> result = service.get("telegram:500");
-
-        assertTrue(result.isPresent());
-        AgentSession session = result.get();
-        assertEquals(3, session.getMessages().size());
-
-        // Assistant message with tool calls
-        Message assistantMsg = session.getMessages().get(1);
-        assertEquals("assistant", assistantMsg.getRole());
-        assertNotNull(assistantMsg.getToolCalls());
-        assertEquals(1, assistantMsg.getToolCalls().size());
-        assertEquals("call_abc", assistantMsg.getToolCalls().get(0).getId());
-        assertEquals("shell", assistantMsg.getToolCalls().get(0).getName());
-        assertEquals("ls -la", assistantMsg.getToolCalls().get(0).getArguments().get("command"));
-
-        // Tool result message
-        Message toolMsg = session.getMessages().get(2);
-        assertEquals("tool", toolMsg.getRole());
-        assertEquals("call_abc", toolMsg.getToolCallId());
-        assertEquals("shell", toolMsg.getToolName());
-    }
-
-    @Test
-    void shouldHandleLegacyJsonWithoutToolFields() {
-        String jsonNoToolFields = """
-                {
-                  "id": "telegram:501",
-                  "messages": [
-                    {
-                      "id": "m1",
-                      "role": "user",
-                      "content": "hello",
-                      "timestamp": "2026-01-15T10:00:00Z"
-                    }
-                  ]
-                }
-                """;
-
-        when(storagePort.getObject(SESSIONS_DIR, "telegram:501.pb"))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
-        when(storagePort.getText(SESSIONS_DIR, "telegram:501.json"))
-                .thenReturn(CompletableFuture.completedFuture(jsonNoToolFields));
-
-        Optional<AgentSession> result = service.get("telegram:501");
-
-        assertTrue(result.isPresent());
-        assertEquals(1, result.get().getMessages().size());
-        assertNull(result.get().getMessages().get(0).getToolCallId());
-        assertNull(result.get().getMessages().get(0).getToolName());
-        assertNull(result.get().getMessages().get(0).getToolCalls());
     }
 
     // ==================== Message Jackson round-trip ====================

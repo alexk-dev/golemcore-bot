@@ -386,7 +386,7 @@ public class PluginManager {
 
             int versionComparison = compareVersions(descriptor.getVersion(), existing.descriptor().getVersion());
             if (versionComparison > 0) {
-                log.info("[Plugins] Selecting newer artifact for {}: {} -> {}",
+                log.debug("[Plugins] Selecting newer artifact for {}: {} -> {}",
                         descriptor.getId(), existing.jarPath(), jarPath);
                 selectedByPluginId.put(descriptor.getId(), candidate);
                 return;

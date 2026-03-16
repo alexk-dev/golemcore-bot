@@ -152,6 +152,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         int toolExecutions = 0;
         int emptyFinalResponseRetries = 0;
         int retryAttempt = 0;
+        String lastRetryCode = null;
         int maxRetries = resolveAutoRetryMaxAttempts();
         long retryBaseDelayMs = resolveAutoRetryBaseDelayMs();
         boolean retryEnabled = isAutoRetryEnabled();
@@ -179,12 +180,14 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 if (LlmErrorClassifier.isContextOverflowCode(code)
                         && tryRecoverFromContextOverflow(context, llmCalls, retryAttempt)) {
                     retryAttempt++;
+                    lastRetryCode = code;
                     continue;
                 }
 
                 if (retryEnabled && LlmErrorClassifier.isTransientCode(code) && retryAttempt < maxRetries) {
                     retryAttempt++;
-                    scheduleRetry(context, retryAttempt, maxRetries, retryBaseDelayMs, code);
+                    lastRetryCode = code;
+                    scheduleRetry(context, llmCalls, retryAttempt, maxRetries, retryBaseDelayMs, code);
                     continue;
                 }
 
@@ -198,7 +201,9 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             if (retryAttempt > 0) {
                 emitRuntimeEvent(context, RuntimeEventType.RETRY_FINISHED,
                         eventPayload("attempt", retryAttempt, "success", true));
+                logRetrySucceeded(context, llmCalls, retryAttempt, maxRetries, lastRetryCode);
                 retryAttempt = 0;
+                lastRetryCode = null;
             }
 
             context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
@@ -389,8 +394,18 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         return runtimeConfigService.isTurnAutoRetryEnabled();
     }
 
-    private void scheduleRetry(AgentContext context, int attempt, int maxAttempts, long baseDelayMs, String code) {
+    private void scheduleRetry(AgentContext context, int llmCalls, int attempt, int maxAttempts, long baseDelayMs,
+            String code) {
         long delayMs = (long) Math.min(3000, baseDelayMs * Math.pow(2, Math.max(0, attempt - 1)));
+        String model = context.getAttribute(ContextAttributes.LLM_MODEL);
+        log.warn(
+                "[ToolLoop] Transient LLM failure, scheduling retry (code={}, retry={}/{}, delayMs={}, llmCall={}, model={})",
+                code,
+                attempt,
+                maxAttempts,
+                delayMs,
+                llmCalls,
+                model != null ? model : "unknown");
         emitRuntimeEvent(context, RuntimeEventType.RETRY_STARTED,
                 eventPayload("attempt", attempt, "maxAttempts", maxAttempts, "delayMs", delayMs, "code", code));
         if (delayMs > 0) {
@@ -400,6 +415,16 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 Thread.currentThread().interrupt();
             }
         }
+    }
+
+    private void logRetrySucceeded(AgentContext context, int llmCalls, int retryAttempt, int maxRetries, String code) {
+        String model = context.getAttribute(ContextAttributes.LLM_MODEL);
+        log.info("[ToolLoop] LLM retry succeeded (code={}, retry={}/{}, llmCall={}, model={})",
+                code != null ? code : "unknown",
+                retryAttempt,
+                maxRetries,
+                llmCalls,
+                model != null ? model : "unknown");
     }
 
     private boolean tryRecoverFromContextOverflow(AgentContext context, int llmCalls, int retryAttempt) {

@@ -1,5 +1,8 @@
 package me.golemcore.bot.domain.system.toolloop;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Attachment;
@@ -13,6 +16,7 @@ import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.RuntimeEventService;
 import me.golemcore.bot.domain.system.LlmErrorClassifier;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationView;
@@ -25,8 +29,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import org.slf4j.LoggerFactory;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -75,6 +81,9 @@ class DefaultToolLoopSystemTest {
 
     @Mock
     private ModelSelectionService modelSelectionService;
+
+    @Mock
+    private RuntimeConfigService runtimeConfigService;
 
     private BotProperties.TurnProperties turnSettings;
 
@@ -146,6 +155,27 @@ class DefaultToolLoopSystemTest {
                 null, null, runtimeEventService, clock);
     }
 
+    private DefaultToolLoopSystem buildSystemWithRuntimeConfig() {
+        return new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, viewBuilder,
+                turnSettings, settings, modelSelectionService, planService,
+                runtimeConfigService, null, null, clock);
+    }
+
+    private void stubRuntimeConfigDefaults() {
+        when(runtimeConfigService.getTurnMaxLlmCalls()).thenReturn(200);
+        when(runtimeConfigService.getTurnMaxToolExecutions()).thenReturn(500);
+        when(runtimeConfigService.getTurnDeadline()).thenReturn(Duration.ofHours(1));
+    }
+
+    private ListAppender<ILoggingEvent> attachLogAppender() {
+        Logger logger = (Logger) LoggerFactory.getLogger(DefaultToolLoopSystem.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.setContext(logger.getLoggerContext());
+        appender.start();
+        logger.addAppender(appender);
+        return appender;
+    }
+
     // ==================== Final answer (no tool calls) ====================
 
     @Test
@@ -214,6 +244,37 @@ class DefaultToolLoopSystemTest {
         assertTrue(llmError.startsWith("[" + LlmErrorClassifier.LANGCHAIN4J_TIMEOUT + "]"));
         assertFalse(context.getFailures().isEmpty());
         assertEquals(me.golemcore.bot.domain.model.FailureKind.EXCEPTION, context.getFailures().get(0).kind());
+    }
+
+    @Test
+    void shouldLogTurnLevelRetriesForTransientLlmFailures() {
+        AgentContext context = buildContext();
+        DefaultToolLoopSystem retrySystem = buildSystemWithRuntimeConfig();
+        stubRuntimeConfigDefaults();
+        when(runtimeConfigService.isTurnAutoRetryEnabled()).thenReturn(true);
+        when(runtimeConfigService.getTurnAutoRetryMaxAttempts()).thenReturn(2);
+        when(runtimeConfigService.getTurnAutoRetryBaseDelayMs()).thenReturn(1L);
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.failedFuture(new TimeoutException("request timed out")))
+                .thenReturn(CompletableFuture.completedFuture(finalResponse("Recovered")));
+
+        ListAppender<ILoggingEvent> appender = attachLogAppender();
+        try {
+            ToolLoopTurnResult result = retrySystem.processTurn(context);
+
+            assertTrue(result.finalAnswerReady());
+            assertEquals(2, result.llmCalls());
+            List<String> messages = appender.list.stream()
+                    .map(ILoggingEvent::getFormattedMessage)
+                    .toList();
+            assertTrue(messages.stream().anyMatch(message -> message.contains(
+                    "Transient LLM failure, scheduling retry (code=llm.langchain4j.timeout, retry=1/2")));
+            assertTrue(messages.stream().anyMatch(message -> message.contains(
+                    "LLM retry succeeded (code=llm.langchain4j.timeout, retry=1/2, llmCall=2, model=gpt-4o)")));
+        } finally {
+            ((Logger) LoggerFactory.getLogger(DefaultToolLoopSystem.class)).detachAppender(appender);
+            appender.stop();
+        }
     }
 
     @Test
