@@ -215,17 +215,17 @@ jobs:
           APP_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
           ARCH="${{ matrix.arch }}"
 
-          echo "app-image=${APP_IMAGE}" >> $GITHUB_OUTPUT
           echo "sha-arch-tag=${SHORT_SHA}-${ARCH}" >> $GITHUB_OUTPUT
+          echo "app-image=${APP_IMAGE}:${SHORT_SHA}-${ARCH}" >> $GITHUB_OUTPUT
 
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             VERSION="${{ github.ref_name }}"
             VERSION="${VERSION#v}"
-            echo "jib-tags=${SHORT_SHA}-${ARCH},latest-${ARCH},${VERSION}-${ARCH}" >> $GITHUB_OUTPUT
+            echo "jib-tags=latest-${ARCH},${VERSION}-${ARCH}" >> $GITHUB_OUTPUT
           elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            echo "jib-tags=${SHORT_SHA}-${ARCH},latest-${ARCH}" >> $GITHUB_OUTPUT
+            echo "jib-tags=latest-${ARCH}" >> $GITHUB_OUTPUT
           else
-            echo "jib-tags=${SHORT_SHA}-${ARCH},dev-latest-${ARCH}" >> $GITHUB_OUTPUT
+            echo "jib-tags=dev-latest-${ARCH}" >> $GITHUB_OUTPUT
           fi
 
       - name: Build and push app image (${{ matrix.arch }})
@@ -293,6 +293,49 @@ jobs:
               "${IMAGE}:dev-latest-amd64" \
               "${IMAGE}:dev-latest-arm64"
             docker manifest push "${IMAGE}:dev-latest"
+          fi
+
+      - name: Verify published manifest tags
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+
+          verify_manifest() {
+            local reference="$1"
+            local raw
+
+            raw="$(docker buildx imagetools inspect "${reference}" --raw)"
+
+            if ! grep -Eq '"mediaType"[[:space:]]*:[[:space:]]*"(application/vnd.docker.distribution.manifest.list.v2\+json|application/vnd.oci.image.index.v1\+json)"' <<< "${raw}"; then
+              echo "Expected a multi-arch manifest list for ${reference}, but found:"
+              echo "${raw}"
+              exit 1
+            fi
+
+            if ! grep -Eq '"architecture"[[:space:]]*:[[:space:]]*"amd64"' <<< "${raw}"; then
+              echo "Missing linux/amd64 entry in ${reference}"
+              echo "${raw}"
+              exit 1
+            fi
+
+            if ! grep -Eq '"architecture"[[:space:]]*:[[:space:]]*"arm64"' <<< "${raw}"; then
+              echo "Missing linux/arm64 entry in ${reference}"
+              echo "${raw}"
+              exit 1
+            fi
+          }
+
+          verify_manifest "${IMAGE}:${SHORT_SHA}"
+
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${{ github.ref_name }}"
+            VERSION="${VERSION#v}"
+            verify_manifest "${IMAGE}:${VERSION}"
+            verify_manifest "${IMAGE}:latest"
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            verify_manifest "${IMAGE}:latest"
+          else
+            verify_manifest "${IMAGE}:dev-latest"
           fi
 
       - name: Job Summary
