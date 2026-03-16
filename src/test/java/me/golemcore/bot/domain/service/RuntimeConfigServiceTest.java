@@ -256,9 +256,9 @@ class RuntimeConfigServiceTest {
     }
 
     @Test
-    void shouldReturnDefaultVoiceProvidersWhenNotConfigured() {
-        assertEquals("golemcore/elevenlabs", service.getSttProvider());
-        assertEquals("golemcore/elevenlabs", service.getTtsProvider());
+    void shouldReturnUnsetVoiceProvidersWhenNotConfigured() {
+        assertNull(service.getSttProvider());
+        assertNull(service.getTtsProvider());
         assertEquals("", service.getWhisperSttUrl());
         assertEquals("", service.getWhisperSttApiKey());
         assertFalse(service.isWhisperSttConfigured());

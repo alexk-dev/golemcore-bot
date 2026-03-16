@@ -19,17 +19,12 @@ class VoiceResponseHandlerTest {
     private static final String TEXT_HELLO = "Hello";
 
     private VoicePort voicePort;
-    private RuntimeConfigService runtimeConfigService;
     private ChannelPort channel;
     private VoiceResponseHandler handler;
 
     @BeforeEach
     void setUp() {
         voicePort = mock(VoicePort.class);
-        runtimeConfigService = mock(RuntimeConfigService.class);
-        when(runtimeConfigService.getVoiceId()).thenReturn("test-voice");
-        when(runtimeConfigService.getTtsModelId()).thenReturn("test-model");
-        when(runtimeConfigService.getVoiceSpeed()).thenReturn(1.0f);
 
         channel = mock(ChannelPort.class);
         when(channel.sendVoice(anyString(), any(byte[].class)))
@@ -37,7 +32,7 @@ class VoiceResponseHandlerTest {
         when(channel.sendMessage(anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
-        handler = new VoiceResponseHandler(voicePort, runtimeConfigService);
+        handler = new VoiceResponseHandler(voicePort);
     }
 
     // ===== trySendVoice =====
@@ -105,18 +100,14 @@ class VoiceResponseHandlerTest {
     }
 
     @Test
-    void trySendVoice_usesConfigFromProperties() {
+    void trySendVoice_usesDefaultVoiceConfig() {
         when(voicePort.isAvailable()).thenReturn(true);
-        when(runtimeConfigService.getVoiceId()).thenReturn("my-voice");
-        when(runtimeConfigService.getTtsModelId()).thenReturn("my-model");
-        when(runtimeConfigService.getVoiceSpeed()).thenReturn(1.5f);
-
         when(voicePort.synthesize(anyString(), any(VoicePort.VoiceConfig.class)))
                 .thenAnswer(inv -> {
                     VoicePort.VoiceConfig config = inv.getArgument(1);
-                    assertEquals("my-voice", config.voiceId());
-                    assertEquals("my-model", config.modelId());
-                    assertEquals(1.5f, config.speed());
+                    assertNull(config.voiceId());
+                    assertNull(config.modelId());
+                    assertEquals(1.0f, config.speed());
                     assertEquals(AudioFormat.MP3, config.outputFormat());
                     return CompletableFuture.completedFuture(new byte[] { 1 });
                 });

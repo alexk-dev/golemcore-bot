@@ -475,11 +475,11 @@ public class RuntimeConfigService {
     }
 
     public String getSttProvider() {
-        return normalizeVoiceProvider(getRuntimeConfig().getVoice().getSttProvider(), DEFAULT_STT_PROVIDER);
+        return normalizeVoiceProvider(getRuntimeConfig().getVoice().getSttProvider());
     }
 
     public String getTtsProvider() {
-        return normalizeVoiceProvider(getRuntimeConfig().getVoice().getTtsProvider(), DEFAULT_TTS_PROVIDER);
+        return normalizeVoiceProvider(getRuntimeConfig().getVoice().getTtsProvider());
     }
 
     public String getWhisperSttUrl() {
@@ -1251,9 +1251,9 @@ public class RuntimeConfigService {
         normalizeSecretFlags(cfg);
     }
 
-    private String normalizeVoiceProvider(String value, String fallback) {
+    private String normalizeVoiceProvider(String value) {
         if (value == null || value.isBlank()) {
-            return fallback;
+            return null;
         }
         String normalized = value.trim().toLowerCase(Locale.ROOT);
         if (LEGACY_ELEVENLABS_PROVIDER.equals(normalized)) {
