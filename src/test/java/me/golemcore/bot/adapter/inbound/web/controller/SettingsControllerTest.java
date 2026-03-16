@@ -12,6 +12,8 @@ import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.plugin.runtime.SttProviderRegistry;
 import me.golemcore.bot.plugin.runtime.TtsProviderRegistry;
+import me.golemcore.plugin.api.extension.spi.SttProvider;
+import me.golemcore.plugin.api.extension.spi.TtsProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -24,6 +26,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -43,6 +46,8 @@ class SettingsControllerTest {
     private ModelSelectionService modelSelectionService;
     private RuntimeConfigService runtimeConfigService;
     private MemoryPresetService memoryPresetService;
+    private SttProviderRegistry sttProviderRegistry;
+    private TtsProviderRegistry ttsProviderRegistry;
     private SettingsController controller;
 
     @BeforeEach
@@ -51,8 +56,13 @@ class SettingsControllerTest {
         modelSelectionService = mock(ModelSelectionService.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
         memoryPresetService = mock(MemoryPresetService.class);
+        sttProviderRegistry = new SttProviderRegistry();
+        ttsProviderRegistry = new TtsProviderRegistry();
+        registerSttProvider("golemcore/elevenlabs", "elevenlabs");
+        registerSttProvider("golemcore/whisper", "whisper");
+        registerTtsProvider("golemcore/elevenlabs", "elevenlabs");
         controller = new SettingsController(preferencesService, modelSelectionService, runtimeConfigService,
-                memoryPresetService, new SttProviderRegistry(), new TtsProviderRegistry());
+                memoryPresetService, sttProviderRegistry, ttsProviderRegistry);
         when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(RuntimeConfig.builder().build());
     }
 
@@ -1068,6 +1078,30 @@ class SettingsControllerTest {
     }
 
     @Test
+    void shouldRejectUnloadedVoiceProvidersEvenWhenCanonicalIdsAreUsed() {
+        SettingsController unloadedController = new SettingsController(
+                preferencesService,
+                modelSelectionService,
+                runtimeConfigService,
+                memoryPresetService,
+                new SttProviderRegistry(),
+                new TtsProviderRegistry());
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .voice(RuntimeConfig.VoiceConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.VoiceConfig incoming = RuntimeConfig.VoiceConfig.builder()
+                .sttProvider("golemcore/elevenlabs")
+                .ttsProvider("golemcore/elevenlabs")
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> unloadedController.updateVoiceConfig(incoming));
+        assertTrue(error.getMessage().contains("voice.sttProvider must resolve to a loaded STT provider"));
+    }
+
+    @Test
     void shouldPreserveWhisperApiKeyWhenNotProvidedOnUpdate() {
         RuntimeConfig runtimeConfig = RuntimeConfig.builder()
                 .voice(RuntimeConfig.VoiceConfig.builder()
@@ -1180,6 +1214,35 @@ class SettingsControllerTest {
     }
 
     @Test
+    void shouldAllowDisabledVoiceConfigWhenNoVoiceProvidersAreLoaded() {
+        SettingsController unloadedController = new SettingsController(
+                preferencesService,
+                modelSelectionService,
+                runtimeConfigService,
+                memoryPresetService,
+                new SttProviderRegistry(),
+                new TtsProviderRegistry());
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .voice(RuntimeConfig.VoiceConfig.builder()
+                        .enabled(false)
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.VoiceConfig incoming = RuntimeConfig.VoiceConfig.builder()
+                .enabled(false)
+                .build();
+
+        StepVerifier.create(unloadedController.updateVoiceConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        RuntimeConfig.VoiceConfig saved = runtimeConfig.getVoice();
+        assertNull(saved.getSttProvider());
+        assertNull(saved.getTtsProvider());
+    }
+
+    @Test
     void shouldPreserveWhisperApiKeyDuringRuntimeUpdateWhenNotProvided() {
         RuntimeConfig current = RuntimeConfig.builder()
                 .modelRouter(RuntimeConfig.ModelRouterConfig.builder()
@@ -1236,5 +1299,21 @@ class SettingsControllerTest {
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> controller.updateRuntimeConfig(incoming));
         assertTrue(error.getMessage().contains("voice.ttsProvider must resolve to a loaded TTS provider"));
+    }
+
+    private void registerSttProvider(String providerId, String alias) {
+        SttProvider provider = mock(SttProvider.class);
+        when(provider.getProviderId()).thenReturn(providerId);
+        when(provider.getAliases()).thenReturn(Set.of(alias));
+        when(provider.isAvailable()).thenReturn(true);
+        sttProviderRegistry.replaceProviders(providerId, List.of(provider));
+    }
+
+    private void registerTtsProvider(String providerId, String alias) {
+        TtsProvider provider = mock(TtsProvider.class);
+        when(provider.getProviderId()).thenReturn(providerId);
+        when(provider.getAliases()).thenReturn(Set.of(alias));
+        when(provider.isAvailable()).thenReturn(true);
+        ttsProviderRegistry.replaceProviders(providerId, List.of(provider));
     }
 }

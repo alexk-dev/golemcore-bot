@@ -147,7 +147,7 @@ class PluginVoicePortTest {
     }
 
     @Test
-    void shouldUseDefaultTtsProviderWhenConfiguredValueIsBlank() {
+    void shouldUseFirstLoadedTtsProviderWhenConfiguredValueIsBlank() {
         TtsProvider ttsProvider = mock(TtsProvider.class);
         when(runtimeConfigService.getTtsProvider()).thenReturn("   ");
         when(ttsProvider.getProviderId()).thenReturn("golemcore/elevenlabs");
