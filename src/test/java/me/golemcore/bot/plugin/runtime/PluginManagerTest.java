@@ -3,6 +3,7 @@ package me.golemcore.bot.plugin.runtime;
 import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.plugin.runtime.extension.PluginExtensionApiMapper;
+import okhttp3.OkHttpClient;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -15,6 +16,7 @@ import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
 import javax.tools.ToolProvider;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -36,6 +38,7 @@ class PluginManagerTest {
 
     private AnnotationConfigApplicationContext applicationContext;
     private PluginManager manager;
+    private PluginSettingsRegistry pluginSettingsRegistry;
 
     @AfterEach
     void tearDown() {
@@ -142,6 +145,23 @@ class PluginManagerTest {
         assertEquals("golemcore/browser", plugins.getFirst().getId());
     }
 
+    @Test
+    void shouldLoadPluginSettingsContributorThatInjectsHostOkHttpClient(@TempDir Path tempDir) throws Exception {
+        Path pluginsDir = tempDir.resolve("plugins");
+        createPluginJarWithOkHttpBackedSettings(pluginsDir, "golemcore/browser", "1.0.0", ">=1.0.0 <2.0.0");
+        manager = createManager(pluginsDir, "1.0.0");
+
+        manager.reloadAll();
+
+        List<PluginRuntimeInfo> plugins = manager.listPlugins();
+        assertEquals(1, plugins.size());
+        assertEquals("golemcore/browser", plugins.getFirst().getId());
+        assertTrue(plugins.getFirst().isLoaded());
+        assertEquals(1, pluginSettingsRegistry.listCatalogItems().size());
+        assertEquals("plugin-golemcore-browser",
+                pluginSettingsRegistry.listCatalogItems().getFirst().getRouteKey());
+    }
+
     private PluginManager createManager(Path pluginsDir, String hostVersion) {
         BotProperties properties = new BotProperties();
         properties.getPlugins().setEnabled(true);
@@ -150,7 +170,10 @@ class PluginManagerTest {
         properties.getPlugins().setDirectory(pluginsDir.toString());
 
         applicationContext = new AnnotationConfigApplicationContext();
+        applicationContext.registerBean(OkHttpClient.class, () -> new OkHttpClient());
         applicationContext.refresh();
+
+        pluginSettingsRegistry = new PluginSettingsRegistry();
 
         return new PluginManager(
                 properties,
@@ -161,7 +184,7 @@ class PluginManagerTest {
                 new SttProviderRegistry(),
                 new TtsProviderRegistry(),
                 new RagProviderRegistry(),
-                new PluginSettingsRegistry(),
+                pluginSettingsRegistry,
                 mock(ToolCallExecutionService.class),
                 new PluginExtensionApiMapper());
     }
@@ -203,6 +226,51 @@ class PluginManagerTest {
         Files.createDirectories(jarPath.getParent());
         try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(jarPath))) {
             addCompiledClasses(output, classesRoot);
+            writeJarEntry(output, "META-INF/services/me.golemcore.plugin.api.extension.spi.PluginBootstrap",
+                    bootstrapFqcn);
+            writeJarEntry(output, "META-INF/golemcore/plugin.yaml",
+                    pluginYaml(pluginId, coordinates[0], coordinates[1], version, engineVersion, bootstrapFqcn));
+        }
+        return jarPath;
+    }
+
+    private Path createPluginJarWithOkHttpBackedSettings(
+            Path pluginsDir,
+            String pluginId,
+            String version,
+            String engineVersion) throws Exception {
+        String[] coordinates = pluginId.split("/", 2);
+        String packageSuffix = pluginId.replace('/', '.').replace('-', '_') + ".v" + version.replace('.', '_')
+                .replace('-', '_');
+        String packageName = "testplugins." + packageSuffix;
+        String bootstrapClassName = "GeneratedPluginBootstrap";
+        String configurationClassName = "GeneratedPluginConfiguration";
+        String settingsContributorClassName = "GeneratedPluginSettingsContributor";
+        String bootstrapFqcn = packageName + "." + bootstrapClassName;
+
+        Path workDir = pluginsDir.resolve("build-" + version.replace('.', '_') + "-okhttp");
+        Path sourceRoot = workDir.resolve("src");
+        Path classesRoot = workDir.resolve("classes");
+        Path packageDir = sourceRoot.resolve(packageName.replace('.', '/'));
+        Files.createDirectories(packageDir);
+        Files.writeString(packageDir.resolve(configurationClassName + ".java"),
+                okHttpConfigurationSource(packageName, configurationClassName, settingsContributorClassName),
+                StandardCharsets.UTF_8);
+        Files.writeString(packageDir.resolve(settingsContributorClassName + ".java"),
+                okHttpSettingsContributorSource(packageName, settingsContributorClassName, pluginId),
+                StandardCharsets.UTF_8);
+        Files.writeString(packageDir.resolve(bootstrapClassName + ".java"),
+                bootstrapSource(packageName, bootstrapClassName, configurationClassName, pluginId, coordinates[0],
+                        coordinates[1], version, engineVersion),
+                StandardCharsets.UTF_8);
+
+        compileSources(sourceRoot, classesRoot);
+
+        Path jarPath = pluginsDir.resolve(coordinates[0] + "-" + coordinates[1] + "-" + version + ".jar");
+        Files.createDirectories(jarPath.getParent());
+        try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(jarPath))) {
+            addCompiledClasses(output, classesRoot);
+            writeClassCopy(output, OkHttpClient.class);
             writeJarEntry(output, "META-INF/services/me.golemcore.plugin.api.extension.spi.PluginBootstrap",
                     bootstrapFqcn);
             writeJarEntry(output, "META-INF/golemcore/plugin.yaml",
@@ -258,6 +326,16 @@ class PluginManagerTest {
         output.closeEntry();
     }
 
+    private void writeClassCopy(JarOutputStream output, Class<?> type) throws IOException {
+        String entryName = type.getName().replace('.', '/') + ".class";
+        try (InputStream input = type.getClassLoader().getResourceAsStream(entryName)) {
+            assertNotNull(input, "Class bytes must be available for " + type.getName());
+            output.putNextEntry(new JarEntry(entryName));
+            input.transferTo(output);
+            output.closeEntry();
+        }
+    }
+
     private String configurationSource(String packageName, String configurationClassName) {
         return """
                 package %s;
@@ -268,6 +346,90 @@ class PluginManagerTest {
                 public class %s {
                 }
                 """.formatted(packageName, configurationClassName);
+    }
+
+    private String okHttpConfigurationSource(
+            String packageName,
+            String configurationClassName,
+            String settingsContributorClassName) {
+        return """
+                package %s;
+
+                import okhttp3.OkHttpClient;
+                import org.springframework.context.annotation.Bean;
+                import org.springframework.context.annotation.Configuration;
+
+                @Configuration
+                public class %s {
+
+                    @Bean
+                    public %s generatedPluginSettingsContributor(OkHttpClient okHttpClient) {
+                        return new %s(okHttpClient);
+                    }
+                }
+                """.formatted(packageName, configurationClassName, settingsContributorClassName,
+                settingsContributorClassName);
+    }
+
+    private String okHttpSettingsContributorSource(String packageName, String className, String pluginId) {
+        return """
+                package %s;
+
+                import java.util.List;
+                import java.util.Map;
+
+                import me.golemcore.plugin.api.extension.spi.PluginActionResult;
+                import me.golemcore.plugin.api.extension.spi.PluginSettingsCatalogItem;
+                import me.golemcore.plugin.api.extension.spi.PluginSettingsContributor;
+                import me.golemcore.plugin.api.extension.spi.PluginSettingsSection;
+                import okhttp3.OkHttpClient;
+
+                public class %s implements PluginSettingsContributor {
+
+                    private final OkHttpClient okHttpClient;
+
+                    public %s(OkHttpClient okHttpClient) {
+                        this.okHttpClient = okHttpClient;
+                    }
+
+                    @Override
+                    public String getPluginId() {
+                        return "%s";
+                    }
+
+                    @Override
+                    public List<PluginSettingsCatalogItem> getCatalogItems() {
+                        return List.of(PluginSettingsCatalogItem.builder()
+                                .sectionKey("main")
+                                .title("Test Settings")
+                                .description(okHttpClient.getClass().getName())
+                                .build());
+                    }
+
+                    @Override
+                    public PluginSettingsSection getSection(String sectionKey) {
+                        return PluginSettingsSection.builder()
+                                .sectionKey(sectionKey)
+                                .title("Test Settings")
+                                .description(okHttpClient.getClass().getName())
+                                .build();
+                    }
+
+                    @Override
+                    public PluginSettingsSection saveSection(String sectionKey, Map<String, Object> values) {
+                        return getSection(sectionKey);
+                    }
+
+                    @Override
+                    public PluginActionResult executeAction(String sectionKey, String actionId, Map<String, Object> payload) {
+                        return PluginActionResult.builder()
+                                .status("ok")
+                                .message(actionId)
+                                .build();
+                    }
+                }
+                """
+                .formatted(packageName, className, className, pluginId);
     }
 
     private String bootstrapSource(String packageName, String bootstrapClassName, String configurationClassName,

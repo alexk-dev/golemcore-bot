@@ -19,6 +19,7 @@ public class ChildFirstPluginClassLoader extends URLClassLoader {
             "org.apache.commons.logging.",
             "ch.qos.logback.",
             "com.fasterxml.jackson.",
+            "okhttp3.",
             "me.golemcore.plugin.api.");
 
     public ChildFirstPluginClassLoader(URL[] urls, ClassLoader parent) {
