@@ -1,6 +1,8 @@
 package me.golemcore.bot.domain.service;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
@@ -50,7 +52,8 @@ import java.util.stream.Stream;
 public class SkillMarketplaceService {
 
     private static final ObjectMapper JSON_MAPPER = new ObjectMapper().registerModule(new JavaTimeModule());
-    private static final ObjectMapper YAML_MAPPER = new ObjectMapper(new YAMLFactory());
+    private static final ObjectMapper YAML_MAPPER = new ObjectMapper(new YAMLFactory())
+            .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
     private static final String GITHUB_USER_AGENT = "golemcore-bot-skill-marketplace";
     private static final String SKILLS_DIR = "skills";
@@ -1441,6 +1444,7 @@ public class SkillMarketplaceService {
     }
 
     @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
     private static class ArtifactManifest {
         private String schema;
         private String type;
@@ -1449,16 +1453,32 @@ public class SkillMarketplaceService {
         private String version;
         private String title;
         private String description;
+        private String license;
+        private ArtifactSourceManifest source;
+        private String attribution;
+        private List<String> tags = List.of();
         private List<ArtifactSkillManifest> skills = List.of();
     }
 
     @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private static class ArtifactSourceManifest {
+        private String repository;
+        private String author;
+        @JsonProperty("author_url")
+        private String authorUrl;
+        private String license;
+    }
+
+    @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
     private static class ArtifactSkillManifest {
         private String id;
         private String path;
     }
 
     @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
     private static class MaintainerManifest {
         private String schema;
         private String id;

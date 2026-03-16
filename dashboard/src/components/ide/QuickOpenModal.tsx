@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactElement } from 'react';
-import { Button, Form, InputGroup, ListGroup, Modal } from 'react-bootstrap';
 import { FiSearch, FiStar } from 'react-icons/fi';
 import type { QuickOpenItem } from '../../hooks/useIdeQuickOpen';
+import { Badge } from '../ui/badge';
+import { Modal } from '../ui/bootstrap-overlay';
+import { Input } from '../ui/field';
+import { cn } from '../../lib/utils';
 
 export interface QuickOpenModalProps {
   show: boolean;
@@ -100,75 +103,77 @@ export function QuickOpenModal({
   };
 
   return (
-    <Modal show={show} onHide={onClose} centered>
+    <Modal show={show} onHide={onClose} centered size="lg">
       <Modal.Header closeButton>
         <Modal.Title>Quick Open</Modal.Title>
       </Modal.Header>
       <Modal.Body className="p-0">
-        <div className="px-3 pt-3 pb-2 border-bottom">
-          <InputGroup size="sm">
-            <InputGroup.Text>
+        <div className="border-b border-border/80 px-5 pb-3 pt-5">
+          <label className="relative block">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
               <FiSearch size={14} />
-            </InputGroup.Text>
-            <Form.Control
+            </span>
+            <Input
               ref={inputRef}
+              className="h-10 rounded-xl border-border/80 bg-background/80 pl-11 pr-3 text-sm shadow-none"
               value={query}
               onChange={(event) => onQueryChange(event.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Type file name or path"
               aria-label="Quick open query"
             />
-          </InputGroup>
-          <div className="small text-body-secondary mt-2">
+          </label>
+          <div className="mt-2 text-xs text-muted-foreground">
             ↑ ↓ navigate · Enter open · Space pin · Esc close
           </div>
         </div>
 
-        <ListGroup variant="flush" className="ide-quick-open-list" role="listbox" aria-label="Quick open results">
+        <div className="ide-quick-open-list p-2" role="listbox" aria-label="Quick open results">
           {items.length === 0 ? (
-            <ListGroup.Item className="text-body-secondary">No matching files.</ListGroup.Item>
+            <div className="rounded-2xl px-4 py-8 text-sm text-muted-foreground">No matching files.</div>
           ) : (
             items.map((item, index) => {
               const isActive = index === activeIndex;
               return (
-                <ListGroup.Item
+                <div
                   key={item.path}
-                  action
-                  active={isActive}
                   role="option"
                   aria-selected={isActive}
+                  className={cn(
+                    'flex w-full items-start justify-between gap-3 rounded-2xl px-4 py-3 text-left transition-colors',
+                    isActive ? 'bg-primary/12 text-foreground' : 'text-foreground hover:bg-muted/70'
+                  )}
                   onMouseEnter={() => setActiveIndex(index)}
                   onClick={() => onPick(item.path)}
                   title={item.path}
                 >
-                  <div className="d-flex align-items-center justify-content-between gap-2">
-                    <div className="fw-medium d-flex align-items-center gap-2">
-                      {item.isPinned && <FiStar size={12} className="text-warning" />}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      {item.isPinned && <FiStar size={12} className="text-amber-500" />}
                       {item.title}
                     </div>
-                    <div className="d-flex align-items-center gap-2">
-                      {item.isRecent && <span className="badge text-bg-secondary">recent</span>}
-                      <Button
-                        variant="link"
-                        size="sm"
-                        className="p-0 ide-quick-open-pin"
-                        aria-label={item.isPinned ? `Unpin ${item.title}` : `Pin ${item.title}`}
-                        onClick={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          onTogglePinned(item.path);
-                        }}
-                      >
-                        <FiStar size={13} className={item.isPinned ? 'text-warning' : 'text-body-secondary'} />
-                      </Button>
-                    </div>
+                    <div className="mt-1 truncate text-xs text-muted-foreground">{item.path}</div>
                   </div>
-                  <div className="small text-body-secondary text-truncate">{item.path}</div>
-                </ListGroup.Item>
+                  <div className="flex items-center gap-2">
+                    {item.isRecent && <Badge variant="secondary">Recent</Badge>}
+                    <button
+                      type="button"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background/80 hover:text-foreground"
+                      aria-label={item.isPinned ? `Unpin ${item.title}` : `Pin ${item.title}`}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        onTogglePinned(item.path);
+                      }}
+                    >
+                      <FiStar size={13} className={item.isPinned ? 'text-amber-500' : undefined} />
+                    </button>
+                  </div>
+                </div>
               );
             })
           )}
-        </ListGroup>
+        </div>
       </Modal.Body>
     </Modal>
   );

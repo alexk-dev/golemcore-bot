@@ -8,6 +8,7 @@ import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.SkillInstallResult;
 import me.golemcore.bot.domain.model.SkillMarketplaceCatalog;
+import me.golemcore.bot.domain.model.SkillMarketplaceItem;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.Test;
@@ -119,6 +120,81 @@ class SkillMarketplaceServiceTest {
                 .findFirst()
                 .orElseThrow()
                 .getId());
+    }
+
+    @Test
+    void shouldListPackArtifactsWithExtendedRegistryMetadataAndUnknownFields(@TempDir Path tempDir) throws Exception {
+        Path repoRoot = createLocalRegistry(tempDir, standaloneSkillMarkdown(), packArtifactYamlWithExtendedMetadata());
+
+        StoragePort storagePort = mock(StoragePort.class);
+        when(storagePort.listObjects(eq("skills"), eq("marketplace")))
+                .thenReturn(CompletableFuture.completedFuture(List.of()));
+
+        SkillService skillService = mock(SkillService.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(RuntimeConfig.builder()
+                .skills(RuntimeConfig.SkillsConfig.builder()
+                        .marketplaceSourceType("directory")
+                        .marketplaceRepositoryDirectory(repoRoot.toString())
+                        .build())
+                .build());
+
+        SkillMarketplaceService service = createService(
+                botProperties("http://127.0.0.1:1"),
+                storagePort,
+                skillService,
+                runtimeConfigService);
+
+        SkillMarketplaceCatalog catalog = service.getCatalog();
+
+        assertTrue(catalog.isAvailable());
+        SkillMarketplaceItem pack = catalog.getItems().stream()
+                .filter(item -> "golemcore/devops-pack".equals(item.getId()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("pack", pack.getArtifactType());
+        assertEquals(2, pack.getSkillCount());
+    }
+
+    @Test
+    void shouldListRemotePackArtifactsWithExtendedRegistryMetadataAndUnknownFields() throws Exception {
+        StoragePort storagePort = mock(StoragePort.class);
+        when(storagePort.listObjects(eq("skills"), eq("marketplace")))
+                .thenReturn(CompletableFuture.completedFuture(List.of()));
+
+        SkillService skillService = mock(SkillService.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(RuntimeConfig.builder()
+                .skills(RuntimeConfig.SkillsConfig.builder()
+                        .marketplaceSourceType("repository")
+                        .marketplaceBranch("main")
+                        .build())
+                .build());
+
+        try (RemoteSkillsMarketplaceServer server = startRemoteRegistryServer(Map.of(
+                "registry/obra/maintainer.yaml", obraMaintainerYaml(),
+                "registry/obra/superpowers/artifact.yaml", remotePackArtifactYamlWithExtendedMetadata(),
+                "registry/obra/superpowers/skills/superpowers-using-superpowers/SKILL.md",
+                remotePackSkillMarkdown()))) {
+            BotProperties properties = botProperties(server.baseUrl());
+            properties.getSkills().setMarketplaceRepositoryUrl(server.repositoryUrl());
+            SkillMarketplaceService service = createService(
+                    properties,
+                    storagePort,
+                    skillService,
+                    runtimeConfigService);
+
+            SkillMarketplaceCatalog catalog = service.getCatalog();
+
+            assertTrue(catalog.isAvailable());
+            SkillMarketplaceItem pack = catalog.getItems().stream()
+                    .filter(item -> "obra/superpowers".equals(item.getId()))
+                    .findFirst()
+                    .orElseThrow();
+            assertEquals("pack", pack.getArtifactType());
+            assertEquals(1, pack.getSkillCount());
+            assertEquals("smart", pack.getModelTier());
+        }
     }
 
     @Test
@@ -623,10 +699,15 @@ class SkillMarketplaceServiceTest {
     }
 
     private Path createLocalRegistry(Path tempDir) throws IOException {
-        return createLocalRegistry(tempDir, standaloneSkillMarkdown());
+        return createLocalRegistry(tempDir, standaloneSkillMarkdown(), packArtifactYaml());
     }
 
     private Path createLocalRegistry(Path tempDir, String standaloneSkillContent) throws IOException {
+        return createLocalRegistry(tempDir, standaloneSkillContent, packArtifactYaml());
+    }
+
+    private Path createLocalRegistry(Path tempDir, String standaloneSkillContent, String packArtifactContent)
+            throws IOException {
         Path repoRoot = tempDir.resolve("golemcore-skills");
         Files.createDirectories(repoRoot.resolve("registry/golemcore/code-reviewer"));
         Files.createDirectories(repoRoot.resolve("registry/golemcore/devops-pack/skills/deploy-review"));
@@ -635,7 +716,7 @@ class SkillMarketplaceServiceTest {
         Files.writeString(repoRoot.resolve("registry/golemcore/maintainer.yaml"), maintainerYaml());
         Files.writeString(repoRoot.resolve("registry/golemcore/code-reviewer/artifact.yaml"), standaloneArtifactYaml());
         Files.writeString(repoRoot.resolve("registry/golemcore/code-reviewer/SKILL.md"), standaloneSkillContent);
-        Files.writeString(repoRoot.resolve("registry/golemcore/devops-pack/artifact.yaml"), packArtifactYaml());
+        Files.writeString(repoRoot.resolve("registry/golemcore/devops-pack/artifact.yaml"), packArtifactContent);
         Files.writeString(repoRoot.resolve("registry/golemcore/devops-pack/skills/deploy-review/SKILL.md"),
                 deployReviewMarkdown());
         Files.writeString(repoRoot.resolve("registry/golemcore/devops-pack/skills/incident-triage/SKILL.md"),
@@ -709,6 +790,84 @@ class SkillMarketplaceServiceTest {
                     path: skills/deploy-review/SKILL.md
                   - id: incident-triage
                     path: skills/incident-triage/SKILL.md
+                """;
+    }
+
+    private static String packArtifactYamlWithExtendedMetadata() {
+        return """
+                schema: v1
+                type: pack
+                maintainer: golemcore
+                id: devops-pack
+                version: 1.2.0
+                title: DevOps Pack
+                description: Delivery and incident response skills.
+                license: MIT
+                source:
+                  repository: https://github.com/obra/superpowers
+                  author: Jesse Vincent
+                  author_url: https://github.com/obra
+                  license: MIT
+                  homepage: https://example.com/ignored
+                attribution: Adapted for Golemcore Bot runtime.
+                tags:
+                  - workflow
+                  - review
+                extra_field: ignored-by-parser
+                skills:
+                  - id: deploy-review
+                    path: skills/deploy-review/SKILL.md
+                  - id: incident-triage
+                    path: skills/incident-triage/SKILL.md
+                """;
+    }
+
+    private static String obraMaintainerYaml() {
+        return """
+                schema: v1
+                id: obra
+                display_name: Obra
+                github: obra
+                website: https://github.com/obra
+                """;
+    }
+
+    private static String remotePackArtifactYamlWithExtendedMetadata() {
+        return """
+                schema: v1
+                type: pack
+                maintainer: obra
+                id: superpowers
+                version: 1.0.1
+                title: Superpowers
+                description: Adapted workflow pack inspired by obra/superpowers for Golemcore Bot.
+                license: MIT
+                source:
+                  repository: https://github.com/obra/superpowers
+                  author: Jesse Vincent
+                  author_url: https://github.com/obra
+                  license: MIT
+                  notes: ignored
+                attribution: Adapted for Golemcore Bot runtime and golemcore-skills packaging.
+                tags:
+                  - workflow
+                  - engineering
+                unknown_top_level: ignored
+                skills:
+                  - id: superpowers-using-superpowers
+                    path: skills/superpowers-using-superpowers/SKILL.md
+                """;
+    }
+
+    private static String remotePackSkillMarkdown() {
+        return """
+                ---
+                name: superpowers-using-superpowers
+                description: Coordinate the rest of the superpowers workflow.
+                model_tier: smart
+                ---
+
+                Coordinate planning and execution across the rest of the pack.
                 """;
     }
 

@@ -47,7 +47,6 @@ public class SettingsController {
     private static final String TELEGRAM_AUTH_MODE_INVITE_ONLY = "invite_only";
     private static final String STT_PROVIDER_ELEVENLABS = "golemcore/elevenlabs";
     private static final String STT_PROVIDER_WHISPER = "golemcore/whisper";
-    private static final String TTS_PROVIDER_ELEVENLABS = "golemcore/elevenlabs";
     private static final String LEGACY_STT_PROVIDER_ELEVENLABS = "elevenlabs";
     private static final String LEGACY_STT_PROVIDER_WHISPER = "whisper";
     private static final Set<String> VALID_API_TYPES = Set.of("openai", "anthropic", "gemini");
@@ -622,15 +621,28 @@ public class SettingsController {
         if (voiceConfig == null) {
             return;
         }
+        boolean voiceEnabled = Boolean.TRUE.equals(voiceConfig.getEnabled());
 
-        String normalizedSttProvider = normalizeProvider(voiceConfig.getSttProvider(), STT_PROVIDER_ELEVENLABS);
-        if (!isKnownSttProvider(normalizedSttProvider)) {
+        String normalizedSttProvider = normalizeProvider(voiceConfig.getSttProvider());
+        if (normalizedSttProvider == null) {
+            normalizedSttProvider = firstLoadedSttProvider();
+        }
+        if (normalizedSttProvider == null && voiceEnabled) {
+            throw new IllegalArgumentException("voice.sttProvider must resolve to a loaded STT provider");
+        }
+        if (normalizedSttProvider != null && !isKnownSttProvider(normalizedSttProvider)) {
             throw new IllegalArgumentException("voice.sttProvider must resolve to a loaded STT provider");
         }
         voiceConfig.setSttProvider(normalizedSttProvider);
 
-        String normalizedTtsProvider = normalizeProvider(voiceConfig.getTtsProvider(), TTS_PROVIDER_ELEVENLABS);
-        if (!isKnownTtsProvider(normalizedTtsProvider)) {
+        String normalizedTtsProvider = normalizeProvider(voiceConfig.getTtsProvider());
+        if (normalizedTtsProvider == null) {
+            normalizedTtsProvider = firstLoadedTtsProvider();
+        }
+        if (normalizedTtsProvider == null && voiceEnabled) {
+            throw new IllegalArgumentException("voice.ttsProvider must resolve to a loaded TTS provider");
+        }
+        if (normalizedTtsProvider != null && !isKnownTtsProvider(normalizedTtsProvider)) {
             throw new IllegalArgumentException("voice.ttsProvider must resolve to a loaded TTS provider");
         }
         voiceConfig.setTtsProvider(normalizedTtsProvider);
@@ -890,9 +902,9 @@ public class SettingsController {
                 .build();
     }
 
-    private String normalizeProvider(String value, String fallback) {
+    private String normalizeProvider(String value) {
         if (value == null || value.isBlank()) {
-            return fallback;
+            return null;
         }
         String normalized = value.trim().toLowerCase(Locale.ROOT);
         if (LEGACY_STT_PROVIDER_ELEVENLABS.equals(normalized)) {
@@ -905,18 +917,23 @@ public class SettingsController {
     }
 
     private boolean isKnownSttProvider(String providerId) {
-        return sttProviderRegistry.find(providerId).isPresent()
-                || STT_PROVIDER_ELEVENLABS.equals(providerId)
-                || STT_PROVIDER_WHISPER.equals(providerId);
+        return providerId != null && sttProviderRegistry.find(providerId).isPresent();
     }
 
     private boolean isKnownTtsProvider(String providerId) {
-        return ttsProviderRegistry.find(providerId).isPresent()
-                || TTS_PROVIDER_ELEVENLABS.equals(providerId);
+        return providerId != null && ttsProviderRegistry.find(providerId).isPresent();
     }
 
     private boolean isWhisperProvider(String providerId) {
         return STT_PROVIDER_WHISPER.equals(providerId);
+    }
+
+    private String firstLoadedSttProvider() {
+        return sttProviderRegistry.listProviderIds().keySet().stream().findFirst().orElse(null);
+    }
+
+    private String firstLoadedTtsProvider() {
+        return ttsProviderRegistry.listProviderIds().keySet().stream().findFirst().orElse(null);
     }
 
     private boolean isValidHttpUrl(String value) {

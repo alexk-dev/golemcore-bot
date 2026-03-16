@@ -349,6 +349,10 @@ textarea:focus-visible,
   width: 2.125rem;
   height: 2.125rem;
   border-radius: 0.5rem;
+  border: 1px solid rgba(var(--bs-border-color-rgb), 0.92);
+  background-color: rgba(var(--bs-body-bg-rgb), 0.94);
+  color: var(--bs-emphasis-color);
+  transition: border-color 0.16s ease, background-color 0.16s ease, color 0.16s ease, transform 0.16s ease;
 
   svg {
     display: block;
@@ -359,6 +363,39 @@ textarea:focus-visible,
 .topbar-action-btn {
   height: 2.125rem;
   border-radius: 0.5rem;
+  border: 1px solid rgba(var(--bs-border-color-rgb), 0.92);
+  background-color: rgba(var(--bs-body-bg-rgb), 0.94);
+  color: var(--bs-emphasis-color);
+  transition: border-color 0.16s ease, background-color 0.16s ease, color 0.16s ease, transform 0.16s ease;
+}
+
+.topbar-icon-btn:hover,
+.topbar-icon-btn:focus-visible,
+.topbar-action-btn:hover,
+.topbar-action-btn:focus-visible {
+  border-color: rgba(var(--bs-primary-rgb), 0.4);
+  background-color: rgba(var(--bs-primary-rgb), 0.1);
+  color: var(--bs-emphasis-color);
+  transform: translateY(-1px);
+}
+
+.topbar-update-btn {
+  position: relative;
+  border-color: rgba(var(--bs-warning-rgb), 0.42);
+  background-color: rgba(var(--bs-warning-rgb), 0.12);
+  box-shadow: 0 12px 28px rgba(var(--bs-warning-rgb), 0.16);
+}
+
+.topbar-update-dot {
+  position: absolute;
+  top: 0.34rem;
+  right: 0.34rem;
+  width: 0.52rem;
+  height: 0.52rem;
+  border-radius: 999px;
+  background-color: rgba(var(--bs-warning-rgb), 1);
+  box-shadow: 0 0 0 0.18rem rgba(var(--bs-warning-rgb), 0.2);
+  animation: status-pulse 1.8s infinite ease-in-out;
 }
 
 .topbar-mobile-menu-btn {
@@ -2333,9 +2370,19 @@ textarea:focus-visible,
 
 @media (max-width: 767.98px) {
   .topbar-icon-btn,
-  .topbar-action-btn {
+  .topbar-action-btn,
+  .topbar-update-btn {
     width: 2.75rem;
     height: 2.75rem;
+  }
+
+  .topbar-update-btn {
+    border-radius: 0.75rem;
+  }
+
+  .topbar-action-btn {
+    justify-content: center;
+    padding: 0;
   }
 
   .topbar-mobile-menu-btn {
