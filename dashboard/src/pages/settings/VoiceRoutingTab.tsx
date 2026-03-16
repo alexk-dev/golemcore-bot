@@ -196,7 +196,7 @@ export default function VoiceRoutingTab({ config }: VoiceRoutingTabProps): React
         </Row>
 
         <Form.Text className="text-muted d-block mt-3">
-          Voice routing stays in runtime config. Provider-specific credentials and model settings live in each provider plugin page.
+          Pick the voice providers you want to use. Need to connect an account or tweak a provider? Open its settings below.
         </Form.Text>
 
         {providerSettingsRoutes.length > 0 && (
