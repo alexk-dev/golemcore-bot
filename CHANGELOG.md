@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.30.2 - 2026-03-16
+#### Bug Fixes
+- (**voice**) allow whisper as a full STT/TTS provider (#181) - (7a7fe4a) - Alex Kuleshov
+
+- - -
+
 ## v0.12.0 - 2026-02-25
 #### Features
 - (**browser**) fetch Playwright driver bundle from Maven at runtime (#117) - (2121f20) - Alex Kuleshov
