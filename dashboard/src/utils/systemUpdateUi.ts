@@ -2,6 +2,7 @@ import type { SystemUpdateStatusResponse } from '../api/system';
 
 export type UpdateBadgeVariant = 'success' | 'warning' | 'danger' | 'secondary' | 'info';
 export type UpdateWorkflowStepState = 'complete' | 'current' | 'upcoming' | 'error';
+export const AUTO_UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 
 const UPDATE_STATE_LABELS: Record<string, string> = {
   DISABLED: 'Disabled',
@@ -68,6 +69,18 @@ export interface SidebarUpdateBadge {
   variant: UpdateBadgeVariant;
   text: 'dark' | 'white';
   title: string;
+}
+
+export interface TopbarUpdateNotice {
+  title: string;
+}
+
+export interface BackgroundUpdateCheckStatus {
+  enabled: boolean;
+  state: string;
+  targetVersion: string | null;
+  stagedVersion: string | null;
+  availableVersion: string | null;
 }
 
 export interface UpdateWorkflowStep {
@@ -209,6 +222,46 @@ export function getSidebarUpdateBadge(state: string): SidebarUpdateBadge | null 
     };
   }
   return null;
+}
+
+export function getTopbarUpdateNotice(status: SystemUpdateStatusResponse | null | undefined): TopbarUpdateNotice | null {
+  if (status?.enabled !== true) {
+    return null;
+  }
+
+  const version = getPrimaryUpdateVersion(status);
+  if (UPDATE_BUSY_STATES.has(status.state) || version == null) {
+    return null;
+  }
+
+  return {
+    title: `Update ${version} available`,
+  };
+}
+
+export function shouldCheckSystemUpdateInBackground(
+  status: BackgroundUpdateCheckStatus | null,
+  lastAttemptAt: number | null,
+  now: number,
+  isCheckPending: boolean,
+): boolean {
+  if (status == null || !status.enabled || isCheckPending) {
+    return false;
+  }
+
+  if (status.state === 'DISABLED' || UPDATE_BUSY_STATES.has(status.state)) {
+    return false;
+  }
+
+  if (status.targetVersion != null || status.stagedVersion != null || status.availableVersion != null) {
+    return false;
+  }
+
+  if (lastAttemptAt != null && now - lastAttemptAt < AUTO_UPDATE_CHECK_INTERVAL_MS) {
+    return false;
+  }
+
+  return true;
 }
 
 function normalizeProgress(value: number | null | undefined, state: string, lastError: string | null): number {
