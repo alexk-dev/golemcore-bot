@@ -162,4 +162,21 @@ class PluginVoicePortTest {
 
         assertArrayEquals(new byte[] { 4, 5, 6 }, synthesized);
     }
+
+    @Test
+    void shouldNormalizeLegacyWhisperTtsProviderIdForSynthesis() {
+        TtsProvider ttsProvider = mock(TtsProvider.class);
+        when(runtimeConfigService.getTtsProvider()).thenReturn("whisper");
+        when(ttsProvider.getProviderId()).thenReturn("golemcore/whisper");
+        when(ttsProvider.isAvailable()).thenReturn(true);
+        when(ttsProvider.synthesize(anyString(),
+                any(me.golemcore.plugin.api.extension.port.outbound.VoicePort.VoiceConfig.class)))
+                .thenReturn(CompletableFuture.completedFuture(new byte[] { 7, 8, 9 }));
+
+        ttsProviderRegistry.replaceProviders("golemcore/whisper", List.of(ttsProvider));
+
+        byte[] synthesized = pluginVoicePort.synthesize("hello", VoicePort.VoiceConfig.defaultConfig()).join();
+
+        assertArrayEquals(new byte[] { 7, 8, 9 }, synthesized);
+    }
 }

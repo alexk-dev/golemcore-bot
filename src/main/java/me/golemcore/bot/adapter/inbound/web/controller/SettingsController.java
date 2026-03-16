@@ -651,16 +651,6 @@ public class SettingsController {
         if (whisperSttUrl != null && whisperSttUrl.isBlank()) {
             voiceConfig.setWhisperSttUrl(null);
         }
-        String effectiveWhisperSttUrl = voiceConfig.getWhisperSttUrl();
-        if (isWhisperProvider(normalizedSttProvider)) {
-            if (effectiveWhisperSttUrl == null || effectiveWhisperSttUrl.isBlank()) {
-                throw new IllegalArgumentException(
-                        "voice.whisperSttUrl is required when the STT provider is Whisper-compatible");
-            }
-            if (!isValidHttpUrl(effectiveWhisperSttUrl)) {
-                throw new IllegalArgumentException("voice.whisperSttUrl must be a valid http(s) URL");
-            }
-        }
     }
 
     private RuntimeConfig.ToolsConfig ensureToolsConfig(RuntimeConfig config) {
@@ -922,10 +912,6 @@ public class SettingsController {
 
     private boolean isKnownTtsProvider(String providerId) {
         return providerId != null && ttsProviderRegistry.find(providerId).isPresent();
-    }
-
-    private boolean isWhisperProvider(String providerId) {
-        return STT_PROVIDER_WHISPER.equals(providerId);
     }
 
     private String firstLoadedSttProvider() {
