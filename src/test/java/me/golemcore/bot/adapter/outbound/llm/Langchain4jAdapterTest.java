@@ -926,6 +926,49 @@ class Langchain4jAdapterTest {
         assertNull(((AiMessage) openAiAgainMessages.get(0)).attribute("thinking_signature", String.class));
     }
 
+    @Test
+    void shouldFlattenGeminiToolHistoryWhenAssistantToolCallMissingThinkingSignature() {
+        when(modelConfig.getProvider("google/gemini-3.1-preview")).thenReturn("google");
+        when(runtimeConfigService.getLlmProviderConfig("google"))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiType("gemini")
+                        .build());
+
+        Message assistantMsg = Message.builder()
+                .role(ROLE_ASSISTANT)
+                .content("Transitioning to reviewer")
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("call_1")
+                        .name("default_api:skill_transition")
+                        .arguments(Map.of("target_skill", "golemcore/code-reviewer"))
+                        .build()))
+                .build();
+
+        Message toolResult = Message.builder()
+                .role(ROLE_TOOL)
+                .toolCallId("call_1")
+                .toolName("default_api:skill_transition")
+                .content("Transitioning to skill: golemcore/code-reviewer")
+                .build();
+
+        LlmRequest request = LlmRequest.builder()
+                .model("google/gemini-3.1-preview")
+                .messages(List.of(assistantMsg, toolResult))
+                .build();
+
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<ChatMessage> messages = (List<ChatMessage>) ReflectionTestUtils.invokeMethod(
+                adapter, CONVERT_MESSAGES, request);
+
+        assertEquals(1, messages.size());
+        assertTrue(messages.get(0) instanceof AiMessage);
+        AiMessage aiMessage = (AiMessage) messages.get(0);
+        assertFalse(aiMessage.hasToolExecutionRequests());
+        assertTrue(aiMessage.text().contains("default_api:skill_transition"));
+        assertTrue(aiMessage.text().contains("Transitioning to skill: golemcore/code-reviewer"));
+        assertNull(aiMessage.attribute("thinking_signature", String.class));
+    }
+
     // ===== convertMessages synthetic ID assignment =====
 
     @Test
@@ -1222,6 +1265,8 @@ class Langchain4jAdapterTest {
 
         ChatModel result = ReflectionTestUtils.invokeMethod(adapter, "createModel", requestModel, null);
         assertTrue(result instanceof GoogleAiGeminiChatModel);
+        assertEquals(Boolean.TRUE, ReflectionTestUtils.getField(result, "returnThinking"));
+        assertEquals(Boolean.TRUE, ReflectionTestUtils.getField(result, "sendThinking"));
     }
 
     @Test

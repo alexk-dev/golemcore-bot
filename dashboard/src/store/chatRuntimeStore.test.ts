@@ -97,4 +97,16 @@ describe('chatRuntimeStore', () => {
     expect(messages[0].id).toBe('persisted-assistant-1');
     expect(messages[1].id).toBe('client-1');
   });
+
+  it('marks pending optimistic messages as failed when the socket disconnects mid-flight', () => {
+    useChatRuntimeStore.getState().appendOptimisticUserMessage('chat-1', createOptimisticMessage({}));
+    useChatRuntimeStore.getState().setTyping('chat-1', true);
+
+    useChatRuntimeStore.getState().markPendingMessagesAsFailed();
+
+    const session = useChatRuntimeStore.getState().sessions['chat-1'];
+    expect(session.messages[0].clientStatus).toBe('failed');
+    expect(session.running).toBe(false);
+    expect(session.typing).toBe(false);
+  });
 });

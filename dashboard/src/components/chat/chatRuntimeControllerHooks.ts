@@ -27,6 +27,7 @@ interface ChatSocketTransportConfig {
   clearReconnectTimer: () => void;
   clearAllTypingTimers: () => void;
   clearTransport: () => void;
+  markPendingMessagesAsFailed: () => void;
   registerTransport: ReturnType<typeof useChatRuntimeStore.getState>['registerTransport'];
   resetAllRuntime: () => void;
   setConnectionState: (state: ReturnType<typeof useChatRuntimeStore.getState>['connectionState']) => void;
@@ -170,6 +171,7 @@ export function useChatSocketTransport({
   clearReconnectTimer,
   clearAllTypingTimers,
   clearTransport,
+  markPendingMessagesAsFailed,
   registerTransport,
   resetAllRuntime,
   setConnectionState,
@@ -228,6 +230,7 @@ export function useChatSocketTransport({
           return;
         }
 
+        markPendingMessagesAsFailed();
         clearTransport();
         setConnectionState('reconnecting');
         clearReconnectTimer();
@@ -269,6 +272,7 @@ export function useChatSocketTransport({
     clearAllTypingTimers,
     clearReconnectTimer,
     clearTransport,
+    markPendingMessagesAsFailed,
     handleSocketMessage,
     registerTransport,
     reconnectTimerRef,

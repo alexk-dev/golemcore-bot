@@ -242,6 +242,10 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 .apiKey(apiKey)
                 .modelName(modelName)
                 .maxRetries(0)
+                // langchain4j only exposes and rehydrates Gemini thought signatures when
+                // both returnThinking and sendThinking are enabled.
+                .returnThinking(true)
+                .sendThinking(true)
                 .timeout(java.time.Duration.ofSeconds(
                         config.getRequestTimeoutSeconds() != null ? config.getRequestTimeoutSeconds() : 300));
 
@@ -495,13 +499,14 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     private List<ChatMessage> convertMessages(String systemPrompt, List<Message> requestMessages,
             boolean geminiApiType) {
         List<ChatMessage> messages = new ArrayList<>();
+        List<Message> normalizedMessages = normalizeMessagesForProvider(requestMessages, geminiApiType);
 
         // Add system message
         if (systemPrompt != null && !systemPrompt.isBlank()) {
             messages.add(SystemMessage.from(systemPrompt));
         }
 
-        if (requestMessages == null) {
+        if (normalizedMessages == null) {
             return messages;
         }
 
@@ -514,7 +519,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         Deque<String> pendingSynthIds = new ArrayDeque<>();
         Set<String> emittedToolCallIds = new HashSet<>();
 
-        for (Message msg : requestMessages) {
+        for (Message msg : normalizedMessages) {
             switch (msg.getRole()) {
             case "user" -> messages.add(toUserMessage(msg));
             case "assistant" -> {
@@ -577,6 +582,26 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         }
 
         return messages;
+    }
+
+    private List<Message> normalizeMessagesForProvider(List<Message> requestMessages, boolean geminiApiType) {
+        if (!geminiApiType || requestMessages == null || requestMessages.isEmpty()) {
+            return requestMessages;
+        }
+
+        long missingSignatureCount = requestMessages.stream()
+                .filter(Message::isAssistantMessage)
+                .filter(Message::hasToolCalls)
+                .filter(msg -> extractGeminiThinkingSignature(msg) == null)
+                .count();
+        if (missingSignatureCount == 0) {
+            return requestMessages;
+        }
+
+        log.warn(
+                "[LLM] Flattening tool history for Gemini request because {} assistant tool-call message(s) are missing thinking_signature",
+                missingSignatureCount);
+        return Message.flattenToolMessages(requestMessages);
     }
 
     private boolean isGeminiRequest(LlmRequest request) {

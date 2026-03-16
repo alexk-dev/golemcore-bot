@@ -243,6 +243,7 @@ public class BotProperties {
         private int jwtExpirationMinutes = 30;
         private int refreshExpirationDays = 7;
         private String corsAllowedOrigins = "";
+        private int webSocketMaxFramePayloadLength = 80 * 1024 * 1024;
         private LogsProperties logs = new LogsProperties();
     }
 

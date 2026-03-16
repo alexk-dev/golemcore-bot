@@ -65,6 +65,10 @@ public class WebSocketChatHandler implements WebSocketHandler {
 
         return session.receive()
                 .doOnNext(wsMessage -> handleIncoming(wsMessage, connectionId, username))
+                .doOnError(error -> log.warn(
+                        "[WebSocket] Connection error: connectionId={}, message={}",
+                        connectionId,
+                        error.getMessage()))
                 .doFinally(signal -> {
                     log.info("[WebSocket] Connection closed: connectionId={}, signal={}", connectionId, signal);
                     webChannelAdapter.deregisterSession(connectionId);

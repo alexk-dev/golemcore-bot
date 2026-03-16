@@ -50,6 +50,7 @@ interface ChatRuntimeState {
   stopSession: (sessionId: string, clientInstanceId: string) => boolean;
   markFirstPendingAsSent: (sessionId: string) => void;
   markMessageAsFailed: (sessionId: string, messageId: string) => void;
+  markPendingMessagesAsFailed: () => void;
   setTyping: (sessionId: string, typing: boolean) => void;
   setRunning: (sessionId: string, running: boolean) => void;
   applyTurnMetadataPatch: (sessionId: string, hint: AssistantHint) => void;
@@ -184,6 +185,7 @@ function createMessageActions(
   | 'stopSession'
   | 'markFirstPendingAsSent'
   | 'markMessageAsFailed'
+  | 'markPendingMessagesAsFailed'
   | 'setTyping'
   | 'setRunning'
   | 'applyTurnMetadataPatch'
@@ -308,6 +310,39 @@ function createMessageActions(
           running: false,
         }),
       };
+    }),
+  markPendingMessagesAsFailed: () =>
+    set((state) => {
+      let changed = false;
+      const nextSessions = { ...state.sessions };
+
+      for (const [sessionId, current] of Object.entries(state.sessions)) {
+        let sessionChanged = false;
+        const nextMessages = current.messages.map((message) => {
+          if (message.role !== 'user' || message.clientStatus !== 'pending') {
+            return message;
+          }
+          sessionChanged = true;
+          return {
+            ...message,
+            clientStatus: 'failed' as const,
+          };
+        });
+
+        if (!sessionChanged && !current.running && !current.typing) {
+          continue;
+        }
+
+        nextSessions[sessionId] = {
+          ...current,
+          messages: nextMessages,
+          running: false,
+          typing: false,
+        };
+        changed = true;
+      }
+
+      return changed ? { sessions: nextSessions } : state;
     }),
   setTyping: (sessionId, typing) =>
     set((state) => {
