@@ -34,7 +34,7 @@ public class DefaultHistoryWriter implements HistoryWriter {
                 .role("assistant")
                 .content(llmResponse != null ? llmResponse.getContent() : null)
                 .toolCalls(toolCalls)
-                .metadata(buildAssistantMetadata(context))
+                .metadata(buildAssistantMetadata(context, llmResponse))
                 .timestamp(now())
                 .build();
 
@@ -69,7 +69,7 @@ public class DefaultHistoryWriter implements HistoryWriter {
                 .role("assistant")
                 .content(finalText)
                 .toolCalls(llmResponse != null ? llmResponse.getToolCalls() : null)
-                .metadata(buildAssistantMetadata(context))
+                .metadata(buildAssistantMetadata(context, llmResponse))
                 .timestamp(now())
                 .build();
 
@@ -109,6 +109,14 @@ public class DefaultHistoryWriter implements HistoryWriter {
         }
 
         metadata.putAll(AutoRunContextSupport.buildAutoMessageMetadata(context));
+        return metadata;
+    }
+
+    private Map<String, Object> buildAssistantMetadata(AgentContext context, LlmResponse llmResponse) {
+        Map<String, Object> metadata = buildAssistantMetadata(context);
+        if (llmResponse != null && llmResponse.getProviderMetadata() != null) {
+            metadata.putAll(llmResponse.getProviderMetadata());
+        }
         return metadata;
     }
 }

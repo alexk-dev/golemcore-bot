@@ -119,6 +119,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     private static final String API_TYPE_OPENAI = "openai";
     private static final String API_TYPE_ANTHROPIC = "anthropic";
     private static final String API_TYPE_GEMINI = "gemini";
+    private static final String GEMINI_THINKING_SIGNATURE_KEY = "thinking_signature";
     private static final String SYNTH_ID_PREFIX = "synth_call_";
     private static final String SCHEMA_KEY_PROPERTIES = "properties";
     private static final java.util.regex.Pattern RESET_SECONDS_PATTERN = java.util.regex.Pattern
@@ -297,6 +298,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
 
             // Handle per-request model/reasoning override
             ChatModel modelToUse = getModelForRequest(request);
+            boolean geminiApiType = isGeminiRequest(request);
             List<ChatMessage> messages = convertMessages(request);
             List<ToolSpecification> tools = convertTools(request);
             boolean compatibilityFlatteningApplied = false;
@@ -315,7 +317,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                         response = modelToUse.chat(messages);
                     }
 
-                    return convertResponse(response, compatibilityFlatteningApplied);
+                    return convertResponse(response, compatibilityFlatteningApplied, geminiApiType);
                 } catch (Exception e) {
                     if (isRateLimitError(e) && attempt < MAX_RETRIES) {
                         long exponentialBackoffMs = (long) (INITIAL_BACKOFF_MS * Math.pow(BACKOFF_MULTIPLIER, attempt));
@@ -474,15 +476,24 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     };
 
     private List<ChatMessage> convertMessages(LlmRequest request) {
-        return convertMessages(request.getSystemPrompt(), request.getMessages());
+        return convertMessages(request, isGeminiRequest(request));
+    }
+
+    private List<ChatMessage> convertMessages(LlmRequest request, boolean geminiApiType) {
+        return convertMessages(request.getSystemPrompt(), request.getMessages(), geminiApiType);
     }
 
     private List<ChatMessage> convertMessagesWithFlattenedToolHistory(LlmRequest request) {
-        List<Message> flattenedMessages = Message.flattenToolMessages(request.getMessages());
-        return convertMessages(request.getSystemPrompt(), flattenedMessages);
+        return convertMessagesWithFlattenedToolHistory(request, isGeminiRequest(request));
     }
 
-    private List<ChatMessage> convertMessages(String systemPrompt, List<Message> requestMessages) {
+    private List<ChatMessage> convertMessagesWithFlattenedToolHistory(LlmRequest request, boolean geminiApiType) {
+        List<Message> flattenedMessages = Message.flattenToolMessages(request.getMessages());
+        return convertMessages(request.getSystemPrompt(), flattenedMessages, geminiApiType);
+    }
+
+    private List<ChatMessage> convertMessages(String systemPrompt, List<Message> requestMessages,
+            boolean geminiApiType) {
         List<ChatMessage> messages = new ArrayList<>();
 
         // Add system message
@@ -523,7 +534,16 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                                 .arguments(convertArgsToJson(tc.getArguments()))
                                 .build());
                     }
-                    messages.add(AiMessage.from(toolRequests));
+                    AiMessage.Builder aiMessageBuilder = AiMessage.builder()
+                            .toolExecutionRequests(toolRequests);
+                    if (msg.getContent() != null && !msg.getContent().isBlank()) {
+                        aiMessageBuilder.text(msg.getContent());
+                    }
+                    String thinkingSignature = geminiApiType ? extractGeminiThinkingSignature(msg) : null;
+                    if (thinkingSignature != null) {
+                        aiMessageBuilder.attributes(Map.of(GEMINI_THINKING_SIGNATURE_KEY, thinkingSignature));
+                    }
+                    messages.add(aiMessageBuilder.build());
                 } else {
                     messages.add(AiMessage.from(nonNullText(msg.getContent())));
                 }
@@ -557,6 +577,31 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         }
 
         return messages;
+    }
+
+    private boolean isGeminiRequest(LlmRequest request) {
+        String model = request != null && request.getModel() != null && !request.getModel().isBlank()
+                ? request.getModel()
+                : currentModel;
+        if (model == null || model.isBlank()) {
+            return false;
+        }
+        String provider = getProvider(model);
+        if (provider == null || provider.isBlank()) {
+            return false;
+        }
+        return API_TYPE_GEMINI.equals(getApiType(getProviderConfig(provider)));
+    }
+
+    private String extractGeminiThinkingSignature(Message msg) {
+        if (msg == null || msg.getMetadata() == null) {
+            return null;
+        }
+        Object value = msg.getMetadata().get(GEMINI_THINKING_SIGNATURE_KEY);
+        if (value instanceof String signature && !signature.isBlank()) {
+            return signature;
+        }
+        return null;
     }
 
     private String nonNullText(String text) {
@@ -752,7 +797,8 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         }
     }
 
-    private LlmResponse convertResponse(ChatResponse response, boolean compatibilityFlatteningApplied) {
+    private LlmResponse convertResponse(ChatResponse response, boolean compatibilityFlatteningApplied,
+            boolean geminiApiType) {
         AiMessage aiMessage = response.aiMessage();
 
         // Convert tool calls if present
@@ -777,14 +823,28 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                     .build();
         }
 
+        Map<String, Object> providerMetadata = extractProviderMetadata(aiMessage, geminiApiType);
+
         return LlmResponse.builder()
                 .content(aiMessage.text())
                 .toolCalls(toolCalls)
                 .usage(usage)
                 .model(currentModel)
                 .finishReason(response.finishReason() != null ? response.finishReason().name() : "stop")
+                .providerMetadata(providerMetadata.isEmpty() ? null : providerMetadata)
                 .compatibilityFlatteningApplied(compatibilityFlatteningApplied)
                 .build();
+    }
+
+    private Map<String, Object> extractProviderMetadata(AiMessage aiMessage, boolean geminiApiType) {
+        if (!geminiApiType || aiMessage == null || !aiMessage.hasToolExecutionRequests()) {
+            return Collections.emptyMap();
+        }
+        String thinkingSignature = aiMessage.attribute(GEMINI_THINKING_SIGNATURE_KEY, String.class);
+        if (thinkingSignature == null || thinkingSignature.isBlank()) {
+            return Collections.emptyMap();
+        }
+        return Map.of(GEMINI_THINKING_SIGNATURE_KEY, thinkingSignature);
     }
 
     private String convertArgsToJson(Map<String, Object> args) {

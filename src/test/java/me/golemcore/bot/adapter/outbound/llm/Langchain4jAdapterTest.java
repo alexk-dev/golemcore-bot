@@ -701,6 +701,231 @@ class Langchain4jAdapterTest {
         assertEquals("Weather is sunny", response.getContent());
     }
 
+    @Test
+    void shouldHydrateGeminiThinkingSignatureIntoAssistantToolCalls() {
+        when(modelConfig.getProvider("google/gemini-3.1-preview")).thenReturn("google");
+        when(runtimeConfigService.getLlmProviderConfig("google"))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiType("gemini")
+                        .build());
+
+        Message assistantMsg = Message.builder()
+                .role(ROLE_ASSISTANT)
+                .content("Let me check that")
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("call_1")
+                        .name(WEATHER)
+                        .arguments(Map.of("location", "London"))
+                        .build()))
+                .metadata(Map.of("thinking_signature", "sig-123"))
+                .build();
+
+        Message toolResultMsg = Message.builder()
+                .role(ROLE_TOOL)
+                .content("Sunny, 25C")
+                .toolCallId("call_1")
+                .toolName(WEATHER)
+                .build();
+
+        LlmRequest request = LlmRequest.builder()
+                .model("google/gemini-3.1-preview")
+                .messages(List.of(assistantMsg, toolResultMsg))
+                .build();
+
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<ChatMessage> messages = (List<ChatMessage>) ReflectionTestUtils.invokeMethod(
+                adapter, CONVERT_MESSAGES, request);
+
+        AiMessage aiMessage = (AiMessage) messages.get(0);
+        assertEquals("Let me check that", aiMessage.text());
+        assertEquals("sig-123", aiMessage.attribute("thinking_signature", String.class));
+    }
+
+    @Test
+    void shouldStoreGeminiThinkingSignatureInResponseMetadata() throws Exception {
+        ChatModel mockModel = mock(ChatModel.class);
+        injectChatModel(mockModel, "google/gemini-3.1-preview");
+        when(modelConfig.getProvider("google/gemini-3.1-preview")).thenReturn("google");
+        when(runtimeConfigService.getLlmProviderConfig("google"))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiType("gemini")
+                        .build());
+
+        ToolExecutionRequest toolReq = ToolExecutionRequest.builder()
+                .id("call_1")
+                .name(WEATHER)
+                .arguments("{\"location\":\"London\"}")
+                .build();
+        AiMessage aiMessage = AiMessage.builder()
+                .toolExecutionRequests(List.of(toolReq))
+                .attributes(Map.of("thinking_signature", "sig-123"))
+                .build();
+
+        ChatResponse chatResponse = ChatResponse.builder()
+                .aiMessage(aiMessage)
+                .finishReason(FinishReason.TOOL_EXECUTION)
+                .build();
+
+        when(mockModel.chat(any(ChatRequest.class))).thenReturn(chatResponse);
+
+        ToolDefinition toolDef = ToolDefinition.builder()
+                .name(WEATHER)
+                .description("Get weather")
+                .inputSchema(Map.of(TYPE, OBJECT, PROPERTIES, Map.of()))
+                .build();
+
+        LlmRequest request = LlmRequest.builder()
+                .model("google/gemini-3.1-preview")
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Weather?").build()))
+                .tools(List.of(toolDef))
+                .build();
+
+        LlmResponse response = adapter.chat(request).get();
+        assertEquals("sig-123", response.getProviderMetadata().get("thinking_signature"));
+    }
+
+    @Test
+    void shouldIgnoreGeminiThinkingSignatureForNonGeminiTargetModel() {
+        when(modelConfig.getProvider("openai/gpt-5.1")).thenReturn(OPENAI);
+        when(runtimeConfigService.getLlmProviderConfig(OPENAI))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiType(OPENAI)
+                        .build());
+
+        Message assistantMsg = Message.builder()
+                .role(ROLE_ASSISTANT)
+                .content("Let me check that")
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("call_1")
+                        .name(WEATHER)
+                        .arguments(Map.of("location", "London"))
+                        .build()))
+                .metadata(Map.of("thinking_signature", "sig-123"))
+                .build();
+
+        LlmRequest request = LlmRequest.builder()
+                .model("openai/gpt-5.1")
+                .messages(List.of(assistantMsg))
+                .build();
+
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<ChatMessage> messages = (List<ChatMessage>) ReflectionTestUtils.invokeMethod(
+                adapter, CONVERT_MESSAGES, request);
+
+        AiMessage aiMessage = (AiMessage) messages.get(0);
+        assertNull(aiMessage.attribute("thinking_signature", String.class));
+    }
+
+    @Test
+    void shouldUseCurrentGeminiModelWhenRequestModelMissingToHydrateSignature() {
+        injectChatModel(mock(ChatModel.class), "google/gemini-3.1-preview");
+        when(modelConfig.getProvider("google/gemini-3.1-preview")).thenReturn("google");
+        when(runtimeConfigService.getLlmProviderConfig("google"))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiType("gemini")
+                        .build());
+
+        Message assistantMsg = Message.builder()
+                .role(ROLE_ASSISTANT)
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("call_1")
+                        .name(WEATHER)
+                        .arguments(Map.of("location", "London"))
+                        .build()))
+                .metadata(Map.of("thinking_signature", "sig-123"))
+                .build();
+
+        LlmRequest request = LlmRequest.builder()
+                .messages(List.of(assistantMsg))
+                .build();
+
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<ChatMessage> messages = (List<ChatMessage>) ReflectionTestUtils.invokeMethod(
+                adapter, CONVERT_MESSAGES, request);
+
+        AiMessage aiMessage = (AiMessage) messages.get(0);
+        assertEquals("sig-123", aiMessage.attribute("thinking_signature", String.class));
+    }
+
+    @Test
+    void shouldNotStoreGeminiThinkingSignatureForFinalAnswerWithoutToolCalls() throws Exception {
+        ChatModel mockModel = mock(ChatModel.class);
+        injectChatModel(mockModel, "google/gemini-3.1-preview");
+        when(modelConfig.getProvider("google/gemini-3.1-preview")).thenReturn("google");
+        when(runtimeConfigService.getLlmProviderConfig("google"))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiType("gemini")
+                        .build());
+
+        AiMessage aiMessage = AiMessage.builder()
+                .text("Final answer")
+                .attributes(Map.of("thinking_signature", "sig-final"))
+                .build();
+
+        ChatResponse chatResponse = ChatResponse.builder()
+                .aiMessage(aiMessage)
+                .finishReason(FinishReason.STOP)
+                .build();
+
+        when(mockModel.chat((List<ChatMessage>) any())).thenReturn(chatResponse);
+
+        LlmRequest request = LlmRequest.builder()
+                .model("google/gemini-3.1-preview")
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
+                .build();
+
+        LlmResponse response = adapter.chat(request).get();
+        assertNull(response.getProviderMetadata());
+    }
+
+    @Test
+    void shouldToggleGeminiThoughtSignatureInjectionAcrossRepeatedModelSwitches() {
+        when(modelConfig.getProvider("google/gemini-3.1-preview")).thenReturn("google");
+        when(modelConfig.getProvider("openai/gpt-5.1")).thenReturn(OPENAI);
+        when(runtimeConfigService.getLlmProviderConfig("google"))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiType("gemini")
+                        .build());
+        when(runtimeConfigService.getLlmProviderConfig(OPENAI))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiType(OPENAI)
+                        .build());
+
+        Message assistantMsg = Message.builder()
+                .role(ROLE_ASSISTANT)
+                .content("Let me check that")
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("call_1")
+                        .name(WEATHER)
+                        .arguments(Map.of("location", "London"))
+                        .build()))
+                .metadata(Map.of("thinking_signature", "sig-123"))
+                .build();
+
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<ChatMessage> openAiMessages = (List<ChatMessage>) ReflectionTestUtils.invokeMethod(
+                adapter, CONVERT_MESSAGES, LlmRequest.builder()
+                        .model("openai/gpt-5.1")
+                        .messages(List.of(assistantMsg))
+                        .build());
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<ChatMessage> geminiMessages = (List<ChatMessage>) ReflectionTestUtils.invokeMethod(
+                adapter, CONVERT_MESSAGES, LlmRequest.builder()
+                        .model("google/gemini-3.1-preview")
+                        .messages(List.of(assistantMsg))
+                        .build());
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<ChatMessage> openAiAgainMessages = (List<ChatMessage>) ReflectionTestUtils.invokeMethod(
+                adapter, CONVERT_MESSAGES, LlmRequest.builder()
+                        .model("openai/gpt-5.1")
+                        .messages(List.of(assistantMsg))
+                        .build());
+
+        assertNull(((AiMessage) openAiMessages.get(0)).attribute("thinking_signature", String.class));
+        assertEquals("sig-123", ((AiMessage) geminiMessages.get(0)).attribute("thinking_signature", String.class));
+        assertNull(((AiMessage) openAiAgainMessages.get(0)).attribute("thinking_signature", String.class));
+    }
+
     // ===== convertMessages synthetic ID assignment =====
 
     @Test

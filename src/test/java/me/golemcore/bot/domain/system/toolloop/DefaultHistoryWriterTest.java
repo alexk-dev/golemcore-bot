@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -92,6 +93,22 @@ class DefaultHistoryWriterTest {
         writer.appendAssistantToolCalls(context, response, List.of());
 
         assertEquals(1, context.getMessages().size());
+    }
+
+    @Test
+    void shouldPersistProviderMetadataOnAssistantToolCalls() {
+        AgentContext context = buildContext(true);
+        LlmResponse response = LlmResponse.builder()
+                .content("thinking...")
+                .providerMetadata(Map.of("thinking_signature", "sig-123"))
+                .build();
+
+        writer.appendAssistantToolCalls(context, response, List.of(
+                Message.ToolCall.builder().id(TC_ID).name("test").build()));
+
+        Message msg = context.getMessages().get(0);
+        assertEquals("sig-123", msg.getMetadata().get("thinking_signature"));
+        assertEquals("sig-123", context.getSession().getMessages().get(0).getMetadata().get("thinking_signature"));
     }
 
     // ==================== appendToolResult ====================
