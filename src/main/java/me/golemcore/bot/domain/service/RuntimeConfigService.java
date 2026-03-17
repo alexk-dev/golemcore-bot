@@ -95,6 +95,9 @@ public class RuntimeConfigService {
     private static final int DEFAULT_AUTO_REFLECTION_FAILURE_THRESHOLD = 2;
     private static final int DEFAULT_AUTO_COMPACT_MAX_TOKENS = 50000;
     private static final int DEFAULT_AUTO_COMPACT_KEEP_LAST = 20;
+    private static final String DEFAULT_COMPACTION_TRIGGER_MODE = "model_ratio";
+    private static final String COMPACTION_TRIGGER_MODE_TOKEN_THRESHOLD = "token_threshold";
+    private static final double DEFAULT_COMPACTION_MODEL_THRESHOLD_RATIO = 0.95d;
     private static final boolean DEFAULT_COMPACTION_PRESERVE_TURN_BOUNDARIES = true;
     private static final boolean DEFAULT_COMPACTION_DETAILS_ENABLED = true;
     private static final int DEFAULT_COMPACTION_DETAILS_MAX_ITEMS = 50;
@@ -637,6 +640,19 @@ public class RuntimeConfigService {
     public int getCompactionKeepLastMessages() {
         Integer val = getRuntimeConfig().getCompaction().getKeepLastMessages();
         return val != null ? val : DEFAULT_AUTO_COMPACT_KEEP_LAST;
+    }
+
+    public String getCompactionTriggerMode() {
+        String val = getRuntimeConfig().getCompaction().getTriggerMode();
+        return normalizeCompactionTriggerMode(val);
+    }
+
+    public double getCompactionModelThresholdRatio() {
+        Double val = getRuntimeConfig().getCompaction().getModelThresholdRatio();
+        if (val == null || val <= 0.0d || val > 1.0d) {
+            return DEFAULT_COMPACTION_MODEL_THRESHOLD_RATIO;
+        }
+        return val;
     }
 
     public boolean isCompactionPreserveTurnBoundariesEnabled() {
@@ -1238,6 +1254,11 @@ public class RuntimeConfigService {
         if (cfg.getCompaction() == null) {
             cfg.setCompaction(new RuntimeConfig.CompactionConfig());
         }
+        cfg.getCompaction().setTriggerMode(normalizeCompactionTriggerMode(cfg.getCompaction().getTriggerMode()));
+        Double modelThresholdRatio = cfg.getCompaction().getModelThresholdRatio();
+        if (modelThresholdRatio == null || modelThresholdRatio <= 0.0d || modelThresholdRatio > 1.0d) {
+            cfg.getCompaction().setModelThresholdRatio(DEFAULT_COMPACTION_MODEL_THRESHOLD_RATIO);
+        }
         if (cfg.getCompaction().getPreserveTurnBoundaries() == null) {
             cfg.getCompaction().setPreserveTurnBoundaries(DEFAULT_COMPACTION_PRESERVE_TURN_BOUNDARIES);
         }
@@ -1293,6 +1314,17 @@ public class RuntimeConfigService {
             return DEFAULT_WHISPER_STT_PROVIDER;
         }
         return normalized;
+    }
+
+    private String normalizeCompactionTriggerMode(String value) {
+        if (value == null || value.isBlank()) {
+            return DEFAULT_COMPACTION_TRIGGER_MODE;
+        }
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
+        return switch (normalized) {
+        case DEFAULT_COMPACTION_TRIGGER_MODE, COMPACTION_TRIGGER_MODE_TOKEN_THRESHOLD -> normalized;
+        default -> DEFAULT_COMPACTION_TRIGGER_MODE;
+        };
     }
 
     private List<RuntimeConfig.ShellEnvironmentVariable> normalizeShellEnvironmentVariables(

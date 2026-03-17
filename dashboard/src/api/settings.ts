@@ -357,6 +357,8 @@ export interface McpConfig {
 
 export interface CompactionConfig {
   enabled: boolean | null;
+  triggerMode: 'model_ratio' | 'token_threshold' | null;
+  modelThresholdRatio: number | null;
   maxContextTokens: number | null;
   keepLastMessages: number | null;
 }

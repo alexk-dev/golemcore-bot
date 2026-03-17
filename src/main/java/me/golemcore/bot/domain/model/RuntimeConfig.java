@@ -236,6 +236,10 @@ public class RuntimeConfig {
         private Integer maxContextTokens;
         private Integer keepLastMessages;
         @Builder.Default
+        private String triggerMode = "model_ratio";
+        @Builder.Default
+        private Double modelThresholdRatio = 0.95d;
+        @Builder.Default
         private Boolean preserveTurnBoundaries = true;
         @Builder.Default
         private Boolean detailsEnabled = true;

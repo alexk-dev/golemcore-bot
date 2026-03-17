@@ -1322,6 +1322,102 @@ class SettingsControllerTest {
         assertEquals("golemcore/whisper", saved.getVoice().getTtsProvider());
     }
 
+    @Test
+    void shouldRejectInvalidCompactionTriggerMode() {
+        RuntimeConfig current = RuntimeConfig.builder().build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .compaction(RuntimeConfig.CompactionConfig.builder()
+                        .triggerMode("magic")
+                        .build())
+                .build();
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateRuntimeConfig(incoming));
+        assertTrue(exception.getMessage().contains("compaction.triggerMode must be one of"));
+        assertTrue(exception.getMessage().contains("model_ratio"));
+        assertTrue(exception.getMessage().contains("token_threshold"));
+    }
+
+    @Test
+    void shouldRejectInvalidCompactionModelThresholdRatio() {
+        RuntimeConfig current = RuntimeConfig.builder().build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .compaction(RuntimeConfig.CompactionConfig.builder()
+                        .modelThresholdRatio(1.2d)
+                        .build())
+                .build();
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateRuntimeConfig(incoming));
+        assertEquals("compaction.modelThresholdRatio must be between 0 and 1", exception.getMessage());
+    }
+
+    @Test
+    void shouldRejectZeroCompactionModelThresholdRatio() {
+        RuntimeConfig current = RuntimeConfig.builder().build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .compaction(RuntimeConfig.CompactionConfig.builder()
+                        .modelThresholdRatio(0.0d)
+                        .build())
+                .build();
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateRuntimeConfig(incoming));
+        assertEquals("compaction.modelThresholdRatio must be between 0 and 1", exception.getMessage());
+    }
+
+    @Test
+    void shouldNormalizeBlankCompactionModeAndMissingRatioToDefaults() {
+        RuntimeConfig current = RuntimeConfig.builder().build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .compaction(RuntimeConfig.CompactionConfig.builder()
+                        .triggerMode("   ")
+                        .modelThresholdRatio(null)
+                        .build())
+                .build();
+
+        StepVerifier.create(controller.updateRuntimeConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        RuntimeConfig saved = captor.getValue();
+        assertEquals("model_ratio", saved.getCompaction().getTriggerMode());
+        assertEquals(0.95d, saved.getCompaction().getModelThresholdRatio(), 0.0001d);
+    }
+
+    @Test
+    void shouldNormalizeCompactionTriggerModeCaseAndWhitespace() {
+        RuntimeConfig current = RuntimeConfig.builder().build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .compaction(RuntimeConfig.CompactionConfig.builder()
+                        .triggerMode(" Token_Threshold ")
+                        .modelThresholdRatio(0.8d)
+                        .build())
+                .build();
+
+        StepVerifier.create(controller.updateRuntimeConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        RuntimeConfig saved = captor.getValue();
+        assertEquals("token_threshold", saved.getCompaction().getTriggerMode());
+        assertEquals(0.8d, saved.getCompaction().getModelThresholdRatio(), 0.0001d);
+    }
+
     private void registerSttProvider(String providerId, String alias) {
         SttProvider provider = mock(SttProvider.class);
         when(provider.getProviderId()).thenReturn(providerId);
