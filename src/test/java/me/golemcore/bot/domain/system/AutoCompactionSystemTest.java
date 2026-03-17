@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.any;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -42,8 +42,10 @@ class AutoCompactionSystemTest {
         modelSelectionService = mock(ModelSelectionService.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
 
-        when(modelSelectionService.resolveMaxInputTokens(any())).thenReturn(128000);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any(AgentContext.class))).thenReturn(128000);
         when(runtimeConfigService.isCompactionEnabled()).thenReturn(true);
+        when(runtimeConfigService.getCompactionTriggerMode()).thenReturn("model_ratio");
+        when(runtimeConfigService.getCompactionModelThresholdRatio()).thenReturn(0.95d);
         when(runtimeConfigService.getCompactionMaxContextTokens()).thenReturn(1000);
         when(runtimeConfigService.getCompactionKeepLastMessages()).thenReturn(5);
 
@@ -93,7 +95,24 @@ class AutoCompactionSystemTest {
     }
 
     @Test
+    void ratioModeShouldIgnoreLegacyAbsoluteThresholdWhenModelWindowIsLarger() {
+        when(runtimeConfigService.getCompactionTriggerMode()).thenReturn("model_ratio");
+        when(runtimeConfigService.getCompactionModelThresholdRatio()).thenReturn(0.95d);
+        when(runtimeConfigService.getCompactionMaxContextTokens()).thenReturn(1000);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any(AgentContext.class))).thenReturn(20000);
+
+        List<Message> messages = buildLargeMessageList(50, 50);
+        AgentContext context = buildContext(messages);
+
+        AgentContext result = system.process(context);
+
+        verifyNoInteractions(compactionOrchestrationService);
+        assertSame(context, result);
+    }
+
+    @Test
     void aboveThresholdCompactsAndSyncsContextMessages() {
+        when(runtimeConfigService.getCompactionTriggerMode()).thenReturn("token_threshold");
         List<Message> messages = buildLargeMessageList(50, 50);
         AgentSession session = buildSession();
         session.getMessages().addAll(messages);
@@ -128,6 +147,7 @@ class AutoCompactionSystemTest {
 
     @Test
     void noMessagesRemovedKeepsContextMessages() {
+        when(runtimeConfigService.getCompactionTriggerMode()).thenReturn("token_threshold");
         List<Message> messages = buildLargeMessageList(50, 50);
         AgentContext context = buildContext(messages);
 
@@ -137,6 +157,39 @@ class AutoCompactionSystemTest {
         AgentContext result = system.process(context);
 
         assertEquals(50, result.getMessages().size());
+    }
+
+    @Test
+    void tokenThresholdModeShouldPreserveLegacyModelSafetyCap() {
+        when(runtimeConfigService.getCompactionTriggerMode()).thenReturn("token_threshold");
+        when(runtimeConfigService.getCompactionMaxContextTokens()).thenReturn(20000);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any(AgentContext.class))).thenReturn(10000);
+        when(compactionOrchestrationService.compact(SESSION_ID, CompactionReason.AUTO_THRESHOLD, 5))
+                .thenReturn(CompactionResult.builder().removed(1).usedSummary(true).build());
+
+        List<Message> messages = buildLargeMessageList(50, 50);
+        AgentContext context = buildContext(messages);
+
+        system.process(context);
+
+        verify(compactionOrchestrationService).compact(SESSION_ID, CompactionReason.AUTO_THRESHOLD, 5);
+    }
+
+    @Test
+    void ratioModeShouldFallBackToConfiguredThresholdWhenModelLookupFails() {
+        when(runtimeConfigService.getCompactionTriggerMode()).thenReturn("model_ratio");
+        when(runtimeConfigService.getCompactionMaxContextTokens()).thenReturn(1000);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any(AgentContext.class)))
+                .thenThrow(new IllegalStateException("missing model"));
+        when(compactionOrchestrationService.compact(SESSION_ID, CompactionReason.AUTO_THRESHOLD, 5))
+                .thenReturn(CompactionResult.builder().removed(1).usedSummary(true).build());
+
+        List<Message> messages = buildLargeMessageList(50, 50);
+        AgentContext context = buildContext(messages);
+
+        system.process(context);
+
+        verify(compactionOrchestrationService).compact(SESSION_ID, CompactionReason.AUTO_THRESHOLD, 5);
     }
 
     @Test
@@ -156,6 +209,7 @@ class AutoCompactionSystemTest {
 
     @Test
     void compactionExceptionPropagates() {
+        when(runtimeConfigService.getCompactionTriggerMode()).thenReturn("token_threshold");
         List<Message> messages = buildLargeMessageList(50, 50);
         AgentContext context = buildContext(messages);
 

@@ -190,6 +190,8 @@ class RuntimeConfigServiceTest {
         assertTrue(service.isCompactionEnabled());
         assertEquals(50000, service.getCompactionMaxContextTokens());
         assertEquals(20, service.getCompactionKeepLastMessages());
+        assertEquals("model_ratio", service.getCompactionTriggerMode());
+        assertEquals(0.95d, service.getCompactionModelThresholdRatio(), 0.0001d);
         assertTrue(service.isCompactionPreserveTurnBoundariesEnabled());
         assertTrue(service.isCompactionDetailsEnabled());
         assertEquals(50, service.getCompactionDetailsMaxItemsPerCategory());
@@ -200,6 +202,8 @@ class RuntimeConfigServiceTest {
     void shouldReturnConfiguredAdvancedCompactionSettings() throws Exception {
         RuntimeConfig.CompactionConfig compaction = RuntimeConfig.CompactionConfig.builder()
                 .enabled(true)
+                .triggerMode("token_threshold")
+                .modelThresholdRatio(0.9d)
                 .maxContextTokens(12345)
                 .keepLastMessages(7)
                 .preserveTurnBoundaries(false)
@@ -209,6 +213,8 @@ class RuntimeConfigServiceTest {
                 .build();
         persistedSections.put("compaction.json", objectMapper.writeValueAsString(compaction));
 
+        assertEquals("token_threshold", service.getCompactionTriggerMode());
+        assertEquals(0.9d, service.getCompactionModelThresholdRatio(), 0.0001d);
         assertFalse(service.isCompactionPreserveTurnBoundariesEnabled());
         assertFalse(service.isCompactionDetailsEnabled());
         assertEquals(12, service.getCompactionDetailsMaxItemsPerCategory());
@@ -222,6 +228,8 @@ class RuntimeConfigServiceTest {
         RuntimeConfig config = service.getRuntimeConfig();
 
         assertNotNull(config.getCompaction());
+        assertEquals("model_ratio", config.getCompaction().getTriggerMode());
+        assertEquals(0.95d, config.getCompaction().getModelThresholdRatio(), 0.0001d);
         assertTrue(config.getCompaction().getPreserveTurnBoundaries());
         assertTrue(config.getCompaction().getDetailsEnabled());
         assertEquals(50, config.getCompaction().getDetailsMaxItemsPerCategory());
@@ -232,6 +240,8 @@ class RuntimeConfigServiceTest {
     void shouldInitializeCompactionAdvancedDefaultsWhenNullDuringRuntimeConfigUpdate() {
         RuntimeConfig newConfig = RuntimeConfig.builder().build();
         newConfig.setCompaction(new RuntimeConfig.CompactionConfig());
+        newConfig.getCompaction().setTriggerMode(null);
+        newConfig.getCompaction().setModelThresholdRatio(null);
         newConfig.getCompaction().setPreserveTurnBoundaries(null);
         newConfig.getCompaction().setDetailsEnabled(null);
         newConfig.getCompaction().setDetailsMaxItemsPerCategory(null);
@@ -240,6 +250,8 @@ class RuntimeConfigServiceTest {
         service.updateRuntimeConfig(newConfig);
 
         RuntimeConfig updated = service.getRuntimeConfig();
+        assertEquals("model_ratio", updated.getCompaction().getTriggerMode());
+        assertEquals(0.95d, updated.getCompaction().getModelThresholdRatio(), 0.0001d);
         assertTrue(updated.getCompaction().getPreserveTurnBoundaries());
         assertTrue(updated.getCompaction().getDetailsEnabled());
         assertEquals(50, updated.getCompaction().getDetailsMaxItemsPerCategory());

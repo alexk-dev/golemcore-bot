@@ -1322,6 +1322,40 @@ class SettingsControllerTest {
         assertEquals("golemcore/whisper", saved.getVoice().getTtsProvider());
     }
 
+    @Test
+    void shouldRejectInvalidCompactionTriggerMode() {
+        RuntimeConfig current = RuntimeConfig.builder().build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .compaction(RuntimeConfig.CompactionConfig.builder()
+                        .triggerMode("magic")
+                        .build())
+                .build();
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateRuntimeConfig(incoming));
+        assertTrue(exception.getMessage().contains("compaction.triggerMode must be one of"));
+        assertTrue(exception.getMessage().contains("model_ratio"));
+        assertTrue(exception.getMessage().contains("token_threshold"));
+    }
+
+    @Test
+    void shouldRejectInvalidCompactionModelThresholdRatio() {
+        RuntimeConfig current = RuntimeConfig.builder().build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .compaction(RuntimeConfig.CompactionConfig.builder()
+                        .modelThresholdRatio(1.2d)
+                        .build())
+                .build();
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateRuntimeConfig(incoming));
+        assertEquals("compaction.modelThresholdRatio must be between 0 and 1", exception.getMessage());
+    }
+
     private void registerSttProvider(String providerId, String alias) {
         SttProvider provider = mock(SttProvider.class);
         when(provider.getProviderId()).thenReturn(providerId);

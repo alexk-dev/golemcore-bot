@@ -50,6 +50,12 @@ public class SettingsController {
     private static final String LEGACY_STT_PROVIDER_ELEVENLABS = "elevenlabs";
     private static final String LEGACY_STT_PROVIDER_WHISPER = "whisper";
     private static final Set<String> VALID_API_TYPES = Set.of("openai", "anthropic", "gemini");
+    private static final String DEFAULT_COMPACTION_TRIGGER_MODE = "model_ratio";
+    private static final String COMPACTION_TRIGGER_MODE_TOKEN_THRESHOLD = "token_threshold";
+    private static final Set<String> VALID_COMPACTION_TRIGGER_MODES = Set.of(
+            DEFAULT_COMPACTION_TRIGGER_MODE,
+            COMPACTION_TRIGGER_MODE_TOKEN_THRESHOLD);
+    private static final double DEFAULT_COMPACTION_MODEL_THRESHOLD_RATIO = 0.95d;
     private static final int MEMORY_SOFT_BUDGET_MIN = 200;
     private static final int MEMORY_SOFT_BUDGET_MAX = 10000;
     private static final int MEMORY_MAX_BUDGET_MIN = 200;
@@ -177,6 +183,7 @@ public class SettingsController {
         if (merged.getMemory() != null) {
             validateMemoryConfig(merged.getMemory());
         }
+        validateCompactionConfig(merged.getCompaction());
         validateVoiceConfig(merged.getVoice());
         runtimeConfigService.updateRuntimeConfig(merged);
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
@@ -461,6 +468,7 @@ public class SettingsController {
             config.setSecurity(request.security());
         }
         if (request.compaction() != null) {
+            validateCompactionConfig(request.compaction());
             config.setCompaction(request.compaction());
         }
         runtimeConfigService.updateRuntimeConfig(config);
@@ -596,6 +604,41 @@ public class SettingsController {
         if (softBudget != null && maxBudget != null && maxBudget < softBudget) {
             throw new IllegalArgumentException(
                     "memory.maxPromptBudgetTokens must be greater than or equal to memory.softPromptBudgetTokens");
+        }
+    }
+
+    private void validateCompactionConfig(RuntimeConfig.CompactionConfig compactionConfig) {
+        if (compactionConfig == null) {
+            return;
+        }
+
+        String triggerMode = compactionConfig.getTriggerMode();
+        if (triggerMode == null || triggerMode.isBlank()) {
+            compactionConfig.setTriggerMode(DEFAULT_COMPACTION_TRIGGER_MODE);
+        } else {
+            String normalized = triggerMode.trim().toLowerCase(Locale.ROOT);
+            if (!VALID_COMPACTION_TRIGGER_MODES.contains(normalized)) {
+                throw new IllegalArgumentException(
+                        "compaction.triggerMode must be one of " + VALID_COMPACTION_TRIGGER_MODES);
+            }
+            compactionConfig.setTriggerMode(normalized);
+        }
+
+        Double modelThresholdRatio = compactionConfig.getModelThresholdRatio();
+        if (modelThresholdRatio == null) {
+            compactionConfig.setModelThresholdRatio(DEFAULT_COMPACTION_MODEL_THRESHOLD_RATIO);
+        } else if (modelThresholdRatio <= 0.0d || modelThresholdRatio > 1.0d) {
+            throw new IllegalArgumentException("compaction.modelThresholdRatio must be between 0 and 1");
+        }
+
+        Integer maxContextTokens = compactionConfig.getMaxContextTokens();
+        if (maxContextTokens != null && maxContextTokens < 1) {
+            throw new IllegalArgumentException("compaction.maxContextTokens must be greater than 0");
+        }
+
+        Integer keepLastMessages = compactionConfig.getKeepLastMessages();
+        if (keepLastMessages != null && keepLastMessages < 1) {
+            throw new IllegalArgumentException("compaction.keepLastMessages must be greater than 0");
         }
     }
 
