@@ -54,6 +54,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.Executors;
@@ -118,6 +119,7 @@ public class AgentLoop {
     }
 
     public void processMessage(Message message) {
+        Objects.requireNonNull(message, "message must not be null");
         try (MdcSupport.Scope ignored = MdcSupport.withContext(AutoRunContextSupport.buildMdcContext(message))) {
             log.info("=== INCOMING MESSAGE ===");
             log.info("Channel: {}, Chat: {}, Sender: {}",
@@ -125,7 +127,7 @@ public class AgentLoop {
             log.debug("Content: {}", truncate(message.getContent(), 200));
 
             boolean isAuto = AutoRunContextSupport.isAutoMessage(message);
-            boolean isInternal = message != null && message.isInternalMessage();
+            boolean isInternal = message.isInternalMessage();
             if (!isAuto && !isInternal) {
                 RateLimitResult rateLimit = rateLimiter.tryConsume();
                 if (!rateLimit.isAllowed()) {
