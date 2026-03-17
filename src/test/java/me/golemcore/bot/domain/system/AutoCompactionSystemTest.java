@@ -2,8 +2,10 @@ package me.golemcore.bot.domain.system;
 
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.CompactionDetails;
 import me.golemcore.bot.domain.model.CompactionReason;
 import me.golemcore.bot.domain.model.CompactionResult;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
@@ -14,9 +16,11 @@ import org.junit.jupiter.api.Test;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -111,6 +115,23 @@ class AutoCompactionSystemTest {
     }
 
     @Test
+    void ratioModeShouldCompactBeforeLegacyAbsoluteThresholdWhenRatioThresholdIsLower() {
+        when(runtimeConfigService.getCompactionTriggerMode()).thenReturn("model_ratio");
+        when(runtimeConfigService.getCompactionModelThresholdRatio()).thenReturn(0.9d);
+        when(runtimeConfigService.getCompactionMaxContextTokens()).thenReturn(50000);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any(AgentContext.class))).thenReturn(10000);
+        when(compactionOrchestrationService.compact(SESSION_ID, CompactionReason.AUTO_THRESHOLD, 5))
+                .thenReturn(CompactionResult.builder().removed(3).usedSummary(true).build());
+
+        List<Message> messages = buildLargeMessageList(10, 500);
+        AgentContext context = buildContext(messages);
+
+        system.process(context);
+
+        verify(compactionOrchestrationService).compact(SESSION_ID, CompactionReason.AUTO_THRESHOLD, 5);
+    }
+
+    @Test
     void aboveThresholdCompactsAndSyncsContextMessages() {
         when(runtimeConfigService.getCompactionTriggerMode()).thenReturn("token_threshold");
         List<Message> messages = buildLargeMessageList(50, 50);
@@ -173,6 +194,58 @@ class AutoCompactionSystemTest {
         system.process(context);
 
         verify(compactionOrchestrationService).compact(SESSION_ID, CompactionReason.AUTO_THRESHOLD, 5);
+    }
+
+    @Test
+    void tokenThresholdModeShouldFallBackToConfiguredThresholdWhenModelLookupFails() {
+        when(runtimeConfigService.getCompactionTriggerMode()).thenReturn("token_threshold");
+        when(runtimeConfigService.getCompactionMaxContextTokens()).thenReturn(1000);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any(AgentContext.class)))
+                .thenThrow(new IllegalStateException("missing model"));
+        when(compactionOrchestrationService.compact(SESSION_ID, CompactionReason.AUTO_THRESHOLD, 5))
+                .thenReturn(CompactionResult.builder().removed(2).usedSummary(true).build());
+
+        List<Message> messages = buildLargeMessageList(50, 50);
+        AgentContext context = buildContext(messages);
+
+        system.process(context);
+
+        verify(compactionOrchestrationService).compact(SESSION_ID, CompactionReason.AUTO_THRESHOLD, 5);
+    }
+
+    @Test
+    void compactionShouldExposeStructuredDetailsInContextAttributes() {
+        when(runtimeConfigService.getCompactionTriggerMode()).thenReturn("token_threshold");
+        when(compactionOrchestrationService.compact(SESSION_ID, CompactionReason.AUTO_THRESHOLD, 5))
+                .thenReturn(CompactionResult.builder()
+                        .removed(10)
+                        .usedSummary(true)
+                        .details(CompactionDetails.builder()
+                                .reason(CompactionReason.AUTO_THRESHOLD)
+                                .summarizedCount(12)
+                                .keptCount(5)
+                                .summaryLength(320)
+                                .durationMs(42L)
+                                .toolCount(2)
+                                .readFilesCount(3)
+                                .modifiedFilesCount(1)
+                                .splitTurnDetected(true)
+                                .fileChanges(List.of())
+                                .build())
+                        .build());
+
+        AgentContext context = buildContext(buildLargeMessageList(50, 50));
+
+        AgentContext result = system.process(context);
+
+        Map<String, Object> details = result.getAttribute(ContextAttributes.COMPACTION_LAST_DETAILS);
+        assertNotNull(details);
+        assertEquals(10, details.get("removed"));
+        assertEquals(true, details.get("usedSummary"));
+        assertEquals("AUTO_THRESHOLD", details.get("reason"));
+        assertEquals(12, details.get("summarizedCount"));
+        assertEquals(5, details.get("keptCount"));
+        assertEquals(true, details.get("splitTurnDetected"));
     }
 
     @Test

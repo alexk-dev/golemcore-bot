@@ -259,6 +259,35 @@ class RuntimeConfigServiceTest {
     }
 
     @Test
+    void shouldNormalizeInvalidStoredCompactionTriggerSettings() throws Exception {
+        RuntimeConfig.CompactionConfig compaction = RuntimeConfig.CompactionConfig.builder()
+                .triggerMode("not-a-real-mode")
+                .modelThresholdRatio(0.0d)
+                .build();
+        persistedSections.put("compaction.json", objectMapper.writeValueAsString(compaction));
+
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        assertEquals("model_ratio", config.getCompaction().getTriggerMode());
+        assertEquals(0.95d, config.getCompaction().getModelThresholdRatio(), 0.0001d);
+    }
+
+    @Test
+    void shouldNormalizeMixedCaseCompactionTriggerModeDuringUpdate() {
+        RuntimeConfig newConfig = RuntimeConfig.builder().build();
+        newConfig.setCompaction(RuntimeConfig.CompactionConfig.builder()
+                .triggerMode(" Token_Threshold ")
+                .modelThresholdRatio(0.8d)
+                .build());
+
+        service.updateRuntimeConfig(newConfig);
+
+        RuntimeConfig updated = service.getRuntimeConfig();
+        assertEquals("token_threshold", updated.getCompaction().getTriggerMode());
+        assertEquals(0.8d, updated.getCompaction().getModelThresholdRatio(), 0.0001d);
+    }
+
+    @Test
     void shouldReturnDefaultVoiceSettings() {
         assertFalse(service.isVoiceEnabled());
         assertEquals("21m00Tcm4TlvDq8ikWAM", service.getVoiceId());

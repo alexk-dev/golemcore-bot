@@ -300,6 +300,33 @@ class ModelSelectionServiceTest {
     }
 
     @Test
+    void shouldPreferContextModelTierOverForcedUserTierAndActiveSkillForContextResolution() {
+        userPreferences.setTierForce(true);
+        userPreferences.setModelTier("smart");
+        when(modelConfigService.getMaxInputTokens("openai/gpt-5.2", "medium")).thenReturn(180000);
+
+        AgentContext context = AgentContext.builder()
+                .modelTier("coding")
+                .activeSkill(Skill.builder().name("reviewer").modelTier("deep").build())
+                .build();
+
+        int result = service.resolveMaxInputTokensForContext(context);
+
+        assertEquals(180000, result);
+        verify(modelConfigService).getMaxInputTokens("openai/gpt-5.2", "medium");
+    }
+
+    @Test
+    void shouldReturnCompactionFallbackWhenContextResolutionFindsNoModel() {
+        when(runtimeConfigService.getBalancedModel()).thenReturn(null);
+        when(runtimeConfigService.getBalancedModelReasoning()).thenReturn(null);
+
+        int result = service.resolveMaxInputTokensForContext(null);
+
+        assertEquals(50000, result);
+    }
+
+    @Test
     void shouldUseUserOverrideModelForTokenResolution() {
         // Arrange
         Map<String, UserPreferences.TierOverride> overrides = new HashMap<>();
