@@ -225,6 +225,22 @@ class OutgoingResponsePreparationSystemTest {
     }
 
     @Test
+    void shouldNotScheduleInternalRetryForAutoMode() {
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.LLM_ERROR,
+                LlmErrorClassifier.withCode(LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT, "rate limited"));
+        context.setAttribute(ContextAttributes.AUTO_MODE, true);
+        when(preferencesService.getMessage("system.error.llm")).thenReturn(ERROR_MESSAGE);
+
+        AgentContext result = system.process(context);
+
+        OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        assertNotNull(outgoing);
+        assertEquals(ERROR_MESSAGE, outgoing.getText());
+        verify(internalTurnService, never()).scheduleAutoContinueRetry(any(), anyString());
+    }
+
+    @Test
     void shouldNotScheduleInternalRetryForInternalInboundMessage() {
         AgentContext context = buildContext();
         context.setAttribute(ContextAttributes.LLM_ERROR,

@@ -311,14 +311,14 @@ public class SessionRunCoordinator {
 
         private void enqueueFollowUp(Message inbound) {
             if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(resolveQueueKind(inbound))) {
-                while (!queuedFollowUpMessages.isEmpty()) {
-                    Message queued = queuedFollowUpMessages.peekLast();
-                    if (queued == null
-                            || !ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(resolveQueueKind(queued))) {
-                        break;
+                java.util.Iterator<Message> iterator = queuedFollowUpMessages.iterator();
+                while (iterator.hasNext()) {
+                    Message queued = iterator.next();
+                    if (!ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(resolveQueueKind(queued))) {
+                        continue;
                     }
-                    Message replaced = queuedFollowUpMessages.removeLast();
-                    rejectPendingCompletion(replaced, "Replaced by a newer internal retry message");
+                    iterator.remove();
+                    rejectPendingCompletion(queued, "Replaced by a newer internal retry message");
                 }
                 enqueueWithBound(queuedFollowUpMessages, inbound, "internal-retry");
                 return;

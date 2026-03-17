@@ -713,6 +713,57 @@ class SessionRunCoordinatorTest {
     }
 
     @Test
+    void shouldKeepOnlyLatestInternalRetryMessageAcrossQueuedFollowUps() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(false, "one-at-a-time", "all");
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService);
+
+            Message a = user("A");
+            Message retryOne = internalRetry("retry-1");
+            Message followUp = user("follow-up");
+            Message retryTwo = internalRetry("retry-2");
+
+            Gate gateA = new Gate();
+            List<String> processedAfterA = new ArrayList<>();
+            CountDownLatch queuedProcessed = new CountDownLatch(2);
+
+            org.mockito.Mockito.doAnswer(invocation -> {
+                Message inbound = invocation.getArgument(0);
+                if ("A".equals(inbound.getContent())) {
+                    gateA.await();
+                } else {
+                    synchronized (processedAfterA) {
+                        processedAfterA.add(inbound.getContent());
+                    }
+                    queuedProcessed.countDown();
+                }
+                return null;
+            }).when(agentLoop).processMessage(any(Message.class));
+
+            coordinator.enqueue(a);
+            gateA.awaitStarted();
+            coordinator.enqueue(retryOne);
+            coordinator.enqueue(followUp);
+            coordinator.enqueue(retryTwo);
+            gateA.release();
+
+            assertTrue(queuedProcessed.await(2, TimeUnit.SECONDS));
+            assertTrue(waitForRunnerCount(coordinator, 0, 2, TimeUnit.SECONDS));
+
+            List<String> processedSnapshot;
+            synchronized (processedAfterA) {
+                processedSnapshot = new ArrayList<>(processedAfterA);
+            }
+            assertEquals(List.of("retry-2", "follow-up"), processedSnapshot);
+        }
+    }
+
+    @Test
     void shouldKeepOnlyLatestInternalRetryMessage() throws Exception {
         SessionPort sessionPort = mock(SessionPort.class);
         AgentLoop agentLoop = mock(AgentLoop.class);

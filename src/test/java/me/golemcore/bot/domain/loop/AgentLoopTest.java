@@ -1247,6 +1247,139 @@ class AgentLoopTest {
     }
 
     @Test
+    void shouldExposeInternalRetryMessageOnlyInTurnContext() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+
+        AgentSession session = AgentSession.builder()
+                .id("s1").channelType(CHANNEL_TYPE).chatId("1")
+                .messages(new ArrayList<>()).build();
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "1")).thenReturn(session);
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+
+        List<Message> observedMessages = new ArrayList<>();
+        java.util.concurrent.atomic.AtomicBoolean internalInput = new java.util.concurrent.atomic.AtomicBoolean(false);
+        AgentSystem inspector = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "inspector";
+            }
+
+            @Override
+            public int getOrder() {
+                return 1;
+            }
+
+            @Override
+            public boolean shouldProcess(AgentContext context) {
+                return true;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                internalInput.set(Boolean.TRUE.equals(context.getAttribute(ContextAttributes.TURN_INPUT_INTERNAL)));
+                observedMessages.addAll(context.getMessages());
+                return context;
+            }
+        };
+
+        AgentLoop loop = createLoop(
+                sessionPort, rateLimitPort, List.of(inspector), List.of(channel),
+                mockRuntimeConfigService(1), preferencesService, llmPort, clock);
+
+        Map<String, Object> meta = new HashMap<>();
+        meta.put(ContextAttributes.MESSAGE_INTERNAL, true);
+        meta.put(ContextAttributes.MESSAGE_INTERNAL_KIND, ContextAttributes.MESSAGE_INTERNAL_KIND_AUTO_CONTINUE);
+        Message internalMsg = Message.builder()
+                .role(ROLE_USER).content("Continue and finish")
+                .channelType(CHANNEL_TYPE).chatId("1").senderId("internal")
+                .metadata(meta).timestamp(clock.instant()).build();
+
+        loop.processMessage(internalMsg);
+
+        assertTrue(internalInput.get());
+        assertEquals(1, observedMessages.size());
+        assertTrue(observedMessages.get(0).isInternalMessage());
+        assertEquals("Continue and finish", observedMessages.get(0).getContent());
+        assertTrue(session.getMessages().isEmpty());
+        verify(rateLimitPort, never()).tryConsume();
+    }
+
+    @Test
+    void shouldSkipFeedbackGuaranteeWhenInternalRetryAlreadyScheduled() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+
+        AgentSession session = AgentSession.builder()
+                .id("s1").channelType(CHANNEL_TYPE).chatId("1")
+                .messages(new ArrayList<>()).build();
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "1")).thenReturn(session);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+        when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        AgentSystem retryScheduled = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "retryScheduled";
+            }
+
+            @Override
+            public int getOrder() {
+                return 1;
+            }
+
+            @Override
+            public boolean shouldProcess(AgentContext context) {
+                return true;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                context.setAttribute(ContextAttributes.TURN_INTERNAL_RETRY_SCHEDULED, true);
+                return context;
+            }
+        };
+
+        ResponseRoutingSystem routing = new ResponseRoutingSystem(
+                new ChannelRegistry(List.of(channel)), preferencesService, mock(VoiceResponseHandler.class));
+
+        AgentLoop loop = createLoop(
+                sessionPort, rateLimitPort, List.of(retryScheduled, routing), List.of(channel),
+                mockRuntimeConfigService(1), preferencesService, llmPort, clock);
+
+        Message inbound = Message.builder()
+                .role(ROLE_USER).content("hi")
+                .channelType(CHANNEL_TYPE).chatId("1").senderId("u1")
+                .timestamp(clock.instant()).build();
+
+        loop.processMessage(inbound);
+
+        verify(channel, never()).sendMessage(eq("1"), eq(MSG_GENERIC), any());
+    }
+
+    @Test
     void shouldSkipFeedbackGuaranteeForAutoMode() {
         SessionPort sessionPort = mock(SessionPort.class);
         RateLimitPort rateLimitPort = mock(RateLimitPort.class);
