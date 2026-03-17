@@ -36,8 +36,8 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -268,12 +268,12 @@ class ToolLoopResilienceBddTest {
         DefaultToolLoopSystem system = buildSystem(llmPort, runtimeConfigService, null, mock(ToolExecutorPort.class));
 
         AtomicReference<ToolLoopTurnResult> resultRef = new AtomicReference<>();
-        AtomicReference<Throwable> failureRef = new AtomicReference<>();
+        AtomicReference<Exception> failureRef = new AtomicReference<>();
         Thread worker = new Thread(() -> {
             try {
                 resultRef.set(system.processTurn(context));
-            } catch (Throwable throwable) {
-                failureRef.set(throwable);
+            } catch (Exception exception) {
+                failureRef.set(exception);
             }
         }, "tool-loop-stop-test");
 
@@ -339,13 +339,13 @@ class ToolLoopResilienceBddTest {
         DefaultToolLoopSystem system = buildSystem(llmPort, runtimeConfigService, null, mock(ToolExecutorPort.class));
 
         AtomicReference<ToolLoopTurnResult> resultRef = new AtomicReference<>();
-        AtomicReference<Throwable> failureRef = new AtomicReference<>();
+        AtomicReference<Exception> failureRef = new AtomicReference<>();
         AtomicBoolean interruptedAfterReturn = new AtomicBoolean(true);
         Thread worker = new Thread(() -> {
             try {
                 resultRef.set(system.processTurn(context));
-            } catch (Throwable throwable) {
-                failureRef.set(throwable);
+            } catch (Exception exception) {
+                failureRef.set(exception);
             } finally {
                 interruptedAfterReturn.set(Thread.currentThread().isInterrupted());
             }
@@ -416,12 +416,12 @@ class ToolLoopResilienceBddTest {
         DefaultToolLoopSystem system = buildSystem(llmPort, runtimeConfigService, null, mock(ToolExecutorPort.class));
 
         AtomicReference<ToolLoopTurnResult> resultRef = new AtomicReference<>();
-        AtomicReference<Throwable> failureRef = new AtomicReference<>();
+        AtomicReference<Exception> failureRef = new AtomicReference<>();
         Thread worker = new Thread(() -> {
             try {
                 resultRef.set(system.processTurn(context));
-            } catch (Throwable throwable) {
-                failureRef.set(throwable);
+            } catch (Exception exception) {
+                failureRef.set(exception);
             }
         }, "tool-loop-retry-stop-test");
 
@@ -454,7 +454,7 @@ class ToolLoopResilienceBddTest {
                 .channelType("telegram")
                 .chatId("c4")
                 .messages(new ArrayList<>())
-                .metadata(new java.util.LinkedHashMap<>())
+                .metadata(new LinkedHashMap<>())
                 .build();
         for (int i = 0; i < 6; i++) {
             session.addMessage(Message.builder()
@@ -559,7 +559,7 @@ class ToolLoopResilienceBddTest {
                 .channelType("telegram")
                 .chatId("c5")
                 .messages(new ArrayList<>())
-                .metadata(new java.util.LinkedHashMap<>())
+                .metadata(new LinkedHashMap<>())
                 .build();
         session.addMessage(Message.builder().role("user").content("edit files").timestamp(NOW).build());
 
@@ -641,7 +641,7 @@ class ToolLoopResilienceBddTest {
                 .channelType("telegram")
                 .chatId("c6")
                 .messages(new ArrayList<>())
-                .metadata(new java.util.LinkedHashMap<>())
+                .metadata(new LinkedHashMap<>())
                 .build();
         session.addMessage(Message.builder().role("user").content("run shell").timestamp(NOW).build());
 
@@ -692,7 +692,7 @@ class ToolLoopResilienceBddTest {
                 .channelType("telegram")
                 .chatId("c7")
                 .messages(new ArrayList<>())
-                .metadata(new java.util.LinkedHashMap<>())
+                .metadata(new LinkedHashMap<>())
                 .build();
         session.addMessage(Message.builder().role("user").content("broken fs args").timestamp(NOW).build());
 

@@ -248,26 +248,11 @@ public class AutoRunHistoryService {
                 lastActivityAt = timestamp;
             }
 
-            String model = null;
-            String modelTier = null;
-            String skill = null;
-            String status = null;
             Map<String, Object> metadata = message.getMetadata();
-            if (metadata != null) {
-                model = AutoRunContextSupport.readMetadataString(metadata, "model");
-                modelTier = AutoRunContextSupport.readMetadataString(metadata, "modelTier");
-                status = AutoRunContextSupport.readMetadataString(metadata, ContextAttributes.AUTO_RUN_STATUS);
-                if (shouldExposeTurnMetadata(message.getRole())) {
-                    skill = AutoRunContextSupport.readMetadataString(metadata, ContextAttributes.AUTO_RUN_ACTIVE_SKILL);
-                    if (StringValueSupport.isBlank(skill)) {
-                        skill = AutoRunContextSupport.readMetadataString(metadata, ContextAttributes.ACTIVE_SKILL_NAME);
-                    }
-                }
-            }
-            if (!shouldExposeTurnMetadata(message.getRole())) {
-                model = null;
-                modelTier = null;
-            }
+            String model = resolveModel(metadata, message.getRole());
+            String modelTier = resolveModelTier(metadata, message.getRole());
+            String skill = resolveSkill(metadata, message.getRole());
+            String status = resolveRunStatus(metadata);
 
             messages.add(new RunMessage(
                     message.getId(),
@@ -349,6 +334,39 @@ public class AutoRunHistoryService {
                 return "TOOL_OUTPUT";
             }
             return "STARTED";
+        }
+
+        private static String resolveModel(Map<String, Object> metadata, String role) {
+            if (!shouldExposeTurnMetadata(role) || metadata == null) {
+                return null;
+            }
+            return AutoRunContextSupport.readMetadataString(metadata, "model");
+        }
+
+        private static String resolveModelTier(Map<String, Object> metadata, String role) {
+            if (!shouldExposeTurnMetadata(role) || metadata == null) {
+                return null;
+            }
+            return AutoRunContextSupport.readMetadataString(metadata, "modelTier");
+        }
+
+        private static String resolveSkill(Map<String, Object> metadata, String role) {
+            if (!shouldExposeTurnMetadata(role) || metadata == null) {
+                return null;
+            }
+            String activeSkill = AutoRunContextSupport.readMetadataString(metadata,
+                    ContextAttributes.AUTO_RUN_ACTIVE_SKILL);
+            if (!StringValueSupport.isBlank(activeSkill)) {
+                return activeSkill;
+            }
+            return AutoRunContextSupport.readMetadataString(metadata, ContextAttributes.ACTIVE_SKILL_NAME);
+        }
+
+        private static String resolveRunStatus(Map<String, Object> metadata) {
+            if (metadata == null) {
+                return null;
+            }
+            return AutoRunContextSupport.readMetadataString(metadata, ContextAttributes.AUTO_RUN_STATUS);
         }
 
         private static String resolveScheduleTargetLabel(
