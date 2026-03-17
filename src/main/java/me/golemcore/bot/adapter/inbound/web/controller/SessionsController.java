@@ -47,7 +47,6 @@ import java.util.UUID;
 public class SessionsController {
 
     private static final String ROLE_ASSISTANT = "assistant";
-    private static final String DEFAULT_MODEL_TIER = "balanced";
     private static final String CHANNEL_WEB = "web";
     private static final String CHANNEL_TELEGRAM = "telegram";
     private static final int MAX_RECENT_LIMIT = 20;
@@ -381,10 +380,6 @@ public class SessionsController {
             autoGoalId = AutoRunContextSupport.readMetadataString(msg.getMetadata(), ContextAttributes.AUTO_GOAL_ID);
             autoTaskId = AutoRunContextSupport.readMetadataString(msg.getMetadata(), ContextAttributes.AUTO_TASK_ID);
         }
-        if (ROLE_ASSISTANT.equals(msg.getRole()) && (modelTier == null || modelTier.isBlank())) {
-            modelTier = DEFAULT_MODEL_TIER;
-        }
-
         return SessionDetailDto.MessageDto.builder()
                 .id(msg.getId())
                 .role(msg.getRole())

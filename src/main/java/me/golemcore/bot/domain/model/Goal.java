@@ -51,6 +51,18 @@ public class Goal {
     @Builder.Default
     private List<AutoTask> tasks = new ArrayList<>();
 
+    @Builder.Default
+    private int consecutiveFailureCount = 0;
+
+    @Builder.Default
+    private boolean reflectionRequired = false;
+
+    private String lastFailureSummary;
+    private String lastFailureFingerprint;
+    private String reflectionStrategy;
+    private String lastUsedSkillName;
+    private Instant lastFailureAt;
+    private Instant lastReflectionAt;
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -69,10 +81,11 @@ public class Goal {
      */
     @JsonIgnore
     public String getExecutionPrompt() {
-        if (prompt != null && !prompt.isBlank()) {
-            return prompt;
+        String basePrompt = prompt != null && !prompt.isBlank() ? prompt : title;
+        if (reflectionStrategy == null || reflectionStrategy.isBlank()) {
+            return basePrompt;
         }
-        return title;
+        return basePrompt + "\n\nRecovery strategy from previous reflection:\n" + reflectionStrategy;
     }
 
     /**

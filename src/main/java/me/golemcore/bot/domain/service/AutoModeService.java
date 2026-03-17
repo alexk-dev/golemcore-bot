@@ -499,26 +499,42 @@ public class AutoModeService {
 
     public void recordAutoRunFailure(String goalId, String taskId, String failureSummary, String failureFingerprint,
             String activeSkillName) {
-        if (StringValueSupport.isBlank(goalId) || StringValueSupport.isBlank(taskId)) {
+        if (StringValueSupport.isBlank(goalId)) {
             return;
         }
 
         Goal goal = getGoal(goalId)
                 .orElseThrow(() -> new IllegalArgumentException(GOAL_NOT_FOUND + goalId));
+        Instant now = Instant.now();
+        String normalizedFailureSummary = normalizeOptionalValue(failureSummary);
+        String normalizedFailureFingerprint = buildFailureFingerprint(
+                failureFingerprint != null ? failureFingerprint : failureSummary);
+        String normalizedActiveSkillName = normalizeOptionalValue(activeSkillName);
+
+        if (StringValueSupport.isBlank(taskId)) {
+            goal.setConsecutiveFailureCount(goal.getConsecutiveFailureCount() + 1);
+            goal.setLastFailureSummary(normalizedFailureSummary);
+            goal.setLastFailureFingerprint(normalizedFailureFingerprint);
+            goal.setLastFailureAt(now);
+            goal.setLastUsedSkillName(normalizedActiveSkillName);
+            goal.setReflectionRequired(goal.getConsecutiveFailureCount() >= getReflectionFailureThreshold());
+            goal.setUpdatedAt(now);
+            saveGoals(getGoals());
+            return;
+        }
+
         AutoTask task = goal.getTasks().stream()
                 .filter(item -> taskId.equals(item.getId()))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException(TASK_NOT_FOUND + taskId));
 
-        Instant now = Instant.now();
         task.setStatus(AutoTask.TaskStatus.FAILED);
-        task.setResult(normalizeOptionalValue(failureSummary));
+        task.setResult(normalizedFailureSummary);
         task.setConsecutiveFailureCount(task.getConsecutiveFailureCount() + 1);
-        task.setLastFailureSummary(normalizeOptionalValue(failureSummary));
-        task.setLastFailureFingerprint(buildFailureFingerprint(
-                failureFingerprint != null ? failureFingerprint : failureSummary));
+        task.setLastFailureSummary(normalizedFailureSummary);
+        task.setLastFailureFingerprint(normalizedFailureFingerprint);
         task.setLastFailureAt(now);
-        task.setLastUsedSkillName(normalizeOptionalValue(activeSkillName));
+        task.setLastUsedSkillName(normalizedActiveSkillName);
         task.setReflectionRequired(task.getConsecutiveFailureCount() >= getReflectionFailureThreshold());
         task.setUpdatedAt(now);
         goal.setUpdatedAt(now);
@@ -526,47 +542,78 @@ public class AutoModeService {
     }
 
     public void recordAutoRunSuccess(String goalId, String taskId, String activeSkillName) {
-        if (StringValueSupport.isBlank(goalId) || StringValueSupport.isBlank(taskId)) {
+        if (StringValueSupport.isBlank(goalId)) {
             return;
         }
 
         Goal goal = getGoal(goalId)
                 .orElseThrow(() -> new IllegalArgumentException(GOAL_NOT_FOUND + goalId));
+        String normalizedActiveSkillName = normalizeOptionalValue(activeSkillName);
+        Instant now = Instant.now();
+
+        if (StringValueSupport.isBlank(taskId)) {
+            resetGoalFailureState(goal);
+            goal.setLastUsedSkillName(normalizedActiveSkillName);
+            goal.setUpdatedAt(now);
+            saveGoals(getGoals());
+            return;
+        }
+
         AutoTask task = goal.getTasks().stream()
                 .filter(item -> taskId.equals(item.getId()))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException(TASK_NOT_FOUND + taskId));
 
         resetTaskFailureState(task);
-        task.setLastUsedSkillName(normalizeOptionalValue(activeSkillName));
+        task.setLastUsedSkillName(normalizedActiveSkillName);
         if (task.getStatus() == AutoTask.TaskStatus.FAILED) {
             task.setStatus(AutoTask.TaskStatus.IN_PROGRESS);
         }
-        task.setUpdatedAt(Instant.now());
-        goal.setUpdatedAt(task.getUpdatedAt());
+        task.setUpdatedAt(now);
+        goal.setUpdatedAt(now);
         saveGoals(getGoals());
     }
 
     public boolean shouldTriggerReflection(String goalId, String taskId) {
-        return getTaskReflectionState(goalId, taskId)
-                .map(TaskReflectionState::reflectionRequired)
-                .orElse(false);
+        return resolveTaskReflectionState(goalId, taskId).reflectionRequired();
     }
 
     public void applyReflectionResult(String goalId, String taskId, String reflectionStrategy) {
-        if (StringValueSupport.isBlank(goalId) || StringValueSupport.isBlank(taskId)) {
+        if (StringValueSupport.isBlank(goalId)) {
             return;
         }
 
         Goal goal = getGoal(goalId)
                 .orElseThrow(() -> new IllegalArgumentException(GOAL_NOT_FOUND + goalId));
+
+        Instant now = Instant.now();
+        String normalizedReflectionStrategy = normalizeOptionalValue(reflectionStrategy);
+        if (StringValueSupport.isBlank(taskId)) {
+            goal.setReflectionStrategy(normalizedReflectionStrategy);
+            goal.setReflectionRequired(false);
+            goal.setConsecutiveFailureCount(0);
+            goal.setLastReflectionAt(now);
+            goal.setUpdatedAt(now);
+            saveGoals(getGoals());
+
+            if (goal.getReflectionStrategy() != null) {
+                writeDiary(DiaryEntry.builder()
+                        .timestamp(now)
+                        .type(DiaryEntry.DiaryType.OBSERVATION)
+                        .content("Reflection strategy for goal '" + goal.getTitle() + "': "
+                                + goal.getReflectionStrategy())
+                        .goalId(goalId)
+                        .build());
+            }
+            return;
+        }
+
         AutoTask task = goal.getTasks().stream()
                 .filter(item -> taskId.equals(item.getId()))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException(TASK_NOT_FOUND + taskId));
 
-        Instant now = Instant.now();
-        task.setReflectionStrategy(normalizeOptionalValue(reflectionStrategy));
+        task.setReflectionStrategy(normalizedReflectionStrategy);
         task.setReflectionRequired(false);
         task.setConsecutiveFailureCount(0);
         task.setLastReflectionAt(now);
@@ -863,24 +910,40 @@ public class AutoModeService {
     }
 
     private Optional<TaskReflectionState> getTaskReflectionState(String goalId, String taskId) {
-        if (StringValueSupport.isBlank(goalId) || StringValueSupport.isBlank(taskId)) {
+        if (StringValueSupport.isBlank(goalId)) {
             return Optional.empty();
         }
 
-        return getGoal(goalId).flatMap(goal -> goal.getTasks().stream()
-                .filter(item -> taskId.equals(item.getId()))
-                .findFirst()
-                .map(task -> new TaskReflectionState(
+        return getGoal(goalId).flatMap(goal -> {
+            if (StringValueSupport.isBlank(taskId)) {
+                return Optional.of(new TaskReflectionState(
                         goal.getReflectionModelTier(),
                         goal.isReflectionTierPriority(),
-                        task.getReflectionModelTier(),
-                        task.isReflectionTierPriority(),
-                        task.getLastUsedSkillName(),
-                        task.getConsecutiveFailureCount(),
-                        task.isReflectionRequired(),
-                        task.getLastFailureSummary(),
-                        task.getLastFailureFingerprint(),
-                        task.getReflectionStrategy())));
+                        null,
+                        false,
+                        goal.getLastUsedSkillName(),
+                        goal.getConsecutiveFailureCount(),
+                        goal.isReflectionRequired(),
+                        goal.getLastFailureSummary(),
+                        goal.getLastFailureFingerprint(),
+                        goal.getReflectionStrategy()));
+            }
+
+            return goal.getTasks().stream()
+                    .filter(item -> taskId.equals(item.getId()))
+                    .findFirst()
+                    .map(task -> new TaskReflectionState(
+                            goal.getReflectionModelTier(),
+                            goal.isReflectionTierPriority(),
+                            task.getReflectionModelTier(),
+                            task.isReflectionTierPriority(),
+                            task.getLastUsedSkillName(),
+                            task.getConsecutiveFailureCount(),
+                            task.isReflectionRequired(),
+                            task.getLastFailureSummary(),
+                            task.getLastFailureFingerprint(),
+                            task.getReflectionStrategy()));
+        });
     }
 
     private String normalizeOptionalValue(String value) {
@@ -903,6 +966,14 @@ public class AutoModeService {
         task.setLastFailureSummary(null);
         task.setLastFailureFingerprint(null);
         task.setLastFailureAt(null);
+    }
+
+    private void resetGoalFailureState(Goal goal) {
+        goal.setConsecutiveFailureCount(0);
+        goal.setReflectionRequired(false);
+        goal.setLastFailureSummary(null);
+        goal.setLastFailureFingerprint(null);
+        goal.setLastFailureAt(null);
     }
 
     private String buildFailureFingerprint(String failureSummary) {

@@ -26,8 +26,6 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class AutoRunHistoryService {
 
-    private static final String DEFAULT_MODEL_TIER = "balanced";
-
     private final SessionPort sessionPort;
     private final ScheduleService scheduleService;
     private final AutoModeService autoModeService;
@@ -258,14 +256,17 @@ public class AutoRunHistoryService {
             if (metadata != null) {
                 model = AutoRunContextSupport.readMetadataString(metadata, "model");
                 modelTier = AutoRunContextSupport.readMetadataString(metadata, "modelTier");
-                skill = AutoRunContextSupport.readMetadataString(metadata, ContextAttributes.AUTO_RUN_ACTIVE_SKILL);
-                if (StringValueSupport.isBlank(skill)) {
-                    skill = AutoRunContextSupport.readMetadataString(metadata, ContextAttributes.ACTIVE_SKILL_NAME);
-                }
                 status = AutoRunContextSupport.readMetadataString(metadata, ContextAttributes.AUTO_RUN_STATUS);
+                if (shouldExposeTurnMetadata(message.getRole())) {
+                    skill = AutoRunContextSupport.readMetadataString(metadata, ContextAttributes.AUTO_RUN_ACTIVE_SKILL);
+                    if (StringValueSupport.isBlank(skill)) {
+                        skill = AutoRunContextSupport.readMetadataString(metadata, ContextAttributes.ACTIVE_SKILL_NAME);
+                    }
+                }
             }
-            if ("assistant".equals(message.getRole()) && StringValueSupport.isBlank(modelTier)) {
-                modelTier = DEFAULT_MODEL_TIER;
+            if (!shouldExposeTurnMetadata(message.getRole())) {
+                model = null;
+                modelTier = null;
             }
 
             messages.add(new RunMessage(
@@ -380,6 +381,10 @@ public class AutoRunHistoryService {
                 return true;
             }
             return candidate.isAfter(current);
+        }
+
+        private static boolean shouldExposeTurnMetadata(String role) {
+            return "assistant".equals(role) || "tool".equals(role);
         }
     }
 }

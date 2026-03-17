@@ -419,6 +419,147 @@ class AutoModeSchedulerTest {
     }
 
     @Test
+    void shouldTriggerGoalLevelReflectionForUnplannedGoalAfterRepeatedFailure() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+        when(autoModeService.shouldTriggerReflection(GOAL_ID, null)).thenReturn(true);
+        when(autoModeService.isReflectionTierPriority(GOAL_ID, null)).thenReturn(true);
+        when(autoModeService.resolveTaskReflectionState(GOAL_ID, null))
+                .thenReturn(new AutoModeService.TaskReflectionState(
+                        "deep",
+                        true,
+                        null,
+                        false,
+                        "planner-skill",
+                        2,
+                        true,
+                        "planner timeout",
+                        "planner timeout",
+                        null));
+        when(skillComponent.findByName("planner-skill")).thenReturn(Optional.of(Skill.builder()
+                .name("planner-skill")
+                .reflectionTier("coding")
+                .build()));
+        when(autoModeService.resolveReflectionTier(eq(GOAL_ID), eq(null), any(Skill.class))).thenReturn("deep");
+
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .reflectionModelTier("deep")
+                .reflectionTierPriority(true)
+                .tasks(new ArrayList<>())
+                .build();
+        when(autoModeService.getGoal(GOAL_ID)).thenReturn(Optional.of(goal));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-goal-reflect")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId(GOAL_ID)
+                .cronExpression(TEST_CRON)
+                .enabled(true)
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        when(sessionRunCoordinator.submit(any(Message.class))).thenAnswer(invocation -> {
+            Message message = invocation.getArgument(0);
+            if (Boolean.TRUE.equals(message.getMetadata().get(ContextAttributes.AUTO_REFLECTION_ACTIVE))) {
+                message.getMetadata().put(ContextAttributes.AUTO_RUN_STATUS, "REFLECTION_COMPLETED");
+                message.getMetadata().put(ContextAttributes.AUTO_RUN_ASSISTANT_TEXT,
+                        "Ask for a smaller planning slice and enumerate blockers first");
+            } else {
+                message.getMetadata().put(ContextAttributes.AUTO_RUN_STATUS, "FAILED");
+                message.getMetadata().put(ContextAttributes.AUTO_RUN_FAILURE_SUMMARY, "planner timeout");
+                message.getMetadata().put(ContextAttributes.AUTO_RUN_FAILURE_FINGERPRINT, "planner timeout");
+                message.getMetadata().put(ContextAttributes.AUTO_RUN_ACTIVE_SKILL, "planner-skill");
+            }
+            return CompletableFuture.completedFuture(null);
+        });
+
+        scheduler.tick();
+
+        ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
+        verify(sessionRunCoordinator, times(2)).submit(captor.capture());
+        List<Message> submitted = captor.getAllValues();
+        assertNull(submitted.get(0).getMetadata().get(ContextAttributes.AUTO_TASK_ID));
+        assertEquals(true, submitted.get(1).getMetadata().get(ContextAttributes.AUTO_REFLECTION_ACTIVE));
+        assertNull(submitted.get(1).getMetadata().get(ContextAttributes.AUTO_TASK_ID));
+        assertEquals("deep", submitted.get(1).getMetadata().get(ContextAttributes.AUTO_REFLECTION_TIER));
+        assertTrue(submitted.get(1).getContent().contains("planning goal"));
+        verify(autoModeService).recordAutoRunFailure(GOAL_ID, null, "planner timeout", "planner timeout",
+                "planner-skill");
+        verify(autoModeService).applyReflectionResult(GOAL_ID, null,
+                "Ask for a smaller planning slice and enumerate blockers first");
+    }
+
+    @Test
+    void shouldFallbackToConfiguredReflectionTierWhenLastUsedSkillIsUnavailable() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+        when(autoModeService.shouldTriggerReflection(GOAL_ID, TASK_ID)).thenReturn(true);
+        when(autoModeService.isReflectionTierPriority(GOAL_ID, TASK_ID)).thenReturn(false);
+        when(autoModeService.resolveTaskReflectionState(GOAL_ID, TASK_ID))
+                .thenReturn(new AutoModeService.TaskReflectionState(
+                        "deep",
+                        false,
+                        "smart",
+                        false,
+                        "missing-skill",
+                        2,
+                        true,
+                        "tool timeout",
+                        "tool timeout",
+                        null));
+        when(skillComponent.findByName("missing-skill")).thenReturn(Optional.empty());
+        when(autoModeService.resolveReflectionTier(GOAL_ID, TASK_ID, null)).thenReturn("deep");
+
+        AutoTask task = AutoTask.builder()
+                .id(TASK_ID)
+                .goalId(GOAL_ID)
+                .title("Implement feature X")
+                .status(AutoTask.TaskStatus.FAILED)
+                .order(1)
+                .build();
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>(List.of(task)))
+                .build();
+        when(autoModeService.findGoalForTask(TASK_ID)).thenReturn(Optional.of(goal));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-task-reflect-fallback")
+                .type(ScheduleEntry.ScheduleType.TASK)
+                .targetId(TASK_ID)
+                .cronExpression("0 30 14 * * *")
+                .enabled(true)
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        when(sessionRunCoordinator.submit(any(Message.class))).thenAnswer(invocation -> {
+            Message message = invocation.getArgument(0);
+            if (Boolean.TRUE.equals(message.getMetadata().get(ContextAttributes.AUTO_REFLECTION_ACTIVE))) {
+                message.getMetadata().put(ContextAttributes.AUTO_RUN_STATUS, "REFLECTION_COMPLETED");
+                message.getMetadata().put(ContextAttributes.AUTO_RUN_ASSISTANT_TEXT,
+                        "Use the goal-level fallback strategy");
+            } else {
+                message.getMetadata().put(ContextAttributes.AUTO_RUN_STATUS, "FAILED");
+                message.getMetadata().put(ContextAttributes.AUTO_RUN_FAILURE_SUMMARY, "tool timeout");
+                message.getMetadata().put(ContextAttributes.AUTO_RUN_FAILURE_FINGERPRINT, "tool timeout");
+                message.getMetadata().put(ContextAttributes.AUTO_RUN_ACTIVE_SKILL, "missing-skill");
+            }
+            return CompletableFuture.completedFuture(null);
+        });
+
+        scheduler.tick();
+
+        ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
+        verify(sessionRunCoordinator, times(2)).submit(captor.capture());
+        List<Message> submitted = captor.getAllValues();
+        assertEquals("deep", submitted.get(1).getMetadata().get(ContextAttributes.AUTO_REFLECTION_TIER));
+        verify(autoModeService).applyReflectionResult(GOAL_ID, TASK_ID, "Use the goal-level fallback strategy");
+    }
+
+    @Test
     void shouldMarkFailureWhenScheduleTimesOut() {
         when(autoModeService.isAutoModeEnabled()).thenReturn(true);
 
@@ -497,7 +638,7 @@ class AutoModeSchedulerTest {
     }
 
     @Test
-    void shouldSkipTickWhenExecutionInProgress() {
+    void shouldSkipTickWhenExecutionInProgress() throws Exception {
         when(autoModeService.isAutoModeEnabled()).thenReturn(true);
 
         ScheduleEntry schedule = ScheduleEntry.builder()
@@ -518,10 +659,27 @@ class AutoModeSchedulerTest {
         when(autoModeService.getGoal(GOAL_ID)).thenReturn(Optional.of(goal));
         when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
 
-        scheduler.tick();
+        CompletableFuture<Void> completion = new CompletableFuture<>();
+        CountDownLatch submitStarted = new CountDownLatch(1);
+        CountDownLatch allowFinish = new CountDownLatch(1);
+        when(sessionRunCoordinator.submit(any(Message.class))).thenAnswer(invocation -> {
+            submitStarted.countDown();
+            allowFinish.await(1, TimeUnit.SECONDS);
+            return completion;
+        });
+
+        Thread firstTick = new Thread(scheduler::tick);
+        firstTick.start();
+        assertTrue(submitStarted.await(1, TimeUnit.SECONDS));
+
         scheduler.tick();
 
-        verify(sessionRunCoordinator, times(2)).submit(any(Message.class));
+        verify(sessionRunCoordinator, times(1)).submit(any(Message.class));
+        verify(scheduleService, times(1)).getDueSchedules();
+
+        completion.complete(null);
+        allowFinish.countDown();
+        firstTick.join(1000);
     }
 
     @Test

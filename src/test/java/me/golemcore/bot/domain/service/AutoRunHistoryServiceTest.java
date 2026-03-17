@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -110,6 +111,8 @@ class AutoRunHistoryServiceTest {
         Optional<AutoRunHistoryService.RunDetail> detail = service.getRun("run-1");
         assertTrue(detail.isPresent());
         assertEquals(2, detail.get().messages().size());
+        assertNull(detail.get().messages().get(0).modelTier());
+        assertNull(detail.get().messages().get(0).skill());
         assertEquals("coding", detail.get().messages().get(1).modelTier());
         assertEquals("reviewer-skill", detail.get().messages().get(1).skill());
     }
