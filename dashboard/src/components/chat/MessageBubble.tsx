@@ -124,14 +124,19 @@ function UserDeliveryState({ clientStatus, onRetry }: UserDeliveryStateProps) {
 
 interface AssistantMessageProps {
   content: string;
+  model?: string | null;
   tier?: string | null;
   modelLabel?: string;
   modelTitle?: string;
 }
 
-function AssistantMessageBubble({ content, tier, modelLabel, modelTitle }: AssistantMessageProps) {
+function AssistantMessageBubble({ content, model, tier, modelLabel, modelTitle }: AssistantMessageProps) {
   const normalizedTier = (tier ?? '').toLowerCase();
   const tierMeta = TIER_META[normalizedTier] ?? null;
+  const hasKnownTier = tierMeta != null || (tier != null && tier.trim().length > 0);
+  const resolvedModelLabel = model != null && model.trim().length > 0
+    ? (modelLabel ?? model)
+    : 'System reply';
 
   const { text, tools } = parseToolCalls(content);
 
@@ -146,13 +151,15 @@ function AssistantMessageBubble({ content, tier, modelLabel, modelTitle }: Assis
             <div className="assistant-message-title-group">
               <span className="assistant-message-title">Assistant</span>
               <small className="assistant-model-label" title={modelTitle}>
-                {modelLabel ?? 'Model unavailable'}
+                {resolvedModelLabel}
               </small>
             </div>
           </div>
-          <span className={`badge assistant-tier-chip ${tierMeta?.className ?? 'text-bg-secondary'}`}>
-            {tierMeta?.label ?? (tier ?? 'Unknown tier')}
-          </span>
+          {hasKnownTier && (
+            <span className={`badge assistant-tier-chip ${tierMeta?.className ?? 'text-bg-secondary'}`}>
+              {tierMeta?.label ?? tier}
+            </span>
+          )}
         </div>
         {tools.map((tool) => (
           <ToolCallCard key={`${tool.tool}-${tool.result}`} tool={tool.tool} result={tool.result} />
@@ -196,12 +203,22 @@ function UserMessageBubble({ content, clientStatus, onRetry }: UserMessageProps)
   );
 }
 
-export default function MessageBubble({ role, content, tier, modelLabel, modelTitle, clientStatus, onRetry }: Props) {
+export default function MessageBubble({
+  role,
+  content,
+  model,
+  tier,
+  modelLabel,
+  modelTitle,
+  clientStatus,
+  onRetry,
+}: Props) {
   const safeContent = content ?? '';
   if (role === 'assistant') {
     return (
       <AssistantMessageBubble
         content={safeContent}
+        model={model}
         tier={tier}
         modelLabel={modelLabel}
         modelTitle={modelTitle}

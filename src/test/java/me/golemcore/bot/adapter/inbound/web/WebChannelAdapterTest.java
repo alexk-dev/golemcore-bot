@@ -5,11 +5,14 @@ import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.Message;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.web.reactive.socket.WebSocketSession;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -170,6 +173,71 @@ class WebChannelAdapterTest {
         CompletableFuture<Void> result = adapter.sendMessage(message);
         assertNotNull(result);
         result.join();
+    }
+
+    @Test
+    void shouldIncludeAssistantHintsWhenSendingCompletedMessage() throws Exception {
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.isOpen()).thenReturn(true);
+        when(session.send(any())).thenReturn(Mono.empty());
+        when(session.textMessage(any(String.class)))
+                .thenReturn(mock(org.springframework.web.reactive.socket.WebSocketMessage.class));
+
+        adapter.registerSession("chat-3", session);
+        Message message = Message.builder()
+                .chatId("chat-3")
+                .content("final answer")
+                .metadata(new LinkedHashMap<>(Map.of(
+                        "model", "gemini-3.1-flash-lite-preview",
+                        "modelTier", "smart",
+                        "reasoning", "medium")))
+                .build();
+
+        adapter.sendMessage(message).join();
+
+        ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
+        verify(session).textMessage(payloadCaptor.capture());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = objectMapper.readValue(payloadCaptor.getValue(), Map.class);
+        assertEquals("assistant_done", payload.get("type"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> hint = (Map<String, Object>) payload.get("hint");
+        assertNotNull(hint);
+        assertEquals("gemini-3.1-flash-lite-preview", hint.get("model"));
+        assertEquals("smart", hint.get("tier"));
+        assertEquals("medium", hint.get("reasoning"));
+    }
+
+    @Test
+    void shouldOmitAssistantHintsWhenMetadataHasNoUsableValues() throws Exception {
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.isOpen()).thenReturn(true);
+        when(session.send(any())).thenReturn(Mono.empty());
+        when(session.textMessage(any(String.class)))
+                .thenReturn(mock(org.springframework.web.reactive.socket.WebSocketMessage.class));
+
+        adapter.registerSession("chat-4", session);
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("model", "   ");
+        metadata.put("modelTier", 42);
+        metadata.put("reasoning", "");
+
+        Message message = Message.builder()
+                .chatId("chat-4")
+                .content("final answer")
+                .metadata(metadata)
+                .build();
+
+        adapter.sendMessage(message).join();
+
+        ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
+        verify(session).textMessage(payloadCaptor.capture());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = objectMapper.readValue(payloadCaptor.getValue(), Map.class);
+        assertEquals("assistant_done", payload.get("type"));
+        assertFalse(payload.containsKey("hint"));
     }
 
     @Test

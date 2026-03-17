@@ -19,6 +19,12 @@ interface ProviderOption {
   routeKey: string | null;
 }
 
+interface ProviderSettingsRoute {
+  id: string;
+  label: string;
+  routeKey: string;
+}
+
 const DEFAULT_TTS_PROVIDER = 'golemcore/elevenlabs';
 const LEGACY_ELEVENLABS_PROVIDER = 'elevenlabs';
 const LEGACY_WHISPER_PROVIDER = 'whisper';
@@ -87,6 +93,92 @@ function buildFormState(
   };
 }
 
+function providerLabel(options: ProviderOption[], providerId: string | null | undefined): string {
+  return options.find((option) => option.id === providerId)?.label ?? 'None';
+}
+
+function buildProviderSettingsRoutes(
+  sttOptions: ProviderOption[],
+  ttsOptions: ProviderOption[],
+): ProviderSettingsRoute[] {
+  const entries = new Map<string, ProviderSettingsRoute>();
+  [...sttOptions, ...ttsOptions].forEach((option) => {
+    if (option.routeKey != null) {
+      entries.set(option.id, {
+        id: option.id,
+        label: option.label,
+        routeKey: option.routeKey,
+      });
+    }
+  });
+  return Array.from(entries.values());
+}
+
+interface ProviderSelectFieldProps {
+  label: ReactElement | string;
+  value: string | null | undefined;
+  disabled: boolean;
+  emptyLabel: string;
+  options: ProviderOption[];
+  onChange: (value: string | null) => void;
+}
+
+function ProviderSelectField({
+  label,
+  value,
+  disabled,
+  emptyLabel,
+  options,
+  onChange,
+}: ProviderSelectFieldProps): ReactElement {
+  return (
+    <Form.Group>
+      <Form.Label className="small fw-medium">{label}</Form.Label>
+      <Form.Select
+        size="sm"
+        value={value ?? ''}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value || null)}
+      >
+        {options.length === 0 && <option value="">{emptyLabel}</option>}
+        {options.map((option) => (
+          <option key={option.id} value={option.id}>{option.label}</option>
+        ))}
+      </Form.Select>
+    </Form.Group>
+  );
+}
+
+function ProviderSettingsLinks({
+  providers,
+  onNavigate,
+}: {
+  providers: ProviderSettingsRoute[];
+  onNavigate: (routeKey: string) => void;
+}): ReactElement | null {
+  if (providers.length === 0) {
+    return null;
+  }
+
+  return (
+    <Row className="g-2 mt-1 voice-provider-links">
+      {providers.map((provider) => (
+        <Col xs={12} sm="auto" key={provider.id}>
+          <Button
+            type="button"
+            size="sm"
+            className="voice-route-shortcut"
+            variant="secondary"
+            onClick={() => onNavigate(provider.routeKey)}
+          >
+            Configure {provider.label}
+          </Button>
+        </Col>
+      ))}
+    </Row>
+  );
+}
+
 export default function VoiceRoutingTab({ config }: VoiceRoutingTabProps): ReactElement {
   const navigate = useNavigate();
   const updateVoice = useUpdateVoice();
@@ -112,19 +204,10 @@ export default function VoiceRoutingTab({ config }: VoiceRoutingTabProps): React
 
   const isDirty = useMemo(() => hasDiff(form, initialForm), [form, initialForm]);
 
-  const providerSettingsRoutes = useMemo(() => {
-    const entries = new Map<string, { id: string; label: string; routeKey: string }>();
-    [...sttOptions, ...ttsOptions].forEach((option) => {
-      if (option.routeKey != null) {
-        entries.set(option.id, {
-          id: option.id,
-          label: option.label,
-          routeKey: option.routeKey,
-        });
-      }
-    });
-    return Array.from(entries.values());
-  }, [sttOptions, ttsOptions]);
+  const providerSettingsRoutes = useMemo(
+    () => buildProviderSettingsRoutes(sttOptions, ttsOptions),
+    [sttOptions, ttsOptions],
+  );
 
   const handleSave = async (): Promise<void> => {
     await updateVoice.mutateAsync({
@@ -144,8 +227,8 @@ export default function VoiceRoutingTab({ config }: VoiceRoutingTabProps): React
           Choose the active STT/TTS providers from the plugins currently loaded by the runtime.
         </Form.Text>
         <div className="d-flex align-items-center gap-2 mb-3 voice-status-badges">
-          <Badge bg="primary">STT: {sttOptions.find((option) => option.id === form.sttProvider)?.label ?? 'None'}</Badge>
-          <Badge bg="primary">TTS: {ttsOptions.find((option) => option.id === form.ttsProvider)?.label ?? 'None'}</Badge>
+          <Badge bg="primary">STT: {providerLabel(sttOptions, form.sttProvider)}</Badge>
+          <Badge bg="primary">TTS: {providerLabel(ttsOptions, form.ttsProvider)}</Badge>
         </div>
 
         <Form.Check
@@ -158,40 +241,24 @@ export default function VoiceRoutingTab({ config }: VoiceRoutingTabProps): React
 
         <Row className="g-3">
           <Col md={6}>
-            <Form.Group>
-              <Form.Label className="small fw-medium">
-                STT Provider <HelpTip text="Provider used for speech-to-text transcription" />
-              </Form.Label>
-              <Form.Select
-                size="sm"
-                value={form.sttProvider ?? ''}
-                disabled={sttOptions.length === 0}
-                onChange={(event) => setForm((prev) => ({ ...prev, sttProvider: event.target.value || null }))}
-              >
-                {sttOptions.length === 0 && <option value="">No STT providers loaded</option>}
-                {sttOptions.map((option) => (
-                  <option key={option.id} value={option.id}>{option.label}</option>
-                ))}
-              </Form.Select>
-            </Form.Group>
+            <ProviderSelectField
+              label={<>STT Provider <HelpTip text="Provider used for speech-to-text transcription" /></>}
+              value={form.sttProvider}
+              disabled={sttOptions.length === 0}
+              emptyLabel="No STT providers loaded"
+              options={sttOptions}
+              onChange={(sttProvider) => setForm((prev) => ({ ...prev, sttProvider }))}
+            />
           </Col>
           <Col md={6}>
-            <Form.Group>
-              <Form.Label className="small fw-medium">
-                TTS Provider <HelpTip text="Provider used for text-to-speech synthesis" />
-              </Form.Label>
-              <Form.Select
-                size="sm"
-                value={form.ttsProvider ?? ''}
-                disabled={ttsOptions.length === 0}
-                onChange={(event) => setForm((prev) => ({ ...prev, ttsProvider: event.target.value || null }))}
-              >
-                {ttsOptions.length === 0 && <option value="">No TTS providers loaded</option>}
-                {ttsOptions.map((option) => (
-                  <option key={option.id} value={option.id}>{option.label}</option>
-                ))}
-              </Form.Select>
-            </Form.Group>
+            <ProviderSelectField
+              label={<>TTS Provider <HelpTip text="Provider used for text-to-speech synthesis" /></>}
+              value={form.ttsProvider}
+              disabled={ttsOptions.length === 0}
+              emptyLabel="No TTS providers loaded"
+              options={ttsOptions}
+              onChange={(ttsProvider) => setForm((prev) => ({ ...prev, ttsProvider }))}
+            />
           </Col>
         </Row>
 
@@ -199,23 +266,10 @@ export default function VoiceRoutingTab({ config }: VoiceRoutingTabProps): React
           Pick the voice providers you want to use. Need to connect an account or tweak a provider? Open its settings below.
         </Form.Text>
 
-        {providerSettingsRoutes.length > 0 && (
-          <Row className="g-2 mt-1 voice-provider-links">
-            {providerSettingsRoutes.map((provider) => (
-              <Col xs={12} sm="auto" key={provider.id}>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="voice-route-shortcut"
-                  variant="secondary"
-                  onClick={() => navigate(`/settings/${provider.routeKey}`)}
-                >
-                  Configure {provider.label}
-                </Button>
-              </Col>
-            ))}
-          </Row>
-        )}
+        <ProviderSettingsLinks
+          providers={providerSettingsRoutes}
+          onNavigate={(routeKey) => navigate(`/settings/${routeKey}`)}
+        />
 
         <SettingsSaveBar className="mt-3">
           <Button

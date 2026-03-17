@@ -30,6 +30,7 @@ import org.slf4j.LoggerFactory;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.concurrent.ExecutionException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -174,7 +175,50 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             emitRuntimeEvent(context, RuntimeEventType.LLM_STARTED, eventPayload("attempt", llmCalls));
             LlmResponse response;
             try {
-                response = llmPort.chat(buildRequest(context)).join();
+                response = llmPort.chat(buildRequest(context)).get();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                try {
+                    if (isInterruptRequested(context)) {
+                        clearInterruptFlag(context);
+                        applyAttachments(context, accumulatedAttachments);
+                        emitRuntimeEvent(context, RuntimeEventType.TURN_FINISHED,
+                                eventPayload("reason", "user_interrupt", "llmCalls", llmCalls,
+                                        "toolExecutions", toolExecutions));
+                        return stopTurn(context, context.getAttribute(ContextAttributes.LLM_RESPONSE), null,
+                                "interrupted by user", llmCalls, toolExecutions);
+                    }
+
+                    emitRuntimeEvent(context, RuntimeEventType.LLM_FINISHED,
+                            eventPayload("attempt", llmCalls, "success", false, "code", "llm.interrupted"));
+                    emitRuntimeEvent(context, RuntimeEventType.TURN_FAILED,
+                            eventPayload("reason", "llm_error", "code", "llm.interrupted"));
+                    return failLlmInvocation(context, new RuntimeException("LLM chat interrupted", e), llmCalls,
+                            toolExecutions);
+                } finally {
+                    clearThreadInterruptFlag();
+                }
+            } catch (ExecutionException e) {
+                RuntimeException llmFailure = toRuntimeException(e);
+                String code = LlmErrorClassifier.classifyFromThrowable(llmFailure);
+                if (LlmErrorClassifier.isContextOverflowCode(code)
+                        && tryRecoverFromContextOverflow(context, llmCalls, retryAttempt)) {
+                    retryAttempt++;
+                    continue;
+                }
+
+                if (retryEnabled && LlmErrorClassifier.isTransientCode(code) && retryAttempt < maxRetries) {
+                    retryAttempt++;
+                    lastRetryCode = code;
+                    scheduleRetry(context, llmCalls, retryAttempt, maxRetries, retryBaseDelayMs, code);
+                    continue;
+                }
+
+                emitRuntimeEvent(context, RuntimeEventType.LLM_FINISHED,
+                        eventPayload("attempt", llmCalls, "success", false, "code", code));
+                emitRuntimeEvent(context, RuntimeEventType.TURN_FAILED,
+                        eventPayload("reason", "llm_error", "code", code));
+                return failLlmInvocation(context, llmFailure, llmCalls, toolExecutions);
             } catch (RuntimeException e) {
                 String code = LlmErrorClassifier.classifyFromThrowable(e);
                 if (LlmErrorClassifier.isContextOverflowCode(code)
@@ -364,6 +408,10 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         }
         Map<String, Object> metadata = context.getSession() != null ? context.getSession().getMetadata() : null;
         return metadata != null && Boolean.TRUE.equals(metadata.get(ContextAttributes.TURN_INTERRUPT_REQUESTED));
+    }
+
+    private void clearThreadInterruptFlag() {
+        Thread.interrupted();
     }
 
     private void clearInterruptFlag(AgentContext context) {
@@ -712,6 +760,14 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
 
         context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
         return new ToolLoopTurnResult(context, true, llmCalls, toolExecutions);
+    }
+
+    private RuntimeException toRuntimeException(ExecutionException executionException) {
+        Throwable cause = executionException.getCause() != null ? executionException.getCause() : executionException;
+        if (cause instanceof RuntimeException runtimeException) {
+            return runtimeException;
+        }
+        return new RuntimeException(cause.getMessage(), cause);
     }
 
     /**
