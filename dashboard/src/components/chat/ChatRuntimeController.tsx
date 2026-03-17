@@ -24,6 +24,7 @@ export function ChatRuntimeController(): ReactElement | null {
   const markPendingMessagesAsFailed = useChatRuntimeStore((state) => state.markPendingMessagesAsFailed);
   const setTyping = useChatRuntimeStore((state) => state.setTyping);
   const setRunning = useChatRuntimeStore((state) => state.setRunning);
+  const applyProgressUpdate = useChatRuntimeStore((state) => state.applyProgressUpdate);
   const applyTurnMetadataPatch = useChatRuntimeStore((state) => state.applyTurnMetadataPatch);
   const applyAssistantText = useChatRuntimeStore((state) => state.applyAssistantText);
   const setTurnMetadata = useContextPanelStore((state) => state.setTurnMetadata);
@@ -89,6 +90,7 @@ export function ChatRuntimeController(): ReactElement | null {
     setRunning,
     setTyping,
     clearTypingTimer,
+    applyProgressUpdate,
     applyTurnMetadataPatch,
     setTurnMetadata,
     applyAssistantText,

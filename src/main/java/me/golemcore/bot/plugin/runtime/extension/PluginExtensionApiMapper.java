@@ -244,6 +244,17 @@ public class PluginExtensionApiMapper {
                 copyObject(result.data()));
     }
 
+    public me.golemcore.plugin.api.extension.model.ProgressUpdate toPluginProgressUpdate(
+            me.golemcore.bot.domain.model.ProgressUpdate update) {
+        if (update == null) {
+            return null;
+        }
+        return new me.golemcore.plugin.api.extension.model.ProgressUpdate(
+                me.golemcore.plugin.api.extension.model.ProgressUpdateType.valueOf(update.type().name()),
+                update.text(),
+                copyMap(update.metadata()));
+    }
+
     public List<me.golemcore.plugin.api.extension.port.inbound.CommandPort.CommandDefinition> toPluginCommandDefinitions(
             List<me.golemcore.bot.port.inbound.CommandPort.CommandDefinition> definitions) {
         if (definitions == null || definitions.isEmpty()) {

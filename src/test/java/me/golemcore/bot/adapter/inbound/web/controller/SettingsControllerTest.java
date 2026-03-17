@@ -744,6 +744,47 @@ class SettingsControllerTest {
     }
 
     @Test
+    void shouldRejectInvalidTurnProgressBatchSize() {
+        RuntimeConfig.TurnConfig turnConfig = RuntimeConfig.TurnConfig.builder()
+                .progressBatchSize(0)
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(RuntimeConfig.builder().build());
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateTurnConfig(turnConfig));
+
+        assertEquals("turn.progressBatchSize must be between 1 and 50", error.getMessage());
+    }
+
+    @Test
+    void shouldUpdateTurnConfigWithProgressSettings() {
+        RuntimeConfig current = RuntimeConfig.builder().turn(new RuntimeConfig.TurnConfig()).build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig.TurnConfig turnConfig = RuntimeConfig.TurnConfig.builder()
+                .maxLlmCalls(10)
+                .maxToolExecutions(20)
+                .deadline("PT30M")
+                .progressUpdatesEnabled(true)
+                .progressIntentEnabled(true)
+                .progressBatchSize(7)
+                .progressMaxSilenceSeconds(12)
+                .progressSummaryTimeoutMs(9000)
+                .build();
+
+        StepVerifier.create(controller.updateTurnConfig(turnConfig))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        RuntimeConfig saved = captor.getValue();
+        assertEquals(7, saved.getTurn().getProgressBatchSize());
+        assertEquals(12, saved.getTurn().getProgressMaxSilenceSeconds());
+        assertEquals(9000, saved.getTurn().getProgressSummaryTimeoutMs());
+    }
+
+    @Test
     void shouldGetShellEnvironmentVariablesFromRuntimeConfigForApi() {
         RuntimeConfig runtimeConfig = RuntimeConfig.builder()
                 .tools(RuntimeConfig.ToolsConfig.builder()

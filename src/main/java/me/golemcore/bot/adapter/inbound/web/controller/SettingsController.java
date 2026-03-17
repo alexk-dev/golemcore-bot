@@ -66,6 +66,12 @@ public class SettingsController {
     private static final int MEMORY_DECAY_DAYS_MAX = 3650;
     private static final int MEMORY_RETRIEVAL_LOOKBACK_DAYS_MIN = 1;
     private static final int MEMORY_RETRIEVAL_LOOKBACK_DAYS_MAX = 90;
+    private static final int TURN_PROGRESS_BATCH_SIZE_MIN = 1;
+    private static final int TURN_PROGRESS_BATCH_SIZE_MAX = 50;
+    private static final int TURN_PROGRESS_MAX_SILENCE_SECONDS_MIN = 1;
+    private static final int TURN_PROGRESS_MAX_SILENCE_SECONDS_MAX = 300;
+    private static final int TURN_PROGRESS_SUMMARY_TIMEOUT_MS_MIN = 1000;
+    private static final int TURN_PROGRESS_SUMMARY_TIMEOUT_MS_MAX = 60000;
     private static final Pattern SHELL_ENV_VAR_NAME_PATTERN = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
     private static final Set<String> RESERVED_SHELL_ENV_VAR_NAMES = Set.of("HOME", "PWD");
     private static final int SHELL_ENV_VAR_NAME_MAX_LENGTH = 128;
@@ -390,6 +396,7 @@ public class SettingsController {
     @PutMapping("/runtime/turn")
     public Mono<ResponseEntity<RuntimeConfig>> updateTurnConfig(
             @RequestBody RuntimeConfig.TurnConfig turnConfig) {
+        validateTurnConfig(turnConfig);
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         config.setTurn(turnConfig);
         runtimeConfigService.updateRuntimeConfig(config);
@@ -572,6 +579,47 @@ public class SettingsController {
                 throw new IllegalArgumentException(
                         "Cannot remove provider '" + usedProvider + "' because it is used by model router tiers");
             }
+        }
+    }
+
+    private void validateTurnConfig(RuntimeConfig.TurnConfig turnConfig) {
+        if (turnConfig == null) {
+            throw new IllegalArgumentException("turn config is required");
+        }
+        if (turnConfig.getMaxLlmCalls() != null && turnConfig.getMaxLlmCalls() < 1) {
+            throw new IllegalArgumentException("turn.maxLlmCalls must be >= 1");
+        }
+        if (turnConfig.getMaxToolExecutions() != null && turnConfig.getMaxToolExecutions() < 1) {
+            throw new IllegalArgumentException("turn.maxToolExecutions must be >= 1");
+        }
+        if (turnConfig.getDeadline() != null && !turnConfig.getDeadline().isBlank()) {
+            try {
+                java.time.Duration deadline = java.time.Duration.parse(turnConfig.getDeadline().trim());
+                if (deadline.isZero() || deadline.isNegative()) {
+                    throw new IllegalArgumentException("turn.deadline must be a positive ISO-8601 duration");
+                }
+            } catch (java.time.format.DateTimeParseException e) {
+                throw new IllegalArgumentException("turn.deadline must be a valid ISO-8601 duration");
+            }
+        }
+        validateRange(turnConfig.getProgressBatchSize(), TURN_PROGRESS_BATCH_SIZE_MIN, TURN_PROGRESS_BATCH_SIZE_MAX,
+                "turn.progressBatchSize");
+        validateRange(turnConfig.getProgressMaxSilenceSeconds(),
+                TURN_PROGRESS_MAX_SILENCE_SECONDS_MIN,
+                TURN_PROGRESS_MAX_SILENCE_SECONDS_MAX,
+                "turn.progressMaxSilenceSeconds");
+        validateRange(turnConfig.getProgressSummaryTimeoutMs(),
+                TURN_PROGRESS_SUMMARY_TIMEOUT_MS_MIN,
+                TURN_PROGRESS_SUMMARY_TIMEOUT_MS_MAX,
+                "turn.progressSummaryTimeoutMs");
+    }
+
+    private void validateRange(Integer value, int min, int max, String fieldName) {
+        if (value == null) {
+            return;
+        }
+        if (value < min || value > max) {
+            throw new IllegalArgumentException(fieldName + " must be between " + min + " and " + max);
         }
     }
 

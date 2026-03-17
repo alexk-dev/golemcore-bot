@@ -127,6 +127,11 @@ public class RuntimeConfigService {
     private static final boolean DEFAULT_TURN_QUEUE_STEERING_ENABLED = true;
     private static final String DEFAULT_TURN_QUEUE_STEERING_MODE = "one-at-a-time";
     private static final String DEFAULT_TURN_QUEUE_FOLLOW_UP_MODE = "one-at-a-time";
+    private static final boolean DEFAULT_TURN_PROGRESS_UPDATES_ENABLED = true;
+    private static final boolean DEFAULT_TURN_PROGRESS_INTENT_ENABLED = true;
+    private static final int DEFAULT_TURN_PROGRESS_BATCH_SIZE = 8;
+    private static final int DEFAULT_TURN_PROGRESS_MAX_SILENCE_SECONDS = 10;
+    private static final int DEFAULT_TURN_PROGRESS_SUMMARY_TIMEOUT_MS = 8000;
     private static final boolean DEFAULT_MCP_ENABLED = true;
     private static final int DEFAULT_MCP_STARTUP_TIMEOUT = 30;
     private static final int DEFAULT_MCP_IDLE_TIMEOUT = 5;
@@ -740,6 +745,52 @@ public class RuntimeConfigService {
         return normalizeQueueMode(turnConfig.getQueueFollowUpMode());
     }
 
+    public boolean isTurnProgressUpdatesEnabled() {
+        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
+        if (turnConfig == null) {
+            return DEFAULT_TURN_PROGRESS_UPDATES_ENABLED;
+        }
+        Boolean val = turnConfig.getProgressUpdatesEnabled();
+        return val != null ? val : DEFAULT_TURN_PROGRESS_UPDATES_ENABLED;
+    }
+
+    public boolean isTurnProgressIntentEnabled() {
+        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
+        if (turnConfig == null) {
+            return DEFAULT_TURN_PROGRESS_INTENT_ENABLED;
+        }
+        Boolean val = turnConfig.getProgressIntentEnabled();
+        return val != null ? val : DEFAULT_TURN_PROGRESS_INTENT_ENABLED;
+    }
+
+    public int getTurnProgressBatchSize() {
+        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
+        if (turnConfig == null) {
+            return DEFAULT_TURN_PROGRESS_BATCH_SIZE;
+        }
+        Integer val = turnConfig.getProgressBatchSize();
+        return val != null ? val : DEFAULT_TURN_PROGRESS_BATCH_SIZE;
+    }
+
+    public java.time.Duration getTurnProgressMaxSilence() {
+        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
+        if (turnConfig == null) {
+            return java.time.Duration.ofSeconds(DEFAULT_TURN_PROGRESS_MAX_SILENCE_SECONDS);
+        }
+        Integer seconds = turnConfig.getProgressMaxSilenceSeconds();
+        int safeSeconds = seconds != null ? seconds : DEFAULT_TURN_PROGRESS_MAX_SILENCE_SECONDS;
+        return java.time.Duration.ofSeconds(safeSeconds);
+    }
+
+    public int getTurnProgressSummaryTimeoutMs() {
+        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
+        if (turnConfig == null) {
+            return DEFAULT_TURN_PROGRESS_SUMMARY_TIMEOUT_MS;
+        }
+        Integer val = turnConfig.getProgressSummaryTimeoutMs();
+        return val != null ? val : DEFAULT_TURN_PROGRESS_SUMMARY_TIMEOUT_MS;
+    }
+
     private String normalizeQueueMode(String mode) {
         if (mode == null || mode.isBlank()) {
             return DEFAULT_TURN_QUEUE_STEERING_MODE;
@@ -1268,6 +1319,24 @@ public class RuntimeConfigService {
             cfg.getTurn().setQueueFollowUpMode(DEFAULT_TURN_QUEUE_FOLLOW_UP_MODE);
         } else {
             cfg.getTurn().setQueueFollowUpMode(normalizeQueueMode(cfg.getTurn().getQueueFollowUpMode()));
+        }
+        if (cfg.getTurn().getProgressUpdatesEnabled() == null) {
+            cfg.getTurn().setProgressUpdatesEnabled(DEFAULT_TURN_PROGRESS_UPDATES_ENABLED);
+        }
+        if (cfg.getTurn().getProgressIntentEnabled() == null) {
+            cfg.getTurn().setProgressIntentEnabled(DEFAULT_TURN_PROGRESS_INTENT_ENABLED);
+        }
+        Integer progressBatchSize = cfg.getTurn().getProgressBatchSize();
+        if (progressBatchSize == null || progressBatchSize < 1) {
+            cfg.getTurn().setProgressBatchSize(DEFAULT_TURN_PROGRESS_BATCH_SIZE);
+        }
+        Integer progressMaxSilenceSeconds = cfg.getTurn().getProgressMaxSilenceSeconds();
+        if (progressMaxSilenceSeconds == null || progressMaxSilenceSeconds < 1) {
+            cfg.getTurn().setProgressMaxSilenceSeconds(DEFAULT_TURN_PROGRESS_MAX_SILENCE_SECONDS);
+        }
+        Integer progressSummaryTimeoutMs = cfg.getTurn().getProgressSummaryTimeoutMs();
+        if (progressSummaryTimeoutMs == null || progressSummaryTimeoutMs < 1000) {
+            cfg.getTurn().setProgressSummaryTimeoutMs(DEFAULT_TURN_PROGRESS_SUMMARY_TIMEOUT_MS);
         }
         normalizeSecretFlags(cfg);
     }

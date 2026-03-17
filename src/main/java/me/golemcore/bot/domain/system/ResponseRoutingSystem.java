@@ -130,40 +130,8 @@ public class ResponseRoutingSystem implements AgentSystem {
                 .errorMessage(errorMessage)
                 .build();
         recordRoutingOutcome(context, routingOutcome);
-        sendRuntimeEvents(context);
 
         return context;
-    }
-
-    @SuppressWarnings("unchecked")
-    private void sendRuntimeEvents(AgentContext context) {
-        if (context == null || context.getSession() == null) {
-            return;
-        }
-
-        Object value = context.getAttribute(ContextAttributes.RUNTIME_EVENTS);
-        if (!(value instanceof List<?> events) || events.isEmpty()) {
-            return;
-        }
-
-        String channelType = context.getSession().getChannelType();
-        ChannelPort channelPort = channelRegistry.get(channelType).orElse(null);
-        if (channelPort == null) {
-            return;
-        }
-
-        String chatId = SessionIdentitySupport.resolveTransportChatId(context.getSession());
-        for (Object eventObject : events) {
-            if (!(eventObject instanceof RuntimeEvent runtimeEvent)) {
-                continue;
-            }
-            try {
-                channelPort.sendRuntimeEvent(chatId, runtimeEvent);
-            } catch (Exception e) { // NOSONAR - runtime event streaming must be best effort
-                log.warn("[Response] Failed to send runtime event {}: {}", runtimeEvent.type(), e.getMessage());
-                log.debug("[Response] Runtime event send failure", e);
-            }
-        }
     }
 
     private void recordRoutingOutcome(AgentContext context, RoutingOutcome routingOutcome) {

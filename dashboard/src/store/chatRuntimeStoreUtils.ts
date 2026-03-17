@@ -1,5 +1,5 @@
 import type { TurnMetadata } from './contextPanelStore';
-import type { AssistantHint, ChatMessage, ChatRuntimeSessionState } from '../components/chat/chatRuntimeTypes';
+import type { AssistantHint, ChatMessage, ChatRuntimeSessionState, LiveProgressUpdate } from '../components/chat/chatRuntimeTypes';
 
 const EMPTY_TURN_METADATA: TurnMetadata = {
   model: null,
@@ -31,6 +31,7 @@ export function createEmptySessionState(): ChatRuntimeSessionState {
     oldestLoadedMessageId: null,
     typing: false,
     running: false,
+    progress: null,
     turnMetadata: createEmptyTurnMetadata(),
   };
 }
@@ -184,7 +185,7 @@ export function applyAssistantTextUpdate(
   text: string,
   hint: AssistantHint | null,
   isFinal: boolean,
-): Pick<ChatRuntimeSessionState, 'messages' | 'running' | 'turnMetadata' | 'typing'> {
+): Pick<ChatRuntimeSessionState, 'messages' | 'running' | 'turnMetadata' | 'typing' | 'progress'> {
   const nextMessages = [...current.messages];
   const lastMessage = nextMessages.length > 0 ? nextMessages[nextMessages.length - 1] : null;
   const safeText = text ?? '';
@@ -200,6 +201,18 @@ export function applyAssistantTextUpdate(
     messages: nextMessages,
     typing: false,
     running: !isFinal,
+    progress: isFinal ? null : current.progress,
     turnMetadata: nextTurnMetadata,
+  };
+}
+
+export function applyLiveProgressUpdate(
+  current: ChatRuntimeSessionState,
+  progress: LiveProgressUpdate | null,
+): Pick<ChatRuntimeSessionState, 'progress' | 'running' | 'typing'> {
+  return {
+    progress,
+    running: progress != null ? true : current.running,
+    typing: false,
   };
 }

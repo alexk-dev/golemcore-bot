@@ -154,7 +154,7 @@ class SessionRunCoordinatorStopIntegrationTest {
                 null,
                 runtimeConfigService,
                 null,
-                new RuntimeEventService(Clock.fixed(NOW, ZoneOffset.UTC), List.of()),
+                new RuntimeEventService(Clock.fixed(NOW, ZoneOffset.UTC)),
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
