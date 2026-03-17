@@ -100,7 +100,53 @@ interface HookExampleCardsProps {
   activeMapping?: HookMapping | null;
 }
 
-export function HookExampleCards({ bearerToken, showBearerToken, activeMapping }: HookExampleCardsProps) {
+interface HookExamplePreview {
+  description: string;
+  command: string;
+}
+
+function buildHookDescription(activeMapping?: HookMapping | null): string {
+  return activeMapping != null
+    ? `Test the hook currently open in the editor with ${activeMapping.authMode === 'hmac' ? 'HMAC' : 'Bearer'} auth.`
+    : 'Open a hook mapping to preview its exact endpoint and auth mode.';
+}
+
+function buildHmacExample(
+  endpoint: string,
+  sampleBody: string,
+  activeMapping?: HookMapping | null,
+): HookExamplePreview {
+  const hmacHeader = activeMapping?.hmacHeader?.trim() || 'x-signature';
+  const hmacPrefix = activeMapping?.hmacPrefix ?? '';
+  return {
+    description: buildHookDescription(activeMapping),
+    command: `curl -X POST ${endpoint} \\
+  -H "Content-Type: application/json" \\
+  -H "${hmacHeader}: ${hmacPrefix}<YOUR_HMAC_SHA256>" \\
+  -d '${sampleBody}'`,
+  };
+}
+
+function buildBearerExample(
+  endpoint: string,
+  sampleBody: string,
+  tokenPreview: string,
+  activeMapping?: HookMapping | null,
+): HookExamplePreview {
+  return {
+    description: buildHookDescription(activeMapping),
+    command: `curl -X POST ${endpoint} \\
+  -H "Authorization: Bearer ${tokenPreview}" \\
+  -H "Content-Type: application/json" \\
+  -d '${sampleBody}'`,
+  };
+}
+
+function buildHookExamplePreview(
+  bearerToken: string | null,
+  showBearerToken: boolean,
+  activeMapping?: HookMapping | null,
+): HookExamplePreview {
   const hasBearerToken = bearerToken != null && bearerToken.length > 0;
   const tokenPreview = hasBearerToken
     ? (showBearerToken ? bearerToken : '<YOUR_TOKEN>')
@@ -108,30 +154,22 @@ export function HookExampleCards({ bearerToken, showBearerToken, activeMapping }
   const activeHookName = activeMapping?.name?.trim() ?? '';
   const endpoint = createAbsoluteHookUrl(activeHookName);
   const sampleBody = '{"event":"Deploy finished","chatId":"webhook:ci"}';
-  const isHmacMapping = activeMapping?.authMode === 'hmac';
-  const hmacHeader = activeMapping?.hmacHeader?.trim() || 'x-signature';
-  const hmacPrefix = activeMapping?.hmacPrefix ?? '';
-  const description = activeMapping != null
-    ? `Test the hook currently open in the editor with ${isHmacMapping ? 'HMAC' : 'Bearer'} auth.`
-    : 'Open a hook mapping to preview its exact endpoint and auth mode.';
-  const command = isHmacMapping
-    ? `curl -X POST ${endpoint} \\
-  -H "Content-Type: application/json" \\
-  -H "${hmacHeader}: ${hmacPrefix}<YOUR_HMAC_SHA256>" \\
-  -d '${sampleBody}'`
-    : `curl -X POST ${endpoint} \\
-  -H "Authorization: Bearer ${tokenPreview}" \\
-  -H "Content-Type: application/json" \\
-  -d '${sampleBody}'`;
+  return activeMapping?.authMode === 'hmac'
+    ? buildHmacExample(endpoint, sampleBody, activeMapping)
+    : buildBearerExample(endpoint, sampleBody, tokenPreview, activeMapping);
+}
+
+export function HookExampleCards({ bearerToken, showBearerToken, activeMapping }: HookExampleCardsProps) {
+  const preview = buildHookExamplePreview(bearerToken, showBearerToken, activeMapping);
 
   return (
     <Card className="webhook-quickstart-card border">
       <Card.Body className="p-3">
         <h3 className="h6 mb-2">Quick Test</h3>
         <div className="small text-body-secondary mb-2">
-          {description}
+          {preview.description}
         </div>
-        <pre className="mb-0 webhook-code-block"><code>{command}</code></pre>
+        <pre className="mb-0 webhook-code-block"><code>{preview.command}</code></pre>
       </Card.Body>
     </Card>
   );

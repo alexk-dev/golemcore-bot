@@ -44,12 +44,12 @@ export function IdeFileExplorer({
     <div className="flex h-full min-h-0 flex-col">
       <div className="border-b border-border/80 px-3 py-3">
         <div className="flex items-center gap-2">
-          <label className="relative min-w-0 flex-1">
+          <label className="input-with-leading-icon min-w-0 flex-1">
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
               <FiSearch size={14} />
             </span>
             <Input
-              className="h-9 rounded-xl border-border/80 bg-background/80 pl-11 pr-3 text-sm shadow-none"
+              className="h-9 rounded-xl border-border/80 bg-background/80 pr-3 text-sm shadow-none"
               value={searchInputValue}
               onChange={(event) => onSearchQueryChange(event.target.value)}
               placeholder="Search files"
