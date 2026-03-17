@@ -97,10 +97,15 @@ public class WebChannelAdapter implements ChannelPort {
             log.debug("[WebChannel] Skip anonymous message event without chatId");
             return CompletableFuture.completedFuture(null);
         }
-        return sendJsonToChat(chatId, Map.of(
-                KEY_TYPE, VALUE_ASSISTANT_DONE,
-                KEY_TEXT, message.getContent() != null ? message.getContent() : "",
-                KEY_SESSION_ID, chatId));
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put(KEY_TYPE, VALUE_ASSISTANT_DONE);
+        payload.put(KEY_TEXT, message.getContent() != null ? message.getContent() : "");
+        payload.put(KEY_SESSION_ID, chatId);
+        Map<String, Object> hint = extractHint(message);
+        if (!hint.isEmpty()) {
+            payload.put("hint", hint);
+        }
+        return sendJsonToChat(chatId, payload);
     }
 
     @Override
@@ -204,6 +209,29 @@ public class WebChannelAdapter implements ChannelPort {
         } catch (Exception e) { // NOSONAR
             log.warn("[WebChannel] Failed to serialize message for {}: {}", chatId, e.getMessage());
             return CompletableFuture.completedFuture(null);
+        }
+    }
+
+    private Map<String, Object> extractHint(Message message) {
+        Map<String, Object> hint = new LinkedHashMap<>();
+        if (message == null || message.getMetadata() == null) {
+            return hint;
+        }
+
+        copyHintValue(message, hint, "model");
+        copyHintValue(message, hint, "modelTier", "tier");
+        copyHintValue(message, hint, "reasoning");
+        return hint;
+    }
+
+    private void copyHintValue(Message message, Map<String, Object> hint, String sourceKey) {
+        copyHintValue(message, hint, sourceKey, sourceKey);
+    }
+
+    private void copyHintValue(Message message, Map<String, Object> hint, String sourceKey, String targetKey) {
+        Object value = message.getMetadata().get(sourceKey);
+        if (value instanceof String stringValue && !stringValue.isBlank()) {
+            hint.put(targetKey, stringValue);
         }
     }
 }

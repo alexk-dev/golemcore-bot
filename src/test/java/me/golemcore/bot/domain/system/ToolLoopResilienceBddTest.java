@@ -30,14 +30,19 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
@@ -227,6 +232,70 @@ class ToolLoopResilienceBddTest {
         verify(toolExecutor, never()).execute(any(), argThat(call -> "tc2".equals(call.getId())));
         assertFalse(Boolean.TRUE.equals(session.getMetadata().get(ContextAttributes.TURN_INTERRUPT_REQUESTED)));
         assertTrue(result.context() != null);
+    }
+
+    @Test
+    void shouldStopGracefullyWhenInterruptRequestedDuringLlmWait() throws Exception {
+        AgentSession session = AgentSession.builder()
+                .id("s3b")
+                .channelType("telegram")
+                .chatId("c3b")
+                .messages(new ArrayList<>())
+                .metadata(new LinkedHashMap<>())
+                .build();
+        session.addMessage(Message.builder().role("user").content("wait for llm").timestamp(NOW).build());
+
+        AgentContext context = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>(session.getMessages()))
+                .build();
+
+        CountDownLatch llmStarted = new CountDownLatch(1);
+        CompletableFuture<LlmResponse> pendingResponse = new CompletableFuture<>();
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.chat(any(LlmRequest.class))).thenAnswer(invocation -> {
+            llmStarted.countDown();
+            return pendingResponse;
+        });
+
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.getTurnMaxLlmCalls()).thenReturn(10);
+        when(runtimeConfigService.getTurnMaxToolExecutions()).thenReturn(10);
+        when(runtimeConfigService.getTurnDeadline()).thenReturn(java.time.Duration.ofMinutes(5));
+        when(runtimeConfigService.isTurnAutoRetryEnabled()).thenReturn(false);
+
+        DefaultToolLoopSystem system = buildSystem(llmPort, runtimeConfigService, null, mock(ToolExecutorPort.class));
+
+        AtomicReference<ToolLoopTurnResult> resultRef = new AtomicReference<>();
+        AtomicReference<Throwable> failureRef = new AtomicReference<>();
+        Thread worker = new Thread(() -> {
+            try {
+                resultRef.set(system.processTurn(context));
+            } catch (Throwable throwable) {
+                failureRef.set(throwable);
+            }
+        }, "tool-loop-stop-test");
+
+        worker.start();
+        assertTrue(llmStarted.await(1, TimeUnit.SECONDS), "LLM call should have started");
+
+        session.getMetadata().put(ContextAttributes.TURN_INTERRUPT_REQUESTED, true);
+        worker.interrupt();
+        worker.join(2000);
+
+        assertFalse(worker.isAlive(), "Tool loop worker should stop after interrupt");
+        assertNull(failureRef.get(), "Interrupt should be handled as a graceful stop");
+        assertNotNull(resultRef.get(), "Tool loop should return a stop result");
+        assertTrue(resultRef.get().finalAnswerReady());
+        assertFalse(Boolean.TRUE.equals(session.getMetadata().get(ContextAttributes.TURN_INTERRUPT_REQUESTED)));
+
+        LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
+        assertNotNull(response);
+        assertEquals("Tool loop stopped: interrupted by user.", response.getContent());
+        assertTrue(session.getMessages().stream()
+                .anyMatch(message -> "assistant".equals(message.getRole())
+                        && message.getContent() != null
+                        && message.getContent().contains("interrupted by user")));
     }
 
     @Test
