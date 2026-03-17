@@ -18,6 +18,11 @@ function toNullableInt(value: string): number | null {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
+function toNullableFloat(value: string): number | null {
+  const parsed = Number.parseFloat(value);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
 interface AdvancedTabProps {
   rateLimit: RateLimitConfig;
   security: SecurityConfig;
@@ -83,11 +88,41 @@ function CompactionCard({ comp, setComp }: CompactionCardProps): ReactElement {
           onChange={(e) => setComp({ ...comp, enabled: e.target.checked })} className="mb-3" />
         <Form.Group className="mb-2">
           <Form.Label className="small fw-medium">
+            Trigger Mode <HelpTip text="Choose whether auto compaction should follow the active model's context window or a fixed token threshold" />
+          </Form.Label>
+          <Form.Select
+            size="sm"
+            value={comp.triggerMode ?? 'model_ratio'}
+            onChange={(e) => setComp({ ...comp, triggerMode: e.target.value as CompactionConfig['triggerMode'] })}
+          >
+            <option value="model_ratio">Model Context Ratio</option>
+            <option value="token_threshold">Fixed Token Threshold</option>
+          </Form.Select>
+        </Form.Group>
+        {(comp.triggerMode ?? 'model_ratio') === 'model_ratio' ? (
+          <Form.Group className="mb-2">
+            <Form.Label className="small fw-medium">
+              Model Ratio <HelpTip text="Multiply the selected model's max input tokens by this coefficient to decide when to compact" />
+            </Form.Label>
+            <Form.Control
+              size="sm"
+              type="number"
+              min={0.01}
+              max={1}
+              step="0.01"
+              value={comp.modelThresholdRatio ?? 0.95}
+              onChange={(e) => setComp({ ...comp, modelThresholdRatio: toNullableFloat(e.target.value) })}
+            />
+          </Form.Group>
+        ) : (
+          <Form.Group className="mb-2">
+          <Form.Label className="small fw-medium">
             Max Context Tokens <HelpTip text="Token threshold that triggers automatic context compaction" />
           </Form.Label>
           <Form.Control size="sm" type="number" value={comp.maxContextTokens ?? 50000}
             onChange={(e) => setComp({ ...comp, maxContextTokens: toNullableInt(e.target.value) })} />
         </Form.Group>
+        )}
         <Form.Group>
           <Form.Label className="small fw-medium">
             Keep Last Messages <HelpTip text="Number of recent messages to preserve during compaction" />

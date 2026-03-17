@@ -20,6 +20,8 @@ package me.golemcore.bot.domain.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import org.springframework.stereotype.Service;
@@ -84,6 +86,18 @@ public class ModelSelectionService {
      */
     public int resolveMaxInputTokens(String tier) {
         ModelSelection selection = resolveForTier(tier);
+        if (selection.model() == null) {
+            return runtimeConfigService.getCompactionMaxContextTokens();
+        }
+        return modelConfigService.getMaxInputTokens(selection.model(), selection.reasoning());
+    }
+
+    /**
+     * Resolve the maximum input tokens for the effective model that would be used
+     * for the provided context.
+     */
+    public int resolveMaxInputTokensForContext(AgentContext context) {
+        ModelSelection selection = resolveForTier(resolveEffectiveTier(context));
         if (selection.model() == null) {
             return runtimeConfigService.getCompactionMaxContextTokens();
         }
@@ -187,6 +201,25 @@ public class ModelSelectionService {
             reasoning = modelConfigService.getLowestReasoningLevel(selected.model());
         }
         return new ModelSelection(selected.model(), reasoning);
+    }
+
+    private String resolveEffectiveTier(AgentContext context) {
+        if (context != null && context.getModelTier() != null) {
+            return context.getModelTier();
+        }
+
+        UserPreferences prefs = preferencesService.getPreferences();
+        String userTier = prefs.getModelTier();
+        if (prefs.isTierForce() && userTier != null) {
+            return userTier;
+        }
+
+        Skill activeSkill = context != null ? context.getActiveSkill() : null;
+        if (activeSkill != null && activeSkill.getModelTier() != null) {
+            return activeSkill.getModelTier();
+        }
+
+        return userTier;
     }
 
     /** Resolved model + reasoning for a tier. */

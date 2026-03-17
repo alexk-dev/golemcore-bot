@@ -36,8 +36,9 @@ import java.util.Map;
 /**
  * System for automatic conversation history compaction when context size
  * exceeds thresholds (order=18). Runs before ContextBuildingSystem to ensure
- * manageable context window. Estimates token count from character length, uses
- * model's maxInputTokens from models.json (with 80% safety margin), and invokes
+ * manageable context window. Estimates token count from character length, then
+ * compares it against either an absolute token threshold or a model-aware ratio
+ * of the resolved model context window before invoking
  * {@link CompactionOrchestrationService} for split-safe compaction with
  * structured details.
  */
@@ -45,6 +46,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 @Slf4j
 public class AutoCompactionSystem implements AgentSystem {
+
+    private static final String TRIGGER_MODE_MODEL_RATIO = "model_ratio";
 
     private final CompactionOrchestrationService compactionOrchestrationService;
     private final RuntimeConfigService runtimeConfigService;
@@ -79,14 +82,15 @@ public class AutoCompactionSystem implements AgentSystem {
                 .sum();
         int estimatedTokens = (int) (totalChars / 3.5) + 8000;
 
+        String triggerMode = runtimeConfigService.getCompactionTriggerMode();
         int threshold = resolveMaxTokens(context);
 
         if (estimatedTokens <= threshold) {
             return context;
         }
 
-        log.info("[AutoCompact] Context too large: ~{} tokens (threshold {}), {} messages. Compacting...",
-                estimatedTokens, threshold, messages.size());
+        log.info("[AutoCompact] Context too large: ~{} tokens (threshold {}, mode={}), {} messages. Compacting...",
+                estimatedTokens, threshold, triggerMode, messages.size());
 
         int keepLast = runtimeConfigService.getCompactionKeepLastMessages();
         CompactionResult result = compactionOrchestrationService.compact(
@@ -108,18 +112,36 @@ public class AutoCompactionSystem implements AgentSystem {
         return context;
     }
 
-    /**
-     * Resolve the max context token threshold. Uses model's maxInputTokens via
-     * ModelSelectionService (with 80% safety margin), capped by config's
-     * maxContextTokens as upper bound.
-     */
     private int resolveMaxTokens(AgentContext context) {
+        if (TRIGGER_MODE_MODEL_RATIO.equals(runtimeConfigService.getCompactionTriggerMode())) {
+            return resolveModelRatioThreshold(context);
+        }
+        return resolveTokenThreshold(context);
+    }
+
+    private int resolveModelRatioThreshold(AgentContext context) {
         try {
-            int modelMax = modelSelectionService.resolveMaxInputTokens(context.getModelTier());
+            int modelMax = modelSelectionService.resolveMaxInputTokensForContext(context);
+            double ratio = runtimeConfigService.getCompactionModelThresholdRatio();
+            return Math.max(1, (int) Math.floor(modelMax * ratio));
+        } catch (Exception e) {
+            log.debug("[AutoCompact] Failed to resolve model max tokens for ratio mode, using config default", e);
+        }
+        return runtimeConfigService.getCompactionMaxContextTokens();
+    }
+
+    /**
+     * Resolve the legacy token threshold mode. Preserves the old behavior: cap the
+     * configured threshold by 80% of the resolved model context window.
+     */
+    private int resolveTokenThreshold(AgentContext context) {
+        try {
+            int modelMax = modelSelectionService.resolveMaxInputTokensForContext(context);
             int modelThreshold = (int) (modelMax * 0.8);
             return Math.min(modelThreshold, runtimeConfigService.getCompactionMaxContextTokens());
         } catch (Exception e) {
-            log.debug("[AutoCompact] Failed to resolve model max tokens, using config default", e);
+            log.debug("[AutoCompact] Failed to resolve model max tokens for token-threshold mode, using config default",
+                    e);
         }
         return runtimeConfigService.getCompactionMaxContextTokens();
     }
