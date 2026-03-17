@@ -206,6 +206,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
 
                 if (retryEnabled && LlmErrorClassifier.isTransientCode(code) && retryAttempt < maxRetries) {
                     retryAttempt++;
+                    lastRetryCode = code;
                     scheduleRetry(context, llmCalls, retryAttempt, maxRetries, retryBaseDelayMs, code);
                     continue;
                 }
