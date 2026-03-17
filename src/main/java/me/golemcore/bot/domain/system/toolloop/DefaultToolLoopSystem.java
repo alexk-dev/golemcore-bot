@@ -177,24 +177,27 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             try {
                 response = llmPort.chat(buildRequest(context)).get();
             } catch (InterruptedException e) {
-                if (isInterruptRequested(context)) {
-                    clearInterruptFlag(context);
-                    clearThreadInterruptFlag();
-                    applyAttachments(context, accumulatedAttachments);
-                    emitRuntimeEvent(context, RuntimeEventType.TURN_FINISHED,
-                            eventPayload("reason", "user_interrupt", "llmCalls", llmCalls,
-                                    "toolExecutions", toolExecutions));
-                    return stopTurn(context, context.getAttribute(ContextAttributes.LLM_RESPONSE), null,
-                            "interrupted by user", llmCalls, toolExecutions);
-                }
+                Thread.currentThread().interrupt();
+                try {
+                    if (isInterruptRequested(context)) {
+                        clearInterruptFlag(context);
+                        applyAttachments(context, accumulatedAttachments);
+                        emitRuntimeEvent(context, RuntimeEventType.TURN_FINISHED,
+                                eventPayload("reason", "user_interrupt", "llmCalls", llmCalls,
+                                        "toolExecutions", toolExecutions));
+                        return stopTurn(context, context.getAttribute(ContextAttributes.LLM_RESPONSE), null,
+                                "interrupted by user", llmCalls, toolExecutions);
+                    }
 
-                clearThreadInterruptFlag();
-                emitRuntimeEvent(context, RuntimeEventType.LLM_FINISHED,
-                        eventPayload("attempt", llmCalls, "success", false, "code", "llm.interrupted"));
-                emitRuntimeEvent(context, RuntimeEventType.TURN_FAILED,
-                        eventPayload("reason", "llm_error", "code", "llm.interrupted"));
-                return failLlmInvocation(context, new RuntimeException("LLM chat interrupted", e), llmCalls,
-                        toolExecutions);
+                    emitRuntimeEvent(context, RuntimeEventType.LLM_FINISHED,
+                            eventPayload("attempt", llmCalls, "success", false, "code", "llm.interrupted"));
+                    emitRuntimeEvent(context, RuntimeEventType.TURN_FAILED,
+                            eventPayload("reason", "llm_error", "code", "llm.interrupted"));
+                    return failLlmInvocation(context, new RuntimeException("LLM chat interrupted", e), llmCalls,
+                            toolExecutions);
+                } finally {
+                    clearThreadInterruptFlag();
+                }
             } catch (ExecutionException e) {
                 RuntimeException llmFailure = toRuntimeException(e);
                 String code = LlmErrorClassifier.classifyFromThrowable(llmFailure);
