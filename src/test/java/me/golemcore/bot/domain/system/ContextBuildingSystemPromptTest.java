@@ -783,4 +783,27 @@ class ContextBuildingSystemPromptTest {
         assertTrue(prompt.contains("Hello Alice, welcome to GolemCore!"));
         assertFalse(prompt.contains("{{USER_NAME}}"));
     }
+
+    @Test
+    void shouldUseLastVisibleUserMessageForMemoryAndRagQueries() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(ragPort.isAvailable()).thenReturn(true);
+        when(ragPort.query(anyString())).thenReturn(CompletableFuture.completedFuture("recalled context"));
+
+        AgentContext ctx = AgentContext.builder()
+                .session(AgentSession.builder().chatId("ch1").build())
+                .messages(new ArrayList<>(List.of(
+                        Message.builder().role("user").content("Visible user request")
+                                .timestamp(Instant.now()).build(),
+                        Message.builder().role("user").content("Internal retry prompt")
+                                .metadata(Map.of(ContextAttributes.MESSAGE_INTERNAL, true))
+                                .timestamp(Instant.now()).build())))
+                .build();
+
+        system.process(ctx);
+
+        verify(memoryComponent).buildMemoryPack(argThat((MemoryQuery query) -> query != null
+                && "Visible user request".equals(query.getQueryText())));
+        verify(ragPort).query("Visible user request");
+    }
 }

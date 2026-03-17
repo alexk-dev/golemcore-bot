@@ -303,7 +303,7 @@ public class SessionsController {
                 .chatId(session.getChatId())
                 .conversationKey(conversationKey)
                 .transportChatId(transportChatId)
-                .messageCount(session.getMessages() != null ? session.getMessages().size() : 0)
+                .messageCount(getVisibleMessages(session).size())
                 .state(session.getState() != null ? session.getState().name() : "ACTIVE")
                 .createdAt(session.getCreatedAt() != null ? session.getCreatedAt().toString() : null)
                 .updatedAt(session.getUpdatedAt() != null ? session.getUpdatedAt().toString() : null)
@@ -319,6 +319,7 @@ public class SessionsController {
         List<SessionDetailDto.MessageDto> messages = List.of();
         if (session.getMessages() != null) {
             messages = session.getMessages().stream()
+                    .filter(this::isHistoryVisibleMessage)
                     .map(this::toMessageDto)
                     .toList();
         }
@@ -427,7 +428,7 @@ public class SessionsController {
         return session.getMessages().stream()
                 .filter(message -> message != null
                         && ("user".equals(message.getRole()) || ROLE_ASSISTANT.equals(message.getRole()))
-                        && isVisibleMessage(message))
+                        && isHistoryVisibleMessage(message))
                 .toList();
     }
 
@@ -448,7 +449,10 @@ public class SessionsController {
         throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "beforeMessageId not found");
     }
 
-    private boolean isVisibleMessage(Message message) {
+    private boolean isHistoryVisibleMessage(Message message) {
+        if (message == null || message.isInternalMessage()) {
+            return false;
+        }
         return hasVisibleContent(message.getContent()) || resolveAttachmentCount(message) > START_WITH_INDEX;
     }
 
@@ -666,7 +670,7 @@ public class SessionsController {
         }
 
         for (Message message : session.getMessages()) {
-            if (message == null || !"user".equals(message.getRole())) {
+            if (message == null || !"user".equals(message.getRole()) || message.isInternalMessage()) {
                 continue;
             }
             String content = message.getContent();
@@ -689,7 +693,7 @@ public class SessionsController {
         String preview = null;
         for (int index = START_WITH_INDEX; index < session.getMessages().size(); index++) {
             Message message = session.getMessages().get(index);
-            if (message == null || StringValueSupport.isBlank(message.getContent())) {
+            if (message == null || message.isInternalMessage() || StringValueSupport.isBlank(message.getContent())) {
                 continue;
             }
             preview = truncate(message.getContent().trim(), PREVIEW_MAX_LEN);

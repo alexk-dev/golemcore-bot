@@ -123,11 +123,37 @@ public final class ContextAttributes {
     /** String — queue kind for inbound message while a turn is running. */
     public static final String TURN_QUEUE_KIND = "turn.queue.kind";
 
+    /**
+     * String value for {@link #TURN_QUEUE_KIND}: internal retry after model
+     * failure.
+     */
+    public static final String TURN_QUEUE_KIND_INTERNAL_RETRY = "internal_retry";
+
     /** String value for {@link #TURN_QUEUE_KIND}: prioritize as steering input. */
     public static final String TURN_QUEUE_KIND_STEERING = "steering";
 
     /** String value for {@link #TURN_QUEUE_KIND}: process as regular follow-up. */
     public static final String TURN_QUEUE_KIND_FOLLOW_UP = "follow_up";
+
+    /**
+     * Boolean — current turn scheduled an internal retry instead of user feedback.
+     */
+    public static final String TURN_INTERNAL_RETRY_SCHEDULED = "turn.internal.retry.scheduled";
+
+    /** Boolean ? message metadata flag for invisible internal messages. */
+    public static final String MESSAGE_INTERNAL = "message.internal";
+
+    /** String ? internal message kind stored in message metadata. */
+    public static final String MESSAGE_INTERNAL_KIND = "message.internal.kind";
+
+    /**
+     * String value for {@link #MESSAGE_INTERNAL_KIND}: one-time auto-continue
+     * retry.
+     */
+    public static final String MESSAGE_INTERNAL_KIND_AUTO_CONTINUE = "auto_continue";
+
+    /** Boolean ? current inbound message is an internal runtime-only message. */
+    public static final String TURN_INPUT_INTERNAL = "turn.input.internal";
 
     /** WebSocketSession — reference to WebSocket session for streaming. */
     public static final String WEB_STREAM_SINK = "web.stream.sink";

@@ -151,7 +151,7 @@ public class RagIndexingSystem implements AgentSystem {
         }
         for (int i = context.getMessages().size() - 1; i >= 0; i--) {
             Message msg = context.getMessages().get(i);
-            if (msg.isUserMessage()) {
+            if (msg.isUserMessage() && !msg.isInternalMessage()) {
                 return msg;
             }
         }

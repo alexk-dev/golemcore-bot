@@ -72,6 +72,9 @@ public class FeedbackGuaranteeSystem implements AgentSystem {
         if (context.getAttribute(ContextAttributes.OUTGOING_RESPONSE) != null) {
             return false;
         }
+        if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.TURN_INTERNAL_RETRY_SCHEDULED))) {
+            return false;
+        }
         if (hasPendingTransition(context)) {
             return false;
         }
@@ -81,6 +84,9 @@ public class FeedbackGuaranteeSystem implements AgentSystem {
     @Override
     public AgentContext process(AgentContext context) {
         if (context.getAttribute(ContextAttributes.OUTGOING_RESPONSE) != null) {
+            return context;
+        }
+        if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.TURN_INTERNAL_RETRY_SCHEDULED))) {
             return context;
         }
         if (hasPendingTransition(context)) {

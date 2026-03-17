@@ -28,6 +28,7 @@ import me.golemcore.bot.domain.model.FinishReason;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
+import me.golemcore.bot.domain.service.InternalTurnService;
 import me.golemcore.bot.domain.model.RateLimitResult;
 import me.golemcore.bot.domain.model.RoutingOutcome;
 import me.golemcore.bot.domain.model.SkillTransitionRequest;
@@ -1201,6 +1202,48 @@ class AgentLoopTest {
         loop.processMessage(autoMsg);
 
         verify(rateLimitPort, never()).tryConsume();
+        verify(sessionPort).save(session);
+    }
+
+    @Test
+    void shouldBypassRateLimitAndRawHistoryForInternalRetryMessage() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+
+        AgentSession session = AgentSession.builder()
+                .id("s1").channelType(CHANNEL_TYPE).chatId("1")
+                .messages(new ArrayList<>()).build();
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "1")).thenReturn(session);
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+        when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        AgentLoop loop = createLoop(
+                sessionPort, rateLimitPort, List.of(), List.of(channel),
+                mockRuntimeConfigService(1), preferencesService, llmPort, clock);
+
+        Map<String, Object> meta = new HashMap<>();
+        meta.put(ContextAttributes.MESSAGE_INTERNAL, true);
+        meta.put(ContextAttributes.MESSAGE_INTERNAL_KIND, ContextAttributes.MESSAGE_INTERNAL_KIND_AUTO_CONTINUE);
+        Message internalMsg = Message.builder()
+                .role(ROLE_USER).content("Continue and finish")
+                .channelType(CHANNEL_TYPE).chatId("1").senderId("internal")
+                .metadata(meta).timestamp(clock.instant()).build();
+
+        loop.processMessage(internalMsg);
+
+        verify(rateLimitPort, never()).tryConsume();
+        assertTrue(session.getMessages().isEmpty());
         verify(sessionPort).save(session);
     }
 

@@ -133,6 +133,63 @@ class SessionsControllerTest {
     }
 
     @Test
+    void shouldHideInternalMessagesFromSessionDetailAndPaging() {
+        Message visibleUser = Message.builder()
+                .id("m-visible")
+                .role("user")
+                .content("hello")
+                .timestamp(Instant.now())
+                .build();
+        Message internalUser = Message.builder()
+                .id("m-internal")
+                .role("user")
+                .content("internal continue")
+                .metadata(Map.of(ContextAttributes.MESSAGE_INTERNAL, true))
+                .timestamp(Instant.now())
+                .build();
+        Message assistant = Message.builder()
+                .id("m-assistant")
+                .role("assistant")
+                .content("reply")
+                .timestamp(Instant.now())
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("s-hidden")
+                .channelType("web")
+                .chatId("chat-hidden")
+                .createdAt(Instant.now())
+                .messages(List.of(visibleUser, internalUser, assistant))
+                .build();
+        when(sessionPort.get("s-hidden")).thenReturn(Optional.of(session));
+        when(sessionPort.listAll()).thenReturn(List.of(session));
+
+        StepVerifier.create(controller.getSession("s-hidden"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    SessionDetailDto body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals(2, body.getMessages().size());
+                    assertEquals("m-visible", body.getMessages().get(0).getId());
+                    assertEquals("m-assistant", body.getMessages().get(1).getId());
+                })
+                .verifyComplete();
+
+        StepVerifier.create(controller.getSessionMessages("s-hidden", 10, null))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertEquals(2, response.getBody().getMessages().size());
+                })
+                .verifyComplete();
+
+        StepVerifier.create(controller.listSessions(null))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertEquals(2, response.getBody().get(0).getMessageCount());
+                })
+                .verifyComplete();
+    }
+
+    @Test
     void shouldPageVisibleMessagesAndKeepAttachmentOnlyEntries() {
         Message attachmentOnly = Message.builder()
                 .id("m-1")
