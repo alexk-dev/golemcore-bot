@@ -197,4 +197,15 @@ public final class ContextAttributes {
     /** List<Map<String,Object>> ? per-turn edited file stats for UI hints. */
     public static final String TURN_FILE_CHANGES = "turn.file.changes";
 
+    /**
+     * Boolean ? whether a live progress intent was already published for this turn.
+     */
+    public static final String TURN_PROGRESS_INTENT_PUBLISHED = "turn.progress.intent.published";
+
+    /** List<ToolExecutionTrace> ? buffered tool executions awaiting summary. */
+    public static final String TURN_PROGRESS_BUFFER = "turn.progress.buffer";
+
+    /** Instant ? timestamp when the current progress batch started. */
+    public static final String TURN_PROGRESS_BATCH_STARTED_AT = "turn.progress.batch.startedAt";
+
 }

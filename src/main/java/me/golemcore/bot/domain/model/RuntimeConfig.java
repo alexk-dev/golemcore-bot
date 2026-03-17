@@ -266,6 +266,16 @@ public class RuntimeConfig {
         private String queueSteeringMode = "one-at-a-time";
         @Builder.Default
         private String queueFollowUpMode = "one-at-a-time";
+        @Builder.Default
+        private Boolean progressUpdatesEnabled = true;
+        @Builder.Default
+        private Boolean progressIntentEnabled = true;
+        @Builder.Default
+        private Integer progressBatchSize = 8;
+        @Builder.Default
+        private Integer progressMaxSilenceSeconds = 10;
+        @Builder.Default
+        private Integer progressSummaryTimeoutMs = 8000;
     }
 
     @Data

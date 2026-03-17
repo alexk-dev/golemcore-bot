@@ -5,7 +5,6 @@ import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.RuntimeEventType;
-import me.golemcore.bot.port.inbound.ChannelPort;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
@@ -15,30 +14,19 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 class RuntimeEventServiceTest {
 
     @Test
-    void shouldEmitRuntimeEventAndForwardToRegisteredChannel() {
-        ChannelPort webChannel = mock(ChannelPort.class);
-        when(webChannel.getChannelType()).thenReturn("web");
-        when(webChannel.sendRuntimeEvent(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
-
+    void shouldEmitRuntimeEventAndStoreItInContext() {
         Clock clock = Clock.fixed(Instant.parse("2026-03-01T12:00:00Z"), ZoneOffset.UTC);
-        RuntimeEventService service = new RuntimeEventService(clock, List.of(webChannel));
+        RuntimeEventService service = new RuntimeEventService(clock);
 
         AgentSession session = AgentSession.builder()
                 .id("session-1")
@@ -69,16 +57,11 @@ class RuntimeEventServiceTest {
         List<RuntimeEvent> events = context.getAttribute(ContextAttributes.RUNTIME_EVENTS);
         assertNotNull(events);
         assertEquals(1, events.size());
-        verify(webChannel).sendRuntimeEvent(eq("chat-1"), eq(event));
     }
 
     @Test
-    void shouldEmitForSessionUsingConversationIdentityAndTransportChatId() {
-        ChannelPort telegramChannel = mock(ChannelPort.class);
-        when(telegramChannel.getChannelType()).thenReturn("telegram");
-        when(telegramChannel.sendRuntimeEvent(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
-
-        RuntimeEventService service = new RuntimeEventService(Clock.systemUTC(), List.of(telegramChannel));
+    void shouldEmitForSessionUsingConversationIdentity() {
+        RuntimeEventService service = new RuntimeEventService(Clock.systemUTC());
 
         Map<String, Object> metadata = new HashMap<>();
         metadata.put(ContextAttributes.CONVERSATION_KEY, "conv-42");
@@ -95,12 +78,11 @@ class RuntimeEventServiceTest {
 
         assertEquals("telegram", event.channelType());
         assertEquals("conv-42", event.chatId());
-        verify(telegramChannel).sendRuntimeEvent(eq("transport-42"), eq(event));
     }
 
     @Test
-    void shouldNotForwardWhenChannelIsNotRegistered() {
-        RuntimeEventService service = new RuntimeEventService(Clock.systemUTC(), List.of());
+    void shouldCreateEventForSessionWithoutRequiringAChannel() {
+        RuntimeEventService service = new RuntimeEventService(Clock.systemUTC());
         AgentSession session = AgentSession.builder()
                 .id("s1")
                 .channelType("unknown")
@@ -113,12 +95,8 @@ class RuntimeEventServiceTest {
     }
 
     @Test
-    void shouldNotForwardWhenChannelTypeOrChatIdIsBlank() {
-        ChannelPort channel = mock(ChannelPort.class);
-        when(channel.getChannelType()).thenReturn("web");
-
-        RuntimeEventService service = new RuntimeEventService(Clock.systemUTC(), List.of(channel));
-
+    void shouldBuildEventsEvenWhenChannelTypeOrChatIdIsBlank() {
+        RuntimeEventService service = new RuntimeEventService(Clock.systemUTC());
         AgentSession noChannel = AgentSession.builder()
                 .id("s1")
                 .channelType("  ")
@@ -132,17 +110,11 @@ class RuntimeEventServiceTest {
 
         service.emitForSession(noChannel, RuntimeEventType.LLM_STARTED, Map.of());
         service.emitForSession(noChat, RuntimeEventType.LLM_STARTED, Map.of());
-
-        verify(channel, never()).sendRuntimeEvent(any(), any());
     }
 
     @Test
-    void shouldIgnoreChannelSendFailures() {
-        ChannelPort channel = mock(ChannelPort.class);
-        when(channel.getChannelType()).thenReturn("web");
-        when(channel.sendRuntimeEvent(any(), any())).thenThrow(new RuntimeException("socket closed"));
-
-        RuntimeEventService service = new RuntimeEventService(Clock.systemUTC(), List.of(channel));
+    void shouldIgnoreNullPayloadAndStillStoreEvent() {
+        RuntimeEventService service = new RuntimeEventService(Clock.systemUTC());
         AgentSession session = AgentSession.builder()
                 .id("s1")
                 .channelType("web")
@@ -162,7 +134,7 @@ class RuntimeEventServiceTest {
 
     @Test
     void shouldReturnExistingRuntimeEventsListFromContext() {
-        RuntimeEventService service = new RuntimeEventService(Clock.systemUTC(), List.of());
+        RuntimeEventService service = new RuntimeEventService(Clock.systemUTC());
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder().id("s1").build())
                 .messages(new ArrayList<>())
@@ -178,11 +150,7 @@ class RuntimeEventServiceTest {
 
     @Test
     void shouldAppendNewRuntimeEventToExistingContextList() {
-        ChannelPort channel = mock(ChannelPort.class);
-        when(channel.getChannelType()).thenReturn("web");
-        when(channel.sendRuntimeEvent(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
-
-        RuntimeEventService service = new RuntimeEventService(Clock.systemUTC(), List.of(channel));
+        RuntimeEventService service = new RuntimeEventService(Clock.systemUTC());
         AgentSession session = AgentSession.builder()
                 .id("s1")
                 .channelType("web")
@@ -215,7 +183,7 @@ class RuntimeEventServiceTest {
 
     @Test
     void shouldCreateRuntimeEventsListWhenAttributeHasUnexpectedType() {
-        RuntimeEventService service = new RuntimeEventService(Clock.systemUTC(), List.of());
+        RuntimeEventService service = new RuntimeEventService(Clock.systemUTC());
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder().id("s1").build())
                 .messages(new ArrayList<>())

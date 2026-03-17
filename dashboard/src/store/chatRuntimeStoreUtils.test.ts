@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ChatMessage, ChatRuntimeSessionState } from '../components/chat/chatRuntimeTypes';
 import {
   applyAssistantTextUpdate,
+  applyLiveProgressUpdate,
   createEmptySessionState,
   mergeInitialHistory,
 } from './chatRuntimeStoreUtils';
@@ -86,6 +87,25 @@ describe('chatRuntimeStoreUtils', () => {
     expect(finalState.turnMetadata.model).toBe('gemini-3.1-flash-lite-preview');
     expect(finalState.turnMetadata.tier).toBe('smart');
     expect(finalState.turnMetadata.reasoning).toBe('medium');
+    expect(finalState.running).toBe(false);
+  });
+
+  it('stores live progress updates and clears them after the final assistant message', () => {
+    const initialState = buildSessionState({});
+    const withProgress = applyLiveProgressUpdate(initialState, {
+      type: 'summary',
+      text: 'Grouped the latest shell runs into a short update.',
+    });
+
+    expect(withProgress.progress?.text).toBe('Grouped the latest shell runs into a short update.');
+    expect(withProgress.running).toBe(true);
+
+    const finalState = applyAssistantTextUpdate({
+      ...initialState,
+      ...withProgress,
+    }, 'chat-1', 'Done', null, true);
+
+    expect(finalState.progress).toBeNull();
     expect(finalState.running).toBe(false);
   });
 });

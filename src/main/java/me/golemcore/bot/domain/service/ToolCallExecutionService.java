@@ -10,8 +10,6 @@ import me.golemcore.bot.domain.model.ToolArtifact;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.infrastructure.config.BotProperties;
-import me.golemcore.bot.plugin.runtime.ChannelRegistry;
-import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.ConfirmationPort;
 import org.springframework.stereotype.Component;
 
@@ -43,14 +41,12 @@ public class ToolCallExecutionService {
     private final ToolConfirmationPolicy confirmationPolicy;
     private final ConfirmationPort confirmationPort;
     private final BotProperties properties;
-    private final ChannelRegistry channelRegistry;
     private final ToolArtifactService toolArtifactService;
 
     public ToolCallExecutionService(List<ToolComponent> toolComponents,
             ToolConfirmationPolicy confirmationPolicy,
             ConfirmationPort confirmationPort,
             BotProperties properties,
-            ChannelRegistry channelRegistry,
             ToolArtifactService toolArtifactService) {
         this.toolRegistry = new ConcurrentHashMap<>();
         for (ToolComponent tool : toolComponents) {
@@ -59,7 +55,6 @@ public class ToolCallExecutionService {
         this.confirmationPolicy = confirmationPolicy;
         this.confirmationPort = confirmationPort;
         this.properties = properties;
-        this.channelRegistry = channelRegistry;
         this.toolArtifactService = toolArtifactService;
     }
 
@@ -74,8 +69,6 @@ public class ToolCallExecutionService {
                     context.addToolResult(toolCall.getId(), denied);
                     return new ToolCallExecutionResult(toolCall.getId(), toolCall.getName(), denied, content, null);
                 }
-            } else if (!confirmationPolicy.isEnabled() && confirmationPolicy.isNotableAction(toolCall)) {
-                notifyToolExecution(context, toolCall);
             }
 
             ToolResult rawResult = executeToolCall(toolCall);
@@ -205,28 +198,6 @@ public class ToolCallExecutionService {
             return result.getOutput();
         }
         return "Error: " + result.getError();
-    }
-
-    private void notifyToolExecution(AgentContext context, Message.ToolCall toolCall) {
-        String description = confirmationPolicy.describeAction(toolCall);
-        String content = "Executing tool: " + toolCall.getName() + "\n" + description;
-
-        try {
-            String chatId = SessionIdentitySupport.resolveTransportChatId(context.getSession());
-            ChannelPort channel = getChannelPort(context.getSession().getChannelType());
-            if (channel != null) {
-                channel.sendMessage(chatId, content);
-            }
-        } catch (Exception e) {
-            log.warn("[Tools] Notification failed", e);
-        }
-    }
-
-    private ChannelPort getChannelPort(String channelType) {
-        if (channelType == null) {
-            return null;
-        }
-        return channelRegistry.get(channelType).orElse(null);
     }
 
     /**

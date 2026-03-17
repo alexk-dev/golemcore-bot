@@ -254,6 +254,11 @@ export interface TurnConfig {
   maxLlmCalls: number | null;
   maxToolExecutions: number | null;
   deadline: string | null;
+  progressUpdatesEnabled: boolean | null;
+  progressIntentEnabled: boolean | null;
+  progressBatchSize: number | null;
+  progressMaxSilenceSeconds: number | null;
+  progressSummaryTimeoutMs: number | null;
 }
 
 export interface TelegramConfig {

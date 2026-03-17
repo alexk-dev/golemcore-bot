@@ -10,7 +10,6 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -149,8 +148,7 @@ class ActiveSessionPointerServiceTest {
         service = new ActiveSessionPointerService(trackingStoragePort, new ObjectMapper());
         String pointerKey = service.buildWebPointerKey("admin", "client-1");
 
-        ExecutorService executor = Executors.newFixedThreadPool(2);
-        try {
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
             CompletableFuture<Void> first = CompletableFuture.runAsync(
                     () -> service.setActiveConversationKey(pointerKey, "session-1"),
                     executor);
@@ -162,16 +160,13 @@ class ActiveSessionPointerServiceTest {
             assertEquals(1, trackingStoragePort.maxConcurrentWrites());
             assertTrue(List.of("session-1", "session-2")
                     .contains(service.getActiveConversationKey(pointerKey).orElse(null)));
-        } finally {
-            executor.shutdownNow();
-            assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
         }
     }
 
     private static final class TrackingStoragePort implements StoragePort {
 
         private final AtomicInteger concurrentWrites = new AtomicInteger();
-        private final AtomicInteger maxConcurrentWrites = new AtomicInteger();
+        private final AtomicInteger maxConcurrentWritesCounter = new AtomicInteger();
 
         @Override
         public CompletableFuture<Void> putObject(String directory, String path, byte[] content) {
@@ -217,7 +212,7 @@ class ActiveSessionPointerServiceTest {
         public CompletableFuture<Void> putTextAtomic(String directory, String path, String content, boolean backup) {
             return CompletableFuture.runAsync(() -> {
                 int active = concurrentWrites.incrementAndGet();
-                maxConcurrentWrites.accumulateAndGet(active, Math::max);
+                maxConcurrentWritesCounter.accumulateAndGet(active, Math::max);
                 try {
                     Thread.sleep(75);
                 } catch (InterruptedException e) {
@@ -235,7 +230,7 @@ class ActiveSessionPointerServiceTest {
         }
 
         int maxConcurrentWrites() {
-            return maxConcurrentWrites.get();
+            return maxConcurrentWritesCounter.get();
         }
     }
 }

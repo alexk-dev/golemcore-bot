@@ -327,6 +327,11 @@ class RuntimeConfigServiceTest {
         assertTrue(service.isTurnQueueSteeringEnabled());
         assertEquals("one-at-a-time", service.getTurnQueueSteeringMode());
         assertEquals("one-at-a-time", service.getTurnQueueFollowUpMode());
+        assertTrue(service.isTurnProgressUpdatesEnabled());
+        assertTrue(service.isTurnProgressIntentEnabled());
+        assertEquals(8, service.getTurnProgressBatchSize());
+        assertEquals(java.time.Duration.ofSeconds(10), service.getTurnProgressMaxSilence());
+        assertEquals(8000, service.getTurnProgressSummaryTimeoutMs());
     }
 
     @Test
@@ -338,6 +343,11 @@ class RuntimeConfigServiceTest {
                 .queueSteeringEnabled(false)
                 .queueSteeringMode("all")
                 .queueFollowUpMode("single")
+                .progressUpdatesEnabled(false)
+                .progressIntentEnabled(false)
+                .progressBatchSize(6)
+                .progressMaxSilenceSeconds(25)
+                .progressSummaryTimeoutMs(12000)
                 .build();
         persistedSections.put("turn.json", objectMapper.writeValueAsString(turn));
 
@@ -347,6 +357,11 @@ class RuntimeConfigServiceTest {
         assertFalse(service.isTurnQueueSteeringEnabled());
         assertEquals("all", service.getTurnQueueSteeringMode());
         assertEquals("one-at-a-time", service.getTurnQueueFollowUpMode());
+        assertFalse(service.isTurnProgressUpdatesEnabled());
+        assertFalse(service.isTurnProgressIntentEnabled());
+        assertEquals(6, service.getTurnProgressBatchSize());
+        assertEquals(java.time.Duration.ofSeconds(25), service.getTurnProgressMaxSilence());
+        assertEquals(12000, service.getTurnProgressSummaryTimeoutMs());
     }
 
     @Test
@@ -362,6 +377,11 @@ class RuntimeConfigServiceTest {
         assertTrue(config.getTurn().getQueueSteeringEnabled());
         assertEquals("one-at-a-time", config.getTurn().getQueueSteeringMode());
         assertEquals("one-at-a-time", config.getTurn().getQueueFollowUpMode());
+        assertTrue(config.getTurn().getProgressUpdatesEnabled());
+        assertTrue(config.getTurn().getProgressIntentEnabled());
+        assertEquals(8, config.getTurn().getProgressBatchSize());
+        assertEquals(10, config.getTurn().getProgressMaxSilenceSeconds());
+        assertEquals(8000, config.getTurn().getProgressSummaryTimeoutMs());
     }
 
     @Test
@@ -379,6 +399,27 @@ class RuntimeConfigServiceTest {
         assertTrue(updated.getTurn().getQueueSteeringEnabled());
         assertEquals("one-at-a-time", updated.getTurn().getQueueSteeringMode());
         assertEquals("one-at-a-time", updated.getTurn().getQueueFollowUpMode());
+        assertTrue(updated.getTurn().getProgressUpdatesEnabled());
+        assertTrue(updated.getTurn().getProgressIntentEnabled());
+        assertEquals(8, updated.getTurn().getProgressBatchSize());
+        assertEquals(10, updated.getTurn().getProgressMaxSilenceSeconds());
+        assertEquals(8000, updated.getTurn().getProgressSummaryTimeoutMs());
+    }
+
+    @Test
+    void shouldNormalizeInvalidTurnProgressSettingsToDefaults() throws Exception {
+        RuntimeConfig.TurnConfig turn = RuntimeConfig.TurnConfig.builder()
+                .progressBatchSize(0)
+                .progressMaxSilenceSeconds(-1)
+                .progressSummaryTimeoutMs(100)
+                .build();
+        persistedSections.put("turn.json", objectMapper.writeValueAsString(turn));
+
+        RuntimeConfig runtimeConfig = service.getRuntimeConfig();
+
+        assertEquals(8, runtimeConfig.getTurn().getProgressBatchSize());
+        assertEquals(10, runtimeConfig.getTurn().getProgressMaxSilenceSeconds());
+        assertEquals(8000, runtimeConfig.getTurn().getProgressSummaryTimeoutMs());
     }
 
     @Test

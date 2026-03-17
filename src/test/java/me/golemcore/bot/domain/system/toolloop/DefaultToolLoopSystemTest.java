@@ -18,6 +18,7 @@ import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.RuntimeEventService;
+import me.golemcore.bot.domain.service.TurnProgressService;
 import me.golemcore.bot.domain.system.LlmErrorClassifier;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationView;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
@@ -85,6 +86,9 @@ class DefaultToolLoopSystemTest {
     @Mock
     private RuntimeConfigService runtimeConfigService;
 
+    @Mock
+    private TurnProgressService turnProgressService;
+
     private BotProperties.TurnProperties turnSettings;
 
     private BotProperties.ToolLoopProperties settings;
@@ -149,7 +153,7 @@ class DefaultToolLoopSystemTest {
     }
 
     private DefaultToolLoopSystem buildSystemWithRuntimeEvents() {
-        RuntimeEventService runtimeEventService = new RuntimeEventService(clock, List.of());
+        RuntimeEventService runtimeEventService = new RuntimeEventService(clock);
         return new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, viewBuilder,
                 turnSettings, settings, modelSelectionService, planService,
                 null, null, runtimeEventService, clock);
@@ -159,6 +163,12 @@ class DefaultToolLoopSystemTest {
         return new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, viewBuilder,
                 turnSettings, settings, modelSelectionService, planService,
                 runtimeConfigService, null, null, clock);
+    }
+
+    private DefaultToolLoopSystem buildSystemWithTurnProgress() {
+        return new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, viewBuilder,
+                turnSettings, settings, modelSelectionService, planService,
+                runtimeConfigService, null, null, turnProgressService, clock);
     }
 
     private void stubRuntimeConfigDefaults() {
@@ -366,6 +376,28 @@ class DefaultToolLoopSystemTest {
         assertTrue(result.finalAnswerReady());
         assertEquals(2, result.llmCalls());
         assertEquals(1, result.toolExecutions());
+    }
+
+    @Test
+    void shouldPublishIntentAndFlushProgressThroughTurnProgressService() {
+        AgentContext context = buildContext();
+        DefaultToolLoopSystem progressSystem = buildSystemWithTurnProgress();
+        stubRuntimeConfigDefaults();
+        Message.ToolCall tc = toolCall(TOOL_CALL_ID, TOOL_NAME);
+
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(tc))))
+                .thenReturn(CompletableFuture.completedFuture(finalResponse(CONTENT_DONE)));
+        when(toolExecutor.execute(any(), any())).thenReturn(new ToolExecutionOutcome(
+                TOOL_CALL_ID, TOOL_NAME, ToolResult.success("ok"), "ok", false, null));
+
+        ToolLoopTurnResult result = progressSystem.processTurn(context);
+
+        assertTrue(result.finalAnswerReady());
+        verify(turnProgressService).maybePublishIntent(eq(context), any(LlmResponse.class));
+        verify(turnProgressService).recordToolExecution(eq(context), eq(tc), any(ToolExecutionOutcome.class), eq(0L));
+        verify(turnProgressService).flushBufferedTools(context, "final_answer");
+        verify(turnProgressService).clearProgress(context);
     }
 
     @Test

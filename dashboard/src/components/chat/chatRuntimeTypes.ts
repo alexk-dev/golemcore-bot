@@ -25,12 +25,20 @@ export interface AssistantHint extends Partial<TurnMetadata> {
   maxContextTokens?: number | null;
 }
 
+export interface LiveProgressUpdate {
+  type: 'intent' | 'summary';
+  text: string;
+  metadata?: Record<string, unknown>;
+}
+
 export interface SocketMessage {
   type?: string;
   eventType?: string;
   text?: string;
   sessionId?: string;
   hint?: AssistantHint;
+  progressType?: 'intent' | 'summary' | 'clear';
+  progressMetadata?: Record<string, unknown>;
   runtimeEventType?: string;
   runtimeEventTimestamp?: string;
   runtimeEventPayload?: Record<string, unknown>;
@@ -60,5 +68,6 @@ export interface ChatRuntimeSessionState {
   oldestLoadedMessageId: string | null;
   typing: boolean;
   running: boolean;
+  progress: LiveProgressUpdate | null;
   turnMetadata: TurnMetadata;
 }

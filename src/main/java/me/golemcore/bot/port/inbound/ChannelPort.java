@@ -19,6 +19,7 @@ package me.golemcore.bot.port.inbound;
  */
 
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.ProgressUpdate;
 import me.golemcore.bot.domain.model.RuntimeEvent;
 
 import java.util.Map;
@@ -81,6 +82,14 @@ public interface ChannelPort {
      * implementation is a no-op.
      */
     default CompletableFuture<Void> sendRuntimeEvent(String chatId, RuntimeEvent event) {
+        return CompletableFuture.completedFuture(null);
+    }
+
+    /**
+     * Sends a high-level progress update for the current turn. Default
+     * implementation is a no-op.
+     */
+    default CompletableFuture<Void> sendProgressUpdate(String chatId, ProgressUpdate update) {
         return CompletableFuture.completedFuture(null);
     }
 

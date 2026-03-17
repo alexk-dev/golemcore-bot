@@ -1,8 +1,16 @@
 import { create } from 'zustand';
-import type { ChatMessage, ChatRuntimeSessionState, AssistantHint, ChatBindPayload, ChatSendPayload } from '../components/chat/chatRuntimeTypes';
+import type {
+  ChatMessage,
+  ChatRuntimeSessionState,
+  AssistantHint,
+  ChatBindPayload,
+  ChatSendPayload,
+  LiveProgressUpdate,
+} from '../components/chat/chatRuntimeTypes';
 import type { OutboundChatPayload } from '../components/chat/chatInputTypes';
 import {
   applyAssistantTextUpdate,
+  applyLiveProgressUpdate,
   createEmptySessionState,
   dedupeMessages,
   mergeInitialHistory,
@@ -53,6 +61,7 @@ interface ChatRuntimeState {
   markPendingMessagesAsFailed: () => void;
   setTyping: (sessionId: string, typing: boolean) => void;
   setRunning: (sessionId: string, running: boolean) => void;
+  applyProgressUpdate: (sessionId: string, progress: LiveProgressUpdate | null) => void;
   applyTurnMetadataPatch: (sessionId: string, hint: AssistantHint) => void;
   applyAssistantText: (sessionId: string, text: string, hint: AssistantHint | null, isFinal: boolean) => void;
 }
@@ -188,6 +197,7 @@ function createMessageActions(
   | 'markPendingMessagesAsFailed'
   | 'setTyping'
   | 'setRunning'
+  | 'applyProgressUpdate'
   | 'applyTurnMetadataPatch'
   | 'applyAssistantText'
 > {
@@ -363,6 +373,17 @@ function createMessageActions(
           ...current,
           running,
           typing: running ? current.typing : false,
+        }),
+      };
+    }),
+  applyProgressUpdate: (sessionId, progress) =>
+    set((state) => {
+      const current = ensureSessionState(state.sessions, sessionId);
+      const nextSession = applyLiveProgressUpdate(current, progress);
+      return {
+        sessions: cloneSessions(state.sessions, sessionId, {
+          ...current,
+          ...nextSession,
         }),
       };
     }),

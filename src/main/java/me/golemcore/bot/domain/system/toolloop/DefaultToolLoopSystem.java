@@ -20,6 +20,7 @@ import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.RuntimeEventService;
+import me.golemcore.bot.domain.service.TurnProgressService;
 import me.golemcore.bot.domain.system.LlmErrorClassifier;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationView;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
@@ -61,6 +62,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
     private final RuntimeConfigService runtimeConfigService;
     private final CompactionOrchestrationService compactionOrchestrationService;
     private final RuntimeEventService runtimeEventService;
+    private final TurnProgressService turnProgressService;
     private final Clock clock;
 
     public DefaultToolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutor, HistoryWriter historyWriter,
@@ -85,6 +87,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         this.runtimeConfigService = null;
         this.compactionOrchestrationService = null;
         this.runtimeEventService = null;
+        this.turnProgressService = null;
         this.clock = clock;
     }
 
@@ -112,6 +115,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         this.runtimeConfigService = null;
         this.compactionOrchestrationService = null;
         this.runtimeEventService = null;
+        this.turnProgressService = null;
         this.clock = clock;
 
     }
@@ -130,6 +134,16 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             PlanService planService, RuntimeConfigService runtimeConfigService,
             CompactionOrchestrationService compactionOrchestrationService,
             RuntimeEventService runtimeEventService, Clock clock) {
+        this(llmPort, toolExecutor, historyWriter, viewBuilder, turnSettings, settings, modelSelectionService,
+                planService, runtimeConfigService, compactionOrchestrationService, runtimeEventService, null, clock);
+    }
+
+    public DefaultToolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutor, HistoryWriter historyWriter,
+            ConversationViewBuilder viewBuilder, BotProperties.TurnProperties turnSettings,
+            BotProperties.ToolLoopProperties settings, ModelSelectionService modelSelectionService,
+            PlanService planService, RuntimeConfigService runtimeConfigService,
+            CompactionOrchestrationService compactionOrchestrationService,
+            RuntimeEventService runtimeEventService, TurnProgressService turnProgressService, Clock clock) {
         this.llmPort = llmPort;
         this.toolExecutor = toolExecutor;
         this.historyWriter = historyWriter;
@@ -141,6 +155,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         this.runtimeConfigService = runtimeConfigService;
         this.compactionOrchestrationService = compactionOrchestrationService;
         this.runtimeEventService = runtimeEventService;
+        this.turnProgressService = turnProgressService;
         this.clock = clock;
     }
 
@@ -247,7 +262,6 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                         eventPayload("attempt", retryAttempt, "success", true));
                 logRetrySucceeded(context, llmCalls, retryAttempt, maxRetries, lastRetryCode);
                 retryAttempt = 0;
-                lastRetryCode = null;
             }
 
             context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
@@ -282,11 +296,15 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 }
 
                 context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
+                flushProgress(context, "final_answer");
                 applyAttachments(context, accumulatedAttachments);
                 emitRuntimeEvent(context, RuntimeEventType.TURN_FINISHED,
                         eventPayload("llmCalls", llmCalls, "toolExecutions", toolExecutions));
+                clearProgress(context);
                 return new ToolLoopTurnResult(context, true, llmCalls, toolExecutions);
             }
+
+            maybePublishIntent(context, response);
 
             // 3) Append assistant message with tool calls
             historyWriter.appendAssistantToolCalls(context, response, response.getToolCalls());
@@ -321,6 +339,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                             md, true, null);
                     historyWriter.appendToolResult(context, synthetic);
                     context.addToolResult(tc.getId(), me.golemcore.bot.domain.model.ToolResult.success(md));
+                    recordToolProgress(context, tc, synthetic, 0L);
                     toolExecutions++;
                     continue;
                 }
@@ -355,6 +374,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                     context.addToolResult(outcome.toolCallId(), outcome.toolResult());
                 }
                 if (outcome != null) {
+                    recordToolProgress(context, tc, outcome, toolDuration);
                     historyWriter.appendToolResult(context, outcome);
                     if (outcome.toolResult() != null && !outcome.toolResult().isSuccess()) {
                         ToolFailureKind kind = outcome.toolResult().getFailureKind();
@@ -444,6 +464,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
 
     private void scheduleRetry(AgentContext context, int llmCalls, int attempt, int maxAttempts, long baseDelayMs,
             String code) {
+        flushProgress(context, "retry");
         long delayMs = (long) Math.min(3000, baseDelayMs * Math.pow(2, Math.max(0, attempt - 1)));
         String model = context.getAttribute(ContextAttributes.LLM_MODEL);
         log.warn(
@@ -493,6 +514,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             return false;
         }
 
+        flushProgress(context, "compaction");
         emitRuntimeEvent(context, RuntimeEventType.COMPACTION_STARTED,
                 eventPayload("llmCall", llmCalls,
                         "messages", total - keepLast,
@@ -643,6 +665,8 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 FailureKind.VALIDATION,
                 diagnostic,
                 clock.instant()));
+        flushProgress(context, "llm_failure");
+        clearProgress(context);
         return new ToolLoopTurnResult(context, false, llmCalls, toolExecutions);
     }
 
@@ -693,6 +717,8 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 FailureKind.EXCEPTION,
                 diagnostic,
                 clock.instant()));
+        flushProgress(context, "llm_failure");
+        clearProgress(context);
         return new ToolLoopTurnResult(context, false, llmCalls, toolExecutions);
     }
 
@@ -733,6 +759,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
 
     private ToolLoopTurnResult stopTurn(AgentContext context, LlmResponse lastResponse,
             List<Message.ToolCall> pendingToolCalls, String reason, int llmCalls, int toolExecutions) {
+        flushProgress(context, "turn_stop");
         if (pendingToolCalls != null) {
             for (Message.ToolCall tc : pendingToolCalls) {
                 // Avoid writing duplicate synthetic results for the same tool_call_id if a real
@@ -759,6 +786,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         context.setAttribute(ContextAttributes.LLM_RESPONSE, cleanResponse);
 
         context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
+        clearProgress(context);
         return new ToolLoopTurnResult(context, true, llmCalls, toolExecutions);
     }
 
@@ -890,6 +918,35 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             return;
         }
         runtimeEventService.emit(context, type, payload);
+    }
+
+    private void maybePublishIntent(AgentContext context, LlmResponse response) {
+        if (turnProgressService == null || context == null || response == null) {
+            return;
+        }
+        turnProgressService.maybePublishIntent(context, response);
+    }
+
+    private void recordToolProgress(AgentContext context, Message.ToolCall toolCall, ToolExecutionOutcome outcome,
+            long durationMs) {
+        if (turnProgressService == null || context == null || toolCall == null || outcome == null) {
+            return;
+        }
+        turnProgressService.recordToolExecution(context, toolCall, outcome, durationMs);
+    }
+
+    private void flushProgress(AgentContext context, String reason) {
+        if (turnProgressService == null || context == null) {
+            return;
+        }
+        turnProgressService.flushBufferedTools(context, reason);
+    }
+
+    private void clearProgress(AgentContext context) {
+        if (turnProgressService == null || context == null) {
+            return;
+        }
+        turnProgressService.clearProgress(context);
     }
 
     private Map<String, Object> eventPayload(Object... entries) {
