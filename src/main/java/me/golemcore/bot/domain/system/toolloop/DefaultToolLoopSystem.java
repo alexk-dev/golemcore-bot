@@ -262,7 +262,6 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                         eventPayload("attempt", retryAttempt, "success", true));
                 logRetrySucceeded(context, llmCalls, retryAttempt, maxRetries, lastRetryCode);
                 retryAttempt = 0;
-                lastRetryCode = null;
             }
 
             context.setAttribute(ContextAttributes.LLM_RESPONSE, response);

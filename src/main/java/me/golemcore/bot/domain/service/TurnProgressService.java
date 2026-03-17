@@ -18,8 +18,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Owns user-facing live progress updates for a single tool-loop turn.
@@ -156,7 +156,7 @@ public class TurnProgressService {
         if (toolCalls == null || toolCalls.isEmpty()) {
             return "inspect the current state and summarize what changes";
         }
-        LinkedHashSet<String> families = new LinkedHashSet<>();
+        Set<String> families = new LinkedHashSet<>();
         for (Message.ToolCall toolCall : toolCalls) {
             String toolName = toolCall != null ? toolCall.getName() : null;
             String family = toolName != null ? traceExtractor.extract(toolCall, null, 0L).family() : "tool";
@@ -203,7 +203,7 @@ public class TurnProgressService {
     }
 
     private List<String> collectFamilies(List<ToolExecutionTrace> traces) {
-        LinkedHashSet<String> families = new LinkedHashSet<>();
+        Set<String> families = new LinkedHashSet<>();
         for (ToolExecutionTrace trace : traces) {
             families.add(trace.family());
         }

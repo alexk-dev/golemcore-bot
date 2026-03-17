@@ -311,8 +311,8 @@ public class AgentLoop {
         context.setAttribute(key, value);
     }
 
-    private ArrayList<Message> buildContextMessages(AgentSession session, Message inbound) {
-        ArrayList<Message> messages = new ArrayList<>();
+    private List<Message> buildContextMessages(AgentSession session, Message inbound) {
+        List<Message> messages = new ArrayList<>();
         if (session != null && session.getMessages() != null) {
             messages.addAll(session.getMessages());
         }
