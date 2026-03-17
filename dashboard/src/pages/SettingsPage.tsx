@@ -215,12 +215,12 @@ export default function SettingsPage(): ReactElement {
         <Card className="settings-card mb-4">
           <Card.Body>
             <Form.Group controlId="settings-catalog-search" className="mb-0">
-              <Form.Label className="small fw-medium">Find a settings widget</Form.Label>
+              <Form.Label className="small fw-medium">Search settings</Form.Label>
               <InputGroup>
                 <InputGroup.Text aria-hidden="true"><FiSearch size={16} /></InputGroup.Text>
                 <Form.Control
                   type="search"
-                  placeholder="Search by widget name"
+                  placeholder="Search by name"
                   value={catalogSearch}
                   onChange={(event) => setCatalogSearch(event.target.value)}
                 />
@@ -232,7 +232,7 @@ export default function SettingsPage(): ReactElement {
                 )}
               </InputGroup>
               <Form.Text className="text-muted">
-                Typo-tolerant search helps you find widgets even if the name is slightly misspelled.
+                Start typing to quickly find the setting you need.
               </Form.Text>
             </Form.Group>
           </Card.Body>
@@ -241,9 +241,9 @@ export default function SettingsPage(): ReactElement {
         {filteredCatalogBlocks.length === 0 ? (
           <Card className="settings-card">
             <Card.Body>
-              <h2 className="h6 mb-2">No matching settings</h2>
+              <h2 className="h6 mb-2">Nothing found</h2>
               <p className="text-body-secondary small mb-0">
-                No widget titles match `{catalogSearch}`. Try a shorter query or clear the search.
+                No settings match `{catalogSearch}`. Try another name or clear the search.
               </p>
             </Card.Body>
           </Card>
