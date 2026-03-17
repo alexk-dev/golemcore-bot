@@ -106,13 +106,12 @@ function DiscoveryResults({
 }: DiscoveryResultsProps): ReactElement {
   return (
     <>
-      <div className="relative">
+      <div className="input-with-leading-icon">
         <FiSearch className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={15} />
         <Input
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
           placeholder={`Search ${providerName} models`}
-          className="pl-11"
         />
       </div>
 
