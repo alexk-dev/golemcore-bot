@@ -54,6 +54,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.Executors;
@@ -118,6 +119,7 @@ public class AgentLoop {
     }
 
     public void processMessage(Message message) {
+        Objects.requireNonNull(message, "message must not be null");
         try (MdcSupport.Scope ignored = MdcSupport.withContext(AutoRunContextSupport.buildMdcContext(message))) {
             log.info("=== INCOMING MESSAGE ===");
             log.info("Channel: {}, Chat: {}, Sender: {}",
@@ -125,7 +127,8 @@ public class AgentLoop {
             log.debug("Content: {}", truncate(message.getContent(), 200));
 
             boolean isAuto = AutoRunContextSupport.isAutoMessage(message);
-            if (!isAuto) {
+            boolean isInternal = message.isInternalMessage();
+            if (!isAuto && !isInternal) {
                 RateLimitResult rateLimit = rateLimiter.tryConsume();
                 if (!rateLimit.isAllowed()) {
                     log.warn("Rate limit exceeded");
@@ -140,11 +143,13 @@ public class AgentLoop {
             log.debug("Session: {}, messages in history: {}", session.getId(), session.getMessages().size());
 
             applySessionIdentityMetadata(session, message);
-            session.addMessage(message);
+            if (!message.isInternalMessage()) {
+                session.addMessage(message);
+            }
 
             AgentContext context = AgentContext.builder()
                     .session(session)
-                    .messages(new ArrayList<>(session.getMessages()))
+                    .messages(buildContextMessages(session, message))
                     .maxIterations(runtimeConfigService.getTurnMaxLlmCalls())
                     .currentIteration(0)
                     .build();
@@ -288,6 +293,9 @@ public class AgentLoop {
         if (AutoRunContextSupport.isAutoMessage(message)) {
             context.setAttribute(ContextAttributes.AUTO_MODE, true);
         }
+        if (message != null && message.isInternalMessage()) {
+            context.setAttribute(ContextAttributes.TURN_INPUT_INTERNAL, true);
+        }
         copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_RUN_KIND);
         copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_RUN_ID);
         copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_SCHEDULE_ID);
@@ -301,6 +309,17 @@ public class AgentLoop {
             return;
         }
         context.setAttribute(key, value);
+    }
+
+    private ArrayList<Message> buildContextMessages(AgentSession session, Message inbound) {
+        ArrayList<Message> messages = new ArrayList<>();
+        if (session != null && session.getMessages() != null) {
+            messages.addAll(session.getMessages());
+        }
+        if (inbound != null && inbound.isInternalMessage()) {
+            messages.add(inbound);
+        }
+        return messages;
     }
 
     private String readMetadataString(Message message, String key) {
@@ -417,6 +436,11 @@ public class AgentLoop {
 
         if (isAutoModeContext(context)) {
             log.debug("[AgentLoop] Feedback guarantee skipped: auto mode context");
+            return;
+        }
+
+        if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.TURN_INTERNAL_RETRY_SCHEDULED))) {
+            log.debug("[AgentLoop] Feedback guarantee skipped: internal retry already scheduled");
             return;
         }
 

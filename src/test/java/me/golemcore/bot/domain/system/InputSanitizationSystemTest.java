@@ -81,6 +81,19 @@ class InputSanitizationSystemTest {
     }
 
     @Test
+    void shouldProcessReturnsFalseForInternalRuntimeMessage() {
+        Message internalMsg = Message.builder()
+                .role(ROLE_USER)
+                .content("internal retry")
+                .timestamp(Instant.now())
+                .metadata(Map.of(ContextAttributes.MESSAGE_INTERNAL, true))
+                .build();
+        AgentContext ctx = contextWith(List.of(internalMsg));
+
+        assertFalse(system.shouldProcess(ctx));
+    }
+
+    @Test
     void shouldProcessReturnsFalseForAutoModeMessage() {
         Message autoMsg = Message.builder()
                 .role(ROLE_USER)

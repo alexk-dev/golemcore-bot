@@ -250,6 +250,27 @@ class RagIndexingSystemTest {
         assertTrue(captor.getValue().contains("Assistant: The capital of France is Paris"));
     }
 
+    @Test
+    void processIgnoresInternalRetryMessageAsLastUserInput() {
+        AgentContext context = AgentContext.builder()
+                .messages(new ArrayList<>(List.of(
+                        Message.builder().role("user").content("visible question")
+                                .timestamp(Instant.now()).build(),
+                        Message.builder().role("user").content("internal continue")
+                                .metadata(Map.of(ContextAttributes.MESSAGE_INTERNAL, true))
+                                .timestamp(Instant.now()).build())))
+                .build();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE,
+                LlmResponse.builder().content("assistant answer with enough detail to index").build());
+
+        system.process(context);
+
+        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+        verify(ragPort).index(captor.capture());
+        assertTrue(captor.getValue().contains("User: visible question"));
+        assertFalse(captor.getValue().contains("internal continue"));
+    }
+
     private AgentContext buildContext(String userText, String assistantText) {
         List<Message> messages = new ArrayList<>();
         messages.add(Message.builder()

@@ -193,6 +193,9 @@ public class SessionRunCoordinator {
             while (!queuedFollowUpMessages.isEmpty()) {
                 Message followUp = queuedFollowUpMessages.removeFirst();
                 rejectPendingCompletion(followUp, "Skipped after stop request");
+                if (followUp.isInternalMessage()) {
+                    continue;
+                }
                 markQueueKind(followUp, ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP);
                 queued.add(followUp);
             }
@@ -274,10 +277,14 @@ public class SessionRunCoordinator {
                 markQueueKind(nextSteering, ContextAttributes.TURN_QUEUE_KIND_STEERING);
                 return nextSteering;
             }
+            Message internalRetry = dequeueInternalRetryLocked();
+            if (internalRetry != null) {
+                markQueueKind(internalRetry, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY);
+                return internalRetry;
+            }
             if (!queuedFollowUpMessages.isEmpty()) {
                 if (isQueueModeAll(runtimeConfigService.getTurnQueueFollowUpMode())) {
-                    Message mergedFollowUp = mergeQueuedMessages(queuedFollowUpMessages,
-                            ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP);
+                    Message mergedFollowUp = mergeQueuedFollowUpMessagesLocked();
                     markQueueKind(mergedFollowUp, ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP);
                     return mergedFollowUp;
                 }
@@ -303,6 +310,20 @@ public class SessionRunCoordinator {
         }
 
         private void enqueueFollowUp(Message inbound) {
+            if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(resolveQueueKind(inbound))) {
+                java.util.Iterator<Message> iterator = queuedFollowUpMessages.iterator();
+                while (iterator.hasNext()) {
+                    Message queued = iterator.next();
+                    if (!ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(resolveQueueKind(queued))) {
+                        continue;
+                    }
+                    iterator.remove();
+                    rejectPendingCompletion(queued, "Replaced by a newer internal retry message");
+                }
+                enqueueWithBound(queuedFollowUpMessages, inbound, "internal-retry");
+                return;
+            }
+
             if (isQueueModeAll(runtimeConfigService.getTurnQueueFollowUpMode())) {
                 enqueueWithBound(queuedFollowUpMessages, inbound, "follow-up");
                 return;
@@ -332,6 +353,48 @@ public class SessionRunCoordinator {
                         key.chatId());
             }
             queue.addLast(inbound);
+        }
+
+        private Message dequeueInternalRetryLocked() {
+            java.util.Iterator<Message> iterator = queuedFollowUpMessages.iterator();
+            while (iterator.hasNext()) {
+                Message message = iterator.next();
+                if (!ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(resolveQueueKind(message))) {
+                    continue;
+                }
+                iterator.remove();
+                return message;
+            }
+            return null;
+        }
+
+        private Message mergeQueuedFollowUpMessagesLocked() {
+            Message first = queuedFollowUpMessages.removeFirst();
+            StringBuilder builder = new StringBuilder();
+            appendMergedChunk(builder, first.getContent());
+            Message merged = Message.builder()
+                    .id(first.getId())
+                    .role(first.getRole())
+                    .content(builder.toString())
+                    .channelType(first.getChannelType())
+                    .chatId(first.getChatId())
+                    .senderId(first.getSenderId())
+                    .timestamp(first.getTimestamp())
+                    .metadata(first.getMetadata() != null ? new LinkedHashMap<>(first.getMetadata()) : null)
+                    .build();
+            transferPendingCompletions(first, merged);
+            while (!queuedFollowUpMessages.isEmpty()) {
+                Message next = queuedFollowUpMessages.peekFirst();
+                if (next == null || ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(resolveQueueKind(next))) {
+                    break;
+                }
+                next = queuedFollowUpMessages.removeFirst();
+                appendMergedChunk(builder, next.getContent());
+                transferPendingCompletions(next, merged);
+            }
+            merged.setContent(builder.toString());
+            markQueueKind(merged, ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP);
+            return merged;
         }
 
         private Message mergeQueuedMessages(Deque<Message> queue, String queueKind) {
@@ -469,9 +532,6 @@ public class SessionRunCoordinator {
     }
 
     private String resolveQueueKind(Message inbound) {
-        if (!runtimeConfigService.isTurnQueueSteeringEnabled()) {
-            return ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP;
-        }
         if (inbound == null || inbound.getMetadata() == null) {
             return ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP;
         }
@@ -482,11 +542,17 @@ public class SessionRunCoordinator {
             if (ContextAttributes.TURN_QUEUE_KIND_STEERING.equals(normalized)) {
                 return ContextAttributes.TURN_QUEUE_KIND_STEERING;
             }
+            if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(normalized)) {
+                return ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY;
+            }
             if (ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP.equals(normalized)) {
                 return ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP;
             }
         }
 
+        if (!runtimeConfigService.isTurnQueueSteeringEnabled()) {
+            return ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP;
+        }
         return ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP;
     }
 

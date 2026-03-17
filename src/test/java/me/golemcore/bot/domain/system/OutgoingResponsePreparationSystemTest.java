@@ -25,6 +25,7 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.TurnLimitReason;
+import me.golemcore.bot.domain.service.InternalTurnService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -49,6 +50,7 @@ class OutgoingResponsePreparationSystemTest {
     private UserPreferencesService preferencesService;
     private ModelSelectionService modelSelectionService;
     private RuntimeConfigService runtimeConfigService;
+    private InternalTurnService internalTurnService;
     private OutgoingResponsePreparationSystem system;
 
     @BeforeEach
@@ -56,9 +58,10 @@ class OutgoingResponsePreparationSystemTest {
         preferencesService = mock(UserPreferencesService.class);
         modelSelectionService = mock(ModelSelectionService.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
+        internalTurnService = mock(InternalTurnService.class);
         when(modelSelectionService.resolveMaxInputTokens(anyString())).thenReturn(128000);
         system = new OutgoingResponsePreparationSystem(preferencesService, modelSelectionService,
-                runtimeConfigService);
+                runtimeConfigService, internalTurnService);
     }
 
     // ── identity ──
@@ -203,6 +206,54 @@ class OutgoingResponsePreparationSystemTest {
         OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
         assertNotNull(outgoing);
         assertEquals(ERROR_MESSAGE, outgoing.getText());
+    }
+
+    @Test
+    void shouldScheduleInternalRetryForTransientLlmError() {
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.LLM_ERROR,
+                LlmErrorClassifier.withCode(LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT, "rate limited"));
+        when(internalTurnService.scheduleAutoContinueRetry(context, LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT))
+                .thenReturn(true);
+
+        AgentContext result = system.process(context);
+
+        assertNull(result.getAttribute(ContextAttributes.OUTGOING_RESPONSE));
+        assertEquals(true, result.getAttribute(ContextAttributes.TURN_INTERNAL_RETRY_SCHEDULED));
+        verify(internalTurnService).scheduleAutoContinueRetry(context, LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT);
+        verify(preferencesService, never()).getMessage("system.error.llm");
+    }
+
+    @Test
+    void shouldNotScheduleInternalRetryForAutoMode() {
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.LLM_ERROR,
+                LlmErrorClassifier.withCode(LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT, "rate limited"));
+        context.setAttribute(ContextAttributes.AUTO_MODE, true);
+        when(preferencesService.getMessage("system.error.llm")).thenReturn(ERROR_MESSAGE);
+
+        AgentContext result = system.process(context);
+
+        OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        assertNotNull(outgoing);
+        assertEquals(ERROR_MESSAGE, outgoing.getText());
+        verify(internalTurnService, never()).scheduleAutoContinueRetry(any(), anyString());
+    }
+
+    @Test
+    void shouldNotScheduleInternalRetryForInternalInboundMessage() {
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.LLM_ERROR,
+                LlmErrorClassifier.withCode(LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT, "rate limited"));
+        context.setAttribute(ContextAttributes.TURN_INPUT_INTERNAL, true);
+        when(preferencesService.getMessage("system.error.llm")).thenReturn(ERROR_MESSAGE);
+
+        AgentContext result = system.process(context);
+
+        OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        assertNotNull(outgoing);
+        assertEquals(ERROR_MESSAGE, outgoing.getText());
+        verify(internalTurnService, never()).scheduleAutoContinueRetry(any(), anyString());
     }
 
     // ── process: LLM response → text ──
@@ -668,6 +719,34 @@ class OutgoingResponsePreparationSystemTest {
         assertNotNull(outgoing);
         assertFalse(outgoing.isVoiceRequested(),
                 "Should check last user message, not earlier voice message");
+    }
+
+    @Test
+    void shouldIgnoreInternalUserMessagesWhenDetectingAutoVoice() {
+        when(runtimeConfigService.isTelegramRespondWithVoiceEnabled()).thenReturn(true);
+
+        AgentContext context = buildContextWithMessages(List.of(
+                Message.builder()
+                        .role(ROLE_USER)
+                        .content("visible user message")
+                        .voiceData(new byte[] { 1, 2, 3 })
+                        .timestamp(Instant.now())
+                        .build(),
+                Message.builder()
+                        .role(ROLE_USER)
+                        .content("internal retry")
+                        .metadata(java.util.Map.of(ContextAttributes.MESSAGE_INTERNAL, true))
+                        .timestamp(Instant.now())
+                        .build()));
+
+        context.setAttribute(ContextAttributes.LLM_RESPONSE,
+                LlmResponse.builder().content(REPLY_TEXT).build());
+
+        AgentContext result = system.process(context);
+
+        OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        assertNotNull(outgoing);
+        assertTrue(outgoing.isVoiceRequested());
     }
 
     // ── process: FINAL_ANSWER_READY with tool calls ──
