@@ -416,6 +416,25 @@ class SkillServiceTest {
     }
 
     @Test
+    void parseSkillWithReflectionTier() {
+        loadSkills("recover/" + SKILL_FILE);
+        stubSkillContent("recover/" + SKILL_FILE, """
+                ---
+                name: recover
+                description: Recovery skill
+                reflection_tier: deep
+                ---
+                You are a recovery assistant.
+                """);
+
+        service.reload();
+
+        Optional<Skill> skill = service.findByName("recover");
+        assertTrue(skill.isPresent());
+        assertEquals("deep", skill.get().getReflectionTier());
+    }
+
+    @Test
     void parseSkillWithoutModelTierReturnsNull() {
         loadSkills("plain/" + SKILL_FILE);
         stubSkillContent("plain/" + SKILL_FILE, """

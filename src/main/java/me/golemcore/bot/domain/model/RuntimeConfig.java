@@ -191,6 +191,12 @@ public class RuntimeConfig {
         private Boolean autoStart;
         private Integer maxGoals;
         private String modelTier;
+        @Builder.Default
+        private Boolean reflectionEnabled = true;
+        @Builder.Default
+        private Integer reflectionFailureThreshold = 2;
+        private String reflectionModelTier;
+        private Boolean reflectionTierPriority;
         private Boolean notifyMilestones;
     }
 

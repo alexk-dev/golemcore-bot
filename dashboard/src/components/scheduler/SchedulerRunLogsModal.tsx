@@ -78,7 +78,8 @@ function RunMessageCard({ message }: { message: SchedulerRunMessage }): ReactEle
       <div className="mt-2 sessions-message">{message.content}</div>
       <div className="mt-2 small text-body-secondary">
         {message.modelTier != null && message.modelTier.length > 0 && <>tier {message.modelTier}</>}
-        {message.model != null && message.model.length > 0 && <> · model {message.model}</>}
+        {message.skill != null && message.skill.length > 0 && <>{message.modelTier != null && message.modelTier.length > 0 ? ' · ' : ''}skill {message.skill}</>}
+        {message.model != null && message.model.length > 0 && <>{(message.modelTier != null && message.modelTier.length > 0) || (message.skill != null && message.skill.length > 0) ? ' · ' : ''}model {message.model}</>}
       </div>
     </div>
   );

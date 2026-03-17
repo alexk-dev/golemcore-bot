@@ -111,6 +111,7 @@ export function mergeInitialHistory(existingMessages: ChatMessage[], historyMess
       && message.content === lastPersistedAssistant?.content
       && message.model === lastPersistedAssistant?.model
       && message.tier === lastPersistedAssistant?.tier
+      && message.skill === lastPersistedAssistant?.skill
       && message.reasoning === lastPersistedAssistant?.reasoning
     ) {
       continue;
@@ -128,6 +129,7 @@ function updateAssistantMessage(
 ): ChatMessage {
   const nextModel = hint?.model ?? message.model;
   const nextTier = hint?.tier ?? message.tier;
+  const nextSkill = hint?.skill ?? message.skill;
   const nextReasoning = hint?.reasoning ?? message.reasoning;
 
   if (!isFinal) {
@@ -136,18 +138,25 @@ function updateAssistantMessage(
       content: `${message.content}${text}`,
       model: nextModel,
       tier: nextTier,
+      skill: nextSkill,
       reasoning: nextReasoning,
     };
   }
 
   if (text.length === 0 || text === message.content) {
-    if (nextModel === message.model && nextTier === message.tier && nextReasoning === message.reasoning) {
+    if (
+      nextModel === message.model
+      && nextTier === message.tier
+      && nextSkill === message.skill
+      && nextReasoning === message.reasoning
+    ) {
       return message;
     }
     return {
       ...message,
       model: nextModel,
       tier: nextTier,
+      skill: nextSkill,
       reasoning: nextReasoning,
     };
   }
@@ -157,6 +166,7 @@ function updateAssistantMessage(
     content: text.length >= message.content.length ? text : message.content,
     model: nextModel,
     tier: nextTier,
+    skill: nextSkill,
     reasoning: nextReasoning,
   };
 }
@@ -173,6 +183,7 @@ function createAssistantMessage(
     content: text,
     model: hint?.model ?? null,
     tier: hint?.tier ?? null,
+    skill: hint?.skill ?? null,
     reasoning: hint?.reasoning ?? null,
     persisted: false,
   };

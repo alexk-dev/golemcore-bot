@@ -78,6 +78,8 @@ class AutoRunHistoryServiceTest {
                         ContextAttributes.AUTO_SCHEDULE_ID, "sched-1",
                         ContextAttributes.AUTO_GOAL_ID, "goal-1",
                         ContextAttributes.AUTO_TASK_ID, "task-1",
+                        ContextAttributes.AUTO_RUN_STATUS, "COMPLETED",
+                        ContextAttributes.AUTO_RUN_ACTIVE_SKILL, "reviewer-skill",
                         "modelTier", "coding"))
                 .build();
         AgentSession session = AgentSession.builder()
@@ -109,5 +111,59 @@ class AutoRunHistoryServiceTest {
         assertTrue(detail.isPresent());
         assertEquals(2, detail.get().messages().size());
         assertEquals("coding", detail.get().messages().get(1).modelTier());
+        assertEquals("reviewer-skill", detail.get().messages().get(1).skill());
+    }
+
+    @Test
+    void shouldPreferExplicitFailedStatusFromMetadata() {
+        AutoTask task = AutoTask.builder()
+                .id("task-1")
+                .goalId("goal-1")
+                .title("Write docs")
+                .order(1)
+                .build();
+        Goal goal = Goal.builder()
+                .id("goal-1")
+                .title("Launch")
+                .tasks(List.of(task))
+                .build();
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-1")
+                .type(ScheduleEntry.ScheduleType.TASK)
+                .targetId("task-1")
+                .cronExpression("* * * * *")
+                .build();
+
+        Message user = Message.builder()
+                .id("m1")
+                .role("user")
+                .content("start")
+                .timestamp(Instant.parse("2026-03-11T10:00:00Z"))
+                .metadata(Map.of(
+                        ContextAttributes.AUTO_MODE, true,
+                        ContextAttributes.AUTO_RUN_ID, "run-1",
+                        ContextAttributes.AUTO_SCHEDULE_ID, "sched-1",
+                        ContextAttributes.AUTO_GOAL_ID, "goal-1",
+                        ContextAttributes.AUTO_TASK_ID, "task-1",
+                        ContextAttributes.AUTO_RUN_STATUS, "FAILED"))
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("web:conv-1")
+                .channelType("web")
+                .chatId("conv-1")
+                .metadata(Map.of(
+                        ContextAttributes.CONVERSATION_KEY, "conv-1",
+                        ContextAttributes.TRANSPORT_CHAT_ID, "client-1"))
+                .messages(List.of(user))
+                .build();
+
+        when(autoModeService.getGoals()).thenReturn(List.of(goal));
+        when(scheduleService.getSchedules()).thenReturn(List.of(schedule));
+        when(sessionPort.listAll()).thenReturn(List.of(session));
+
+        List<AutoRunHistoryService.RunSummary> runs = service.listRuns("sched-1", null, null, 10);
+
+        assertEquals(1, runs.size());
+        assertEquals("FAILED", runs.get(0).status());
     }
 }

@@ -5,6 +5,7 @@ import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.ToolResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -194,6 +195,21 @@ class DefaultHistoryWriterTest {
 
         Message message = context.getMessages().get(0);
         assertEquals("high", message.getMetadata().get("reasoning"));
+    }
+
+    @Test
+    void shouldPersistActiveSkillMetadataWhenAvailable() {
+        AgentContext context = buildContext(true);
+        context.setActiveSkill(Skill.builder()
+                .name("golemcore/superpowers/superpowers-systematic-debugging")
+                .build());
+
+        writer.appendFinalAssistantAnswer(context, null, "Final text");
+
+        Message message = context.getMessages().get(0);
+        assertEquals(
+                "golemcore/superpowers/superpowers-systematic-debugging",
+                message.getMetadata().get(ContextAttributes.ACTIVE_SKILL_NAME));
     }
 
     @Test

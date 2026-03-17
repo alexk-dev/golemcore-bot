@@ -42,6 +42,8 @@ public class Goal {
     private String title;
     private String description;
     private String prompt;
+    private String reflectionModelTier;
+    private boolean reflectionTierPriority;
 
     @Builder.Default
     private GoalStatus status = GoalStatus.ACTIVE;

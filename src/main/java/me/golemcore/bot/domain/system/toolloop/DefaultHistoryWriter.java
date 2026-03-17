@@ -108,6 +108,11 @@ public class DefaultHistoryWriter implements HistoryWriter {
             metadata.put("reasoning", reasoning);
         }
 
+        if (context.getActiveSkill() != null && context.getActiveSkill().getName() != null
+                && !context.getActiveSkill().getName().isBlank()) {
+            metadata.put(ContextAttributes.ACTIVE_SKILL_NAME, context.getActiveSkill().getName());
+        }
+
         metadata.putAll(AutoRunContextSupport.buildAutoMessageMetadata(context));
         return metadata;
     }

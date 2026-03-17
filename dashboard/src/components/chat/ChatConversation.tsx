@@ -132,6 +132,7 @@ export function ChatConversation({
             content={message.content}
             model={message.model}
             tier={message.tier}
+            skill={message.skill}
             reasoning={message.reasoning}
             modelLabel={formatModelDisplayLabel(message.model, message.reasoning, modelsConfig)}
             modelTitle={buildModelTitle(message.model, message.reasoning, modelsConfig)}

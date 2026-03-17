@@ -171,7 +171,9 @@ public class AutoRunHistoryService {
             boolean hasToolCalls,
             boolean hasVoice,
             String model,
-            String modelTier) {
+            String modelTier,
+            String skill,
+            String status) {
     }
 
     private static final class RunAggregate {
@@ -250,10 +252,17 @@ public class AutoRunHistoryService {
 
             String model = null;
             String modelTier = null;
+            String skill = null;
+            String status = null;
             Map<String, Object> metadata = message.getMetadata();
             if (metadata != null) {
                 model = AutoRunContextSupport.readMetadataString(metadata, "model");
                 modelTier = AutoRunContextSupport.readMetadataString(metadata, "modelTier");
+                skill = AutoRunContextSupport.readMetadataString(metadata, ContextAttributes.AUTO_RUN_ACTIVE_SKILL);
+                if (StringValueSupport.isBlank(skill)) {
+                    skill = AutoRunContextSupport.readMetadataString(metadata, ContextAttributes.ACTIVE_SKILL_NAME);
+                }
+                status = AutoRunContextSupport.readMetadataString(metadata, ContextAttributes.AUTO_RUN_STATUS);
             }
             if ("assistant".equals(message.getRole()) && StringValueSupport.isBlank(modelTier)) {
                 modelTier = DEFAULT_MODEL_TIER;
@@ -267,7 +276,9 @@ public class AutoRunHistoryService {
                     message.hasToolCalls(),
                     message.hasVoice(),
                     model,
-                    modelTier));
+                    modelTier,
+                    skill,
+                    status));
         }
 
         private Instant sortInstant() {
@@ -320,6 +331,14 @@ public class AutoRunHistoryService {
         }
 
         private String resolveStatus() {
+            String explicit = messages.stream()
+                    .map(RunMessage::status)
+                    .filter(value -> value != null && !value.isBlank())
+                    .reduce((first, second) -> second)
+                    .orElse(null);
+            if (explicit != null) {
+                return explicit;
+            }
             boolean hasAssistant = messages.stream().anyMatch(message -> "assistant".equals(message.role()));
             if (hasAssistant) {
                 return "COMPLETED";

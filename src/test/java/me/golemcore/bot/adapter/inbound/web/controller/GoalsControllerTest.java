@@ -83,24 +83,29 @@ class GoalsControllerTest {
     }
 
     @Test
-    void createGoalShouldReturnCreatedGoalWithPrompt() {
+    void createGoalShouldReturnCreatedGoalWithPromptAndReflectionTier() {
         Goal goal = Goal.builder()
                 .id("goal-1")
                 .title("Release v2")
                 .description("Prepare release train")
                 .prompt("Ship version 2 with release checklist")
+                .reflectionModelTier("deep")
+                .reflectionTierPriority(true)
                 .status(Goal.GoalStatus.ACTIVE)
                 .tasks(List.of())
                 .build();
 
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
-        when(autoModeService.createGoal("Release v2", "Prepare release train", "Ship version 2 with release checklist"))
+        when(autoModeService.createGoal("Release v2", "Prepare release train", "Ship version 2 with release checklist",
+                "deep", true))
                 .thenReturn(goal);
 
         GoalsController.CreateGoalRequest request = new GoalsController.CreateGoalRequest(
                 "Release v2",
                 "Prepare release train",
-                "Ship version 2 with release checklist");
+                "Ship version 2 with release checklist",
+                "deep",
+                true);
 
         StepVerifier.create(controller.createGoal(request))
                 .assertNext(response -> {
@@ -109,6 +114,8 @@ class GoalsControllerTest {
                     assertNotNull(body);
                     assertEquals("Release v2", body.title());
                     assertEquals("Ship version 2 with release checklist", body.prompt());
+                    assertEquals("deep", body.reflectionModelTier());
+                    assertTrue(body.reflectionTierPriority());
                 })
                 .verifyComplete();
     }
@@ -120,6 +127,8 @@ class GoalsControllerTest {
                 .goalId("inbox")
                 .title("Review crash logs")
                 .prompt("Inspect the latest crash logs and summarize issues")
+                .reflectionModelTier("smart")
+                .reflectionTierPriority(true)
                 .status(AutoTask.TaskStatus.PENDING)
                 .order(1)
                 .build();
@@ -131,6 +140,8 @@ class GoalsControllerTest {
                 "Review crash logs",
                 "Check prod errors",
                 "Inspect the latest crash logs and summarize issues",
+                "smart",
+                true,
                 AutoTask.TaskStatus.PENDING))
                 .thenReturn(task);
         when(autoModeService.findGoalForTask("task-1")).thenReturn(Optional.of(inbox));
@@ -141,6 +152,8 @@ class GoalsControllerTest {
                 "Review crash logs",
                 "Check prod errors",
                 "Inspect the latest crash logs and summarize issues",
+                "smart",
+                true,
                 null);
 
         StepVerifier.create(controller.createTask(request))
@@ -151,6 +164,8 @@ class GoalsControllerTest {
                     assertTrue(body.standalone());
                     assertEquals("Review crash logs", body.title());
                     assertNull(body.goalId());
+                    assertEquals("smart", body.reflectionModelTier());
+                    assertTrue(body.reflectionTierPriority());
                 })
                 .verifyComplete();
     }
@@ -163,6 +178,8 @@ class GoalsControllerTest {
                 "goal-1",
                 "Review crash logs",
                 "Check prod errors",
+                null,
+                null,
                 null,
                 "done-ish");
 
@@ -182,8 +199,13 @@ class GoalsControllerTest {
                 .title("Review crash logs")
                 .description("Check prod errors")
                 .prompt(null)
+                .reflectionModelTier("deep")
+                .reflectionTierPriority(false)
                 .status(AutoTask.TaskStatus.COMPLETED)
                 .order(1)
+                .consecutiveFailureCount(2)
+                .reflectionRequired(true)
+                .reflectionStrategy("Try a different source")
                 .build();
         Goal inbox = Goal.builder().id("inbox").title("Inbox").build();
 
@@ -193,6 +215,8 @@ class GoalsControllerTest {
                 "Review crash logs",
                 "Check prod errors",
                 null,
+                "deep",
+                false,
                 AutoTask.TaskStatus.COMPLETED))
                 .thenReturn(task);
         when(autoModeService.findGoalForTask("task-1")).thenReturn(Optional.of(inbox));
@@ -202,6 +226,8 @@ class GoalsControllerTest {
                 "Review crash logs",
                 "Check prod errors",
                 null,
+                "deep",
+                false,
                 "completed");
 
         StepVerifier.create(controller.updateTask("task-1", request))
@@ -212,6 +238,9 @@ class GoalsControllerTest {
                     assertTrue(body.standalone());
                     assertNull(body.goalId());
                     assertEquals("COMPLETED", body.status());
+                    assertEquals(2, body.consecutiveFailureCount());
+                    assertTrue(body.reflectionRequired());
+                    assertEquals("Try a different source", body.reflectionStrategy());
                 })
                 .verifyComplete();
     }
@@ -224,6 +253,8 @@ class GoalsControllerTest {
                 "Release v2",
                 "Prepare release train",
                 "Ship version 2 with release checklist",
+                "deep",
+                true,
                 "ACTIVE");
 
         ResponseStatusException exception = assertThrows(

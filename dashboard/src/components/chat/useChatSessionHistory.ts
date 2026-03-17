@@ -75,6 +75,7 @@ function toChatMessage(message: Awaited<ReturnType<typeof getSessionMessages>>['
     content: message.content ?? '',
     model: message.model,
     tier: message.modelTier,
+    skill: message.skill,
     reasoning: message.reasoning,
     clientMessageId: message.clientMessageId,
     persisted: true,

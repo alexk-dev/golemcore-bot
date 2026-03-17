@@ -108,6 +108,7 @@ describe('useChatSessionHistory', () => {
         content: 'hello',
         model: null,
         tier: null,
+        skill: null,
         reasoning: null,
         clientMessageId: 'client-1',
         persisted: false,

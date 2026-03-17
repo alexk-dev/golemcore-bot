@@ -82,6 +82,7 @@ class ContextBuildingSystemPromptTest {
         userPreferencesService = mock(UserPreferencesService.class);
         workspaceInstructionService = mock(WorkspaceInstructionService.class);
         when(runtimeConfigService.getAutoModelTier()).thenReturn(TIER_SMART);
+        when(runtimeConfigService.getAutoReflectionModelTier()).thenReturn(TIER_DEEP);
 
         when(memoryComponent.buildMemoryPack(any())).thenReturn(MemoryPack.builder()
                 .renderedContext("")
@@ -471,6 +472,104 @@ class ContextBuildingSystemPromptTest {
 
         assertEquals(TIER_SMART, ctx.getModelTier());
         assertTrue(ctx.getSystemPrompt().contains("# Goals"));
+    }
+
+    @Test
+    void shouldPreferSkillReflectionTierWhenTaskTierIsNotPriority() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(autoModeService.buildAutoContext()).thenReturn("# Goals\n- Recover");
+
+        Skill skill = Skill.builder()
+                .name("recovery-skill")
+                .description("Recovery")
+                .content("Recover")
+                .reflectionTier(TIER_DEEP)
+                .available(true)
+                .build();
+
+        AgentContext ctx = AgentContext.builder()
+                .session(AgentSession.builder().chatId("ch1").build())
+                .messages(new ArrayList<>(List.of(
+                        Message.builder().role("user").content("Auto task")
+                                .timestamp(Instant.now())
+                                .metadata(new HashMap<>(Map.of(
+                                        ContextAttributes.AUTO_MODE, true,
+                                        ContextAttributes.AUTO_REFLECTION_ACTIVE, true,
+                                        ContextAttributes.AUTO_REFLECTION_TIER, TIER_SMART,
+                                        ContextAttributes.AUTO_REFLECTION_TIER_PRIORITY, false)))
+                                .build())))
+                .build();
+        ctx.setActiveSkill(skill);
+
+        system.process(ctx);
+
+        assertEquals(TIER_DEEP, ctx.getModelTier());
+        assertTrue(ctx.getSystemPrompt().contains("# Auto Reflection Mode"));
+    }
+
+    @Test
+    void shouldPreferTaskReflectionTierWhenMarkedPriority() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(autoModeService.buildAutoContext()).thenReturn("# Goals\n- Recover");
+
+        Skill skill = Skill.builder()
+                .name("recovery-skill")
+                .description("Recovery")
+                .content("Recover")
+                .reflectionTier(TIER_DEEP)
+                .available(true)
+                .build();
+
+        AgentContext ctx = AgentContext.builder()
+                .session(AgentSession.builder().chatId("ch1").build())
+                .messages(new ArrayList<>(List.of(
+                        Message.builder().role("user").content("Auto task")
+                                .timestamp(Instant.now())
+                                .metadata(new HashMap<>(Map.of(
+                                        ContextAttributes.AUTO_MODE, true,
+                                        ContextAttributes.AUTO_REFLECTION_ACTIVE, true,
+                                        ContextAttributes.AUTO_REFLECTION_TIER, TIER_SMART,
+                                        ContextAttributes.AUTO_REFLECTION_TIER_PRIORITY, true)))
+                                .build())))
+                .build();
+        ctx.setActiveSkill(skill);
+
+        system.process(ctx);
+
+        assertEquals(TIER_SMART, ctx.getModelTier());
+    }
+
+    @Test
+    void shouldPreferLastUsedSkillReflectionTierFromMetadata() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(autoModeService.buildAutoContext()).thenReturn("# Goals\n- Recover");
+
+        Skill skill = Skill.builder()
+                .name("reviewer-skill")
+                .description("Recovery")
+                .content("Recover")
+                .reflectionTier(TIER_DEEP)
+                .available(true)
+                .build();
+        when(skillComponent.findByName("reviewer-skill")).thenReturn(Optional.of(skill));
+
+        AgentContext ctx = AgentContext.builder()
+                .session(AgentSession.builder().chatId("ch1").build())
+                .messages(new ArrayList<>(List.of(
+                        Message.builder().role("user").content("Auto task")
+                                .timestamp(Instant.now())
+                                .metadata(new HashMap<>(Map.of(
+                                        ContextAttributes.AUTO_MODE, true,
+                                        ContextAttributes.AUTO_REFLECTION_ACTIVE, true,
+                                        ContextAttributes.AUTO_REFLECTION_TIER, TIER_SMART,
+                                        ContextAttributes.AUTO_REFLECTION_TIER_PRIORITY, false,
+                                        ContextAttributes.AUTO_RUN_ACTIVE_SKILL, "reviewer-skill")))
+                                .build())))
+                .build();
+
+        system.process(ctx);
+
+        assertEquals(TIER_DEEP, ctx.getModelTier());
     }
 
     // ===== Plan mode context =====

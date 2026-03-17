@@ -33,6 +33,7 @@ import java.util.ArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import me.golemcore.bot.infrastructure.config.BotProperties;
@@ -159,6 +160,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         boolean retryEnabled = isAutoRetryEnabled();
         List<Attachment> accumulatedAttachments = new ArrayList<>();
         List<Map<String, Object>> turnFileChanges = new ArrayList<>();
+        Map<String, Integer> toolFailureCounts = new LinkedHashMap<>();
 
         int maxLlmCalls = resolveMaxLlmCalls();
         int maxToolExecutions = resolveMaxToolExecutions();
@@ -373,6 +375,15 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                             return stopTurn(context, context.getAttribute(ContextAttributes.LLM_RESPONSE),
                                     response.getToolCalls(), "tool denied by policy", llmCalls, toolExecutions);
                         }
+                    }
+                    if (outcome.toolResult() != null && !outcome.toolResult().isSuccess()
+                            && shouldStopForRepeatedToolFailure(context, outcome, toolFailureCounts)) {
+                        applyAttachments(context, accumulatedAttachments);
+                        emitRuntimeEvent(context, RuntimeEventType.TURN_FINISHED,
+                                eventPayload("reason", "repeated_tool_failure", "tool", outcome.toolName()));
+                        return stopTurn(context, context.getAttribute(ContextAttributes.LLM_RESPONSE),
+                                response.getToolCalls(),
+                                "repeated tool failure (" + outcome.toolName() + ")", llmCalls, toolExecutions);
                     }
                     if (stopOnToolFailure && outcome.toolResult() != null && !outcome.toolResult().isSuccess()) {
                         applyAttachments(context, accumulatedAttachments);
@@ -606,6 +617,38 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             return number.intValue();
         }
         return 0;
+    }
+
+    private boolean shouldStopForRepeatedToolFailure(AgentContext context, ToolExecutionOutcome outcome,
+            Map<String, Integer> toolFailureCounts) {
+        if (outcome == null || outcome.toolResult() == null || outcome.toolResult().isSuccess()) {
+            return false;
+        }
+
+        String fingerprint = buildToolFailureFingerprint(outcome);
+        int attempts = toolFailureCounts.merge(fingerprint, 1, Integer::sum);
+        if (attempts < 2) {
+            return false;
+        }
+
+        context.addFailure(new FailureEvent(
+                FailureSource.TOOL,
+                "DefaultToolLoopSystem",
+                FailureKind.EXCEPTION,
+                "Repeated tool failure: " + fingerprint,
+                clock.instant()));
+        return true;
+    }
+
+    private String buildToolFailureFingerprint(ToolExecutionOutcome outcome) {
+        String toolName = outcome.toolName() != null ? outcome.toolName() : "unknown";
+        String failureKind = outcome.toolResult().getFailureKind() != null
+                ? outcome.toolResult().getFailureKind().name()
+                : ToolFailureKind.EXECUTION_FAILED.name();
+        String error = outcome.toolResult().getError() != null ? outcome.toolResult().getError()
+                : outcome.messageContent();
+        String normalized = error != null ? error.trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT) : "unknown";
+        return toolName + ":" + failureKind + ":" + normalized;
     }
 
     private String getEmptyFinalResponseCode(LlmResponse response, AgentContext context) {

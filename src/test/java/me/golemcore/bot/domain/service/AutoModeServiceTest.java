@@ -3,6 +3,7 @@ package me.golemcore.bot.domain.service;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.DiaryEntry;
 import me.golemcore.bot.domain.model.Goal;
+import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.port.outbound.StoragePort;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -13,10 +14,22 @@ import org.mockito.ArgumentCaptor;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.contains;
+import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class AutoModeServiceTest {
 
@@ -36,11 +49,14 @@ class AutoModeServiceTest {
     void setUp() {
         storagePort = mock(StoragePort.class);
         objectMapper = new ObjectMapper();
-        objectMapper.findAndRegisterModules(); // for java.time Instant serialization
+        objectMapper.findAndRegisterModules();
 
         runtimeConfigService = mock(RuntimeConfigService.class);
         when(runtimeConfigService.isAutoModeEnabled()).thenReturn(true);
         when(runtimeConfigService.getAutoMaxGoals()).thenReturn(3);
+        when(runtimeConfigService.getAutoReflectionFailureThreshold()).thenReturn(2);
+        when(runtimeConfigService.getAutoReflectionModelTier()).thenReturn("deep");
+        when(runtimeConfigService.isAutoReflectionTierPriority()).thenReturn(false);
 
         when(storagePort.putText(anyString(), anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
@@ -53,7 +69,7 @@ class AutoModeServiceTest {
     }
 
     @Test
-    void createGoal_savesGoalViaStoragePort() throws Exception {
+    void createGoalSavesGoalViaStoragePort() {
         Goal goal = service.createGoal("Learn Spring Boot", "Master Spring Boot framework");
 
         assertNotNull(goal);
@@ -67,7 +83,7 @@ class AutoModeServiceTest {
     }
 
     @Test
-    void createGoal_withPromptPersistsPrompt() throws Exception {
+    void createGoalWithPromptPersistsPrompt() {
         Goal goal = service.createGoal("Release v2", "Prepare release train", "Ship version 2 with checklist");
 
         assertEquals("Ship version 2 with checklist", goal.getPrompt());
@@ -75,7 +91,15 @@ class AutoModeServiceTest {
     }
 
     @Test
-    void createGoal_shouldIgnoreInboxWhenCountingActiveGoalLimit() throws Exception {
+    void createGoalWithReflectionTierPersistsReflectionSettings() {
+        Goal goal = service.createGoal("Release v3", "Prepare release", "Prompt", "deep", true);
+
+        assertEquals("deep", goal.getReflectionModelTier());
+        assertTrue(goal.isReflectionTierPriority());
+    }
+
+    @Test
+    void createGoalShouldIgnoreInboxWhenCountingActiveGoalLimit() throws Exception {
         when(runtimeConfigService.getAutoMaxGoals()).thenReturn(1);
 
         Goal inbox = Goal.builder()
@@ -96,8 +120,7 @@ class AutoModeServiceTest {
     }
 
     @Test
-    void createGoal_throwsWhenMaxActiveGoalsReached() throws Exception {
-        // Pre-load 3 active goals
+    void createGoalThrowsWhenMaxActiveGoalsReached() throws Exception {
         List<Goal> existingGoals = new ArrayList<>();
         for (int i = 0; i < 3; i++) {
             existingGoals.add(Goal.builder()
@@ -117,7 +140,7 @@ class AutoModeServiceTest {
     }
 
     @Test
-    void getActiveGoals_returnsOnlyActiveGoals() throws Exception {
+    void getActiveGoalsReturnsOnlyActiveGoals() throws Exception {
         List<Goal> goals = List.of(
                 Goal.builder().id("g1").title("Active 1")
                         .status(Goal.GoalStatus.ACTIVE).tasks(new ArrayList<>()).createdAt(Instant.now()).build(),
@@ -136,7 +159,7 @@ class AutoModeServiceTest {
     }
 
     @Test
-    void addTask_addsTaskToGoal() throws Exception {
+    void addTaskAddsTaskToGoal() throws Exception {
         Goal goal = Goal.builder()
                 .id(GOAL_ID)
                 .title(TEST_GOAL_TITLE)
@@ -160,7 +183,7 @@ class AutoModeServiceTest {
     }
 
     @Test
-    void addTask_throwsIfGoalNotFound() throws Exception {
+    void addTaskThrowsIfGoalNotFound() {
         when(storagePort.getText(AUTO_DIR, GOALS_FILE))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
@@ -169,7 +192,7 @@ class AutoModeServiceTest {
     }
 
     @Test
-    void addTask_throwsWhenMaxTasksPerGoalReached() throws Exception {
+    void addTaskThrowsWhenMaxTasksPerGoalReached() throws Exception {
         List<AutoTask> tasks = new ArrayList<>();
         for (int i = 0; i < 20; i++) {
             tasks.add(AutoTask.builder()
@@ -197,11 +220,11 @@ class AutoModeServiceTest {
     }
 
     @Test
-    void createTask_withBlankGoalIdCreatesStandaloneInboxTaskAndNormalizesPrompt() throws Exception {
+    void createTaskWithBlankGoalIdCreatesStandaloneInboxTaskAndNormalizesPrompt() {
         when(storagePort.getText(AUTO_DIR, GOALS_FILE))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
-        AutoTask task = service.createTask("   ", "Review alerts", "Investigate spikes", "   ", null);
+        AutoTask task = service.createTask("   ", "Review alerts", "Investigate spikes", "   ", null, null, null);
 
         assertEquals("inbox", task.getGoalId());
         assertEquals("Review alerts", task.getTitle());
@@ -211,7 +234,16 @@ class AutoModeServiceTest {
     }
 
     @Test
-    void updateGoal_updatesFieldsAndStatus() throws Exception {
+    void createTaskWithReflectionTierPersistsTaskReflectionSettings() {
+        AutoTask task = service.createTask(null, "Review alerts", "Investigate spikes", "Prompt", "smart", true,
+                AutoTask.TaskStatus.PENDING);
+
+        assertEquals("smart", task.getReflectionModelTier());
+        assertTrue(task.isReflectionTierPriority());
+    }
+
+    @Test
+    void updateGoalUpdatesFieldsAndStatus() throws Exception {
         Goal goal = Goal.builder()
                 .id(GOAL_ID)
                 .title("Old title")
@@ -229,17 +261,21 @@ class AutoModeServiceTest {
                 "New title",
                 "New description",
                 "Execute updated prompt",
+                "deep",
+                true,
                 Goal.GoalStatus.PAUSED);
 
         assertEquals("New title", updated.getTitle());
         assertEquals("New description", updated.getDescription());
         assertEquals("Execute updated prompt", updated.getPrompt());
+        assertEquals("deep", updated.getReflectionModelTier());
+        assertTrue(updated.isReflectionTierPriority());
         assertEquals(Goal.GoalStatus.PAUSED, updated.getStatus());
         verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq(GOALS_FILE), anyString());
     }
 
     @Test
-    void updateGoal_throwsWhenEditingInboxGoal() throws Exception {
+    void updateGoalThrowsWhenEditingInboxGoal() throws Exception {
         Goal inbox = Goal.builder()
                 .id("inbox")
                 .title("Inbox")
@@ -253,13 +289,13 @@ class AutoModeServiceTest {
 
         IllegalArgumentException exception = assertThrows(
                 IllegalArgumentException.class,
-                () -> service.updateGoal("inbox", "Inbox", "Desc", "Prompt", Goal.GoalStatus.ACTIVE));
+                () -> service.updateGoal("inbox", "Inbox", "Desc", "Prompt", null, null, Goal.GoalStatus.ACTIVE));
 
         assertEquals("Inbox goal cannot be edited", exception.getMessage());
     }
 
     @Test
-    void updateTaskStatus_updatesStatusAndWritesDiaryOnCompleted() throws Exception {
+    void updateTaskStatusUpdatesStatusAndWritesDiaryOnCompleted() throws Exception {
         AutoTask task = AutoTask.builder()
                 .id(TASK_ID)
                 .goalId(GOAL_ID)
@@ -281,15 +317,42 @@ class AutoModeServiceTest {
 
         service.updateTaskStatus(GOAL_ID, TASK_ID, AutoTask.TaskStatus.COMPLETED, "Done successfully");
 
-        // Verify goals saved
         verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq(GOALS_FILE), anyString());
-
-        // Verify diary entry written for COMPLETED status
         verify(storagePort).appendText(eq(AUTO_DIR), contains(DIARY_PREFIX), anyString());
     }
 
     @Test
-    void updateTaskStatus_throwsIfGoalOrTaskNotFound() throws Exception {
+    void updateTaskStatusFailedIncrementsFailureCounterAndSetsReflectionRequiredAtThreshold() throws Exception {
+        AutoTask task = AutoTask.builder()
+                .id(TASK_ID)
+                .goalId(GOAL_ID)
+                .title("Do something")
+                .status(AutoTask.TaskStatus.IN_PROGRESS)
+                .order(0)
+                .createdAt(Instant.now())
+                .build();
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(TEST_GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>(List.of(task)))
+                .createdAt(Instant.now())
+                .build();
+        String goalsJson = objectMapper.writeValueAsString(List.of(goal));
+        when(storagePort.getText(AUTO_DIR, GOALS_FILE))
+                .thenReturn(CompletableFuture.completedFuture(goalsJson));
+
+        service.updateTaskStatus(GOAL_ID, TASK_ID, AutoTask.TaskStatus.FAILED, "First failure");
+        service.updateTaskStatus(GOAL_ID, TASK_ID, AutoTask.TaskStatus.FAILED, "Second failure");
+
+        AutoTask updated = service.getTask(TASK_ID).orElseThrow();
+        assertEquals(2, updated.getConsecutiveFailureCount());
+        assertTrue(updated.isReflectionRequired());
+        assertEquals("Second failure", updated.getLastFailureSummary());
+    }
+
+    @Test
+    void updateTaskStatusThrowsIfGoalOrTaskNotFound() {
         when(storagePort.getText(AUTO_DIR, GOALS_FILE))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
@@ -299,7 +362,7 @@ class AutoModeServiceTest {
     }
 
     @Test
-    void updateTask_updatesPromptAndStatusAndWritesDiaryWhenCompleted() throws Exception {
+    void updateTaskUpdatesPromptAndStatusAndWritesDiaryWhenCompleted() throws Exception {
         AutoTask task = AutoTask.builder()
                 .id(TASK_ID)
                 .goalId(GOAL_ID)
@@ -325,18 +388,22 @@ class AutoModeServiceTest {
                 "New task",
                 "New description",
                 "Run the deeper task prompt",
+                "deep",
+                true,
                 AutoTask.TaskStatus.COMPLETED);
 
         assertEquals("New task", updated.getTitle());
         assertEquals("New description", updated.getDescription());
         assertEquals("Run the deeper task prompt", updated.getPrompt());
+        assertEquals("deep", updated.getReflectionModelTier());
+        assertTrue(updated.isReflectionTierPriority());
         assertEquals(AutoTask.TaskStatus.COMPLETED, updated.getStatus());
         verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq(GOALS_FILE), anyString());
         verify(storagePort).appendText(eq(AUTO_DIR), contains(DIARY_PREFIX), anyString());
     }
 
     @Test
-    void getNextPendingTask_returnsFirstPendingTaskAcrossActiveGoals() throws Exception {
+    void getNextPendingTaskReturnsFirstPendingTaskAcrossActiveGoals() throws Exception {
         AutoTask pendingTask = AutoTask.builder()
                 .id("task-2")
                 .goalId(GOAL_ID)
@@ -371,7 +438,7 @@ class AutoModeServiceTest {
         when(storagePort.getText(AUTO_DIR, GOALS_FILE))
                 .thenReturn(CompletableFuture.completedFuture(goalsJson));
 
-        var next = service.getNextPendingTask();
+        Optional<AutoTask> next = service.getNextPendingTask();
 
         assertTrue(next.isPresent());
         assertEquals("task-2", next.get().getId());
@@ -379,7 +446,7 @@ class AutoModeServiceTest {
     }
 
     @Test
-    void completeGoal_marksGoalAsCompletedAndWritesDiary() throws Exception {
+    void completeGoalMarksGoalAsCompletedAndWritesDiary() throws Exception {
         Goal goal = Goal.builder()
                 .id(GOAL_ID)
                 .title("Completed Goal")
@@ -400,8 +467,6 @@ class AutoModeServiceTest {
         List<Goal> savedGoals = objectMapper.readValue(savedJson, new TypeReference<>() {
         });
         assertEquals(Goal.GoalStatus.COMPLETED, savedGoals.get(0).getStatus());
-
-        // Verify diary entry for goal completion
         verify(storagePort).appendText(eq(AUTO_DIR), contains(DIARY_PREFIX), anyString());
     }
 
@@ -417,7 +482,7 @@ class AutoModeServiceTest {
     }
 
     @Test
-    void buildAutoContext_returnsNullWhenNoActiveGoals() throws Exception {
+    void buildAutoContextReturnsNullWhenNoActiveGoals() {
         when(storagePort.getText(AUTO_DIR, GOALS_FILE))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
@@ -427,7 +492,7 @@ class AutoModeServiceTest {
     }
 
     @Test
-    void buildAutoContext_formatsGoalsTasksDiaryIntoMarkdown() throws Exception {
+    void buildAutoContextFormatsGoalsTasksDiaryIntoMarkdown() throws Exception {
         AutoTask task = AutoTask.builder()
                 .id(TASK_ID)
                 .goalId(GOAL_ID)
@@ -435,6 +500,7 @@ class AutoModeServiceTest {
                 .description("Implement the feature")
                 .status(AutoTask.TaskStatus.PENDING)
                 .order(0)
+                .reflectionStrategy("Try a different MCP tool and validate access first")
                 .createdAt(Instant.now())
                 .build();
         Goal goal = Goal.builder()
@@ -456,7 +522,6 @@ class AutoModeServiceTest {
                 .goalId(GOAL_ID)
                 .build();
         String diaryLine = objectMapper.writeValueAsString(entry);
-        // Diary is stored in date-based files: diary/{date}.jsonl
         String todayDate = java.time.LocalDate.now(java.time.ZoneOffset.UTC)
                 .format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE);
         when(storagePort.getText(AUTO_DIR, DIARY_PREFIX + todayDate + ".jsonl"))
@@ -468,10 +533,83 @@ class AutoModeServiceTest {
         assertTrue(context.contains("Build feature X"));
         assertTrue(context.contains("Write code"));
         assertTrue(context.contains("Started working on feature X"));
+        assertTrue(context.contains("Recovery strategy"));
     }
 
     @Test
-    void isFeatureEnabled_returnsPropertiesSetting() {
+    void recordAutoRunFailureAndReflectionResultShouldUpdateState() throws Exception {
+        AutoTask task = AutoTask.builder()
+                .id(TASK_ID)
+                .goalId(GOAL_ID)
+                .title("Write code")
+                .status(AutoTask.TaskStatus.PENDING)
+                .order(1)
+                .createdAt(Instant.now())
+                .build();
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(TEST_GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .reflectionModelTier("deep")
+                .reflectionTierPriority(true)
+                .tasks(new ArrayList<>(List.of(task)))
+                .createdAt(Instant.now())
+                .build();
+        String goalsJson = objectMapper.writeValueAsString(List.of(goal));
+        when(storagePort.getText(AUTO_DIR, GOALS_FILE))
+                .thenReturn(CompletableFuture.completedFuture(goalsJson));
+
+        service.recordAutoRunFailure(GOAL_ID, TASK_ID, "tool timeout", "tool timeout", "reviewer-skill");
+        service.recordAutoRunFailure(GOAL_ID, TASK_ID, "tool timeout", "tool timeout", "reviewer-skill");
+
+        assertTrue(service.shouldTriggerReflection(GOAL_ID, TASK_ID));
+        assertEquals("deep", service.resolveReflectionTier(GOAL_ID, TASK_ID));
+        assertTrue(service.isReflectionTierPriority(GOAL_ID, TASK_ID));
+
+        service.applyReflectionResult(GOAL_ID, TASK_ID, "Use a different tool and verify permissions first");
+
+        AutoTask updated = service.getTask(TASK_ID).orElseThrow();
+        assertEquals(0, updated.getConsecutiveFailureCount());
+        assertFalse(updated.isReflectionRequired());
+        assertEquals("Use a different tool and verify permissions first", updated.getReflectionStrategy());
+        assertEquals("reviewer-skill", updated.getLastUsedSkillName());
+        assertEquals(AutoTask.TaskStatus.IN_PROGRESS, updated.getStatus());
+    }
+
+    @Test
+    void resolveReflectionTierShouldPreferUsedSkillWhenTaskTierIsNotPriority() throws Exception {
+        AutoTask task = AutoTask.builder()
+                .id(TASK_ID)
+                .goalId(GOAL_ID)
+                .title("Write code")
+                .reflectionModelTier("smart")
+                .reflectionTierPriority(false)
+                .lastUsedSkillName("reviewer-skill")
+                .status(AutoTask.TaskStatus.FAILED)
+                .order(1)
+                .createdAt(Instant.now())
+                .build();
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(TEST_GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>(List.of(task)))
+                .createdAt(Instant.now())
+                .build();
+        String goalsJson = objectMapper.writeValueAsString(List.of(goal));
+        when(storagePort.getText(AUTO_DIR, GOALS_FILE))
+                .thenReturn(CompletableFuture.completedFuture(goalsJson));
+
+        Skill skill = Skill.builder()
+                .name("reviewer-skill")
+                .reflectionTier("deep")
+                .build();
+
+        assertEquals("deep", service.resolveReflectionTier(GOAL_ID, TASK_ID, skill));
+    }
+
+    @Test
+    void isFeatureEnabledReturnsPropertiesSetting() {
         when(runtimeConfigService.isAutoModeEnabled()).thenReturn(true);
         assertTrue(service.isFeatureEnabled());
 
@@ -480,7 +618,7 @@ class AutoModeServiceTest {
     }
 
     @Test
-    void deleteGoal_removesGoalAndSaves() throws Exception {
+    void deleteGoalRemovesGoalAndSaves() throws Exception {
         Goal goal = Goal.builder()
                 .id(GOAL_ID)
                 .title("To Delete")
@@ -499,13 +637,11 @@ class AutoModeServiceTest {
         List<Goal> savedGoals = objectMapper.readValue(captor.getValue(), new TypeReference<>() {
         });
         assertTrue(savedGoals.isEmpty());
-
-        // Verify diary entry written
         verify(storagePort).appendText(eq(AUTO_DIR), contains(DIARY_PREFIX), anyString());
     }
 
     @Test
-    void deleteGoal_throwsIfNotFound() throws Exception {
+    void deleteGoalThrowsIfNotFound() {
         when(storagePort.getText(AUTO_DIR, GOALS_FILE))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
@@ -514,7 +650,7 @@ class AutoModeServiceTest {
     }
 
     @Test
-    void deleteTask_removesTaskFromGoal() throws Exception {
+    void deleteTaskRemovesTaskFromGoal() throws Exception {
         AutoTask task = AutoTask.builder()
                 .id(TASK_ID)
                 .goalId(GOAL_ID)
@@ -544,7 +680,7 @@ class AutoModeServiceTest {
     }
 
     @Test
-    void deleteTask_byTaskIdRebalancesRemainingOrders() throws Exception {
+    void deleteTaskByTaskIdRebalancesRemainingOrders() throws Exception {
         AutoTask firstTask = AutoTask.builder()
                 .id("task-1")
                 .goalId(GOAL_ID)
@@ -595,7 +731,7 @@ class AutoModeServiceTest {
     }
 
     @Test
-    void deleteTask_throwsIfGoalNotFound() throws Exception {
+    void deleteTaskThrowsIfGoalNotFound() {
         when(storagePort.getText(AUTO_DIR, GOALS_FILE))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
@@ -604,7 +740,7 @@ class AutoModeServiceTest {
     }
 
     @Test
-    void deleteTask_throwsIfTaskNotFound() throws Exception {
+    void deleteTaskThrowsIfTaskNotFound() throws Exception {
         Goal goal = Goal.builder()
                 .id(GOAL_ID)
                 .title(TEST_GOAL_TITLE)
@@ -621,7 +757,7 @@ class AutoModeServiceTest {
     }
 
     @Test
-    void clearCompletedGoals_removesCompletedAndCancelledGoals() throws Exception {
+    void clearCompletedGoalsRemovesCompletedAndCancelledGoals() throws Exception {
         List<Goal> goals = new ArrayList<>(List.of(
                 Goal.builder().id("g1").title("Active")
                         .status(Goal.GoalStatus.ACTIVE).tasks(new ArrayList<>()).createdAt(Instant.now()).build(),
@@ -648,7 +784,7 @@ class AutoModeServiceTest {
     }
 
     @Test
-    void clearCompletedGoals_returnsZeroWhenNothingToRemove() throws Exception {
+    void clearCompletedGoalsReturnsZeroWhenNothingToRemove() throws Exception {
         Goal goal = Goal.builder()
                 .id("g1")
                 .title("Active")
@@ -690,7 +826,7 @@ class AutoModeServiceTest {
     }
 
     @Test
-    void writeDiary_callsStoragePortAppendText() throws Exception {
+    void writeDiaryCallsStoragePortAppendText() {
         DiaryEntry entry = DiaryEntry.builder()
                 .timestamp(Instant.now())
                 .type(DiaryEntry.DiaryType.THOUGHT)

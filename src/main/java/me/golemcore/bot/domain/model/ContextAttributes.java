@@ -191,6 +191,38 @@ public final class ContextAttributes {
     /** String ? active auto task identifier for the turn. */
     public static final String AUTO_TASK_ID = "auto.task.id";
 
+    /** String ? active skill name applied during the current turn or message. */
+    public static final String ACTIVE_SKILL_NAME = "skill.active.name";
+
+    /** Boolean ? current auto run is a reflection/recovery run. */
+    public static final String AUTO_REFLECTION_ACTIVE = "auto.reflection.active";
+
+    /** String ? reflection model tier configured from goal/task settings. */
+    public static final String AUTO_REFLECTION_TIER = "auto.reflection.tier";
+
+    /**
+     * Boolean ? goal/task reflection tier should override active skill metadata.
+     */
+    public static final String AUTO_REFLECTION_TIER_PRIORITY = "auto.reflection.tier.priority";
+
+    /** String ? resolved status of the completed auto run. */
+    public static final String AUTO_RUN_STATUS = "auto.run.status";
+
+    /** String ? finish reason recorded for the completed auto run. */
+    public static final String AUTO_RUN_FINISH_REASON = "auto.run.finish.reason";
+
+    /** String ? summary of the most important auto-run failure. */
+    public static final String AUTO_RUN_FAILURE_SUMMARY = "auto.run.failure.summary";
+
+    /** String ? normalized fingerprint of the most important auto-run failure. */
+    public static final String AUTO_RUN_FAILURE_FINGERPRINT = "auto.run.failure.fingerprint";
+
+    /** String ? assistant text produced by the completed auto run. */
+    public static final String AUTO_RUN_ASSISTANT_TEXT = "auto.run.assistant.text";
+
+    /** String ? active skill name used during the completed auto run. */
+    public static final String AUTO_RUN_ACTIVE_SKILL = "auto.run.active.skill";
+
     /** Map<String,Object> ? latest structured compaction details. */
     public static final String COMPACTION_LAST_DETAILS = "compaction.last.details";
 

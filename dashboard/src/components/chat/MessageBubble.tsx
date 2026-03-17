@@ -8,6 +8,7 @@ interface Props {
   content: string | null | undefined;
   model?: string | null;
   tier?: string | null;
+  skill?: string | null;
   reasoning?: string | null;
   modelLabel?: string;
   modelTitle?: string;
@@ -18,6 +19,20 @@ interface Props {
 interface UserDeliveryStateProps {
   clientStatus?: 'pending' | 'failed';
   onRetry?: () => void;
+}
+
+interface AssistantMessageProps {
+  content: string;
+  model?: string | null;
+  tier?: string | null;
+  skill?: string | null;
+  modelLabel?: string;
+  modelTitle?: string;
+}
+
+interface AssistantBadgesProps {
+  tier?: string | null;
+  skill?: string | null;
 }
 
 const TIER_META: Record<string, { label: string; className: string }> = {
@@ -99,6 +114,18 @@ function renderUserContent(content: string, leadingCommand: { command: string; a
   );
 }
 
+function hasContent(value: string | null | undefined): boolean {
+  return value != null && value.trim().length > 0;
+}
+
+function resolveModelLabel(model: string | null | undefined, modelLabel: string | undefined): string {
+  if (hasContent(model)) {
+    return modelLabel ?? model ?? 'System reply';
+  }
+
+  return 'System reply';
+}
+
 function UserDeliveryState({ clientStatus, onRetry }: UserDeliveryStateProps) {
   if (clientStatus == null) {
     return null;
@@ -122,22 +149,34 @@ function UserDeliveryState({ clientStatus, onRetry }: UserDeliveryStateProps) {
   );
 }
 
-interface AssistantMessageProps {
-  content: string;
-  model?: string | null;
-  tier?: string | null;
-  modelLabel?: string;
-  modelTitle?: string;
-}
-
-function AssistantMessageBubble({ content, model, tier, modelLabel, modelTitle }: AssistantMessageProps) {
+function AssistantBadges({ tier, skill }: AssistantBadgesProps) {
   const normalizedTier = (tier ?? '').toLowerCase();
   const tierMeta = TIER_META[normalizedTier] ?? null;
-  const hasKnownTier = tierMeta != null || (tier != null && tier.trim().length > 0);
-  const resolvedModelLabel = model != null && model.trim().length > 0
-    ? (modelLabel ?? model)
-    : 'System reply';
+  const hasKnownTier = tierMeta != null || hasContent(tier);
+  const hasSkill = hasContent(skill);
 
+  if (!hasSkill && !hasKnownTier) {
+    return null;
+  }
+
+  return (
+    <div className="d-flex align-items-center gap-2 flex-wrap justify-content-end">
+      {hasSkill && (
+        <span className="badge text-bg-secondary" title={skill ?? undefined}>
+          {skill}
+        </span>
+      )}
+      {hasKnownTier && (
+        <span className={`badge assistant-tier-chip ${tierMeta?.className ?? 'text-bg-secondary'}`}>
+          {tierMeta?.label ?? tier}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function AssistantMessageBubble({ content, model, tier, skill, modelLabel, modelTitle }: AssistantMessageProps) {
+  const resolvedModelLabel = resolveModelLabel(model, modelLabel);
   const { text, tools } = parseToolCalls(content);
 
   return (
@@ -155,11 +194,7 @@ function AssistantMessageBubble({ content, model, tier, modelLabel, modelTitle }
               </small>
             </div>
           </div>
-          {hasKnownTier && (
-            <span className={`badge assistant-tier-chip ${tierMeta?.className ?? 'text-bg-secondary'}`}>
-              {tierMeta?.label ?? tier}
-            </span>
-          )}
+          <AssistantBadges tier={tier} skill={skill} />
         </div>
         {tools.map((tool) => (
           <ToolCallCard key={`${tool.tool}-${tool.result}`} tool={tool.tool} result={tool.result} />
@@ -208,6 +243,7 @@ export default function MessageBubble({
   content,
   model,
   tier,
+  skill,
   modelLabel,
   modelTitle,
   clientStatus,
@@ -220,6 +256,7 @@ export default function MessageBubble({
         content={safeContent}
         model={model}
         tier={tier}
+        skill={skill}
         modelLabel={modelLabel}
         modelTitle={modelTitle}
       />

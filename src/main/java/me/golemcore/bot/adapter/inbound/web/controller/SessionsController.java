@@ -339,6 +339,7 @@ public class SessionsController {
     private SessionDetailDto.MessageDto toMessageDto(Message msg) {
         String model = null;
         String modelTier = null;
+        String skill = null;
         String reasoning = null;
         String clientMessageId = null;
         boolean autoMode = false;
@@ -358,6 +359,16 @@ public class SessionsController {
             Object reasoningValue = msg.getMetadata().get("reasoning");
             if (reasoningValue instanceof String) {
                 reasoning = (String) reasoningValue;
+            }
+            Object skillValue = msg.getMetadata().get(ContextAttributes.AUTO_RUN_ACTIVE_SKILL);
+            if (skillValue instanceof String) {
+                skill = (String) skillValue;
+            }
+            if (skill == null || skill.isBlank()) {
+                Object activeSkillValue = msg.getMetadata().get(ContextAttributes.ACTIVE_SKILL_NAME);
+                if (activeSkillValue instanceof String) {
+                    skill = (String) activeSkillValue;
+                }
             }
             Object clientMessageIdValue = msg.getMetadata().get("clientMessageId");
             if (clientMessageIdValue instanceof String) {
@@ -383,6 +394,7 @@ public class SessionsController {
                 .hasVoice(msg.hasVoice())
                 .model(model)
                 .modelTier(modelTier)
+                .skill(skill)
                 .reasoning(reasoning)
                 .clientMessageId(clientMessageId)
                 .autoMode(autoMode)

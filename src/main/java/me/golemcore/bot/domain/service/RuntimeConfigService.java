@@ -91,6 +91,8 @@ public class RuntimeConfigService {
     private static final int DEFAULT_AUTO_TIMEOUT_MINUTES = 10;
     private static final int DEFAULT_AUTO_MAX_GOALS = 3;
     private static final String DEFAULT_AUTO_MODEL_TIER = "default";
+    private static final boolean DEFAULT_AUTO_REFLECTION_ENABLED = true;
+    private static final int DEFAULT_AUTO_REFLECTION_FAILURE_THRESHOLD = 2;
     private static final int DEFAULT_AUTO_COMPACT_MAX_TOKENS = 50000;
     private static final int DEFAULT_AUTO_COMPACT_KEEP_LAST = 20;
     private static final boolean DEFAULT_COMPACTION_PRESERVE_TURN_BOUNDARIES = true;
@@ -525,6 +527,25 @@ public class RuntimeConfigService {
     public String getAutoModelTier() {
         String val = getRuntimeConfig().getAutoMode().getModelTier();
         return val != null ? val : DEFAULT_AUTO_MODEL_TIER;
+    }
+
+    public boolean isAutoReflectionEnabled() {
+        Boolean val = getRuntimeConfig().getAutoMode().getReflectionEnabled();
+        return val != null ? val : DEFAULT_AUTO_REFLECTION_ENABLED;
+    }
+
+    public int getAutoReflectionFailureThreshold() {
+        Integer val = getRuntimeConfig().getAutoMode().getReflectionFailureThreshold();
+        return val != null ? val : DEFAULT_AUTO_REFLECTION_FAILURE_THRESHOLD;
+    }
+
+    public String getAutoReflectionModelTier() {
+        return getRuntimeConfig().getAutoMode().getReflectionModelTier();
+    }
+
+    public boolean isAutoReflectionTierPriority() {
+        Boolean val = getRuntimeConfig().getAutoMode().getReflectionTierPriority();
+        return val != null && val;
     }
 
     public boolean isAutoNotifyMilestonesEnabled() {
@@ -1193,6 +1214,15 @@ public class RuntimeConfigService {
         }
         if (cfg.getTools() == null) {
             cfg.setTools(RuntimeConfig.ToolsConfig.builder().build());
+        }
+        if (cfg.getAutoMode() == null) {
+            cfg.setAutoMode(new RuntimeConfig.AutoModeConfig());
+        }
+        if (cfg.getAutoMode().getReflectionEnabled() == null) {
+            cfg.getAutoMode().setReflectionEnabled(DEFAULT_AUTO_REFLECTION_ENABLED);
+        }
+        if (cfg.getAutoMode().getReflectionFailureThreshold() == null) {
+            cfg.getAutoMode().setReflectionFailureThreshold(DEFAULT_AUTO_REFLECTION_FAILURE_THRESHOLD);
         }
         cfg.getTools().setShellEnvironmentVariables(
                 normalizeShellEnvironmentVariables(cfg.getTools().getShellEnvironmentVariables()));
