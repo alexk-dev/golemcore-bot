@@ -62,7 +62,30 @@ describe('chatRuntimeStoreUtils', () => {
 
     expect(finalState.messages).toHaveLength(1);
     expect(finalState.messages[0].content).toBe('Hello');
+    expect(finalState.messages[0].model).toBe('openai/o3-mini');
+    expect(finalState.messages[0].tier).toBe('smart');
+    expect(finalState.messages[0].reasoning).toBe('high');
     expect(finalState.running).toBe(false);
     expect(finalState.typing).toBe(false);
+  });
+
+  it('creates a finalized assistant message with metadata when only assistant_done arrives', () => {
+    const initialState = buildSessionState({});
+
+    const finalState = applyAssistantTextUpdate(initialState, 'chat-1', 'Hello', {
+      model: 'gemini-3.1-flash-lite-preview',
+      tier: 'smart',
+      reasoning: 'medium',
+    }, true);
+
+    expect(finalState.messages).toHaveLength(1);
+    expect(finalState.messages[0].content).toBe('Hello');
+    expect(finalState.messages[0].model).toBe('gemini-3.1-flash-lite-preview');
+    expect(finalState.messages[0].tier).toBe('smart');
+    expect(finalState.messages[0].reasoning).toBe('medium');
+    expect(finalState.turnMetadata.model).toBe('gemini-3.1-flash-lite-preview');
+    expect(finalState.turnMetadata.tier).toBe('smart');
+    expect(finalState.turnMetadata.reasoning).toBe('medium');
+    expect(finalState.running).toBe(false);
   });
 });

@@ -31,4 +31,19 @@ describe('MessageBubble', () => {
     expect(html).toContain('gemini-3.1-flash-lite-preview');
     expect(html).toContain('Smart');
   });
+
+  it('prefers the formatted model label and hides the tier chip when tier is blank', () => {
+    const html = renderToStaticMarkup(
+      <MessageBubble
+        role="assistant"
+        content="Final answer"
+        model="openai/o3-mini"
+        tier=" "
+        modelLabel="OpenAI o3 mini:high"
+      />,
+    );
+
+    expect(html).toContain('OpenAI o3 mini:high');
+    expect(html).not.toContain('assistant-tier-chip');
+  });
 });

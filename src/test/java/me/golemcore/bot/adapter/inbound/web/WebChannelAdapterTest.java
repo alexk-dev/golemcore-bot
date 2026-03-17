@@ -210,6 +210,37 @@ class WebChannelAdapterTest {
     }
 
     @Test
+    void shouldOmitAssistantHintsWhenMetadataHasNoUsableValues() throws Exception {
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.isOpen()).thenReturn(true);
+        when(session.send(any())).thenReturn(Mono.empty());
+        when(session.textMessage(any(String.class)))
+                .thenReturn(mock(org.springframework.web.reactive.socket.WebSocketMessage.class));
+
+        adapter.registerSession("chat-4", session);
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("model", "   ");
+        metadata.put("modelTier", 42);
+        metadata.put("reasoning", "");
+
+        Message message = Message.builder()
+                .chatId("chat-4")
+                .content("final answer")
+                .metadata(metadata)
+                .build();
+
+        adapter.sendMessage(message).join();
+
+        ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
+        verify(session).textMessage(payloadCaptor.capture());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = objectMapper.readValue(payloadCaptor.getValue(), Map.class);
+        assertEquals("assistant_done", payload.get("type"));
+        assertFalse(payload.containsKey("hint"));
+    }
+
+    @Test
     void shouldHandleClosedSession() {
         WebSocketSession session = mock(WebSocketSession.class);
         when(session.isOpen()).thenReturn(false);

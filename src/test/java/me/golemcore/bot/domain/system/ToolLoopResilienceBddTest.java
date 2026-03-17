@@ -37,6 +37,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -296,6 +297,154 @@ class ToolLoopResilienceBddTest {
                 .anyMatch(message -> "assistant".equals(message.getRole())
                         && message.getContent() != null
                         && message.getContent().contains("interrupted by user")));
+
+        @SuppressWarnings("unchecked")
+        List<RuntimeEvent> events = context.getAttribute(ContextAttributes.RUNTIME_EVENTS);
+        assertNotNull(events);
+        assertTrue(events.stream().anyMatch(event -> RuntimeEventType.TURN_FINISHED.equals(event.type())
+                && "user_interrupt".equals(event.payload().get("reason"))));
+        assertFalse(events.stream().anyMatch(event -> RuntimeEventType.TURN_FAILED.equals(event.type())));
+    }
+
+    @Test
+    void shouldFailWhenInterruptedDuringLlmWaitWithoutStopRequest() throws Exception {
+        AgentSession session = AgentSession.builder()
+                .id("s3c")
+                .channelType("telegram")
+                .chatId("c3c")
+                .messages(new ArrayList<>())
+                .metadata(new LinkedHashMap<>())
+                .build();
+        session.addMessage(Message.builder().role("user").content("wait for llm").timestamp(NOW).build());
+
+        AgentContext context = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>(session.getMessages()))
+                .build();
+
+        CountDownLatch llmStarted = new CountDownLatch(1);
+        CompletableFuture<LlmResponse> pendingResponse = new CompletableFuture<>();
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.chat(any(LlmRequest.class))).thenAnswer(invocation -> {
+            llmStarted.countDown();
+            return pendingResponse;
+        });
+
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.getTurnMaxLlmCalls()).thenReturn(10);
+        when(runtimeConfigService.getTurnMaxToolExecutions()).thenReturn(10);
+        when(runtimeConfigService.getTurnDeadline()).thenReturn(java.time.Duration.ofMinutes(5));
+        when(runtimeConfigService.isTurnAutoRetryEnabled()).thenReturn(false);
+
+        DefaultToolLoopSystem system = buildSystem(llmPort, runtimeConfigService, null, mock(ToolExecutorPort.class));
+
+        AtomicReference<ToolLoopTurnResult> resultRef = new AtomicReference<>();
+        AtomicReference<Throwable> failureRef = new AtomicReference<>();
+        AtomicBoolean interruptedAfterReturn = new AtomicBoolean(true);
+        Thread worker = new Thread(() -> {
+            try {
+                resultRef.set(system.processTurn(context));
+            } catch (Throwable throwable) {
+                failureRef.set(throwable);
+            } finally {
+                interruptedAfterReturn.set(Thread.currentThread().isInterrupted());
+            }
+        }, "tool-loop-interrupt-failure-test");
+
+        worker.start();
+        assertTrue(llmStarted.await(1, TimeUnit.SECONDS), "LLM call should have started");
+
+        worker.interrupt();
+        worker.join(2000);
+
+        assertFalse(worker.isAlive(), "Tool loop worker should stop after interrupt");
+        assertNull(failureRef.get(), "Interrupt should be converted into a failed turn result");
+        assertNotNull(resultRef.get(), "Tool loop should return a failed result");
+        assertFalse(resultRef.get().finalAnswerReady());
+        assertFalse(interruptedAfterReturn.get(), "Interrupt status should be cleared before returning");
+        assertFalse(Boolean.TRUE.equals(session.getMetadata().get(ContextAttributes.TURN_INTERRUPT_REQUESTED)));
+        Object llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
+        assertTrue(llmError instanceof String);
+        assertTrue(((String) llmError).contains("llm.request.aborted"));
+        assertTrue(((String) llmError).contains("LLM call failed"));
+
+        @SuppressWarnings("unchecked")
+        List<RuntimeEvent> events = context.getAttribute(ContextAttributes.RUNTIME_EVENTS);
+        assertNotNull(events);
+        assertTrue(events.stream().anyMatch(event -> RuntimeEventType.TURN_FAILED.equals(event.type())
+                && "llm_error".equals(event.payload().get("reason"))));
+    }
+
+    @Test
+    void shouldStopGracefullyWhenInterruptRequestedDuringRetryBackoff() throws Exception {
+        AgentSession session = AgentSession.builder()
+                .id("s3d")
+                .channelType("telegram")
+                .chatId("c3d")
+                .messages(new ArrayList<>())
+                .metadata(new LinkedHashMap<>())
+                .build();
+        session.addMessage(Message.builder().role("user").content("retry then stop").timestamp(NOW).build());
+
+        AgentContext context = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>(session.getMessages()))
+                .build();
+
+        AtomicInteger llmCalls = new AtomicInteger();
+        CountDownLatch firstCallStarted = new CountDownLatch(1);
+        CompletableFuture<LlmResponse> secondAttempt = new CompletableFuture<>();
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.chat(any(LlmRequest.class))).thenAnswer(invocation -> {
+            int call = llmCalls.incrementAndGet();
+            if (call == 1) {
+                firstCallStarted.countDown();
+                return CompletableFuture.failedFuture(new RuntimeException("["
+                        + LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT + "] 429"));
+            }
+            return secondAttempt;
+        });
+
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.getTurnMaxLlmCalls()).thenReturn(10);
+        when(runtimeConfigService.getTurnMaxToolExecutions()).thenReturn(10);
+        when(runtimeConfigService.getTurnDeadline()).thenReturn(java.time.Duration.ofMinutes(5));
+        when(runtimeConfigService.isTurnAutoRetryEnabled()).thenReturn(true);
+        when(runtimeConfigService.getTurnAutoRetryMaxAttempts()).thenReturn(2);
+        when(runtimeConfigService.getTurnAutoRetryBaseDelayMs()).thenReturn(2_000L);
+
+        DefaultToolLoopSystem system = buildSystem(llmPort, runtimeConfigService, null, mock(ToolExecutorPort.class));
+
+        AtomicReference<ToolLoopTurnResult> resultRef = new AtomicReference<>();
+        AtomicReference<Throwable> failureRef = new AtomicReference<>();
+        Thread worker = new Thread(() -> {
+            try {
+                resultRef.set(system.processTurn(context));
+            } catch (Throwable throwable) {
+                failureRef.set(throwable);
+            }
+        }, "tool-loop-retry-stop-test");
+
+        worker.start();
+        assertTrue(firstCallStarted.await(1, TimeUnit.SECONDS), "First LLM call should have started");
+
+        session.getMetadata().put(ContextAttributes.TURN_INTERRUPT_REQUESTED, true);
+        worker.interrupt();
+        worker.join(2000);
+
+        assertFalse(worker.isAlive(), "Tool loop worker should stop during retry backoff");
+        assertNull(failureRef.get(), "Retry backoff interrupt should be handled as a graceful stop");
+        assertNotNull(resultRef.get());
+        assertTrue(resultRef.get().finalAnswerReady());
+        assertTrue(llmCalls.get() >= 1, "LLM should have been called before stop");
+        assertFalse(Boolean.TRUE.equals(session.getMetadata().get(ContextAttributes.TURN_INTERRUPT_REQUESTED)));
+
+        @SuppressWarnings("unchecked")
+        List<RuntimeEvent> events = context.getAttribute(ContextAttributes.RUNTIME_EVENTS);
+        assertNotNull(events);
+        assertTrue(events.stream().anyMatch(event -> RuntimeEventType.RETRY_STARTED.equals(event.type())));
+        assertTrue(events.stream().anyMatch(event -> RuntimeEventType.TURN_FINISHED.equals(event.type())
+                && "user_interrupt".equals(event.payload().get("reason"))));
     }
 
     @Test
