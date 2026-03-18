@@ -16,6 +16,7 @@ import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -160,6 +161,69 @@ class ResponseRoutingSystemTest {
         system.process(context);
 
         verify(channelPort).sendDocument(eq("transport-5"), eq(new byte[] { 7, 8, 9 }), eq("edge.pdf"), eq("Edge"));
+    }
+
+    @Test
+    void shouldSendWebAssistantMessageWithAllAttachmentsInOnePayload() {
+        ChannelPort webChannel = mock(ChannelPort.class);
+        when(webChannel.getChannelType()).thenReturn("web");
+        when(webChannel.sendMessage(any(Message.class))).thenReturn(CompletableFuture.completedFuture(null));
+
+        ResponseRoutingSystem webSystem = new ResponseRoutingSystem(
+                new ChannelRegistry(List.of(webChannel)),
+                preferencesService,
+                voiceHandler);
+
+        AgentSession session = AgentSession.builder()
+                .id(SESSION_ID)
+                .chatId("web-chat")
+                .channelType("web")
+                .messages(new ArrayList<>())
+                .build();
+        AgentContext context = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>())
+                .build();
+
+        Attachment first = Attachment.builder()
+                .type(Attachment.Type.IMAGE)
+                .data(new byte[] { 1, 2, 3 })
+                .filename("first.png")
+                .mimeType("image/png")
+                .downloadUrl("/api/files/download?path=first")
+                .internalFilePath(".golemcore/tool-artifacts/first")
+                .thumbnailBase64("thumb-first")
+                .build();
+        Attachment second = Attachment.builder()
+                .type(Attachment.Type.DOCUMENT)
+                .data(new byte[] { 4, 5, 6 })
+                .filename("report.pdf")
+                .mimeType("application/pdf")
+                .downloadUrl("/api/files/download?path=report")
+                .internalFilePath(".golemcore/tool-artifacts/report")
+                .build();
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.builder()
+                .text("Done")
+                .attachment(first)
+                .attachment(second)
+                .hints(Map.of("model", "gemini-3.1-pro", "tier", "smart"))
+                .build());
+
+        webSystem.process(context);
+
+        ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
+        verify(webChannel).sendMessage(messageCaptor.capture());
+        verify(webChannel, never()).sendPhoto(anyString(), any(byte[].class), anyString(), any());
+        verify(webChannel, never()).sendDocument(anyString(), any(byte[].class), anyString(), any());
+        Message delivered = messageCaptor.getValue();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> attachments = (List<Map<String, Object>>) delivered.getMetadata().get("attachments");
+        assertEquals(2, attachments.size());
+        assertEquals("first.png", attachments.get(0).get("name"));
+        assertEquals(".golemcore/tool-artifacts/first", attachments.get(0).get("internalFilePath"));
+        assertEquals("thumb-first", attachments.get(0).get("thumbnailBase64"));
+        assertEquals("report.pdf", attachments.get(1).get("name"));
+        assertEquals("smart", delivered.getMetadata().get("modelTier"));
     }
 
     @Test

@@ -79,6 +79,7 @@ class ToolCallExecutionServiceTest {
                                     + safeFilename)
                             .build();
                 });
+        when(toolArtifactService.buildThumbnailBase64(anyString())).thenReturn("thumb-base64");
 
         service = new ToolCallExecutionService(
                 List.of(toolComponent),
@@ -309,6 +310,9 @@ class ToolCallExecutionServiceTest {
         assertEquals("screenshot.png", attachment.getFilename());
         assertEquals("image/png", attachment.getMimeType());
         assertEquals(pngBytes.length, attachment.getData().length);
+        assertEquals("thumb-base64", attachment.getThumbnailBase64());
+        Map<?, ?> sanitizedData = (Map<?, ?>) result.toolResult().getData();
+        assertEquals("thumb-base64", sanitizedData.get("internal_file_thumbnail_base64"));
     }
 
     @Test
@@ -342,6 +346,7 @@ class ToolCallExecutionServiceTest {
         assertTrue(!sanitizedData.containsKey("attachment"));
         assertEquals("/api/files/download?path=.golemcore%2Ftool-artifacts%2Fsession%2Ftest%2Freport.pdf",
                 sanitizedData.get("internal_file_url"));
+        assertNull(sanitizedData.get("internal_file_thumbnail_base64"));
     }
 
     @Test
@@ -391,6 +396,9 @@ class ToolCallExecutionServiceTest {
 
         assertNotNull(result.extractedAttachment());
         assertEquals(Attachment.Type.IMAGE, result.extractedAttachment().getType());
+        assertEquals("thumb-base64", result.extractedAttachment().getThumbnailBase64());
+        Map<?, ?> sanitizedData = (Map<?, ?>) result.toolResult().getData();
+        assertEquals("thumb-base64", sanitizedData.get("internal_file_thumbnail_base64"));
     }
 
     // ==================== extractAttachment: invalid base64 ====================

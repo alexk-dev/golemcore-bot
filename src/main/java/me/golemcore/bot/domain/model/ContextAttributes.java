@@ -208,4 +208,10 @@ public final class ContextAttributes {
     /** Instant ? timestamp when the current progress batch started. */
     public static final String TURN_PROGRESS_BATCH_STARTED_AT = "turn.progress.batch.startedAt";
 
+    /**
+     * List<Map<String,Object>> ? assistant-facing attachments produced during this
+     * turn.
+     */
+    public static final String TURN_OUTPUT_ATTACHMENTS = "turn.output.attachments";
+
 }

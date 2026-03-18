@@ -36,6 +36,8 @@ import me.golemcore.bot.port.inbound.ChannelPort;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -54,6 +56,7 @@ import java.util.concurrent.TimeoutException;
 @Slf4j
 public class ResponseRoutingSystem implements AgentSystem {
 
+    private static final String CHANNEL_WEB = "web";
     private static final String CHANNEL_WEBHOOK = "webhook";
     private static final String WEBHOOK_DELIVER_FLAG = "webhook.deliver";
     private static final String WEBHOOK_DELIVER_CHANNEL = "webhook.deliver.channel";
@@ -106,19 +109,26 @@ public class ResponseRoutingSystem implements AgentSystem {
         boolean sentText = false;
         boolean sentVoice = false;
         String errorMessage = null;
+        int sentAttachments;
 
-        if (outgoing.getText() != null && !outgoing.getText().isBlank()) {
-            String textError = sendOutgoingText(context, outgoing);
-            if (textError == null) {
-                sentText = true;
-            } else {
-                errorMessage = textError;
+        if (shouldSendCombinedWebMessage(context, outgoing)) {
+            errorMessage = sendCombinedWebMessage(context, outgoing);
+            sentText = errorMessage == null && outgoing.getText() != null && !outgoing.getText().isBlank();
+            sentAttachments = errorMessage == null ? toAttachmentMetadata(outgoing.getAttachments()).size() : 0;
+        } else {
+            if (outgoing.getText() != null && !outgoing.getText().isBlank()) {
+                String textError = sendOutgoingText(context, outgoing);
+                if (textError == null) {
+                    sentText = true;
+                } else {
+                    errorMessage = textError;
+                }
             }
+            sentAttachments = sendOutgoingAttachments(context, outgoing);
         }
         if (sendOutgoingVoiceIfRequested(context, outgoing)) {
             sentVoice = true;
         }
-        int sentAttachments = sendOutgoingAttachments(context, outgoing);
 
         // Build and record RoutingOutcome
         RoutingOutcome routingOutcome = RoutingOutcome.builder()
@@ -175,6 +185,58 @@ public class ResponseRoutingSystem implements AgentSystem {
         return errorMessage;
     }
 
+    private boolean shouldSendCombinedWebMessage(AgentContext context, OutgoingResponse outgoing) {
+        if (context == null || outgoing == null) {
+            return false;
+        }
+        if ((outgoing.getText() == null || outgoing.getText().isBlank())
+                && (outgoing.getAttachments() == null || outgoing.getAttachments().isEmpty())) {
+            return false;
+        }
+
+        AgentSession session = context.getSession();
+        ChannelPort primaryChannel = session != null ? resolveChannel(session) : null;
+        if (primaryChannel != null && CHANNEL_WEB.equalsIgnoreCase(primaryChannel.getChannelType())) {
+            return true;
+        }
+
+        CrossChannelDelivery crossChannelDelivery = resolveWebhookCrossChannelDelivery(context);
+        return crossChannelDelivery != null
+                && CHANNEL_WEB.equalsIgnoreCase(crossChannelDelivery.channel().getChannelType());
+    }
+
+    private String sendCombinedWebMessage(AgentContext context, OutgoingResponse outgoing) {
+        AgentSession session = context.getSession();
+        ChannelPort channel = resolveChannel(session);
+        if (channel == null) {
+            return null;
+        }
+        String chatId = SessionIdentitySupport.resolveTransportChatId(session);
+        CrossChannelDelivery crossChannelDelivery = resolveWebhookCrossChannelDelivery(context);
+
+        String errorMessage = null;
+        if (CHANNEL_WEB.equalsIgnoreCase(channel.getChannelType())) {
+            errorMessage = sendStructuredMessage(channel, buildStructuredWebMessage(chatId, outgoing));
+        } else if (outgoing.getText() != null && !outgoing.getText().isBlank()) {
+            errorMessage = sendText(channel, chatId, outgoing);
+        }
+
+        if (crossChannelDelivery != null) {
+            String deliveryError = null;
+            if (CHANNEL_WEB.equalsIgnoreCase(crossChannelDelivery.channel().getChannelType())) {
+                deliveryError = sendStructuredMessage(
+                        crossChannelDelivery.channel(),
+                        buildStructuredWebMessage(crossChannelDelivery.chatId(), outgoing));
+            } else if (outgoing.getText() != null && !outgoing.getText().isBlank()) {
+                deliveryError = sendText(crossChannelDelivery.channel(), crossChannelDelivery.chatId(), outgoing);
+            }
+            if (errorMessage == null) {
+                errorMessage = deliveryError;
+            }
+        }
+        return errorMessage;
+    }
+
     private String sendText(ChannelPort channel, String chatId, OutgoingResponse outgoing) {
         try {
             channel.sendMessage(chatId, outgoing.getText(), outgoing.getHints()).get(30, TimeUnit.SECONDS);
@@ -190,6 +252,25 @@ public class ResponseRoutingSystem implements AgentSystem {
         } catch (Exception e) {
             log.warn("[Response] FAILED to send (OutgoingResponse): {}", e.getMessage());
             log.debug("[Response] OutgoingResponse send failure", e);
+            return e.getMessage();
+        }
+    }
+
+    private String sendStructuredMessage(ChannelPort channel, Message message) {
+        try {
+            channel.sendMessage(message).get(30, TimeUnit.SECONDS);
+            return null;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("[Response] FAILED to send structured message (interrupted): {}", e.getMessage());
+            return e.getMessage();
+        } catch (ExecutionException | TimeoutException e) {
+            log.warn("[Response] FAILED to send structured message: {}", e.getMessage());
+            log.debug("[Response] Structured message send failure", e);
+            return e.getMessage();
+        } catch (Exception e) {
+            log.warn("[Response] FAILED to send structured message: {}", e.getMessage());
+            log.debug("[Response] Structured message send failure", e);
             return e.getMessage();
         }
     }
@@ -270,6 +351,71 @@ public class ResponseRoutingSystem implements AgentSystem {
             }
         }
         return sent;
+    }
+
+    private Message buildStructuredWebMessage(String chatId, OutgoingResponse outgoing) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        Object model = outgoing.getHints().get("model");
+        if (model instanceof String modelValue && !modelValue.isBlank()) {
+            metadata.put("model", modelValue);
+        }
+        Object tier = outgoing.getHints().get("tier");
+        if (tier instanceof String tierValue && !tierValue.isBlank()) {
+            metadata.put("modelTier", tierValue);
+        }
+        Object reasoning = outgoing.getHints().get("reasoning");
+        if (reasoning instanceof String reasoningValue && !reasoningValue.isBlank()) {
+            metadata.put("reasoning", reasoningValue);
+        }
+
+        List<Map<String, Object>> attachments = toAttachmentMetadata(outgoing.getAttachments());
+        if (!attachments.isEmpty()) {
+            metadata.put("attachments", attachments);
+        }
+
+        return Message.builder()
+                .role("assistant")
+                .chatId(chatId)
+                .content(outgoing.getText())
+                .metadata(metadata)
+                .build();
+    }
+
+    private List<Map<String, Object>> toAttachmentMetadata(List<Attachment> attachments) {
+        if (attachments == null || attachments.isEmpty()) {
+            return List.of();
+        }
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Attachment attachment : attachments) {
+            if (attachment == null) {
+                continue;
+            }
+            Map<String, Object> metadata = new LinkedHashMap<>();
+            metadata.put("type", attachment.getType() == Attachment.Type.IMAGE ? "image" : "document");
+            if (attachment.getFilename() != null && !attachment.getFilename().isBlank()) {
+                metadata.put("name", attachment.getFilename());
+            }
+            if (attachment.getMimeType() != null && !attachment.getMimeType().isBlank()) {
+                metadata.put("mimeType", attachment.getMimeType());
+            }
+            if (attachment.getDownloadUrl() != null && !attachment.getDownloadUrl().isBlank()) {
+                metadata.put("url", attachment.getDownloadUrl());
+            }
+            if (attachment.getInternalFilePath() != null && !attachment.getInternalFilePath().isBlank()) {
+                metadata.put("internalFilePath", attachment.getInternalFilePath());
+            }
+            if (attachment.getThumbnailBase64() != null && !attachment.getThumbnailBase64().isBlank()) {
+                metadata.put("thumbnailBase64", attachment.getThumbnailBase64());
+            }
+            if (attachment.getCaption() != null && !attachment.getCaption().isBlank()) {
+                metadata.put("caption", attachment.getCaption());
+            }
+            if (metadata.containsKey("url") || metadata.containsKey("internalFilePath")) {
+                result.add(metadata);
+            }
+        }
+        return result;
     }
 
     private CrossChannelDelivery resolveWebhookCrossChannelDelivery(AgentContext context) {

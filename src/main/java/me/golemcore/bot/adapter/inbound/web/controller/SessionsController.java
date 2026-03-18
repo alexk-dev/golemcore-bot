@@ -31,7 +31,11 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.security.Principal;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -390,6 +394,7 @@ public class SessionsController {
                 .autoScheduleId(autoScheduleId)
                 .autoGoalId(autoGoalId)
                 .autoTaskId(autoTaskId)
+                .attachments(resolveAttachments(msg))
                 .build();
     }
 
@@ -474,8 +479,8 @@ public class SessionsController {
         }
 
         return attachmentCount == 1
-                ? "[1 image attachment]"
-                : "[" + attachmentCount + " image attachments]";
+                ? "[1 attachment]"
+                : "[" + attachmentCount + " attachments]";
     }
 
     private int resolveAttachmentCount(Message message) {
@@ -487,6 +492,66 @@ public class SessionsController {
             return START_WITH_INDEX;
         }
         return attachments.size();
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<SessionDetailDto.AttachmentDto> resolveAttachments(Message message) {
+        if (message == null || message.getMetadata() == null) {
+            return List.of();
+        }
+        Object attachmentsRaw = message.getMetadata().get("attachments");
+        if (!(attachmentsRaw instanceof List<?> attachments) || attachments.isEmpty()) {
+            return List.of();
+        }
+
+        List<SessionDetailDto.AttachmentDto> result = new ArrayList<>();
+        for (Object attachmentObj : attachments) {
+            if (!(attachmentObj instanceof Map<?, ?> attachmentMap)) {
+                continue;
+            }
+            Map<String, Object> normalized = new LinkedHashMap<>((Map<String, Object>) attachmentMap);
+            String type = readAttachmentString(normalized, "type");
+            String name = readAttachmentString(normalized, "name");
+            String mimeType = readAttachmentString(normalized, "mimeType");
+            String url = readAttachmentUrl(normalized);
+            String internalFilePath = readAttachmentString(normalized, "internalFilePath");
+            String thumbnailBase64 = readAttachmentString(normalized, "thumbnailBase64");
+            if (type == null && name == null && mimeType == null && url == null
+                    && internalFilePath == null && thumbnailBase64 == null) {
+                continue;
+            }
+            result.add(SessionDetailDto.AttachmentDto.builder()
+                    .type(type)
+                    .name(name)
+                    .mimeType(mimeType)
+                    .url(url)
+                    .internalFilePath(internalFilePath)
+                    .thumbnailBase64(thumbnailBase64)
+                    .build());
+        }
+        return result;
+    }
+
+    private String readAttachmentUrl(Map<String, Object> attachment) {
+        String directUrl = readAttachmentString(attachment, "url");
+        if (directUrl != null) {
+            return directUrl;
+        }
+        String internalFilePath = readAttachmentString(attachment, "internalFilePath");
+        if (internalFilePath == null) {
+            return null;
+        }
+        String encoded = URLEncoder.encode(internalFilePath, StandardCharsets.UTF_8).replace("+", "%20");
+        return "/api/files/download?path=" + encoded;
+    }
+
+    private String readAttachmentString(Map<String, Object> attachment, String key) {
+        Object value = attachment.get(key);
+        if (!(value instanceof String stringValue)) {
+            return null;
+        }
+        String normalized = stringValue.trim();
+        return normalized.isEmpty() ? null : normalized;
     }
 
     private String resolvePointerKey(

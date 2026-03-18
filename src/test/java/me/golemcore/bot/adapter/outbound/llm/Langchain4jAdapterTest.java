@@ -8,6 +8,8 @@ import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.ToolArtifactService;
+import me.golemcore.bot.domain.model.ToolArtifactDownload;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
@@ -73,13 +75,16 @@ class Langchain4jAdapterTest {
 
     private ModelConfigService modelConfig;
     private RuntimeConfigService runtimeConfigService;
+    private ToolArtifactService toolArtifactService;
     private Langchain4jAdapter adapter;
 
     @BeforeEach
     void setUp() {
         modelConfig = mock(ModelConfigService.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
+        toolArtifactService = mock(ToolArtifactService.class);
         when(modelConfig.supportsTemperature(anyString())).thenReturn(true);
+        when(modelConfig.supportsVision(anyString())).thenReturn(false);
         when(modelConfig.getProvider(anyString())).thenReturn(OPENAI);
         when(modelConfig.isReasoningRequired(anyString())).thenReturn(false);
         when(modelConfig.getAllModels()).thenReturn(Map.of());
@@ -91,7 +96,7 @@ class Langchain4jAdapterTest {
         when(runtimeConfigService.getLlmProviderConfig(anyString()))
                 .thenReturn(RuntimeConfig.LlmProviderConfig.builder().build());
 
-        adapter = new Langchain4jAdapter(runtimeConfigService, modelConfig) {
+        adapter = new Langchain4jAdapter(runtimeConfigService, modelConfig, toolArtifactService) {
             @Override
             protected void sleepBeforeRetry(long backoffMs) {
                 // No-op for deterministic fast retry tests.
@@ -699,6 +704,136 @@ class Langchain4jAdapterTest {
 
         LlmResponse response = adapter.chat(request).get();
         assertEquals("Weather is sunny", response.getContent());
+    }
+
+    @Test
+    void shouldInjectToolImageAsMultimodalContextForVisionModels() {
+        when(modelConfig.supportsVision("openai/gpt-4.1")).thenReturn(true);
+        when(toolArtifactService.getDownload(".golemcore/tool-artifacts/session/pinchtab/capture.png"))
+                .thenReturn(ToolArtifactDownload.builder()
+                        .path(".golemcore/tool-artifacts/session/pinchtab/capture.png")
+                        .filename("capture.png")
+                        .mimeType("image/png")
+                        .size(4L)
+                        .data(new byte[] { 1, 2, 3, 4 })
+                        .build());
+
+        Message assistantMsg = Message.builder()
+                .role(ROLE_ASSISTANT)
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("call_img")
+                        .name("pinchtab_screenshot")
+                        .arguments(Map.of("tabId", "tab-1"))
+                        .build()))
+                .build();
+
+        Message toolResultMsg = Message.builder()
+                .role(ROLE_TOOL)
+                .content("Captured screenshot")
+                .toolCallId("call_img")
+                .toolName("pinchtab_screenshot")
+                .metadata(Map.of(
+                        "toolAttachments", List.of(Map.of(
+                                TYPE, "image",
+                                "mimeType", "image/png",
+                                "internalFilePath", ".golemcore/tool-artifacts/session/pinchtab/capture.png"))))
+                .build();
+
+        LlmRequest request = LlmRequest.builder()
+                .model("openai/gpt-4.1")
+                .messages(List.of(
+                        Message.builder().role(ROLE_USER).content("Check the page").build(),
+                        assistantMsg,
+                        toolResultMsg))
+                .build();
+
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<ChatMessage> messages = (List<ChatMessage>) ReflectionTestUtils.invokeMethod(
+                adapter, CONVERT_MESSAGES, request);
+
+        assertEquals(4, messages.size());
+        assertTrue(messages.get(2) instanceof ToolExecutionResultMessage);
+        assertTrue(messages.get(3) instanceof UserMessage);
+        UserMessage visualContext = (UserMessage) messages.get(3);
+        assertEquals(2, visualContext.contents().size());
+        assertEquals(ContentType.TEXT, visualContext.contents().get(0).type());
+        assertEquals(ContentType.IMAGE, visualContext.contents().get(1).type());
+    }
+
+    @Test
+    void shouldSkipToolImageInjectionForNonVisionModels() {
+        Message assistantMsg = Message.builder()
+                .role(ROLE_ASSISTANT)
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("call_img")
+                        .name("pinchtab_screenshot")
+                        .arguments(Map.of("tabId", "tab-1"))
+                        .build()))
+                .build();
+
+        Message toolResultMsg = Message.builder()
+                .role(ROLE_TOOL)
+                .content("Captured screenshot")
+                .toolCallId("call_img")
+                .toolName("pinchtab_screenshot")
+                .metadata(Map.of(
+                        "toolAttachments", List.of(Map.of(
+                                TYPE, "image",
+                                "mimeType", "image/png",
+                                "internalFilePath", ".golemcore/tool-artifacts/session/pinchtab/capture.png"))))
+                .build();
+
+        LlmRequest request = LlmRequest.builder()
+                .model("openai/gpt-4.1-mini")
+                .messages(List.of(assistantMsg, toolResultMsg))
+                .build();
+
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<ChatMessage> messages = (List<ChatMessage>) ReflectionTestUtils.invokeMethod(
+                adapter, CONVERT_MESSAGES, request);
+
+        assertEquals(2, messages.size());
+        assertTrue(messages.get(1) instanceof ToolExecutionResultMessage);
+    }
+
+    @Test
+    void shouldIgnoreBrokenToolImageAttachmentDownload() {
+        when(modelConfig.supportsVision("openai/gpt-4.1")).thenReturn(true);
+        when(toolArtifactService.getDownload(".golemcore/tool-artifacts/session/pinchtab/missing.png"))
+                .thenThrow(new IllegalArgumentException("File not found"));
+
+        Message assistantMsg = Message.builder()
+                .role(ROLE_ASSISTANT)
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("call_img")
+                        .name("pinchtab_screenshot")
+                        .arguments(Map.of("tabId", "tab-1"))
+                        .build()))
+                .build();
+
+        Message toolResultMsg = Message.builder()
+                .role(ROLE_TOOL)
+                .content("Captured screenshot")
+                .toolCallId("call_img")
+                .toolName("pinchtab_screenshot")
+                .metadata(Map.of(
+                        "toolAttachments", List.of(Map.of(
+                                TYPE, "image",
+                                "mimeType", "image/png",
+                                "internalFilePath", ".golemcore/tool-artifacts/session/pinchtab/missing.png"))))
+                .build();
+
+        LlmRequest request = LlmRequest.builder()
+                .model("openai/gpt-4.1")
+                .messages(List.of(assistantMsg, toolResultMsg))
+                .build();
+
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<ChatMessage> messages = (List<ChatMessage>) ReflectionTestUtils.invokeMethod(
+                adapter, CONVERT_MESSAGES, request);
+
+        assertEquals(2, messages.size());
+        assertTrue(messages.get(1) instanceof ToolExecutionResultMessage);
     }
 
     @Test
