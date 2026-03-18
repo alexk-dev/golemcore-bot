@@ -41,6 +41,15 @@ class HiveControllerTest {
                 30,
                 Instant.parse("2026-03-18T00:00:00Z"),
                 Instant.parse("2026-03-18T00:00:05Z"),
+                null,
+                "CONNECTED",
+                Instant.parse("2026-03-18T00:00:00Z"),
+                Instant.parse("2026-03-18T00:00:05Z"),
+                null,
+                null,
+                null,
+                0,
+                0,
                 null));
 
         StepVerifier.create(controller.getStatus())
@@ -69,6 +78,15 @@ class HiveControllerTest {
                 30,
                 Instant.parse("2026-03-18T00:00:00Z"),
                 Instant.parse("2026-03-18T00:00:05Z"),
+                null,
+                "CONNECTED",
+                Instant.parse("2026-03-18T00:00:00Z"),
+                Instant.parse("2026-03-18T00:00:05Z"),
+                null,
+                null,
+                null,
+                0,
+                0,
                 null);
         when(hiveConnectionService.join("token:https://hive.example.com")).thenReturn(snapshot);
 

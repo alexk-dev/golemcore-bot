@@ -6,15 +6,21 @@ import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.adapter.outbound.hive.HiveApiClient;
+import me.golemcore.bot.adapter.outbound.hive.HiveControlChannelClient;
+import me.golemcore.bot.adapter.outbound.hive.HiveControlChannelStatus;
+import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
 import me.golemcore.bot.domain.model.HiveSessionState;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.infrastructure.config.BotProperties;
@@ -29,11 +35,17 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class HiveConnectionService {
 
+    private static final Duration ACCESS_TOKEN_REFRESH_WINDOW = Duration.ofMinutes(1);
+    private static final int DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 30;
+    private static final int CONTROL_CHANNEL_RECONNECT_INTERVAL_SECONDS = 5;
+
     private final BotProperties botProperties;
     private final RuntimeConfigService runtimeConfigService;
     private final HiveBootstrapConfigSynchronizer hiveBootstrapConfigSynchronizer;
     private final HiveSessionStateStore hiveSessionStateStore;
+    private final HiveControlInboxService hiveControlInboxService;
     private final HiveApiClient hiveApiClient;
+    private final HiveControlChannelClient hiveControlChannelClient;
     private final ChannelRegistry channelRegistry;
     private final ObjectProvider<BuildProperties> buildPropertiesProvider;
     private final ObjectProvider<GitProperties> gitPropertiesProvider;
@@ -49,12 +61,17 @@ public class HiveConnectionService {
         return thread;
     });
 
+    private ScheduledFuture<?> heartbeatFuture;
+    private ScheduledFuture<?> controlChannelFuture;
+
     public HiveConnectionService(
             BotProperties botProperties,
             RuntimeConfigService runtimeConfigService,
             HiveBootstrapConfigSynchronizer hiveBootstrapConfigSynchronizer,
             HiveSessionStateStore hiveSessionStateStore,
+            HiveControlInboxService hiveControlInboxService,
             HiveApiClient hiveApiClient,
+            HiveControlChannelClient hiveControlChannelClient,
             ChannelRegistry channelRegistry,
             ObjectProvider<BuildProperties> buildPropertiesProvider,
             ObjectProvider<GitProperties> gitPropertiesProvider,
@@ -63,7 +80,9 @@ public class HiveConnectionService {
         this.runtimeConfigService = runtimeConfigService;
         this.hiveBootstrapConfigSynchronizer = hiveBootstrapConfigSynchronizer;
         this.hiveSessionStateStore = hiveSessionStateStore;
+        this.hiveControlInboxService = hiveControlInboxService;
         this.hiveApiClient = hiveApiClient;
+        this.hiveControlChannelClient = hiveControlChannelClient;
         this.channelRegistry = channelRegistry;
         this.buildPropertiesProvider = buildPropertiesProvider;
         this.gitPropertiesProvider = gitPropertiesProvider;
@@ -84,12 +103,18 @@ public class HiveConnectionService {
 
     @PreDestroy
     void destroy() {
+        synchronized (lock) {
+            cancelBackgroundTasks();
+            hiveControlChannelClient.disconnect("shutdown");
+        }
         executor.shutdownNow();
     }
 
     public HiveStatusSnapshot getStatus() {
         RuntimeConfig.HiveConfig hiveConfig = runtimeConfigService.getHiveConfig();
         HiveSessionState sessionState = hiveSessionStateStore.load().orElse(null);
+        HiveControlChannelStatus controlChannelStatus = hiveControlChannelClient.getStatus();
+        HiveControlInboxService.InboxSummary inboxSummary = hiveControlInboxService.getSummary();
         String lastError = lastErrorRef.get();
         if (lastError == null && sessionState != null) {
             lastError = sessionState.getLastError();
@@ -109,6 +134,15 @@ public class HiveConnectionService {
                 sessionState != null ? sessionState.getHeartbeatIntervalSeconds() : null,
                 sessionState != null ? sessionState.getLastConnectedAt() : null,
                 sessionState != null ? sessionState.getLastHeartbeatAt() : null,
+                sessionState != null ? sessionState.getLastTokenRotatedAt() : null,
+                controlChannelStatus.state(),
+                controlChannelStatus.connectedAt(),
+                controlChannelStatus.lastMessageAt(),
+                controlChannelStatus.lastError(),
+                inboxSummary.lastReceivedCommandId(),
+                inboxSummary.lastReceivedAt(),
+                inboxSummary.receivedCommandCount(),
+                inboxSummary.bufferedCommandCount(),
                 lastError);
     }
 
@@ -116,6 +150,7 @@ public class HiveConnectionService {
         synchronized (lock) {
             stateRef.set(HiveConnectionState.JOINING);
             lastErrorRef.set(null);
+            stopRuntimeTransport();
             String joinCode = resolveJoinCodeForAction(requestedJoinCode);
             HiveJoinCodeParser.ParsedJoinCode parsedJoinCode = HiveJoinCodeParser.parse(joinCode);
             RuntimeConfig.HiveConfig hiveConfig = runtimeConfigService.getHiveConfig();
@@ -129,12 +164,7 @@ public class HiveConnectionService {
                         resolveBuildVersion(),
                         resolveSupportedChannels());
                 HiveSessionState sessionState = buildSessionState(parsedJoinCode.serverUrl(), response);
-                sendHeartbeat(sessionState, "Hive join completed");
-                sessionState.setLastConnectedAt(Instant.now(clock));
-                sessionState.setLastError(null);
-                hiveSessionStateStore.save(sessionState);
-                lastErrorRef.set(null);
-                stateRef.set(HiveConnectionState.CONNECTED);
+                activateConnectedSession(sessionState, "Hive join completed");
                 persistManualJoinServerUrl(parsedJoinCode.serverUrl());
                 return getStatus();
             } catch (RuntimeException exception) {
@@ -155,19 +185,11 @@ public class HiveConnectionService {
             }
             stateRef.set(HiveConnectionState.JOINING);
             lastErrorRef.set(null);
+            stopRuntimeTransport();
             HiveSessionState sessionState = sessionStateOptional.get();
             try {
-                HiveApiClient.GolemAuthResponse response = hiveApiClient.rotate(
-                        sessionState.getServerUrl(),
-                        sessionState.getGolemId(),
-                        sessionState.getRefreshToken());
-                applyAuthResponse(sessionState, response);
-                sendHeartbeat(sessionState, "Hive reconnect completed");
-                sessionState.setLastConnectedAt(Instant.now(clock));
-                sessionState.setLastError(null);
-                hiveSessionStateStore.save(sessionState);
-                lastErrorRef.set(null);
-                stateRef.set(HiveConnectionState.CONNECTED);
+                rotateSessionTokens(sessionState);
+                activateConnectedSession(sessionState, "Hive reconnect completed");
                 return getStatus();
             } catch (RuntimeException exception) {
                 handleFailure(exception);
@@ -178,11 +200,58 @@ public class HiveConnectionService {
 
     public HiveStatusSnapshot leave() {
         synchronized (lock) {
+            stopRuntimeTransport();
             hiveSessionStateStore.clear();
             stateRef.set(HiveConnectionState.DISCONNECTED);
             lastErrorRef.set(null);
             return getStatus();
         }
+    }
+
+    void runHeartbeatMaintenanceCycle() {
+        synchronized (lock) {
+            Optional<HiveSessionState> sessionStateOptional = hiveSessionStateStore.load();
+            if (sessionStateOptional.isEmpty()) {
+                return;
+            }
+            HiveSessionState sessionState = sessionStateOptional.get();
+            try {
+                refreshSessionTokensIfNeeded(sessionState);
+                sendHeartbeat(sessionState, buildHealthSummary());
+                sessionState.setLastError(null);
+                hiveSessionStateStore.save(sessionState);
+                updateStateFromRuntimeHealth();
+            } catch (RuntimeException exception) {
+                handleBackgroundFailure(sessionState, exception);
+            }
+        }
+    }
+
+    void runControlChannelMaintenanceCycle() {
+        synchronized (lock) {
+            Optional<HiveSessionState> sessionStateOptional = hiveSessionStateStore.load();
+            if (sessionStateOptional.isEmpty()) {
+                return;
+            }
+            HiveSessionState sessionState = sessionStateOptional.get();
+            try {
+                ensureControlChannelConnected(sessionState);
+                updateStateFromRuntimeHealth();
+            } catch (RuntimeException exception) {
+                handleBackgroundFailure(sessionState, exception);
+            }
+        }
+    }
+
+    private void activateConnectedSession(HiveSessionState sessionState, String heartbeatSummary) {
+        ensureControlChannelConnected(sessionState);
+        sendHeartbeat(sessionState, heartbeatSummary);
+        sessionState.setLastConnectedAt(Instant.now(clock));
+        sessionState.setLastError(null);
+        hiveSessionStateStore.save(sessionState);
+        lastErrorRef.set(null);
+        updateStateFromRuntimeHealth();
+        scheduleBackgroundTasks(sessionState);
     }
 
     private void attemptStartupConnect() {
@@ -286,6 +355,25 @@ public class HiveConnectionService {
                 .build();
     }
 
+    private void refreshSessionTokensIfNeeded(HiveSessionState sessionState) {
+        Instant accessTokenExpiresAt = sessionState.getAccessTokenExpiresAt();
+        if (accessTokenExpiresAt == null
+                || accessTokenExpiresAt.isAfter(Instant.now(clock).plus(ACCESS_TOKEN_REFRESH_WINDOW))) {
+            return;
+        }
+        rotateSessionTokens(sessionState);
+        hiveControlChannelClient.disconnect("token-refresh");
+    }
+
+    private void rotateSessionTokens(HiveSessionState sessionState) {
+        HiveApiClient.GolemAuthResponse response = hiveApiClient.rotate(
+                sessionState.getServerUrl(),
+                sessionState.getGolemId(),
+                sessionState.getRefreshToken());
+        applyAuthResponse(sessionState, response);
+        sessionState.setLastTokenRotatedAt(Instant.now(clock));
+    }
+
     private void applyAuthResponse(HiveSessionState sessionState, HiveApiClient.GolemAuthResponse response) {
         sessionState.setGolemId(response.golemId());
         sessionState.setControlChannelUrl(response.controlChannelUrl());
@@ -300,15 +388,73 @@ public class HiveConnectionService {
     }
 
     private void sendHeartbeat(HiveSessionState sessionState, String healthSummary) {
+        HiveControlChannelStatus controlChannelStatus = hiveControlChannelClient.getStatus();
         hiveApiClient.heartbeat(
                 sessionState.getServerUrl(),
                 sessionState.getGolemId(),
                 sessionState.getAccessToken(),
-                "connected",
+                "CONNECTED".equals(controlChannelStatus.state()) ? "connected" : "degraded",
                 healthSummary,
-                null,
+                controlChannelStatus.lastError(),
                 ManagementFactory.getRuntimeMXBean().getUptime() / 1000L);
         sessionState.setLastHeartbeatAt(Instant.now(clock));
+    }
+
+    private String buildHealthSummary() {
+        HiveControlChannelStatus controlChannelStatus = hiveControlChannelClient.getStatus();
+        return "CONNECTED".equals(controlChannelStatus.state())
+                ? "Control channel connected"
+                : "Waiting for control channel reconnect";
+    }
+
+    private void ensureControlChannelConnected(HiveSessionState sessionState) {
+        if (sessionState.getControlChannelUrl() == null || sessionState.getControlChannelUrl().isBlank()) {
+            return;
+        }
+        HiveControlChannelStatus controlChannelStatus = hiveControlChannelClient.getStatus();
+        if ("CONNECTED".equals(controlChannelStatus.state()) || "CONNECTING".equals(controlChannelStatus.state())) {
+            return;
+        }
+        hiveControlChannelClient.connect(sessionState, this::recordControlCommand);
+    }
+
+    private void recordControlCommand(HiveControlCommandEnvelope envelope) {
+        HiveControlInboxService.InboxSummary inboxSummary = hiveControlInboxService.recordReceived(envelope);
+        log.info("[Hive] Received control command: commandId={}, threadId={}, buffered={}",
+                envelope.getCommandId(), envelope.getThreadId(), inboxSummary.bufferedCommandCount());
+    }
+
+    private void scheduleBackgroundTasks(HiveSessionState sessionState) {
+        cancelBackgroundTasks();
+        int heartbeatIntervalSeconds = sessionState.getHeartbeatIntervalSeconds() != null
+                ? Math.max(sessionState.getHeartbeatIntervalSeconds(), 5)
+                : DEFAULT_HEARTBEAT_INTERVAL_SECONDS;
+        heartbeatFuture = executor.scheduleWithFixedDelay(
+                this::safeRunHeartbeatMaintenanceCycle,
+                heartbeatIntervalSeconds,
+                heartbeatIntervalSeconds,
+                TimeUnit.SECONDS);
+        controlChannelFuture = executor.scheduleWithFixedDelay(
+                this::safeRunControlChannelMaintenanceCycle,
+                1,
+                CONTROL_CHANNEL_RECONNECT_INTERVAL_SECONDS,
+                TimeUnit.SECONDS);
+    }
+
+    private void safeRunHeartbeatMaintenanceCycle() {
+        try {
+            runHeartbeatMaintenanceCycle();
+        } catch (RuntimeException exception) { // NOSONAR - scheduler loop must stay alive
+            log.warn("[Hive] Heartbeat cycle failed: {}", exception.getMessage());
+        }
+    }
+
+    private void safeRunControlChannelMaintenanceCycle() {
+        try {
+            runControlChannelMaintenanceCycle();
+        } catch (RuntimeException exception) { // NOSONAR - scheduler loop must stay alive
+            log.warn("[Hive] Control channel cycle failed: {}", exception.getMessage());
+        }
     }
 
     private void persistManualJoinServerUrl(String serverUrl) {
@@ -331,6 +477,50 @@ public class HiveConnectionService {
         runtimeConfigService.updateRuntimeConfig(runtimeConfig);
     }
 
+    private void updateStateFromRuntimeHealth() {
+        if (stateRef.get() == HiveConnectionState.REVOKED) {
+            return;
+        }
+        Optional<HiveSessionState> sessionStateOptional = hiveSessionStateStore.load();
+        if (sessionStateOptional.isEmpty()) {
+            stateRef.set(HiveConnectionState.DISCONNECTED);
+            return;
+        }
+        HiveSessionState sessionState = sessionStateOptional.get();
+        HiveControlChannelStatus controlChannelStatus = hiveControlChannelClient.getStatus();
+        if (sessionState.getControlChannelUrl() == null || sessionState.getControlChannelUrl().isBlank()) {
+            stateRef.set(HiveConnectionState.CONNECTED);
+            return;
+        }
+        if ("CONNECTED".equals(controlChannelStatus.state())) {
+            stateRef.set(HiveConnectionState.CONNECTED);
+            return;
+        }
+        stateRef.set(HiveConnectionState.DEGRADED);
+    }
+
+    private void stopRuntimeTransport() {
+        cancelBackgroundTasks();
+        hiveControlChannelClient.disconnect("stop");
+    }
+
+    private void cancelBackgroundTasks() {
+        if (heartbeatFuture != null) {
+            heartbeatFuture.cancel(true);
+            heartbeatFuture = null;
+        }
+        if (controlChannelFuture != null) {
+            controlChannelFuture.cancel(true);
+            controlChannelFuture = null;
+        }
+    }
+
+    private void handleBackgroundFailure(HiveSessionState sessionState, RuntimeException exception) {
+        sessionState.setLastError(exception.getMessage());
+        hiveSessionStateStore.save(sessionState);
+        handleFailure(exception);
+    }
+
     private void handleFailure(RuntimeException exception) {
         Optional<HiveSessionState> sessionStateOptional = hiveSessionStateStore.load();
         if (sessionStateOptional.isPresent()) {
@@ -342,6 +532,7 @@ public class HiveConnectionService {
         if (exception instanceof HiveApiClient.HiveApiException hiveApiException
                 && (hiveApiException.getStatusCode() == 401 || hiveApiException.getStatusCode() == 403)) {
             stateRef.set(HiveConnectionState.REVOKED);
+            stopRuntimeTransport();
             return;
         }
         stateRef.set(HiveConnectionState.ERROR);
@@ -362,6 +553,15 @@ public class HiveConnectionService {
             Integer heartbeatIntervalSeconds,
             Instant lastConnectedAt,
             Instant lastHeartbeatAt,
+            Instant lastTokenRotatedAt,
+            String controlChannelState,
+            Instant controlChannelConnectedAt,
+            Instant controlChannelLastMessageAt,
+            String controlChannelLastError,
+            String lastReceivedCommandId,
+            String lastReceivedCommandAt,
+            int receivedCommandCount,
+            int bufferedCommandCount,
             String lastError) {
     }
 

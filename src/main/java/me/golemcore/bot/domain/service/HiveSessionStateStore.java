@@ -107,6 +107,7 @@ public class HiveSessionStateStore {
                 .registeredAt(source.getRegisteredAt())
                 .lastConnectedAt(source.getLastConnectedAt())
                 .lastHeartbeatAt(source.getLastHeartbeatAt())
+                .lastTokenRotatedAt(source.getLastTokenRotatedAt())
                 .lastError(source.getLastError())
                 .build();
     }

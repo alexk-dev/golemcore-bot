@@ -127,12 +127,15 @@ interface HiveConnectionSummaryProps {
 
 function HiveConnectionSummary({ status }: HiveConnectionSummaryProps): ReactElement {
   const statusVariant = resolveStatusVariant(status?.state ?? 'DISCONNECTED');
+  const controlStatusVariant = resolveStatusVariant(status?.controlChannelState ?? 'DISCONNECTED');
 
   return (
     <>
       <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
         <span className="small text-body-secondary">Connection status</span>
         <Badge bg={statusVariant}>{status?.state ?? 'LOADING'}</Badge>
+        <span className="small text-body-secondary">Control channel</span>
+        <Badge bg={controlStatusVariant}>{status?.controlChannelState ?? 'DISCONNECTED'}</Badge>
         {status?.golemId ? <span className="small text-body-secondary">Golem ID: {status.golemId}</span> : null}
       </div>
 
@@ -315,13 +318,34 @@ interface HiveSessionDetailsProps {
   fallbackServerUrl: string | null;
 }
 
+function resolveDetailValue(
+  value: string | number | null | undefined,
+  fallback: string | number = '—',
+): string | number {
+  return value ?? fallback;
+}
+
 function HiveSessionDetails({ status, fallbackServerUrl }: HiveSessionDetailsProps): ReactElement {
+  const detailRows = [
+    ['Server URL', resolveDetailValue(status?.serverUrl, fallbackServerUrl ?? '—')],
+    ['Last connected', resolveDetailValue(status?.lastConnectedAt)],
+    ['Last heartbeat', resolveDetailValue(status?.lastHeartbeatAt)],
+    ['Last token refresh', resolveDetailValue(status?.lastTokenRotatedAt)],
+    ['Last control message', resolveDetailValue(status?.controlChannelLastMessageAt)],
+    ['Buffered commands', resolveDetailValue(status?.bufferedCommandCount, 0)],
+    ['Received commands', resolveDetailValue(status?.receivedCommandCount, 0)],
+    ['Last command ID', resolveDetailValue(status?.lastReceivedCommandId)],
+  ] as const;
+
   return (
     <Col md={6}>
       <div className="small text-body-secondary mb-1">Session details</div>
-      <div className="small">Server URL: {status?.serverUrl ?? fallbackServerUrl ?? '—'}</div>
-      <div className="small">Last connected: {status?.lastConnectedAt ?? '—'}</div>
-      <div className="small">Last heartbeat: {status?.lastHeartbeatAt ?? '—'}</div>
+      {detailRows.map(([label, value]) => (
+        <div key={label} className="small">{label}: {value}</div>
+      ))}
+      {status?.controlChannelLastError ? (
+        <div className="small text-danger">Control error: {status.controlChannelLastError}</div>
+      ) : null}
     </Col>
   );
 }

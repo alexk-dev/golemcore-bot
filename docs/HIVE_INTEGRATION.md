@@ -79,6 +79,8 @@ That file contains bot-owned machine state such as:
 
 The dashboard never receives raw join tokens from `RuntimeConfig.HiveConfig`.
 
+Buffered control commands are persisted separately in `preferences/hive-control-inbox.json`.
+
 ## Dashboard Actions
 
 The dashboard Hive tab now uses dedicated action endpoints:
@@ -100,15 +102,14 @@ The current bot-side slice includes:
 - machine registration against Hive
 - persisted `HiveSessionState`
 - reconnect via refresh-token rotation
-- one-shot heartbeat after join and reconnect
+- periodic heartbeat maintenance
+- control channel connect and reconnect loop
+- buffered control command inbox for transport diagnostics
 - dashboard status and join/reconnect/leave controls
 
 Still pending in the epic:
 
-- control channel,
 - `events:batch`
-- periodic heartbeats
+- command execution via Hive transport
 - runtime event bridge
 - explicit lifecycle signals
-
-are implemented incrementally in the Hive integration epic PR.

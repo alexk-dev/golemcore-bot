@@ -34,5 +34,6 @@ public class HiveSessionState {
     private Instant registeredAt;
     private Instant lastConnectedAt;
     private Instant lastHeartbeatAt;
+    private Instant lastTokenRotatedAt;
     private String lastError;
 }

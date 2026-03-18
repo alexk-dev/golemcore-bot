@@ -15,6 +15,15 @@ export interface HiveStatusResponse {
   heartbeatIntervalSeconds: number | null;
   lastConnectedAt: string | null;
   lastHeartbeatAt: string | null;
+  lastTokenRotatedAt: string | null;
+  controlChannelState: string | null;
+  controlChannelConnectedAt: string | null;
+  controlChannelLastMessageAt: string | null;
+  controlChannelLastError: string | null;
+  lastReceivedCommandId: string | null;
+  lastReceivedCommandAt: string | null;
+  receivedCommandCount: number;
+  bufferedCommandCount: number;
   lastError: string | null;
 }
 

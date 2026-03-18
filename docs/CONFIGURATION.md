@@ -280,6 +280,7 @@ Rules:
 - `bot.hive.*` acts as a managed bootstrap override.
 - When managed bootstrap is active, the dashboard Hive tab becomes read-only and the backend rejects edits to the Hive section.
 - Rotating machine auth state does not belong in `hive.json`; it lives in `preferences/hive-session.json`.
+- Buffered control channel commands live in `preferences/hive-control-inbox.json`.
 
 See: [Hive Integration](HIVE_INTEGRATION.md)
 
