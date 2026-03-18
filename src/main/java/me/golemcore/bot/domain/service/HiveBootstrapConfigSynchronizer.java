@@ -19,7 +19,6 @@ package me.golemcore.bot.domain.service;
  */
 
 import jakarta.annotation.PostConstruct;
-import java.net.URI;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -111,35 +110,12 @@ public class HiveBootstrapConfigSynchronizer {
         if (managedJoinCode == null) {
             return normalizeOptionalString(currentServerUrl);
         }
-        String parsedServerUrl = parseServerUrlFromJoinCode(managedJoinCode);
+        String parsedServerUrl = HiveJoinCodeParser.tryExtractServerUrl(managedJoinCode);
         if (parsedServerUrl != null) {
             return parsedServerUrl;
         }
         log.warn("[Hive] Failed to parse server URL from managed join code");
         return normalizeOptionalString(currentServerUrl);
-    }
-
-    private String parseServerUrlFromJoinCode(String joinCode) {
-        int delimiterIndex = joinCode.indexOf(':');
-        if (delimiterIndex <= 0 || delimiterIndex >= joinCode.length() - 1) {
-            return null;
-        }
-        String serverUrl = joinCode.substring(delimiterIndex + 1).trim();
-        if (serverUrl.isBlank()) {
-            return null;
-        }
-        try {
-            URI uri = URI.create(serverUrl);
-            if (uri.getHost() == null || uri.getScheme() == null) {
-                return null;
-            }
-            if (!"http".equalsIgnoreCase(uri.getScheme()) && !"https".equalsIgnoreCase(uri.getScheme())) {
-                return null;
-            }
-            return stripTrailingSlash(serverUrl);
-        } catch (IllegalArgumentException exception) {
-            return null;
-        }
     }
 
     private String resolveString(String managedValue, String currentValue) {
@@ -155,11 +131,4 @@ public class HiveBootstrapConfigSynchronizer {
         return normalized.isEmpty() ? null : normalized;
     }
 
-    private String stripTrailingSlash(String value) {
-        String normalized = value;
-        while (normalized.endsWith("/")) {
-            normalized = normalized.substring(0, normalized.length() - 1);
-        }
-        return normalized;
-    }
 }

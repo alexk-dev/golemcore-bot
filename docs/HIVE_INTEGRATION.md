@@ -63,16 +63,52 @@ The bot parses the join code by splitting on the first `:`:
 - `autoConnect`
 - `managedByProperties`
 
+## Session State
+
+Persistent machine auth is stored separately in `preferences/hive-session.json`.
+
+That file contains bot-owned machine state such as:
+
+- `golemId`
+- `serverUrl`
+- `controlChannelUrl`
+- access and refresh JWTs
+- token expiration timestamps
+- `heartbeatIntervalSeconds`
+- reconnect metadata such as `lastConnectedAt`, `lastHeartbeatAt`, and `lastError`
+
+The dashboard never receives raw join tokens from `RuntimeConfig.HiveConfig`.
+
+## Dashboard Actions
+
+The dashboard Hive tab now uses dedicated action endpoints:
+
+- `GET /api/hive/status`
+- `POST /api/hive/join`
+- `POST /api/hive/reconnect`
+- `POST /api/hive/leave`
+
+`POST /api/hive/join` accepts a transient `joinCode` field only for the action itself. The value is not persisted into `hive.json`.
+
 ## Current Scope
 
 This document covers config authority and bootstrap semantics.
 
-Transport-specific flows such as:
+The current bot-side slice includes:
 
-- machine registration,
-- token rotation,
-- heartbeat,
+- manual or managed join code parsing
+- machine registration against Hive
+- persisted `HiveSessionState`
+- reconnect via refresh-token rotation
+- one-shot heartbeat after join and reconnect
+- dashboard status and join/reconnect/leave controls
+
+Still pending in the epic:
+
 - control channel,
 - `events:batch`
+- periodic heartbeats
+- runtime event bridge
+- explicit lifecycle signals
 
 are implemented incrementally in the Hive integration epic PR.

@@ -279,7 +279,7 @@ Rules:
 - `RuntimeConfig.HiveConfig` is the effective UI/runtime configuration.
 - `bot.hive.*` acts as a managed bootstrap override.
 - When managed bootstrap is active, the dashboard Hive tab becomes read-only and the backend rejects edits to the Hive section.
-- Rotating machine auth state does not belong in `hive.json`; it will live in a dedicated Hive session store.
+- Rotating machine auth state does not belong in `hive.json`; it lives in `preferences/hive-session.json`.
 
 See: [Hive Integration](HIVE_INTEGRATION.md)
 
@@ -613,7 +613,7 @@ workspace/
 ├── auto/                    # auto mode + plan mode state
 ├── memory/                  # structured memory items (JSONL)
 ├── models/                  # models.json (capabilities)
-├── preferences/             # settings.json, runtime-config.json, admin.json
+├── preferences/             # settings.json, sectioned runtime config, admin.json, hive-session.json
 ├── sessions/                # conversation sessions
 ├── skills/                  # manual skills + marketplace-installed artifacts
 └── usage/                   # usage logs
