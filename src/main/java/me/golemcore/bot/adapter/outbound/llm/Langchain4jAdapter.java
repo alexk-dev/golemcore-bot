@@ -27,6 +27,7 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.ToolDefinition;
+import me.golemcore.bot.domain.service.ToolArtifactService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import me.golemcore.bot.port.outbound.LlmPort;
@@ -70,6 +71,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.Base64;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
@@ -120,6 +122,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     private static final String API_TYPE_ANTHROPIC = "anthropic";
     private static final String API_TYPE_GEMINI = "gemini";
     private static final String GEMINI_THINKING_SIGNATURE_KEY = "thinking_signature";
+    private static final String TOOL_ATTACHMENTS_METADATA_KEY = "toolAttachments";
     private static final String SYNTH_ID_PREFIX = "synth_call_";
     private static final String SCHEMA_KEY_PROPERTIES = "properties";
     private static final java.util.regex.Pattern RESET_SECONDS_PATTERN = java.util.regex.Pattern
@@ -127,6 +130,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
 
     private final RuntimeConfigService runtimeConfigService;
     private final ModelConfigService modelConfig;
+    private final ToolArtifactService toolArtifactService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private ChatModel chatModel;
@@ -484,7 +488,8 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     }
 
     private List<ChatMessage> convertMessages(LlmRequest request, boolean geminiApiType) {
-        return convertMessages(request.getSystemPrompt(), request.getMessages(), geminiApiType);
+        return convertMessages(request.getSystemPrompt(), request.getMessages(), geminiApiType,
+                isVisionCapableRequest(request));
     }
 
     private List<ChatMessage> convertMessagesWithFlattenedToolHistory(LlmRequest request) {
@@ -493,11 +498,12 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
 
     private List<ChatMessage> convertMessagesWithFlattenedToolHistory(LlmRequest request, boolean geminiApiType) {
         List<Message> flattenedMessages = Message.flattenToolMessages(request.getMessages());
-        return convertMessages(request.getSystemPrompt(), flattenedMessages, geminiApiType);
+        return convertMessages(request.getSystemPrompt(), flattenedMessages, geminiApiType,
+                isVisionCapableRequest(request));
     }
 
     private List<ChatMessage> convertMessages(String systemPrompt, List<Message> requestMessages,
-            boolean geminiApiType) {
+            boolean geminiApiType, boolean visionCapableTarget) {
         List<ChatMessage> messages = new ArrayList<>();
         List<Message> normalizedMessages = normalizeMessagesForProvider(requestMessages, geminiApiType);
 
@@ -568,12 +574,21 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                             toolCallId,
                             msg.getToolName(),
                             nonNullText(msg.getContent())));
+                    UserMessage toolVisualContext = visionCapableTarget
+                            ? toToolVisualContextMessage(msg, buildToolVisualContextText(msg))
+                            : null;
+                    if (toolVisualContext != null) {
+                        messages.add(toolVisualContext);
+                    }
                 } else {
                     log.debug("[LLM] Converting orphaned tool message to text: tool={}",
                             msg.getToolName());
                     String toolText = "[Tool: " + nonNullText(msg.getToolName())
                             + "]\n[Result: " + nonNullText(msg.getContent()) + "]";
-                    messages.add(UserMessage.from(toolText));
+                    UserMessage orphanedToolContext = visionCapableTarget
+                            ? toToolVisualContextMessage(msg, toolText)
+                            : null;
+                    messages.add(orphanedToolContext != null ? orphanedToolContext : UserMessage.from(toolText));
                 }
             }
             case "system" -> messages.add(SystemMessage.from(nonNullText(msg.getContent())));
@@ -629,8 +644,25 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         return null;
     }
 
+    private boolean isVisionCapableRequest(LlmRequest request) {
+        String model = request != null && request.getModel() != null && !request.getModel().isBlank()
+                ? request.getModel()
+                : currentModel;
+        if (model == null || model.isBlank() || modelConfig == null) {
+            return false;
+        }
+        return modelConfig.supportsVision(model);
+    }
+
     private String nonNullText(String text) {
         return text != null ? text : "";
+    }
+
+    private String buildToolVisualContextText(Message msg) {
+        String toolName = msg != null && msg.getToolName() != null && !msg.getToolName().isBlank()
+                ? msg.getToolName()
+                : "tool";
+        return "Visual output from tool " + toolName + ".";
     }
 
     private boolean isUnsupportedFunctionRoleError(Throwable throwable) {
@@ -695,6 +727,61 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
 
         if (contents.isEmpty()) {
             return UserMessage.from(msg.getContent() != null ? msg.getContent() : "");
+        }
+
+        return UserMessage.from(contents);
+    }
+
+    @SuppressWarnings("unchecked")
+    private UserMessage toToolVisualContextMessage(Message msg, String text) {
+        if (msg == null || msg.getMetadata() == null || toolArtifactService == null) {
+            return null;
+        }
+
+        Object attachmentsRaw = msg.getMetadata().get(TOOL_ATTACHMENTS_METADATA_KEY);
+        if (!(attachmentsRaw instanceof List<?> attachments)) {
+            return null;
+        }
+
+        List<Content> contents = new ArrayList<>();
+        if (text != null && !text.isBlank()) {
+            contents.add(TextContent.from(text));
+        }
+
+        for (Object attachmentObj : attachments) {
+            if (!(attachmentObj instanceof Map<?, ?> attachmentMap)) {
+                continue;
+            }
+
+            Object typeObj = attachmentMap.get("type");
+            Object pathObj = attachmentMap.get("internalFilePath");
+            if (!(typeObj instanceof String type)
+                    || !(pathObj instanceof String internalFilePath)
+                    || !"image".equals(type)
+                    || internalFilePath.isBlank()) {
+                continue;
+            }
+
+            try {
+                var download = toolArtifactService.getDownload(internalFilePath);
+                String mimeType = download.getMimeType();
+                if (mimeType == null || !mimeType.startsWith("image/")) {
+                    continue;
+                }
+                String base64Data = Base64.getEncoder().encodeToString(download.getData());
+                Image image = Image.builder()
+                        .base64Data(base64Data)
+                        .mimeType(mimeType)
+                        .build();
+                contents.add(ImageContent.from(image));
+            } catch (RuntimeException ex) {
+                log.warn("[LLM] Failed to hydrate tool image attachment '{}': {}", internalFilePath, ex.getMessage());
+            }
+        }
+
+        if (contents.isEmpty()
+                || (contents.size() == 1 && contents.get(0).type() == dev.langchain4j.data.message.ContentType.TEXT)) {
+            return null;
         }
 
         return UserMessage.from(contents);
