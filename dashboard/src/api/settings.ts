@@ -76,12 +76,14 @@ interface RuntimeConfigUiRecord extends UnknownRecord {
   } & UnknownRecord;
   tools?: UnknownRecord;
   voice?: UnknownRecord;
+  hive?: UnknownRecord;
 }
 
 function toUiRuntimeConfig(data: RuntimeConfigUiRecord): RuntimeConfig {
   const cfg: RuntimeConfigUiRecord = {
     ...data,
     plan: typeof data.plan === 'object' && data.plan != null ? { ...data.plan } : {},
+    hive: typeof data.hive === 'object' && data.hive != null ? { ...data.hive } : {},
   };
   if (cfg.telegram) {
     cfg.telegram = {
@@ -201,6 +203,7 @@ export interface RuntimeConfig {
   usage: UsageConfig;
   mcp: McpConfig;
   plan: PlanConfig;
+  hive: HiveConfig;
   autoMode: AutoModeConfig;
   rateLimit: RateLimitConfig;
   security: SecurityConfig;
@@ -336,6 +339,15 @@ export interface PlanConfig {
   maxPlans: number | null;
   maxStepsPerPlan: number | null;
   stopOnFailure: boolean | null;
+}
+
+export interface HiveConfig {
+  enabled: boolean | null;
+  serverUrl: string | null;
+  displayName: string | null;
+  hostLabel: string | null;
+  autoConnect: boolean | null;
+  managedByProperties: boolean | null;
 }
 
 export interface AutoModeConfig {
@@ -482,6 +494,11 @@ export async function updateUsageConfig(config: UsageConfig): Promise<RuntimeCon
 
 export async function updateMcpConfig(config: McpConfig): Promise<RuntimeConfig> {
   const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/mcp', config);
+  return toUiRuntimeConfig(data);
+}
+
+export async function updateHiveConfig(config: HiveConfig): Promise<RuntimeConfig> {
+  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/hive', config);
   return toUiRuntimeConfig(data);
 }
 

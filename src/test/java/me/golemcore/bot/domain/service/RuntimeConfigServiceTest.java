@@ -97,8 +97,8 @@ class RuntimeConfigServiceTest {
         RuntimeConfig second = service.getRuntimeConfig();
 
         assertEquals(first, second);
-        // First call loads all 15 sections, second call returns cached
-        verify(storagePort, atLeast(15)).getText(anyString(), anyString());
+        // First call loads all 16 sections, second call returns cached
+        verify(storagePort, atLeast(16)).getText(anyString(), anyString());
     }
 
     @Test
@@ -694,7 +694,7 @@ class RuntimeConfigServiceTest {
 
         service.updateRuntimeConfig(newConfig);
 
-        verify(storagePort, times(15)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
+        verify(storagePort, times(16)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
 
         RuntimeConfig updated = service.getRuntimeConfig();
         assertEquals("custom/model", updated.getModelRouter().getBalancedModel());
@@ -787,7 +787,7 @@ class RuntimeConfigServiceTest {
         assertEquals(20, code.getCode().length());
         assertFalse(code.isUsed());
         assertNotNull(code.getCreatedAt());
-        verify(storagePort, atLeast(15)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
+        verify(storagePort, atLeast(16)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
     }
 
     @Test
@@ -1029,6 +1029,21 @@ class RuntimeConfigServiceTest {
         assertFalse(service.isPlanStopOnFailure());
     }
 
+    @Test
+    void shouldReturnConfiguredHiveSettings() throws Exception {
+        RuntimeConfig.HiveConfig hive = RuntimeConfig.HiveConfig.builder()
+                .enabled(true)
+                .serverUrl("https://hive.example.com")
+                .autoConnect(true)
+                .managedByProperties(true)
+                .build();
+        persistedSections.put("hive.json", objectMapper.writeValueAsString(hive));
+
+        assertTrue(service.getHiveConfig().getEnabled());
+        assertEquals("https://hive.example.com", service.getHiveConfig().getServerUrl());
+        assertTrue(service.isHiveManagedByProperties());
+    }
+
     // ==================== Section Validation ====================
 
     @Test
@@ -1075,6 +1090,7 @@ class RuntimeConfigServiceTest {
         assertEquals("model-router.json", RuntimeConfig.ConfigSection.MODEL_ROUTER.getFileName());
         assertEquals("auto-mode.json", RuntimeConfig.ConfigSection.AUTO_MODE.getFileName());
         assertEquals("plan.json", RuntimeConfig.ConfigSection.PLAN.getFileName());
+        assertEquals("hive.json", RuntimeConfig.ConfigSection.HIVE.getFileName());
     }
 
     @Test
@@ -1086,6 +1102,8 @@ class RuntimeConfigServiceTest {
                 RuntimeConfig.ConfigSection.fromFileId("model-router").get());
         assertTrue(RuntimeConfig.ConfigSection.fromFileId("plan").isPresent());
         assertEquals(RuntimeConfig.ConfigSection.PLAN, RuntimeConfig.ConfigSection.fromFileId("plan").get());
+        assertTrue(RuntimeConfig.ConfigSection.fromFileId("hive").isPresent());
+        assertEquals(RuntimeConfig.ConfigSection.HIVE, RuntimeConfig.ConfigSection.fromFileId("hive").get());
     }
 
     @Test
@@ -1116,6 +1134,13 @@ class RuntimeConfigServiceTest {
                 .build();
         persistedSections.put("voice.json", objectMapper.writeValueAsString(voice));
 
+        RuntimeConfig.HiveConfig hive = RuntimeConfig.HiveConfig.builder()
+                .enabled(true)
+                .serverUrl("https://hive.example.com")
+                .managedByProperties(true)
+                .build();
+        persistedSections.put("hive.json", objectMapper.writeValueAsString(hive));
+
         RuntimeConfig config = service.getRuntimeConfig();
 
         // Verify each section loaded correctly
@@ -1123,6 +1148,9 @@ class RuntimeConfigServiceTest {
         assertEquals("custom/balanced", config.getModelRouter().getBalancedModel());
         assertTrue(config.getVoice().getEnabled());
         assertEquals("custom-voice", config.getVoice().getVoiceId());
+        assertTrue(config.getHive().getEnabled());
+        assertEquals("https://hive.example.com", config.getHive().getServerUrl());
+        assertTrue(config.getHive().getManagedByProperties());
     }
 
     @Test
@@ -1139,5 +1167,6 @@ class RuntimeConfigServiceTest {
         assertTrue(persistedSections.containsKey("llm.json"));
         assertTrue(persistedSections.containsKey("tools.json"));
         assertTrue(persistedSections.containsKey("plan.json"));
+        assertTrue(persistedSections.containsKey("hive.json"));
     }
 }

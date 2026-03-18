@@ -70,6 +70,7 @@ public class BotProperties {
     private WebhooksProperties webhooks = new WebhooksProperties();
     private UpdateProperties update = new UpdateProperties();
     private PluginsProperties plugins = new PluginsProperties();
+    private HiveProperties hive = new HiveProperties();
 
     @Data
     public static class LlmProperties {
@@ -261,6 +262,15 @@ public class BotProperties {
         private String updatesPath = "${bot.storage.local.base-path}/updates";
         private int maxKeptVersions = 3;
         private java.time.Duration checkInterval = java.time.Duration.ofHours(1);
+    }
+
+    @Data
+    public static class HiveProperties {
+        private Boolean enabled;
+        private String joinCode = "";
+        private String displayName = "";
+        private String hostLabel = "";
+        private Boolean autoConnectOnStartup;
     }
 
     // ==================== PLUGINS ====================
