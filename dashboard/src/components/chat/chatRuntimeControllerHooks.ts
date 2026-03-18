@@ -3,7 +3,7 @@ import { getActiveSession } from '../../api/sessions';
 import type { useChatRuntimeStore } from '../../store/chatRuntimeStore';
 import type { TurnMetadata } from '../../store/contextPanelStore';
 import { isLegacyCompatibleConversationKey, normalizeConversationKey } from '../../utils/conversationKey';
-import type { AssistantHint, SocketMessage } from './chatRuntimeTypes';
+import type { AssistantHint, LiveProgressUpdate, SocketMessage } from './chatRuntimeTypes';
 
 const RECONNECT_DELAY_MS = 3000;
 const TYPING_RESET_MS = 3000;
@@ -15,6 +15,7 @@ interface SocketMessageHandlerConfig {
   setRunning: (sessionId: string, running: boolean) => void;
   setTyping: (sessionId: string, typing: boolean) => void;
   clearTypingTimer: (sessionId: string) => void;
+  applyProgressUpdate: (sessionId: string, progress: LiveProgressUpdate | null) => void;
   applyTurnMetadataPatch: (sessionId: string, hint: AssistantHint) => void;
   setTurnMetadata: (meta: Partial<TurnMetadata>) => void;
   applyAssistantText: (sessionId: string, text: string, hint: AssistantHint | null, isFinal: boolean) => void;
@@ -91,6 +92,7 @@ export function useSocketMessageHandler({
   setRunning,
   setTyping,
   clearTypingTimer,
+  applyProgressUpdate,
   applyTurnMetadataPatch,
   setTurnMetadata,
   applyAssistantText,
@@ -124,6 +126,25 @@ export function useSocketMessageHandler({
       return;
     }
 
+    if (data.type === 'system_event' && data.eventType === 'progress_update') {
+      clearTypingTimer(sessionId);
+      setTyping(sessionId, false);
+      if (data.progressType === 'clear') {
+        applyProgressUpdate(sessionId, null);
+        setRunning(sessionId, false);
+        return;
+      }
+      if (data.progressType === 'intent' || data.progressType === 'summary') {
+        applyProgressUpdate(sessionId, {
+          type: data.progressType,
+          text: data.text ?? '',
+          metadata: data.progressMetadata,
+        });
+        setRunning(sessionId, true);
+      }
+      return;
+    }
+
     if (data.type !== 'assistant_chunk' && data.type !== 'assistant_done') {
       return;
     }
@@ -144,6 +165,7 @@ export function useSocketMessageHandler({
   }, [
     activeSessionIdRef,
     applyAssistantText,
+    applyProgressUpdate,
     applyTurnMetadataPatch,
     clearTypingTimer,
     markFirstPendingAsSent,

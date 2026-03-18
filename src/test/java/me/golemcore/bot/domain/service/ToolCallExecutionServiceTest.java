@@ -10,8 +10,6 @@ import me.golemcore.bot.domain.model.ToolArtifact;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.infrastructure.config.BotProperties;
-import me.golemcore.bot.plugin.runtime.ChannelRegistry;
-import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.ConfirmationPort;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -49,7 +47,6 @@ class ToolCallExecutionServiceTest {
     private ToolConfirmationPolicy confirmationPolicy;
     private ConfirmationPort confirmationPort;
     private BotProperties properties;
-    private ChannelPort channelPort;
     private ToolArtifactService toolArtifactService;
     private ToolCallExecutionService service;
 
@@ -60,12 +57,10 @@ class ToolCallExecutionServiceTest {
         confirmationPort = mock(ConfirmationPort.class);
         properties = new BotProperties();
         properties.getAutoCompact().setMaxToolResultChars(MAX_TOOL_RESULT_CHARS);
-        channelPort = mock(ChannelPort.class);
         toolArtifactService = mock(ToolArtifactService.class);
 
         when(toolComponent.getToolName()).thenReturn(TOOL_NAME);
         when(toolComponent.isEnabled()).thenReturn(true);
-        when(channelPort.getChannelType()).thenReturn(CHANNEL_TYPE);
         when(confirmationPort.isAvailable()).thenReturn(false);
         when(confirmationPolicy.requiresConfirmation(any())).thenReturn(false);
         when(confirmationPolicy.isEnabled()).thenReturn(true);
@@ -90,7 +85,6 @@ class ToolCallExecutionServiceTest {
                 confirmationPolicy,
                 confirmationPort,
                 properties,
-                new ChannelRegistry(List.of(channelPort)),
                 toolArtifactService);
     }
 
@@ -559,64 +553,27 @@ class ToolCallExecutionServiceTest {
         assertEquals(ToolFailureKind.CONFIRMATION_DENIED, toolResult.getFailureKind());
     }
 
-    // ==================== notification ====================
+    // ==================== progress notifications are loop-owned
+    // ====================
 
     @Test
-    void shouldNotifyToolExecution() {
+    void shouldNotSendChannelNotificationWhenConfirmationPolicyDisabled() {
         AgentContext context = buildContext();
         Message.ToolCall toolCall = buildToolCall(TOOL_NAME, Map.of());
         when(confirmationPolicy.isEnabled()).thenReturn(false);
-        when(confirmationPolicy.isNotableAction(any())).thenReturn(true);
-        when(confirmationPolicy.describeAction(any())).thenReturn("Run command: ls -la");
-        when(channelPort.sendMessage(anyString(), anyString()))
-                .thenReturn(CompletableFuture.completedFuture(null));
-        ToolResult successResult = ToolResult.success("ok");
-        when(toolComponent.execute(any())).thenReturn(CompletableFuture.completedFuture(successResult));
-
-        ToolCallExecutionResult result = service.execute(context, toolCall);
-
-        assertNotNull(result);
-        assertTrue(result.toolResult().isSuccess());
-        verify(channelPort).sendMessage(eq(CHAT_ID), anyString());
-    }
-
-    @Test
-    void shouldNotNotifyWhenConfirmationPolicyEnabled() {
-        AgentContext context = buildContext();
-        Message.ToolCall toolCall = buildToolCall(TOOL_NAME, Map.of());
-        when(confirmationPolicy.isEnabled()).thenReturn(true);
         when(confirmationPolicy.isNotableAction(any())).thenReturn(true);
         ToolResult successResult = ToolResult.success("ok");
         when(toolComponent.execute(any())).thenReturn(CompletableFuture.completedFuture(successResult));
 
         service.execute(context, toolCall);
-
-        verify(channelPort, never()).sendMessage(anyString(), anyString());
     }
 
     @Test
-    void shouldNotNotifyWhenActionNotNotable() {
-        AgentContext context = buildContext();
-        Message.ToolCall toolCall = buildToolCall(TOOL_NAME, Map.of());
-        when(confirmationPolicy.isEnabled()).thenReturn(false);
-        when(confirmationPolicy.isNotableAction(any())).thenReturn(false);
-        ToolResult successResult = ToolResult.success("ok");
-        when(toolComponent.execute(any())).thenReturn(CompletableFuture.completedFuture(successResult));
-
-        service.execute(context, toolCall);
-
-        verify(channelPort, never()).sendMessage(anyString(), anyString());
-    }
-
-    @Test
-    void shouldNotCrashWhenNotificationFails() {
+    void shouldExecuteNormallyWithoutToolLevelNotifications() {
         AgentContext context = buildContext();
         Message.ToolCall toolCall = buildToolCall(TOOL_NAME, Map.of());
         when(confirmationPolicy.isEnabled()).thenReturn(false);
         when(confirmationPolicy.isNotableAction(any())).thenReturn(true);
-        when(confirmationPolicy.describeAction(any())).thenReturn("action");
-        when(channelPort.sendMessage(anyString(), anyString()))
-                .thenThrow(new RuntimeException("Channel error"));
         ToolResult successResult = ToolResult.success("ok");
         when(toolComponent.execute(any())).thenReturn(CompletableFuture.completedFuture(successResult));
 

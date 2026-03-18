@@ -298,6 +298,7 @@ export default function ChatWindow(): ReactElement {
           hasMoreHistory={sessionState.hasMoreHistory}
           messages={messages}
           typing={sessionState.typing}
+          progress={sessionState.progress}
           modelsConfig={modelsConfig}
           onScroll={handleScroll}
           onRetryHistory={reloadHistory}

@@ -3,6 +3,8 @@ package me.golemcore.bot.adapter.inbound.web;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.ProgressUpdate;
+import me.golemcore.bot.domain.model.ProgressUpdateType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -155,6 +157,32 @@ class WebChannelAdapterTest {
 
         adapter.registerSession("chat-1", session);
         adapter.showTyping("chat-1");
+    }
+
+    @Test
+    void shouldSendProgressUpdateToActiveSession() throws Exception {
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.isOpen()).thenReturn(true);
+        when(session.send(any())).thenReturn(Mono.empty());
+        when(session.textMessage(any(String.class)))
+                .thenReturn(mock(org.springframework.web.reactive.socket.WebSocketMessage.class));
+
+        adapter.registerSession("chat-progress", session);
+        adapter.sendProgressUpdate("chat-progress", new ProgressUpdate(
+                ProgressUpdateType.SUMMARY,
+                "Grouped the recent tool calls into one update.",
+                Map.of("toolCount", 8)))
+                .join();
+
+        ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
+        verify(session).textMessage(payloadCaptor.capture());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = objectMapper.readValue(payloadCaptor.getValue(), Map.class);
+        assertEquals("system_event", payload.get("type"));
+        assertEquals("progress_update", payload.get("eventType"));
+        assertEquals("summary", payload.get("progressType"));
+        assertEquals("Grouped the recent tool calls into one update.", payload.get("text"));
     }
 
     @Test

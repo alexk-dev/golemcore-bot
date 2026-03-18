@@ -371,12 +371,17 @@ public class SessionRunCoordinator {
         }
 
         private Message dequeueInternalRetryLocked() {
-            Optional<Message> internalRetry = queuedFollowUpMessages.stream()
-                    .filter(message -> ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY
-                            .equals(resolveQueueKind(message)))
-                    .findFirst();
-            internalRetry.ifPresent(queuedFollowUpMessages::remove);
-            return internalRetry.orElse(null);
+            Message internalRetry = null;
+            for (Message queuedMessage : queuedFollowUpMessages) {
+                if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(resolveQueueKind(queuedMessage))) {
+                    internalRetry = queuedMessage;
+                    break;
+                }
+            }
+            if (internalRetry != null) {
+                queuedFollowUpMessages.remove(internalRetry);
+            }
+            return internalRetry;
         }
 
         private Message mergeQueuedFollowUpMessagesLocked() {

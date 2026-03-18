@@ -24,7 +24,6 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -154,7 +153,7 @@ class SessionRunCoordinatorStopIntegrationTest {
                 null,
                 runtimeConfigService,
                 null,
-                new RuntimeEventService(Clock.fixed(NOW, ZoneOffset.UTC), List.of()),
+                new RuntimeEventService(Clock.fixed(NOW, ZoneOffset.UTC)),
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
 

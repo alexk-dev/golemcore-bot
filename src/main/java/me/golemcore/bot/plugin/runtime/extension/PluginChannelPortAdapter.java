@@ -1,5 +1,6 @@
 package me.golemcore.bot.plugin.runtime.extension;
 
+import me.golemcore.bot.domain.model.ProgressUpdate;
 import me.golemcore.bot.port.inbound.ChannelPort;
 
 import java.util.Map;
@@ -58,6 +59,11 @@ public final class PluginChannelPortAdapter implements ChannelPort {
     @Override
     public CompletableFuture<Void> sendVoice(String chatId, byte[] voiceData) {
         return delegate.sendVoice(chatId, voiceData);
+    }
+
+    @Override
+    public CompletableFuture<Void> sendProgressUpdate(String chatId, ProgressUpdate update) {
+        return delegate.sendProgressUpdate(chatId, mapper.toPluginProgressUpdate(update));
     }
 
     @Override

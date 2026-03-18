@@ -166,7 +166,7 @@ class ActiveSessionPointerServiceTest {
     private static final class TrackingStoragePort implements StoragePort {
 
         private final AtomicInteger concurrentWrites = new AtomicInteger();
-        private final AtomicInteger maxObservedConcurrentWrites = new AtomicInteger();
+        private final AtomicInteger maxConcurrentWritesCounter = new AtomicInteger();
 
         @Override
         public CompletableFuture<Void> putObject(String directory, String path, byte[] content) {
@@ -212,7 +212,7 @@ class ActiveSessionPointerServiceTest {
         public CompletableFuture<Void> putTextAtomic(String directory, String path, String content, boolean backup) {
             return CompletableFuture.runAsync(() -> {
                 int active = concurrentWrites.incrementAndGet();
-                maxObservedConcurrentWrites.accumulateAndGet(active, Math::max);
+                maxConcurrentWritesCounter.accumulateAndGet(active, Math::max);
                 try {
                     Thread.sleep(75);
                 } catch (InterruptedException e) {
@@ -230,7 +230,7 @@ class ActiveSessionPointerServiceTest {
         }
 
         int maxConcurrentWrites() {
-            return maxObservedConcurrentWrites.get();
+            return maxConcurrentWritesCounter.get();
         }
     }
 }

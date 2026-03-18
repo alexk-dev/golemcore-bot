@@ -2,7 +2,7 @@ import type { ReactElement, RefObject } from 'react';
 import { FiMessageSquare } from 'react-icons/fi';
 import type { ModelsConfig } from '../../api/models';
 import { buildModelTitle, formatModelDisplayLabel } from '../../utils/modelLabel';
-import type { ChatMessage } from './chatRuntimeTypes';
+import type { ChatMessage, LiveProgressUpdate } from './chatRuntimeTypes';
 import MessageBubble from './MessageBubble';
 
 const STARTER_PROMPTS = [
@@ -31,6 +31,7 @@ interface ChatConversationProps {
   hasMoreHistory: boolean;
   messages: ChatMessage[];
   typing: boolean;
+  progress: LiveProgressUpdate | null;
   modelsConfig: ModelsConfig | null | undefined;
   onScroll: () => void;
   onRetryHistory: () => void;
@@ -47,6 +48,7 @@ export function ChatConversation({
   hasMoreHistory,
   messages,
   typing,
+  progress,
   modelsConfig,
   onScroll,
   onRetryHistory,
@@ -142,6 +144,13 @@ export function ChatConversation({
               : undefined}
           />
         ))}
+
+        {progress != null && progress.text.length > 0 && (
+          <div className="alert alert-light border small py-2 px-3 mb-3" role="status" aria-live="polite">
+            <div className="fw-semibold mb-1">{progress.type === 'intent' ? 'Plan' : 'Progress'}</div>
+            <div>{progress.text}</div>
+          </div>
+        )}
 
         {typing && (
           <div className="typing-indicator" role="status" aria-live="polite" aria-label="Assistant is typing">

@@ -272,7 +272,7 @@ class ToolLoopResilienceBddTest {
         Thread worker = new Thread(() -> {
             try {
                 resultRef.set(system.processTurn(context));
-            } catch (Exception exception) {
+            } catch (RuntimeException exception) {
                 failureRef.set(exception);
             }
         }, "tool-loop-stop-test");
@@ -344,7 +344,7 @@ class ToolLoopResilienceBddTest {
         Thread worker = new Thread(() -> {
             try {
                 resultRef.set(system.processTurn(context));
-            } catch (Exception exception) {
+            } catch (RuntimeException exception) {
                 failureRef.set(exception);
             } finally {
                 interruptedAfterReturn.set(Thread.currentThread().isInterrupted());
@@ -420,7 +420,7 @@ class ToolLoopResilienceBddTest {
         Thread worker = new Thread(() -> {
             try {
                 resultRef.set(system.processTurn(context));
-            } catch (Exception exception) {
+            } catch (RuntimeException exception) {
                 failureRef.set(exception);
             }
         }, "tool-loop-retry-stop-test");
@@ -756,7 +756,7 @@ class ToolLoopResilienceBddTest {
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
         when(modelSelectionService.resolveForTier(any()))
                 .thenReturn(new ModelSelectionService.ModelSelection(null, null));
-        RuntimeEventService runtimeEventService = new RuntimeEventService(Clock.fixed(NOW, ZoneOffset.UTC), List.of());
+        RuntimeEventService runtimeEventService = new RuntimeEventService(Clock.fixed(NOW, ZoneOffset.UTC));
 
         return new DefaultToolLoopSystem(
                 llmPort,
