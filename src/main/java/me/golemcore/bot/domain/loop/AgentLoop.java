@@ -24,6 +24,7 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.FailureEvent;
 import me.golemcore.bot.domain.model.FailureKind;
 import me.golemcore.bot.domain.model.FailureSource;
+import me.golemcore.bot.domain.model.FinishReason;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.RoutingOutcome;
@@ -53,7 +54,10 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
@@ -175,6 +179,7 @@ public class AgentLoop {
             try {
                 runLoop(context);
                 ensureFeedback(context);
+                recordAutoRunOutcome(message, context);
             } finally {
                 if (typingTask != null) {
                     typingTask.cancel(false);
@@ -301,6 +306,21 @@ public class AgentLoop {
         copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_SCHEDULE_ID);
         copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_GOAL_ID);
         copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_TASK_ID);
+        copyStringMetadataAttribute(message, context, ContextAttributes.ACTIVE_SKILL_NAME);
+        copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_RUN_ACTIVE_SKILL);
+        copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_REFLECTION_TIER);
+
+        boolean reflectionActive = readMetadataBoolean(message, ContextAttributes.AUTO_REFLECTION_ACTIVE);
+        if (reflectionActive) {
+            context.setAttribute(ContextAttributes.AUTO_REFLECTION_ACTIVE, true);
+        }
+
+        if (message != null && message.getMetadata() != null
+                && message.getMetadata().containsKey(ContextAttributes.AUTO_REFLECTION_TIER_PRIORITY)) {
+            boolean reflectionTierPriority = readMetadataBoolean(message,
+                    ContextAttributes.AUTO_REFLECTION_TIER_PRIORITY);
+            context.setAttribute(ContextAttributes.AUTO_REFLECTION_TIER_PRIORITY, reflectionTierPriority);
+        }
     }
 
     private void copyStringMetadataAttribute(Message message, AgentContext context, String key) {
@@ -327,6 +347,52 @@ public class AgentLoop {
             return null;
         }
         return AutoRunContextSupport.readMetadataString(message.getMetadata(), key);
+    }
+
+    private boolean readMetadataBoolean(Message message, String key) {
+        if (message == null || message.getMetadata() == null || key == null || key.isBlank()) {
+            return false;
+        }
+        Object value = message.getMetadata().get(key);
+        if (value instanceof Boolean booleanValue) {
+            return booleanValue;
+        }
+        if (value instanceof String stringValue && !stringValue.isBlank()) {
+            return Boolean.parseBoolean(stringValue.trim());
+        }
+        return false;
+    }
+
+    private void recordAutoRunOutcome(Message inbound, AgentContext context) {
+        if (!AutoRunContextSupport.isAutoMessage(inbound) || inbound == null || context == null) {
+            return;
+        }
+
+        Map<String, Object> metadata = inbound.getMetadata();
+        if (metadata == null) {
+            metadata = new LinkedHashMap<>();
+            inbound.setMetadata(metadata);
+        }
+
+        String status = determineAutoRunStatus(context);
+        String finishReason = determineAutoRunFinishReason(context);
+        String assistantText = determineAssistantText(context);
+        String activeSkillName = determineActiveSkillName(context);
+        String failureSummary = determineFailureSummary(context);
+        String failureFingerprint = buildFailureFingerprint(failureSummary);
+
+        metadata.put(ContextAttributes.AUTO_RUN_STATUS, status);
+        metadata.put(ContextAttributes.AUTO_RUN_FINISH_REASON, finishReason);
+        if (assistantText != null && !assistantText.isBlank()) {
+            metadata.put(ContextAttributes.AUTO_RUN_ASSISTANT_TEXT, assistantText);
+        }
+        if (activeSkillName != null && !activeSkillName.isBlank()) {
+            metadata.put(ContextAttributes.AUTO_RUN_ACTIVE_SKILL, activeSkillName);
+        }
+        if (failureSummary != null && !failureSummary.isBlank()) {
+            metadata.put(ContextAttributes.AUTO_RUN_FAILURE_SUMMARY, failureSummary);
+            metadata.put(ContextAttributes.AUTO_RUN_FAILURE_FINGERPRINT, failureFingerprint);
+        }
     }
 
     // Inbound messages are handled by SessionRunCoordinator via
@@ -580,6 +646,97 @@ public class AgentLoop {
         }
         Message last = context.getMessages().get(context.getMessages().size() - 1);
         return last.getMetadata() != null && Boolean.TRUE.equals(last.getMetadata().get(ContextAttributes.AUTO_MODE));
+    }
+
+    private String determineAutoRunStatus(AgentContext context) {
+        boolean reflectionActive = Boolean.TRUE.equals(context.getAttribute(ContextAttributes.AUTO_REFLECTION_ACTIVE));
+        boolean failed = hasAutoRunFailure(context);
+        if (reflectionActive) {
+            return failed ? "REFLECTION_FAILED" : "REFLECTION_COMPLETED";
+        }
+        return failed ? "FAILED" : "COMPLETED";
+    }
+
+    private String determineAutoRunFinishReason(AgentContext context) {
+        TurnOutcome outcome = context.getTurnOutcome();
+        FinishReason finishReason = outcome != null ? outcome.getFinishReason() : null;
+        if (finishReason != null) {
+            return finishReason.name();
+        }
+        if (context.getAttribute(ContextAttributes.LLM_ERROR) != null) {
+            return FinishReason.ERROR.name();
+        }
+        return FinishReason.SUCCESS.name();
+    }
+
+    private boolean hasAutoRunFailure(AgentContext context) {
+        if (context == null) {
+            return true;
+        }
+        if (context.getAttribute(ContextAttributes.LLM_ERROR) != null) {
+            return true;
+        }
+        if (!context.getFailures().isEmpty()) {
+            return true;
+        }
+        TurnOutcome outcome = context.getTurnOutcome();
+        return outcome != null && outcome.getFinishReason() == FinishReason.ERROR;
+    }
+
+    private String determineAssistantText(AgentContext context) {
+        if (context == null) {
+            return null;
+        }
+        TurnOutcome outcome = context.getTurnOutcome();
+        if (outcome != null && outcome.getAssistantText() != null && !outcome.getAssistantText().isBlank()) {
+            return outcome.getAssistantText();
+        }
+        OutgoingResponse outgoingResponse = context.getOutgoingResponse();
+        if (outgoingResponse != null && outgoingResponse.getText() != null && !outgoingResponse.getText().isBlank()) {
+            return outgoingResponse.getText();
+        }
+        return null;
+    }
+
+    private String determineFailureSummary(AgentContext context) {
+        if (context == null) {
+            return null;
+        }
+        if (!context.getFailures().isEmpty()) {
+            FailureEvent failure = context.getFailures().get(context.getFailures().size() - 1);
+            return failure.message();
+        }
+        String llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
+        if (llmError != null && !llmError.isBlank()) {
+            return llmError;
+        }
+        TurnOutcome outcome = context.getTurnOutcome();
+        if (outcome != null && outcome.getRoutingOutcome() != null) {
+            return outcome.getRoutingOutcome().getErrorMessage();
+        }
+        return null;
+    }
+
+    private String determineActiveSkillName(AgentContext context) {
+        if (context == null) {
+            return null;
+        }
+        String explicit = context.getAttribute(ContextAttributes.ACTIVE_SKILL_NAME);
+        if (explicit != null && !explicit.isBlank()) {
+            return explicit;
+        }
+        if (context.getActiveSkill() != null && context.getActiveSkill().getName() != null
+                && !context.getActiveSkill().getName().isBlank()) {
+            return context.getActiveSkill().getName();
+        }
+        return null;
+    }
+
+    private String buildFailureFingerprint(String summary) {
+        if (summary == null || summary.isBlank()) {
+            return null;
+        }
+        return summary.trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
     }
 
     private List<AgentSystem> getSortedSystems() {

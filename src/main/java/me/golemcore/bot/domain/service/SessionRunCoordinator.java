@@ -23,6 +23,9 @@ import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.FailureEvent;
+import me.golemcore.bot.domain.model.FailureKind;
+import me.golemcore.bot.domain.model.FailureSource;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.port.outbound.SessionPort;
@@ -242,9 +245,21 @@ public class SessionRunCoordinator {
                 Thread.currentThread().interrupt();
                 log.info("[SessionRunCoordinator] run interrupted: channel={}, chatId={}",
                         inbound.getChannelType(), inbound.getChatId());
+                annotateRunFailure(inbound, new FailureEvent(
+                        FailureSource.SYSTEM,
+                        "SessionRunCoordinator",
+                        FailureKind.TIMEOUT,
+                        "Run interrupted",
+                        Instant.now()));
                 return;
             }
 
+            annotateRunFailure(inbound, new FailureEvent(
+                    FailureSource.SYSTEM,
+                    "SessionRunCoordinator",
+                    FailureKind.EXCEPTION,
+                    e.getMessage(),
+                    Instant.now()));
             log.error("[SessionRunCoordinator] run failed: channel={}, chatId={}: {}",
                     inbound.getChannelType(), inbound.getChatId(), e.getMessage(), e);
         }
@@ -356,15 +371,17 @@ public class SessionRunCoordinator {
         }
 
         private Message dequeueInternalRetryLocked() {
-            java.util.Iterator<Message> iterator = queuedFollowUpMessages.iterator();
-            while (iterator.hasNext()) {
-                Message message = iterator.next();
-                if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(resolveQueueKind(message))) {
-                    iterator.remove();
-                    return message;
+            Message internalRetry = null;
+            for (Message queuedMessage : queuedFollowUpMessages) {
+                if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(resolveQueueKind(queuedMessage))) {
+                    internalRetry = queuedMessage;
+                    break;
                 }
             }
-            return null;
+            if (internalRetry != null) {
+                queuedFollowUpMessages.remove(internalRetry);
+            }
+            return internalRetry;
         }
 
         private Message mergeQueuedFollowUpMessagesLocked() {
@@ -591,6 +608,24 @@ public class SessionRunCoordinator {
         }
         runtimeEventService.emitForSession(session, RuntimeEventType.TURN_INTERRUPT_REQUESTED,
                 Map.of("source", "command.stop"));
+    }
+
+    private void annotateRunFailure(Message inbound, FailureEvent failureEvent) {
+        if (inbound == null || failureEvent == null) {
+            return;
+        }
+        Map<String, Object> metadata = inbound.getMetadata();
+        if (metadata == null) {
+            metadata = new LinkedHashMap<>();
+            inbound.setMetadata(metadata);
+        }
+        metadata.put(ContextAttributes.AUTO_RUN_STATUS, "FAILED");
+        metadata.put(ContextAttributes.AUTO_RUN_FINISH_REASON, "ERROR");
+        if (failureEvent.message() != null && !failureEvent.message().isBlank()) {
+            metadata.put(ContextAttributes.AUTO_RUN_FAILURE_SUMMARY, failureEvent.message());
+            metadata.put(ContextAttributes.AUTO_RUN_FAILURE_FINGERPRINT,
+                    failureEvent.message().trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT));
+        }
     }
 
     private record SessionKey(String channelType, String chatId) {

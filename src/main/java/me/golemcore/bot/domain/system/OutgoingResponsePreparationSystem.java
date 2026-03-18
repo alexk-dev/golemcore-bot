@@ -268,6 +268,14 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
             hints.put("reasoning", reasoning);
         }
 
+        String activeSkillName = context.getAttribute(ContextAttributes.ACTIVE_SKILL_NAME);
+        if (activeSkillName == null && context.getActiveSkill() != null) {
+            activeSkillName = context.getActiveSkill().getName();
+        }
+        if (activeSkillName != null && !activeSkillName.isBlank()) {
+            hints.put("skill", activeSkillName);
+        }
+
         String tier = context.getModelTier();
         hints.put("tier", tier != null ? tier : "balanced");
 

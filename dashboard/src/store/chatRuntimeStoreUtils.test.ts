@@ -14,6 +14,7 @@ function createUserMessage(overrides: Partial<ChatMessage>): ChatMessage {
     content: 'hello',
     model: null,
     tier: null,
+    skill: null,
     reasoning: null,
     attachments: [],
     persisted: false,
@@ -53,6 +54,7 @@ describe('chatRuntimeStoreUtils', () => {
         model: 'openai/o3-mini',
         reasoning: 'high',
         tier: 'smart',
+        skill: 'reviewer-skill',
       },
       attachments: [],
       isFinal: false,
@@ -60,6 +62,7 @@ describe('chatRuntimeStoreUtils', () => {
 
     expect(chunkState.messages).toHaveLength(1);
     expect(chunkState.messages[0].content).toBe('Hel');
+    expect(chunkState.messages[0].skill).toBe('reviewer-skill');
     expect(chunkState.running).toBe(true);
     expect(chunkState.turnMetadata.reasoning).toBe('high');
 

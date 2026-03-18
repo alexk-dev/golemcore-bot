@@ -80,6 +80,7 @@ export interface SchedulerRunMessage {
   hasVoice: boolean;
   model: string | null;
   modelTier: string | null;
+  skill: string | null;
 }
 
 export interface SchedulerRunDetail extends SchedulerRunSummary {

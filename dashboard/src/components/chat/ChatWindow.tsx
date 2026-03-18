@@ -196,6 +196,7 @@ export default function ChatWindow(): ReactElement {
       content: trimmed.length > 0 ? trimmed : fallback,
       model: null,
       tier: null,
+      skill: null,
       reasoning: null,
       attachments: [],
       clientStatus: 'pending',

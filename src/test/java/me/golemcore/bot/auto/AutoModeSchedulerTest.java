@@ -1,12 +1,14 @@
 package me.golemcore.bot.auto;
 
+import me.golemcore.bot.domain.component.SkillComponent;
+import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.AutoModeChannelRegisteredEvent;
 import me.golemcore.bot.domain.model.AutoTask;
-import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ScheduleEntry;
+import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
@@ -38,6 +40,7 @@ import static org.mockito.Mockito.contains;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -56,6 +59,7 @@ class AutoModeSchedulerTest {
     private ChannelPort channelPort;
     private RuntimeConfigService runtimeConfigService;
     private SessionPort sessionPort;
+    private SkillComponent skillComponent;
     private AutoModeScheduler scheduler;
 
     @BeforeEach
@@ -66,22 +70,27 @@ class AutoModeSchedulerTest {
         goalManagementTool = mock(GoalManagementTool.class);
         channelPort = mock(ChannelPort.class);
         sessionPort = mock(SessionPort.class);
+        skillComponent = mock(SkillComponent.class);
 
         when(channelPort.getChannelType()).thenReturn(CHANNEL_TYPE_TELEGRAM);
         when(channelPort.sendMessage(anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
         when(scheduleService.getDueSchedules()).thenReturn(List.of());
         when(sessionRunCoordinator.submit(any(Message.class))).thenReturn(CompletableFuture.completedFuture(null));
+        when(skillComponent.findByName(anyString())).thenReturn(Optional.empty());
 
         runtimeConfigService = mock(RuntimeConfigService.class);
         when(runtimeConfigService.isAutoModeEnabled()).thenReturn(true);
         when(runtimeConfigService.getAutoTaskTimeLimitMinutes()).thenReturn(10);
         when(runtimeConfigService.isAutoNotifyMilestonesEnabled()).thenReturn(true);
         when(runtimeConfigService.isAutoStartEnabled()).thenReturn(false);
+        when(runtimeConfigService.isAutoReflectionEnabled()).thenReturn(true);
+        when(runtimeConfigService.getAutoReflectionModelTier()).thenReturn("deep");
+        when(runtimeConfigService.isAutoReflectionTierPriority()).thenReturn(false);
 
         scheduler = new AutoModeScheduler(
                 autoModeService, scheduleService, sessionRunCoordinator, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort);
+                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort, skillComponent);
     }
 
     @Test
@@ -293,6 +302,301 @@ class AutoModeSchedulerTest {
     }
 
     @Test
+    void shouldIncludeReflectionTierMetadataFromTaskSettings() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+
+        AutoTask task = AutoTask.builder()
+                .id(TASK_ID)
+                .goalId(GOAL_ID)
+                .title("Recover feature X")
+                .reflectionModelTier("deep")
+                .reflectionTierPriority(true)
+                .status(AutoTask.TaskStatus.PENDING)
+                .order(1)
+                .build();
+
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>(List.of(task)))
+                .build();
+        when(autoModeService.findGoalForTask(TASK_ID)).thenReturn(Optional.of(goal));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-task-reflection-tier")
+                .type(ScheduleEntry.ScheduleType.TASK)
+                .targetId(TASK_ID)
+                .cronExpression("0 30 14 * * *")
+                .enabled(true)
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        scheduler.tick();
+
+        ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
+        verify(sessionRunCoordinator).submit(captor.capture());
+        Message sent = captor.getValue();
+        assertEquals("deep", sent.getMetadata().get(ContextAttributes.AUTO_REFLECTION_TIER));
+        assertEquals(true, sent.getMetadata().get(ContextAttributes.AUTO_REFLECTION_TIER_PRIORITY));
+    }
+
+    @Test
+    void shouldTriggerReflectionRunAfterSecondFailure() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+        when(autoModeService.shouldTriggerReflection(GOAL_ID, TASK_ID)).thenReturn(true);
+        when(autoModeService.isReflectionTierPriority(GOAL_ID, TASK_ID)).thenReturn(true);
+        when(autoModeService.resolveTaskReflectionState(GOAL_ID, TASK_ID))
+                .thenReturn(new AutoModeService.TaskReflectionState(
+                        null,
+                        false,
+                        "deep",
+                        true,
+                        "reviewer-skill",
+                        2,
+                        true,
+                        "403 from tool",
+                        "403 from tool",
+                        null));
+        when(skillComponent.findByName("reviewer-skill")).thenReturn(Optional.of(Skill.builder()
+                .name("reviewer-skill")
+                .reflectionTier("coding")
+                .build()));
+        when(autoModeService.resolveReflectionTier(eq(GOAL_ID), eq(TASK_ID), any(Skill.class))).thenReturn("coding");
+
+        AutoTask task = AutoTask.builder()
+                .id(TASK_ID)
+                .goalId(GOAL_ID)
+                .title("Implement feature X")
+                .status(AutoTask.TaskStatus.FAILED)
+                .order(1)
+                .build();
+
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>(List.of(task)))
+                .build();
+        when(autoModeService.findGoalForTask(TASK_ID)).thenReturn(Optional.of(goal));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-task-reflect")
+                .type(ScheduleEntry.ScheduleType.TASK)
+                .targetId(TASK_ID)
+                .cronExpression("0 30 14 * * *")
+                .enabled(true)
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        when(sessionRunCoordinator.submit(any(Message.class))).thenAnswer(invocation -> {
+            Message message = invocation.getArgument(0);
+            if (Boolean.TRUE.equals(message.getMetadata().get(ContextAttributes.AUTO_REFLECTION_ACTIVE))) {
+                message.getMetadata().put(ContextAttributes.AUTO_RUN_STATUS, "REFLECTION_COMPLETED");
+                message.getMetadata().put(ContextAttributes.AUTO_RUN_ASSISTANT_TEXT,
+                        "Use a different tool and verify permissions first");
+            } else {
+                message.getMetadata().put(ContextAttributes.AUTO_RUN_STATUS, "FAILED");
+                message.getMetadata().put(ContextAttributes.AUTO_RUN_FAILURE_SUMMARY, "403 from tool");
+                message.getMetadata().put(ContextAttributes.AUTO_RUN_FAILURE_FINGERPRINT, "403 from tool");
+                message.getMetadata().put(ContextAttributes.AUTO_RUN_ACTIVE_SKILL, "reviewer-skill");
+            }
+            return CompletableFuture.completedFuture(null);
+        });
+
+        scheduler.tick();
+
+        ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
+        verify(sessionRunCoordinator, times(2)).submit(captor.capture());
+        List<Message> submitted = captor.getAllValues();
+        assertNull(submitted.get(0).getMetadata().get(ContextAttributes.AUTO_REFLECTION_ACTIVE));
+        assertEquals(true, submitted.get(1).getMetadata().get(ContextAttributes.AUTO_REFLECTION_ACTIVE));
+        assertEquals("coding", submitted.get(1).getMetadata().get(ContextAttributes.AUTO_REFLECTION_TIER));
+        verify(autoModeService).applyReflectionResult(GOAL_ID, TASK_ID,
+                "Use a different tool and verify permissions first");
+        verify(autoModeService).recordAutoRunFailure(GOAL_ID, TASK_ID, "403 from tool", "403 from tool",
+                "reviewer-skill");
+    }
+
+    @Test
+    void shouldTriggerGoalLevelReflectionForUnplannedGoalAfterRepeatedFailure() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+        when(autoModeService.shouldTriggerReflection(GOAL_ID, null)).thenReturn(true);
+        when(autoModeService.isReflectionTierPriority(GOAL_ID, null)).thenReturn(true);
+        when(autoModeService.resolveTaskReflectionState(GOAL_ID, null))
+                .thenReturn(new AutoModeService.TaskReflectionState(
+                        "deep",
+                        true,
+                        null,
+                        false,
+                        "planner-skill",
+                        2,
+                        true,
+                        "planner timeout",
+                        "planner timeout",
+                        null));
+        when(skillComponent.findByName("planner-skill")).thenReturn(Optional.of(Skill.builder()
+                .name("planner-skill")
+                .reflectionTier("coding")
+                .build()));
+        when(autoModeService.resolveReflectionTier(eq(GOAL_ID), eq(null), any(Skill.class))).thenReturn("deep");
+
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .reflectionModelTier("deep")
+                .reflectionTierPriority(true)
+                .tasks(new ArrayList<>())
+                .build();
+        when(autoModeService.getGoal(GOAL_ID)).thenReturn(Optional.of(goal));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-goal-reflect")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId(GOAL_ID)
+                .cronExpression(TEST_CRON)
+                .enabled(true)
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        when(sessionRunCoordinator.submit(any(Message.class))).thenAnswer(invocation -> {
+            Message message = invocation.getArgument(0);
+            if (Boolean.TRUE.equals(message.getMetadata().get(ContextAttributes.AUTO_REFLECTION_ACTIVE))) {
+                message.getMetadata().put(ContextAttributes.AUTO_RUN_STATUS, "REFLECTION_COMPLETED");
+                message.getMetadata().put(ContextAttributes.AUTO_RUN_ASSISTANT_TEXT,
+                        "Ask for a smaller planning slice and enumerate blockers first");
+            } else {
+                message.getMetadata().put(ContextAttributes.AUTO_RUN_STATUS, "FAILED");
+                message.getMetadata().put(ContextAttributes.AUTO_RUN_FAILURE_SUMMARY, "planner timeout");
+                message.getMetadata().put(ContextAttributes.AUTO_RUN_FAILURE_FINGERPRINT, "planner timeout");
+                message.getMetadata().put(ContextAttributes.AUTO_RUN_ACTIVE_SKILL, "planner-skill");
+            }
+            return CompletableFuture.completedFuture(null);
+        });
+
+        scheduler.tick();
+
+        ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
+        verify(sessionRunCoordinator, times(2)).submit(captor.capture());
+        List<Message> submitted = captor.getAllValues();
+        assertNull(submitted.get(0).getMetadata().get(ContextAttributes.AUTO_TASK_ID));
+        assertEquals(true, submitted.get(1).getMetadata().get(ContextAttributes.AUTO_REFLECTION_ACTIVE));
+        assertNull(submitted.get(1).getMetadata().get(ContextAttributes.AUTO_TASK_ID));
+        assertEquals("deep", submitted.get(1).getMetadata().get(ContextAttributes.AUTO_REFLECTION_TIER));
+        assertTrue(submitted.get(1).getContent().contains("planning goal"));
+        verify(autoModeService).recordAutoRunFailure(GOAL_ID, null, "planner timeout", "planner timeout",
+                "planner-skill");
+        verify(autoModeService).applyReflectionResult(GOAL_ID, null,
+                "Ask for a smaller planning slice and enumerate blockers first");
+    }
+
+    @Test
+    void shouldFallbackToConfiguredReflectionTierWhenLastUsedSkillIsUnavailable() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+        when(autoModeService.shouldTriggerReflection(GOAL_ID, TASK_ID)).thenReturn(true);
+        when(autoModeService.isReflectionTierPriority(GOAL_ID, TASK_ID)).thenReturn(false);
+        when(autoModeService.resolveTaskReflectionState(GOAL_ID, TASK_ID))
+                .thenReturn(new AutoModeService.TaskReflectionState(
+                        "deep",
+                        false,
+                        "smart",
+                        false,
+                        "missing-skill",
+                        2,
+                        true,
+                        "tool timeout",
+                        "tool timeout",
+                        null));
+        when(skillComponent.findByName("missing-skill")).thenReturn(Optional.empty());
+        when(autoModeService.resolveReflectionTier(GOAL_ID, TASK_ID, null)).thenReturn("deep");
+
+        AutoTask task = AutoTask.builder()
+                .id(TASK_ID)
+                .goalId(GOAL_ID)
+                .title("Implement feature X")
+                .status(AutoTask.TaskStatus.FAILED)
+                .order(1)
+                .build();
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>(List.of(task)))
+                .build();
+        when(autoModeService.findGoalForTask(TASK_ID)).thenReturn(Optional.of(goal));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-task-reflect-fallback")
+                .type(ScheduleEntry.ScheduleType.TASK)
+                .targetId(TASK_ID)
+                .cronExpression("0 30 14 * * *")
+                .enabled(true)
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        when(sessionRunCoordinator.submit(any(Message.class))).thenAnswer(invocation -> {
+            Message message = invocation.getArgument(0);
+            if (Boolean.TRUE.equals(message.getMetadata().get(ContextAttributes.AUTO_REFLECTION_ACTIVE))) {
+                message.getMetadata().put(ContextAttributes.AUTO_RUN_STATUS, "REFLECTION_COMPLETED");
+                message.getMetadata().put(ContextAttributes.AUTO_RUN_ASSISTANT_TEXT,
+                        "Use the goal-level fallback strategy");
+            } else {
+                message.getMetadata().put(ContextAttributes.AUTO_RUN_STATUS, "FAILED");
+                message.getMetadata().put(ContextAttributes.AUTO_RUN_FAILURE_SUMMARY, "tool timeout");
+                message.getMetadata().put(ContextAttributes.AUTO_RUN_FAILURE_FINGERPRINT, "tool timeout");
+                message.getMetadata().put(ContextAttributes.AUTO_RUN_ACTIVE_SKILL, "missing-skill");
+            }
+            return CompletableFuture.completedFuture(null);
+        });
+
+        scheduler.tick();
+
+        ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
+        verify(sessionRunCoordinator, times(2)).submit(captor.capture());
+        List<Message> submitted = captor.getAllValues();
+        assertEquals("deep", submitted.get(1).getMetadata().get(ContextAttributes.AUTO_REFLECTION_TIER));
+        verify(autoModeService).applyReflectionResult(GOAL_ID, TASK_ID, "Use the goal-level fallback strategy");
+    }
+
+    @Test
+    void shouldMarkFailureWhenScheduleTimesOut() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+
+        AutoTask task = AutoTask.builder()
+                .id(TASK_ID)
+                .goalId(GOAL_ID)
+                .title("Implement feature X")
+                .status(AutoTask.TaskStatus.PENDING)
+                .order(1)
+                .build();
+
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>(List.of(task)))
+                .build();
+        when(autoModeService.findGoalForTask(TASK_ID)).thenReturn(Optional.of(goal));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-task-timeout")
+                .type(ScheduleEntry.ScheduleType.TASK)
+                .targetId(TASK_ID)
+                .cronExpression("0 30 14 * * *")
+                .enabled(true)
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+        when(runtimeConfigService.getAutoTaskTimeLimitMinutes()).thenReturn(0);
+        when(sessionRunCoordinator.submit(any(Message.class))).thenReturn(new CompletableFuture<>());
+
+        scheduler.tick();
+
+        verify(autoModeService).recordAutoRunFailure(eq(GOAL_ID), eq(TASK_ID), contains("timed out"), eq("timeout"),
+                eq(null));
+    }
+
+    @Test
     void shouldProcessStandaloneTaskScheduleStoredInInboxGoal() {
         when(autoModeService.isAutoModeEnabled()).thenReturn(true);
 
@@ -334,10 +638,9 @@ class AutoModeSchedulerTest {
     }
 
     @Test
-    void shouldSkipTickWhenExecutionInProgress() {
+    void shouldSkipTickWhenExecutionInProgress() throws Exception {
         when(autoModeService.isAutoModeEnabled()).thenReturn(true);
 
-        // Simulate a long-running schedule that blocks
         ScheduleEntry schedule = ScheduleEntry.builder()
                 .id("sched-goal-slow")
                 .type(ScheduleEntry.ScheduleType.GOAL)
@@ -354,20 +657,29 @@ class AutoModeSchedulerTest {
                 .createdAt(Instant.now())
                 .build();
         when(autoModeService.getGoal(GOAL_ID)).thenReturn(Optional.of(goal));
-
-        // First tick returns a due schedule, second tick should find executing=true
-        // We can't truly test concurrency in a unit test, but we can test the flag
-        // mechanism
         when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
 
+        CompletableFuture<Void> completion = new CompletableFuture<>();
+        CountDownLatch submitStarted = new CountDownLatch(1);
+        CountDownLatch allowFinish = new CountDownLatch(1);
+        when(sessionRunCoordinator.submit(any(Message.class))).thenAnswer(invocation -> {
+            submitStarted.countDown();
+            allowFinish.await(1, TimeUnit.SECONDS);
+            return completion;
+        });
+
+        Thread firstTick = new Thread(scheduler::tick);
+        firstTick.start();
+        assertTrue(submitStarted.await(1, TimeUnit.SECONDS));
+
         scheduler.tick();
 
-        // After tick completes, executing should be false again
-        // Next tick should work normally
-        scheduler.tick();
+        verify(sessionRunCoordinator, times(1)).submit(any(Message.class));
+        verify(scheduleService, times(1)).getDueSchedules();
 
-        // Both ticks should have processed (no concurrent blocking in sequential test)
-        verify(sessionRunCoordinator, org.mockito.Mockito.times(2)).submit(any(Message.class));
+        completion.complete(null);
+        allowFinish.countDown();
+        firstTick.join(1000);
     }
 
     @Test
@@ -559,8 +871,6 @@ class AutoModeSchedulerTest {
         verify(sessionRunCoordinator, never()).submit(any(Message.class));
     }
 
-    // ===== Channel registration =====
-
     @Test
     void registerChannelStoresChannelInfo() {
         scheduler.registerChannel(CHANNEL_TYPE_TELEGRAM, "chat-123");
@@ -597,8 +907,6 @@ class AutoModeSchedulerTest {
         verify(channelPort, never()).sendMessage(anyString(), anyString());
     }
 
-    // ===== Event listener =====
-
     @Test
     void onChannelRegisteredDelegatesToRegisterChannel() {
         AutoModeChannelRegisteredEvent event = new AutoModeChannelRegisteredEvent(CHANNEL_TYPE_TELEGRAM,
@@ -609,8 +917,6 @@ class AutoModeSchedulerTest {
         scheduler.sendMilestoneNotification("Event test");
         verify(channelPort).sendMessage(eq("chat-event-123"), contains("Event test"));
     }
-
-    // ===== Notification failure handling =====
 
     @Test
     void sendMilestoneNotificationHandlesChannelNotFound() {
@@ -628,8 +934,6 @@ class AutoModeSchedulerTest {
 
         assertDoesNotThrow(() -> scheduler.sendMilestoneNotification("Should handle error"));
     }
-
-    // ===== Tick with channel info =====
 
     @Test
     void tickUsesRegisteredChannelForChatId() {
@@ -696,18 +1000,14 @@ class AutoModeSchedulerTest {
         assertEquals("auto", sent.getChannelType());
     }
 
-    // ===== Shutdown =====
-
     @Test
     void shutdownDoesNotThrowWhenNotInitialized() {
         AutoModeScheduler freshScheduler = new AutoModeScheduler(
                 autoModeService, scheduleService, sessionRunCoordinator, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort);
+                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort, skillComponent);
 
         assertDoesNotThrow(freshScheduler::shutdown);
     }
-
-    // ===== Auto-start =====
 
     @Test
     void shouldAutoStartWhenEnabledInConfig() {
@@ -716,7 +1016,7 @@ class AutoModeSchedulerTest {
 
         AutoModeScheduler newScheduler = new AutoModeScheduler(
                 autoModeService, scheduleService, sessionRunCoordinator, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort);
+                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort, skillComponent);
 
         newScheduler.init();
 
@@ -731,7 +1031,7 @@ class AutoModeSchedulerTest {
 
         AutoModeScheduler newScheduler = new AutoModeScheduler(
                 autoModeService, scheduleService, sessionRunCoordinator, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort);
+                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort, skillComponent);
 
         newScheduler.init();
 
@@ -747,7 +1047,7 @@ class AutoModeSchedulerTest {
 
         AutoModeScheduler newScheduler = new AutoModeScheduler(
                 autoModeService, scheduleService, sessionRunCoordinator, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort);
+                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort, skillComponent);
 
         newScheduler.init();
 
@@ -762,7 +1062,7 @@ class AutoModeSchedulerTest {
 
         AutoModeScheduler newScheduler = new AutoModeScheduler(
                 autoModeService, scheduleService, sessionRunCoordinator, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort);
+                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort, skillComponent);
 
         newScheduler.init();
 
@@ -809,6 +1109,6 @@ class AutoModeSchedulerTest {
         scheduler.tick();
         scheduler.tick();
 
-        verify(sessionRunCoordinator, org.mockito.Mockito.times(1)).submit(any(Message.class));
+        verify(sessionRunCoordinator, times(1)).submit(any(Message.class));
     }
 }

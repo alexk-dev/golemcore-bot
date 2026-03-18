@@ -41,12 +41,27 @@ public class AutoTask {
     private String title;
     private String description;
     private String prompt;
+    private String reflectionModelTier;
+    private boolean reflectionTierPriority;
 
     @Builder.Default
     private TaskStatus status = TaskStatus.PENDING;
 
     private String result;
     private int order;
+
+    @Builder.Default
+    private int consecutiveFailureCount = 0;
+
+    @Builder.Default
+    private boolean reflectionRequired = false;
+
+    private String lastFailureSummary;
+    private String lastFailureFingerprint;
+    private Instant lastFailureAt;
+    private String reflectionStrategy;
+    private String lastUsedSkillName;
+    private Instant lastReflectionAt;
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -55,10 +70,11 @@ public class AutoTask {
      */
     @JsonIgnore
     public String getExecutionPrompt() {
-        if (prompt != null && !prompt.isBlank()) {
-            return prompt;
+        String basePrompt = prompt != null && !prompt.isBlank() ? prompt : title;
+        if (reflectionStrategy == null || reflectionStrategy.isBlank()) {
+            return basePrompt;
         }
-        return title;
+        return basePrompt + "\n\nRecovery strategy from previous reflection:\n" + reflectionStrategy;
     }
 
     public enum TaskStatus {

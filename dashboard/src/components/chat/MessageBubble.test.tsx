@@ -32,6 +32,30 @@ describe('MessageBubble', () => {
     expect(html).toContain('Smart');
   });
 
+  it('renders the skill badge only when skill metadata is present', () => {
+    const htmlWithSkill = renderToStaticMarkup(
+      <MessageBubble
+        role="assistant"
+        content="Final answer"
+        model="openai/o3-mini"
+        tier="smart"
+        skill="reviewer-skill"
+      />,
+    );
+    const htmlWithoutSkill = renderToStaticMarkup(
+      <MessageBubble
+        role="assistant"
+        content="Final answer"
+        model="openai/o3-mini"
+        tier="smart"
+        skill={null}
+      />,
+    );
+
+    expect(htmlWithSkill).toContain('reviewer-skill');
+    expect(htmlWithoutSkill).not.toContain('reviewer-skill');
+  });
+
   it('prefers the formatted model label and hides the tier chip when tier is blank', () => {
     const html = renderToStaticMarkup(
       <MessageBubble

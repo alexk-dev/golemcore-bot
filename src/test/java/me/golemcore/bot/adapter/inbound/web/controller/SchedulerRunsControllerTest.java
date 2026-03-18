@@ -86,13 +86,16 @@ class SchedulerRunsControllerTest {
                         false,
                         false,
                         null,
-                        "coding")));
+                        "coding",
+                        "reviewer-skill",
+                        "COMPLETED")));
         when(autoRunHistoryService.getRun("run-1")).thenReturn(Optional.of(detail));
 
         StepVerifier.create(controller.getRun("run-1"))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
                     assertEquals("run-1", response.getBody().runId());
+                    assertEquals("reviewer-skill", response.getBody().messages().get(0).skill());
                 })
                 .verifyComplete();
     }

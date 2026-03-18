@@ -118,6 +118,7 @@ export function mergeInitialHistory(existingMessages: ChatMessage[], historyMess
       && message.content === lastPersistedAssistant?.content
       && message.model === lastPersistedAssistant?.model
       && message.tier === lastPersistedAssistant?.tier
+      && message.skill === lastPersistedAssistant?.skill
       && message.reasoning === lastPersistedAssistant?.reasoning
       && areAttachmentsEqual(message.attachments, lastPersistedAssistant?.attachments ?? [])
     ) {
@@ -152,6 +153,7 @@ function updateAssistantMessage(
 ): ChatMessage {
   const nextModel = hint?.model ?? message.model;
   const nextTier = hint?.tier ?? message.tier;
+  const nextSkill = hint?.skill ?? message.skill;
   const nextReasoning = hint?.reasoning ?? message.reasoning;
   const nextAttachments = attachments.length > 0 ? attachments : message.attachments;
 
@@ -161,6 +163,7 @@ function updateAssistantMessage(
       content: `${message.content}${text}`,
       model: nextModel,
       tier: nextTier,
+      skill: nextSkill,
       reasoning: nextReasoning,
       attachments: nextAttachments,
     };
@@ -170,6 +173,7 @@ function updateAssistantMessage(
     if (
       nextModel === message.model
       && nextTier === message.tier
+      && nextSkill === message.skill
       && nextReasoning === message.reasoning
       && areAttachmentsEqual(nextAttachments, message.attachments)
     ) {
@@ -179,6 +183,7 @@ function updateAssistantMessage(
       ...message,
       model: nextModel,
       tier: nextTier,
+      skill: nextSkill,
       reasoning: nextReasoning,
       attachments: nextAttachments,
     };
@@ -189,6 +194,7 @@ function updateAssistantMessage(
     content: text.length >= message.content.length ? text : message.content,
     model: nextModel,
     tier: nextTier,
+    skill: nextSkill,
     reasoning: nextReasoning,
     attachments: nextAttachments,
   };
@@ -207,6 +213,7 @@ function createAssistantMessage(
     content: text,
     model: hint?.model ?? null,
     tier: hint?.tier ?? null,
+    skill: hint?.skill ?? null,
     reasoning: hint?.reasoning ?? null,
     attachments,
     persisted: false,

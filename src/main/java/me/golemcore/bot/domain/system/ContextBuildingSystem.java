@@ -23,9 +23,9 @@ import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
-import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.MemoryPack;
 import me.golemcore.bot.domain.model.MemoryQuery;
+import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.PromptSection;
 import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.model.Skill;
@@ -33,6 +33,7 @@ import me.golemcore.bot.domain.model.SkillTransitionRequest;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
+import me.golemcore.bot.domain.service.AutoRunContextSupport;
 import me.golemcore.bot.domain.service.MemoryScopeSupport;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
@@ -110,7 +111,8 @@ public class ContextBuildingSystem implements AgentSystem {
             context.clearSkillTransitionRequest();
         }
 
-        // Resolve model tier from user preferences and active skill
+        // Resolve model tier from user preferences, active skill, and auto reflection
+        // settings
         UserPreferences prefs = userPreferencesService.getPreferences();
         resolveTier(context, prefs);
 
@@ -216,7 +218,7 @@ public class ContextBuildingSystem implements AgentSystem {
             }
         }
 
-        // Set model tier for auto-mode messages
+        // Set model tier for auto-mode messages when nothing else resolved it.
         if (isAutoModeMessage(context) && context.getModelTier() == null) {
             context.setModelTier(runtimeConfigService.getAutoModelTier());
         }
@@ -334,6 +336,12 @@ public class ContextBuildingSystem implements AgentSystem {
 
         // Inject auto-mode context (goals, tasks, diary)
         if (isAutoModeMessage(context)) {
+            if (isAutoReflectionContext(context)) {
+                sb.append("# Auto Reflection Mode\n");
+                sb.append("This autonomous run is a recovery/reflection step after repeated failures. ");
+                sb.append(
+                        "Diagnose the failure, identify why the previous approach failed, and propose a concrete alternative strategy for the next run.\n\n");
+            }
             String autoContext = autoModeService.buildAutoContext();
             if (autoContext != null && !autoContext.isBlank()) {
                 sb.append("\n").append(autoContext).append("\n");
@@ -384,6 +392,11 @@ public class ContextBuildingSystem implements AgentSystem {
             return;
         }
 
+        if (isAutoReflectionContext(context)) {
+            resolveReflectionTier(context, userTier);
+            return;
+        }
+
         Skill activeSkill = context.getActiveSkill();
         if (activeSkill != null && activeSkill.getModelTier() != null) {
             context.setModelTier(activeSkill.getModelTier());
@@ -394,11 +407,122 @@ public class ContextBuildingSystem implements AgentSystem {
         // (currently "balanced") and resolves model selection accordingly.
     }
 
+    private void resolveReflectionTier(AgentContext context, String userTier) {
+        Skill activeSkill = resolveReflectionSkill(context);
+        String configuredReflectionTier = resolveReflectionTierOverride(context);
+        boolean priority = resolveReflectionTierPriority(context);
+        String skillReflectionTier = activeSkill != null ? activeSkill.getReflectionTier() : null;
+
+        if (priority && configuredReflectionTier != null && !configuredReflectionTier.isBlank()) {
+            context.setModelTier(configuredReflectionTier);
+            return;
+        }
+        if (skillReflectionTier != null && !skillReflectionTier.isBlank()) {
+            context.setModelTier(skillReflectionTier);
+            return;
+        }
+        if (configuredReflectionTier != null && !configuredReflectionTier.isBlank()) {
+            context.setModelTier(configuredReflectionTier);
+            return;
+        }
+
+        String runtimeReflectionTier = runtimeConfigService.getAutoReflectionModelTier();
+        if (runtimeReflectionTier != null && !runtimeReflectionTier.isBlank()) {
+            context.setModelTier(runtimeReflectionTier);
+            return;
+        }
+        if (activeSkill != null && activeSkill.getModelTier() != null) {
+            context.setModelTier(activeSkill.getModelTier());
+            return;
+        }
+        if (userTier != null) {
+            context.setModelTier(userTier);
+        }
+    }
+
     private boolean isAutoModeMessage(AgentContext context) {
-        if (context.getMessages() == null || context.getMessages().isEmpty())
+        if (context.getMessages() == null || context.getMessages().isEmpty()) {
             return false;
+        }
         Message last = context.getMessages().get(context.getMessages().size() - 1);
         return last.getMetadata() != null && Boolean.TRUE.equals(last.getMetadata().get(ContextAttributes.AUTO_MODE));
+    }
+
+    private boolean isAutoReflectionContext(AgentContext context) {
+        if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.AUTO_REFLECTION_ACTIVE))) {
+            return true;
+        }
+        Message last = getLastMessage(context);
+        return last != null && last.getMetadata() != null
+                && Boolean.TRUE.equals(last.getMetadata().get(ContextAttributes.AUTO_REFLECTION_ACTIVE));
+    }
+
+    private String resolveReflectionTierOverride(AgentContext context) {
+        String configured = context.getAttribute(ContextAttributes.AUTO_REFLECTION_TIER);
+        if (configured != null && !configured.isBlank()) {
+            return configured;
+        }
+        Message last = getLastMessage(context);
+        return last != null ? AutoRunContextSupport.readMetadataString(last.getMetadata(),
+                ContextAttributes.AUTO_REFLECTION_TIER) : null;
+    }
+
+    private Skill resolveReflectionSkill(AgentContext context) {
+        String skillName = resolveReflectionSkillName(context);
+        if (skillName != null && !skillName.isBlank()) {
+            Optional<Skill> reflectedSkill = skillComponent.findByName(skillName);
+            if (reflectedSkill.isPresent()) {
+                return reflectedSkill.get();
+            }
+        }
+        return context.getActiveSkill();
+    }
+
+    private String resolveReflectionSkillName(AgentContext context) {
+        String explicit = context.getAttribute(ContextAttributes.AUTO_RUN_ACTIVE_SKILL);
+        if (explicit != null && !explicit.isBlank()) {
+            return explicit;
+        }
+        explicit = context.getAttribute(ContextAttributes.ACTIVE_SKILL_NAME);
+        if (explicit != null && !explicit.isBlank()) {
+            return explicit;
+        }
+        Message last = getLastMessage(context);
+        if (last == null || last.getMetadata() == null) {
+            return null;
+        }
+        String runSkill = AutoRunContextSupport.readMetadataString(last.getMetadata(),
+                ContextAttributes.AUTO_RUN_ACTIVE_SKILL);
+        if (runSkill != null && !runSkill.isBlank()) {
+            return runSkill;
+        }
+        return AutoRunContextSupport.readMetadataString(last.getMetadata(), ContextAttributes.ACTIVE_SKILL_NAME);
+    }
+
+    private boolean resolveReflectionTierPriority(AgentContext context) {
+        Boolean priority = context.getAttribute(ContextAttributes.AUTO_REFLECTION_TIER_PRIORITY);
+        if (priority != null) {
+            return priority;
+        }
+        Message last = getLastMessage(context);
+        if (last == null || last.getMetadata() == null) {
+            return false;
+        }
+        Object value = last.getMetadata().get(ContextAttributes.AUTO_REFLECTION_TIER_PRIORITY);
+        if (value instanceof Boolean booleanValue) {
+            return booleanValue;
+        }
+        if (value instanceof String stringValue && !stringValue.isBlank()) {
+            return Boolean.parseBoolean(stringValue.trim());
+        }
+        return false;
+    }
+
+    private Message getLastMessage(AgentContext context) {
+        if (context.getMessages() == null || context.getMessages().isEmpty()) {
+            return null;
+        }
+        return context.getMessages().get(context.getMessages().size() - 1);
     }
 
     private String getLastUserMessageText(AgentContext context) {

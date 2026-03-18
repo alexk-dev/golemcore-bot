@@ -45,6 +45,7 @@ export interface MessageInfo {
   hasVoice: boolean;
   model: string | null;
   modelTier: string | null;
+  skill: string | null;
   reasoning: string | null;
   clientMessageId: string | null;
   attachments: SessionMessageAttachment[];

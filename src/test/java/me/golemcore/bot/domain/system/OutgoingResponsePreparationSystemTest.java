@@ -24,6 +24,7 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
+import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.TurnLimitReason;
 import me.golemcore.bot.domain.service.InternalTurnService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
@@ -36,8 +37,18 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class OutgoingResponsePreparationSystemTest {
 
@@ -64,15 +75,11 @@ class OutgoingResponsePreparationSystemTest {
                 runtimeConfigService, internalTurnService);
     }
 
-    // ── identity ──
-
     @Test
     void shouldReturnCorrectNameAndOrder() {
         assertEquals("OutgoingResponsePreparationSystem", system.getName());
         assertEquals(58, system.getOrder());
     }
-
-    // ── shouldProcess ──
 
     @Test
     void shouldNotProcessWhenOutgoingResponseAlreadyPresent() {
@@ -133,8 +140,6 @@ class OutgoingResponsePreparationSystemTest {
         assertFalse(system.shouldProcess(context));
     }
 
-    // ── process: defensive guard ──
-
     @Test
     void shouldReturnContextUnchangedWhenProcessCalledWithExistingOutgoingResponse() {
         AgentContext context = buildContext();
@@ -145,8 +150,6 @@ class OutgoingResponsePreparationSystemTest {
 
         assertSame(existing, result.getAttribute(ContextAttributes.OUTGOING_RESPONSE));
     }
-
-    // ── process: LLM error path ──
 
     @Test
     void shouldConvertLlmErrorToOutgoingResponse() {
@@ -256,8 +259,6 @@ class OutgoingResponsePreparationSystemTest {
         verify(internalTurnService, never()).scheduleAutoContinueRetry(any(), anyString());
     }
 
-    // ── process: LLM response → text ──
-
     @Test
     void shouldConvertLlmResponseToTextResponse() {
         AgentContext context = buildContext();
@@ -270,6 +271,22 @@ class OutgoingResponsePreparationSystemTest {
         assertNotNull(outgoing);
         assertEquals("Hello there", outgoing.getText());
         assertFalse(outgoing.isVoiceRequested());
+    }
+
+    @Test
+    void shouldIncludeSkillHintWhenSkillWasUsed() {
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE,
+                LlmResponse.builder().content("Hello there").build());
+        context.setAttribute(ContextAttributes.ACTIVE_SKILL_NAME, "golemcore/superpowers/superpowers-code-reviewer");
+
+        AgentContext result = system.process(context);
+
+        OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        assertNotNull(outgoing);
+        assertEquals(
+                "golemcore/superpowers/superpowers-code-reviewer",
+                outgoing.getHints().get("skill"));
     }
 
     @Test
@@ -379,8 +396,6 @@ class OutgoingResponsePreparationSystemTest {
         assertNull(result.getAttribute(ContextAttributes.LLM_ERROR));
     }
 
-    // ── process: voice prefix detection ──
-
     @Test
     void shouldDetectVoicePrefixAndBuildVoiceResponse() {
         AgentContext context = buildContext();
@@ -462,8 +477,6 @@ class OutgoingResponsePreparationSystemTest {
         assertEquals("Spoken text", outgoing.getVoiceText());
     }
 
-    // ── process: explicit voiceRequested / voiceText (no prefix) ──
-
     @Test
     void shouldBuildVoiceResponseWhenVoiceRequestedAttributeSet() {
         AgentContext context = buildContext();
@@ -539,8 +552,6 @@ class OutgoingResponsePreparationSystemTest {
         assertTrue(outgoing.isVoiceRequested());
         assertEquals("voice content", outgoing.getVoiceText());
     }
-
-    // ── process: auto-voice ──
 
     @Test
     void shouldAutoVoiceRespondWhenIncomingVoice() {
@@ -749,8 +760,6 @@ class OutgoingResponsePreparationSystemTest {
         assertTrue(outgoing.isVoiceRequested());
     }
 
-    // ── process: FINAL_ANSWER_READY with tool calls ──
-
     @Test
     void shouldCreateResponseWhenFinalAnswerReadyEvenWithToolCalls() {
         AgentContext context = buildContext();
@@ -768,8 +777,6 @@ class OutgoingResponsePreparationSystemTest {
         assertNotNull(outgoing, "Should create OutgoingResponse when FINAL_ANSWER_READY is set");
         assertEquals("Tool loop stopped: reached max internal LLM calls (2).", outgoing.getText());
     }
-
-    // ── process: tool loop limit i18n override ──
 
     @Test
     void shouldUseSpecificMessageWhenToolLoopStopsByMaxLlmCalls() {
@@ -885,8 +892,6 @@ class OutgoingResponsePreparationSystemTest {
                 "Should not create OutgoingResponse when tool calls present and FINAL_ANSWER_READY not set");
     }
 
-    // ── process: edge case — no attributes at all ──
-
     @Test
     void shouldDoNothingWhenNoAttributesSet() {
         AgentContext context = buildContext();
@@ -896,7 +901,23 @@ class OutgoingResponsePreparationSystemTest {
         assertNull(result.getAttribute(ContextAttributes.OUTGOING_RESPONSE));
     }
 
-    // ── helpers ──
+    @Test
+    void shouldIncludeSkillHintFromActiveSkillWhenAttributeMissing() {
+        AgentContext context = buildContext();
+        context.setActiveSkill(Skill.builder()
+                .name("golemcore/superpowers/superpowers-code-reviewer")
+                .build());
+        context.setAttribute(ContextAttributes.LLM_RESPONSE,
+                LlmResponse.builder().content("Hello there").build());
+
+        AgentContext result = system.process(context);
+
+        OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        assertNotNull(outgoing);
+        assertEquals(
+                "golemcore/superpowers/superpowers-code-reviewer",
+                outgoing.getHints().get("skill"));
+    }
 
     private AgentContext buildContext() {
         return AgentContext.builder()

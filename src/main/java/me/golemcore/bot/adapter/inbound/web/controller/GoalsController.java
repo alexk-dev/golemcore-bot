@@ -47,7 +47,12 @@ public class GoalsController {
         }
 
         try {
-            Goal goal = autoModeService.createGoal(request.title(), request.description(), request.prompt());
+            Goal goal = autoModeService.createGoal(
+                    request.title(),
+                    request.description(),
+                    request.prompt(),
+                    request.reflectionModelTier(),
+                    Boolean.TRUE.equals(request.reflectionTierPriority()));
             return Mono.just(ResponseEntity.status(HttpStatus.CREATED).body(toGoalDto(goal)));
         } catch (IllegalArgumentException | IllegalStateException e) {
             throw badRequest(e.getMessage());
@@ -68,6 +73,8 @@ public class GoalsController {
                     request.title(),
                     request.description(),
                     request.prompt(),
+                    request.reflectionModelTier(),
+                    request.reflectionTierPriority(),
                     parseGoalStatus(request.status()));
             return Mono.just(ResponseEntity.ok(toGoalDto(goal)));
         } catch (IllegalArgumentException | IllegalStateException e) {
@@ -100,6 +107,8 @@ public class GoalsController {
                     request.title(),
                     request.description(),
                     request.prompt(),
+                    request.reflectionModelTier(),
+                    request.reflectionTierPriority(),
                     parseTaskStatus(request.status(), AutoTask.TaskStatus.PENDING));
             return Mono.just(ResponseEntity.status(HttpStatus.CREATED).body(toTaskDto(task, autoModeService.isInboxGoal(
                     autoModeService.findGoalForTask(task.getId()).orElse(null)))));
@@ -122,6 +131,8 @@ public class GoalsController {
                     request.title(),
                     request.description(),
                     request.prompt(),
+                    request.reflectionModelTier(),
+                    request.reflectionTierPriority(),
                     parseTaskStatus(request.status(), null));
             boolean standalone = autoModeService.findGoalForTask(task.getId())
                     .map(autoModeService::isInboxGoal)
@@ -187,6 +198,8 @@ public class GoalsController {
                 goal.getTitle(),
                 goal.getDescription(),
                 goal.getPrompt(),
+                goal.getReflectionModelTier(),
+                goal.isReflectionTierPriority(),
                 goal.getStatus().name(),
                 completedTasks,
                 totalTasks,
@@ -201,8 +214,13 @@ public class GoalsController {
                 task.getTitle(),
                 task.getDescription(),
                 task.getPrompt(),
+                task.getReflectionModelTier(),
+                task.isReflectionTierPriority(),
                 task.getStatus().name(),
                 task.getOrder(),
+                task.getConsecutiveFailureCount(),
+                task.isReflectionRequired(),
+                task.getReflectionStrategy(),
                 standalone);
     }
 
@@ -258,6 +276,8 @@ public class GoalsController {
             String title,
             String description,
             String prompt,
+            String reflectionModelTier,
+            boolean reflectionTierPriority,
             String status,
             long completedTasks,
             int totalTasks,
@@ -270,24 +290,33 @@ public class GoalsController {
             String title,
             String description,
             String prompt,
+            String reflectionModelTier,
+            boolean reflectionTierPriority,
             String status,
             int order,
+            int consecutiveFailureCount,
+            boolean reflectionRequired,
+            String reflectionStrategy,
             boolean standalone) {
     }
 
-    public record CreateGoalRequest(String title, String description, String prompt) {
+    public record CreateGoalRequest(String title, String description, String prompt,
+            String reflectionModelTier, Boolean reflectionTierPriority) {
     }
 
-    public record UpdateGoalRequest(String title, String description, String prompt, String status) {
+    public record UpdateGoalRequest(String title, String description, String prompt,
+            String reflectionModelTier, Boolean reflectionTierPriority, String status) {
     }
 
     public record DeleteGoalResponse(String goalId) {
     }
 
-    public record CreateTaskRequest(String goalId, String title, String description, String prompt, String status) {
+    public record CreateTaskRequest(String goalId, String title, String description, String prompt,
+            String reflectionModelTier, Boolean reflectionTierPriority, String status) {
     }
 
-    public record UpdateTaskRequest(String title, String description, String prompt, String status) {
+    public record UpdateTaskRequest(String title, String description, String prompt,
+            String reflectionModelTier, Boolean reflectionTierPriority, String status) {
     }
 
     public record DeleteTaskResponse(String taskId) {

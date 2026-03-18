@@ -605,6 +605,48 @@ class DefaultToolLoopSystemTest {
         assertEquals(2, result.llmCalls());
     }
 
+    @Test
+    void shouldStopOnRepeatedToolFailureWithNormalizedFingerprint() {
+        AgentContext context = buildContext();
+        Message.ToolCall firstCall = toolCall(TOOL_CALL_ID, TOOL_NAME);
+        Message.ToolCall secondCall = toolCall("tc-2", TOOL_NAME);
+
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(firstCall))))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(secondCall))));
+
+        ToolExecutionOutcome firstOutcome = new ToolExecutionOutcome(
+                TOOL_CALL_ID,
+                TOOL_NAME,
+                ToolResult.failure(ToolFailureKind.EXECUTION_FAILED, " Timeout\n"),
+                " Timeout\n",
+                false,
+                null);
+        ToolExecutionOutcome secondOutcome = new ToolExecutionOutcome(
+                "tc-2",
+                TOOL_NAME,
+                ToolResult.failure(ToolFailureKind.EXECUTION_FAILED, "timeout"),
+                "timeout",
+                false,
+                null);
+        when(toolExecutor.execute(any(), any()))
+                .thenReturn(firstOutcome)
+                .thenReturn(secondOutcome);
+
+        ToolLoopTurnResult result = system.processTurn(context);
+
+        assertTrue(result.finalAnswerReady());
+        assertEquals(2, result.llmCalls());
+        assertEquals(2, result.toolExecutions());
+        assertFalse(Boolean.TRUE.equals(context.getAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REACHED)));
+        assertTrue(context.getFailures().stream()
+                .anyMatch(failure -> failure.message().contains("Repeated tool failure: " + TOOL_NAME)));
+
+        LlmResponse llmResponse = context.getAttribute(ContextAttributes.LLM_RESPONSE);
+        assertNotNull(llmResponse);
+        assertTrue(llmResponse.getContent().contains("repeated tool failure (" + TOOL_NAME + ")"));
+    }
+
     // ==================== Max limits ====================
 
     @Test

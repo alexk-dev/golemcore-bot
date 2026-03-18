@@ -62,7 +62,7 @@ class GoalManagementToolTest {
                 .updatedAt(Instant.now())
                 .build();
 
-        when(autoModeService.createGoal(LEARN_JAVA, STUDY_JAVA))
+        when(autoModeService.createGoal(LEARN_JAVA, STUDY_JAVA, null, null, false))
                 .thenReturn(goal);
 
         ToolResult result = tool.execute(Map.of(
@@ -73,7 +73,7 @@ class GoalManagementToolTest {
         assertTrue(result.isSuccess());
         assertTrue(result.getOutput().contains(LEARN_JAVA));
         assertTrue(result.getOutput().contains(GOAL_ID_G1));
-        verify(autoModeService).createGoal(LEARN_JAVA, STUDY_JAVA);
+        verify(autoModeService).createGoal(LEARN_JAVA, STUDY_JAVA, null, null, false);
     }
 
     @Test
@@ -88,7 +88,7 @@ class GoalManagementToolTest {
 
     @Test
     void createGoalLimitReached() throws Exception {
-        when(autoModeService.createGoal(anyString(), any()))
+        when(autoModeService.createGoal(anyString(), any(), any(), any(), anyBoolean()))
                 .thenThrow(new IllegalStateException("Maximum active goals reached: 3"));
 
         ToolResult result = tool.execute(Map.of(

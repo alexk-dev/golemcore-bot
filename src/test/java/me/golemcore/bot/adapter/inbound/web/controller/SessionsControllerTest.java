@@ -12,8 +12,10 @@ import me.golemcore.bot.domain.service.ActiveSessionPointerService;
 import me.golemcore.bot.port.outbound.SessionPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
+import reactor.test.StepVerifier;
 
 import java.security.Principal;
 import java.time.Instant;
@@ -24,6 +26,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -32,9 +35,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-
-import reactor.test.StepVerifier;
-import org.mockito.ArgumentCaptor;
 
 class SessionsControllerTest {
 
@@ -311,7 +311,7 @@ class SessionsControllerTest {
     }
 
     @Test
-    void shouldFallbackAssistantTierToBalancedWhenHistoryMetadataIsMissing() {
+    void shouldKeepAssistantTierNullWhenHistoryMetadataIsMissing() {
         Message msg = Message.builder()
                 .id("m1")
                 .role("assistant")
@@ -333,7 +333,38 @@ class SessionsControllerTest {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
                     SessionDetailDto body = response.getBody();
                     assertNotNull(body);
-                    assertEquals("balanced", body.getMessages().get(0).getModelTier());
+                    assertNull(body.getMessages().get(0).getModelTier());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldExposeSkillMetadataWhenPresent() {
+        Message msg = Message.builder()
+                .id("m-skill")
+                .role("assistant")
+                .content("hello")
+                .metadata(
+                        Map.of(ContextAttributes.ACTIVE_SKILL_NAME, "golemcore/superpowers/superpowers-code-reviewer"))
+                .timestamp(Instant.now())
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("s-skill")
+                .channelType("web")
+                .chatId("123")
+                .createdAt(Instant.now())
+                .messages(List.of(msg))
+                .build();
+        when(sessionPort.get("s-skill")).thenReturn(Optional.of(session));
+
+        StepVerifier.create(controller.getSession("s-skill"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    SessionDetailDto body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals(
+                            "golemcore/superpowers/superpowers-code-reviewer",
+                            body.getMessages().get(0).getSkill());
                 })
                 .verifyComplete();
     }

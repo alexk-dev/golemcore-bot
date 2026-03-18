@@ -16,6 +16,7 @@ export interface ChatMessage {
   content: string;
   model: string | null;
   tier: string | null;
+  skill: string | null;
   reasoning: string | null;
   attachments: ChatMessageAttachment[];
   clientStatus?: 'pending' | 'failed';
@@ -27,6 +28,7 @@ export interface ChatMessage {
 export interface AssistantHint extends Partial<TurnMetadata> {
   model?: string | null;
   tier?: string | null;
+  skill?: string | null;
   reasoning?: string | null;
   inputTokens?: number | null;
   outputTokens?: number | null;

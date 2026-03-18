@@ -69,6 +69,7 @@ public class SkillService implements SkillComponent {
             "name",
             "description",
             "model_tier",
+            "reflection_tier",
             "requires",
             "vars",
             "mcp",
@@ -243,8 +244,9 @@ public class SkillService implements SkillComponent {
         String nextSkill = (String) metadata.get("next_skill");
         Map<String, String> conditionalNextSkills = parseConditionalNextSkills(metadata);
 
-        // Parse model tier
+        // Parse model tiers
         String modelTier = (String) metadata.get("model_tier");
+        String reflectionTier = (String) metadata.get("reflection_tier");
         Skill.SkillRequirements requirements = parseRequirements(metadata);
 
         return Skill.builder()
@@ -259,6 +261,7 @@ public class SkillService implements SkillComponent {
                 .resolvedVariables(new HashMap<>(resolvedVariables))
                 .mcpConfig(mcpConfig)
                 .modelTier(modelTier)
+                .reflectionTier(reflectionTier)
                 .nextSkill(nextSkill)
                 .conditionalNextSkills(conditionalNextSkills)
                 .build();

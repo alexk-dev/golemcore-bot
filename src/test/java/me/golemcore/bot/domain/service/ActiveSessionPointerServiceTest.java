@@ -143,7 +143,7 @@ class ActiveSessionPointerServiceTest {
     }
 
     @Test
-    void shouldSerializeConcurrentWritesToPointerRegistry() throws InterruptedException {
+    void shouldSerializeConcurrentWritesToPointerRegistry() {
         TrackingStoragePort trackingStoragePort = new TrackingStoragePort();
         service = new ActiveSessionPointerService(trackingStoragePort, new ObjectMapper());
         String pointerKey = service.buildWebPointerKey("admin", "client-1");

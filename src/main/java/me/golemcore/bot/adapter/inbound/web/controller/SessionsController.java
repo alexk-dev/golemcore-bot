@@ -51,7 +51,6 @@ import java.util.UUID;
 public class SessionsController {
 
     private static final String ROLE_ASSISTANT = "assistant";
-    private static final String DEFAULT_MODEL_TIER = "balanced";
     private static final String CHANNEL_WEB = "web";
     private static final String CHANNEL_TELEGRAM = "telegram";
     private static final int MAX_RECENT_LIMIT = 20;
@@ -343,6 +342,7 @@ public class SessionsController {
     private SessionDetailDto.MessageDto toMessageDto(Message msg) {
         String model = null;
         String modelTier = null;
+        String skill = null;
         String reasoning = null;
         String clientMessageId = null;
         boolean autoMode = false;
@@ -363,6 +363,16 @@ public class SessionsController {
             if (reasoningValue instanceof String) {
                 reasoning = (String) reasoningValue;
             }
+            Object skillValue = msg.getMetadata().get(ContextAttributes.AUTO_RUN_ACTIVE_SKILL);
+            if (skillValue instanceof String) {
+                skill = (String) skillValue;
+            }
+            if (skill == null || skill.isBlank()) {
+                Object activeSkillValue = msg.getMetadata().get(ContextAttributes.ACTIVE_SKILL_NAME);
+                if (activeSkillValue instanceof String) {
+                    skill = (String) activeSkillValue;
+                }
+            }
             Object clientMessageIdValue = msg.getMetadata().get("clientMessageId");
             if (clientMessageIdValue instanceof String) {
                 clientMessageId = (String) clientMessageIdValue;
@@ -374,10 +384,6 @@ public class SessionsController {
             autoGoalId = AutoRunContextSupport.readMetadataString(msg.getMetadata(), ContextAttributes.AUTO_GOAL_ID);
             autoTaskId = AutoRunContextSupport.readMetadataString(msg.getMetadata(), ContextAttributes.AUTO_TASK_ID);
         }
-        if (ROLE_ASSISTANT.equals(msg.getRole()) && (modelTier == null || modelTier.isBlank())) {
-            modelTier = DEFAULT_MODEL_TIER;
-        }
-
         return SessionDetailDto.MessageDto.builder()
                 .id(msg.getId())
                 .role(msg.getRole())
@@ -387,6 +393,7 @@ public class SessionsController {
                 .hasVoice(msg.hasVoice())
                 .model(model)
                 .modelTier(modelTier)
+                .skill(skill)
                 .reasoning(reasoning)
                 .clientMessageId(clientMessageId)
                 .autoMode(autoMode)
