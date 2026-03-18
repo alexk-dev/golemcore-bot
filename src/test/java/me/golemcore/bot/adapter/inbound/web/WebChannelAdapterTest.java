@@ -238,6 +238,46 @@ class WebChannelAdapterTest {
     }
 
     @Test
+    void shouldIncludeAssistantAttachmentsWhenSendingCompletedMessage() throws Exception {
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.isOpen()).thenReturn(true);
+        when(session.send(any())).thenReturn(Mono.empty());
+        when(session.textMessage(any(String.class)))
+                .thenReturn(mock(org.springframework.web.reactive.socket.WebSocketMessage.class));
+
+        adapter.registerSession("chat-attachments", session);
+        Message message = Message.builder()
+                .chatId("chat-attachments")
+                .content("Here is the screenshot")
+                .metadata(new LinkedHashMap<>(Map.of(
+                        "attachments", java.util.List.of(Map.of(
+                                "type", "image",
+                                "name", "capture.png",
+                                "mimeType", "image/png",
+                                "url", "/api/files/download?path=capture",
+                                "internalFilePath", ".golemcore/tool-artifacts/session/tool/capture.png",
+                                "thumbnailBase64", "thumb-base64")))))
+                .build();
+
+        adapter.sendMessage(message).join();
+
+        ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
+        verify(session).textMessage(payloadCaptor.capture());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = objectMapper.readValue(payloadCaptor.getValue(), Map.class);
+        @SuppressWarnings("unchecked")
+        java.util.List<Map<String, Object>> attachments = (java.util.List<Map<String, Object>>) payload
+                .get("attachments");
+        assertNotNull(attachments);
+        assertEquals(1, attachments.size());
+        assertEquals("capture.png", attachments.get(0).get("name"));
+        assertEquals("/api/files/download?path=capture", attachments.get(0).get("url"));
+        assertEquals(".golemcore/tool-artifacts/session/tool/capture.png", attachments.get(0).get("internalFilePath"));
+        assertEquals("thumb-base64", attachments.get(0).get("thumbnailBase64"));
+    }
+
+    @Test
     void shouldOmitAssistantHintsWhenMetadataHasNoUsableValues() throws Exception {
         WebSocketSession session = mock(WebSocketSession.class);
         when(session.isOpen()).thenReturn(true);

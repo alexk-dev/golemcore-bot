@@ -78,6 +78,14 @@ function toChatMessage(message: Awaited<ReturnType<typeof getSessionMessages>>['
     tier: message.modelTier,
     skill: message.skill,
     reasoning: message.reasoning,
+    attachments: (message.attachments ?? []).map((attachment) => ({
+      type: attachment.type === 'document' ? 'document' : 'image',
+      name: attachment.name,
+      mimeType: attachment.mimeType,
+      url: attachment.url,
+      internalFilePath: attachment.internalFilePath,
+      thumbnailBase64: attachment.thumbnailBase64,
+    })),
     clientMessageId: message.clientMessageId,
     persisted: true,
   };

@@ -111,6 +111,7 @@ describe('useChatSessionHistory', () => {
         tier: null,
         skill: null,
         reasoning: null,
+        attachments: [],
         clientMessageId: 'client-1',
         persisted: false,
       }],

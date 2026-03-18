@@ -20,6 +20,11 @@ export interface FileRenameResponse {
   targetPath: string;
 }
 
+export interface DownloadedFile {
+  objectUrl: string;
+  revoke: () => void;
+}
+
 export async function getFileTree(path: string): Promise<FileTreeNode[]> {
   const { data } = await client.get<FileTreeNode[]>('/files/tree', { params: { path } });
   return data;
@@ -47,4 +52,17 @@ export async function renameFilePath(sourcePath: string, targetPath: string): Pr
 
 export async function deleteFilePath(path: string): Promise<void> {
   await client.delete('/files', { params: { path } });
+}
+
+export async function fetchProtectedFileObjectUrl(path: string): Promise<DownloadedFile> {
+  const response = await client.get<Blob>('/files/download', {
+    params: { path },
+    responseType: 'blob',
+  });
+  const blob = response.data;
+  const objectUrl = URL.createObjectURL(blob);
+  return {
+    objectUrl,
+    revoke: () => URL.revokeObjectURL(objectUrl),
+  };
 }

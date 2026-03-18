@@ -1,5 +1,11 @@
 import type { TurnMetadata } from './contextPanelStore';
-import type { AssistantHint, ChatMessage, ChatRuntimeSessionState, LiveProgressUpdate } from '../components/chat/chatRuntimeTypes';
+import type {
+  AssistantHint,
+  ChatMessage,
+  ChatMessageAttachment,
+  ChatRuntimeSessionState,
+  LiveProgressUpdate,
+} from '../components/chat/chatRuntimeTypes';
 
 const EMPTY_TURN_METADATA: TurnMetadata = {
   model: null,
@@ -114,6 +120,7 @@ export function mergeInitialHistory(existingMessages: ChatMessage[], historyMess
       && message.tier === lastPersistedAssistant?.tier
       && message.skill === lastPersistedAssistant?.skill
       && message.reasoning === lastPersistedAssistant?.reasoning
+      && areAttachmentsEqual(message.attachments, lastPersistedAssistant?.attachments ?? [])
     ) {
       continue;
     }
@@ -122,16 +129,33 @@ export function mergeInitialHistory(existingMessages: ChatMessage[], historyMess
   return dedupeMessages(merged);
 }
 
+function areAttachmentsEqual(left: ChatMessageAttachment[], right: ChatMessageAttachment[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  return left.every((attachment, index) => {
+    const other = right[index];
+    return attachment.type === other.type
+      && attachment.name === other.name
+      && attachment.mimeType === other.mimeType
+      && attachment.url === other.url
+      && attachment.internalFilePath === other.internalFilePath
+      && attachment.thumbnailBase64 === other.thumbnailBase64;
+  });
+}
+
 function updateAssistantMessage(
   message: ChatMessage,
   text: string,
   hint: AssistantHint | null,
+  attachments: ChatMessageAttachment[],
   isFinal: boolean,
 ): ChatMessage {
   const nextModel = hint?.model ?? message.model;
   const nextTier = hint?.tier ?? message.tier;
   const nextSkill = hint?.skill ?? message.skill;
   const nextReasoning = hint?.reasoning ?? message.reasoning;
+  const nextAttachments = attachments.length > 0 ? attachments : message.attachments;
 
   if (!isFinal) {
     return {
@@ -141,6 +165,7 @@ function updateAssistantMessage(
       tier: nextTier,
       skill: nextSkill,
       reasoning: nextReasoning,
+      attachments: nextAttachments,
     };
   }
 
@@ -150,6 +175,7 @@ function updateAssistantMessage(
       && nextTier === message.tier
       && nextSkill === message.skill
       && nextReasoning === message.reasoning
+      && areAttachmentsEqual(nextAttachments, message.attachments)
     ) {
       return message;
     }
@@ -159,6 +185,7 @@ function updateAssistantMessage(
       tier: nextTier,
       skill: nextSkill,
       reasoning: nextReasoning,
+      attachments: nextAttachments,
     };
   }
 
@@ -169,6 +196,7 @@ function updateAssistantMessage(
     tier: nextTier,
     skill: nextSkill,
     reasoning: nextReasoning,
+    attachments: nextAttachments,
   };
 }
 
@@ -177,6 +205,7 @@ function createAssistantMessage(
   messageIndex: number,
   text: string,
   hint: AssistantHint | null,
+  attachments: ChatMessageAttachment[],
 ): ChatMessage {
   return {
     id: `${sessionId}:assistant:${messageIndex + 1}:${Date.now()}`,
@@ -186,26 +215,37 @@ function createAssistantMessage(
     tier: hint?.tier ?? null,
     skill: hint?.skill ?? null,
     reasoning: hint?.reasoning ?? null,
+    attachments,
     persisted: false,
   };
 }
 
 export function applyAssistantTextUpdate(
   current: ChatRuntimeSessionState,
-  sessionId: string,
-  text: string,
-  hint: AssistantHint | null,
-  isFinal: boolean,
+  update: {
+    sessionId: string;
+    text: string;
+    hint: AssistantHint | null;
+    attachments: ChatMessageAttachment[];
+    isFinal: boolean;
+  },
 ): Pick<ChatRuntimeSessionState, 'messages' | 'running' | 'turnMetadata' | 'typing' | 'progress'> {
+  const {
+    sessionId,
+    text,
+    hint,
+    attachments,
+    isFinal,
+  } = update;
   const nextMessages = [...current.messages];
   const lastMessage = nextMessages.length > 0 ? nextMessages[nextMessages.length - 1] : null;
   const safeText = text ?? '';
   const nextTurnMetadata = hint != null ? patchTurnMetadata(current.turnMetadata, hint) : current.turnMetadata;
 
   if (lastMessage?.role === 'assistant' && !lastMessage.persisted) {
-    nextMessages[nextMessages.length - 1] = updateAssistantMessage(lastMessage, safeText, hint, isFinal);
-  } else if (safeText.length > 0) {
-    nextMessages.push(createAssistantMessage(sessionId, nextMessages.length, safeText, hint));
+    nextMessages[nextMessages.length - 1] = updateAssistantMessage(lastMessage, safeText, hint, attachments, isFinal);
+  } else if (safeText.length > 0 || attachments.length > 0) {
+    nextMessages.push(createAssistantMessage(sessionId, nextMessages.length, safeText, hint, attachments));
   }
 
   return {

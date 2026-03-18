@@ -304,6 +304,13 @@ public class ToolCallExecutionService {
 
         String output = result.getOutput();
         if (storedFile != null) {
+            attachment.setDownloadUrl(storedFile.getDownloadUrl());
+            attachment.setInternalFilePath(storedFile.getPath());
+            attachment.setFilename(storedFile.getFilename());
+            attachment.setMimeType(storedFile.getMimeType());
+            if (attachment.getType() == Attachment.Type.IMAGE) {
+                attachment.setThumbnailBase64(toolArtifactService.buildThumbnailBase64(storedFile.getPath()));
+            }
             if (dataMap == null) {
                 dataMap = new LinkedHashMap<>();
             }
@@ -314,6 +321,9 @@ public class ToolCallExecutionService {
             dataMap.put("internal_file_size", storedFile.getSize());
             if (attachment.getType() != null) {
                 dataMap.put("internal_file_kind", attachment.getType().name().toLowerCase(Locale.ROOT));
+            }
+            if (attachment.getThumbnailBase64() != null && !attachment.getThumbnailBase64().isBlank()) {
+                dataMap.put("internal_file_thumbnail_base64", attachment.getThumbnailBase64());
             }
             output = appendInternalFileLink(output, storedFile);
             mutated = true;

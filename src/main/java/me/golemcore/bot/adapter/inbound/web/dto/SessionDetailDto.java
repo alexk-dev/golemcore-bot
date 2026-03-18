@@ -43,5 +43,19 @@ public class SessionDetailDto {
         private String autoScheduleId;
         private String autoGoalId;
         private String autoTaskId;
+        private List<AttachmentDto> attachments;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class AttachmentDto {
+        private String type;
+        private String name;
+        private String mimeType;
+        private String url;
+        private String internalFilePath;
+        private String thumbnailBase64;
     }
 }

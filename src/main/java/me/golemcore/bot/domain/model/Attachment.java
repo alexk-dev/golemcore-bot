@@ -39,4 +39,7 @@ public class Attachment {
     private String filename;
     private String mimeType;
     private String caption;
+    private String downloadUrl;
+    private String internalFilePath;
+    private String thumbnailBase64;
 }

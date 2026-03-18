@@ -380,7 +380,7 @@
                 <version>2.0.0</version>
                 <configuration>
                     <workingDirectory>dashboard</workingDirectory>
-                    <nodeVersion>v20.19.0</nodeVersion>
+                    <nodeVersion>v20.20.1</nodeVersion>
                 </configuration>
                 <executions>
                     <execution>

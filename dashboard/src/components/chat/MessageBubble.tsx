@@ -1,7 +1,9 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useId, useState } from 'react';
-import { FiCpu, FiUser } from 'react-icons/fi';
+import { FiArchive, FiCpu, FiFile, FiFileText, FiUser } from 'react-icons/fi';
+import { fetchProtectedFileObjectUrl } from '../../api/files';
+import type { ChatMessageAttachment } from './chatRuntimeTypes';
 
 interface Props {
   role: string;
@@ -10,6 +12,7 @@ interface Props {
   tier?: string | null;
   skill?: string | null;
   reasoning?: string | null;
+  attachments?: ChatMessageAttachment[];
   modelLabel?: string;
   modelTitle?: string;
   clientStatus?: 'pending' | 'failed';
@@ -26,6 +29,7 @@ interface AssistantMessageProps {
   model?: string | null;
   tier?: string | null;
   skill?: string | null;
+  attachments: ChatMessageAttachment[];
   modelLabel?: string;
   modelTitle?: string;
 }
@@ -175,7 +179,98 @@ function AssistantBadges({ tier, skill }: AssistantBadgesProps) {
   );
 }
 
-function AssistantMessageBubble({ content, model, tier, skill, modelLabel, modelTitle }: AssistantMessageProps) {
+function buildThumbnailSrc(attachment: ChatMessageAttachment): string | null {
+  if (attachment.thumbnailBase64 == null || attachment.thumbnailBase64.length === 0) {
+    return null;
+  }
+  return `data:image/png;base64,${attachment.thumbnailBase64}`;
+}
+
+function resolveAttachmentIcon(mimeType: string | null | undefined) {
+  const normalizedMime = (mimeType ?? '').toLowerCase();
+  if (normalizedMime === 'application/pdf' || normalizedMime.startsWith('text/')) {
+    return <FiFileText size={16} />;
+  }
+  if (normalizedMime.includes('zip') || normalizedMime.includes('tar') || normalizedMime.includes('gzip')) {
+    return <FiArchive size={16} />;
+  }
+  return <FiFile size={16} />;
+}
+
+async function openProtectedAttachment(attachment: ChatMessageAttachment): Promise<void> {
+  if (attachment.internalFilePath == null || attachment.internalFilePath.length === 0) {
+    return;
+  }
+
+  const { objectUrl, revoke } = await fetchProtectedFileObjectUrl(attachment.internalFilePath);
+  const isPreviewable = (attachment.mimeType ?? '').startsWith('image/') || attachment.mimeType === 'application/pdf';
+
+  try {
+    if (isPreviewable) {
+      const opened = window.open(objectUrl, '_blank', 'noopener,noreferrer');
+      if (opened != null) {
+        return;
+      }
+    }
+
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = attachment.name ?? 'download';
+    link.rel = 'noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  } finally {
+    window.setTimeout(() => revoke(), 60_000);
+  }
+}
+
+function MessageAttachments({ attachments }: { attachments: ChatMessageAttachment[] }) {
+  if (attachments.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="chat-attachments-row chat-attachments-row--message">
+      {attachments.map((attachment, index) => {
+        const label = attachment.name ?? `Attachment ${index + 1}`;
+        const thumbnailSrc = attachment.type === 'image' ? buildThumbnailSrc(attachment) : null;
+
+        if (thumbnailSrc != null) {
+          return (
+            <button
+              key={`${attachment.internalFilePath ?? label}:${index}`}
+              type="button"
+              className="chat-attachment-link chat-attachment-button"
+              title={label}
+              onClick={() => { void openProtectedAttachment(attachment); }}
+            >
+              <img src={thumbnailSrc} alt={label} className="chat-attachment-thumb" />
+              <span className="chat-attachment-name">{label}</span>
+            </button>
+          );
+        }
+
+        return (
+          <button
+            key={`${attachment.internalFilePath ?? label}:${index}`}
+            type="button"
+            className="chat-attachment-chip chat-attachment-link chat-attachment-button"
+            title={label}
+            onClick={() => { void openProtectedAttachment(attachment); }}
+          >
+            <span className="chat-attachment-icon" aria-hidden="true">
+              {resolveAttachmentIcon(attachment.mimeType)}
+            </span>
+            <span className="chat-attachment-name">{label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function AssistantMessageBubble({ content, model, tier, skill, attachments, modelLabel, modelTitle }: AssistantMessageProps) {
   const resolvedModelLabel = resolveModelLabel(model, modelLabel);
   const { text, tools } = parseToolCalls(content);
 
@@ -206,6 +301,7 @@ function AssistantMessageBubble({ content, model, tier, skill, modelLabel, model
             </ReactMarkdown>
           </div>
         )}
+        <MessageAttachments attachments={attachments} />
       </div>
     </div>
   );
@@ -244,6 +340,7 @@ export default function MessageBubble({
   model,
   tier,
   skill,
+  attachments = [],
   modelLabel,
   modelTitle,
   clientStatus,
@@ -257,6 +354,7 @@ export default function MessageBubble({
         model={model}
         tier={tier}
         skill={skill}
+        attachments={attachments}
         modelLabel={modelLabel}
         modelTitle={modelTitle}
       />

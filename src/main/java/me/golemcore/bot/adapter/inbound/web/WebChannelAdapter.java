@@ -15,6 +15,7 @@ import org.springframework.web.reactive.socket.WebSocketSession;
 import reactor.core.publisher.Mono;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -105,6 +106,10 @@ public class WebChannelAdapter implements ChannelPort {
         Map<String, Object> hint = extractHint(message);
         if (!hint.isEmpty()) {
             payload.put("hint", hint);
+        }
+        List<Map<String, Object>> attachments = extractAttachments(message);
+        if (!attachments.isEmpty()) {
+            payload.put("attachments", attachments);
         }
         return sendJsonToChat(chatId, payload);
     }
@@ -245,6 +250,43 @@ public class WebChannelAdapter implements ChannelPort {
         Object value = message.getMetadata().get(sourceKey);
         if (value instanceof String stringValue && !stringValue.isBlank()) {
             hint.put(targetKey, stringValue);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> extractAttachments(Message message) {
+        if (message == null || message.getMetadata() == null) {
+            return List.of();
+        }
+        Object attachmentsRaw = message.getMetadata().get("attachments");
+        if (!(attachmentsRaw instanceof List<?> attachments) || attachments.isEmpty()) {
+            return List.of();
+        }
+
+        List<Map<String, Object>> normalized = new java.util.ArrayList<>();
+        for (Object attachmentObj : attachments) {
+            if (!(attachmentObj instanceof Map<?, ?> attachmentMap)) {
+                continue;
+            }
+            Map<String, Object> next = new LinkedHashMap<>();
+            copyAttachmentValue(attachmentMap, next, "type");
+            copyAttachmentValue(attachmentMap, next, "name");
+            copyAttachmentValue(attachmentMap, next, "mimeType");
+            copyAttachmentValue(attachmentMap, next, "url");
+            copyAttachmentValue(attachmentMap, next, "internalFilePath");
+            copyAttachmentValue(attachmentMap, next, "thumbnailBase64");
+            copyAttachmentValue(attachmentMap, next, "caption");
+            if (!next.isEmpty()) {
+                normalized.add(next);
+            }
+        }
+        return normalized;
+    }
+
+    private void copyAttachmentValue(Map<?, ?> source, Map<String, Object> target, String key) {
+        Object value = source.get(key);
+        if (value instanceof String stringValue && !stringValue.isBlank()) {
+            target.put(key, stringValue);
         }
     }
 }

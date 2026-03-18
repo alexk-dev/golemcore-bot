@@ -198,6 +198,7 @@ export default function ChatWindow(): ReactElement {
       tier: null,
       skill: null,
       reasoning: null,
+      attachments: [],
       clientStatus: 'pending',
       outbound: outboundPayload,
       clientMessageId: messageId,

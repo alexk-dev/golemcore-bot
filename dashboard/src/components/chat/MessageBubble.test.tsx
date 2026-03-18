@@ -70,4 +70,35 @@ describe('MessageBubble', () => {
     expect(html).toContain('OpenAI o3 mini:high');
     expect(html).not.toContain('assistant-tier-chip');
   });
+
+  it('renders multiple assistant attachments when a reply includes screenshots', () => {
+    const html = renderToStaticMarkup(
+      <MessageBubble
+        role="assistant"
+        content="Here are the screenshots"
+        attachments={[
+          {
+            type: 'image',
+            name: 'screen-1.png',
+            mimeType: 'image/png',
+            url: null,
+            internalFilePath: '.golemcore/tool-artifacts/screen-1.png',
+            thumbnailBase64: 'ZmFrZS0x',
+          },
+          {
+            type: 'image',
+            name: 'screen-2.png',
+            mimeType: 'image/png',
+            url: null,
+            internalFilePath: '.golemcore/tool-artifacts/screen-2.png',
+            thumbnailBase64: 'ZmFrZS0y',
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain('screen-1.png');
+    expect(html).toContain('screen-2.png');
+    expect(html).toContain('data:image/png;base64,ZmFrZS0x');
+  });
 });
