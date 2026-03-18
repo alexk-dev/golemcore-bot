@@ -130,7 +130,7 @@ function PlanControlBody({
   }
 
   if (data?.featureEnabled !== true) {
-    return <div className="text-body-secondary small">Plan mode is disabled in runtime config.</div>;
+    return <div className="text-body-secondary small">Plan mode is disabled in settings.</div>;
   }
 
   return (

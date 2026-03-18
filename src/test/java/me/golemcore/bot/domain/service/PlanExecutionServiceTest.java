@@ -5,7 +5,6 @@ import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.PlanExecutionCompletedEvent;
 import me.golemcore.bot.domain.model.PlanStep;
 import me.golemcore.bot.domain.model.ToolResult;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -47,7 +46,7 @@ class PlanExecutionServiceTest {
     private ToolComponent filesystemTool;
     private ToolComponent shellTool;
     private ApplicationEventPublisher eventPublisher;
-    private BotProperties properties;
+    private RuntimeConfigService runtimeConfigService;
     private PlanExecutionService service;
 
     @BeforeEach
@@ -64,14 +63,14 @@ class PlanExecutionServiceTest {
 
         eventPublisher = mock(ApplicationEventPublisher.class);
 
-        properties = new BotProperties();
-        properties.getPlan().setStopOnFailure(true);
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isPlanStopOnFailure()).thenReturn(true);
 
         service = new PlanExecutionService(
                 planService,
                 List.of(filesystemTool, shellTool),
                 eventPublisher,
-                properties);
+                runtimeConfigService);
     }
 
     @Test
@@ -115,7 +114,7 @@ class PlanExecutionServiceTest {
 
     @Test
     void shouldContinueOnFailureWhenNotStopOnFailure() throws Exception {
-        properties.getPlan().setStopOnFailure(false);
+        when(runtimeConfigService.isPlanStopOnFailure()).thenReturn(false);
 
         Plan plan = buildPlan(Plan.PlanStatus.APPROVED, List.of(
                 buildStep("s1", TOOL_FILESYSTEM, 0, PlanStep.StepStatus.PENDING),
@@ -465,7 +464,7 @@ class PlanExecutionServiceTest {
 
     @Test
     void shouldCompleteWithHasFailureWhenStopOnFailureDisabled() throws Exception {
-        properties.getPlan().setStopOnFailure(false);
+        when(runtimeConfigService.isPlanStopOnFailure()).thenReturn(false);
 
         Plan plan = buildPlan(Plan.PlanStatus.APPROVED, List.of(
                 buildStep("s1", TOOL_FILESYSTEM, 0, PlanStep.StepStatus.PENDING)));

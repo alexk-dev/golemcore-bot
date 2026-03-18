@@ -4,7 +4,6 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.PlanStep;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -53,7 +52,7 @@ class PlanServiceTest {
 
     private StoragePort storagePort;
     private ObjectMapper objectMapper;
-    private BotProperties properties;
+    private RuntimeConfigService runtimeConfigService;
     private Clock clock;
     private PlanService service;
 
@@ -63,10 +62,10 @@ class PlanServiceTest {
         objectMapper = new ObjectMapper();
         objectMapper.findAndRegisterModules();
 
-        properties = new BotProperties();
-        properties.getPlan().setEnabled(true);
-        properties.getPlan().setMaxPlans(5);
-        properties.getPlan().setMaxStepsPerPlan(50);
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isPlanEnabled()).thenReturn(true);
+        when(runtimeConfigService.getPlanMaxPlans()).thenReturn(5);
+        when(runtimeConfigService.getPlanMaxStepsPerPlan()).thenReturn(50);
 
         clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
 
@@ -75,7 +74,7 @@ class PlanServiceTest {
         when(storagePort.getText(anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
-        service = new PlanService(storagePort, objectMapper, properties, clock);
+        service = new PlanService(storagePort, objectMapper, runtimeConfigService, clock);
     }
 
     // ==================== 1. shouldCreatePlanSuccessfully ====================
@@ -328,7 +327,7 @@ class PlanServiceTest {
         // Since activatePlanMode creates a new plan, let's reload and test differently
 
         // Reset and use a specific plan
-        service = new PlanService(storagePort, objectMapper, properties, clock);
+        service = new PlanService(storagePort, objectMapper, runtimeConfigService, clock);
         when(storagePort.getText(AUTO_DIR, PLANS_FILE))
                 .thenReturn(CompletableFuture.completedFuture(plansJson));
 
@@ -538,7 +537,7 @@ class PlanServiceTest {
         allPlans.addAll(service.getPlans());
         String plansJson = objectMapper.writeValueAsString(allPlans);
         // Reset the service to reload the cache
-        service = new PlanService(storagePort, objectMapper, properties, clock);
+        service = new PlanService(storagePort, objectMapper, runtimeConfigService, clock);
         when(storagePort.getText(AUTO_DIR, PLANS_FILE))
                 .thenReturn(CompletableFuture.completedFuture(plansJson));
 
@@ -1046,10 +1045,10 @@ class PlanServiceTest {
     @Test
     void shouldReturnFeatureEnabledFromProperties() {
         // Arrange & Act & Assert
-        properties.getPlan().setEnabled(true);
+        when(runtimeConfigService.isPlanEnabled()).thenReturn(true);
         assertTrue(service.isFeatureEnabled());
 
-        properties.getPlan().setEnabled(false);
+        when(runtimeConfigService.isPlanEnabled()).thenReturn(false);
         assertFalse(service.isFeatureEnabled());
     }
 

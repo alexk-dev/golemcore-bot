@@ -23,6 +23,7 @@ import TurnTab from './settings/TurnTab';
 import UsageTab from './settings/UsageTab';
 import McpTab from './settings/McpTab';
 import AutoModeTab from './settings/AutoModeTab';
+import PlanModeTab from './settings/PlanModeTab';
 import { UpdatesTab } from './settings/UpdatesTab';
 import PluginSettingsPanel from './settings/PluginSettingsPanel';
 import PluginsMarketplaceTab from './settings/PluginsMarketplaceTab';
@@ -318,6 +319,7 @@ export default function SettingsPage(): ReactElement {
       {staticSection === 'turn' && rc != null && <TurnTab config={rc.turn} />}
       {staticSection === 'usage' && rc != null && <UsageTab config={rc.usage} />}
       {staticSection === 'mcp' && rc != null && <McpTab config={rc.mcp} />}
+      {staticSection === 'plan' && rc != null && <PlanModeTab config={rc.plan} />}
       {staticSection === 'auto' && rc != null && <AutoModeTab config={rc.autoMode} />}
       {staticSection === 'updates' && <UpdatesTab />}
 

@@ -27,11 +27,11 @@ import me.golemcore.bot.domain.system.toolloop.ToolExecutorPort;
 import me.golemcore.bot.domain.system.toolloop.ToolLoopTurnResult;
 import me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder;
 import me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.McpPort;
 import me.golemcore.bot.port.outbound.RagPort;
 import me.golemcore.bot.port.outbound.StoragePort;
+import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.tools.PlanGetTool;
 import me.golemcore.bot.tools.PlanSetContentTool;
 import org.junit.jupiter.api.Test;
@@ -74,13 +74,15 @@ class PlanWorkLifecycleBddTest {
         when(storagePort.getText(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
         when(storagePort.putText(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
-        BotProperties properties = new BotProperties();
-        properties.getPlan().setEnabled(true);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isPlanEnabled()).thenReturn(true);
+        when(runtimeConfigService.getPlanMaxPlans()).thenReturn(5);
+        when(runtimeConfigService.getPlanMaxStepsPerPlan()).thenReturn(50);
 
         PlanService planService = new PlanService(
                 storagePort,
                 new ObjectMapper().findAndRegisterModules(),
-                properties,
+                runtimeConfigService,
                 Clock.fixed(NOW, ZoneOffset.UTC));
 
         // /plan on (activate plan work + create empty plan)
@@ -92,7 +94,7 @@ class PlanWorkLifecycleBddTest {
         assertTrue(planService.isPlanModeActive(sessionIdentity));
 
         // And a minimal context builder to verify tool advertisement
-        ContextBuildingSystem contextBuildingSystem = buildContextBuildingSystem(planService, properties);
+        ContextBuildingSystem contextBuildingSystem = buildContextBuildingSystem(planService);
 
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder().chatId(CHAT_ID).channelType("telegram").messages(new ArrayList<>())
@@ -189,7 +191,7 @@ class PlanWorkLifecycleBddTest {
         assertEquals(Plan.PlanStatus.READY, plan.get().getStatus());
     }
 
-    private static ContextBuildingSystem buildContextBuildingSystem(PlanService planService, BotProperties properties) {
+    private static ContextBuildingSystem buildContextBuildingSystem(PlanService planService) {
         SkillTemplateEngine templateEngine = mock(SkillTemplateEngine.class);
         PromptSectionService promptSectionService = mock(PromptSectionService.class);
         UserPreferencesService userPreferencesService = mock(UserPreferencesService.class);
@@ -216,7 +218,7 @@ class PlanWorkLifecycleBddTest {
                 mcpPort,
                 toolCallExecutionService,
                 ragPort,
-                properties,
+                new me.golemcore.bot.infrastructure.config.BotProperties(),
                 autoModeService,
                 planService,
                 promptSectionService,
