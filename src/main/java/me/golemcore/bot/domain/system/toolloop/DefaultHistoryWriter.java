@@ -23,9 +23,11 @@ public class DefaultHistoryWriter implements HistoryWriter {
     private static final String DEFAULT_MODEL_TIER = "balanced";
     private static final String TOOL_ATTACHMENTS_METADATA_KEY = "toolAttachments";
     private static final String INTERNAL_FILE_PATH_KEY = "internal_file_path";
+    private static final String INTERNAL_FILE_URL_KEY = "internal_file_url";
     private static final String INTERNAL_FILE_NAME_KEY = "internal_file_name";
     private static final String INTERNAL_FILE_MIME_TYPE_KEY = "internal_file_mime_type";
     private static final String INTERNAL_FILE_KIND_KEY = "internal_file_kind";
+    private static final String ATTACHMENTS_METADATA_KEY = "attachments";
 
     private final Clock clock;
 
@@ -53,16 +55,18 @@ public class DefaultHistoryWriter implements HistoryWriter {
 
     @Override
     public void appendToolResult(AgentContext context, ToolExecutionOutcome outcome) {
+        Map<String, Object> metadata = buildToolMetadata(context, outcome);
         Message toolMsg = Message.builder()
                 .id(UUID.randomUUID().toString())
                 .role("tool")
                 .toolCallId(outcome.toolCallId())
                 .toolName(outcome.toolName())
                 .content(outcome.messageContent())
-                .metadata(buildToolMetadata(context, outcome))
+                .metadata(metadata)
                 .timestamp(now())
                 .build();
 
+        recordTurnOutputAttachments(context, metadata);
         context.getMessages().add(toolMsg);
         if (context.getSession() != null) {
             context.getSession().addMessage(toolMsg);
@@ -71,12 +75,17 @@ public class DefaultHistoryWriter implements HistoryWriter {
 
     @Override
     public void appendFinalAssistantAnswer(AgentContext context, LlmResponse llmResponse, String finalText) {
+        Map<String, Object> metadata = buildAssistantMetadata(context, llmResponse);
+        List<Map<String, Object>> attachments = context.getAttribute(ContextAttributes.TURN_OUTPUT_ATTACHMENTS);
+        if (attachments != null && !attachments.isEmpty()) {
+            metadata.put(ATTACHMENTS_METADATA_KEY, copyAttachments(attachments));
+        }
         Message assistant = Message.builder()
                 .id(UUID.randomUUID().toString())
                 .role("assistant")
                 .content(finalText)
                 .toolCalls(llmResponse != null ? llmResponse.getToolCalls() : null)
-                .metadata(buildAssistantMetadata(context, llmResponse))
+                .metadata(metadata)
                 .timestamp(now())
                 .build();
 
@@ -140,14 +149,18 @@ public class DefaultHistoryWriter implements HistoryWriter {
         Object pathValue = data.get(INTERNAL_FILE_PATH_KEY);
         if (!(kindValue instanceof String kind)
                 || !(pathValue instanceof String path)
-                || !"image".equalsIgnoreCase(kind)
                 || path.isBlank()) {
             return metadata;
         }
 
         Map<String, Object> attachment = new LinkedHashMap<>();
-        attachment.put("type", "image");
+        attachment.put("type", kind.toLowerCase(java.util.Locale.ROOT));
         attachment.put("internalFilePath", path);
+
+        Object urlValue = data.get(INTERNAL_FILE_URL_KEY);
+        if (urlValue instanceof String url && !url.isBlank()) {
+            attachment.put("url", url);
+        }
 
         Object filenameValue = data.get(INTERNAL_FILE_NAME_KEY);
         if (filenameValue instanceof String filename && !filename.isBlank()) {
@@ -163,5 +176,33 @@ public class DefaultHistoryWriter implements HistoryWriter {
         attachments.add(attachment);
         metadata.put(TOOL_ATTACHMENTS_METADATA_KEY, attachments);
         return metadata;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void recordTurnOutputAttachments(AgentContext context, Map<String, Object> metadata) {
+        if (context == null || metadata == null) {
+            return;
+        }
+        Object attachmentsRaw = metadata.get(TOOL_ATTACHMENTS_METADATA_KEY);
+        if (!(attachmentsRaw instanceof List<?> attachments) || attachments.isEmpty()) {
+            return;
+        }
+
+        List<Map<String, Object>> current = context.getAttribute(ContextAttributes.TURN_OUTPUT_ATTACHMENTS);
+        List<Map<String, Object>> next = current == null ? new ArrayList<>() : new ArrayList<>(current);
+        for (Object attachmentObj : attachments) {
+            if (attachmentObj instanceof Map<?, ?> attachmentMap) {
+                next.add(new LinkedHashMap<>((Map<String, Object>) attachmentMap));
+            }
+        }
+        context.setAttribute(ContextAttributes.TURN_OUTPUT_ATTACHMENTS, next);
+    }
+
+    private List<Map<String, Object>> copyAttachments(List<Map<String, Object>> attachments) {
+        List<Map<String, Object>> copied = new ArrayList<>(attachments.size());
+        for (Map<String, Object> attachment : attachments) {
+            copied.add(new LinkedHashMap<>(attachment));
+        }
+        return copied;
     }
 }

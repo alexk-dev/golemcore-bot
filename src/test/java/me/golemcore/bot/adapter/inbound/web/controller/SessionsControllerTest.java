@@ -133,6 +133,41 @@ class SessionsControllerTest {
     }
 
     @Test
+    void shouldExposeAssistantAttachmentsInSessionDetail() {
+        Message msg = Message.builder()
+                .id("m-image")
+                .role("assistant")
+                .content("Here is the screenshot")
+                .metadata(Map.of(
+                        "attachments", List.of(Map.of(
+                                "type", "image",
+                                "name", "capture.png",
+                                "mimeType", "image/png",
+                                "internalFilePath", ".golemcore/tool-artifacts/session/tool/capture.png"))))
+                .timestamp(Instant.now())
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("s-image")
+                .channelType("web")
+                .chatId("123")
+                .createdAt(Instant.now())
+                .messages(List.of(msg))
+                .build();
+        when(sessionPort.get("s-image")).thenReturn(Optional.of(session));
+
+        StepVerifier.create(controller.getSession("s-image"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    SessionDetailDto.MessageDto message = response.getBody().getMessages().get(0);
+                    assertNotNull(message.getAttachments());
+                    assertEquals(1, message.getAttachments().size());
+                    assertEquals("capture.png", message.getAttachments().get(0).getName());
+                    assertTrue(message.getAttachments().get(0).getUrl().contains("/api/files/download?path="));
+                })
+                .verifyComplete();
+    }
+
+    @Test
     void shouldHideInternalMessagesFromSessionDetailAndPaging() {
         Message visibleUser = Message.builder()
                 .id("m-visible")
@@ -241,7 +276,7 @@ class SessionsControllerTest {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
                     assertEquals(1, response.getBody().getMessages().size());
                     SessionDetailDto.MessageDto message = response.getBody().getMessages().get(0);
-                    assertEquals("[1 image attachment]", message.getContent());
+                    assertEquals("[1 attachment]", message.getContent());
                     assertEquals("client-msg-1", message.getClientMessageId());
                     assertFalse(response.getBody().isHasMore());
                 })

@@ -27,6 +27,13 @@ export interface SessionDetail {
   messages: MessageInfo[];
 }
 
+export interface SessionMessageAttachment {
+  type: string | null;
+  name: string | null;
+  mimeType: string | null;
+  url: string | null;
+}
+
 export interface MessageInfo {
   id: string;
   role: string;
@@ -38,6 +45,7 @@ export interface MessageInfo {
   modelTier: string | null;
   reasoning: string | null;
   clientMessageId: string | null;
+  attachments: SessionMessageAttachment[];
 }
 
 export interface SessionMessagesPage {

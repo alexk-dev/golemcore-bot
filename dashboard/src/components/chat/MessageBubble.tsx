@@ -2,6 +2,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useId, useState } from 'react';
 import { FiCpu, FiUser } from 'react-icons/fi';
+import type { ChatMessageAttachment } from './chatRuntimeTypes';
 
 interface Props {
   role: string;
@@ -9,6 +10,7 @@ interface Props {
   model?: string | null;
   tier?: string | null;
   reasoning?: string | null;
+  attachments?: ChatMessageAttachment[];
   modelLabel?: string;
   modelTitle?: string;
   clientStatus?: 'pending' | 'failed';
@@ -126,11 +128,66 @@ interface AssistantMessageProps {
   content: string;
   model?: string | null;
   tier?: string | null;
+  attachments: ChatMessageAttachment[];
   modelLabel?: string;
   modelTitle?: string;
 }
 
-function AssistantMessageBubble({ content, model, tier, modelLabel, modelTitle }: AssistantMessageProps) {
+function MessageAttachments({ attachments }: { attachments: ChatMessageAttachment[] }) {
+  if (attachments.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="chat-attachments-row chat-attachments-row--message">
+      {attachments.map((attachment, index) => {
+        const label = attachment.name ?? `Attachment ${index + 1}`;
+        if (attachment.type === 'image' && attachment.url != null) {
+          return (
+            <a
+              key={`${attachment.url}:${index}`}
+              href={attachment.url}
+              target="_blank"
+              rel="noreferrer"
+              className="chat-attachment-link"
+              title={label}
+            >
+              <img src={attachment.url} alt={label} className="chat-attachment-thumb" />
+              <span className="chat-attachment-name">{label}</span>
+            </a>
+          );
+        }
+
+        if (attachment.url == null) {
+          return (
+            <div
+              key={`${label}:${index}`}
+              className="chat-attachment-chip"
+              title={label}
+            >
+              <span className="chat-attachment-name">{label}</span>
+            </div>
+          );
+        }
+
+        return (
+          <a
+            key={`${attachment.url}:${index}`}
+            href={attachment.url}
+            target="_blank"
+            rel="noreferrer"
+            className="chat-attachment-chip chat-attachment-link"
+            title={label}
+          >
+            <span className="chat-attachment-name">{label}</span>
+          </a>
+        );
+      })}
+    </div>
+  );
+}
+
+function AssistantMessageBubble({ content, model, tier, attachments, modelLabel, modelTitle }: AssistantMessageProps) {
   const normalizedTier = (tier ?? '').toLowerCase();
   const tierMeta = TIER_META[normalizedTier] ?? null;
   const hasKnownTier = tierMeta != null || (tier != null && tier.trim().length > 0);
@@ -171,6 +228,7 @@ function AssistantMessageBubble({ content, model, tier, modelLabel, modelTitle }
             </ReactMarkdown>
           </div>
         )}
+        <MessageAttachments attachments={attachments} />
       </div>
     </div>
   );
@@ -208,6 +266,7 @@ export default function MessageBubble({
   content,
   model,
   tier,
+  attachments = [],
   modelLabel,
   modelTitle,
   clientStatus,
@@ -220,6 +279,7 @@ export default function MessageBubble({
         content={safeContent}
         model={model}
         tier={tier}
+        attachments={attachments}
         modelLabel={modelLabel}
         modelTitle={modelTitle}
       />

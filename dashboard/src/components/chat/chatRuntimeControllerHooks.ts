@@ -18,7 +18,13 @@ interface SocketMessageHandlerConfig {
   applyProgressUpdate: (sessionId: string, progress: LiveProgressUpdate | null) => void;
   applyTurnMetadataPatch: (sessionId: string, hint: AssistantHint) => void;
   setTurnMetadata: (meta: Partial<TurnMetadata>) => void;
-  applyAssistantText: (sessionId: string, text: string, hint: AssistantHint | null, isFinal: boolean) => void;
+  applyAssistantText: (
+    sessionId: string,
+    text: string,
+    hint: AssistantHint | null,
+    attachments: NonNullable<SocketMessage['attachments']>,
+    isFinal: boolean,
+  ) => void;
 }
 
 interface ChatSocketTransportConfig {
@@ -161,7 +167,7 @@ export function useSocketMessageHandler({
       }
     }
 
-    applyAssistantText(sessionId, data.text ?? '', hint, data.type === 'assistant_done');
+    applyAssistantText(sessionId, data.text ?? '', hint, data.attachments ?? [], data.type === 'assistant_done');
   }, [
     activeSessionIdRef,
     applyAssistantText,

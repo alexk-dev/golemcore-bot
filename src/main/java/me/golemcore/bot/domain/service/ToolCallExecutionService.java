@@ -304,6 +304,10 @@ public class ToolCallExecutionService {
 
         String output = result.getOutput();
         if (storedFile != null) {
+            attachment.setDownloadUrl(storedFile.getDownloadUrl());
+            attachment.setInternalFilePath(storedFile.getPath());
+            attachment.setFilename(storedFile.getFilename());
+            attachment.setMimeType(storedFile.getMimeType());
             if (dataMap == null) {
                 dataMap = new LinkedHashMap<>();
             }

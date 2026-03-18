@@ -1068,6 +1068,10 @@ textarea:focus-visible,
   padding: 0.25rem 0.25rem 0;
 }
 
+.chat-attachments-row--message {
+  padding: 0.35rem 0 0;
+}
+
 .chat-attachment-chip {
   display: inline-flex;
   align-items: center;
@@ -1077,6 +1081,11 @@ textarea:focus-visible,
   border-radius: 0.6rem;
   background-color: var(--bs-tertiary-bg);
   max-width: 220px;
+}
+
+.chat-attachment-link {
+  text-decoration: none;
+  color: inherit;
 }
 
 .chat-attachment-thumb {

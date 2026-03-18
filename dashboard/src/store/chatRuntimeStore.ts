@@ -63,7 +63,13 @@ interface ChatRuntimeState {
   setRunning: (sessionId: string, running: boolean) => void;
   applyProgressUpdate: (sessionId: string, progress: LiveProgressUpdate | null) => void;
   applyTurnMetadataPatch: (sessionId: string, hint: AssistantHint) => void;
-  applyAssistantText: (sessionId: string, text: string, hint: AssistantHint | null, isFinal: boolean) => void;
+  applyAssistantText: (
+    sessionId: string,
+    text: string,
+    hint: AssistantHint | null,
+    attachments: ChatMessage['attachments'],
+    isFinal: boolean,
+  ) => void;
 }
 
 function ensureSessionState(
@@ -397,10 +403,10 @@ function createMessageActions(
         }),
       };
     }),
-  applyAssistantText: (sessionId, text, hint, isFinal) =>
+  applyAssistantText: (sessionId, text, hint, attachments, isFinal) =>
     set((state) => {
       const current = ensureSessionState(state.sessions, sessionId);
-      const nextSession = applyAssistantTextUpdate(current, sessionId, text, hint, isFinal);
+      const nextSession = applyAssistantTextUpdate(current, sessionId, text, hint, attachments, isFinal);
 
       return {
         sessions: cloneSessions(state.sessions, sessionId, {

@@ -151,6 +151,7 @@ class DefaultHistoryWriterTest {
                 .data(Map.of(
                         "internal_file_kind", "image",
                         "internal_file_path", ".golemcore/tool-artifacts/session/tool/capture.png",
+                        "internal_file_url", "/api/files/download?path=capture",
                         "internal_file_name", "capture.png",
                         "internal_file_mime_type", "image/png"))
                 .build();
@@ -167,6 +168,7 @@ class DefaultHistoryWriterTest {
         assertEquals(1, attachments.size());
         assertEquals("image", attachments.get(0).get("type"));
         assertEquals(".golemcore/tool-artifacts/session/tool/capture.png", attachments.get(0).get("internalFilePath"));
+        assertEquals("/api/files/download?path=capture", attachments.get(0).get("url"));
         assertEquals("capture.png", attachments.get(0).get("name"));
         assertEquals("image/png", attachments.get(0).get("mimeType"));
     }
@@ -234,6 +236,33 @@ class DefaultHistoryWriterTest {
 
         Message message = context.getMessages().get(0);
         assertFalse(message.getMetadata().containsKey("reasoning"));
+    }
+
+    @Test
+    void shouldCarryTurnAttachmentsIntoFinalAssistantAnswer() {
+        AgentContext context = buildContext(true);
+        ToolResult toolResult = ToolResult.builder()
+                .success(true)
+                .output("Saved screenshot")
+                .data(Map.of(
+                        "internal_file_kind", "image",
+                        "internal_file_path", ".golemcore/tool-artifacts/session/tool/capture.png",
+                        "internal_file_url", "/api/files/download?path=capture",
+                        "internal_file_name", "capture.png",
+                        "internal_file_mime_type", "image/png"))
+                .build();
+        writer.appendToolResult(context, new ToolExecutionOutcome(
+                TC_ID, "pinchtab_screenshot", toolResult, "Saved screenshot", false, null));
+
+        writer.appendFinalAssistantAnswer(context, null, "Here is the screenshot");
+
+        Message message = context.getMessages().get(1);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> attachments = (List<Map<String, Object>>) message.getMetadata().get("attachments");
+        assertNotNull(attachments);
+        assertEquals(1, attachments.size());
+        assertEquals("/api/files/download?path=capture", attachments.get(0).get("url"));
+        assertEquals("capture.png", attachments.get(0).get("name"));
     }
 
     @Test

@@ -15,6 +15,7 @@ function createUserMessage(overrides: Partial<ChatMessage>): ChatMessage {
     model: null,
     tier: null,
     reasoning: null,
+    attachments: [],
     persisted: false,
     ...overrides,
   };
@@ -49,7 +50,7 @@ describe('chatRuntimeStoreUtils', () => {
       model: 'openai/o3-mini',
       reasoning: 'high',
       tier: 'smart',
-    }, false);
+    }, [], false);
 
     expect(chunkState.messages).toHaveLength(1);
     expect(chunkState.messages[0].content).toBe('Hel');
@@ -59,7 +60,7 @@ describe('chatRuntimeStoreUtils', () => {
     const finalState = applyAssistantTextUpdate({
       ...initialState,
       ...chunkState,
-    }, 'chat-1', 'Hello', null, true);
+    }, 'chat-1', 'Hello', null, [], true);
 
     expect(finalState.messages).toHaveLength(1);
     expect(finalState.messages[0].content).toBe('Hello');
@@ -77,7 +78,7 @@ describe('chatRuntimeStoreUtils', () => {
       model: 'gemini-3.1-flash-lite-preview',
       tier: 'smart',
       reasoning: 'medium',
-    }, true);
+    }, [], true);
 
     expect(finalState.messages).toHaveLength(1);
     expect(finalState.messages[0].content).toBe('Hello');
@@ -103,9 +104,25 @@ describe('chatRuntimeStoreUtils', () => {
     const finalState = applyAssistantTextUpdate({
       ...initialState,
       ...withProgress,
-    }, 'chat-1', 'Done', null, true);
+    }, 'chat-1', 'Done', null, [], true);
 
     expect(finalState.progress).toBeNull();
+    expect(finalState.running).toBe(false);
+  });
+
+  it('creates an assistant message when the final reply contains only attachments', () => {
+    const initialState = buildSessionState({});
+
+    const finalState = applyAssistantTextUpdate(initialState, 'chat-1', '', null, [{
+      type: 'image',
+      name: 'capture.png',
+      mimeType: 'image/png',
+      url: '/api/files/download?path=capture',
+    }], true);
+
+    expect(finalState.messages).toHaveLength(1);
+    expect(finalState.messages[0].attachments).toHaveLength(1);
+    expect(finalState.messages[0].content).toBe('');
     expect(finalState.running).toBe(false);
   });
 });

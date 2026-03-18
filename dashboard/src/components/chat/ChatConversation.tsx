@@ -135,6 +135,7 @@ export function ChatConversation({
             model={message.model}
             tier={message.tier}
             reasoning={message.reasoning}
+            attachments={message.attachments}
             modelLabel={formatModelDisplayLabel(message.model, message.reasoning, modelsConfig)}
             modelTitle={buildModelTitle(message.model, message.reasoning, modelsConfig)}
             clientStatus={message.role === 'user' ? message.clientStatus : undefined}

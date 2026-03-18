@@ -1,6 +1,13 @@
 import type { TurnMetadata } from '../../store/contextPanelStore';
 import type { ChatAttachmentPayload, OutboundChatPayload } from './chatInputTypes';
 
+export interface ChatMessageAttachment {
+  type: 'image' | 'document';
+  name: string | null;
+  mimeType: string | null;
+  url: string | null;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -8,6 +15,7 @@ export interface ChatMessage {
   model: string | null;
   tier: string | null;
   reasoning: string | null;
+  attachments: ChatMessageAttachment[];
   clientStatus?: 'pending' | 'failed';
   outbound?: OutboundChatPayload;
   clientMessageId?: string | null;
@@ -37,6 +45,7 @@ export interface SocketMessage {
   text?: string;
   sessionId?: string;
   hint?: AssistantHint;
+  attachments?: ChatMessageAttachment[];
   progressType?: 'intent' | 'summary' | 'clear';
   progressMetadata?: Record<string, unknown>;
   runtimeEventType?: string;
