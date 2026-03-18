@@ -410,10 +410,10 @@ public class ContextBuildingSystem implements AgentSystem {
     private void resolveReflectionTier(AgentContext context, String userTier) {
         Skill activeSkill = resolveReflectionSkill(context);
         String configuredReflectionTier = resolveReflectionTierOverride(context);
-        Boolean priority = resolveReflectionTierPriority(context);
+        boolean priority = resolveReflectionTierPriority(context);
         String skillReflectionTier = activeSkill != null ? activeSkill.getReflectionTier() : null;
 
-        if (Boolean.TRUE.equals(priority) && configuredReflectionTier != null && !configuredReflectionTier.isBlank()) {
+        if (priority && configuredReflectionTier != null && !configuredReflectionTier.isBlank()) {
             context.setModelTier(configuredReflectionTier);
             return;
         }
@@ -499,14 +499,14 @@ public class ContextBuildingSystem implements AgentSystem {
         return AutoRunContextSupport.readMetadataString(last.getMetadata(), ContextAttributes.ACTIVE_SKILL_NAME);
     }
 
-    private Boolean resolveReflectionTierPriority(AgentContext context) {
+    private boolean resolveReflectionTierPriority(AgentContext context) {
         Boolean priority = context.getAttribute(ContextAttributes.AUTO_REFLECTION_TIER_PRIORITY);
         if (priority != null) {
             return priority;
         }
         Message last = getLastMessage(context);
         if (last == null || last.getMetadata() == null) {
-            return null;
+            return false;
         }
         Object value = last.getMetadata().get(ContextAttributes.AUTO_REFLECTION_TIER_PRIORITY);
         if (value instanceof Boolean booleanValue) {
@@ -515,7 +515,7 @@ public class ContextBuildingSystem implements AgentSystem {
         if (value instanceof String stringValue && !stringValue.isBlank()) {
             return Boolean.parseBoolean(stringValue.trim());
         }
-        return null;
+        return false;
     }
 
     private Message getLastMessage(AgentContext context) {

@@ -411,16 +411,14 @@ public class AutoModeScheduler {
     }
 
     private void handleRunSuccess(ScheduleMessage scheduleMessage, String activeSkillName) {
-        if (!scheduleMessage.reflectionActive() && !StringValueSupport.isBlank(scheduleMessage.goalId())
-                && !StringValueSupport.isBlank(scheduleMessage.taskId())) {
+        if (!scheduleMessage.reflectionActive() && !StringValueSupport.isBlank(scheduleMessage.goalId())) {
             autoModeService.recordAutoRunSuccess(scheduleMessage.goalId(), scheduleMessage.taskId(), activeSkillName);
         }
     }
 
     private void recordFailedRunState(ScheduleMessage scheduleMessage, String summary, String fingerprint,
             String activeSkillName) {
-        if (StringValueSupport.isBlank(scheduleMessage.goalId())
-                || StringValueSupport.isBlank(scheduleMessage.taskId())) {
+        if (StringValueSupport.isBlank(scheduleMessage.goalId())) {
             return;
         }
         autoModeService.recordAutoRunFailure(scheduleMessage.goalId(), scheduleMessage.taskId(), summary, fingerprint,
@@ -434,15 +432,14 @@ public class AutoModeScheduler {
         if (!runtimeConfigService.isAutoReflectionEnabled()) {
             return false;
         }
-        if (StringValueSupport.isBlank(scheduleMessage.goalId())
-                || StringValueSupport.isBlank(scheduleMessage.taskId())) {
+        if (StringValueSupport.isBlank(scheduleMessage.goalId())) {
             return false;
         }
         return autoModeService.shouldTriggerReflection(scheduleMessage.goalId(), scheduleMessage.taskId());
     }
 
     private ScheduleMessage buildReflectionMessage(ScheduleMessage source, String scheduleId) {
-        if (StringValueSupport.isBlank(source.goalId()) || StringValueSupport.isBlank(source.taskId())) {
+        if (StringValueSupport.isBlank(source.goalId())) {
             return null;
         }
         AutoModeService.TaskReflectionState reflectionState = autoModeService.resolveTaskReflectionState(
@@ -451,9 +448,15 @@ public class AutoModeScheduler {
         String tier = autoModeService.resolveReflectionTier(source.goalId(), source.taskId(), reflectedSkill);
         boolean priority = autoModeService.isReflectionTierPriority(source.goalId(), source.taskId());
         StringBuilder prompt = new StringBuilder();
-        prompt.append("[AUTO][REFLECTION] Analyze the repeated failure for task '")
-                .append(source.taskTitle() != null ? source.taskTitle() : source.taskId())
-                .append("' and propose an alternative strategy for the next run.");
+        if (!StringValueSupport.isBlank(source.taskId())) {
+            prompt.append("[AUTO][REFLECTION] Analyze the repeated failure for task '")
+                    .append(source.taskTitle() != null ? source.taskTitle() : source.taskId())
+                    .append("' and propose an alternative strategy for the next run.");
+        } else {
+            prompt.append("[AUTO][REFLECTION] Analyze the repeated failure while planning goal '")
+                    .append(source.goalTitle() != null ? source.goalTitle() : source.goalId())
+                    .append("' and propose an alternative strategy for the next run.");
+        }
         if (!StringValueSupport.isBlank(reflectionState.lastFailureSummary())) {
             prompt.append(" Latest failure: ").append(reflectionState.lastFailureSummary()).append('.');
         }

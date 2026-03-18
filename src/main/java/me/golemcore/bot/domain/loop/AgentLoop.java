@@ -310,13 +310,15 @@ public class AgentLoop {
         copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_RUN_ACTIVE_SKILL);
         copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_REFLECTION_TIER);
 
-        Boolean reflectionActive = readMetadataBoolean(message, ContextAttributes.AUTO_REFLECTION_ACTIVE);
-        if (Boolean.TRUE.equals(reflectionActive)) {
+        boolean reflectionActive = readMetadataBoolean(message, ContextAttributes.AUTO_REFLECTION_ACTIVE);
+        if (reflectionActive) {
             context.setAttribute(ContextAttributes.AUTO_REFLECTION_ACTIVE, true);
         }
 
-        Boolean reflectionTierPriority = readMetadataBoolean(message, ContextAttributes.AUTO_REFLECTION_TIER_PRIORITY);
-        if (reflectionTierPriority != null) {
+        if (message != null && message.getMetadata() != null
+                && message.getMetadata().containsKey(ContextAttributes.AUTO_REFLECTION_TIER_PRIORITY)) {
+            boolean reflectionTierPriority = readMetadataBoolean(message,
+                    ContextAttributes.AUTO_REFLECTION_TIER_PRIORITY);
             context.setAttribute(ContextAttributes.AUTO_REFLECTION_TIER_PRIORITY, reflectionTierPriority);
         }
     }
@@ -347,9 +349,9 @@ public class AgentLoop {
         return AutoRunContextSupport.readMetadataString(message.getMetadata(), key);
     }
 
-    private Boolean readMetadataBoolean(Message message, String key) {
+    private boolean readMetadataBoolean(Message message, String key) {
         if (message == null || message.getMetadata() == null || key == null || key.isBlank()) {
-            return null;
+            return false;
         }
         Object value = message.getMetadata().get(key);
         if (value instanceof Boolean booleanValue) {
@@ -358,7 +360,7 @@ public class AgentLoop {
         if (value instanceof String stringValue && !stringValue.isBlank()) {
             return Boolean.parseBoolean(stringValue.trim());
         }
-        return null;
+        return false;
     }
 
     private void recordAutoRunOutcome(Message inbound, AgentContext context) {

@@ -36,8 +36,8 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -268,7 +268,7 @@ class ToolLoopResilienceBddTest {
         DefaultToolLoopSystem system = buildSystem(llmPort, runtimeConfigService, null, mock(ToolExecutorPort.class));
 
         AtomicReference<ToolLoopTurnResult> resultRef = new AtomicReference<>();
-        AtomicReference<Throwable> failureRef = new AtomicReference<>();
+        AtomicReference<Exception> failureRef = new AtomicReference<>();
         Thread worker = new Thread(() -> {
             try {
                 resultRef.set(system.processTurn(context));
@@ -339,7 +339,7 @@ class ToolLoopResilienceBddTest {
         DefaultToolLoopSystem system = buildSystem(llmPort, runtimeConfigService, null, mock(ToolExecutorPort.class));
 
         AtomicReference<ToolLoopTurnResult> resultRef = new AtomicReference<>();
-        AtomicReference<Throwable> failureRef = new AtomicReference<>();
+        AtomicReference<Exception> failureRef = new AtomicReference<>();
         AtomicBoolean interruptedAfterReturn = new AtomicBoolean(true);
         Thread worker = new Thread(() -> {
             try {
@@ -416,7 +416,7 @@ class ToolLoopResilienceBddTest {
         DefaultToolLoopSystem system = buildSystem(llmPort, runtimeConfigService, null, mock(ToolExecutorPort.class));
 
         AtomicReference<ToolLoopTurnResult> resultRef = new AtomicReference<>();
-        AtomicReference<Throwable> failureRef = new AtomicReference<>();
+        AtomicReference<Exception> failureRef = new AtomicReference<>();
         Thread worker = new Thread(() -> {
             try {
                 resultRef.set(system.processTurn(context));

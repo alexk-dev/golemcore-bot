@@ -169,7 +169,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         int toolExecutions = 0;
         int emptyFinalResponseRetries = 0;
         int retryAttempt = 0;
-        String lastRetryCode = null;
+        String lastRetryCode = "";
         int maxRetries = resolveAutoRetryMaxAttempts();
         long retryBaseDelayMs = resolveAutoRetryBaseDelayMs();
         boolean retryEnabled = isAutoRetryEnabled();
@@ -264,6 +264,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                         eventPayload("attempt", retryAttempt, "success", true));
                 logRetrySucceeded(context, llmCalls, retryAttempt, maxRetries, lastRetryCode);
                 retryAttempt = 0;
+                lastRetryCode = "";
             }
 
             context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
@@ -500,7 +501,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
     private void logRetrySucceeded(AgentContext context, int llmCalls, int retryAttempt, int maxRetries, String code) {
         String model = context.getAttribute(ContextAttributes.LLM_MODEL);
         log.info("[ToolLoop] LLM retry succeeded (code={}, retry={}/{}, llmCall={}, model={})",
-                code != null ? code : "unknown",
+                code != null && !code.isBlank() ? code : "unknown",
                 retryAttempt,
                 maxRetries,
                 llmCalls,

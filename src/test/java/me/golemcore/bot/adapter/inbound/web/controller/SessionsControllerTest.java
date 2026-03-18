@@ -26,6 +26,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -271,7 +272,7 @@ class SessionsControllerTest {
     }
 
     @Test
-    void shouldFallbackAssistantTierToBalancedWhenHistoryMetadataIsMissing() {
+    void shouldKeepAssistantTierNullWhenHistoryMetadataIsMissing() {
         Message msg = Message.builder()
                 .id("m1")
                 .role("assistant")
@@ -293,7 +294,7 @@ class SessionsControllerTest {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
                     SessionDetailDto body = response.getBody();
                     assertNotNull(body);
-                    assertEquals("balanced", body.getMessages().get(0).getModelTier());
+                    assertNull(body.getMessages().get(0).getModelTier());
                 })
                 .verifyComplete();
     }

@@ -577,6 +577,42 @@ class AutoModeServiceTest {
     }
 
     @Test
+    void shouldTrackGoalLevelFailureAndReflectionStateWhenTaskIdIsMissing() throws Exception {
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(TEST_GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .reflectionModelTier("deep")
+                .reflectionTierPriority(true)
+                .tasks(new ArrayList<>())
+                .createdAt(Instant.now())
+                .build();
+        String goalsJson = objectMapper.writeValueAsString(List.of(goal));
+        when(storagePort.getText(AUTO_DIR, GOALS_FILE))
+                .thenReturn(CompletableFuture.completedFuture(goalsJson));
+
+        service.recordAutoRunFailure(GOAL_ID, null, "planner timeout", "planner timeout", "planner-skill");
+        service.recordAutoRunFailure(GOAL_ID, null, "planner timeout", "planner timeout", "planner-skill");
+
+        Goal updatedGoal = service.getGoal(GOAL_ID).orElseThrow();
+        assertEquals(2, updatedGoal.getConsecutiveFailureCount());
+        assertTrue(updatedGoal.isReflectionRequired());
+        assertEquals("planner-skill", updatedGoal.getLastUsedSkillName());
+        assertTrue(service.shouldTriggerReflection(GOAL_ID, null));
+        assertEquals("deep", service.resolveReflectionTier(GOAL_ID, null));
+        assertTrue(service.isReflectionTierPriority(GOAL_ID, null));
+
+        service.applyReflectionResult(GOAL_ID, null, "Try a narrower planning prompt and summarize blockers first");
+
+        Goal reflectedGoal = service.getGoal(GOAL_ID).orElseThrow();
+        assertEquals(0, reflectedGoal.getConsecutiveFailureCount());
+        assertFalse(reflectedGoal.isReflectionRequired());
+        assertEquals("Try a narrower planning prompt and summarize blockers first",
+                reflectedGoal.getReflectionStrategy());
+        assertEquals("planner-skill", reflectedGoal.getLastUsedSkillName());
+    }
+
+    @Test
     void resolveReflectionTierShouldPreferUsedSkillWhenTaskTierIsNotPriority() throws Exception {
         AutoTask task = AutoTask.builder()
                 .id(TASK_ID)

@@ -371,15 +371,17 @@ public class SessionRunCoordinator {
         }
 
         private Message dequeueInternalRetryLocked() {
-            java.util.Iterator<Message> iterator = queuedFollowUpMessages.iterator();
-            while (iterator.hasNext()) {
-                Message message = iterator.next();
-                if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(resolveQueueKind(message))) {
-                    iterator.remove();
-                    return message;
+            Message internalRetry = null;
+            for (Message queuedMessage : queuedFollowUpMessages) {
+                if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(resolveQueueKind(queuedMessage))) {
+                    internalRetry = queuedMessage;
+                    break;
                 }
             }
-            return null;
+            if (internalRetry != null) {
+                queuedFollowUpMessages.remove(internalRetry);
+            }
+            return internalRetry;
         }
 
         private Message mergeQueuedFollowUpMessagesLocked() {

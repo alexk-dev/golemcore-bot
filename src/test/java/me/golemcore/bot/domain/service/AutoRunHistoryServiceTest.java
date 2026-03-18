@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -110,6 +111,8 @@ class AutoRunHistoryServiceTest {
         Optional<AutoRunHistoryService.RunDetail> detail = service.getRun("run-1");
         assertTrue(detail.isPresent());
         assertEquals(2, detail.get().messages().size());
+        assertNull(detail.get().messages().get(0).modelTier());
+        assertNull(detail.get().messages().get(0).skill());
         assertEquals("coding", detail.get().messages().get(1).modelTier());
         assertEquals("reviewer-skill", detail.get().messages().get(1).skill());
     }
@@ -166,4 +169,79 @@ class AutoRunHistoryServiceTest {
         assertEquals(1, runs.size());
         assertEquals("FAILED", runs.get(0).status());
     }
+
+    @Test
+    void shouldExposeToolMetadataAndToolOutputStatusWhenAssistantIsMissing() {
+        Goal goal = Goal.builder()
+                .id("goal-1")
+                .title("Launch")
+                .tasks(List.of())
+                .build();
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-goal")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId("goal-1")
+                .cronExpression("* * * * *")
+                .build();
+
+        Message user = Message.builder()
+                .id("m-user")
+                .role("user")
+                .content("start")
+                .timestamp(Instant.parse("2026-03-11T10:00:00Z"))
+                .metadata(Map.of(
+                        ContextAttributes.AUTO_MODE, true,
+                        ContextAttributes.AUTO_RUN_ID, "run-tool",
+                        ContextAttributes.AUTO_SCHEDULE_ID, "sched-goal",
+                        ContextAttributes.AUTO_GOAL_ID, "goal-1",
+                        ContextAttributes.AUTO_RUN_ACTIVE_SKILL, "user-skill",
+                        "model", "user-model",
+                        "modelTier", "balanced"))
+                .build();
+        Message tool = Message.builder()
+                .id("m-tool")
+                .role("tool")
+                .content("tool output")
+                .timestamp(Instant.parse("2026-03-11T10:00:02Z"))
+                .metadata(Map.of(
+                        ContextAttributes.AUTO_MODE, true,
+                        ContextAttributes.AUTO_RUN_ID, "run-tool",
+                        ContextAttributes.AUTO_SCHEDULE_ID, "sched-goal",
+                        ContextAttributes.AUTO_GOAL_ID, "goal-1",
+                        ContextAttributes.AUTO_RUN_ACTIVE_SKILL, "tool-skill",
+                        "model", "tool-model",
+                        "modelTier", "smart"))
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("web:conv-tool")
+                .channelType("web")
+                .chatId("conv-tool")
+                .metadata(Map.of(
+                        ContextAttributes.CONVERSATION_KEY, "conv-tool",
+                        ContextAttributes.TRANSPORT_CHAT_ID, "client-tool"))
+                .messages(List.of(user, tool))
+                .build();
+
+        when(autoModeService.getGoals()).thenReturn(List.of(goal));
+        when(scheduleService.getSchedules()).thenReturn(List.of(schedule));
+        when(sessionPort.listAll()).thenReturn(List.of(session));
+
+        List<AutoRunHistoryService.RunSummary> runs = service.listRuns("sched-goal", null, null, 10);
+
+        assertEquals(1, runs.size());
+        AutoRunHistoryService.RunSummary run = runs.get(0);
+        assertEquals("TOOL_OUTPUT", run.status());
+        assertEquals("GOAL", run.scheduleTargetType());
+        assertEquals("Launch", run.scheduleTargetLabel());
+
+        AutoRunHistoryService.RunDetail detail = service.getRun("run-tool").orElseThrow();
+        assertEquals(2, detail.messages().size());
+        assertNull(detail.messages().get(0).model());
+        assertNull(detail.messages().get(0).modelTier());
+        assertNull(detail.messages().get(0).skill());
+        assertEquals("tool-model", detail.messages().get(1).model());
+        assertEquals("smart", detail.messages().get(1).modelTier());
+        assertEquals("tool-skill", detail.messages().get(1).skill());
+    }
+
 }
