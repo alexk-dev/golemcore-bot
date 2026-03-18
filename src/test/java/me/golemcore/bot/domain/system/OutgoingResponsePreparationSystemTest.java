@@ -24,6 +24,7 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
+import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.TurnLimitReason;
 import me.golemcore.bot.domain.service.InternalTurnService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
@@ -898,6 +899,24 @@ class OutgoingResponsePreparationSystemTest {
         AgentContext result = system.process(context);
 
         assertNull(result.getAttribute(ContextAttributes.OUTGOING_RESPONSE));
+    }
+
+    @Test
+    void shouldIncludeSkillHintFromActiveSkillWhenAttributeMissing() {
+        AgentContext context = buildContext();
+        context.setActiveSkill(Skill.builder()
+                .name("golemcore/superpowers/superpowers-code-reviewer")
+                .build());
+        context.setAttribute(ContextAttributes.LLM_RESPONSE,
+                LlmResponse.builder().content("Hello there").build());
+
+        AgentContext result = system.process(context);
+
+        OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        assertNotNull(outgoing);
+        assertEquals(
+                "golemcore/superpowers/superpowers-code-reviewer",
+                outgoing.getHints().get("skill"));
     }
 
     private AgentContext buildContext() {

@@ -1634,6 +1634,175 @@ class AgentLoopTest {
         verify(channel, atLeastOnce()).sendMessage(eq("1"), eq("Something went wrong"), any());
     }
 
+    @Test
+    void shouldRecordReflectionCompletionOutcomeForAutoRunMessage() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+
+        AgentSession session = AgentSession.builder()
+                .id("s-auto")
+                .channelType(CHANNEL_TYPE)
+                .chatId("auto-chat")
+                .messages(new ArrayList<>())
+                .build();
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "auto-chat")).thenReturn(session);
+
+        AgentSystem reflectionSystem = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "reflectionSystem";
+            }
+
+            @Override
+            public int getOrder() {
+                return 1;
+            }
+
+            @Override
+            public boolean shouldProcess(AgentContext context) {
+                return true;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                context.setAttribute(ContextAttributes.AUTO_REFLECTION_ACTIVE, true);
+                context.setAttribute(ContextAttributes.ACTIVE_SKILL_NAME, "reviewer-skill");
+                context.setTurnOutcome(TurnOutcome.builder()
+                        .assistantText("Reflected answer")
+                        .finishReason(FinishReason.SUCCESS)
+                        .build());
+                return context;
+            }
+        };
+
+        AgentLoop loop = createLoop(
+                sessionPort,
+                rateLimitPort,
+                List.of(reflectionSystem),
+                List.of(),
+                mockRuntimeConfigService(1),
+                preferencesService,
+                llmPort,
+                clock);
+
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put(ContextAttributes.AUTO_MODE, true);
+        metadata.put(ContextAttributes.AUTO_RUN_ID, "run-1");
+        Message inbound = Message.builder()
+                .role(ROLE_USER)
+                .content("reflect")
+                .channelType(CHANNEL_TYPE)
+                .chatId("auto-chat")
+                .senderId("auto")
+                .metadata(metadata)
+                .timestamp(clock.instant())
+                .build();
+
+        loop.processMessage(inbound);
+
+        assertEquals("REFLECTION_COMPLETED", inbound.getMetadata().get(ContextAttributes.AUTO_RUN_STATUS));
+        assertEquals("SUCCESS", inbound.getMetadata().get(ContextAttributes.AUTO_RUN_FINISH_REASON));
+        assertEquals("Reflected answer", inbound.getMetadata().get(ContextAttributes.AUTO_RUN_ASSISTANT_TEXT));
+        assertEquals("reviewer-skill", inbound.getMetadata().get(ContextAttributes.AUTO_RUN_ACTIVE_SKILL));
+        assertNull(inbound.getMetadata().get(ContextAttributes.AUTO_RUN_FAILURE_SUMMARY));
+    }
+
+    @Test
+    void shouldRecordReflectionFailureOutcomeForAutoRunMessage() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+
+        AgentSession session = AgentSession.builder()
+                .id("s-auto-fail")
+                .channelType(CHANNEL_TYPE)
+                .chatId("auto-chat")
+                .messages(new ArrayList<>())
+                .build();
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "auto-chat")).thenReturn(session);
+
+        AgentSystem reflectionFailureSystem = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "reflectionFailureSystem";
+            }
+
+            @Override
+            public int getOrder() {
+                return 1;
+            }
+
+            @Override
+            public boolean shouldProcess(AgentContext context) {
+                return true;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                context.setAttribute(ContextAttributes.AUTO_REFLECTION_ACTIVE, true);
+                context.setAttribute(ContextAttributes.ACTIVE_SKILL_NAME, "planner-skill");
+                context.addFailure(new FailureEvent(
+                        FailureSource.LLM,
+                        "test-llm",
+                        FailureKind.EXCEPTION,
+                        "Planner timeout",
+                        clock.instant()));
+                context.setTurnOutcome(TurnOutcome.builder()
+                        .finishReason(FinishReason.ERROR)
+                        .build());
+                return context;
+            }
+        };
+
+        AgentLoop loop = createLoop(
+                sessionPort,
+                rateLimitPort,
+                List.of(reflectionFailureSystem),
+                List.of(),
+                mockRuntimeConfigService(1),
+                preferencesService,
+                llmPort,
+                clock);
+
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put(ContextAttributes.AUTO_MODE, true);
+        metadata.put(ContextAttributes.AUTO_RUN_ID, "run-2");
+        Message inbound = Message.builder()
+                .role(ROLE_USER)
+                .content("reflect fail")
+                .channelType(CHANNEL_TYPE)
+                .chatId("auto-chat")
+                .senderId("auto")
+                .metadata(metadata)
+                .timestamp(clock.instant())
+                .build();
+
+        loop.processMessage(inbound);
+
+        assertEquals("REFLECTION_FAILED", inbound.getMetadata().get(ContextAttributes.AUTO_RUN_STATUS));
+        assertEquals("ERROR", inbound.getMetadata().get(ContextAttributes.AUTO_RUN_FINISH_REASON));
+        assertEquals("planner-skill", inbound.getMetadata().get(ContextAttributes.AUTO_RUN_ACTIVE_SKILL));
+        assertEquals("Planner timeout", inbound.getMetadata().get(ContextAttributes.AUTO_RUN_FAILURE_SUMMARY));
+        assertEquals("planner timeout", inbound.getMetadata().get(ContextAttributes.AUTO_RUN_FAILURE_FINGERPRINT));
+    }
+
     private static AgentLoop createLoop(
             SessionPort sessionPort,
             RateLimitPort rateLimitPort,
