@@ -79,7 +79,10 @@ interface RuntimeConfigUiRecord extends UnknownRecord {
 }
 
 function toUiRuntimeConfig(data: RuntimeConfigUiRecord): RuntimeConfig {
-  const cfg: RuntimeConfigUiRecord = { ...data };
+  const cfg: RuntimeConfigUiRecord = {
+    ...data,
+    plan: typeof data.plan === 'object' && data.plan != null ? { ...data.plan } : {},
+  };
   if (cfg.telegram) {
     cfg.telegram = {
       ...cfg.telegram,
@@ -197,6 +200,7 @@ export interface RuntimeConfig {
   turn: TurnConfig;
   usage: UsageConfig;
   mcp: McpConfig;
+  plan: PlanConfig;
   autoMode: AutoModeConfig;
   rateLimit: RateLimitConfig;
   security: SecurityConfig;
@@ -325,6 +329,13 @@ export interface VoiceConfig {
 
 export interface UsageConfig {
   enabled: boolean | null;
+}
+
+export interface PlanConfig {
+  enabled: boolean | null;
+  maxPlans: number | null;
+  maxStepsPerPlan: number | null;
+  stopOnFailure: boolean | null;
 }
 
 export interface AutoModeConfig {
@@ -471,6 +482,11 @@ export async function updateUsageConfig(config: UsageConfig): Promise<RuntimeCon
 
 export async function updateMcpConfig(config: McpConfig): Promise<RuntimeConfig> {
   const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/mcp', config);
+  return toUiRuntimeConfig(data);
+}
+
+export async function updatePlanConfig(config: PlanConfig): Promise<RuntimeConfig> {
+  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/plan', config);
   return toUiRuntimeConfig(data);
 }
 

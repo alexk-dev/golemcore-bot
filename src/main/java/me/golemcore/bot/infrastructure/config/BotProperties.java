@@ -66,7 +66,6 @@ public class BotProperties {
     private AutoCompactProperties autoCompact = new AutoCompactProperties();
     private TurnProperties turn = new TurnProperties();
     private ToolLoopProperties toolLoop = new ToolLoopProperties();
-    private PlanProperties plan = new PlanProperties();
     private DashboardProperties dashboard = new DashboardProperties();
     private WebhooksProperties webhooks = new WebhooksProperties();
     private UpdateProperties update = new UpdateProperties();
@@ -221,16 +220,6 @@ public class BotProperties {
          * Stop the loop when a tool was blocked by policy (disabled/unknown/etc).
          */
         private boolean stopOnToolPolicyDenied = false;
-    }
-
-    // ==================== PLAN MODE ====================
-
-    @Data
-    public static class PlanProperties {
-        private boolean enabled = false;
-        private int maxPlans = 5;
-        private int maxStepsPerPlan = 50;
-        private boolean stopOnFailure = true;
     }
 
     // ==================== DASHBOARD ====================

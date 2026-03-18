@@ -30,7 +30,7 @@ export default function AutoModeTab({ config }: AutoModeTabProps): ReactElement 
   }, [config]);
 
   const handleSave = async (): Promise<void> => {
-    await updateAuto.mutateAsync({ ...form, tickIntervalSeconds: 1 });
+    await updateAuto.mutateAsync(form);
     toast.success('Auto mode settings saved');
   };
 

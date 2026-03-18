@@ -97,8 +97,8 @@ class RuntimeConfigServiceTest {
         RuntimeConfig second = service.getRuntimeConfig();
 
         assertEquals(first, second);
-        // First call loads all 14 sections, second call returns cached
-        verify(storagePort, atLeast(14)).getText(anyString(), anyString());
+        // First call loads all 15 sections, second call returns cached
+        verify(storagePort, atLeast(15)).getText(anyString(), anyString());
     }
 
     @Test
@@ -694,7 +694,7 @@ class RuntimeConfigServiceTest {
 
         service.updateRuntimeConfig(newConfig);
 
-        verify(storagePort, times(14)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
+        verify(storagePort, times(15)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
 
         RuntimeConfig updated = service.getRuntimeConfig();
         assertEquals("custom/model", updated.getModelRouter().getBalancedModel());
@@ -787,7 +787,7 @@ class RuntimeConfigServiceTest {
         assertEquals(20, code.getCode().length());
         assertFalse(code.isUsed());
         assertNotNull(code.getCreatedAt());
-        verify(storagePort, atLeast(14)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
+        verify(storagePort, atLeast(15)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
     }
 
     @Test
@@ -1005,6 +1005,30 @@ class RuntimeConfigServiceTest {
         assertTrue(service.isUsageEnabled());
     }
 
+    @Test
+    void shouldReturnDefaultPlanSettings() {
+        assertFalse(service.isPlanEnabled());
+        assertEquals(5, service.getPlanMaxPlans());
+        assertEquals(50, service.getPlanMaxStepsPerPlan());
+        assertTrue(service.isPlanStopOnFailure());
+    }
+
+    @Test
+    void shouldReturnConfiguredPlanSettings() throws Exception {
+        RuntimeConfig.PlanConfig plan = RuntimeConfig.PlanConfig.builder()
+                .enabled(true)
+                .maxPlans(8)
+                .maxStepsPerPlan(120)
+                .stopOnFailure(false)
+                .build();
+        persistedSections.put("plan.json", objectMapper.writeValueAsString(plan));
+
+        assertTrue(service.isPlanEnabled());
+        assertEquals(8, service.getPlanMaxPlans());
+        assertEquals(120, service.getPlanMaxStepsPerPlan());
+        assertFalse(service.isPlanStopOnFailure());
+    }
+
     // ==================== Section Validation ====================
 
     @Test
@@ -1023,6 +1047,7 @@ class RuntimeConfigServiceTest {
         assertTrue(RuntimeConfigService.isValidConfigSection("skills"));
         assertTrue(RuntimeConfigService.isValidConfigSection("usage"));
         assertTrue(RuntimeConfigService.isValidConfigSection("mcp"));
+        assertTrue(RuntimeConfigService.isValidConfigSection("plan"));
     }
 
     @Test
@@ -1039,6 +1064,7 @@ class RuntimeConfigServiceTest {
         assertTrue(RuntimeConfigService.isValidConfigSection("TELEGRAM"));
         assertTrue(RuntimeConfigService.isValidConfigSection("Model-Router"));
         assertTrue(RuntimeConfigService.isValidConfigSection("AUTO-MODE"));
+        assertTrue(RuntimeConfigService.isValidConfigSection("PLAN"));
     }
 
     // ==================== ConfigSection Enum ====================
@@ -1048,6 +1074,7 @@ class RuntimeConfigServiceTest {
         assertEquals("telegram.json", RuntimeConfig.ConfigSection.TELEGRAM.getFileName());
         assertEquals("model-router.json", RuntimeConfig.ConfigSection.MODEL_ROUTER.getFileName());
         assertEquals("auto-mode.json", RuntimeConfig.ConfigSection.AUTO_MODE.getFileName());
+        assertEquals("plan.json", RuntimeConfig.ConfigSection.PLAN.getFileName());
     }
 
     @Test
@@ -1057,6 +1084,8 @@ class RuntimeConfigServiceTest {
         assertTrue(RuntimeConfig.ConfigSection.fromFileId("model-router").isPresent());
         assertEquals(RuntimeConfig.ConfigSection.MODEL_ROUTER,
                 RuntimeConfig.ConfigSection.fromFileId("model-router").get());
+        assertTrue(RuntimeConfig.ConfigSection.fromFileId("plan").isPresent());
+        assertEquals(RuntimeConfig.ConfigSection.PLAN, RuntimeConfig.ConfigSection.fromFileId("plan").get());
     }
 
     @Test
@@ -1109,5 +1138,6 @@ class RuntimeConfigServiceTest {
         assertTrue(persistedSections.containsKey("model-router.json"));
         assertTrue(persistedSections.containsKey("llm.json"));
         assertTrue(persistedSections.containsKey("tools.json"));
+        assertTrue(persistedSections.containsKey("plan.json"));
     }
 }

@@ -24,7 +24,6 @@ import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.PlanStep;
 import me.golemcore.bot.domain.model.SessionIdentity;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.stereotype.Service;
 
@@ -59,7 +58,7 @@ public class PlanService {
 
     private final StoragePort storagePort;
     private final ObjectMapper objectMapper;
-    private final BotProperties properties;
+    private final RuntimeConfigService runtimeConfigService;
     private final Clock clock;
 
     /**
@@ -71,15 +70,15 @@ public class PlanService {
     private final AtomicReference<List<Plan>> plansCache = new AtomicReference<>();
 
     public PlanService(StoragePort storagePort, ObjectMapper objectMapper,
-            BotProperties properties, Clock clock) {
+            RuntimeConfigService runtimeConfigService, Clock clock) {
         this.storagePort = storagePort;
         this.objectMapper = objectMapper;
-        this.properties = properties;
+        this.runtimeConfigService = runtimeConfigService;
         this.clock = clock;
     }
 
     public boolean isFeatureEnabled() {
-        return properties.getPlan().isEnabled();
+        return runtimeConfigService.isPlanEnabled();
     }
 
     // ==================== Plan mode state ====================
@@ -155,8 +154,8 @@ public class PlanService {
         long activeCount = plans.stream()
                 .filter(this::isActivePlanStatus)
                 .count();
-        if (activeCount >= properties.getPlan().getMaxPlans()) {
-            throw new IllegalStateException("Maximum active plans reached: " + properties.getPlan().getMaxPlans());
+        if (activeCount >= runtimeConfigService.getPlanMaxPlans()) {
+            throw new IllegalStateException("Maximum active plans reached: " + runtimeConfigService.getPlanMaxPlans());
         }
 
         Instant now = Instant.now(clock);
@@ -187,8 +186,8 @@ public class PlanService {
         long activeCount = getPlans(normalized).stream()
                 .filter(this::isActivePlanStatus)
                 .count();
-        if (activeCount >= properties.getPlan().getMaxPlans()) {
-            throw new IllegalStateException("Maximum active plans reached: " + properties.getPlan().getMaxPlans());
+        if (activeCount >= runtimeConfigService.getPlanMaxPlans()) {
+            throw new IllegalStateException("Maximum active plans reached: " + runtimeConfigService.getPlanMaxPlans());
         }
 
         Instant now = Instant.now(clock);
@@ -297,9 +296,9 @@ public class PlanService {
         Plan plan = getPlan(planId)
                 .orElseThrow(() -> new IllegalArgumentException(PLAN_NOT_FOUND + planId));
 
-        if (plan.getSteps().size() >= properties.getPlan().getMaxStepsPerPlan()) {
+        if (plan.getSteps().size() >= runtimeConfigService.getPlanMaxStepsPerPlan()) {
             throw new IllegalStateException(
-                    "Maximum steps per plan reached: " + properties.getPlan().getMaxStepsPerPlan());
+                    "Maximum steps per plan reached: " + runtimeConfigService.getPlanMaxStepsPerPlan());
         }
 
         Instant now = Instant.now(clock);
