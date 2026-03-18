@@ -52,4 +52,28 @@ class HiveControlCommandDispatcherTest {
         assertEquals("run-1", inbound.getMetadata().get(ContextAttributes.HIVE_RUN_ID));
         assertEquals("golem-1", inbound.getMetadata().get(ContextAttributes.HIVE_GOLEM_ID));
     }
+
+    @Test
+    void shouldRequestStopForStopControlEvent() {
+        SessionRunCoordinator coordinator = mock(SessionRunCoordinator.class);
+        HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveControlCommandDispatcher dispatcher = new HiveControlCommandDispatcher(
+                coordinator,
+                publisher,
+                Clock.fixed(Instant.parse("2026-03-18T00:00:00Z"), ZoneOffset.UTC));
+
+        HiveControlCommandEnvelope envelope = HiveControlCommandEnvelope.builder()
+                .eventType("command.stop")
+                .commandId("cmd-2")
+                .threadId("thread-1")
+                .runId("run-1")
+                .golemId("golem-1")
+                .createdAt(Instant.parse("2026-03-18T00:00:02Z"))
+                .build();
+
+        dispatcher.dispatch(envelope);
+
+        verify(coordinator).requestStop("hive", "thread-1");
+        verify(publisher).publishCommandAcknowledged(envelope);
+    }
 }

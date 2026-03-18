@@ -111,7 +111,15 @@ class HiveEventBatchPublisherTest {
                 eventsCaptor.capture());
         List<HiveEventPayload> events = eventsCaptor.getValue();
         assertEquals(List.of("RUN_STARTED", "RUN_PROGRESS", "RUN_COMPLETED"),
-                events.stream().map(HiveEventPayload::runtimeEventType).toList());
+                events.stream()
+                        .filter(event -> "runtime_event".equals(event.eventType()))
+                        .map(HiveEventPayload::runtimeEventType)
+                        .toList());
+        assertEquals(List.of("WORK_STARTED"),
+                events.stream()
+                        .filter(event -> "card_lifecycle_signal".equals(event.eventType()))
+                        .map(HiveEventPayload::signalType)
+                        .toList());
         assertEquals("card-1", events.get(0).cardId());
         assertEquals("run-1", events.get(0).runId());
     }
@@ -148,5 +156,75 @@ class HiveEventBatchPublisherTest {
 
         verify(hiveApiClient, never()).publishEventsBatch(eq("https://hive.example.com"), eq("golem-1"), eq("access"),
                 anyList());
+    }
+
+    @Test
+    void shouldPublishExplicitLifecycleSignal() {
+        publisher.publishLifecycleSignal(
+                new HiveLifecycleSignalRequest(
+                        "BLOCKER_RAISED",
+                        "Missing credentials",
+                        "Need staging API key",
+                        "missing_credentials",
+                        List.of(new HiveEvidenceRef("run_log", "run-1/log-2")),
+                        Instant.parse("2026-03-18T00:02:00Z")),
+                Map.of(
+                        ContextAttributes.HIVE_THREAD_ID, "thread-1",
+                        ContextAttributes.HIVE_CARD_ID, "card-1",
+                        ContextAttributes.HIVE_COMMAND_ID, "cmd-1",
+                        ContextAttributes.HIVE_RUN_ID, "run-1"));
+
+        ArgumentCaptor<List<HiveEventPayload>> eventsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(hiveApiClient).publishEventsBatch(eq("https://hive.example.com"), eq("golem-1"), eq("access"),
+                eventsCaptor.capture());
+        HiveEventPayload event = eventsCaptor.getValue().get(0);
+        assertEquals("card_lifecycle_signal", event.eventType());
+        assertEquals("BLOCKER_RAISED", event.signalType());
+        assertEquals("Missing credentials", event.summary());
+        assertEquals("missing_credentials", event.blockerCode());
+        assertEquals(1, event.evidenceRefs().size());
+        assertEquals("run_log", event.evidenceRefs().get(0).kind());
+    }
+
+    @Test
+    void shouldMapFailedAndCancelledRuntimeEventsToLifecycleSignals() {
+        List<RuntimeEvent> runtimeEvents = List.of(
+                RuntimeEvent.builder()
+                        .type(RuntimeEventType.TURN_FAILED)
+                        .timestamp(Instant.parse("2026-03-18T00:00:01Z"))
+                        .sessionId("hive:thread-1")
+                        .channelType("hive")
+                        .chatId("thread-1")
+                        .payload(Map.of("reason", "tool_error", "code", "shell_failed"))
+                        .build(),
+                RuntimeEvent.builder()
+                        .type(RuntimeEventType.TURN_FINISHED)
+                        .timestamp(Instant.parse("2026-03-18T00:00:02Z"))
+                        .sessionId("hive:thread-1")
+                        .channelType("hive")
+                        .chatId("thread-1")
+                        .payload(Map.of("reason", "user_interrupt"))
+                        .build());
+
+        publisher.publishRuntimeEvents(runtimeEvents, Map.of(
+                ContextAttributes.HIVE_THREAD_ID, "thread-1",
+                ContextAttributes.HIVE_CARD_ID, "card-1",
+                ContextAttributes.HIVE_COMMAND_ID, "cmd-1",
+                ContextAttributes.HIVE_RUN_ID, "run-1"));
+
+        ArgumentCaptor<List<HiveEventPayload>> eventsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(hiveApiClient).publishEventsBatch(eq("https://hive.example.com"), eq("golem-1"), eq("access"),
+                eventsCaptor.capture());
+        List<HiveEventPayload> events = eventsCaptor.getValue();
+        assertEquals(List.of("RUN_FAILED", "RUN_CANCELLED"),
+                events.stream()
+                        .filter(event -> "runtime_event".equals(event.eventType()))
+                        .map(HiveEventPayload::runtimeEventType)
+                        .toList());
+        assertEquals(List.of("WORK_FAILED", "WORK_CANCELLED"),
+                events.stream()
+                        .filter(event -> "card_lifecycle_signal".equals(event.eventType()))
+                        .map(HiveEventPayload::signalType)
+                        .toList());
     }
 }

@@ -26,6 +26,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.ContextAttributes;
@@ -44,6 +45,9 @@ public class HiveEventBatchPublisher {
 
     private static final Integer SCHEMA_VERSION = 1;
     private static final String EVENT_TYPE_RUNTIME_EVENT = "runtime_event";
+    private static final String EVENT_TYPE_CARD_LIFECYCLE_SIGNAL = "card_lifecycle_signal";
+    private static final String CONTROL_EVENT_TYPE_STOP = "command.stop";
+    private static final String CONTROL_EVENT_TYPE_CANCEL = "command.cancel";
     private static final int SUMMARY_MAX_LENGTH = 240;
 
     private final HiveSessionStateStore hiveSessionStateStore;
@@ -63,7 +67,7 @@ public class HiveEventBatchPublisher {
         HiveEventPayload event = buildRuntimeEvent(
                 context,
                 "COMMAND_ACKNOWLEDGED",
-                "Command acknowledged by bot",
+                buildAcknowledgementSummary(envelope.getEventType()),
                 envelope.getBody(),
                 null,
                 null,
@@ -85,6 +89,10 @@ public class HiveEventBatchPublisher {
         for (RuntimeEvent runtimeEvent : runtimeEvents) {
             String mappedType = mapRuntimeEventType(runtimeEvent);
             if (mappedType == null) {
+                HiveEventPayload lifecycleSignalOnly = buildLifecycleSignalFromRuntimeEvent(eventContext, runtimeEvent);
+                if (lifecycleSignalOnly != null) {
+                    events.add(lifecycleSignalOnly);
+                }
                 continue;
             }
             Map<String, Object> payload = runtimeEvent.payload() != null
@@ -99,8 +107,24 @@ public class HiveEventBatchPublisher {
                     null,
                     null,
                     runtimeEvent.timestamp()));
+            HiveEventPayload lifecycleSignal = buildLifecycleSignalFromRuntimeEvent(eventContext, runtimeEvent);
+            if (lifecycleSignal != null) {
+                events.add(lifecycleSignal);
+            }
         }
         publishBatch(events);
+    }
+
+    public void publishLifecycleSignal(HiveLifecycleSignalRequest request, Map<String, Object> metadata) {
+        if (request == null) {
+            return;
+        }
+        HiveEventContext eventContext = resolveEventContext(null, metadata);
+        HiveEventPayload payload = buildLifecycleSignal(eventContext, request);
+        if (payload == null) {
+            return;
+        }
+        publishBatch(List.of(payload));
     }
 
     public void publishThreadMessage(String threadId, String content, Map<String, Object> metadata) {
@@ -208,6 +232,41 @@ public class HiveEventBatchPublisher {
                 .build();
     }
 
+    private HiveEventPayload buildLifecycleSignal(
+            HiveEventContext context,
+            HiveLifecycleSignalRequest request) {
+        if (context == null || isBlank(context.threadId()) || isBlank(context.cardId()) || request == null
+                || isBlank(request.signalType())) {
+            return null;
+        }
+        return HiveEventPayload.builder()
+                .schemaVersion(SCHEMA_VERSION)
+                .eventType(EVENT_TYPE_CARD_LIFECYCLE_SIGNAL)
+                .signalId(generateSignalId())
+                .threadId(context.threadId())
+                .cardId(context.cardId())
+                .commandId(context.commandId())
+                .runId(context.runId())
+                .golemId(context.golemId())
+                .signalType(request.signalType())
+                .summary(firstNonBlank(request.summary(), defaultLifecycleSummary(request.signalType())))
+                .details(request.details())
+                .blockerCode(request.blockerCode())
+                .evidenceRefs(request.evidenceRefs())
+                .createdAt(request.createdAt() != null ? request.createdAt() : Instant.now())
+                .build();
+    }
+
+    private HiveEventPayload buildLifecycleSignalFromRuntimeEvent(
+            HiveEventContext context,
+            RuntimeEvent runtimeEvent) {
+        HiveLifecycleSignalRequest request = mapLifecycleSignal(runtimeEvent);
+        if (request == null) {
+            return null;
+        }
+        return buildLifecycleSignal(context, request);
+    }
+
     private HiveEventContext resolveEventContext(String fallbackThreadId, Map<String, Object> metadata) {
         String threadId = firstNonBlank(
                 readMetadataString(metadata, ContextAttributes.HIVE_THREAD_ID),
@@ -274,6 +333,42 @@ public class HiveEventBatchPublisher {
         return "RUN_PROGRESS";
     }
 
+    private HiveLifecycleSignalRequest mapLifecycleSignal(RuntimeEvent runtimeEvent) {
+        if (runtimeEvent == null || runtimeEvent.type() == null) {
+            return null;
+        }
+        Map<String, Object> payload = runtimeEvent.payload() != null ? runtimeEvent.payload() : Map.of();
+        if (runtimeEvent.type() == RuntimeEventType.TURN_STARTED) {
+            return new HiveLifecycleSignalRequest(
+                    "WORK_STARTED",
+                    "Work started",
+                    null,
+                    null,
+                    List.of(),
+                    runtimeEvent.timestamp());
+        }
+        if (runtimeEvent.type() == RuntimeEventType.TURN_FAILED) {
+            return new HiveLifecycleSignalRequest(
+                    "WORK_FAILED",
+                    buildFailureLifecycleSummary(payload),
+                    serializeDetails(payload),
+                    null,
+                    List.of(),
+                    runtimeEvent.timestamp());
+        }
+        if (runtimeEvent.type() == RuntimeEventType.TURN_FINISHED
+                && "user_interrupt".equals(extractRuntimeReason(payload))) {
+            return new HiveLifecycleSignalRequest(
+                    "WORK_CANCELLED",
+                    "Work cancelled",
+                    serializeDetails(payload),
+                    null,
+                    List.of(),
+                    runtimeEvent.timestamp());
+        }
+        return null;
+    }
+
     private String buildRuntimeSummary(RuntimeEvent runtimeEvent) {
         if (runtimeEvent == null || runtimeEvent.type() == null) {
             return "Runtime event";
@@ -303,6 +398,43 @@ public class HiveEventBatchPublisher {
         case COMPACTION_FINISHED -> "Compaction finished";
         case TURN_INTERRUPT_REQUESTED -> "Interrupt requested";
         };
+    }
+
+    private String buildFailureLifecycleSummary(Map<String, Object> payload) {
+        String reason = extractRuntimeReason(payload);
+        String code = readMetadataString(payload, "code");
+        return firstNonBlank(
+                reason != null ? "Work failed: " + reason : null,
+                code != null ? "Work failed: " + code : null,
+                "Work failed");
+    }
+
+    private String buildAcknowledgementSummary(String eventType) {
+        if (CONTROL_EVENT_TYPE_STOP.equals(eventType) || CONTROL_EVENT_TYPE_CANCEL.equals(eventType)) {
+            return "Stop request acknowledged by bot";
+        }
+        return "Command acknowledged by bot";
+    }
+
+    private String defaultLifecycleSummary(String signalType) {
+        if (isBlank(signalType)) {
+            return "Lifecycle signal";
+        }
+        return switch (signalType) {
+        case "WORK_STARTED" -> "Work started";
+        case "PROGRESS_REPORTED" -> "Progress reported";
+        case "BLOCKER_RAISED" -> "Blocker raised";
+        case "BLOCKER_CLEARED" -> "Blocker cleared";
+        case "REVIEW_REQUESTED" -> "Review requested";
+        case "WORK_COMPLETED" -> "Work completed";
+        case "WORK_FAILED" -> "Work failed";
+        case "WORK_CANCELLED" -> "Work cancelled";
+        default -> "Lifecycle signal";
+        };
+    }
+
+    private String generateSignalId() {
+        return "sig_" + UUID.randomUUID().toString().replace("-", "");
     }
 
     private String extractRuntimeReason(Map<String, Object> payload) {

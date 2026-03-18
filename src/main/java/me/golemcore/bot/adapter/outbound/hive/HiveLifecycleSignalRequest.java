@@ -20,6 +20,7 @@ package me.golemcore.bot.adapter.outbound.hive;
 
 import java.time.Instant;
 import java.util.List;
-import lombok.Builder;
 
-@Builder public record HiveEventPayload(Integer schemaVersion,String eventType,String golemId,String runtimeEventType,String signalId,String cardId,String commandId,String runId,String threadId,String signalType,String summary,String details,String blockerCode,List<HiveEvidenceRef>evidenceRefs,Long inputTokens,Long outputTokens,Long accumulatedCostMicros,Instant createdAt){}
+public record HiveLifecycleSignalRequest(String signalType,String summary,String details,String blockerCode,List<HiveEvidenceRef>evidenceRefs,Instant createdAt){
+
+public HiveLifecycleSignalRequest{evidenceRefs=evidenceRefs!=null?List.copyOf(evidenceRefs):List.of();}}

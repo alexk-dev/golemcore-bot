@@ -46,6 +46,7 @@ import me.golemcore.bot.domain.service.WorkspaceInstructionService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.McpPort;
 import me.golemcore.bot.port.outbound.RagPort;
+import me.golemcore.bot.tools.HiveLifecycleSignalTool;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -71,6 +72,7 @@ public class ContextBuildingSystem implements AgentSystem {
     private static final String DOUBLE_NEWLINE = "\n\n";
     private static final String TOOL_PLAN_SET_CONTENT = "plan_set_content";
     private static final String TOOL_PLAN_GET = "plan_get";
+    private static final String TOOL_HIVE_LIFECYCLE_SIGNAL = HiveLifecycleSignalTool.TOOL_NAME;
 
     private final MemoryComponent memoryComponent;
     private final SkillComponent skillComponent;
@@ -120,6 +122,7 @@ public class ContextBuildingSystem implements AgentSystem {
         boolean planModeActive = sessionIdentity != null
                 ? planService.isPlanModeActive(sessionIdentity)
                 : planService.isPlanModeActive();
+        boolean hiveSessionActive = isHiveSession(context);
 
         // Build memory context from structured Memory V2 pack
         String userQueryForMemory = getLastUserMessageText(context);
@@ -171,7 +174,7 @@ public class ContextBuildingSystem implements AgentSystem {
         // Collect tool definitions (native + MCP)
         List<ToolDefinition> tools = new ArrayList<>(toolCallExecutionService.listTools().stream()
                 .filter(ToolComponent::isEnabled)
-                .filter(tool -> isToolAdvertised(tool, planModeActive))
+                .filter(tool -> isToolAdvertised(tool, planModeActive, hiveSessionActive))
                 .map(ToolComponent::getDefinition)
                 .toList());
 
@@ -367,15 +370,32 @@ public class ContextBuildingSystem implements AgentSystem {
             });
         }
 
+        if (isHiveSession(context)) {
+            sb.append("# Hive Card Lifecycle\n");
+            sb.append("This thread is bound to a Hive card. Use the `")
+                    .append(TOOL_HIVE_LIFECYCLE_SIGNAL)
+                    .append("` tool whenever you need to report structured board-relevant state such as blocker raised, blocker cleared, review requested, work completed, progress reported, or intentional work failure. ")
+                    .append("Do not rely on plain text alone to move Hive card state. `WORK_STARTED` and interruption-driven cancellation are emitted automatically.\n\n");
+        }
+
         return sb.toString().trim();
     }
 
-    private boolean isToolAdvertised(ToolComponent tool, boolean planModeActive) {
+    private boolean isToolAdvertised(ToolComponent tool, boolean planModeActive, boolean hiveSessionActive) {
         String toolName = tool.getToolName();
         if (TOOL_PLAN_SET_CONTENT.equals(toolName) || TOOL_PLAN_GET.equals(toolName)) {
             return planModeActive;
         }
+        if (TOOL_HIVE_LIFECYCLE_SIGNAL.equals(toolName)) {
+            return hiveSessionActive;
+        }
         return true;
+    }
+
+    private boolean isHiveSession(AgentContext context) {
+        return context != null
+                && context.getSession() != null
+                && "hive".equalsIgnoreCase(context.getSession().getChannelType());
     }
 
     private void resolveTier(AgentContext context, UserPreferences prefs) {

@@ -107,9 +107,38 @@ The current bot-side slice includes:
 - buffered control command inbox for transport diagnostics
 - control command dispatch into the regular `hive` channel execution queue
 - `events:batch` publishing for command acknowledgements, runtime events, progress updates, thread messages, and usage snapshots
+- explicit `hive_lifecycle_signal` tool for Hive card-bound turns
+- automatic lifecycle signals for `WORK_STARTED`, `WORK_FAILED`, and interruption-driven `WORK_CANCELLED`
+- stop/cancel control command handling via `command.stop` and `command.cancel`
 - dashboard status and join/reconnect/leave controls
 
-Still pending in the epic:
+## Control Command Event Types
 
-- explicit lifecycle signals
-- richer stop/cancel semantics for Hive-issued runs
+Hive may send these control command envelope event types over the control channel:
+
+- `command`
+  - regular card-bound prompt execution; requires `body`
+- `command.stop`
+  - request stop for the active Hive thread run
+- `command.cancel`
+  - alias of `command.stop` for control-plane initiated cancellation
+
+`command.stop` and `command.cancel` do not enqueue a new inbound user message. They route directly to the existing session stop path for the `hive` channel.
+
+## Lifecycle Signal Emission
+
+The bot now emits card lifecycle signals in two ways:
+
+1. automatically from deterministic runtime outcomes
+   - `TURN_STARTED -> WORK_STARTED`
+   - `TURN_FAILED -> WORK_FAILED`
+   - `TURN_FINISHED(reason=user_interrupt) -> WORK_CANCELLED`
+2. explicitly from the Hive-only `hive_lifecycle_signal` tool
+   - `PROGRESS_REPORTED`
+   - `BLOCKER_RAISED`
+   - `BLOCKER_CLEARED`
+   - `REVIEW_REQUESTED`
+   - `WORK_COMPLETED`
+   - `WORK_FAILED`
+
+This keeps Hive board state driven by structured events instead of parsing assistant prose.

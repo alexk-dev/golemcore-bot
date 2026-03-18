@@ -35,12 +35,24 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class HiveControlCommandDispatcher {
 
+    private static final String EVENT_TYPE_COMMAND = "command";
+    private static final String EVENT_TYPE_COMMAND_STOP = "command.stop";
+    private static final String EVENT_TYPE_COMMAND_CANCEL = "command.cancel";
+
     private final SessionRunCoordinator sessionRunCoordinator;
     private final HiveEventBatchPublisher hiveEventBatchPublisher;
     private final Clock clock;
 
     public void dispatch(HiveControlCommandEnvelope envelope) {
-        validateEnvelope(envelope);
+        String eventType = validateEnvelope(envelope);
+        if (EVENT_TYPE_COMMAND_STOP.equals(eventType) || EVENT_TYPE_COMMAND_CANCEL.equals(eventType)) {
+            sessionRunCoordinator.requestStop("hive", envelope.getThreadId());
+            hiveEventBatchPublisher.publishCommandAcknowledged(envelope);
+            log.info("[Hive] Requested stop for control command: commandId={}, threadId={}, runId={}, eventType={}",
+                    envelope.getCommandId(), envelope.getThreadId(), envelope.getRunId(), eventType);
+            return;
+        }
+
         Message inbound = buildInboundMessage(envelope);
         sessionRunCoordinator.enqueue(inbound);
         hiveEventBatchPublisher.publishCommandAcknowledged(envelope);
@@ -73,7 +85,7 @@ public class HiveControlCommandDispatcher {
         return metadata;
     }
 
-    private void validateEnvelope(HiveControlCommandEnvelope envelope) {
+    private String validateEnvelope(HiveControlCommandEnvelope envelope) {
         if (envelope == null) {
             throw new IllegalArgumentException("Hive control command is required");
         }
@@ -83,14 +95,28 @@ public class HiveControlCommandDispatcher {
         if (envelope.getCommandId() == null || envelope.getCommandId().isBlank()) {
             throw new IllegalArgumentException("Hive control command commandId is required");
         }
-        if (envelope.getBody() == null || envelope.getBody().isBlank()) {
+        String eventType = normalizeEventType(envelope.getEventType());
+        if (!EVENT_TYPE_COMMAND.equals(eventType)
+                && !EVENT_TYPE_COMMAND_STOP.equals(eventType)
+                && !EVENT_TYPE_COMMAND_CANCEL.equals(eventType)) {
+            throw new IllegalArgumentException("Unsupported Hive control command eventType: " + eventType);
+        }
+        if (EVENT_TYPE_COMMAND.equals(eventType) && (envelope.getBody() == null || envelope.getBody().isBlank())) {
             throw new IllegalArgumentException("Hive control command body is required");
         }
+        return eventType;
     }
 
     private void putIfPresent(Map<String, Object> metadata, String key, String value) {
         if (value != null && !value.isBlank()) {
             metadata.put(key, value);
         }
+    }
+
+    private String normalizeEventType(String eventType) {
+        if (eventType == null || eventType.isBlank()) {
+            return EVENT_TYPE_COMMAND;
+        }
+        return eventType.trim().toLowerCase();
     }
 }
