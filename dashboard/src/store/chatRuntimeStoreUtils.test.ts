@@ -46,11 +46,17 @@ describe('chatRuntimeStoreUtils', () => {
 
   it('accumulates assistant chunks into a single live assistant message and finalizes the text', () => {
     const initialState = buildSessionState({});
-    const chunkState = applyAssistantTextUpdate(initialState, 'chat-1', 'Hel', {
-      model: 'openai/o3-mini',
-      reasoning: 'high',
-      tier: 'smart',
-    }, [], false);
+    const chunkState = applyAssistantTextUpdate(initialState, {
+      sessionId: 'chat-1',
+      text: 'Hel',
+      hint: {
+        model: 'openai/o3-mini',
+        reasoning: 'high',
+        tier: 'smart',
+      },
+      attachments: [],
+      isFinal: false,
+    });
 
     expect(chunkState.messages).toHaveLength(1);
     expect(chunkState.messages[0].content).toBe('Hel');
@@ -60,7 +66,13 @@ describe('chatRuntimeStoreUtils', () => {
     const finalState = applyAssistantTextUpdate({
       ...initialState,
       ...chunkState,
-    }, 'chat-1', 'Hello', null, [], true);
+    }, {
+      sessionId: 'chat-1',
+      text: 'Hello',
+      hint: null,
+      attachments: [],
+      isFinal: true,
+    });
 
     expect(finalState.messages).toHaveLength(1);
     expect(finalState.messages[0].content).toBe('Hello');
@@ -74,11 +86,17 @@ describe('chatRuntimeStoreUtils', () => {
   it('creates a finalized assistant message with metadata when only assistant_done arrives', () => {
     const initialState = buildSessionState({});
 
-    const finalState = applyAssistantTextUpdate(initialState, 'chat-1', 'Hello', {
-      model: 'gemini-3.1-flash-lite-preview',
-      tier: 'smart',
-      reasoning: 'medium',
-    }, [], true);
+    const finalState = applyAssistantTextUpdate(initialState, {
+      sessionId: 'chat-1',
+      text: 'Hello',
+      hint: {
+        model: 'gemini-3.1-flash-lite-preview',
+        tier: 'smart',
+        reasoning: 'medium',
+      },
+      attachments: [],
+      isFinal: true,
+    });
 
     expect(finalState.messages).toHaveLength(1);
     expect(finalState.messages[0].content).toBe('Hello');
@@ -104,7 +122,13 @@ describe('chatRuntimeStoreUtils', () => {
     const finalState = applyAssistantTextUpdate({
       ...initialState,
       ...withProgress,
-    }, 'chat-1', 'Done', null, [], true);
+    }, {
+      sessionId: 'chat-1',
+      text: 'Done',
+      hint: null,
+      attachments: [],
+      isFinal: true,
+    });
 
     expect(finalState.progress).toBeNull();
     expect(finalState.running).toBe(false);
@@ -113,14 +137,20 @@ describe('chatRuntimeStoreUtils', () => {
   it('creates an assistant message when the final reply contains only attachments', () => {
     const initialState = buildSessionState({});
 
-    const finalState = applyAssistantTextUpdate(initialState, 'chat-1', '', null, [{
-      type: 'image',
-      name: 'capture.png',
-      mimeType: 'image/png',
-      url: null,
-      internalFilePath: '.golemcore/tool-artifacts/capture.png',
-      thumbnailBase64: 'ZmFrZQ==',
-    }], true);
+    const finalState = applyAssistantTextUpdate(initialState, {
+      sessionId: 'chat-1',
+      text: '',
+      hint: null,
+      attachments: [{
+        type: 'image',
+        name: 'capture.png',
+        mimeType: 'image/png',
+        url: null,
+        internalFilePath: '.golemcore/tool-artifacts/capture.png',
+        thumbnailBase64: 'ZmFrZQ==',
+      }],
+      isFinal: true,
+    });
 
     expect(finalState.messages).toHaveLength(1);
     expect(finalState.messages[0].attachments).toHaveLength(1);

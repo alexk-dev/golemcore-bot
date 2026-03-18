@@ -215,12 +215,21 @@ function createAssistantMessage(
 
 export function applyAssistantTextUpdate(
   current: ChatRuntimeSessionState,
-  sessionId: string,
-  text: string,
-  hint: AssistantHint | null,
-  attachments: ChatMessageAttachment[],
-  isFinal: boolean,
+  update: {
+    sessionId: string;
+    text: string;
+    hint: AssistantHint | null;
+    attachments: ChatMessageAttachment[];
+    isFinal: boolean;
+  },
 ): Pick<ChatRuntimeSessionState, 'messages' | 'running' | 'turnMetadata' | 'typing' | 'progress'> {
+  const {
+    sessionId,
+    text,
+    hint,
+    attachments,
+    isFinal,
+  } = update;
   const nextMessages = [...current.messages];
   const lastMessage = nextMessages.length > 0 ? nextMessages[nextMessages.length - 1] : null;
   const safeText = text ?? '';

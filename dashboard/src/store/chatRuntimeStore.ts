@@ -406,7 +406,13 @@ function createMessageActions(
   applyAssistantText: (sessionId, text, hint, attachments, isFinal) =>
     set((state) => {
       const current = ensureSessionState(state.sessions, sessionId);
-      const nextSession = applyAssistantTextUpdate(current, sessionId, text, hint, attachments, isFinal);
+      const nextSession = applyAssistantTextUpdate(current, {
+        sessionId,
+        text,
+        hint,
+        attachments,
+        isFinal,
+      });
 
       return {
         sessions: cloneSessions(state.sessions, sessionId, {
