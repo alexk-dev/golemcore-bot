@@ -192,6 +192,7 @@ class ResponseRoutingSystemTest {
                 .mimeType("image/png")
                 .downloadUrl("/api/files/download?path=first")
                 .internalFilePath(".golemcore/tool-artifacts/first")
+                .thumbnailBase64("thumb-first")
                 .build();
         Attachment second = Attachment.builder()
                 .type(Attachment.Type.DOCUMENT)
@@ -219,6 +220,8 @@ class ResponseRoutingSystemTest {
         List<Map<String, Object>> attachments = (List<Map<String, Object>>) delivered.getMetadata().get("attachments");
         assertEquals(2, attachments.size());
         assertEquals("first.png", attachments.get(0).get("name"));
+        assertEquals(".golemcore/tool-artifacts/first", attachments.get(0).get("internalFilePath"));
+        assertEquals("thumb-first", attachments.get(0).get("thumbnailBase64"));
         assertEquals("report.pdf", attachments.get(1).get("name"));
         assertEquals("smart", delivered.getMetadata().get("modelTier"));
     }

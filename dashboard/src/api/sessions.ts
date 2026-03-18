@@ -32,6 +32,8 @@ export interface SessionMessageAttachment {
   name: string | null;
   mimeType: string | null;
   url: string | null;
+  internalFilePath: string | null;
+  thumbnailBase64: string | null;
 }
 
 export interface MessageInfo {

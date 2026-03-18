@@ -41,4 +41,5 @@ public class Attachment {
     private String caption;
     private String downloadUrl;
     private String internalFilePath;
+    private String thumbnailBase64;
 }

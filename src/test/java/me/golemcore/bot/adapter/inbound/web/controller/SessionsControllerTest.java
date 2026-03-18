@@ -143,7 +143,8 @@ class SessionsControllerTest {
                                 "type", "image",
                                 "name", "capture.png",
                                 "mimeType", "image/png",
-                                "internalFilePath", ".golemcore/tool-artifacts/session/tool/capture.png"))))
+                                "internalFilePath", ".golemcore/tool-artifacts/session/tool/capture.png",
+                                "thumbnailBase64", "thumb-base64"))))
                 .timestamp(Instant.now())
                 .build();
         AgentSession session = AgentSession.builder()
@@ -162,6 +163,9 @@ class SessionsControllerTest {
                     assertNotNull(message.getAttachments());
                     assertEquals(1, message.getAttachments().size());
                     assertEquals("capture.png", message.getAttachments().get(0).getName());
+                    assertEquals(".golemcore/tool-artifacts/session/tool/capture.png",
+                            message.getAttachments().get(0).getInternalFilePath());
+                    assertEquals("thumb-base64", message.getAttachments().get(0).getThumbnailBase64());
                     assertTrue(message.getAttachments().get(0).getUrl().contains("/api/files/download?path="));
                 })
                 .verifyComplete();

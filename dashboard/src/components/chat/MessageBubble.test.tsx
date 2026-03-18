@@ -57,13 +57,17 @@ describe('MessageBubble', () => {
             type: 'image',
             name: 'screen-1.png',
             mimeType: 'image/png',
-            url: '/api/files/download?path=screen-1',
+            url: null,
+            internalFilePath: '.golemcore/tool-artifacts/screen-1.png',
+            thumbnailBase64: 'ZmFrZS0x',
           },
           {
             type: 'image',
             name: 'screen-2.png',
             mimeType: 'image/png',
-            url: '/api/files/download?path=screen-2',
+            url: null,
+            internalFilePath: '.golemcore/tool-artifacts/screen-2.png',
+            thumbnailBase64: 'ZmFrZS0y',
           },
         ]}
       />,
@@ -71,6 +75,6 @@ describe('MessageBubble', () => {
 
     expect(html).toContain('screen-1.png');
     expect(html).toContain('screen-2.png');
-    expect(html).toContain('/api/files/download?path=screen-1');
+    expect(html).toContain('data:image/png;base64,ZmFrZS0x');
   });
 });

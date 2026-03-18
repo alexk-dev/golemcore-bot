@@ -274,6 +274,7 @@ public class WebChannelAdapter implements ChannelPort {
             copyAttachmentValue(attachmentMap, next, "mimeType");
             copyAttachmentValue(attachmentMap, next, "url");
             copyAttachmentValue(attachmentMap, next, "internalFilePath");
+            copyAttachmentValue(attachmentMap, next, "thumbnailBase64");
             copyAttachmentValue(attachmentMap, next, "caption");
             if (!next.isEmpty()) {
                 normalized.add(next);

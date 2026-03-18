@@ -254,7 +254,9 @@ class WebChannelAdapterTest {
                                 "type", "image",
                                 "name", "capture.png",
                                 "mimeType", "image/png",
-                                "url", "/api/files/download?path=capture")))))
+                                "url", "/api/files/download?path=capture",
+                                "internalFilePath", ".golemcore/tool-artifacts/session/tool/capture.png",
+                                "thumbnailBase64", "thumb-base64")))))
                 .build();
 
         adapter.sendMessage(message).join();
@@ -271,6 +273,8 @@ class WebChannelAdapterTest {
         assertEquals(1, attachments.size());
         assertEquals("capture.png", attachments.get(0).get("name"));
         assertEquals("/api/files/download?path=capture", attachments.get(0).get("url"));
+        assertEquals(".golemcore/tool-artifacts/session/tool/capture.png", attachments.get(0).get("internalFilePath"));
+        assertEquals("thumb-base64", attachments.get(0).get("thumbnailBase64"));
     }
 
     @Test

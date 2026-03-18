@@ -9,6 +9,10 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
+import javax.imageio.ImageIO;
+import java.awt.Color;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -17,6 +21,8 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -96,6 +102,33 @@ class ToolArtifactServiceTest {
         assertArrayEquals(data, download.getData());
     }
 
+    @Test
+    void shouldBuildThumbnailBase64ForStoredImageArtifact() throws IOException {
+        ToolArtifact stored = toolArtifactService.saveArtifact(
+                "session-1",
+                "pinchtab_screenshot",
+                "capture.png",
+                createPngImage(640, 320),
+                "image/png");
+
+        String thumbnailBase64 = toolArtifactService.buildThumbnailBase64(stored.getPath());
+
+        assertNotNull(thumbnailBase64);
+        assertTrue(thumbnailBase64.length() > 100);
+    }
+
+    @Test
+    void shouldSkipThumbnailGenerationForNonImageArtifacts() {
+        ToolArtifact stored = toolArtifactService.saveArtifact(
+                "session-1",
+                "report_tool",
+                "report.pdf",
+                new byte[] { 1, 2, 3 },
+                "application/pdf");
+
+        assertNull(toolArtifactService.buildThumbnailBase64(stored.getPath()));
+    }
+
     @ParameterizedTest
     @MethodSource("invalidDownloadPaths")
     void shouldRejectInvalidPathsWhenDownloading(String path) {
@@ -123,5 +156,18 @@ class ToolArtifactServiceTest {
                 "..\\windows\\system32",
                 "/tmp/file",
                 "\\tmp\\file");
+    }
+
+    private byte[] createPngImage(int width, int height) throws IOException {
+        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        for (int x = 0; x < width; x++) {
+            for (int y = 0; y < height; y++) {
+                image.setRGB(x, y, (x + y) % 2 == 0 ? Color.BLACK.getRGB() : Color.WHITE.getRGB());
+            }
+        }
+        try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            ImageIO.write(image, "png", output);
+            return output.toByteArray();
+        }
     }
 }

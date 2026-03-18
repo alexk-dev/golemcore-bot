@@ -405,6 +405,9 @@ public class ResponseRoutingSystem implements AgentSystem {
             if (attachment.getInternalFilePath() != null && !attachment.getInternalFilePath().isBlank()) {
                 metadata.put("internalFilePath", attachment.getInternalFilePath());
             }
+            if (attachment.getThumbnailBase64() != null && !attachment.getThumbnailBase64().isBlank()) {
+                metadata.put("thumbnailBase64", attachment.getThumbnailBase64());
+            }
             if (attachment.getCaption() != null && !attachment.getCaption().isBlank()) {
                 metadata.put("caption", attachment.getCaption());
             }

@@ -117,7 +117,9 @@ describe('chatRuntimeStoreUtils', () => {
       type: 'image',
       name: 'capture.png',
       mimeType: 'image/png',
-      url: '/api/files/download?path=capture',
+      url: null,
+      internalFilePath: '.golemcore/tool-artifacts/capture.png',
+      thumbnailBase64: 'ZmFrZQ==',
     }], true);
 
     expect(finalState.messages).toHaveLength(1);

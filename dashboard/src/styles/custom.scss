@@ -1088,6 +1088,18 @@ textarea:focus-visible,
   color: inherit;
 }
 
+.chat-attachment-button {
+  border: none;
+  background: transparent;
+  text-align: left;
+}
+
+.chat-attachment-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--bs-secondary-color);
+}
+
 .chat-attachment-thumb {
   width: 42px;
   height: 42px;

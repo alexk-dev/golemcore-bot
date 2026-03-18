@@ -82,6 +82,8 @@ function toChatMessage(message: Awaited<ReturnType<typeof getSessionMessages>>['
       name: attachment.name,
       mimeType: attachment.mimeType,
       url: attachment.url,
+      internalFilePath: attachment.internalFilePath,
+      thumbnailBase64: attachment.thumbnailBase64,
     })),
     clientMessageId: message.clientMessageId,
     persisted: true,

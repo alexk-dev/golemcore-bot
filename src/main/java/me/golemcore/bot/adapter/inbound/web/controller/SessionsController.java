@@ -514,7 +514,10 @@ public class SessionsController {
             String name = readAttachmentString(normalized, "name");
             String mimeType = readAttachmentString(normalized, "mimeType");
             String url = readAttachmentUrl(normalized);
-            if (type == null && name == null && mimeType == null && url == null) {
+            String internalFilePath = readAttachmentString(normalized, "internalFilePath");
+            String thumbnailBase64 = readAttachmentString(normalized, "thumbnailBase64");
+            if (type == null && name == null && mimeType == null && url == null
+                    && internalFilePath == null && thumbnailBase64 == null) {
                 continue;
             }
             result.add(SessionDetailDto.AttachmentDto.builder()
@@ -522,6 +525,8 @@ public class SessionsController {
                     .name(name)
                     .mimeType(mimeType)
                     .url(url)
+                    .internalFilePath(internalFilePath)
+                    .thumbnailBase64(thumbnailBase64)
                     .build());
         }
         return result;

@@ -54,5 +54,7 @@ public class SessionDetailDto {
         private String name;
         private String mimeType;
         private String url;
+        private String internalFilePath;
+        private String thumbnailBase64;
     }
 }

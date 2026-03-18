@@ -137,7 +137,9 @@ function areAttachmentsEqual(left: ChatMessageAttachment[], right: ChatMessageAt
     return attachment.type === other.type
       && attachment.name === other.name
       && attachment.mimeType === other.mimeType
-      && attachment.url === other.url;
+      && attachment.url === other.url
+      && attachment.internalFilePath === other.internalFilePath
+      && attachment.thumbnailBase64 === other.thumbnailBase64;
   });
 }
 

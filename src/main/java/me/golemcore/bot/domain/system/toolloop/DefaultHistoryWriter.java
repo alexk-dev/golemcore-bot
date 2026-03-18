@@ -27,6 +27,7 @@ public class DefaultHistoryWriter implements HistoryWriter {
     private static final String INTERNAL_FILE_NAME_KEY = "internal_file_name";
     private static final String INTERNAL_FILE_MIME_TYPE_KEY = "internal_file_mime_type";
     private static final String INTERNAL_FILE_KIND_KEY = "internal_file_kind";
+    private static final String INTERNAL_FILE_THUMBNAIL_BASE64_KEY = "internal_file_thumbnail_base64";
     private static final String ATTACHMENTS_METADATA_KEY = "attachments";
 
     private final Clock clock;
@@ -160,6 +161,11 @@ public class DefaultHistoryWriter implements HistoryWriter {
         Object urlValue = data.get(INTERNAL_FILE_URL_KEY);
         if (urlValue instanceof String url && !url.isBlank()) {
             attachment.put("url", url);
+        }
+
+        Object thumbnailValue = data.get(INTERNAL_FILE_THUMBNAIL_BASE64_KEY);
+        if (thumbnailValue instanceof String thumbnailBase64 && !thumbnailBase64.isBlank()) {
+            attachment.put("thumbnailBase64", thumbnailBase64);
         }
 
         Object filenameValue = data.get(INTERNAL_FILE_NAME_KEY);

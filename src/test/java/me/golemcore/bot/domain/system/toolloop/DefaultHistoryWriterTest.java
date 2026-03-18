@@ -152,6 +152,7 @@ class DefaultHistoryWriterTest {
                         "internal_file_kind", "image",
                         "internal_file_path", ".golemcore/tool-artifacts/session/tool/capture.png",
                         "internal_file_url", "/api/files/download?path=capture",
+                        "internal_file_thumbnail_base64", "thumb-base64",
                         "internal_file_name", "capture.png",
                         "internal_file_mime_type", "image/png"))
                 .build();
@@ -169,6 +170,7 @@ class DefaultHistoryWriterTest {
         assertEquals("image", attachments.get(0).get("type"));
         assertEquals(".golemcore/tool-artifacts/session/tool/capture.png", attachments.get(0).get("internalFilePath"));
         assertEquals("/api/files/download?path=capture", attachments.get(0).get("url"));
+        assertEquals("thumb-base64", attachments.get(0).get("thumbnailBase64"));
         assertEquals("capture.png", attachments.get(0).get("name"));
         assertEquals("image/png", attachments.get(0).get("mimeType"));
     }
@@ -248,6 +250,7 @@ class DefaultHistoryWriterTest {
                         "internal_file_kind", "image",
                         "internal_file_path", ".golemcore/tool-artifacts/session/tool/capture.png",
                         "internal_file_url", "/api/files/download?path=capture",
+                        "internal_file_thumbnail_base64", "thumb-base64",
                         "internal_file_name", "capture.png",
                         "internal_file_mime_type", "image/png"))
                 .build();
@@ -262,6 +265,7 @@ class DefaultHistoryWriterTest {
         assertNotNull(attachments);
         assertEquals(1, attachments.size());
         assertEquals("/api/files/download?path=capture", attachments.get(0).get("url"));
+        assertEquals("thumb-base64", attachments.get(0).get("thumbnailBase64"));
         assertEquals("capture.png", attachments.get(0).get("name"));
     }
 
