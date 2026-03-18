@@ -58,7 +58,7 @@ public class CompactionOrchestrationService {
         }
 
         AgentSession session = sessionOptional.get();
-        List<Message> sessionMessages = session.getMessages() != null ? session.getMessages() : new ArrayList<>();
+        List<Message> sessionMessages = session.getMessages() != null ? session.getMessages() : List.of();
 
         CompactionPreparation preparation = preparationService.prepare(
                 sessionId,
@@ -99,11 +99,12 @@ public class CompactionOrchestrationService {
         }
 
         List<Message> keptMessages = Message.flattenToolMessages(new ArrayList<>(preparation.messagesToKeep()));
-        sessionMessages.clear();
+        List<Message> mutableSessionMessages = session.mutableMessages();
+        mutableSessionMessages.clear();
         if (summaryMessage != null) {
-            sessionMessages.add(summaryMessage);
+            mutableSessionMessages.add(summaryMessage);
         }
-        sessionMessages.addAll(keptMessages);
+        mutableSessionMessages.addAll(keptMessages);
 
         long durationMs = Math.max(0, clock.millis() - startedAt);
         CompactionDetails details = detailsExtractor.extract(
