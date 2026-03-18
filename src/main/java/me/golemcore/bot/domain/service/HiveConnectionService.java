@@ -44,6 +44,7 @@ public class HiveConnectionService {
     private final HiveBootstrapConfigSynchronizer hiveBootstrapConfigSynchronizer;
     private final HiveSessionStateStore hiveSessionStateStore;
     private final HiveControlInboxService hiveControlInboxService;
+    private final HiveControlCommandDispatcher hiveControlCommandDispatcher;
     private final HiveApiClient hiveApiClient;
     private final HiveControlChannelClient hiveControlChannelClient;
     private final ChannelRegistry channelRegistry;
@@ -70,6 +71,7 @@ public class HiveConnectionService {
             HiveBootstrapConfigSynchronizer hiveBootstrapConfigSynchronizer,
             HiveSessionStateStore hiveSessionStateStore,
             HiveControlInboxService hiveControlInboxService,
+            HiveControlCommandDispatcher hiveControlCommandDispatcher,
             HiveApiClient hiveApiClient,
             HiveControlChannelClient hiveControlChannelClient,
             ChannelRegistry channelRegistry,
@@ -81,6 +83,7 @@ public class HiveConnectionService {
         this.hiveBootstrapConfigSynchronizer = hiveBootstrapConfigSynchronizer;
         this.hiveSessionStateStore = hiveSessionStateStore;
         this.hiveControlInboxService = hiveControlInboxService;
+        this.hiveControlCommandDispatcher = hiveControlCommandDispatcher;
         this.hiveApiClient = hiveApiClient;
         this.hiveControlChannelClient = hiveControlChannelClient;
         this.channelRegistry = channelRegistry;
@@ -420,8 +423,14 @@ public class HiveConnectionService {
 
     private void recordControlCommand(HiveControlCommandEnvelope envelope) {
         HiveControlInboxService.InboxSummary inboxSummary = hiveControlInboxService.recordReceived(envelope);
-        log.info("[Hive] Received control command: commandId={}, threadId={}, buffered={}",
-                envelope.getCommandId(), envelope.getThreadId(), inboxSummary.bufferedCommandCount());
+        try {
+            hiveControlCommandDispatcher.dispatch(envelope);
+            log.info("[Hive] Received control command: commandId={}, threadId={}, buffered={}",
+                    envelope.getCommandId(), envelope.getThreadId(), inboxSummary.bufferedCommandCount());
+        } catch (RuntimeException exception) {
+            log.warn("[Hive] Failed to dispatch control command {}: {}",
+                    envelope.getCommandId(), exception.getMessage());
+        }
     }
 
     private void scheduleBackgroundTasks(HiveSessionState sessionState) {

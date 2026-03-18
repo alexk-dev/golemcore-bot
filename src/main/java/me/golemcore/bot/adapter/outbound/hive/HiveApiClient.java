@@ -78,6 +78,18 @@ public class HiveApiClient {
                 JsonNode.class);
     }
 
+    public void publishEventsBatch(
+            String serverUrl,
+            String golemId,
+            String accessToken,
+            List<HiveEventPayload> events) {
+        postJson(serverUrl,
+                "/api/v1/golems/" + golemId + "/events:batch",
+                new HiveEventBatchRequest(events),
+                accessToken,
+                JsonNode.class);
+    }
+
     private <T> T postJson(
             String serverUrl,
             String path,

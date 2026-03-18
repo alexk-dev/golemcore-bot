@@ -223,6 +223,21 @@ public final class ContextAttributes {
     /** String ? active skill name used during the completed auto run. */
     public static final String AUTO_RUN_ACTIVE_SKILL = "auto.run.active.skill";
 
+    /** String ? Hive card identifier bound to the current turn. */
+    public static final String HIVE_CARD_ID = "hive.card.id";
+
+    /** String ? Hive thread identifier bound to the current turn. */
+    public static final String HIVE_THREAD_ID = "hive.thread.id";
+
+    /** String ? Hive command identifier bound to the current turn. */
+    public static final String HIVE_COMMAND_ID = "hive.command.id";
+
+    /** String ? Hive run identifier bound to the current turn. */
+    public static final String HIVE_RUN_ID = "hive.run.id";
+
+    /** String ? Hive golem identifier for the active control-plane session. */
+    public static final String HIVE_GOLEM_ID = "hive.golem.id";
+
     /** Map<String,Object> ? latest structured compaction details. */
     public static final String COMPACTION_LAST_DETAILS = "compaction.last.details";
 

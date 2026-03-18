@@ -122,6 +122,49 @@ class ResponseRoutingSystemTest {
     }
 
     @Test
+    void shouldPropagateHiveRoutingHints() {
+        ChannelPort hiveChannel = mock(ChannelPort.class);
+        when(hiveChannel.getChannelType()).thenReturn("hive");
+        when(hiveChannel.sendMessage(anyString(), anyString(), any()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        ResponseRoutingSystem hiveSystem = new ResponseRoutingSystem(
+                new ChannelRegistry(List.of(hiveChannel)),
+                preferencesService,
+                voiceHandler);
+
+        AgentSession session = AgentSession.builder()
+                .id("hive:thread-1")
+                .chatId("thread-1")
+                .channelType("hive")
+                .messages(new ArrayList<>())
+                .build();
+        AgentContext context = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>())
+                .build();
+        context.setAttribute(ContextAttributes.HIVE_THREAD_ID, "thread-1");
+        context.setAttribute(ContextAttributes.HIVE_CARD_ID, "card-1");
+        context.setAttribute(ContextAttributes.HIVE_COMMAND_ID, "cmd-1");
+        context.setAttribute(ContextAttributes.HIVE_RUN_ID, "run-1");
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.builder()
+                .text("Hive reply")
+                .hints(Map.of("model", "gpt-5"))
+                .build());
+
+        hiveSystem.process(context);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> hintsCaptor = ArgumentCaptor.forClass((Class) Map.class);
+        verify(hiveChannel).sendMessage(eq("thread-1"), eq("Hive reply"), hintsCaptor.capture());
+        assertEquals("thread-1", hintsCaptor.getValue().get(ContextAttributes.HIVE_THREAD_ID));
+        assertEquals("card-1", hintsCaptor.getValue().get(ContextAttributes.HIVE_CARD_ID));
+        assertEquals("cmd-1", hintsCaptor.getValue().get(ContextAttributes.HIVE_COMMAND_ID));
+        assertEquals("run-1", hintsCaptor.getValue().get(ContextAttributes.HIVE_RUN_ID));
+        assertEquals("gpt-5", hintsCaptor.getValue().get("model"));
+    }
+
+    @Test
     void shouldSendOutgoingResponseWithDocumentAttachment() {
         AgentContext context = createContext();
 

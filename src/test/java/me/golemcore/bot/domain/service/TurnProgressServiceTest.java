@@ -2,6 +2,7 @@ package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ProgressUpdate;
@@ -109,6 +110,41 @@ class TurnProgressServiceTest {
         ArgumentCaptor<ProgressUpdate> captor = ArgumentCaptor.forClass(ProgressUpdate.class);
         verify(channelPort).sendProgressUpdate(eq("chat-1"), captor.capture());
         assertEquals(ProgressUpdateType.SUMMARY, captor.getValue().type());
+    }
+
+    @Test
+    void shouldPropagateHiveMetadataIntoProgressUpdates() {
+        ChannelPort hiveChannel = mock(ChannelPort.class);
+        when(hiveChannel.getChannelType()).thenReturn("hive");
+        when(hiveChannel.sendProgressUpdate(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        TurnProgressService hiveService = new TurnProgressService(
+                runtimeConfigService,
+                new ChannelRegistry(List.of(hiveChannel)),
+                new ToolExecutionTraceExtractor(),
+                summaryService,
+                Clock.fixed(Instant.parse("2026-03-17T18:05:00Z"), ZoneOffset.UTC));
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder()
+                        .id("hive:thread-1")
+                        .channelType("hive")
+                        .chatId("thread-1")
+                        .build())
+                .messages(new ArrayList<>())
+                .build();
+        context.setAttribute(ContextAttributes.HIVE_THREAD_ID, "thread-1");
+        context.setAttribute(ContextAttributes.HIVE_CARD_ID, "card-1");
+        context.setAttribute(ContextAttributes.HIVE_COMMAND_ID, "cmd-1");
+        context.setAttribute(ContextAttributes.HIVE_RUN_ID, "run-1");
+
+        hiveService.clearProgress(context);
+
+        ArgumentCaptor<ProgressUpdate> captor = ArgumentCaptor.forClass(ProgressUpdate.class);
+        verify(hiveChannel).sendProgressUpdate(eq("thread-1"), captor.capture());
+        ProgressUpdate update = captor.getValue();
+        assertEquals("thread-1", update.metadata().get(ContextAttributes.HIVE_THREAD_ID));
+        assertEquals("card-1", update.metadata().get(ContextAttributes.HIVE_CARD_ID));
+        assertEquals("cmd-1", update.metadata().get(ContextAttributes.HIVE_COMMAND_ID));
+        assertEquals("run-1", update.metadata().get(ContextAttributes.HIVE_RUN_ID));
     }
 
     private AgentContext buildContext() {

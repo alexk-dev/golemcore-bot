@@ -79,6 +79,28 @@ class HiveApiClientTest {
     }
 
     @Test
+    void shouldPublishEventBatchWithBearerToken() throws Exception {
+        server.enqueue(new MockResponse.Builder().code(200).body("{\"acceptedEvents\":1}").build());
+
+        hiveApiClient.publishEventsBatch(
+                server.url("/").toString(),
+                "golem-1",
+                "access",
+                List.of(HiveEventPayload.builder()
+                        .schemaVersion(1)
+                        .eventType("runtime_event")
+                        .runtimeEventType("COMMAND_ACKNOWLEDGED")
+                        .threadId("thread-1")
+                        .commandId("cmd-1")
+                        .createdAt(Instant.parse("2026-03-18T00:00:00Z"))
+                        .build()));
+
+        RecordedRequest recordedRequest = server.takeRequest();
+        assertEquals("/api/v1/golems/golem-1/events:batch", recordedRequest.getTarget());
+        assertEquals("Bearer access", recordedRequest.getHeaders().get("Authorization"));
+    }
+
+    @Test
     void shouldExposeHiveStatusCodeOnApiError() {
         server.enqueue(new MockResponse.Builder().code(401).body("{\"message\":\"Invalid refresh token\"}").build());
 

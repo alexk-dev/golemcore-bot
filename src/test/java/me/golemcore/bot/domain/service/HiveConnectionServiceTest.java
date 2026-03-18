@@ -37,6 +37,7 @@ class HiveConnectionServiceTest {
     private HiveBootstrapConfigSynchronizer hiveBootstrapConfigSynchronizer;
     private HiveSessionStateStore hiveSessionStateStore;
     private HiveControlInboxService hiveControlInboxService;
+    private HiveControlCommandDispatcher hiveControlCommandDispatcher;
     private HiveApiClient hiveApiClient;
     private HiveControlChannelClient hiveControlChannelClient;
     private ChannelPort webPort;
@@ -51,6 +52,7 @@ class HiveConnectionServiceTest {
         hiveBootstrapConfigSynchronizer = mock(HiveBootstrapConfigSynchronizer.class);
         hiveSessionStateStore = mock(HiveSessionStateStore.class);
         hiveControlInboxService = mock(HiveControlInboxService.class);
+        hiveControlCommandDispatcher = mock(HiveControlCommandDispatcher.class);
         hiveApiClient = mock(HiveApiClient.class);
         hiveControlChannelClient = mock(HiveControlChannelClient.class);
         webPort = mock(ChannelPort.class);
@@ -103,6 +105,7 @@ class HiveConnectionServiceTest {
                 hiveBootstrapConfigSynchronizer,
                 hiveSessionStateStore,
                 hiveControlInboxService,
+                hiveControlCommandDispatcher,
                 hiveApiClient,
                 hiveControlChannelClient,
                 new ChannelRegistry(List.of(webPort)),

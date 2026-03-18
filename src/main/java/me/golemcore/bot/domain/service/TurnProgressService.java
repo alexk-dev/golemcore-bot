@@ -223,7 +223,7 @@ public class TurnProgressService {
         if (channel == null) {
             return;
         }
-        channel.sendProgressUpdate(chatId, update);
+        channel.sendProgressUpdate(chatId, enrichHiveMetadata(context, update));
     }
 
     @SuppressWarnings("unchecked")
@@ -250,5 +250,28 @@ public class TurnProgressService {
             return value;
         }
         return value.substring(0, Math.max(0, maxLength - 3)) + "...";
+    }
+
+    private ProgressUpdate enrichHiveMetadata(AgentContext context, ProgressUpdate update) {
+        if (context == null || update == null) {
+            return update;
+        }
+        Map<String, Object> metadata = new LinkedHashMap<>(update.metadata());
+        copyHiveMetadata(context, metadata, ContextAttributes.HIVE_CARD_ID);
+        copyHiveMetadata(context, metadata, ContextAttributes.HIVE_THREAD_ID);
+        copyHiveMetadata(context, metadata, ContextAttributes.HIVE_COMMAND_ID);
+        copyHiveMetadata(context, metadata, ContextAttributes.HIVE_RUN_ID);
+        copyHiveMetadata(context, metadata, ContextAttributes.HIVE_GOLEM_ID);
+        if (metadata.equals(update.metadata())) {
+            return update;
+        }
+        return new ProgressUpdate(update.type(), update.text(), metadata);
+    }
+
+    private void copyHiveMetadata(AgentContext context, Map<String, Object> target, String key) {
+        Object value = context.getAttribute(key);
+        if (value instanceof String stringValue && !stringValue.isBlank()) {
+            target.put(key, stringValue);
+        }
     }
 }

@@ -105,11 +105,11 @@ The current bot-side slice includes:
 - periodic heartbeat maintenance
 - control channel connect and reconnect loop
 - buffered control command inbox for transport diagnostics
+- control command dispatch into the regular `hive` channel execution queue
+- `events:batch` publishing for command acknowledgements, runtime events, progress updates, thread messages, and usage snapshots
 - dashboard status and join/reconnect/leave controls
 
 Still pending in the epic:
 
-- `events:batch`
-- command execution via Hive transport
-- runtime event bridge
 - explicit lifecycle signals
+- richer stop/cancel semantics for Hive-issued runs
