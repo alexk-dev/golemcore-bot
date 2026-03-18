@@ -5,6 +5,7 @@ import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.RuntimeEventService;
+import me.golemcore.bot.domain.service.TurnProgressService;
 import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
 import me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder;
@@ -63,6 +64,7 @@ class ToolLoopConfigurationTest {
         UsageTrackingPort usageTrackingPort = mock(UsageTrackingPort.class);
         CompactionOrchestrationService compactionOrchestrationService = mock(CompactionOrchestrationService.class);
         RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        TurnProgressService turnProgressService = mock(TurnProgressService.class);
 
         ToolLoopSystem system = configuration.toolLoopSystem(
                 llmPort,
@@ -75,7 +77,8 @@ class ToolLoopConfigurationTest {
                 runtimeConfigService,
                 usageTrackingPort,
                 compactionOrchestrationService,
-                runtimeEventService);
+                runtimeEventService,
+                turnProgressService);
 
         assertNotNull(system);
         assertInstanceOf(DefaultToolLoopSystem.class, system);

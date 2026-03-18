@@ -97,8 +97,8 @@ class RuntimeConfigServiceTest {
         RuntimeConfig second = service.getRuntimeConfig();
 
         assertEquals(first, second);
-        // First call loads all 14 sections, second call returns cached
-        verify(storagePort, atLeast(14)).getText(anyString(), anyString());
+        // First call loads all 15 sections, second call returns cached
+        verify(storagePort, atLeast(15)).getText(anyString(), anyString());
     }
 
     @Test
@@ -190,6 +190,8 @@ class RuntimeConfigServiceTest {
         assertTrue(service.isCompactionEnabled());
         assertEquals(50000, service.getCompactionMaxContextTokens());
         assertEquals(20, service.getCompactionKeepLastMessages());
+        assertEquals("model_ratio", service.getCompactionTriggerMode());
+        assertEquals(0.95d, service.getCompactionModelThresholdRatio(), 0.0001d);
         assertTrue(service.isCompactionPreserveTurnBoundariesEnabled());
         assertTrue(service.isCompactionDetailsEnabled());
         assertEquals(50, service.getCompactionDetailsMaxItemsPerCategory());
@@ -200,6 +202,8 @@ class RuntimeConfigServiceTest {
     void shouldReturnConfiguredAdvancedCompactionSettings() throws Exception {
         RuntimeConfig.CompactionConfig compaction = RuntimeConfig.CompactionConfig.builder()
                 .enabled(true)
+                .triggerMode("token_threshold")
+                .modelThresholdRatio(0.9d)
                 .maxContextTokens(12345)
                 .keepLastMessages(7)
                 .preserveTurnBoundaries(false)
@@ -209,6 +213,8 @@ class RuntimeConfigServiceTest {
                 .build();
         persistedSections.put("compaction.json", objectMapper.writeValueAsString(compaction));
 
+        assertEquals("token_threshold", service.getCompactionTriggerMode());
+        assertEquals(0.9d, service.getCompactionModelThresholdRatio(), 0.0001d);
         assertFalse(service.isCompactionPreserveTurnBoundariesEnabled());
         assertFalse(service.isCompactionDetailsEnabled());
         assertEquals(12, service.getCompactionDetailsMaxItemsPerCategory());
@@ -222,6 +228,8 @@ class RuntimeConfigServiceTest {
         RuntimeConfig config = service.getRuntimeConfig();
 
         assertNotNull(config.getCompaction());
+        assertEquals("model_ratio", config.getCompaction().getTriggerMode());
+        assertEquals(0.95d, config.getCompaction().getModelThresholdRatio(), 0.0001d);
         assertTrue(config.getCompaction().getPreserveTurnBoundaries());
         assertTrue(config.getCompaction().getDetailsEnabled());
         assertEquals(50, config.getCompaction().getDetailsMaxItemsPerCategory());
@@ -232,6 +240,8 @@ class RuntimeConfigServiceTest {
     void shouldInitializeCompactionAdvancedDefaultsWhenNullDuringRuntimeConfigUpdate() {
         RuntimeConfig newConfig = RuntimeConfig.builder().build();
         newConfig.setCompaction(new RuntimeConfig.CompactionConfig());
+        newConfig.getCompaction().setTriggerMode(null);
+        newConfig.getCompaction().setModelThresholdRatio(null);
         newConfig.getCompaction().setPreserveTurnBoundaries(null);
         newConfig.getCompaction().setDetailsEnabled(null);
         newConfig.getCompaction().setDetailsMaxItemsPerCategory(null);
@@ -240,10 +250,41 @@ class RuntimeConfigServiceTest {
         service.updateRuntimeConfig(newConfig);
 
         RuntimeConfig updated = service.getRuntimeConfig();
+        assertEquals("model_ratio", updated.getCompaction().getTriggerMode());
+        assertEquals(0.95d, updated.getCompaction().getModelThresholdRatio(), 0.0001d);
         assertTrue(updated.getCompaction().getPreserveTurnBoundaries());
         assertTrue(updated.getCompaction().getDetailsEnabled());
         assertEquals(50, updated.getCompaction().getDetailsMaxItemsPerCategory());
         assertEquals(15000, updated.getCompaction().getSummaryTimeoutMs());
+    }
+
+    @Test
+    void shouldNormalizeInvalidStoredCompactionTriggerSettings() throws Exception {
+        RuntimeConfig.CompactionConfig compaction = RuntimeConfig.CompactionConfig.builder()
+                .triggerMode("not-a-real-mode")
+                .modelThresholdRatio(0.0d)
+                .build();
+        persistedSections.put("compaction.json", objectMapper.writeValueAsString(compaction));
+
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        assertEquals("model_ratio", config.getCompaction().getTriggerMode());
+        assertEquals(0.95d, config.getCompaction().getModelThresholdRatio(), 0.0001d);
+    }
+
+    @Test
+    void shouldNormalizeMixedCaseCompactionTriggerModeDuringUpdate() {
+        RuntimeConfig newConfig = RuntimeConfig.builder().build();
+        newConfig.setCompaction(RuntimeConfig.CompactionConfig.builder()
+                .triggerMode(" Token_Threshold ")
+                .modelThresholdRatio(0.8d)
+                .build());
+
+        service.updateRuntimeConfig(newConfig);
+
+        RuntimeConfig updated = service.getRuntimeConfig();
+        assertEquals("token_threshold", updated.getCompaction().getTriggerMode());
+        assertEquals(0.8d, updated.getCompaction().getModelThresholdRatio(), 0.0001d);
     }
 
     @Test
@@ -286,6 +327,11 @@ class RuntimeConfigServiceTest {
         assertTrue(service.isTurnQueueSteeringEnabled());
         assertEquals("one-at-a-time", service.getTurnQueueSteeringMode());
         assertEquals("one-at-a-time", service.getTurnQueueFollowUpMode());
+        assertTrue(service.isTurnProgressUpdatesEnabled());
+        assertTrue(service.isTurnProgressIntentEnabled());
+        assertEquals(8, service.getTurnProgressBatchSize());
+        assertEquals(java.time.Duration.ofSeconds(10), service.getTurnProgressMaxSilence());
+        assertEquals(8000, service.getTurnProgressSummaryTimeoutMs());
     }
 
     @Test
@@ -297,6 +343,11 @@ class RuntimeConfigServiceTest {
                 .queueSteeringEnabled(false)
                 .queueSteeringMode("all")
                 .queueFollowUpMode("single")
+                .progressUpdatesEnabled(false)
+                .progressIntentEnabled(false)
+                .progressBatchSize(6)
+                .progressMaxSilenceSeconds(25)
+                .progressSummaryTimeoutMs(12000)
                 .build();
         persistedSections.put("turn.json", objectMapper.writeValueAsString(turn));
 
@@ -306,6 +357,11 @@ class RuntimeConfigServiceTest {
         assertFalse(service.isTurnQueueSteeringEnabled());
         assertEquals("all", service.getTurnQueueSteeringMode());
         assertEquals("one-at-a-time", service.getTurnQueueFollowUpMode());
+        assertFalse(service.isTurnProgressUpdatesEnabled());
+        assertFalse(service.isTurnProgressIntentEnabled());
+        assertEquals(6, service.getTurnProgressBatchSize());
+        assertEquals(java.time.Duration.ofSeconds(25), service.getTurnProgressMaxSilence());
+        assertEquals(12000, service.getTurnProgressSummaryTimeoutMs());
     }
 
     @Test
@@ -321,6 +377,11 @@ class RuntimeConfigServiceTest {
         assertTrue(config.getTurn().getQueueSteeringEnabled());
         assertEquals("one-at-a-time", config.getTurn().getQueueSteeringMode());
         assertEquals("one-at-a-time", config.getTurn().getQueueFollowUpMode());
+        assertTrue(config.getTurn().getProgressUpdatesEnabled());
+        assertTrue(config.getTurn().getProgressIntentEnabled());
+        assertEquals(8, config.getTurn().getProgressBatchSize());
+        assertEquals(10, config.getTurn().getProgressMaxSilenceSeconds());
+        assertEquals(8000, config.getTurn().getProgressSummaryTimeoutMs());
     }
 
     @Test
@@ -338,6 +399,27 @@ class RuntimeConfigServiceTest {
         assertTrue(updated.getTurn().getQueueSteeringEnabled());
         assertEquals("one-at-a-time", updated.getTurn().getQueueSteeringMode());
         assertEquals("one-at-a-time", updated.getTurn().getQueueFollowUpMode());
+        assertTrue(updated.getTurn().getProgressUpdatesEnabled());
+        assertTrue(updated.getTurn().getProgressIntentEnabled());
+        assertEquals(8, updated.getTurn().getProgressBatchSize());
+        assertEquals(10, updated.getTurn().getProgressMaxSilenceSeconds());
+        assertEquals(8000, updated.getTurn().getProgressSummaryTimeoutMs());
+    }
+
+    @Test
+    void shouldNormalizeInvalidTurnProgressSettingsToDefaults() throws Exception {
+        RuntimeConfig.TurnConfig turn = RuntimeConfig.TurnConfig.builder()
+                .progressBatchSize(0)
+                .progressMaxSilenceSeconds(-1)
+                .progressSummaryTimeoutMs(100)
+                .build();
+        persistedSections.put("turn.json", objectMapper.writeValueAsString(turn));
+
+        RuntimeConfig runtimeConfig = service.getRuntimeConfig();
+
+        assertEquals(8, runtimeConfig.getTurn().getProgressBatchSize());
+        assertEquals(10, runtimeConfig.getTurn().getProgressMaxSilenceSeconds());
+        assertEquals(8000, runtimeConfig.getTurn().getProgressSummaryTimeoutMs());
     }
 
     @Test
@@ -612,7 +694,7 @@ class RuntimeConfigServiceTest {
 
         service.updateRuntimeConfig(newConfig);
 
-        verify(storagePort, times(14)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
+        verify(storagePort, times(15)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
 
         RuntimeConfig updated = service.getRuntimeConfig();
         assertEquals("custom/model", updated.getModelRouter().getBalancedModel());
@@ -705,7 +787,7 @@ class RuntimeConfigServiceTest {
         assertEquals(20, code.getCode().length());
         assertFalse(code.isUsed());
         assertNotNull(code.getCreatedAt());
-        verify(storagePort, atLeast(14)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
+        verify(storagePort, atLeast(15)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
     }
 
     @Test
@@ -923,6 +1005,30 @@ class RuntimeConfigServiceTest {
         assertTrue(service.isUsageEnabled());
     }
 
+    @Test
+    void shouldReturnDefaultPlanSettings() {
+        assertFalse(service.isPlanEnabled());
+        assertEquals(5, service.getPlanMaxPlans());
+        assertEquals(50, service.getPlanMaxStepsPerPlan());
+        assertTrue(service.isPlanStopOnFailure());
+    }
+
+    @Test
+    void shouldReturnConfiguredPlanSettings() throws Exception {
+        RuntimeConfig.PlanConfig plan = RuntimeConfig.PlanConfig.builder()
+                .enabled(true)
+                .maxPlans(8)
+                .maxStepsPerPlan(120)
+                .stopOnFailure(false)
+                .build();
+        persistedSections.put("plan.json", objectMapper.writeValueAsString(plan));
+
+        assertTrue(service.isPlanEnabled());
+        assertEquals(8, service.getPlanMaxPlans());
+        assertEquals(120, service.getPlanMaxStepsPerPlan());
+        assertFalse(service.isPlanStopOnFailure());
+    }
+
     // ==================== Section Validation ====================
 
     @Test
@@ -941,6 +1047,7 @@ class RuntimeConfigServiceTest {
         assertTrue(RuntimeConfigService.isValidConfigSection("skills"));
         assertTrue(RuntimeConfigService.isValidConfigSection("usage"));
         assertTrue(RuntimeConfigService.isValidConfigSection("mcp"));
+        assertTrue(RuntimeConfigService.isValidConfigSection("plan"));
     }
 
     @Test
@@ -957,6 +1064,7 @@ class RuntimeConfigServiceTest {
         assertTrue(RuntimeConfigService.isValidConfigSection("TELEGRAM"));
         assertTrue(RuntimeConfigService.isValidConfigSection("Model-Router"));
         assertTrue(RuntimeConfigService.isValidConfigSection("AUTO-MODE"));
+        assertTrue(RuntimeConfigService.isValidConfigSection("PLAN"));
     }
 
     // ==================== ConfigSection Enum ====================
@@ -966,6 +1074,7 @@ class RuntimeConfigServiceTest {
         assertEquals("telegram.json", RuntimeConfig.ConfigSection.TELEGRAM.getFileName());
         assertEquals("model-router.json", RuntimeConfig.ConfigSection.MODEL_ROUTER.getFileName());
         assertEquals("auto-mode.json", RuntimeConfig.ConfigSection.AUTO_MODE.getFileName());
+        assertEquals("plan.json", RuntimeConfig.ConfigSection.PLAN.getFileName());
     }
 
     @Test
@@ -975,6 +1084,8 @@ class RuntimeConfigServiceTest {
         assertTrue(RuntimeConfig.ConfigSection.fromFileId("model-router").isPresent());
         assertEquals(RuntimeConfig.ConfigSection.MODEL_ROUTER,
                 RuntimeConfig.ConfigSection.fromFileId("model-router").get());
+        assertTrue(RuntimeConfig.ConfigSection.fromFileId("plan").isPresent());
+        assertEquals(RuntimeConfig.ConfigSection.PLAN, RuntimeConfig.ConfigSection.fromFileId("plan").get());
     }
 
     @Test
@@ -1027,5 +1138,6 @@ class RuntimeConfigServiceTest {
         assertTrue(persistedSections.containsKey("model-router.json"));
         assertTrue(persistedSections.containsKey("llm.json"));
         assertTrue(persistedSections.containsKey("tools.json"));
+        assertTrue(persistedSections.containsKey("plan.json"));
     }
 }

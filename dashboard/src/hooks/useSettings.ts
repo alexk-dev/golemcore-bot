@@ -11,6 +11,7 @@ import {
   type TurnConfig,
   type UsageConfig,
   type McpConfig,
+  type PlanConfig,
   type AutoModeConfig,
   type RateLimitConfig,
   type SecurityConfig,
@@ -32,6 +33,7 @@ import {
   updateTurnConfig,
   updateUsageConfig,
   updateMcpConfig,
+  updatePlanConfig,
   updateAutoConfig,
   updateAdvancedConfig,
 } from '../api/settings';
@@ -157,6 +159,14 @@ export function useUpdateMcp(): UseMutationResult<Awaited<ReturnType<typeof upda
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: McpConfig) => updateMcpConfig(config),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useUpdatePlan(): UseMutationResult<Awaited<ReturnType<typeof updatePlanConfig>>, unknown, PlanConfig> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (config: PlanConfig) => updatePlanConfig(config),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
   });
 }

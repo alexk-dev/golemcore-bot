@@ -50,6 +50,12 @@ public class SettingsController {
     private static final String LEGACY_STT_PROVIDER_ELEVENLABS = "elevenlabs";
     private static final String LEGACY_STT_PROVIDER_WHISPER = "whisper";
     private static final Set<String> VALID_API_TYPES = Set.of("openai", "anthropic", "gemini");
+    private static final String DEFAULT_COMPACTION_TRIGGER_MODE = "model_ratio";
+    private static final String COMPACTION_TRIGGER_MODE_TOKEN_THRESHOLD = "token_threshold";
+    private static final Set<String> VALID_COMPACTION_TRIGGER_MODES = Set.of(
+            DEFAULT_COMPACTION_TRIGGER_MODE,
+            COMPACTION_TRIGGER_MODE_TOKEN_THRESHOLD);
+    private static final double DEFAULT_COMPACTION_MODEL_THRESHOLD_RATIO = 0.95d;
     private static final int MEMORY_SOFT_BUDGET_MIN = 200;
     private static final int MEMORY_SOFT_BUDGET_MAX = 10000;
     private static final int MEMORY_MAX_BUDGET_MIN = 200;
@@ -60,6 +66,12 @@ public class SettingsController {
     private static final int MEMORY_DECAY_DAYS_MAX = 3650;
     private static final int MEMORY_RETRIEVAL_LOOKBACK_DAYS_MIN = 1;
     private static final int MEMORY_RETRIEVAL_LOOKBACK_DAYS_MAX = 90;
+    private static final int TURN_PROGRESS_BATCH_SIZE_MIN = 1;
+    private static final int TURN_PROGRESS_BATCH_SIZE_MAX = 50;
+    private static final int TURN_PROGRESS_MAX_SILENCE_SECONDS_MIN = 1;
+    private static final int TURN_PROGRESS_MAX_SILENCE_SECONDS_MAX = 300;
+    private static final int TURN_PROGRESS_SUMMARY_TIMEOUT_MS_MIN = 1000;
+    private static final int TURN_PROGRESS_SUMMARY_TIMEOUT_MS_MAX = 60000;
     private static final Pattern SHELL_ENV_VAR_NAME_PATTERN = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
     private static final Set<String> RESERVED_SHELL_ENV_VAR_NAMES = Set.of("HOME", "PWD");
     private static final int SHELL_ENV_VAR_NAME_MAX_LENGTH = 128;
@@ -177,6 +189,7 @@ public class SettingsController {
         if (merged.getMemory() != null) {
             validateMemoryConfig(merged.getMemory());
         }
+        validateCompactionConfig(merged.getCompaction());
         validateVoiceConfig(merged.getVoice());
         runtimeConfigService.updateRuntimeConfig(merged);
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
@@ -383,6 +396,7 @@ public class SettingsController {
     @PutMapping("/runtime/turn")
     public Mono<ResponseEntity<RuntimeConfig>> updateTurnConfig(
             @RequestBody RuntimeConfig.TurnConfig turnConfig) {
+        validateTurnConfig(turnConfig);
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         config.setTurn(turnConfig);
         runtimeConfigService.updateRuntimeConfig(config);
@@ -431,6 +445,16 @@ public class SettingsController {
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
 
+    @PutMapping("/runtime/plan")
+    public Mono<ResponseEntity<RuntimeConfig>> updatePlanConfig(
+            @RequestBody RuntimeConfig.PlanConfig planConfig) {
+        validatePlanConfig(planConfig);
+        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        config.setPlan(planConfig);
+        runtimeConfigService.updateRuntimeConfig(config);
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    }
+
     @PutMapping("/runtime/webhooks")
     public Mono<ResponseEntity<Void>> updateWebhooksConfig(
             @RequestBody UserPreferences.WebhookConfig webhookConfig) {
@@ -461,6 +485,7 @@ public class SettingsController {
             config.setSecurity(request.security());
         }
         if (request.compaction() != null) {
+            validateCompactionConfig(request.compaction());
             config.setCompaction(request.compaction());
         }
         runtimeConfigService.updateRuntimeConfig(config);
@@ -567,6 +592,47 @@ public class SettingsController {
         }
     }
 
+    private void validateTurnConfig(RuntimeConfig.TurnConfig turnConfig) {
+        if (turnConfig == null) {
+            throw new IllegalArgumentException("turn config is required");
+        }
+        if (turnConfig.getMaxLlmCalls() != null && turnConfig.getMaxLlmCalls() < 1) {
+            throw new IllegalArgumentException("turn.maxLlmCalls must be >= 1");
+        }
+        if (turnConfig.getMaxToolExecutions() != null && turnConfig.getMaxToolExecutions() < 1) {
+            throw new IllegalArgumentException("turn.maxToolExecutions must be >= 1");
+        }
+        if (turnConfig.getDeadline() != null && !turnConfig.getDeadline().isBlank()) {
+            try {
+                java.time.Duration deadline = java.time.Duration.parse(turnConfig.getDeadline().trim());
+                if (deadline.isZero() || deadline.isNegative()) {
+                    throw new IllegalArgumentException("turn.deadline must be a positive ISO-8601 duration");
+                }
+            } catch (java.time.format.DateTimeParseException e) {
+                throw new IllegalArgumentException("turn.deadline must be a valid ISO-8601 duration");
+            }
+        }
+        validateRange(turnConfig.getProgressBatchSize(), TURN_PROGRESS_BATCH_SIZE_MIN, TURN_PROGRESS_BATCH_SIZE_MAX,
+                "turn.progressBatchSize");
+        validateRange(turnConfig.getProgressMaxSilenceSeconds(),
+                TURN_PROGRESS_MAX_SILENCE_SECONDS_MIN,
+                TURN_PROGRESS_MAX_SILENCE_SECONDS_MAX,
+                "turn.progressMaxSilenceSeconds");
+        validateRange(turnConfig.getProgressSummaryTimeoutMs(),
+                TURN_PROGRESS_SUMMARY_TIMEOUT_MS_MIN,
+                TURN_PROGRESS_SUMMARY_TIMEOUT_MS_MAX,
+                "turn.progressSummaryTimeoutMs");
+    }
+
+    private void validateRange(Integer value, int min, int max, String fieldName) {
+        if (value == null) {
+            return;
+        }
+        if (value < min || value > max) {
+            throw new IllegalArgumentException(fieldName + " must be between " + min + " and " + max);
+        }
+    }
+
     private void validateMemoryConfig(RuntimeConfig.MemoryConfig memoryConfig) {
         if (memoryConfig == null) {
             throw new IllegalArgumentException("memory config is required");
@@ -596,6 +662,41 @@ public class SettingsController {
         if (softBudget != null && maxBudget != null && maxBudget < softBudget) {
             throw new IllegalArgumentException(
                     "memory.maxPromptBudgetTokens must be greater than or equal to memory.softPromptBudgetTokens");
+        }
+    }
+
+    private void validateCompactionConfig(RuntimeConfig.CompactionConfig compactionConfig) {
+        if (compactionConfig == null) {
+            return;
+        }
+
+        String triggerMode = compactionConfig.getTriggerMode();
+        if (triggerMode == null || triggerMode.isBlank()) {
+            compactionConfig.setTriggerMode(DEFAULT_COMPACTION_TRIGGER_MODE);
+        } else {
+            String normalized = triggerMode.trim().toLowerCase(Locale.ROOT);
+            if (!VALID_COMPACTION_TRIGGER_MODES.contains(normalized)) {
+                throw new IllegalArgumentException(
+                        "compaction.triggerMode must be one of " + VALID_COMPACTION_TRIGGER_MODES);
+            }
+            compactionConfig.setTriggerMode(normalized);
+        }
+
+        Double modelThresholdRatio = compactionConfig.getModelThresholdRatio();
+        if (modelThresholdRatio == null) {
+            compactionConfig.setModelThresholdRatio(DEFAULT_COMPACTION_MODEL_THRESHOLD_RATIO);
+        } else if (modelThresholdRatio <= 0.0d || modelThresholdRatio > 1.0d) {
+            throw new IllegalArgumentException("compaction.modelThresholdRatio must be between 0 and 1");
+        }
+
+        Integer maxContextTokens = compactionConfig.getMaxContextTokens();
+        if (maxContextTokens != null && maxContextTokens < 1) {
+            throw new IllegalArgumentException("compaction.maxContextTokens must be greater than 0");
+        }
+
+        Integer keepLastMessages = compactionConfig.getKeepLastMessages();
+        if (keepLastMessages != null && keepLastMessages < 1) {
+            throw new IllegalArgumentException("compaction.keepLastMessages must be greater than 0");
         }
     }
 
@@ -653,6 +754,14 @@ public class SettingsController {
         }
     }
 
+    private void validatePlanConfig(RuntimeConfig.PlanConfig planConfig) {
+        if (planConfig == null) {
+            throw new IllegalArgumentException("plan config is required");
+        }
+        validateNullableInteger(planConfig.getMaxPlans(), 1, 100, "plan.maxPlans");
+        validateNullableInteger(planConfig.getMaxStepsPerPlan(), 1, 1000, "plan.maxStepsPerPlan");
+    }
+
     private RuntimeConfig.ToolsConfig ensureToolsConfig(RuntimeConfig config) {
         RuntimeConfig.ToolsConfig toolsConfig = config.getTools();
         if (toolsConfig == null) {
@@ -683,6 +792,7 @@ public class SettingsController {
                 .skills(mergeSection(patch.getSkills(), baseline.getSkills(), RuntimeConfig.SkillsConfig::new))
                 .usage(mergeSection(patch.getUsage(), baseline.getUsage(), RuntimeConfig.UsageConfig::new))
                 .mcp(mergeSection(patch.getMcp(), baseline.getMcp(), RuntimeConfig.McpConfig::new))
+                .plan(mergeSection(patch.getPlan(), baseline.getPlan(), RuntimeConfig.PlanConfig::new))
                 .build();
     }
 

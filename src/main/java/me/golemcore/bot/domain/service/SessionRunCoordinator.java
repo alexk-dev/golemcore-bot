@@ -374,11 +374,10 @@ public class SessionRunCoordinator {
             java.util.Iterator<Message> iterator = queuedFollowUpMessages.iterator();
             while (iterator.hasNext()) {
                 Message message = iterator.next();
-                if (!ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(resolveQueueKind(message))) {
-                    continue;
+                if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(resolveQueueKind(message))) {
+                    iterator.remove();
+                    return message;
                 }
-                iterator.remove();
-                return message;
             }
             return null;
         }

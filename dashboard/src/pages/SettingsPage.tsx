@@ -1,8 +1,8 @@
-import type { ReactElement } from 'react';
+import { useDeferredValue, useState, type ReactElement } from 'react';
 import {
-  Badge, Card, Button, Row, Col, Spinner, Placeholder,
+  Badge, Card, Button, Row, Col, Spinner, Placeholder, Form, InputGroup,
 } from 'react-bootstrap';
-import { FiPackage } from 'react-icons/fi';
+import { FiPackage, FiSearch, FiX } from 'react-icons/fi';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   useSettings, useRuntimeConfig,
@@ -23,6 +23,7 @@ import TurnTab from './settings/TurnTab';
 import UsageTab from './settings/UsageTab';
 import McpTab from './settings/McpTab';
 import AutoModeTab from './settings/AutoModeTab';
+import PlanModeTab from './settings/PlanModeTab';
 import { UpdatesTab } from './settings/UpdatesTab';
 import PluginSettingsPanel from './settings/PluginSettingsPanel';
 import PluginsMarketplaceTab from './settings/PluginsMarketplaceTab';
@@ -32,6 +33,7 @@ import {
   isSettingsSectionKey,
   type SettingsSectionMeta,
 } from './settings/settingsCatalog';
+import { filterCatalogBlocks } from './settings/settingsCatalogSearch';
 
 interface CatalogCardItem {
   key: string;
@@ -96,6 +98,8 @@ function buildMarketplaceBadge(
 export default function SettingsPage(): ReactElement {
   const navigate = useNavigate();
   const { section } = useParams<{ section?: string }>();
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const deferredCatalogSearch = useDeferredValue(catalogSearch);
   const { data: settings, isLoading: settingsLoading } = useSettings();
   const { data: rc, isLoading: rcLoading } = useRuntimeConfig();
   const { data: pluginCatalog = [], isLoading: pluginCatalogLoading } = usePluginSettingsCatalog();
@@ -179,6 +183,7 @@ export default function SettingsPage(): ReactElement {
 
     return Array.from(byKey.values()).filter((block) => block.items.length > 0);
   })();
+  const filteredCatalogBlocks = filterCatalogBlocks(catalogBlocks, deferredCatalogSearch);
 
   if (settingsLoading || rcLoading || pluginCatalogLoading) {
     return (
@@ -208,7 +213,42 @@ export default function SettingsPage(): ReactElement {
           <h4>Settings</h4>
           <p className="text-body-secondary mb-0">Select a settings category</p>
         </div>
-        {catalogBlocks.map((block) => (
+        <Card className="settings-card mb-4">
+          <Card.Body>
+            <Form.Group controlId="settings-catalog-search" className="mb-0">
+              <Form.Label className="small fw-medium">Search settings</Form.Label>
+              <InputGroup>
+                <InputGroup.Text aria-hidden="true"><FiSearch size={16} /></InputGroup.Text>
+                <Form.Control
+                  type="search"
+                  placeholder="Search by name"
+                  value={catalogSearch}
+                  onChange={(event) => setCatalogSearch(event.target.value)}
+                />
+                {catalogSearch.trim().length > 0 && (
+                  <Button type="button" variant="outline-secondary" onClick={() => setCatalogSearch('')}>
+                    <FiX size={16} className="me-1" />
+                    Clear
+                  </Button>
+                )}
+              </InputGroup>
+              <Form.Text className="text-muted">
+                Start typing to quickly find the setting you need.
+              </Form.Text>
+            </Form.Group>
+          </Card.Body>
+        </Card>
+
+        {filteredCatalogBlocks.length === 0 ? (
+          <Card className="settings-card">
+            <Card.Body>
+              <h2 className="h6 mb-2">Nothing found</h2>
+              <p className="text-body-secondary small mb-0">
+                No settings match `{catalogSearch}`. Try another name or clear the search.
+              </p>
+            </Card.Body>
+          </Card>
+        ) : filteredCatalogBlocks.map((block) => (
           <div key={block.key} className="mb-4">
             <div className="mb-2">
               <h2 className="h6 mb-1">{block.title}</h2>
@@ -279,6 +319,7 @@ export default function SettingsPage(): ReactElement {
       {staticSection === 'turn' && rc != null && <TurnTab config={rc.turn} />}
       {staticSection === 'usage' && rc != null && <UsageTab config={rc.usage} />}
       {staticSection === 'mcp' && rc != null && <McpTab config={rc.mcp} />}
+      {staticSection === 'plan' && rc != null && <PlanModeTab config={rc.plan} />}
       {staticSection === 'auto' && rc != null && <AutoModeTab config={rc.autoMode} />}
       {staticSection === 'updates' && <UpdatesTab />}
 

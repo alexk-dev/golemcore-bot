@@ -5,6 +5,7 @@ import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.RuntimeEventService;
+import me.golemcore.bot.domain.service.TurnProgressService;
 import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
 import me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder;
@@ -52,10 +53,12 @@ public class ToolLoopConfiguration {
             RuntimeConfigService runtimeConfigService,
             UsageTrackingPort usageTracker,
             CompactionOrchestrationService compactionOrchestrationService,
-            RuntimeEventService runtimeEventService) {
+            RuntimeEventService runtimeEventService,
+            TurnProgressService turnProgressService) {
         LlmPort tracked = new UsageTrackingLlmPortDecorator(llmPort, usageTracker);
         return new DefaultToolLoopSystem(tracked, toolExecutorPort, historyWriter, viewBuilder,
                 botProperties.getTurn(), botProperties.getToolLoop(), modelSelectionService, planService,
-                runtimeConfigService, compactionOrchestrationService, runtimeEventService, Clock.systemUTC());
+                runtimeConfigService, compactionOrchestrationService, runtimeEventService, turnProgressService,
+                Clock.systemUTC());
     }
 }

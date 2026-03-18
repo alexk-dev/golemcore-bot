@@ -66,6 +66,9 @@ public class RuntimeConfig {
     @Builder.Default
     private McpConfig mcp = new McpConfig();
 
+    @Builder.Default
+    private PlanConfig plan = new PlanConfig();
+
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
@@ -236,6 +239,10 @@ public class RuntimeConfig {
         private Integer maxContextTokens;
         private Integer keepLastMessages;
         @Builder.Default
+        private String triggerMode = "model_ratio";
+        @Builder.Default
+        private Double modelThresholdRatio = 0.95d;
+        @Builder.Default
         private Boolean preserveTurnBoundaries = true;
         @Builder.Default
         private Boolean detailsEnabled = true;
@@ -268,6 +275,16 @@ public class RuntimeConfig {
         private String queueSteeringMode = "one-at-a-time";
         @Builder.Default
         private String queueFollowUpMode = "one-at-a-time";
+        @Builder.Default
+        private Boolean progressUpdatesEnabled = true;
+        @Builder.Default
+        private Boolean progressIntentEnabled = true;
+        @Builder.Default
+        private Integer progressBatchSize = 8;
+        @Builder.Default
+        private Integer progressMaxSilenceSeconds = 10;
+        @Builder.Default
+        private Integer progressSummaryTimeoutMs = 8000;
     }
 
     @Data
@@ -340,6 +357,21 @@ public class RuntimeConfig {
         private Integer defaultIdleTimeout;
     }
 
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class PlanConfig {
+        @Builder.Default
+        private Boolean enabled = false;
+        @Builder.Default
+        private Integer maxPlans = 5;
+        @Builder.Default
+        private Integer maxStepsPerPlan = 50;
+        @Builder.Default
+        private Boolean stopOnFailure = true;
+    }
+
     /**
      * Whitelist of valid configuration sections. Each section corresponds to a
      * separate JSON file in the preferences directory.
@@ -355,7 +387,7 @@ public class RuntimeConfig {
                                 SecurityConfig.class), COMPACTION("compaction", CompactionConfig.class), TURN("turn",
                                         TurnConfig.class), MEMORY("memory", MemoryConfig.class), SKILLS("skills",
                                                 SkillsConfig.class), USAGE("usage", UsageConfig.class), MCP("mcp",
-                                                        McpConfig.class);
+                                                        McpConfig.class), PLAN("plan", PlanConfig.class);
 
         private final String fileId;
         private final Class<?> configClass;

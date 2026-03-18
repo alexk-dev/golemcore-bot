@@ -1,5 +1,7 @@
 package me.golemcore.bot.domain.service;
 
+import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import org.junit.jupiter.api.BeforeEach;
@@ -267,6 +269,61 @@ class ModelSelectionServiceTest {
         // Assert
         assertEquals(250000, result);
         verify(modelConfigService).getMaxInputTokens("openai/gpt-5.2", "xhigh");
+    }
+
+    @Test
+    void shouldResolveContextTokenLimitFromActiveSkillTier() {
+        when(modelConfigService.getMaxInputTokens("openai/gpt-5.2", "xhigh")).thenReturn(320000);
+
+        AgentContext context = AgentContext.builder()
+                .activeSkill(Skill.builder().name("reviewer").modelTier("deep").build())
+                .build();
+
+        int result = service.resolveMaxInputTokensForContext(context);
+
+        assertEquals(320000, result);
+    }
+
+    @Test
+    void shouldPreferForcedUserTierOverActiveSkillWhenResolvingContextTokenLimit() {
+        userPreferences.setTierForce(true);
+        userPreferences.setModelTier("smart");
+        when(modelConfigService.getMaxInputTokens("openai/gpt-5.1", "high")).thenReturn(210000);
+
+        AgentContext context = AgentContext.builder()
+                .activeSkill(Skill.builder().name("reviewer").modelTier("deep").build())
+                .build();
+
+        int result = service.resolveMaxInputTokensForContext(context);
+
+        assertEquals(210000, result);
+    }
+
+    @Test
+    void shouldPreferContextModelTierOverForcedUserTierAndActiveSkillForContextResolution() {
+        userPreferences.setTierForce(true);
+        userPreferences.setModelTier("smart");
+        when(modelConfigService.getMaxInputTokens("openai/gpt-5.2", "medium")).thenReturn(180000);
+
+        AgentContext context = AgentContext.builder()
+                .modelTier("coding")
+                .activeSkill(Skill.builder().name("reviewer").modelTier("deep").build())
+                .build();
+
+        int result = service.resolveMaxInputTokensForContext(context);
+
+        assertEquals(180000, result);
+        verify(modelConfigService).getMaxInputTokens("openai/gpt-5.2", "medium");
+    }
+
+    @Test
+    void shouldReturnCompactionFallbackWhenContextResolutionFindsNoModel() {
+        when(runtimeConfigService.getBalancedModel()).thenReturn(null);
+        when(runtimeConfigService.getBalancedModelReasoning()).thenReturn(null);
+
+        int result = service.resolveMaxInputTokensForContext(null);
+
+        assertEquals(50000, result);
     }
 
     @Test

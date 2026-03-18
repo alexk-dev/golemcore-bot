@@ -95,6 +95,9 @@ public class RuntimeConfigService {
     private static final int DEFAULT_AUTO_REFLECTION_FAILURE_THRESHOLD = 2;
     private static final int DEFAULT_AUTO_COMPACT_MAX_TOKENS = 50000;
     private static final int DEFAULT_AUTO_COMPACT_KEEP_LAST = 20;
+    private static final String DEFAULT_COMPACTION_TRIGGER_MODE = "model_ratio";
+    private static final String COMPACTION_TRIGGER_MODE_TOKEN_THRESHOLD = "token_threshold";
+    private static final double DEFAULT_COMPACTION_MODEL_THRESHOLD_RATIO = 0.95d;
     private static final boolean DEFAULT_COMPACTION_PRESERVE_TURN_BOUNDARIES = true;
     private static final boolean DEFAULT_COMPACTION_DETAILS_ENABLED = true;
     private static final int DEFAULT_COMPACTION_DETAILS_MAX_ITEMS = 50;
@@ -126,9 +129,18 @@ public class RuntimeConfigService {
     private static final boolean DEFAULT_TURN_QUEUE_STEERING_ENABLED = true;
     private static final String DEFAULT_TURN_QUEUE_STEERING_MODE = "one-at-a-time";
     private static final String DEFAULT_TURN_QUEUE_FOLLOW_UP_MODE = "one-at-a-time";
+    private static final boolean DEFAULT_TURN_PROGRESS_UPDATES_ENABLED = true;
+    private static final boolean DEFAULT_TURN_PROGRESS_INTENT_ENABLED = true;
+    private static final int DEFAULT_TURN_PROGRESS_BATCH_SIZE = 8;
+    private static final int DEFAULT_TURN_PROGRESS_MAX_SILENCE_SECONDS = 10;
+    private static final int DEFAULT_TURN_PROGRESS_SUMMARY_TIMEOUT_MS = 8000;
     private static final boolean DEFAULT_MCP_ENABLED = true;
     private static final int DEFAULT_MCP_STARTUP_TIMEOUT = 30;
     private static final int DEFAULT_MCP_IDLE_TIMEOUT = 5;
+    private static final boolean DEFAULT_PLAN_ENABLED = false;
+    private static final int DEFAULT_PLAN_MAX_PLANS = 5;
+    private static final int DEFAULT_PLAN_MAX_STEPS_PER_PLAN = 50;
+    private static final boolean DEFAULT_PLAN_STOP_ON_FAILURE = true;
     private final StoragePort storagePort;
     private final ObjectMapper objectMapper;
 
@@ -442,6 +454,44 @@ public class RuntimeConfigService {
         return val != null ? val : DEFAULT_MCP_IDLE_TIMEOUT;
     }
 
+    // ==================== Plan ====================
+
+    public boolean isPlanEnabled() {
+        RuntimeConfig.PlanConfig planConfig = getRuntimeConfig().getPlan();
+        if (planConfig == null) {
+            return DEFAULT_PLAN_ENABLED;
+        }
+        Boolean val = planConfig.getEnabled();
+        return val != null ? val : DEFAULT_PLAN_ENABLED;
+    }
+
+    public int getPlanMaxPlans() {
+        RuntimeConfig.PlanConfig planConfig = getRuntimeConfig().getPlan();
+        if (planConfig == null) {
+            return DEFAULT_PLAN_MAX_PLANS;
+        }
+        Integer val = planConfig.getMaxPlans();
+        return val != null ? val : DEFAULT_PLAN_MAX_PLANS;
+    }
+
+    public int getPlanMaxStepsPerPlan() {
+        RuntimeConfig.PlanConfig planConfig = getRuntimeConfig().getPlan();
+        if (planConfig == null) {
+            return DEFAULT_PLAN_MAX_STEPS_PER_PLAN;
+        }
+        Integer val = planConfig.getMaxStepsPerPlan();
+        return val != null ? val : DEFAULT_PLAN_MAX_STEPS_PER_PLAN;
+    }
+
+    public boolean isPlanStopOnFailure() {
+        RuntimeConfig.PlanConfig planConfig = getRuntimeConfig().getPlan();
+        if (planConfig == null) {
+            return DEFAULT_PLAN_STOP_ON_FAILURE;
+        }
+        Boolean val = planConfig.getStopOnFailure();
+        return val != null ? val : DEFAULT_PLAN_STOP_ON_FAILURE;
+    }
+
     public String getVoiceApiKey() {
         return Secret.valueOrEmpty(getRuntimeConfig().getVoice().getApiKey());
     }
@@ -639,6 +689,19 @@ public class RuntimeConfigService {
         return val != null ? val : DEFAULT_AUTO_COMPACT_KEEP_LAST;
     }
 
+    public String getCompactionTriggerMode() {
+        String val = getRuntimeConfig().getCompaction().getTriggerMode();
+        return normalizeCompactionTriggerMode(val);
+    }
+
+    public double getCompactionModelThresholdRatio() {
+        Double val = getRuntimeConfig().getCompaction().getModelThresholdRatio();
+        if (val == null || val <= 0.0d || val > 1.0d) {
+            return DEFAULT_COMPACTION_MODEL_THRESHOLD_RATIO;
+        }
+        return val;
+    }
+
     public boolean isCompactionPreserveTurnBoundariesEnabled() {
         Boolean val = getRuntimeConfig().getCompaction().getPreserveTurnBoundaries();
         return val != null ? val : DEFAULT_COMPACTION_PRESERVE_TURN_BOUNDARIES;
@@ -743,6 +806,52 @@ public class RuntimeConfigService {
             return DEFAULT_TURN_QUEUE_FOLLOW_UP_MODE;
         }
         return normalizeQueueMode(turnConfig.getQueueFollowUpMode());
+    }
+
+    public boolean isTurnProgressUpdatesEnabled() {
+        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
+        if (turnConfig == null) {
+            return DEFAULT_TURN_PROGRESS_UPDATES_ENABLED;
+        }
+        Boolean val = turnConfig.getProgressUpdatesEnabled();
+        return val != null ? val : DEFAULT_TURN_PROGRESS_UPDATES_ENABLED;
+    }
+
+    public boolean isTurnProgressIntentEnabled() {
+        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
+        if (turnConfig == null) {
+            return DEFAULT_TURN_PROGRESS_INTENT_ENABLED;
+        }
+        Boolean val = turnConfig.getProgressIntentEnabled();
+        return val != null ? val : DEFAULT_TURN_PROGRESS_INTENT_ENABLED;
+    }
+
+    public int getTurnProgressBatchSize() {
+        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
+        if (turnConfig == null) {
+            return DEFAULT_TURN_PROGRESS_BATCH_SIZE;
+        }
+        Integer val = turnConfig.getProgressBatchSize();
+        return val != null ? val : DEFAULT_TURN_PROGRESS_BATCH_SIZE;
+    }
+
+    public java.time.Duration getTurnProgressMaxSilence() {
+        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
+        if (turnConfig == null) {
+            return java.time.Duration.ofSeconds(DEFAULT_TURN_PROGRESS_MAX_SILENCE_SECONDS);
+        }
+        Integer seconds = turnConfig.getProgressMaxSilenceSeconds();
+        int safeSeconds = seconds != null ? seconds : DEFAULT_TURN_PROGRESS_MAX_SILENCE_SECONDS;
+        return java.time.Duration.ofSeconds(safeSeconds);
+    }
+
+    public int getTurnProgressSummaryTimeoutMs() {
+        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
+        if (turnConfig == null) {
+            return DEFAULT_TURN_PROGRESS_SUMMARY_TIMEOUT_MS;
+        }
+        Integer val = turnConfig.getProgressSummaryTimeoutMs();
+        return val != null ? val : DEFAULT_TURN_PROGRESS_SUMMARY_TIMEOUT_MS;
     }
 
     private String normalizeQueueMode(String mode) {
@@ -1084,6 +1193,8 @@ public class RuntimeConfigService {
                 RuntimeConfig.UsageConfig::new);
         persistSection(RuntimeConfig.ConfigSection.MCP, cfg.getMcp(),
                 RuntimeConfig.McpConfig::new);
+        persistSection(RuntimeConfig.ConfigSection.PLAN, cfg.getPlan(),
+                RuntimeConfig.PlanConfig::new);
 
         log.debug("[RuntimeConfig] Persisted all config sections");
     }
@@ -1150,6 +1261,8 @@ public class RuntimeConfigService {
                 RuntimeConfig.UsageConfig.class, RuntimeConfig.UsageConfig::new);
         RuntimeConfig.McpConfig mcp = loadSection(RuntimeConfig.ConfigSection.MCP,
                 RuntimeConfig.McpConfig.class, RuntimeConfig.McpConfig::new);
+        RuntimeConfig.PlanConfig plan = loadSection(RuntimeConfig.ConfigSection.PLAN,
+                RuntimeConfig.PlanConfig.class, RuntimeConfig.PlanConfig::new);
 
         RuntimeConfig config = RuntimeConfig.builder()
                 .telegram(telegram)
@@ -1166,6 +1279,7 @@ public class RuntimeConfigService {
                 .skills(skills)
                 .usage(usage)
                 .mcp(mcp)
+                .plan(plan)
                 .build();
 
         log.info("[RuntimeConfig] Loaded runtime config from {} section files",
@@ -1238,6 +1352,11 @@ public class RuntimeConfigService {
         if (cfg.getCompaction() == null) {
             cfg.setCompaction(new RuntimeConfig.CompactionConfig());
         }
+        cfg.getCompaction().setTriggerMode(normalizeCompactionTriggerMode(cfg.getCompaction().getTriggerMode()));
+        Double modelThresholdRatio = cfg.getCompaction().getModelThresholdRatio();
+        if (modelThresholdRatio == null || modelThresholdRatio <= 0.0d || modelThresholdRatio > 1.0d) {
+            cfg.getCompaction().setModelThresholdRatio(DEFAULT_COMPACTION_MODEL_THRESHOLD_RATIO);
+        }
         if (cfg.getCompaction().getPreserveTurnBoundaries() == null) {
             cfg.getCompaction().setPreserveTurnBoundaries(DEFAULT_COMPACTION_PRESERVE_TURN_BOUNDARIES);
         }
@@ -1252,6 +1371,21 @@ public class RuntimeConfigService {
         }
         if (cfg.getTurn() == null) {
             cfg.setTurn(new RuntimeConfig.TurnConfig());
+        }
+        if (cfg.getPlan() == null) {
+            cfg.setPlan(new RuntimeConfig.PlanConfig());
+        }
+        if (cfg.getPlan().getEnabled() == null) {
+            cfg.getPlan().setEnabled(DEFAULT_PLAN_ENABLED);
+        }
+        if (cfg.getPlan().getMaxPlans() == null || cfg.getPlan().getMaxPlans() < 1) {
+            cfg.getPlan().setMaxPlans(DEFAULT_PLAN_MAX_PLANS);
+        }
+        if (cfg.getPlan().getMaxStepsPerPlan() == null || cfg.getPlan().getMaxStepsPerPlan() < 1) {
+            cfg.getPlan().setMaxStepsPerPlan(DEFAULT_PLAN_MAX_STEPS_PER_PLAN);
+        }
+        if (cfg.getPlan().getStopOnFailure() == null) {
+            cfg.getPlan().setStopOnFailure(DEFAULT_PLAN_STOP_ON_FAILURE);
         }
         if (!Integer.valueOf(DEFAULT_MEMORY_VERSION).equals(cfg.getMemory().getVersion())) {
             cfg.getMemory().setVersion(DEFAULT_MEMORY_VERSION);
@@ -1278,6 +1412,24 @@ public class RuntimeConfigService {
         } else {
             cfg.getTurn().setQueueFollowUpMode(normalizeQueueMode(cfg.getTurn().getQueueFollowUpMode()));
         }
+        if (cfg.getTurn().getProgressUpdatesEnabled() == null) {
+            cfg.getTurn().setProgressUpdatesEnabled(DEFAULT_TURN_PROGRESS_UPDATES_ENABLED);
+        }
+        if (cfg.getTurn().getProgressIntentEnabled() == null) {
+            cfg.getTurn().setProgressIntentEnabled(DEFAULT_TURN_PROGRESS_INTENT_ENABLED);
+        }
+        Integer progressBatchSize = cfg.getTurn().getProgressBatchSize();
+        if (progressBatchSize == null || progressBatchSize < 1) {
+            cfg.getTurn().setProgressBatchSize(DEFAULT_TURN_PROGRESS_BATCH_SIZE);
+        }
+        Integer progressMaxSilenceSeconds = cfg.getTurn().getProgressMaxSilenceSeconds();
+        if (progressMaxSilenceSeconds == null || progressMaxSilenceSeconds < 1) {
+            cfg.getTurn().setProgressMaxSilenceSeconds(DEFAULT_TURN_PROGRESS_MAX_SILENCE_SECONDS);
+        }
+        Integer progressSummaryTimeoutMs = cfg.getTurn().getProgressSummaryTimeoutMs();
+        if (progressSummaryTimeoutMs == null || progressSummaryTimeoutMs < 1000) {
+            cfg.getTurn().setProgressSummaryTimeoutMs(DEFAULT_TURN_PROGRESS_SUMMARY_TIMEOUT_MS);
+        }
         normalizeSecretFlags(cfg);
     }
 
@@ -1293,6 +1445,17 @@ public class RuntimeConfigService {
             return DEFAULT_WHISPER_STT_PROVIDER;
         }
         return normalized;
+    }
+
+    private String normalizeCompactionTriggerMode(String value) {
+        if (value == null || value.isBlank()) {
+            return DEFAULT_COMPACTION_TRIGGER_MODE;
+        }
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
+        return switch (normalized) {
+        case DEFAULT_COMPACTION_TRIGGER_MODE, COMPACTION_TRIGGER_MODE_TOKEN_THRESHOLD -> normalized;
+        default -> DEFAULT_COMPACTION_TRIGGER_MODE;
+        };
     }
 
     private List<RuntimeConfig.ShellEnvironmentVariable> normalizeShellEnvironmentVariables(

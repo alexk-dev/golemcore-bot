@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.ProgressUpdate;
 import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.service.StringValueSupport;
 import me.golemcore.bot.port.inbound.ChannelPort;
@@ -122,6 +123,18 @@ public class WebChannelAdapter implements ChannelPort {
         payload.put("runtimeEventType", event.type().name());
         payload.put("runtimeEventTimestamp", event.timestamp().toString());
         payload.put("runtimeEventPayload", event.payload());
+        payload.put(KEY_SESSION_ID, chatId);
+        return sendJsonToChat(chatId, payload);
+    }
+
+    @Override
+    public CompletableFuture<Void> sendProgressUpdate(String chatId, ProgressUpdate update) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put(KEY_TYPE, VALUE_SYSTEM_EVENT);
+        payload.put("eventType", "progress_update");
+        payload.put("progressType", update.type().name().toLowerCase(java.util.Locale.ROOT));
+        payload.put(KEY_TEXT, update.text());
+        payload.put("progressMetadata", update.metadata());
         payload.put(KEY_SESSION_ID, chatId);
         return sendJsonToChat(chatId, payload);
     }

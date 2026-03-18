@@ -54,6 +54,7 @@ function createFallbackSessionState(): ChatRuntimeSessionState {
     oldestLoadedMessageId: null,
     typing: false,
     running: false,
+    progress: null,
     turnMetadata: {
       model: null,
       tier: null,

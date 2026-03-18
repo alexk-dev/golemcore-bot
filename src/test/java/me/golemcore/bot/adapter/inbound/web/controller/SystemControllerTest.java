@@ -69,6 +69,7 @@ class SystemControllerTest {
                 .thenReturn(CompletableFuture.completedFuture(Collections.emptyList()));
 
         when(runtimeConfigService.isVoiceEnabled()).thenReturn(false);
+        when(runtimeConfigService.isPlanEnabled()).thenReturn(false);
         when(runtimeConfigService.isAutoModeEnabled()).thenReturn(false);
         when(ragPort.isAvailable()).thenReturn(false);
 
@@ -192,6 +193,7 @@ class SystemControllerTest {
                     assertTrue(body.containsKey("llmProvider"));
                     assertTrue(body.containsKey("maxIterations"));
                     assertTrue(body.containsKey("dashboardEnabled"));
+                    assertTrue(body.containsKey("planEnabled"));
                 })
                 .verifyComplete();
     }

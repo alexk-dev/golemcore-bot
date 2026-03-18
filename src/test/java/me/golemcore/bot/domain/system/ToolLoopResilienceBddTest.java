@@ -272,8 +272,8 @@ class ToolLoopResilienceBddTest {
         Thread worker = new Thread(() -> {
             try {
                 resultRef.set(system.processTurn(context));
-            } catch (Throwable throwable) {
-                failureRef.set(throwable);
+            } catch (RuntimeException exception) {
+                failureRef.set(exception);
             }
         }, "tool-loop-stop-test");
 
@@ -344,8 +344,8 @@ class ToolLoopResilienceBddTest {
         Thread worker = new Thread(() -> {
             try {
                 resultRef.set(system.processTurn(context));
-            } catch (Throwable throwable) {
-                failureRef.set(throwable);
+            } catch (RuntimeException exception) {
+                failureRef.set(exception);
             } finally {
                 interruptedAfterReturn.set(Thread.currentThread().isInterrupted());
             }
@@ -420,8 +420,8 @@ class ToolLoopResilienceBddTest {
         Thread worker = new Thread(() -> {
             try {
                 resultRef.set(system.processTurn(context));
-            } catch (Throwable throwable) {
-                failureRef.set(throwable);
+            } catch (RuntimeException exception) {
+                failureRef.set(exception);
             }
         }, "tool-loop-retry-stop-test");
 
@@ -454,7 +454,7 @@ class ToolLoopResilienceBddTest {
                 .channelType("telegram")
                 .chatId("c4")
                 .messages(new ArrayList<>())
-                .metadata(new java.util.LinkedHashMap<>())
+                .metadata(new LinkedHashMap<>())
                 .build();
         for (int i = 0; i < 6; i++) {
             session.addMessage(Message.builder()
@@ -559,7 +559,7 @@ class ToolLoopResilienceBddTest {
                 .channelType("telegram")
                 .chatId("c5")
                 .messages(new ArrayList<>())
-                .metadata(new java.util.LinkedHashMap<>())
+                .metadata(new LinkedHashMap<>())
                 .build();
         session.addMessage(Message.builder().role("user").content("edit files").timestamp(NOW).build());
 
@@ -641,7 +641,7 @@ class ToolLoopResilienceBddTest {
                 .channelType("telegram")
                 .chatId("c6")
                 .messages(new ArrayList<>())
-                .metadata(new java.util.LinkedHashMap<>())
+                .metadata(new LinkedHashMap<>())
                 .build();
         session.addMessage(Message.builder().role("user").content("run shell").timestamp(NOW).build());
 
@@ -692,7 +692,7 @@ class ToolLoopResilienceBddTest {
                 .channelType("telegram")
                 .chatId("c7")
                 .messages(new ArrayList<>())
-                .metadata(new java.util.LinkedHashMap<>())
+                .metadata(new LinkedHashMap<>())
                 .build();
         session.addMessage(Message.builder().role("user").content("broken fs args").timestamp(NOW).build());
 
@@ -756,7 +756,7 @@ class ToolLoopResilienceBddTest {
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
         when(modelSelectionService.resolveForTier(any()))
                 .thenReturn(new ModelSelectionService.ModelSelection(null, null));
-        RuntimeEventService runtimeEventService = new RuntimeEventService(Clock.fixed(NOW, ZoneOffset.UTC), List.of());
+        RuntimeEventService runtimeEventService = new RuntimeEventService(Clock.fixed(NOW, ZoneOffset.UTC));
 
         return new DefaultToolLoopSystem(
                 llmPort,

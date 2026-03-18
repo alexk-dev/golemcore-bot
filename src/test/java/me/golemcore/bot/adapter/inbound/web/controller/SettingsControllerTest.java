@@ -744,6 +744,47 @@ class SettingsControllerTest {
     }
 
     @Test
+    void shouldRejectInvalidTurnProgressBatchSize() {
+        RuntimeConfig.TurnConfig turnConfig = RuntimeConfig.TurnConfig.builder()
+                .progressBatchSize(0)
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(RuntimeConfig.builder().build());
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateTurnConfig(turnConfig));
+
+        assertEquals("turn.progressBatchSize must be between 1 and 50", error.getMessage());
+    }
+
+    @Test
+    void shouldUpdateTurnConfigWithProgressSettings() {
+        RuntimeConfig current = RuntimeConfig.builder().turn(new RuntimeConfig.TurnConfig()).build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig.TurnConfig turnConfig = RuntimeConfig.TurnConfig.builder()
+                .maxLlmCalls(10)
+                .maxToolExecutions(20)
+                .deadline("PT30M")
+                .progressUpdatesEnabled(true)
+                .progressIntentEnabled(true)
+                .progressBatchSize(7)
+                .progressMaxSilenceSeconds(12)
+                .progressSummaryTimeoutMs(9000)
+                .build();
+
+        StepVerifier.create(controller.updateTurnConfig(turnConfig))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        RuntimeConfig saved = captor.getValue();
+        assertEquals(7, saved.getTurn().getProgressBatchSize());
+        assertEquals(12, saved.getTurn().getProgressMaxSilenceSeconds());
+        assertEquals(9000, saved.getTurn().getProgressSummaryTimeoutMs());
+    }
+
+    @Test
     void shouldGetShellEnvironmentVariablesFromRuntimeConfigForApi() {
         RuntimeConfig runtimeConfig = RuntimeConfig.builder()
                 .tools(RuntimeConfig.ToolsConfig.builder()
@@ -1320,6 +1361,173 @@ class SettingsControllerTest {
         RuntimeConfig saved = captor.getValue();
         assertEquals("golemcore/whisper", saved.getVoice().getSttProvider());
         assertEquals("golemcore/whisper", saved.getVoice().getTtsProvider());
+    }
+
+    @Test
+    void shouldRejectInvalidCompactionTriggerMode() {
+        RuntimeConfig current = RuntimeConfig.builder().build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .compaction(RuntimeConfig.CompactionConfig.builder()
+                        .triggerMode("magic")
+                        .build())
+                .build();
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateRuntimeConfig(incoming));
+        assertTrue(exception.getMessage().contains("compaction.triggerMode must be one of"));
+        assertTrue(exception.getMessage().contains("model_ratio"));
+        assertTrue(exception.getMessage().contains("token_threshold"));
+    }
+
+    @Test
+    void shouldRejectInvalidCompactionModelThresholdRatio() {
+        RuntimeConfig current = RuntimeConfig.builder().build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .compaction(RuntimeConfig.CompactionConfig.builder()
+                        .modelThresholdRatio(1.2d)
+                        .build())
+                .build();
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateRuntimeConfig(incoming));
+        assertEquals("compaction.modelThresholdRatio must be between 0 and 1", exception.getMessage());
+    }
+
+    @Test
+    void shouldRejectZeroCompactionModelThresholdRatio() {
+        RuntimeConfig current = RuntimeConfig.builder().build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .compaction(RuntimeConfig.CompactionConfig.builder()
+                        .modelThresholdRatio(0.0d)
+                        .build())
+                .build();
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateRuntimeConfig(incoming));
+        assertEquals("compaction.modelThresholdRatio must be between 0 and 1", exception.getMessage());
+    }
+
+    @Test
+    void shouldNormalizeBlankCompactionModeAndMissingRatioToDefaults() {
+        RuntimeConfig current = RuntimeConfig.builder().build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .compaction(RuntimeConfig.CompactionConfig.builder()
+                        .triggerMode("   ")
+                        .modelThresholdRatio(null)
+                        .build())
+                .build();
+
+        StepVerifier.create(controller.updateRuntimeConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        RuntimeConfig saved = captor.getValue();
+        assertEquals("model_ratio", saved.getCompaction().getTriggerMode());
+        assertEquals(0.95d, saved.getCompaction().getModelThresholdRatio(), 0.0001d);
+    }
+
+    @Test
+    void shouldNormalizeCompactionTriggerModeCaseAndWhitespace() {
+        RuntimeConfig current = RuntimeConfig.builder().build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .compaction(RuntimeConfig.CompactionConfig.builder()
+                        .triggerMode(" Token_Threshold ")
+                        .modelThresholdRatio(0.8d)
+                        .build())
+                .build();
+
+        StepVerifier.create(controller.updateRuntimeConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        RuntimeConfig saved = captor.getValue();
+        assertEquals("token_threshold", saved.getCompaction().getTriggerMode());
+        assertEquals(0.8d, saved.getCompaction().getModelThresholdRatio(), 0.0001d);
+    }
+
+    @Test
+    void shouldUpdatePlanConfigWhenValid() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .plan(RuntimeConfig.PlanConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.PlanConfig planConfig = RuntimeConfig.PlanConfig.builder()
+                .enabled(true)
+                .maxPlans(8)
+                .maxStepsPerPlan(120)
+                .stopOnFailure(false)
+                .build();
+
+        StepVerifier.create(controller.updatePlanConfig(planConfig))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        verify(runtimeConfigService).updateRuntimeConfig(runtimeConfig);
+        assertEquals(8, runtimeConfig.getPlan().getMaxPlans());
+        assertEquals(120, runtimeConfig.getPlan().getMaxStepsPerPlan());
+        assertEquals(Boolean.FALSE, runtimeConfig.getPlan().getStopOnFailure());
+    }
+
+    @Test
+    void shouldRejectPlanConfigWhenMaxPlansOutOfRange() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .plan(RuntimeConfig.PlanConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.PlanConfig planConfig = RuntimeConfig.PlanConfig.builder()
+                .enabled(true)
+                .maxPlans(0)
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updatePlanConfig(planConfig));
+        assertTrue(error.getMessage().contains("plan.maxPlans"));
+    }
+
+    @Test
+    void shouldPreserveExistingPlanSectionDuringPartialRuntimeUpdate() {
+        RuntimeConfig current = RuntimeConfig.builder()
+                .plan(RuntimeConfig.PlanConfig.builder()
+                        .enabled(true)
+                        .maxPlans(9)
+                        .maxStepsPerPlan(70)
+                        .stopOnFailure(false)
+                        .build())
+                .turn(RuntimeConfig.TurnConfig.builder().maxLlmCalls(9).build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .turn(RuntimeConfig.TurnConfig.builder().maxLlmCalls(12).build())
+                .build();
+
+        StepVerifier.create(controller.updateRuntimeConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        RuntimeConfig saved = captor.getValue();
+        assertEquals(Boolean.TRUE, saved.getPlan().getEnabled());
+        assertEquals(9, saved.getPlan().getMaxPlans());
+        assertEquals(70, saved.getPlan().getMaxStepsPerPlan());
+        assertEquals(Boolean.FALSE, saved.getPlan().getStopOnFailure());
     }
 
     private void registerSttProvider(String providerId, String alias) {
