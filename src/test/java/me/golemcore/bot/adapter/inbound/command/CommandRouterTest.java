@@ -98,6 +98,7 @@ class CommandRouterTest {
     private ModelSelectionService modelSelectionService;
     private PlanService planService;
     private PlanExecutionService planExecutionService;
+    private RuntimeConfigService runtimeConfigService;
     private ScheduleService scheduleService;
     private SessionRunCoordinator runCoordinator;
     private ApplicationEventPublisher eventPublisher;
@@ -143,6 +144,7 @@ class CommandRouterTest {
         modelSelectionService = mock(ModelSelectionService.class);
         planService = mock(PlanService.class);
         planExecutionService = mock(PlanExecutionService.class);
+        runtimeConfigService = mock(RuntimeConfigService.class);
         scheduleService = mock(ScheduleService.class);
         runCoordinator = mock(SessionRunCoordinator.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
@@ -152,6 +154,7 @@ class CommandRouterTest {
         ToolComponent tool3 = mockTool("disabled-tool", "Disabled tool", false);
 
         BotProperties properties = new BotProperties();
+        when(runtimeConfigService.getPlanMaxPlans()).thenReturn(5);
 
         buildPropertiesProvider = mock(ObjectProvider.class);
 
@@ -169,8 +172,7 @@ class CommandRouterTest {
                 scheduleService,
                 runCoordinator,
                 eventPublisher,
-                properties,
-                mock(RuntimeConfigService.class),
+                runtimeConfigService,
                 buildPropertiesProvider);
     }
 

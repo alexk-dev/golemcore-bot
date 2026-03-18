@@ -445,6 +445,16 @@ public class SettingsController {
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
 
+    @PutMapping("/runtime/plan")
+    public Mono<ResponseEntity<RuntimeConfig>> updatePlanConfig(
+            @RequestBody RuntimeConfig.PlanConfig planConfig) {
+        validatePlanConfig(planConfig);
+        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        config.setPlan(planConfig);
+        runtimeConfigService.updateRuntimeConfig(config);
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    }
+
     @PutMapping("/runtime/webhooks")
     public Mono<ResponseEntity<Void>> updateWebhooksConfig(
             @RequestBody UserPreferences.WebhookConfig webhookConfig) {
@@ -744,6 +754,14 @@ public class SettingsController {
         }
     }
 
+    private void validatePlanConfig(RuntimeConfig.PlanConfig planConfig) {
+        if (planConfig == null) {
+            throw new IllegalArgumentException("plan config is required");
+        }
+        validateNullableInteger(planConfig.getMaxPlans(), 1, 100, "plan.maxPlans");
+        validateNullableInteger(planConfig.getMaxStepsPerPlan(), 1, 1000, "plan.maxStepsPerPlan");
+    }
+
     private RuntimeConfig.ToolsConfig ensureToolsConfig(RuntimeConfig config) {
         RuntimeConfig.ToolsConfig toolsConfig = config.getTools();
         if (toolsConfig == null) {
@@ -774,6 +792,7 @@ public class SettingsController {
                 .skills(mergeSection(patch.getSkills(), baseline.getSkills(), RuntimeConfig.SkillsConfig::new))
                 .usage(mergeSection(patch.getUsage(), baseline.getUsage(), RuntimeConfig.UsageConfig::new))
                 .mcp(mergeSection(patch.getMcp(), baseline.getMcp(), RuntimeConfig.McpConfig::new))
+                .plan(mergeSection(patch.getPlan(), baseline.getPlan(), RuntimeConfig.PlanConfig::new))
                 .build();
     }
 

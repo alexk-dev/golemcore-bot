@@ -94,7 +94,7 @@ public class SystemController {
         config.put("maxIterations", runtimeConfigService.getTurnMaxLlmCalls());
         config.put("voiceEnabled", runtimeConfigService.isVoiceEnabled());
         config.put("ragEnabled", ragPort.isAvailable());
-        config.put("planEnabled", botProperties.getPlan().isEnabled());
+        config.put("planEnabled", runtimeConfigService.isPlanEnabled());
         config.put("autoModeEnabled", runtimeConfigService.isAutoModeEnabled());
         config.put("dashboardEnabled", botProperties.getDashboard().isEnabled());
         return Mono.just(ResponseEntity.ok(config));

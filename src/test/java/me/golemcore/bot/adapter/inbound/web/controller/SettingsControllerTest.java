@@ -1459,6 +1459,77 @@ class SettingsControllerTest {
         assertEquals(0.8d, saved.getCompaction().getModelThresholdRatio(), 0.0001d);
     }
 
+    @Test
+    void shouldUpdatePlanConfigWhenValid() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .plan(RuntimeConfig.PlanConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.PlanConfig planConfig = RuntimeConfig.PlanConfig.builder()
+                .enabled(true)
+                .maxPlans(8)
+                .maxStepsPerPlan(120)
+                .stopOnFailure(false)
+                .build();
+
+        StepVerifier.create(controller.updatePlanConfig(planConfig))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        verify(runtimeConfigService).updateRuntimeConfig(runtimeConfig);
+        assertEquals(8, runtimeConfig.getPlan().getMaxPlans());
+        assertEquals(120, runtimeConfig.getPlan().getMaxStepsPerPlan());
+        assertEquals(Boolean.FALSE, runtimeConfig.getPlan().getStopOnFailure());
+    }
+
+    @Test
+    void shouldRejectPlanConfigWhenMaxPlansOutOfRange() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .plan(RuntimeConfig.PlanConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.PlanConfig planConfig = RuntimeConfig.PlanConfig.builder()
+                .enabled(true)
+                .maxPlans(0)
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updatePlanConfig(planConfig));
+        assertTrue(error.getMessage().contains("plan.maxPlans"));
+    }
+
+    @Test
+    void shouldPreserveExistingPlanSectionDuringPartialRuntimeUpdate() {
+        RuntimeConfig current = RuntimeConfig.builder()
+                .plan(RuntimeConfig.PlanConfig.builder()
+                        .enabled(true)
+                        .maxPlans(9)
+                        .maxStepsPerPlan(70)
+                        .stopOnFailure(false)
+                        .build())
+                .turn(RuntimeConfig.TurnConfig.builder().maxLlmCalls(9).build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .turn(RuntimeConfig.TurnConfig.builder().maxLlmCalls(12).build())
+                .build();
+
+        StepVerifier.create(controller.updateRuntimeConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        RuntimeConfig saved = captor.getValue();
+        assertEquals(Boolean.TRUE, saved.getPlan().getEnabled());
+        assertEquals(9, saved.getPlan().getMaxPlans());
+        assertEquals(70, saved.getPlan().getMaxStepsPerPlan());
+        assertEquals(Boolean.FALSE, saved.getPlan().getStopOnFailure());
+    }
+
     private void registerSttProvider(String providerId, String alias) {
         SttProvider provider = mock(SttProvider.class);
         when(provider.getProviderId()).thenReturn(providerId);

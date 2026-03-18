@@ -43,7 +43,6 @@ import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import me.golemcore.bot.domain.service.SessionRunCoordinator;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.CommandPort;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
@@ -131,7 +130,6 @@ public class CommandRouter implements CommandPort {
     private final ScheduleService scheduleService;
     private final SessionRunCoordinator runCoordinator;
     private final ApplicationEventPublisher eventPublisher;
-    private final BotProperties properties;
     private final RuntimeConfigService runtimeConfigService;
     private final ObjectProvider<BuildProperties> buildPropertiesProvider;
 
@@ -157,7 +155,6 @@ public class CommandRouter implements CommandPort {
             ScheduleService scheduleService,
             SessionRunCoordinator runCoordinator,
             ApplicationEventPublisher eventPublisher,
-            BotProperties properties,
             RuntimeConfigService runtimeConfigService,
             ObjectProvider<BuildProperties> buildPropertiesProvider) {
         this.skillComponent = skillComponent;
@@ -173,7 +170,6 @@ public class CommandRouter implements CommandPort {
         this.scheduleService = scheduleService;
         this.runCoordinator = runCoordinator;
         this.eventPublisher = eventPublisher;
-        this.properties = properties;
         this.runtimeConfigService = runtimeConfigService;
         this.buildPropertiesProvider = buildPropertiesProvider;
         log.info("CommandRouter initialized with commands: {}", KNOWN_COMMANDS);
@@ -874,7 +870,7 @@ public class CommandRouter implements CommandPort {
             String tierMsg = modelTier != null ? " (tier: " + modelTier + ")" : "";
             return CommandResult.success(msg("command.plan.enabled") + tierMsg);
         } catch (IllegalArgumentException | IllegalStateException e) {
-            return CommandResult.failure(msg("command.plan.limit", properties.getPlan().getMaxPlans()));
+            return CommandResult.failure(msg("command.plan.limit", runtimeConfigService.getPlanMaxPlans()));
         }
     }
 

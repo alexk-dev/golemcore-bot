@@ -66,6 +66,9 @@ public class RuntimeConfig {
     @Builder.Default
     private McpConfig mcp = new McpConfig();
 
+    @Builder.Default
+    private PlanConfig plan = new PlanConfig();
+
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
@@ -348,6 +351,21 @@ public class RuntimeConfig {
         private Integer defaultIdleTimeout;
     }
 
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class PlanConfig {
+        @Builder.Default
+        private Boolean enabled = false;
+        @Builder.Default
+        private Integer maxPlans = 5;
+        @Builder.Default
+        private Integer maxStepsPerPlan = 50;
+        @Builder.Default
+        private Boolean stopOnFailure = true;
+    }
+
     /**
      * Whitelist of valid configuration sections. Each section corresponds to a
      * separate JSON file in the preferences directory.
@@ -363,7 +381,7 @@ public class RuntimeConfig {
                                 SecurityConfig.class), COMPACTION("compaction", CompactionConfig.class), TURN("turn",
                                         TurnConfig.class), MEMORY("memory", MemoryConfig.class), SKILLS("skills",
                                                 SkillsConfig.class), USAGE("usage", UsageConfig.class), MCP("mcp",
-                                                        McpConfig.class);
+                                                        McpConfig.class), PLAN("plan", PlanConfig.class);
 
         private final String fileId;
         private final Class<?> configClass;
