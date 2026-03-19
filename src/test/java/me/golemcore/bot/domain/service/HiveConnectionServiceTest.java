@@ -2,6 +2,7 @@ package me.golemcore.bot.domain.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anySet;
@@ -207,6 +208,58 @@ class HiveConnectionServiceTest {
 
         assertEquals("CONNECTED", status.state());
         verify(runtimeConfigService, never()).updateRuntimeConfig(any(RuntimeConfig.class));
+    }
+
+    @Test
+    void shouldReconnectInsteadOfRegisteringAgainWhenSessionAlreadyExistsForSameServer() {
+        HiveSessionState sessionState = HiveSessionState.builder()
+                .golemId("golem-1")
+                .serverUrl("https://hive.example.com")
+                .refreshToken("refresh")
+                .accessToken("access-old")
+                .controlChannelUrl("/ws/golems/control")
+                .build();
+        storedSession.set(Optional.of(sessionState));
+        when(hiveApiClient.rotate("https://hive.example.com", "golem-1", "refresh"))
+                .thenReturn(new HiveApiClient.GolemAuthResponse(
+                        "golem-1",
+                        "access-new",
+                        "refresh-new",
+                        Instant.parse("2026-03-18T00:10:00Z"),
+                        Instant.parse("2026-03-19T00:10:00Z"),
+                        "hive",
+                        "golems",
+                        "/ws/golems/control",
+                        30,
+                        List.of("golems:heartbeat")));
+
+        HiveConnectionService.HiveStatusSnapshot status = service.join("token-id.secret:https://hive.example.com/");
+
+        assertEquals("CONNECTED", status.state());
+        verify(hiveApiClient, never()).register(any(), any(), any(), any(), any(), any(), anySet());
+        verify(hiveApiClient).rotate("https://hive.example.com", "golem-1", "refresh");
+    }
+
+    @Test
+    void shouldRejectJoinToDifferentServerWhenSessionAlreadyExists() {
+        HiveSessionState sessionState = HiveSessionState.builder()
+                .golemId("golem-1")
+                .serverUrl("https://hive.example.com")
+                .refreshToken("refresh")
+                .accessToken("access-old")
+                .controlChannelUrl("/ws/golems/control")
+                .build();
+        storedSession.set(Optional.of(sessionState));
+
+        IllegalStateException error = assertThrows(
+                IllegalStateException.class,
+                () -> service.join("token-id.secret:https://other-hive.example.com"));
+
+        assertEquals(
+                "A Hive session already exists. Leave the current session before joining a different Hive server.",
+                error.getMessage());
+        verify(hiveApiClient, never()).register(any(), any(), any(), any(), any(), any(), anySet());
+        verify(hiveApiClient, never()).rotate(any(), any(), any());
     }
 
     @Test

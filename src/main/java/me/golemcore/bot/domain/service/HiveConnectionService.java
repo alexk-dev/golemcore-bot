@@ -151,11 +151,19 @@ public class HiveConnectionService {
 
     public HiveStatusSnapshot join(String requestedJoinCode) {
         synchronized (lock) {
+            String joinCode = resolveJoinCodeForAction(requestedJoinCode);
+            HiveJoinCodeParser.ParsedJoinCode parsedJoinCode = HiveJoinCodeParser.parse(joinCode);
+            Optional<HiveSessionState> existingSession = hiveSessionStateStore.load();
+            if (existingSession.isPresent()) {
+                if (!sameServer(existingSession.get().getServerUrl(), parsedJoinCode.serverUrl())) {
+                    throw new IllegalStateException(
+                            "A Hive session already exists. Leave the current session before joining a different Hive server.");
+                }
+                return reconnect();
+            }
             stateRef.set(HiveConnectionState.JOINING);
             lastErrorRef.set(null);
             stopRuntimeTransport();
-            String joinCode = resolveJoinCodeForAction(requestedJoinCode);
-            HiveJoinCodeParser.ParsedJoinCode parsedJoinCode = HiveJoinCodeParser.parse(joinCode);
             RuntimeConfig.HiveConfig hiveConfig = runtimeConfigService.getHiveConfig();
             try {
                 HiveApiClient.GolemAuthResponse response = hiveApiClient.register(
@@ -270,6 +278,15 @@ public class HiveConnectionService {
         } catch (RuntimeException exception) {
             log.warn("[Hive] Startup auto-connect failed: {}", exception.getMessage());
         }
+    }
+
+    private boolean sameServer(String currentServerUrl, String requestedServerUrl) {
+        if (currentServerUrl == null || currentServerUrl.isBlank()
+                || requestedServerUrl == null || requestedServerUrl.isBlank()) {
+            return false;
+        }
+        return HiveJoinCodeParser.normalizeServerUrl(currentServerUrl)
+                .equals(HiveJoinCodeParser.normalizeServerUrl(requestedServerUrl));
     }
 
     private boolean shouldAutoConnect() {

@@ -375,7 +375,11 @@ function HiveActionButtons({
   onReconnect,
   onLeave,
 }: HiveActionButtonsProps): ReactElement {
-  const canJoin = isManaged ? status?.managedJoinCodeAvailable === true : joinCode.trim().length > 0;
+  const canJoin = status?.sessionPresent === true
+    ? false
+    : isManaged
+      ? status?.managedJoinCodeAvailable === true
+      : joinCode.trim().length > 0;
   const canReconnect = status?.sessionPresent === true || (isManaged && status?.managedJoinCodeAvailable === true);
 
   return (
