@@ -15,6 +15,7 @@ import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.Content;
 import dev.langchain4j.data.message.ContentType;
+import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatModel;
@@ -26,6 +27,7 @@ import dev.langchain4j.model.output.FinishReason;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.output.TokenUsage;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -48,6 +50,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class Langchain4jAdapterTest {
@@ -635,6 +639,76 @@ class Langchain4jAdapterTest {
     }
 
     @Test
+    void shouldRetryWithoutToolImagesWhenProviderRejectsOversizedJsonBody() throws Exception {
+        ChatModel mockModel = mock(ChatModel.class);
+        injectChatModel(mockModel, "openai/gpt-4.1");
+        when(modelConfig.supportsVision("openai/gpt-4.1")).thenReturn(true);
+        when(toolArtifactService.getDownload(".golemcore/tool-artifacts/session/pinchtab/capture.png"))
+                .thenReturn(ToolArtifactDownload.builder()
+                        .path(".golemcore/tool-artifacts/session/pinchtab/capture.png")
+                        .filename("capture.png")
+                        .mimeType("image/png")
+                        .size(4L)
+                        .data(new byte[] { 1, 2, 3, 4 })
+                        .build());
+
+        AiMessage aiMessage = AiMessage.from("Recovered without images");
+        ChatResponse chatResponse = ChatResponse.builder()
+                .aiMessage(aiMessage)
+                .finishReason(FinishReason.STOP)
+                .build();
+
+        when(mockModel.chat((List<ChatMessage>) any()))
+                .thenThrow(new RuntimeException("{\"detail\":\"request body must be valid JSON\"}"))
+                .thenReturn(chatResponse);
+
+        Message assistantMsg = Message.builder()
+                .role(ROLE_ASSISTANT)
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("call_img")
+                        .name("pinchtab_screenshot")
+                        .arguments(Map.of("tabId", "tab-1"))
+                        .build()))
+                .build();
+
+        Message toolResultMsg = Message.builder()
+                .role(ROLE_TOOL)
+                .content("Captured screenshot")
+                .toolCallId("call_img")
+                .toolName("pinchtab_screenshot")
+                .metadata(Map.of(
+                        "toolAttachments", List.of(Map.of(
+                                TYPE, "image",
+                                "name", "capture.png",
+                                "mimeType", "image/png",
+                                "internalFilePath", ".golemcore/tool-artifacts/session/pinchtab/capture.png"))))
+                .build();
+
+        LlmRequest request = LlmRequest.builder()
+                .model("openai/gpt-4.1")
+                .messages(List.of(
+                        Message.builder().role(ROLE_USER).content("Inspect this capture").build(),
+                        assistantMsg,
+                        toolResultMsg))
+                .build();
+
+        LlmResponse response = adapter.chat(request).get();
+
+        assertEquals("Recovered without images", response.getContent());
+        assertEquals(Boolean.TRUE, response.getProviderMetadata().get("toolAttachmentFallbackApplied"));
+        assertEquals("oversize_invalid_json", response.getProviderMetadata().get("toolAttachmentFallbackReason"));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ChatMessage>> messagesCaptor = ArgumentCaptor.forClass(List.class);
+        verify(mockModel, times(2)).chat(messagesCaptor.capture());
+        List<List<ChatMessage>> calls = messagesCaptor.getAllValues();
+        assertTrue(hasImageContent(calls.get(0)));
+        assertFalse(hasImageContent(calls.get(1)));
+        assertTrue(hasToolAttachmentPlaceholder(calls.get(1),
+                ".golemcore/tool-artifacts/session/pinchtab/capture.png"));
+    }
+
+    @Test
     void shouldThrowOnNonRateLimitError() {
         ChatModel mockModel = mock(ChatModel.class);
         injectChatModel(mockModel, TEST_MODEL);
@@ -817,6 +891,8 @@ class Langchain4jAdapterTest {
         assertEquals(2, visualContext.contents().size());
         assertEquals(ContentType.TEXT, visualContext.contents().get(0).type());
         assertEquals(ContentType.IMAGE, visualContext.contents().get(1).type());
+        assertTrue(textOf(visualContext.contents().get(0))
+                .contains(".golemcore/tool-artifacts/session/pinchtab/capture.png"));
     }
 
     @Test
@@ -851,8 +927,14 @@ class Langchain4jAdapterTest {
         List<ChatMessage> messages = (List<ChatMessage>) ReflectionTestUtils.invokeMethod(
                 adapter, CONVERT_MESSAGES, request);
 
-        assertEquals(2, messages.size());
+        assertEquals(3, messages.size());
         assertTrue(messages.get(1) instanceof ToolExecutionResultMessage);
+        assertTrue(messages.get(2) instanceof UserMessage);
+        UserMessage placeholder = (UserMessage) messages.get(2);
+        assertEquals(1, placeholder.contents().size());
+        assertEquals(ContentType.TEXT, placeholder.contents().get(0).type());
+        assertTrue(textOf(placeholder.contents().get(0))
+                .contains(".golemcore/tool-artifacts/session/pinchtab/capture.png"));
     }
 
     @Test
@@ -891,8 +973,63 @@ class Langchain4jAdapterTest {
         List<ChatMessage> messages = (List<ChatMessage>) ReflectionTestUtils.invokeMethod(
                 adapter, CONVERT_MESSAGES, request);
 
-        assertEquals(2, messages.size());
+        assertEquals(3, messages.size());
         assertTrue(messages.get(1) instanceof ToolExecutionResultMessage);
+        assertTrue(messages.get(2) instanceof UserMessage);
+        UserMessage placeholder = (UserMessage) messages.get(2);
+        assertEquals(1, placeholder.contents().size());
+        assertEquals(ContentType.TEXT, placeholder.contents().get(0).type());
+        assertTrue(textOf(placeholder.contents().get(0))
+                .contains(".golemcore/tool-artifacts/session/pinchtab/missing.png"));
+    }
+
+    @Test
+    void shouldCollapseHistoricalToolImageAttachmentsToTextPlaceholder() {
+        when(modelConfig.supportsVision("openai/gpt-4.1")).thenReturn(true);
+
+        Message assistantMsg = Message.builder()
+                .role(ROLE_ASSISTANT)
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("call_img")
+                        .name("pinchtab_screenshot")
+                        .arguments(Map.of("tabId", "tab-1"))
+                        .build()))
+                .build();
+
+        Message toolResultMsg = Message.builder()
+                .role(ROLE_TOOL)
+                .content("Captured screenshot")
+                .toolCallId("call_img")
+                .toolName("pinchtab_screenshot")
+                .metadata(Map.of(
+                        "toolAttachments", List.of(Map.of(
+                                TYPE, "image",
+                                "name", "capture.png",
+                                "mimeType", "image/png",
+                                "internalFilePath", ".golemcore/tool-artifacts/session/pinchtab/capture.png"))))
+                .build();
+
+        LlmRequest request = LlmRequest.builder()
+                .model("openai/gpt-4.1")
+                .messages(List.of(
+                        assistantMsg,
+                        toolResultMsg,
+                        Message.builder().role(ROLE_USER).content("Summarize it").build()))
+                .build();
+
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<ChatMessage> messages = (List<ChatMessage>) ReflectionTestUtils.invokeMethod(
+                adapter, CONVERT_MESSAGES, request);
+
+        assertEquals(4, messages.size());
+        assertTrue(messages.get(1) instanceof ToolExecutionResultMessage);
+        assertTrue(messages.get(2) instanceof UserMessage);
+        UserMessage placeholder = (UserMessage) messages.get(2);
+        assertEquals(1, placeholder.contents().size());
+        assertEquals(ContentType.TEXT, placeholder.contents().get(0).type());
+        assertTrue(textOf(placeholder.contents().get(0)).contains("capture.png"));
+        assertTrue(textOf(placeholder.contents().get(0))
+                .contains(".golemcore/tool-artifacts/session/pinchtab/capture.png"));
     }
 
     @Test
@@ -1497,5 +1634,40 @@ class Langchain4jAdapterTest {
         ReflectionTestUtils.setField(adapter, "chatModel", model);
         ReflectionTestUtils.setField(adapter, "currentModel", modelName);
         ReflectionTestUtils.setField(adapter, "initialized", true);
+    }
+
+    private boolean hasImageContent(List<ChatMessage> messages) {
+        for (ChatMessage message : messages) {
+            if (!(message instanceof UserMessage userMessage)) {
+                continue;
+            }
+            for (Content content : userMessage.contents()) {
+                if (content.type() == ContentType.IMAGE) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean hasToolAttachmentPlaceholder(List<ChatMessage> messages, String pathFragment) {
+        for (ChatMessage message : messages) {
+            if (!(message instanceof UserMessage userMessage)) {
+                continue;
+            }
+            for (Content content : userMessage.contents()) {
+                if (content.type() == ContentType.TEXT && textOf(content).contains(pathFragment)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private String textOf(Content content) {
+        if (content instanceof TextContent textContent) {
+            return textContent.text();
+        }
+        return String.valueOf(content);
     }
 }

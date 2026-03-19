@@ -20,6 +20,7 @@ package me.golemcore.bot.adapter.outbound.llm;
 
 import me.golemcore.bot.domain.component.LlmComponent;
 import me.golemcore.bot.domain.model.LlmChunk;
+import me.golemcore.bot.domain.model.LlmProviderMetadataKeys;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.LlmUsage;
@@ -65,16 +66,16 @@ import reactor.core.publisher.Flux;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.Base64;
+import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
-import java.util.stream.Collectors;
 
 /**
  * LLM adapter using the langchain4j library.
@@ -128,6 +129,10 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     private static final String SCHEMA_KEY_PROPERTIES = "properties";
     private static final java.util.regex.Pattern RESET_SECONDS_PATTERN = java.util.regex.Pattern
             .compile("\"reset_seconds\"\\s*:\\s*(\\d+)");
+    private static final String TOOL_ATTACHMENT_REOPEN_HINT = "Re-open the file with a tool if deeper inspection is needed.";
+
+    private record MessageConversionResult(List<ChatMessage> messages, boolean hydratedToolImages) {
+    }
 
     private final RuntimeConfigService runtimeConfigService;
     private final ModelConfigService modelConfig;
@@ -211,7 +216,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         if (apiType == null || apiType.isBlank()) {
             return API_TYPE_OPENAI;
         }
-        return apiType.trim().toLowerCase(java.util.Locale.ROOT);
+        return apiType.trim().toLowerCase(Locale.ROOT);
     }
 
     private ChatModel createAnthropicModel(String modelName, RuntimeConfig.LlmProviderConfig config) {
@@ -308,11 +313,15 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             // Handle per-request model/reasoning override
             ChatModel modelToUse = getModelForRequest(request);
             boolean geminiApiType = isGeminiRequest(request);
-            List<ChatMessage> messages = convertMessages(request);
+            LlmRequest requestToUse = request;
+            MessageConversionResult conversionResult = buildChatMessages(requestToUse);
+            List<ChatMessage> messages = conversionResult.messages();
             List<ToolSpecification> tools = convertTools(request);
             boolean compatibilityFlatteningApplied = false;
+            boolean toolAttachmentFallbackApplied = false;
 
-            for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            int attempt = 0;
+            while (attempt <= MAX_RETRIES) {
                 try {
                     ChatResponse response;
                     if (tools != null && !tools.isEmpty()) {
@@ -326,8 +335,25 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                         response = modelToUse.chat(messages);
                     }
 
-                    return convertResponse(response, compatibilityFlatteningApplied, geminiApiType);
+                    LlmResponse llmResponse = convertResponse(response, compatibilityFlatteningApplied, geminiApiType);
+                    if (toolAttachmentFallbackApplied) {
+                        llmResponse = withProviderMetadata(llmResponse, Map.of(
+                                LlmProviderMetadataKeys.TOOL_ATTACHMENT_FALLBACK_APPLIED, true,
+                                LlmProviderMetadataKeys.TOOL_ATTACHMENT_FALLBACK_REASON,
+                                LlmProviderMetadataKeys.TOOL_ATTACHMENT_FALLBACK_REASON_OVERSIZE_INVALID_JSON));
+                    }
+                    return llmResponse;
                 } catch (Exception e) {
+                    if (!requestToUse.isDisableToolAttachmentHydration()
+                            && conversionResult.hydratedToolImages()
+                            && isOversizedToolAttachmentError(e)) {
+                        requestToUse = copyWithoutToolAttachmentHydration(requestToUse);
+                        conversionResult = buildChatMessages(requestToUse);
+                        messages = conversionResult.messages();
+                        toolAttachmentFallbackApplied = true;
+                        log.warn("[LLM] Provider rejected oversized inline tool attachments; retrying without them");
+                        continue;
+                    }
                     if (isRateLimitError(e) && attempt < MAX_RETRIES) {
                         long exponentialBackoffMs = (long) (INITIAL_BACKOFF_MS * Math.pow(BACKOFF_MULTIPLIER, attempt));
                         long resetSeconds = extractResetSeconds(e);
@@ -343,9 +369,10 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                             Thread.currentThread().interrupt();
                             throw new RuntimeException("LLM chat interrupted during retry backoff", ie);
                         }
+                        attempt++;
                     } else if (!compatibilityFlatteningApplied && isUnsupportedFunctionRoleError(e)) {
                         compatibilityFlatteningApplied = true;
-                        messages = convertMessagesWithFlattenedToolHistory(request);
+                        messages = convertMessagesWithFlattenedToolHistory(requestToUse);
                         log.warn(
                                 "[LLM] Retrying request with flattened tool history due to unsupported function/tool role");
                     } else {
@@ -399,6 +426,41 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             current = current.getCause();
         }
         return -1;
+    }
+
+    private boolean isOversizedToolAttachmentError(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null) {
+                String normalized = message.toLowerCase(Locale.ROOT);
+                if (normalized.contains("request body must be valid json")
+                        || normalized.contains("payload too large")
+                        || normalized.contains("request entity too large")
+                        || normalized.contains("body_size_exceeded")
+                        || normalized.contains("\"detail\":\"payload too large\"")) {
+                    return true;
+                }
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private LlmRequest copyWithoutToolAttachmentHydration(LlmRequest request) {
+        return LlmRequest.builder()
+                .model(request.getModel())
+                .systemPrompt(request.getSystemPrompt())
+                .messages(request.getMessages())
+                .tools(request.getTools())
+                .toolResults(request.getToolResults())
+                .temperature(request.getTemperature())
+                .maxTokens(request.getMaxTokens())
+                .stream(request.isStream())
+                .disableToolAttachmentHydration(true)
+                .sessionId(request.getSessionId())
+                .reasoningEffort(request.getReasoningEffort())
+                .build();
     }
 
     private ChatModel getModelForRequest(LlmRequest request) {
@@ -484,13 +546,18 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     private static final TypeReference<Map<String, Object>> MAP_TYPE_REF = new TypeReference<>() {
     };
 
-    private List<ChatMessage> convertMessages(LlmRequest request) {
+    private MessageConversionResult buildChatMessages(LlmRequest request) {
         return convertMessages(request, isGeminiRequest(request));
     }
 
-    private List<ChatMessage> convertMessages(LlmRequest request, boolean geminiApiType) {
+    // Package-private for reflection-based adapter tests in the same package.
+    List<ChatMessage> convertMessages(LlmRequest request) {
+        return buildChatMessages(request).messages();
+    }
+
+    private MessageConversionResult convertMessages(LlmRequest request, boolean geminiApiType) {
         return convertMessages(request.getSystemPrompt(), request.getMessages(), geminiApiType,
-                isVisionCapableRequest(request));
+                isVisionCapableRequest(request), request.isDisableToolAttachmentHydration());
     }
 
     private List<ChatMessage> convertMessagesWithFlattenedToolHistory(LlmRequest request) {
@@ -500,13 +567,14 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     private List<ChatMessage> convertMessagesWithFlattenedToolHistory(LlmRequest request, boolean geminiApiType) {
         List<Message> flattenedMessages = Message.flattenToolMessages(request.getMessages());
         return convertMessages(request.getSystemPrompt(), flattenedMessages, geminiApiType,
-                isVisionCapableRequest(request));
+                isVisionCapableRequest(request), request.isDisableToolAttachmentHydration()).messages();
     }
 
-    private List<ChatMessage> convertMessages(String systemPrompt, List<Message> requestMessages,
-            boolean geminiApiType, boolean visionCapableTarget) {
+    private MessageConversionResult convertMessages(String systemPrompt, List<Message> requestMessages,
+            boolean geminiApiType, boolean visionCapableTarget, boolean disableToolAttachmentHydration) {
         List<ChatMessage> messages = new ArrayList<>();
         List<Message> normalizedMessages = normalizeMessagesForProvider(requestMessages, geminiApiType);
+        boolean hydratedToolImages = false;
 
         // Add system message
         if (systemPrompt != null && !systemPrompt.isBlank()) {
@@ -514,7 +582,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         }
 
         if (normalizedMessages == null) {
-            return messages;
+            return new MessageConversionResult(messages, false);
         }
 
         // Synthetic ID generation: langchain4j serializes null-ID tool calls as
@@ -525,8 +593,10 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         int synthCounter = 0;
         Deque<String> pendingSynthIds = new ArrayDeque<>();
         Set<String> emittedToolCallIds = new HashSet<>();
+        int firstTrailingToolIndex = findFirstTrailingToolMessageIndex(normalizedMessages);
 
-        for (Message msg : normalizedMessages) {
+        for (int index = 0; index < normalizedMessages.size(); index++) {
+            Message msg = normalizedMessages.get(index);
             switch (msg.getRole()) {
             case "user" -> messages.add(toUserMessage(msg));
             case "assistant" -> {
@@ -575,21 +645,25 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                             toolCallId,
                             msg.getToolName(),
                             nonNullText(msg.getContent())));
-                    UserMessage toolVisualContext = visionCapableTarget
-                            ? toToolVisualContextMessage(msg, buildToolVisualContextText(msg))
-                            : null;
+                    boolean hydrateToolImages = shouldHydrateToolAttachments(index, firstTrailingToolIndex,
+                            visionCapableTarget, disableToolAttachmentHydration);
+                    UserMessage toolVisualContext = toToolAttachmentContextMessage(msg, hydrateToolImages);
                     if (toolVisualContext != null) {
                         messages.add(toolVisualContext);
+                        hydratedToolImages = hydratedToolImages || hasImageContent(toolVisualContext);
                     }
                 } else {
                     log.debug("[LLM] Converting orphaned tool message to text: tool={}",
                             msg.getToolName());
                     String toolText = "[Tool: " + nonNullText(msg.getToolName())
                             + "]\n[Result: " + nonNullText(msg.getContent()) + "]";
-                    UserMessage orphanedToolContext = visionCapableTarget
-                            ? toToolVisualContextMessage(msg, toolText)
-                            : null;
+                    boolean hydrateToolImages = shouldHydrateToolAttachments(index, firstTrailingToolIndex,
+                            visionCapableTarget, disableToolAttachmentHydration);
+                    UserMessage orphanedToolContext = toToolAttachmentContextMessage(msg, hydrateToolImages);
                     messages.add(orphanedToolContext != null ? orphanedToolContext : UserMessage.from(toolText));
+                    if (orphanedToolContext != null) {
+                        hydratedToolImages = hydratedToolImages || hasImageContent(orphanedToolContext);
+                    }
                 }
             }
             case "system" -> messages.add(SystemMessage.from(nonNullText(msg.getContent())));
@@ -597,7 +671,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             }
         }
 
-        return messages;
+        return new MessageConversionResult(messages, hydratedToolImages);
     }
 
     private List<Message> normalizeMessagesForProvider(List<Message> requestMessages, boolean geminiApiType) {
@@ -659,11 +733,30 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         return text != null ? text : "";
     }
 
-    private String buildToolVisualContextText(Message msg) {
-        String toolName = msg != null && msg.getToolName() != null && !msg.getToolName().isBlank()
-                ? msg.getToolName()
-                : "tool";
-        return "Visual output from tool " + toolName + ".";
+    private int findFirstTrailingToolMessageIndex(List<Message> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return -1;
+        }
+
+        int index = messages.size() - 1;
+        while (index >= 0) {
+            Message message = messages.get(index);
+            if (message == null || !"tool".equals(message.getRole())) {
+                break;
+            }
+            index--;
+        }
+
+        int firstTrailingToolIndex = index + 1;
+        return firstTrailingToolIndex < messages.size() ? firstTrailingToolIndex : -1;
+    }
+
+    private boolean shouldHydrateToolAttachments(int messageIndex, int firstTrailingToolIndex,
+            boolean visionCapableTarget, boolean disableToolAttachmentHydration) {
+        return visionCapableTarget
+                && !disableToolAttachmentHydration
+                && firstTrailingToolIndex >= 0
+                && messageIndex >= firstTrailingToolIndex;
     }
 
     private boolean isUnsupportedFunctionRoleError(Throwable throwable) {
@@ -734,8 +827,8 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     }
 
     @SuppressWarnings("unchecked")
-    private UserMessage toToolVisualContextMessage(Message msg, String text) {
-        if (msg == null || msg.getMetadata() == null || toolArtifactService == null) {
+    private UserMessage toToolAttachmentContextMessage(Message msg, boolean hydrateImages) {
+        if (msg == null || msg.getMetadata() == null) {
             return null;
         }
 
@@ -745,8 +838,13 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         }
 
         List<Content> contents = new ArrayList<>();
+        String text = buildToolAttachmentContextText(msg, attachments);
         if (text != null && !text.isBlank()) {
             contents.add(TextContent.from(text));
+        }
+
+        if (!hydrateImages || toolArtifactService == null) {
+            return contents.isEmpty() ? null : UserMessage.from(contents);
         }
 
         for (Object attachmentObj : attachments) {
@@ -780,12 +878,54 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             }
         }
 
-        if (contents.isEmpty()
-                || (contents.size() == 1 && contents.get(0).type() == dev.langchain4j.data.message.ContentType.TEXT)) {
+        if (contents.isEmpty()) {
             return null;
         }
 
         return UserMessage.from(contents);
+    }
+
+    private String buildToolAttachmentContextText(Message msg, List<?> attachments) {
+        String toolName = msg.getToolName() != null && !msg.getToolName().isBlank()
+                ? msg.getToolName()
+                : "tool";
+        List<String> lines = new ArrayList<>();
+        lines.add("Tool artifact from " + toolName + " is available.");
+
+        boolean foundAttachment = false;
+        for (Object attachmentObj : attachments) {
+            if (!(attachmentObj instanceof Map<?, ?> attachmentMap)) {
+                continue;
+            }
+            String path = objectAsString(attachmentMap.get("internalFilePath"));
+            if (path == null || path.isBlank()) {
+                continue;
+            }
+            String name = objectAsString(attachmentMap.get("name"));
+            String mimeType = objectAsString(attachmentMap.get("mimeType"));
+            String displayName = name != null && !name.isBlank() ? name : path.substring(path.lastIndexOf('/') + 1);
+            StringBuilder line = new StringBuilder("- ").append(displayName);
+            if (mimeType != null && !mimeType.isBlank()) {
+                line.append(" (").append(mimeType).append(")");
+            }
+            line.append(" @ ").append(path);
+            lines.add(line.toString());
+            foundAttachment = true;
+        }
+
+        if (!foundAttachment) {
+            return null;
+        }
+
+        lines.add(TOOL_ATTACHMENT_REOPEN_HINT);
+        return String.join("\n", lines);
+    }
+
+    private String objectAsString(Object value) {
+        if (value instanceof String stringValue) {
+            return stringValue;
+        }
+        return null;
     }
 
     private List<ToolSpecification> convertTools(LlmRequest request) {
@@ -941,7 +1081,10 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         }
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({
+            "unchecked",
+            "PMD.ReturnEmptyCollectionRatherThanNull"
+    })
     private Map<String, Object> stringObjectMap(Object rawValue, String toolName, String path) {
         if (!(rawValue instanceof Map<?, ?> rawMap)) {
             if (rawValue != null) {
@@ -961,6 +1104,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         return casted;
     }
 
+    @SuppressWarnings("PMD.ReturnEmptyCollectionRatherThanNull")
     private List<String> stringList(Object rawValue, String toolName, String path) {
         if (!(rawValue instanceof List<?> rawList)) {
             if (rawValue != null) {
@@ -1031,6 +1175,28 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 .build();
     }
 
+    private LlmResponse withProviderMetadata(LlmResponse response, Map<String, Object> extraMetadata) {
+        if (response == null || extraMetadata == null || extraMetadata.isEmpty()) {
+            return response;
+        }
+
+        Map<String, Object> merged = new LinkedHashMap<>();
+        if (response.getProviderMetadata() != null) {
+            merged.putAll(response.getProviderMetadata());
+        }
+        merged.putAll(extraMetadata);
+
+        return LlmResponse.builder()
+                .content(response.getContent())
+                .toolCalls(response.getToolCalls())
+                .usage(response.getUsage())
+                .model(response.getModel())
+                .finishReason(response.getFinishReason())
+                .providerMetadata(merged)
+                .compatibilityFlatteningApplied(response.isCompatibilityFlatteningApplied())
+                .build();
+    }
+
     private Map<String, Object> extractProviderMetadata(AiMessage aiMessage, boolean geminiApiType) {
         if (!geminiApiType || aiMessage == null || !aiMessage.hasToolExecutionRequests()) {
             return Collections.emptyMap();
@@ -1040,6 +1206,18 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             return Collections.emptyMap();
         }
         return Map.of(GEMINI_THINKING_SIGNATURE_KEY, thinkingSignature);
+    }
+
+    private boolean hasImageContent(UserMessage message) {
+        if (message == null || message.contents() == null) {
+            return false;
+        }
+        for (Content content : message.contents()) {
+            if (content.type() == dev.langchain4j.data.message.ContentType.IMAGE) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String convertArgsToJson(Map<String, Object> args) {

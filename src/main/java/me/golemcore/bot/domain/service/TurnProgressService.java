@@ -120,6 +120,13 @@ public class TurnProgressService {
         publish(context, new ProgressUpdate(ProgressUpdateType.CLEAR, "", Map.of()));
     }
 
+    public void publishSummary(AgentContext context, String text, Map<String, Object> metadata) {
+        if (!isEnabled() || context == null || text == null || text.isBlank()) {
+            return;
+        }
+        publish(context, new ProgressUpdate(ProgressUpdateType.SUMMARY, text, metadata));
+    }
+
     private boolean shouldFlushBeforeAdding(AgentContext context, List<ToolExecutionTrace> buffer,
             ToolExecutionTrace nextTrace, Instant now) {
         String currentFamily = buffer.get(0).family();
