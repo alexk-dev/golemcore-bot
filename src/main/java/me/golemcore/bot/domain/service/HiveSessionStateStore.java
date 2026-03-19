@@ -23,7 +23,7 @@ public class HiveSessionStateStore {
 
     private final Object lock = new Object();
     private HiveSessionState cachedState;
-    private boolean loaded;
+    private volatile boolean loaded;
 
     public Optional<HiveSessionState> load() {
         ensureLoaded();

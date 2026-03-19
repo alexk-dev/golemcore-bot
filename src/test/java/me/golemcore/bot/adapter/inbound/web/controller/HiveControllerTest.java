@@ -108,4 +108,132 @@ class HiveControllerTest {
 
         verify(hiveConnectionService).join("token:https://hive.example.com");
     }
+
+    @Test
+    void shouldForwardJoinRequestWithoutBody() {
+        HiveConnectionService.HiveStatusSnapshot snapshot = new HiveConnectionService.HiveStatusSnapshot(
+                "DISCONNECTED",
+                false,
+                false,
+                false,
+                false,
+                null,
+                null,
+                null,
+                false,
+                null,
+                null,
+                30,
+                null,
+                null,
+                null,
+                "DISCONNECTED",
+                null,
+                null,
+                null,
+                null,
+                null,
+                0,
+                0,
+                0,
+                0,
+                0,
+                null,
+                null);
+        when(hiveConnectionService.join(null)).thenReturn(snapshot);
+
+        StepVerifier.create(controller.join(null))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        verify(hiveConnectionService).join(null);
+    }
+
+    @Test
+    void shouldForwardReconnectRequest() {
+        HiveConnectionService.HiveStatusSnapshot snapshot = new HiveConnectionService.HiveStatusSnapshot(
+                "CONNECTED",
+                true,
+                false,
+                false,
+                true,
+                "https://hive.example.com",
+                "Builder",
+                "lab-a",
+                true,
+                "golem-1",
+                null,
+                30,
+                Instant.parse("2026-03-18T00:00:00Z"),
+                Instant.parse("2026-03-18T00:00:05Z"),
+                null,
+                "CONNECTED",
+                Instant.parse("2026-03-18T00:00:00Z"),
+                Instant.parse("2026-03-18T00:00:05Z"),
+                null,
+                null,
+                null,
+                0,
+                0,
+                0,
+                0,
+                0,
+                null,
+                null);
+        when(hiveConnectionService.reconnect()).thenReturn(snapshot);
+
+        StepVerifier.create(controller.reconnect())
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertNotNull(response.getBody());
+                    assertEquals("CONNECTED", response.getBody().state());
+                })
+                .verifyComplete();
+
+        verify(hiveConnectionService).reconnect();
+    }
+
+    @Test
+    void shouldForwardLeaveRequest() {
+        HiveConnectionService.HiveStatusSnapshot snapshot = new HiveConnectionService.HiveStatusSnapshot(
+                "DISCONNECTED",
+                false,
+                false,
+                false,
+                false,
+                null,
+                null,
+                null,
+                false,
+                null,
+                null,
+                30,
+                null,
+                null,
+                null,
+                "DISCONNECTED",
+                null,
+                null,
+                null,
+                null,
+                null,
+                0,
+                0,
+                0,
+                0,
+                0,
+                null,
+                null);
+        when(hiveConnectionService.leave()).thenReturn(snapshot);
+
+        StepVerifier.create(controller.leave())
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertNotNull(response.getBody());
+                    assertEquals("DISCONNECTED", response.getBody().state());
+                })
+                .verifyComplete();
+
+        verify(hiveConnectionService).leave();
+    }
 }
