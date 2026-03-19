@@ -65,6 +65,7 @@ import reactor.core.publisher.Flux;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashSet;
@@ -792,12 +793,25 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             return Collections.emptyList();
         }
 
-        return request.getTools().stream()
-                .map(this::convertToolDefinition)
-                .collect(Collectors.toList());
+        Map<String, ToolDefinition> uniqueTools = new LinkedHashMap<>();
+        for (ToolDefinition tool : request.getTools()) {
+            if (tool == null || tool.getName() == null || tool.getName().isBlank()) {
+                log.warn("[LLM] Dropping tool with blank name before request serialization");
+                continue;
+            }
+            ToolDefinition previous = uniqueTools.putIfAbsent(tool.getName(), tool);
+            if (previous != null) {
+                log.warn("[LLM] Dropping duplicate tool definition '{}' before request serialization", tool.getName());
+            }
+        }
+
+        List<ToolSpecification> tools = new ArrayList<>(uniqueTools.size());
+        for (ToolDefinition tool : uniqueTools.values()) {
+            tools.add(convertToolDefinition(tool));
+        }
+        return tools;
     }
 
-    @SuppressWarnings("unchecked")
     private ToolSpecification convertToolDefinition(ToolDefinition tool) {
         ToolSpecification.Builder builder = ToolSpecification.builder()
                 .name(tool.getName())
@@ -806,15 +820,21 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         // Convert input schema to JsonObjectSchema parameters
         if (tool.getInputSchema() != null) {
             Map<String, Object> schema = tool.getInputSchema();
-            Map<String, Object> properties = (Map<String, Object>) schema.get(SCHEMA_KEY_PROPERTIES);
-            List<String> required = (List<String>) schema.get("required");
-
+            Map<String, Object> properties = stringObjectMap(schema.get(SCHEMA_KEY_PROPERTIES),
+                    tool.getName(), SCHEMA_KEY_PROPERTIES);
+            List<String> required = stringList(schema.get("required"), tool.getName(), "required");
             if (properties != null) {
                 JsonObjectSchema.Builder schemaBuilder = JsonObjectSchema.builder();
                 for (Map.Entry<String, Object> entry : properties.entrySet()) {
                     String paramName = entry.getKey();
-                    Map<String, Object> paramSchema = (Map<String, Object>) entry.getValue();
-                    schemaBuilder.addProperty(paramName, toJsonSchemaElement(paramSchema));
+                    Map<String, Object> paramSchema = stringObjectMap(entry.getValue(), tool.getName(),
+                            SCHEMA_KEY_PROPERTIES + "." + paramName);
+                    if (paramSchema == null) {
+                        log.warn("[LLM] Dropping invalid schema for tool '{}' param '{}'", tool.getName(), paramName);
+                        continue;
+                    }
+                    schemaBuilder.addProperty(paramName, toJsonSchemaElement(tool.getName(),
+                            SCHEMA_KEY_PROPERTIES + "." + paramName, paramSchema));
                 }
                 if (required != null && !required.isEmpty()) {
                     schemaBuilder.required(required);
@@ -826,11 +846,10 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         return builder.build();
     }
 
-    @SuppressWarnings("unchecked")
-    private JsonSchemaElement toJsonSchemaElement(Map<String, Object> paramSchema) {
-        String type = (String) paramSchema.get("type");
-        String description = (String) paramSchema.get("description");
-        List<String> enumValues = (List<String>) paramSchema.get("enum");
+    private JsonSchemaElement toJsonSchemaElement(String toolName, String path, Map<String, Object> paramSchema) {
+        String type = stringValue(paramSchema.get("type"), toolName, path + ".type");
+        String description = stringValue(paramSchema.get("description"), toolName, path + ".description");
+        List<String> enumValues = stringList(paramSchema.get("enum"), toolName, path + ".enum");
 
         // Enum values take priority
         if (enumValues != null && !enumValues.isEmpty()) {
@@ -880,8 +899,10 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 builder.description(description);
             }
             if (paramSchema.containsKey("items")) {
-                Map<String, Object> items = (Map<String, Object>) paramSchema.get("items");
-                builder.items(toJsonSchemaElement(items));
+                Map<String, Object> items = stringObjectMap(paramSchema.get("items"), toolName, path + ".items");
+                if (items != null) {
+                    builder.items(toJsonSchemaElement(toolName, path + ".items", items));
+                }
             }
             return builder.build();
         }
@@ -891,9 +912,20 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 builder.description(description);
             }
             if (paramSchema.containsKey(SCHEMA_KEY_PROPERTIES)) {
-                Map<String, Object> nestedProps = (Map<String, Object>) paramSchema.get(SCHEMA_KEY_PROPERTIES);
-                for (Map.Entry<String, Object> entry : nestedProps.entrySet()) {
-                    builder.addProperty(entry.getKey(), toJsonSchemaElement((Map<String, Object>) entry.getValue()));
+                Map<String, Object> nestedProps = stringObjectMap(paramSchema.get(SCHEMA_KEY_PROPERTIES),
+                        toolName, path + "." + SCHEMA_KEY_PROPERTIES);
+                if (nestedProps != null) {
+                    for (Map.Entry<String, Object> entry : nestedProps.entrySet()) {
+                        Map<String, Object> nestedSchema = stringObjectMap(entry.getValue(), toolName,
+                                path + "." + SCHEMA_KEY_PROPERTIES + "." + entry.getKey());
+                        if (nestedSchema == null) {
+                            log.warn("[LLM] Dropping invalid nested schema for tool '{}' at {}", toolName,
+                                    path + "." + SCHEMA_KEY_PROPERTIES + "." + entry.getKey());
+                            continue;
+                        }
+                        builder.addProperty(entry.getKey(), toJsonSchemaElement(toolName,
+                                path + "." + SCHEMA_KEY_PROPERTIES + "." + entry.getKey(), nestedSchema));
+                    }
                 }
             }
             return builder.build();
@@ -907,6 +939,57 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             return builder.build();
         }
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> stringObjectMap(Object rawValue, String toolName, String path) {
+        if (!(rawValue instanceof Map<?, ?> rawMap)) {
+            if (rawValue != null) {
+                log.warn("[LLM] Invalid schema object for tool '{}' at {}: {}", toolName, path,
+                        rawValue.getClass().getSimpleName());
+            }
+            return null;
+        }
+        Map<String, Object> casted = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+            if (!(entry.getKey() instanceof String key)) {
+                log.warn("[LLM] Dropping non-string schema key for tool '{}' at {}", toolName, path);
+                continue;
+            }
+            casted.put(key, (Object) entry.getValue());
+        }
+        return casted;
+    }
+
+    private List<String> stringList(Object rawValue, String toolName, String path) {
+        if (!(rawValue instanceof List<?> rawList)) {
+            if (rawValue != null) {
+                log.warn("[LLM] Invalid schema list for tool '{}' at {}: {}", toolName, path,
+                        rawValue.getClass().getSimpleName());
+            }
+            return null;
+        }
+        List<String> values = new ArrayList<>(rawList.size());
+        for (Object item : rawList) {
+            if (item instanceof String stringValue && !stringValue.isBlank()) {
+                values.add(stringValue);
+            } else {
+                log.warn("[LLM] Dropping non-string schema list item for tool '{}' at {}", toolName, path);
+            }
+        }
+        return values;
+    }
+
+    private String stringValue(Object rawValue, String toolName, String path) {
+        if (rawValue == null) {
+            return null;
+        }
+        if (rawValue instanceof String stringValue) {
+            return stringValue;
+        }
+        log.warn("[LLM] Invalid schema string for tool '{}' at {}: {}", toolName, path,
+                rawValue.getClass().getSimpleName());
+        return null;
     }
 
     private LlmResponse convertResponse(ChatResponse response, boolean compatibilityFlatteningApplied,

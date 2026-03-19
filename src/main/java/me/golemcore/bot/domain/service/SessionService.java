@@ -99,6 +99,7 @@ public class SessionService implements SessionPort {
             log.debug("Saved session: {}", session.getId());
         } catch (Exception e) {
             log.error("Failed to save session: {}", session.getId(), e);
+            throw new IllegalStateException("Failed to save session: " + session.getId(), e);
         }
     }
 
@@ -280,7 +281,10 @@ public class SessionService implements SessionPort {
                 enrichSessionFields(loaded, sessionId + PROTO_EXTENSION);
                 return Optional.of(loaded);
             }
-        } catch (IOException | RuntimeException e) { // NOSONAR - intentionally catch all for fallback
+        } catch (IOException e) {
+            log.error("Failed to parse protobuf session {}: {}", sessionId, e.getMessage());
+            throw new IllegalStateException("Failed to parse protobuf session: " + sessionId, e);
+        } catch (RuntimeException e) { // NOSONAR - intentionally catch all for storage fallback
             log.debug("Failed protobuf load for session {}: {}", sessionId, e.getMessage());
         }
         return Optional.empty();

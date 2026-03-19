@@ -424,9 +424,55 @@ class ContextBuildingSystemPromptTest {
         ctx.setActiveSkill(skill);
         system.process(ctx);
 
-        verify(toolCallExecutionService).registerTool(mcpAdapter);
+        verify(toolCallExecutionService, never()).registerTool(any());
         assertTrue(ctx.getAvailableTools().contains(mcpTool));
         assertTrue(ctx.getSystemPrompt().contains("github_search"));
+        Object scopedTools = ctx.getAttribute(ContextAttributes.CONTEXT_SCOPED_TOOLS);
+        assertTrue(scopedTools instanceof Map<?, ?>);
+        assertEquals(mcpAdapter, ((Map<?, ?>) scopedTools).get("github_search"));
+    }
+
+    @Test
+    void shouldDeduplicateGlobalToolDefinitionWhenActiveMcpToolUsesSameName() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+
+        ToolDefinition globalToolDefinition = ToolDefinition.builder()
+                .name("github_search")
+                .description("Global search")
+                .inputSchema(Map.of("type", "object"))
+                .build();
+        ToolComponent globalTool = mock(ToolComponent.class);
+        when(globalTool.isEnabled()).thenReturn(true);
+        when(globalTool.getDefinition()).thenReturn(globalToolDefinition);
+        when(toolCallExecutionService.listTools()).thenReturn(List.of(globalTool));
+
+        McpConfig mcpConfig = McpConfig.builder().command("npx server").build();
+        Skill skill = Skill.builder()
+                .name("github")
+                .description("GitHub skill")
+                .content("Interact with GitHub")
+                .mcpConfig(mcpConfig)
+                .available(true)
+                .build();
+
+        ToolDefinition mcpTool = ToolDefinition.builder()
+                .name("github_search")
+                .description("Search GitHub via MCP")
+                .build();
+        when(mcpPort.getOrStartClient(skill)).thenReturn(List.of(mcpTool));
+
+        ToolComponent mcpAdapter = mock(ToolComponent.class);
+        when(mcpPort.createToolAdapter(eq("github"), eq(mcpTool))).thenReturn(mcpAdapter);
+
+        AgentContext ctx = createContext();
+        ctx.setActiveSkill(skill);
+        system.process(ctx);
+
+        assertEquals(1, ctx.getAvailableTools().size());
+        assertEquals("Search GitHub via MCP", ctx.getAvailableTools().get(0).getDescription());
+        Object scopedTools = ctx.getAttribute(ContextAttributes.CONTEXT_SCOPED_TOOLS);
+        assertTrue(scopedTools instanceof Map<?, ?>);
+        assertEquals(mcpAdapter, ((Map<?, ?>) scopedTools).get("github_search"));
     }
 
     // ===== Skill transition =====

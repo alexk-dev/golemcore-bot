@@ -396,19 +396,48 @@ public class SessionRunCoordinator {
             }
 
             if (isQueueModeAll(runtimeConfigService.getTurnQueueFollowUpMode())) {
-                enqueueWithBound(queuedFollowUpMessages, inbound, "follow-up");
+                enqueueFollowUpWithBound(inbound, "follow-up");
                 return;
             }
 
-            if (queuedFollowUpMessages.isEmpty()) {
-                queuedFollowUpMessages.addLast(inbound);
-            } else {
-                Message replaced = queuedFollowUpMessages.removeFirst();
+            Message replaced = removeOldestRegularFollowUpLocked();
+            if (replaced != null) {
                 rejectPendingCompletion(replaced, "Replaced by a newer follow-up message");
-                queuedFollowUpMessages.addLast(inbound);
                 log.debug(
                         "[SessionRunCoordinator] follow-up queue mode one-at-a-time: replaced pending follow-up message");
             }
+            enqueueFollowUpWithBound(inbound, "follow-up");
+        }
+
+        private void enqueueFollowUpWithBound(Message inbound, String queueLabel) {
+            if (queuedFollowUpMessages.size() >= MAX_QUEUED_MESSAGES_PER_SESSION) {
+                Message dropped = removeOldestRegularFollowUpLocked();
+                if (dropped == null) {
+                    dropped = queuedFollowUpMessages.removeFirst();
+                }
+                rejectPendingCompletion(dropped,
+                        "Dropped oldest pending " + queueLabel + " message due to queue limit");
+                log.warn(
+                        "[SessionRunCoordinator] {} queue limit reached ({}), dropped oldest message: channel={}, chatId={}",
+                        queueLabel,
+                        MAX_QUEUED_MESSAGES_PER_SESSION,
+                        key.channelType(),
+                        key.chatId());
+            }
+            queuedFollowUpMessages.addLast(inbound);
+        }
+
+        private Message removeOldestRegularFollowUpLocked() {
+            java.util.Iterator<Message> iterator = queuedFollowUpMessages.iterator();
+            while (iterator.hasNext()) {
+                Message queued = iterator.next();
+                if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(resolveQueueKind(queued))) {
+                    continue;
+                }
+                iterator.remove();
+                return queued;
+            }
+            return null;
         }
 
         private void enqueueWithBound(Deque<Message> queue, Message inbound, String queueLabel) {
