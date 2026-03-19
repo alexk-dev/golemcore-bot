@@ -309,7 +309,8 @@ class ToolCallExecutionServiceTest {
         when(scopedTool.getToolName()).thenReturn(TOOL_NAME);
         when(scopedTool.isEnabled()).thenReturn(true);
         when(scopedTool.execute(any())).thenReturn(CompletableFuture.completedFuture(ToolResult.success("scoped ok")));
-        when(toolComponent.execute(any())).thenReturn(CompletableFuture.completedFuture(ToolResult.success("global ok")));
+        when(toolComponent.execute(any()))
+                .thenReturn(CompletableFuture.completedFuture(ToolResult.success("global ok")));
 
         AgentContext context = buildContext();
         context.setAttribute(ContextAttributes.CONTEXT_SCOPED_TOOLS, Map.of(TOOL_NAME, scopedTool));
