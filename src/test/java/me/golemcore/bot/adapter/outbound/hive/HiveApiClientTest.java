@@ -3,6 +3,7 @@ package me.golemcore.bot.adapter.outbound.hive;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import java.io.IOException;
@@ -98,6 +99,10 @@ class HiveApiClientTest {
         RecordedRequest recordedRequest = server.takeRequest();
         assertEquals("/api/v1/golems/golem-1/events:batch", recordedRequest.getTarget());
         assertEquals("Bearer access", recordedRequest.getHeaders().get("Authorization"));
+        JsonNode payload = new ObjectMapper().readTree(recordedRequest.getBody().utf8());
+        assertEquals(1, payload.get("schemaVersion").asInt());
+        assertEquals("golem-1", payload.get("golemId").asText());
+        assertEquals("runtime_event", payload.get("events").get(0).get("eventType").asText());
     }
 
     @Test

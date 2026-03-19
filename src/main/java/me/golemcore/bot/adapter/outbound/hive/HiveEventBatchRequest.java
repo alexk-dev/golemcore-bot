@@ -20,4 +20,4 @@ package me.golemcore.bot.adapter.outbound.hive;
 
 import java.util.List;
 
-public record HiveEventBatchRequest(List<HiveEventPayload>events){}
+public record HiveEventBatchRequest(Integer schemaVersion,String golemId,List<HiveEventPayload>events){}

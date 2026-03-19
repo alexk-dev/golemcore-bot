@@ -45,7 +45,9 @@ public class JdkHiveControlChannelClient implements HiveControlChannelClient {
             if (isAlreadyConnected(sessionState)) {
                 return;
             }
-            disconnect("reconnect");
+        }
+        disconnect("reconnect");
+        synchronized (lock) {
             status = new HiveControlChannelStatus(
                     "CONNECTING",
                     null,
@@ -55,19 +57,22 @@ public class JdkHiveControlChannelClient implements HiveControlChannelClient {
                     status.receivedCommandCount());
             connectedGolemId = sessionState.getGolemId();
             connectedUrl = sessionState.getControlChannelUrl();
-            try {
-                WebSocket webSocket = httpClient.newWebSocketBuilder()
-                        .buildAsync(
-                                HiveControlChannelUrlResolver.resolve(
-                                        sessionState.getServerUrl(),
-                                        sessionState.getControlChannelUrl(),
-                                        sessionState.getAccessToken()),
-                                new Listener(commandConsumer))
-                        .join();
-                webSocketRef.set(webSocket);
-            } catch (RuntimeException exception) {
+        }
+        WebSocket webSocket;
+        try {
+            webSocket = httpClient.newWebSocketBuilder()
+                    .buildAsync(
+                            HiveControlChannelUrlResolver.resolve(
+                                    sessionState.getServerUrl(),
+                                    sessionState.getControlChannelUrl(),
+                                    sessionState.getAccessToken()),
+                            new Listener(commandConsumer))
+                    .join();
+        } catch (RuntimeException exception) {
+            synchronized (lock) {
                 connectedGolemId = null;
                 connectedUrl = null;
+                webSocketRef.set(null);
                 status = new HiveControlChannelStatus(
                         "ERROR",
                         null,
@@ -75,24 +80,30 @@ public class JdkHiveControlChannelClient implements HiveControlChannelClient {
                         exception.getMessage(),
                         status.lastReceivedCommandId(),
                         status.receivedCommandCount());
-                throw new IllegalStateException("Failed to connect Hive control channel", exception);
             }
+            throw new IllegalStateException("Failed to connect Hive control channel", exception);
+        }
+        boolean staleConnection = false;
+        synchronized (lock) {
+            if (Objects.equals(connectedGolemId, sessionState.getGolemId())
+                    && Objects.equals(connectedUrl, sessionState.getControlChannelUrl())) {
+                webSocketRef.set(webSocket);
+            } else {
+                staleConnection = true;
+            }
+        }
+        if (staleConnection) {
+            closeQuietly(webSocket, "stale-connect");
         }
     }
 
     @Override
     public void disconnect(String reason) {
+        WebSocket webSocket;
         synchronized (lock) {
-            WebSocket webSocket = webSocketRef.getAndSet(null);
+            webSocket = webSocketRef.getAndSet(null);
             connectedGolemId = null;
             connectedUrl = null;
-            if (webSocket != null) {
-                try {
-                    webSocket.sendClose(WebSocket.NORMAL_CLOSURE, reason != null ? reason : "disconnect").join();
-                } catch (RuntimeException exception) {
-                    log.debug("[Hive] Control channel close failed: {}", exception.getMessage());
-                }
-            }
             status = new HiveControlChannelStatus(
                     "DISCONNECTED",
                     null,
@@ -101,6 +112,7 @@ public class JdkHiveControlChannelClient implements HiveControlChannelClient {
                     status.lastReceivedCommandId(),
                     status.receivedCommandCount());
         }
+        closeQuietly(webSocket, reason);
     }
 
     @Override
@@ -115,6 +127,17 @@ public class JdkHiveControlChannelClient implements HiveControlChannelClient {
                 && Objects.equals(connectedGolemId, sessionState.getGolemId())
                 && Objects.equals(connectedUrl, sessionState.getControlChannelUrl())
                 && webSocketRef.get() != null;
+    }
+
+    private void closeQuietly(WebSocket webSocket, String reason) {
+        if (webSocket == null) {
+            return;
+        }
+        try {
+            webSocket.sendClose(WebSocket.NORMAL_CLOSURE, reason != null ? reason : "disconnect").join();
+        } catch (RuntimeException exception) {
+            log.debug("[Hive] Control channel close failed: {}", exception.getMessage());
+        }
     }
 
     private final class Listener implements WebSocket.Listener {

@@ -19,6 +19,7 @@ import org.springframework.stereotype.Component;
 public class HiveApiClient {
 
     private static final MediaType JSON_MEDIA_TYPE = MediaType.parse("application/json; charset=utf-8");
+    private static final Integer HIVE_EVENT_SCHEMA_VERSION = 1;
 
     private final OkHttpClient okHttpClient;
     private final ObjectMapper objectMapper;
@@ -85,7 +86,7 @@ public class HiveApiClient {
             List<HiveEventPayload> events) {
         postJson(serverUrl,
                 "/api/v1/golems/" + golemId + "/events:batch",
-                new HiveEventBatchRequest(events),
+                new HiveEventBatchRequest(HIVE_EVENT_SCHEMA_VERSION, golemId, events),
                 accessToken,
                 JsonNode.class);
     }
