@@ -20,6 +20,7 @@ package me.golemcore.bot.domain.service;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.concurrent.CompletionException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -38,8 +39,10 @@ public class HiveControlCommandDispatcher {
     private static final String EVENT_TYPE_COMMAND = "command";
     private static final String EVENT_TYPE_COMMAND_STOP = "command.stop";
     private static final String EVENT_TYPE_COMMAND_CANCEL = "command.cancel";
+    private static final String CANCELLED_BY_HIVE_MESSAGE = "Cancelled by Hive control command";
 
     private final SessionRunCoordinator sessionRunCoordinator;
+    private final HiveControlInboxService hiveControlInboxService;
     private final HiveEventBatchPublisher hiveEventBatchPublisher;
     private final Clock clock;
 
@@ -55,10 +58,26 @@ public class HiveControlCommandDispatcher {
         }
 
         Message inbound = buildInboundMessage(envelope);
-        sessionRunCoordinator.enqueue(inbound);
+        sessionRunCoordinator.submit(inbound, () -> hiveControlInboxService.markProcessed(envelope.getCommandId()))
+                .whenComplete((ignored, failure) -> finalizeCommandDispatch(envelope, failure));
         hiveEventBatchPublisher.publishCommandAcknowledged(envelope);
         log.info("[Hive] Enqueued control command: commandId={}, threadId={}, runId={}",
                 envelope.getCommandId(), envelope.getThreadId(), envelope.getRunId());
+    }
+
+    private void finalizeCommandDispatch(HiveControlCommandEnvelope envelope, Throwable failure) {
+        if (envelope == null || envelope.getCommandId() == null || envelope.getCommandId().isBlank()) {
+            return;
+        }
+        if (failure == null) {
+            return;
+        }
+        Throwable rootCause = unwrap(failure);
+        if (isResolvedCancellation(rootCause)) {
+            hiveControlInboxService.markProcessed(envelope.getCommandId());
+            return;
+        }
+        hiveControlInboxService.markFailedIfPending(envelope.getCommandId(), rootCause);
     }
 
     private Message buildInboundMessage(HiveControlCommandEnvelope envelope) {
@@ -119,5 +138,23 @@ public class HiveControlCommandDispatcher {
             return EVENT_TYPE_COMMAND;
         }
         return eventType.trim().toLowerCase();
+    }
+
+    private Throwable unwrap(Throwable failure) {
+        if (failure instanceof CompletionException completionException && completionException.getCause() != null) {
+            return completionException.getCause();
+        }
+        return failure;
+    }
+
+    private boolean isResolvedCancellation(Throwable failure) {
+        if (failure == null) {
+            return false;
+        }
+        if (failure instanceof InterruptedException || failure instanceof java.util.concurrent.CancellationException) {
+            return true;
+        }
+        return failure instanceof IllegalStateException
+                && CANCELLED_BY_HIVE_MESSAGE.equals(failure.getMessage());
     }
 }

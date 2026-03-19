@@ -84,6 +84,8 @@ public class SessionRunCoordinator {
     private final Map<SessionKey, SessionRunner> runners = new ConcurrentHashMap<>();
     private final Map<Message, List<CompletableFuture<Void>>> pendingCompletions = Collections
             .synchronizedMap(new IdentityHashMap<>());
+    private final Map<Message, List<Runnable>> pendingStartCallbacks = Collections
+            .synchronizedMap(new IdentityHashMap<>());
 
     public void enqueue(Message inbound) {
         SessionKey key = new SessionKey(inbound.getChannelType(), inbound.getChatId());
@@ -97,10 +99,15 @@ public class SessionRunCoordinator {
      * processed or discarded.
      */
     public CompletableFuture<Void> submit(Message inbound) {
+        return submit(inbound, null);
+    }
+
+    public CompletableFuture<Void> submit(Message inbound, Runnable onStart) {
         Objects.requireNonNull(inbound, "inbound");
 
         CompletableFuture<Void> completion = new CompletableFuture<>();
         registerPendingCompletion(inbound, completion);
+        registerPendingStartCallback(inbound, onStart);
         enqueue(inbound);
         return completion;
     }
@@ -175,8 +182,9 @@ public class SessionRunCoordinator {
             Future<?> taskToCancel;
             boolean shouldPause;
             Message cancelledQueuedMessage = null;
+            boolean targetedHiveStop = isHiveTargetedStop(expectedRunId, expectedCommandId);
             synchronized (lock) {
-                if (isHiveTargetedStop(expectedRunId, expectedCommandId)) {
+                if (targetedHiveStop) {
                     cancelledQueuedMessage = removeQueuedHiveMessage(expectedRunId, expectedCommandId);
                     if (cancelledQueuedMessage == null
                             && !matchesHiveTarget(runningInbound, expectedRunId, expectedCommandId)) {
@@ -186,7 +194,8 @@ public class SessionRunCoordinator {
                         return;
                     }
                 }
-                shouldPause = isRunning() || !queuedSteeringMessages.isEmpty() || !queuedFollowUpMessages.isEmpty();
+                shouldPause = !targetedHiveStop
+                        && (isRunning() || !queuedSteeringMessages.isEmpty() || !queuedFollowUpMessages.isEmpty());
                 pausedAfterStop = shouldPause;
                 taskToCancel = runningTask.orElse(null);
             }
@@ -268,6 +277,7 @@ public class SessionRunCoordinator {
                     if (!prefix.isEmpty()) {
                         flushQueuedMessages(runKey, prefix);
                     }
+                    runPendingStartCallbacks(inbound);
                     agentLoop.processMessage(inbound);
                     completePendingCompletion(inbound);
                 } catch (Exception e) { // NOSONAR - must not kill executor thread
@@ -580,8 +590,24 @@ public class SessionRunCoordinator {
         }
     }
 
+    private void registerPendingStartCallback(Message message, Runnable onStart) {
+        if (message == null || onStart == null) {
+            return;
+        }
+        synchronized (pendingStartCallbacks) {
+            pendingStartCallbacks.computeIfAbsent(message, ignored -> new ArrayList<>()).add(onStart);
+        }
+    }
+
+    private void runPendingStartCallbacks(Message message) {
+        for (Runnable callback : removePendingStartCallbacks(message)) {
+            callback.run();
+        }
+    }
+
     private void transferPendingCompletions(Message source, Message target) {
         List<CompletableFuture<Void>> completions = removePendingCompletions(source);
+        removePendingStartCallbacks(source);
         if (completions.isEmpty()) {
             return;
         }
@@ -592,12 +618,14 @@ public class SessionRunCoordinator {
     }
 
     private void completePendingCompletion(Message message) {
+        removePendingStartCallbacks(message);
         for (CompletableFuture<Void> completion : removePendingCompletions(message)) {
             completion.complete(null);
         }
     }
 
     private void failPendingCompletion(Message message, Throwable failure) {
+        removePendingStartCallbacks(message);
         for (CompletableFuture<Void> completion : removePendingCompletions(message)) {
             completion.completeExceptionally(failure);
         }
@@ -614,6 +642,16 @@ public class SessionRunCoordinator {
                 return List.of();
             }
             return new ArrayList<>(completions);
+        }
+    }
+
+    private List<Runnable> removePendingStartCallbacks(Message message) {
+        synchronized (pendingStartCallbacks) {
+            List<Runnable> callbacks = pendingStartCallbacks.remove(message);
+            if (callbacks == null || callbacks.isEmpty()) {
+                return List.of();
+            }
+            return new ArrayList<>(callbacks);
         }
     }
 
@@ -703,7 +741,11 @@ public class SessionRunCoordinator {
         AgentSession session = sessionPort.getOrCreate(inbound.getChannelType(), inbound.getChatId());
         RuntimeEvent runtimeEvent = runtimeEventService.emitForSession(session, RuntimeEventType.TURN_FINISHED,
                 Map.of("reason", "user_interrupt"));
-        hiveEventBatchPublisher.publishRuntimeEvents(List.of(runtimeEvent), metadata);
+        try {
+            hiveEventBatchPublisher.publishRuntimeEvents(List.of(runtimeEvent), metadata);
+        } catch (RuntimeException exception) {
+            log.warn("[Hive] Failed to publish interruption fallback: {}", exception.getMessage());
+        }
     }
 
     private Map<String, Object> buildHiveMetadata(Message inbound) {

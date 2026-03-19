@@ -1,12 +1,15 @@
 package me.golemcore.bot.domain.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import me.golemcore.bot.adapter.outbound.hive.HiveEventBatchPublisher;
@@ -19,9 +22,18 @@ class HiveControlCommandDispatcherTest {
     @Test
     void shouldEnqueueHiveInboundMessageAndAcknowledgeCommand() {
         SessionRunCoordinator coordinator = mock(SessionRunCoordinator.class);
+        HiveControlInboxService inboxService = mock(HiveControlInboxService.class);
         HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        when(coordinator.submit(any(Message.class), any(Runnable.class))).thenAnswer(invocation -> {
+            Runnable onStart = invocation.getArgument(1);
+            if (onStart != null) {
+                onStart.run();
+            }
+            return CompletableFuture.completedFuture(null);
+        });
         HiveControlCommandDispatcher dispatcher = new HiveControlCommandDispatcher(
                 coordinator,
+                inboxService,
                 publisher,
                 Clock.fixed(Instant.parse("2026-03-18T00:00:00Z"), ZoneOffset.UTC));
 
@@ -38,7 +50,8 @@ class HiveControlCommandDispatcherTest {
         dispatcher.dispatch(envelope);
 
         ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
-        verify(coordinator).enqueue(captor.capture());
+        verify(coordinator).submit(captor.capture(), any(Runnable.class));
+        verify(inboxService).markProcessed("cmd-1");
         verify(publisher).publishCommandAcknowledged(envelope);
 
         Message inbound = captor.getValue();
@@ -56,9 +69,11 @@ class HiveControlCommandDispatcherTest {
     @Test
     void shouldRequestStopForStopControlEvent() {
         SessionRunCoordinator coordinator = mock(SessionRunCoordinator.class);
+        HiveControlInboxService inboxService = mock(HiveControlInboxService.class);
         HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
         HiveControlCommandDispatcher dispatcher = new HiveControlCommandDispatcher(
                 coordinator,
+                inboxService,
                 publisher,
                 Clock.fixed(Instant.parse("2026-03-18T00:00:00Z"), ZoneOffset.UTC));
 

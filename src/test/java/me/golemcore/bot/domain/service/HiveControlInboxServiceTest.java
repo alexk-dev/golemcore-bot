@@ -82,7 +82,25 @@ class HiveControlInboxServiceTest {
         assertEquals(0, firstDrainCount);
         assertEquals(1, secondDrainCount);
         assertEquals(List.of("cmd-1"), dispatched);
+        assertEquals(1, service.getSummary().pendingCommandCount());
+
+        service.markProcessed("cmd-1");
+
         assertEquals(0, service.getSummary().pendingCommandCount());
+    }
+
+    @Test
+    void shouldResetProcessingCommandsAfterRestart() {
+        service.recordReceived(command("cmd-1", "thread-1", "run-1"));
+        service.drainPending(envelope -> {
+        });
+
+        int resetCount = service.resetInFlightCommandsForRestart();
+        int replayedCount = service.drainPending(envelope -> {
+        });
+
+        assertEquals(1, resetCount);
+        assertEquals(1, replayedCount);
     }
 
     @Test

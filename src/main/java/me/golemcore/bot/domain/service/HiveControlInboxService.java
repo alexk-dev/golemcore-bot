@@ -74,7 +74,6 @@ public class HiveControlInboxService {
             }
             try {
                 commandHandler.handle(command.getEnvelope());
-                markProcessed(command.getEnvelope().getCommandId());
                 processedCount++;
             } catch (RuntimeException exception) {
                 markFailed(command.getEnvelope().getCommandId(), exception);
@@ -86,6 +85,67 @@ public class HiveControlInboxService {
     public InboxSummary getSummary() {
         synchronized (lock) {
             return toSummary(getLoadedStateLocked());
+        }
+    }
+
+    public void markProcessed(String commandId) {
+        synchronized (lock) {
+            InboxState state = getLoadedStateLocked();
+            StoredCommand command = findByCommandId(state, commandId);
+            if (command == null) {
+                return;
+            }
+            command.setStatus(CommandStatus.PROCESSED.name());
+            command.setProcessedAt(Instant.now().toString());
+            command.setLastError(null);
+            trimProcessedCommandsLocked(state);
+            touch(state);
+            saveStateLocked(state);
+        }
+    }
+
+    public void markFailed(String commandId, Throwable failure) {
+        markFailed(commandId, failure, false);
+    }
+
+    public void markFailedIfPending(String commandId, Throwable failure) {
+        markFailed(commandId, failure, true);
+    }
+
+    private void markFailed(String commandId, Throwable failure, boolean onlyIfPending) {
+        synchronized (lock) {
+            InboxState state = getLoadedStateLocked();
+            StoredCommand command = findByCommandId(state, commandId);
+            if (command == null) {
+                return;
+            }
+            if (onlyIfPending && parseStatus(command.getStatus()) == CommandStatus.PROCESSED) {
+                return;
+            }
+            command.setStatus(CommandStatus.FAILED.name());
+            command.setLastError(failure != null ? failure.getMessage() : null);
+            touch(state);
+            saveStateLocked(state);
+        }
+    }
+
+    public int resetInFlightCommandsForRestart() {
+        synchronized (lock) {
+            InboxState state = getLoadedStateLocked();
+            int resetCount = 0;
+            for (StoredCommand command : state.getCommands()) {
+                if (parseStatus(command.getStatus()) != CommandStatus.PROCESSING) {
+                    continue;
+                }
+                command.setStatus(CommandStatus.FAILED.name());
+                command.setLastError("Bot restarted before command execution completed");
+                resetCount++;
+            }
+            if (resetCount > 0) {
+                touch(state);
+                saveStateLocked(state);
+            }
+            return resetCount;
         }
     }
 
@@ -105,7 +165,7 @@ public class HiveControlInboxService {
         synchronized (lock) {
             InboxState state = getLoadedStateLocked();
             for (StoredCommand command : state.getCommands()) {
-                if (!isPending(command)) {
+                if (!isDispatchable(command)) {
                     continue;
                 }
                 command.setStatus(CommandStatus.PROCESSING.name());
@@ -120,41 +180,16 @@ public class HiveControlInboxService {
         }
     }
 
-    private void markProcessed(String commandId) {
-        synchronized (lock) {
-            InboxState state = getLoadedStateLocked();
-            StoredCommand command = findByCommandId(state, commandId);
-            if (command == null) {
-                return;
-            }
-            command.setStatus(CommandStatus.PROCESSED.name());
-            command.setProcessedAt(Instant.now().toString());
-            command.setLastError(null);
-            trimProcessedCommandsLocked(state);
-            touch(state);
-            saveStateLocked(state);
-        }
-    }
-
-    private void markFailed(String commandId, RuntimeException exception) {
-        synchronized (lock) {
-            InboxState state = getLoadedStateLocked();
-            StoredCommand command = findByCommandId(state, commandId);
-            if (command == null) {
-                return;
-            }
-            command.setStatus(CommandStatus.FAILED.name());
-            command.setLastError(exception.getMessage());
-            touch(state);
-            saveStateLocked(state);
-        }
-    }
-
     private boolean isPending(StoredCommand command) {
         CommandStatus status = parseStatus(command.getStatus());
         return status == CommandStatus.RECEIVED
                 || status == CommandStatus.FAILED
                 || status == CommandStatus.PROCESSING;
+    }
+
+    private boolean isDispatchable(StoredCommand command) {
+        CommandStatus status = parseStatus(command.getStatus());
+        return status == CommandStatus.RECEIVED || status == CommandStatus.FAILED;
     }
 
     private CommandStatus parseStatus(String status) {

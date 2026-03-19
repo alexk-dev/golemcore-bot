@@ -41,6 +41,8 @@ public class HiveEventOutboxService {
 
     private static final String PREFERENCES_DIR = "preferences";
     private static final String OUTBOX_FILE = "hive-event-outbox.json";
+    private static final int MAX_PENDING_BATCHES = 256;
+    private static final int MAX_PENDING_EVENTS = 2048;
 
     private final StoragePort storagePort;
     private final ObjectMapper objectMapper;
@@ -65,6 +67,7 @@ public class HiveEventOutboxService {
                     0,
                     null,
                     new ArrayList<>(events)));
+            trimOverflowLocked(state);
             touch(state);
             saveStateLocked(state);
             return toSummary(state);
@@ -210,6 +213,26 @@ public class HiveEventOutboxService {
 
     private void touch(OutboxState state) {
         state.setUpdatedAt(Instant.now().toString());
+    }
+
+    private void trimOverflowLocked(OutboxState state) {
+        int pendingEventCount = countEvents(state);
+        while (!state.getBatches().isEmpty()
+                && (state.getBatches().size() > MAX_PENDING_BATCHES || pendingEventCount > MAX_PENDING_EVENTS)) {
+            OutboxBatch droppedBatch = state.getBatches().remove(0);
+            int droppedEventCount = droppedBatch.getEvents() != null ? droppedBatch.getEvents().size() : 0;
+            pendingEventCount -= droppedEventCount;
+            log.warn("[Hive] Dropped oldest outbox batch due to capacity limit: batchId={}, droppedEvents={}",
+                    droppedBatch.getBatchId(), droppedEventCount);
+        }
+    }
+
+    private int countEvents(OutboxState state) {
+        int pendingEventCount = 0;
+        for (OutboxBatch batch : state.getBatches()) {
+            pendingEventCount += batch.getEvents() != null ? batch.getEvents().size() : 0;
+        }
+        return pendingEventCount;
     }
 
     private OutboxSummary toSummary(OutboxState state) {

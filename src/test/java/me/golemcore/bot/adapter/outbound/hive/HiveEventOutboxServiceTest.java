@@ -78,4 +78,30 @@ class HiveEventOutboxServiceTest {
         assertEquals(0, successSummary.pendingBatchCount());
         assertEquals(0, successSummary.pendingEventCount());
     }
+
+    @Test
+    void shouldTrimOldestBatchesWhenOutboxExceedsCapacity() {
+        HiveSessionState sessionState = HiveSessionState.builder()
+                .serverUrl("https://hive.example.com")
+                .golemId("golem-1")
+                .accessToken("access")
+                .build();
+
+        for (int index = 0; index < 300; index++) {
+            service.enqueue(sessionState, List.of(HiveEventPayload.builder()
+                    .schemaVersion(1)
+                    .eventType("runtime_event")
+                    .runtimeEventType("RUN_PROGRESS")
+                    .threadId("thread-" + index)
+                    .commandId("cmd-" + index)
+                    .runId("run-" + index)
+                    .createdAt(Instant.parse("2026-03-18T00:00:00Z"))
+                    .build()));
+        }
+
+        HiveEventOutboxService.OutboxSummary summary = service.getSummary();
+
+        assertEquals(256, summary.pendingBatchCount());
+        assertEquals(256, summary.pendingEventCount());
+    }
 }

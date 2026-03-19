@@ -143,6 +143,7 @@ public class JdkHiveControlChannelClient implements HiveControlChannelClient {
     private final class Listener implements WebSocket.Listener {
 
         private final Consumer<HiveControlCommandEnvelope> commandConsumer;
+        private final StringBuilder textBuffer = new StringBuilder();
 
         private Listener(Consumer<HiveControlCommandEnvelope> commandConsumer) {
             this.commandConsumer = commandConsumer;
@@ -165,8 +166,14 @@ public class JdkHiveControlChannelClient implements HiveControlChannelClient {
         @Override
         public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
             try {
-                HiveControlCommandEnvelope envelope = objectMapper.readValue(data.toString(),
+                textBuffer.append(data);
+                if (!last) {
+                    webSocket.request(1);
+                    return null;
+                }
+                HiveControlCommandEnvelope envelope = objectMapper.readValue(textBuffer.toString(),
                         HiveControlCommandEnvelope.class);
+                textBuffer.setLength(0);
                 synchronized (lock) {
                     status = new HiveControlChannelStatus(
                             "CONNECTED",
@@ -178,6 +185,7 @@ public class JdkHiveControlChannelClient implements HiveControlChannelClient {
                 }
                 commandConsumer.accept(envelope);
             } catch (Exception exception) { // NOSONAR - must keep socket alive on malformed payload
+                textBuffer.setLength(0);
                 synchronized (lock) {
                     status = new HiveControlChannelStatus(
                             "ERROR",

@@ -98,6 +98,10 @@ public class HiveConnectionService {
 
     @PostConstruct
     void init() {
+        int resetCount = hiveControlInboxService.resetInFlightCommandsForRestart();
+        if (resetCount > 0) {
+            log.info("[Hive] Reset {} in-flight control command(s) after restart", resetCount);
+        }
         Optional<HiveSessionState> sessionState = hiveSessionStateStore.load();
         if (sessionState.isPresent()) {
             stateRef.set(HiveConnectionState.DEGRADED);

@@ -155,6 +155,15 @@ class HiveConnectionServiceTest {
     }
 
     @Test
+    void shouldResetInFlightInboxCommandsOnInit() {
+        when(hiveControlInboxService.resetInFlightCommandsForRestart()).thenReturn(1);
+
+        service.init();
+
+        verify(hiveControlInboxService).resetInFlightCommandsForRestart();
+    }
+
+    @Test
     void shouldReconnectUsingPersistedSession() {
         HiveSessionState sessionState = HiveSessionState.builder()
                 .golemId("golem-1")

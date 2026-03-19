@@ -34,6 +34,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -238,6 +239,104 @@ class SessionRunCoordinatorTest {
                             && "cmd-2".equals(metadata.get(ContextAttributes.HIVE_COMMAND_ID))
                             && "run-2".equals(metadata.get(ContextAttributes.HIVE_RUN_ID))
                             && "golem-1".equals(metadata.get(ContextAttributes.HIVE_GOLEM_ID))));
+        }
+    }
+
+    @Test
+    void shouldContinueWithQueuedHiveCommandAfterCancellingActiveRun() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
+        HiveEventBatchPublisher hiveEventBatchPublisher = mock(HiveEventBatchPublisher.class);
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService, hiveEventBatchPublisher);
+
+            AgentSession session = AgentSession.builder()
+                    .id("hive:thread-1")
+                    .channelType("hive")
+                    .chatId("thread-1")
+                    .messages(new ArrayList<>())
+                    .metadata(new LinkedHashMap<>())
+                    .build();
+            when(sessionPort.getOrCreate("hive", "thread-1")).thenReturn(session);
+            org.mockito.Mockito.doNothing().when(sessionPort).save(any(AgentSession.class));
+
+            Gate gateA = new Gate();
+            CountDownLatch secondProcessed = new CountDownLatch(1);
+            org.mockito.Mockito.doAnswer(invocation -> {
+                Message inbound = invocation.getArgument(0);
+                if ("Inspect run-1".equals(inbound.getContent())) {
+                    gateA.await();
+                    return null;
+                }
+                if ("Inspect run-2".equals(inbound.getContent())) {
+                    secondProcessed.countDown();
+                }
+                return null;
+            }).when(agentLoop).processMessage(any(Message.class));
+
+            Message firstInbound = hiveMessage("Inspect run-1", "cmd-1", "run-1");
+            Message secondInbound = hiveMessage("Inspect run-2", "cmd-2", "run-2");
+
+            coordinator.enqueue(firstInbound);
+            gateA.awaitStarted();
+            coordinator.enqueue(secondInbound);
+
+            coordinator.requestStop("hive", "thread-1", "run-1", "cmd-1");
+            gateA.release();
+
+            assertTrue(secondProcessed.await(2, TimeUnit.SECONDS), "Queued hive command should continue automatically");
+            verify(agentLoop, times(1)).processMessage(firstInbound);
+            verify(agentLoop, times(1)).processMessage(secondInbound);
+        }
+    }
+
+    @Test
+    void shouldSuppressFallbackPublishFailureWhenHiveSessionIsGone() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = new RuntimeEventService(
+                Clock.fixed(Instant.parse("2026-03-18T00:00:00Z"), ZoneOffset.UTC));
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
+        HiveEventBatchPublisher hiveEventBatchPublisher = mock(HiveEventBatchPublisher.class);
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService, hiveEventBatchPublisher);
+
+            AgentSession session = AgentSession.builder()
+                    .id("hive:thread-1")
+                    .channelType("hive")
+                    .chatId("thread-1")
+                    .messages(new ArrayList<>())
+                    .metadata(new LinkedHashMap<>())
+                    .build();
+            when(sessionPort.getOrCreate("hive", "thread-1")).thenReturn(session);
+            org.mockito.Mockito.doNothing().when(sessionPort).save(any(AgentSession.class));
+
+            CountDownLatch started = new CountDownLatch(1);
+            org.mockito.Mockito.doAnswer(invocation -> {
+                started.countDown();
+                CountDownLatch blocked = new CountDownLatch(1);
+                blocked.await();
+                return null;
+            }).when(agentLoop).processMessage(any(Message.class));
+            doThrow(new IllegalStateException("Hive session is not available"))
+                    .when(hiveEventBatchPublisher)
+                    .publishRuntimeEvents(any(List.class), any(Map.class));
+
+            CompletableFuture<Void> completion = coordinator.submit(hiveMessage("Inspect the workspace"));
+            assertTrue(started.await(1, TimeUnit.SECONDS), "Hive run should have started");
+
+            coordinator.requestStop("hive", "thread-1", "run-1", "cmd-1");
+
+            ExecutionException failure = assertThrows(ExecutionException.class, () -> completion.get(2,
+                    TimeUnit.SECONDS));
+            assertFalse("Hive session is not available".equals(failure.getCause().getMessage()));
+            verify(hiveEventBatchPublisher, timeout(1000)).publishRuntimeEvents(any(List.class), any(Map.class));
         }
     }
 
