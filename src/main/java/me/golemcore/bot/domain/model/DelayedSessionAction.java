@@ -22,6 +22,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -63,6 +64,7 @@ public class DelayedSessionAction {
     @Builder.Default
     private Map<String, Object> payload = new LinkedHashMap<>();
 
+    @JsonIgnore
     public boolean isTerminal() {
         return status == DelayedActionStatus.COMPLETED
                 || status == DelayedActionStatus.CANCELLED

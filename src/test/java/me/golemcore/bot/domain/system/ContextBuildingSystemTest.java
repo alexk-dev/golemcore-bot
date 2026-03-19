@@ -2,9 +2,13 @@ package me.golemcore.bot.domain.system;
 
 import me.golemcore.bot.domain.component.MemoryComponent;
 import me.golemcore.bot.domain.component.SkillComponent;
+import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
+import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -17,6 +21,7 @@ import me.golemcore.bot.port.outbound.McpPort;
 import me.golemcore.bot.port.outbound.RagPort;
 import me.golemcore.bot.tools.PlanSetContentTool;
 import me.golemcore.bot.tools.PlanGetTool;
+import me.golemcore.bot.tools.ScheduleSessionActionTool;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -42,6 +47,7 @@ class ContextBuildingSystemTest {
         McpPort mcpPort = mock(McpPort.class);
         RagPort ragPort = mock(RagPort.class);
         AutoModeService autoModeService = mock(AutoModeService.class);
+        DelayedActionPolicyService delayedActionPolicyService = mock(DelayedActionPolicyService.class);
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         WorkspaceInstructionService workspaceInstructionService = mock(WorkspaceInstructionService.class);
         when(workspaceInstructionService.getWorkspaceInstructionsContext()).thenReturn("");
@@ -62,6 +68,7 @@ class ContextBuildingSystemTest {
                 ragPort,
                 properties,
                 autoModeService,
+                delayedActionPolicyService,
                 planService,
                 promptSectionService,
                 runtimeConfigService,
@@ -84,5 +91,64 @@ class ContextBuildingSystemTest {
                 .anyMatch(t -> PlanSetContentTool.TOOL_NAME.equals(t.getName())));
         assertTrue(context.getAvailableTools().stream()
                 .anyMatch(t -> PlanGetTool.TOOL_NAME.equals(t.getName())));
+    }
+
+    @Test
+    void shouldNotAdvertiseDelayedActionToolForWebhookSession() {
+        BotProperties properties = new BotProperties();
+
+        SkillTemplateEngine templateEngine = mock(SkillTemplateEngine.class);
+        PromptSectionService promptSectionService = mock(PromptSectionService.class);
+        UserPreferencesService userPreferencesService = mock(UserPreferencesService.class);
+        when(userPreferencesService.getPreferences()).thenReturn(UserPreferences.builder().build());
+
+        MemoryComponent memoryComponent = mock(MemoryComponent.class);
+        SkillComponent skillComponent = mock(SkillComponent.class);
+        ToolCallExecutionService toolCallExecutionService = mock(ToolCallExecutionService.class);
+        McpPort mcpPort = mock(McpPort.class);
+        RagPort ragPort = mock(RagPort.class);
+        AutoModeService autoModeService = mock(AutoModeService.class);
+        DelayedActionPolicyService delayedActionPolicyService = mock(DelayedActionPolicyService.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        WorkspaceInstructionService workspaceInstructionService = mock(WorkspaceInstructionService.class);
+        PlanService planService = mock(PlanService.class);
+        ToolComponent delayedTool = mock(ToolComponent.class);
+        when(workspaceInstructionService.getWorkspaceInstructionsContext()).thenReturn("");
+        when(delayedTool.isEnabled()).thenReturn(true);
+        when(delayedTool.getToolName()).thenReturn(ScheduleSessionActionTool.TOOL_NAME);
+        when(delayedTool.getDefinition()).thenReturn(ToolDefinition.builder()
+                .name(ScheduleSessionActionTool.TOOL_NAME)
+                .description("Delayed actions")
+                .build());
+        when(toolCallExecutionService.listTools()).thenReturn(List.of(delayedTool));
+        when(delayedActionPolicyService.canScheduleActions("webhook")).thenReturn(false);
+
+        ContextBuildingSystem system = new ContextBuildingSystem(
+                memoryComponent,
+                skillComponent,
+                templateEngine,
+                mcpPort,
+                toolCallExecutionService,
+                ragPort,
+                properties,
+                autoModeService,
+                delayedActionPolicyService,
+                planService,
+                promptSectionService,
+                runtimeConfigService,
+                userPreferencesService,
+                workspaceInstructionService);
+
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder()
+                        .channelType("webhook")
+                        .chatId("conv-1")
+                        .build())
+                .build();
+
+        system.process(context);
+
+        assertTrue(context.getAvailableTools().stream()
+                .noneMatch(t -> ScheduleSessionActionTool.TOOL_NAME.equals(t.getName())));
     }
 }

@@ -56,7 +56,7 @@ class SessionRunCoordinatorStopIntegrationTest {
 
         try (ExecutorService executor = java.util.concurrent.Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService);
+                    runtimeEventService, runtimeConfigService, null);
 
             AgentSession session = AgentSession.builder()
                     .id("s-stop-llm")

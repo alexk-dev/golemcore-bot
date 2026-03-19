@@ -12,6 +12,7 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.service.AutoModeService;
+import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
@@ -204,6 +205,7 @@ class PlanWorkLifecycleBddTest {
         McpPort mcpPort = mock(McpPort.class);
         RagPort ragPort = mock(RagPort.class);
         AutoModeService autoModeService = mock(AutoModeService.class);
+        DelayedActionPolicyService delayedActionPolicyService = mock(DelayedActionPolicyService.class);
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         WorkspaceInstructionService workspaceInstructionService = mock(WorkspaceInstructionService.class);
         when(workspaceInstructionService.getWorkspaceInstructionsContext()).thenReturn("");
@@ -220,6 +222,7 @@ class PlanWorkLifecycleBddTest {
                 ragPort,
                 new me.golemcore.bot.infrastructure.config.BotProperties(),
                 autoModeService,
+                delayedActionPolicyService,
                 planService,
                 promptSectionService,
                 runtimeConfigService,

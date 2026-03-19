@@ -141,6 +141,9 @@ public final class ContextAttributes {
     /** String value for {@link #TURN_QUEUE_KIND}: process as regular follow-up. */
     public static final String TURN_QUEUE_KIND_FOLLOW_UP = "follow_up";
 
+    /** String value for {@link #TURN_QUEUE_KIND}: delayed internal wake-up. */
+    public static final String TURN_QUEUE_KIND_DELAYED_ACTION = "delayed_action";
+
     /**
      * Boolean — current turn scheduled an internal retry instead of user feedback.
      */

@@ -139,7 +139,7 @@ public class DelayedActionDispatcher {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put(ContextAttributes.MESSAGE_INTERNAL, true);
         metadata.put(ContextAttributes.MESSAGE_INTERNAL_KIND, ContextAttributes.MESSAGE_INTERNAL_KIND_DELAYED_ACTION);
-        metadata.put(ContextAttributes.TURN_QUEUE_KIND, ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP);
+        metadata.put(ContextAttributes.TURN_QUEUE_KIND, ContextAttributes.TURN_QUEUE_KIND_DELAYED_ACTION);
         metadata.put(ContextAttributes.CONVERSATION_KEY, action.getConversationKey());
         if (!StringValueSupport.isBlank(action.getTransportChatId())) {
             metadata.put(ContextAttributes.TRANSPORT_CHAT_ID, action.getTransportChatId());

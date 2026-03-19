@@ -44,7 +44,7 @@ class SessionRunCoordinatorTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService);
+                    runtimeEventService, runtimeConfigService, null);
 
             AgentSession session = AgentSession.builder()
                     .id("s1")
@@ -101,7 +101,7 @@ class SessionRunCoordinatorTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService);
+                    runtimeEventService, runtimeConfigService, null);
             AgentSession session = AgentSession.builder()
                     .id("s-idle")
                     .channelType(CHANNEL_TYPE)
@@ -127,7 +127,7 @@ class SessionRunCoordinatorTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService);
+                    runtimeEventService, runtimeConfigService, null);
 
             Message a = user("A");
             Message b = user("B");
@@ -172,7 +172,7 @@ class SessionRunCoordinatorTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService);
+                    runtimeEventService, runtimeConfigService, null);
 
             Message a = user("A");
             Message auto = auto("AUTO");
@@ -216,7 +216,7 @@ class SessionRunCoordinatorTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService);
+                    runtimeEventService, runtimeConfigService, null);
 
             Message a = user("A");
             Message followUp = user("F1");
@@ -264,7 +264,7 @@ class SessionRunCoordinatorTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService);
+                    runtimeEventService, runtimeConfigService, null);
 
             Message a = user("A");
             Message b = user("B");
@@ -315,7 +315,7 @@ class SessionRunCoordinatorTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService);
+                    runtimeEventService, runtimeConfigService, null);
 
             Message a = user("A");
             Message s1 = steering("S1");
@@ -368,7 +368,7 @@ class SessionRunCoordinatorTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService);
+                    runtimeEventService, runtimeConfigService, null);
 
             Message a = user("A");
             Message f1 = user("F1");
@@ -427,7 +427,7 @@ class SessionRunCoordinatorTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService);
+                    runtimeEventService, runtimeConfigService, null);
 
             Message a = user("A");
             Message f1 = user("F1");
@@ -486,7 +486,7 @@ class SessionRunCoordinatorTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService);
+                    runtimeEventService, runtimeConfigService, null);
 
             AgentSession session = AgentSession.builder()
                     .id("s-burst-stop")
@@ -567,7 +567,7 @@ class SessionRunCoordinatorTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService);
+                    runtimeEventService, runtimeConfigService, null);
 
             Message a = user("A");
             org.mockito.Mockito.doThrow(new RuntimeException("boom"))
@@ -592,7 +592,7 @@ class SessionRunCoordinatorTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService);
+                    runtimeEventService, runtimeConfigService, null);
 
             AgentSession session = AgentSession.builder()
                     .id("s-submit-stop")
@@ -647,7 +647,7 @@ class SessionRunCoordinatorTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService);
+                    runtimeEventService, runtimeConfigService, null);
 
             CountDownLatch processed = new CountDownLatch(1);
             Message a = user("A");
@@ -671,7 +671,7 @@ class SessionRunCoordinatorTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService);
+                    runtimeEventService, runtimeConfigService, null);
 
             AgentSession session = AgentSession.builder()
                     .id("s-limit")
@@ -721,7 +721,7 @@ class SessionRunCoordinatorTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService);
+                    runtimeEventService, runtimeConfigService, null);
 
             Message a = user("A");
             Message retryOne = internalRetry("retry-1");
@@ -772,7 +772,7 @@ class SessionRunCoordinatorTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService);
+                    runtimeEventService, runtimeConfigService, null);
 
             Message a = user("A");
             Message retryOne = internalRetry("retry-1");
@@ -821,7 +821,7 @@ class SessionRunCoordinatorTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService);
+                    runtimeEventService, runtimeConfigService, null);
 
             Message a = user("A");
             Message retry = internalRetry("retry");
@@ -872,7 +872,7 @@ class SessionRunCoordinatorTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService);
+                    runtimeEventService, runtimeConfigService, null);
 
             Message a = user("A");
             Message retry = internalRetry("retry");

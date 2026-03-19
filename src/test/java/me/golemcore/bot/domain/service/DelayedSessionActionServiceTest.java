@@ -168,6 +168,35 @@ class DelayedSessionActionServiceTest {
     }
 
     @Test
+    void shouldReLeaseActionAfterLeaseExpires() {
+        DelayedSessionAction created = service.schedule(DelayedSessionAction.builder()
+                .channelType("telegram")
+                .conversationKey("conv-1")
+                .transportChatId("chat-1")
+                .kind(DelayedActionKind.RUN_LATER)
+                .deliveryMode(DelayedActionDeliveryMode.INTERNAL_TURN)
+                .runAt(NOW)
+                .payload(Map.of("instruction", "Resume"))
+                .build());
+
+        List<DelayedSessionAction> firstLease = service.leaseDueActions(10);
+
+        assertEquals(1, firstLease.size());
+        assertEquals(DelayedActionStatus.LEASED, service.get(created.getId()).orElseThrow().getStatus());
+
+        DelayedSessionActionService recovered = new DelayedSessionActionService(
+                storagePort,
+                runtimeConfigService,
+                Clock.fixed(NOW.plus(Duration.ofMinutes(3)), ZoneOffset.UTC));
+
+        List<DelayedSessionAction> secondLease = recovered.leaseDueActions(10);
+
+        assertEquals(1, secondLease.size());
+        assertEquals(created.getId(), secondLease.get(0).getId());
+        assertEquals(DelayedActionStatus.LEASED, recovered.get(created.getId()).orElseThrow().getStatus());
+    }
+
+    @Test
     void shouldScheduleJobReadyEvent() {
         DelayedSessionAction created = service.scheduleJobReadyNotification(new DelayedJobReadyEvent(
                 "telegram",
@@ -245,5 +274,18 @@ class DelayedSessionActionServiceTest {
                         .build()));
 
         assertTrue(error.getMessage().contains("not supported"));
+    }
+
+    @Test
+    void shouldStartWithEmptyRegistryWhenLoadFails() {
+        when(storagePort.getText(DelayedSessionActionService.AUTOMATION_DIR, DelayedSessionActionService.ACTIONS_FILE))
+                .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("boom")));
+
+        DelayedSessionActionService failingService = new DelayedSessionActionService(
+                storagePort,
+                runtimeConfigService,
+                Clock.fixed(NOW, ZoneOffset.UTC));
+
+        assertTrue(failingService.listActions("telegram", "conv-1").isEmpty());
     }
 }

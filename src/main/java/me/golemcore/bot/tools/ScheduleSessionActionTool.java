@@ -137,7 +137,14 @@ public class ScheduleSessionActionTool implements ToolComponent {
 
     @Override
     public boolean isEnabled() {
-        return runtimeConfigService.isDelayedActionsEnabled();
+        if (!runtimeConfigService.isDelayedActionsEnabled()) {
+            return false;
+        }
+        AgentContext context = AgentContextHolder.get();
+        if (context == null || context.getSession() == null) {
+            return true;
+        }
+        return delayedActionPolicyService.canScheduleActions(context.getSession().getChannelType());
     }
 
     private ToolResult executeInternal(Map<String, Object> parameters) {
@@ -216,6 +223,10 @@ public class ScheduleSessionActionTool implements ToolComponent {
                 && !payload.containsKey("artifactPath")) {
             return ToolResult.failure("message or artifact_path is required for notify_job_ready");
         }
+        if (!supportsDeliveryNow(channelType, transportChatId, deliveryMode)) {
+            return ToolResult.failure(ToolFailureKind.POLICY_DENIED,
+                    unavailableMessageFor(deliveryMode));
+        }
 
         DelayedSessionAction created;
         try {
@@ -230,8 +241,7 @@ public class ScheduleSessionActionTool implements ToolComponent {
                     .maxAttempts(intParam(parameters, "max_attempts",
                             runtimeConfigService.getDelayedActionsDefaultMaxAttempts()))
                     .dedupeKey(stringParam(parameters, "dedupe_key"))
-                    .cancelOnUserActivity(boolParam(parameters, "cancel_on_user_activity",
-                            kind == DelayedActionKind.REMIND_LATER))
+                    .cancelOnUserActivity(boolParam(parameters, "cancel_on_user_activity", false))
                     .createdBy("tool:" + TOOL_NAME)
                     .payload(payload)
                     .build());
@@ -252,6 +262,23 @@ public class ScheduleSessionActionTool implements ToolComponent {
                 "proactiveDeliverySupportedNow", proactiveSupportedNow,
                 "cancelOnUserActivity", created.isCancelOnUserActivity());
         return ToolResult.success("Delayed action scheduled for " + created.getRunAt(), data);
+    }
+
+    private boolean supportsDeliveryNow(String channelType, String transportChatId,
+            DelayedActionDeliveryMode deliveryMode) {
+        return switch (deliveryMode) {
+        case DIRECT_FILE -> delayedActionPolicyService.supportsProactiveDocument(channelType, transportChatId);
+        case DIRECT_MESSAGE -> delayedActionPolicyService.supportsProactiveMessage(channelType, transportChatId);
+        case INTERNAL_TURN -> delayedActionPolicyService.supportsDelayedExecution(channelType, transportChatId);
+        };
+    }
+
+    private String unavailableMessageFor(DelayedActionDeliveryMode deliveryMode) {
+        return switch (deliveryMode) {
+        case DIRECT_FILE -> "Proactive file delivery is unavailable for this channel or session";
+        case DIRECT_MESSAGE -> "Proactive message delivery is unavailable for this channel or session";
+        case INTERNAL_TURN -> "Delayed execution is unavailable for this channel or session";
+        };
     }
 
     private ToolResult listActions(String channelType, String conversationKey) {

@@ -36,6 +36,7 @@ import me.golemcore.bot.domain.model.UsageStats;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
+import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.DelayedSessionActionService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanExecutionService;
@@ -48,8 +49,8 @@ import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.port.inbound.CommandPort;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
+import me.golemcore.bot.tools.ScheduleSessionActionTool;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.info.BuildProperties;
 import org.springframework.context.ApplicationEventPublisher;
@@ -132,6 +133,7 @@ public class CommandRouter implements CommandPort {
     private final PlanService planService;
     private final PlanExecutionService planExecutionService;
     private final ScheduleService scheduleService;
+    private final DelayedActionPolicyService delayedActionPolicyService;
     private final DelayedSessionActionService delayedSessionActionService;
     private final SessionRunCoordinator runCoordinator;
     private final ApplicationEventPublisher eventPublisher;
@@ -146,7 +148,6 @@ public class CommandRouter implements CommandPort {
     private static final java.util.Set<String> VALID_TIERS = java.util.Set.of(
             "balanced", "smart", "coding", "deep");
 
-    @Autowired
     public CommandRouter(
             SkillComponent skillComponent,
             List<ToolComponent> toolComponents,
@@ -159,6 +160,7 @@ public class CommandRouter implements CommandPort {
             PlanService planService,
             PlanExecutionService planExecutionService,
             ScheduleService scheduleService,
+            DelayedActionPolicyService delayedActionPolicyService,
             DelayedSessionActionService delayedSessionActionService,
             SessionRunCoordinator runCoordinator,
             ApplicationEventPublisher eventPublisher,
@@ -175,34 +177,13 @@ public class CommandRouter implements CommandPort {
         this.planService = planService;
         this.planExecutionService = planExecutionService;
         this.scheduleService = scheduleService;
+        this.delayedActionPolicyService = delayedActionPolicyService;
         this.delayedSessionActionService = delayedSessionActionService;
         this.runCoordinator = runCoordinator;
         this.eventPublisher = eventPublisher;
         this.runtimeConfigService = runtimeConfigService;
         this.buildPropertiesProvider = buildPropertiesProvider;
         log.info("CommandRouter initialized with commands: {}", KNOWN_COMMANDS);
-    }
-
-    public CommandRouter(
-            SkillComponent skillComponent,
-            List<ToolComponent> toolComponents,
-            SessionPort sessionService,
-            UsageTrackingPort usageTracker,
-            UserPreferencesService preferencesService,
-            CompactionOrchestrationService compactionOrchestrationService,
-            AutoModeService autoModeService,
-            ModelSelectionService modelSelectionService,
-            PlanService planService,
-            PlanExecutionService planExecutionService,
-            ScheduleService scheduleService,
-            SessionRunCoordinator runCoordinator,
-            ApplicationEventPublisher eventPublisher,
-            RuntimeConfigService runtimeConfigService,
-            ObjectProvider<BuildProperties> buildPropertiesProvider) {
-        this(skillComponent, toolComponents, sessionService, usageTracker, preferencesService,
-                compactionOrchestrationService, autoModeService, modelSelectionService, planService,
-                planExecutionService, scheduleService, null, runCoordinator, eventPublisher,
-                runtimeConfigService, buildPropertiesProvider);
     }
 
     @Override
@@ -224,7 +205,7 @@ public class CommandRouter implements CommandPort {
 
             return switch (command) {
             case "skills" -> handleSkills();
-            case "tools" -> handleTools();
+            case "tools" -> handleTools(channelType);
             case CMD_STATUS -> handleStatus(sessionId);
             case "new" -> handleNew();
             case "reset" -> handleReset(sessionId, sessionIdentity);
@@ -332,9 +313,10 @@ public class CommandRouter implements CommandPort {
         return CommandResult.success(sb.toString());
     }
 
-    private CommandResult handleTools() {
+    private CommandResult handleTools(String channelType) {
         List<ToolComponent> enabledTools = toolComponents.stream()
                 .filter(ToolComponent::isEnabled)
+                .filter(tool -> isToolVisibleForChannel(tool, channelType))
                 .toList();
 
         StringBuilder sb = new StringBuilder();
@@ -356,6 +338,19 @@ public class CommandRouter implements CommandPort {
         }
 
         return CommandResult.success(sb.toString());
+    }
+
+    private boolean isToolVisibleForChannel(ToolComponent tool, String channelType) {
+        if (tool == null) {
+            return false;
+        }
+        if (!ScheduleSessionActionTool.TOOL_NAME.equals(tool.getToolName())) {
+            return true;
+        }
+        if (delayedActionPolicyService == null) {
+            return true;
+        }
+        return delayedActionPolicyService.canScheduleActions(channelType);
     }
 
     private CommandResult handleStatus(String sessionId) {

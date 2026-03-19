@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentCaptor.forClass;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -42,6 +43,7 @@ class ScheduleSessionActionToolTest {
         when(delayedActionPolicyService.canScheduleActions("telegram")).thenReturn(true);
         when(delayedActionPolicyService.canScheduleRunLater("telegram", "transport-1")).thenReturn(true);
         when(delayedActionPolicyService.supportsProactiveMessage("telegram", "transport-1")).thenReturn(true);
+        when(delayedActionPolicyService.supportsProactiveDocument("telegram", "transport-1")).thenReturn(true);
         when(delayedActionPolicyService.supportsDelayedExecution("telegram", "transport-1")).thenReturn(true);
         when(runtimeConfigService.isDelayedActionsEnabled()).thenReturn(true);
         when(runtimeConfigService.getDelayedActionsDefaultMaxAttempts()).thenReturn(4);
@@ -90,6 +92,26 @@ class ScheduleSessionActionToolTest {
     }
 
     @Test
+    void shouldDefaultReminderCancellationToFalse() throws Exception {
+        org.mockito.ArgumentCaptor<DelayedSessionAction> captor = forClass(DelayedSessionAction.class);
+        when(delayedActionService.schedule(any())).thenAnswer(invocation -> {
+            DelayedSessionAction action = invocation.getArgument(0);
+            action.setId("delay-2");
+            return action;
+        });
+
+        ToolResult result = tool.execute(Map.of(
+                "operation", "create",
+                "action_kind", "remind_later",
+                "delay_seconds", 60,
+                "message", "Ping me")).get();
+
+        assertTrue(result.isSuccess());
+        org.mockito.Mockito.verify(delayedActionService).schedule(captor.capture());
+        assertFalse(captor.getValue().isCancelOnUserActivity());
+    }
+
+    @Test
     void shouldRejectRunLaterWhenProactiveDeliveryIsUnavailable() throws Exception {
         when(delayedActionPolicyService.canScheduleRunLater("telegram", "transport-1")).thenReturn(false);
 
@@ -101,6 +123,34 @@ class ScheduleSessionActionToolTest {
 
         assertFalse(result.isSuccess());
         assertEquals("run_later is unavailable for this channel or session", result.getError());
+    }
+
+    @Test
+    void shouldRejectReminderWhenProactiveMessageDeliveryIsUnavailable() throws Exception {
+        when(delayedActionPolicyService.supportsProactiveMessage("telegram", "transport-1")).thenReturn(false);
+
+        ToolResult result = tool.execute(Map.of(
+                "operation", "create",
+                "action_kind", "remind_later",
+                "delay_seconds", 300,
+                "message", "Ping me")).get();
+
+        assertFalse(result.isSuccess());
+        assertEquals("Proactive message delivery is unavailable for this channel or session", result.getError());
+    }
+
+    @Test
+    void shouldRejectFileNotificationWhenProactiveFileDeliveryIsUnavailable() throws Exception {
+        when(delayedActionPolicyService.supportsProactiveDocument("telegram", "transport-1")).thenReturn(false);
+
+        ToolResult result = tool.execute(Map.of(
+                "operation", "create",
+                "action_kind", "notify_job_ready",
+                "delay_seconds", 300,
+                "artifact_path", "artifacts/report.txt")).get();
+
+        assertFalse(result.isSuccess());
+        assertEquals("Proactive file delivery is unavailable for this channel or session", result.getError());
     }
 
     @Test
