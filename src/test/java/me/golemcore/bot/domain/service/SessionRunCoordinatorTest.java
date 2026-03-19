@@ -1,14 +1,18 @@
 package me.golemcore.bot.domain.service;
 
+import me.golemcore.bot.adapter.outbound.hive.HiveEventBatchPublisher;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.port.outbound.SessionPort;
 import org.junit.jupiter.api.Test;
 
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -25,8 +29,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -43,7 +51,7 @@ class SessionRunCoordinatorTest {
         RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
-            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
                     runtimeEventService, runtimeConfigService);
 
             AgentSession session = AgentSession.builder()
@@ -100,7 +108,7 @@ class SessionRunCoordinatorTest {
         RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
-            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
                     runtimeEventService, runtimeConfigService);
             AgentSession session = AgentSession.builder()
                     .id("s-idle")
@@ -119,6 +127,220 @@ class SessionRunCoordinatorTest {
     }
 
     @Test
+    void shouldPublishHiveCancellationFallbackWhenInterruptedOutsideGracefulTurnHandling() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = new RuntimeEventService(
+                Clock.fixed(Instant.parse("2026-03-18T00:00:00Z"), ZoneOffset.UTC));
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
+        HiveEventBatchPublisher hiveEventBatchPublisher = mock(HiveEventBatchPublisher.class);
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService, hiveEventBatchPublisher);
+
+            AgentSession session = AgentSession.builder()
+                    .id("hive:thread-1")
+                    .channelType("hive")
+                    .chatId("thread-1")
+                    .messages(new ArrayList<>())
+                    .metadata(new LinkedHashMap<>())
+                    .build();
+            when(sessionPort.getOrCreate("hive", "thread-1")).thenReturn(session);
+            org.mockito.Mockito.doNothing().when(sessionPort).save(any(AgentSession.class));
+
+            CountDownLatch started = new CountDownLatch(1);
+            org.mockito.Mockito.doAnswer(invocation -> {
+                started.countDown();
+                CountDownLatch blocked = new CountDownLatch(1);
+                blocked.await();
+                return null;
+            }).when(agentLoop).processMessage(any(Message.class));
+
+            Message inbound = hiveMessage("Inspect the workspace");
+            coordinator.enqueue(inbound);
+            assertTrue(started.await(1, TimeUnit.SECONDS), "Hive run should have started");
+
+            coordinator.requestStop("hive", "thread-1");
+
+            verify(hiveEventBatchPublisher, timeout(1000)).publishRuntimeEvents(
+                    argThat(SessionRunCoordinatorTest::isUserInterruptFinishEvent),
+                    argThat(metadata -> "thread-1".equals(metadata.get(ContextAttributes.HIVE_THREAD_ID))
+                            && "card-1".equals(metadata.get(ContextAttributes.HIVE_CARD_ID))
+                            && "cmd-1".equals(metadata.get(ContextAttributes.HIVE_COMMAND_ID))
+                            && "run-1".equals(metadata.get(ContextAttributes.HIVE_RUN_ID))
+                            && "golem-1".equals(metadata.get(ContextAttributes.HIVE_GOLEM_ID))));
+            assertFalse(Boolean.TRUE.equals(session.getMetadata().get(ContextAttributes.TURN_INTERRUPT_REQUESTED)));
+        }
+    }
+
+    @Test
+    void shouldCancelOnlyMatchingQueuedHiveRun() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
+        HiveEventBatchPublisher hiveEventBatchPublisher = mock(HiveEventBatchPublisher.class);
+
+        RuntimeEvent cancelledEvent = RuntimeEvent.builder()
+                .type(RuntimeEventType.TURN_FINISHED)
+                .timestamp(Instant.parse("2026-03-18T00:00:00Z"))
+                .sessionId("hive:thread-1")
+                .channelType("hive")
+                .chatId("thread-1")
+                .payload(Map.of("reason", "user_interrupt"))
+                .build();
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService, hiveEventBatchPublisher);
+
+            AgentSession session = AgentSession.builder()
+                    .id("hive:thread-1")
+                    .channelType("hive")
+                    .chatId("thread-1")
+                    .messages(new ArrayList<>())
+                    .metadata(new LinkedHashMap<>())
+                    .build();
+            when(sessionPort.getOrCreate("hive", "thread-1")).thenReturn(session);
+            org.mockito.Mockito.doNothing().when(sessionPort).save(any(AgentSession.class));
+            when(runtimeEventService.emitForSession(any(AgentSession.class), any(RuntimeEventType.class),
+                    any(Map.class)))
+                    .thenReturn(cancelledEvent);
+
+            Gate gateA = new Gate();
+            org.mockito.Mockito.doAnswer(invocation -> {
+                Message inbound = invocation.getArgument(0);
+                if ("Inspect run-1".equals(inbound.getContent())) {
+                    gateA.await();
+                }
+                return null;
+            }).when(agentLoop).processMessage(any(Message.class));
+
+            Message firstInbound = hiveMessage("Inspect run-1", "cmd-1", "run-1");
+            Message secondInbound = hiveMessage("Inspect run-2", "cmd-2", "run-2");
+
+            coordinator.enqueue(firstInbound);
+            gateA.awaitStarted();
+            coordinator.enqueue(secondInbound);
+
+            coordinator.requestStop("hive", "thread-1", "run-2", "cmd-2");
+            gateA.release();
+
+            executor.shutdown();
+            assertTrue(executor.awaitTermination(2, TimeUnit.SECONDS), "Coordinator should terminate cleanly");
+
+            verify(agentLoop, times(1)).processMessage(firstInbound);
+            verify(agentLoop, never()).processMessage(secondInbound);
+            verify(hiveEventBatchPublisher, timeout(1000)).publishRuntimeEvents(
+                    argThat(SessionRunCoordinatorTest::isUserInterruptFinishEvent),
+                    argThat(metadata -> "thread-1".equals(metadata.get(ContextAttributes.HIVE_THREAD_ID))
+                            && "card-1".equals(metadata.get(ContextAttributes.HIVE_CARD_ID))
+                            && "cmd-2".equals(metadata.get(ContextAttributes.HIVE_COMMAND_ID))
+                            && "run-2".equals(metadata.get(ContextAttributes.HIVE_RUN_ID))
+                            && "golem-1".equals(metadata.get(ContextAttributes.HIVE_GOLEM_ID))));
+        }
+    }
+
+    @Test
+    void shouldContinueWithQueuedHiveCommandAfterCancellingActiveRun() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
+        HiveEventBatchPublisher hiveEventBatchPublisher = mock(HiveEventBatchPublisher.class);
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService, hiveEventBatchPublisher);
+
+            AgentSession session = AgentSession.builder()
+                    .id("hive:thread-1")
+                    .channelType("hive")
+                    .chatId("thread-1")
+                    .messages(new ArrayList<>())
+                    .metadata(new LinkedHashMap<>())
+                    .build();
+            when(sessionPort.getOrCreate("hive", "thread-1")).thenReturn(session);
+            org.mockito.Mockito.doNothing().when(sessionPort).save(any(AgentSession.class));
+
+            Gate gateA = new Gate();
+            CountDownLatch secondProcessed = new CountDownLatch(1);
+            org.mockito.Mockito.doAnswer(invocation -> {
+                Message inbound = invocation.getArgument(0);
+                if ("Inspect run-1".equals(inbound.getContent())) {
+                    gateA.await();
+                    return null;
+                }
+                if ("Inspect run-2".equals(inbound.getContent())) {
+                    secondProcessed.countDown();
+                }
+                return null;
+            }).when(agentLoop).processMessage(any(Message.class));
+
+            Message firstInbound = hiveMessage("Inspect run-1", "cmd-1", "run-1");
+            Message secondInbound = hiveMessage("Inspect run-2", "cmd-2", "run-2");
+
+            coordinator.enqueue(firstInbound);
+            gateA.awaitStarted();
+            coordinator.enqueue(secondInbound);
+
+            coordinator.requestStop("hive", "thread-1", "run-1", "cmd-1");
+            gateA.release();
+
+            assertTrue(secondProcessed.await(2, TimeUnit.SECONDS), "Queued hive command should continue automatically");
+            verify(agentLoop, times(1)).processMessage(firstInbound);
+            verify(agentLoop, times(1)).processMessage(secondInbound);
+        }
+    }
+
+    @Test
+    void shouldSuppressFallbackPublishFailureWhenHiveSessionIsGone() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = new RuntimeEventService(
+                Clock.fixed(Instant.parse("2026-03-18T00:00:00Z"), ZoneOffset.UTC));
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
+        HiveEventBatchPublisher hiveEventBatchPublisher = mock(HiveEventBatchPublisher.class);
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService, hiveEventBatchPublisher);
+
+            AgentSession session = AgentSession.builder()
+                    .id("hive:thread-1")
+                    .channelType("hive")
+                    .chatId("thread-1")
+                    .messages(new ArrayList<>())
+                    .metadata(new LinkedHashMap<>())
+                    .build();
+            when(sessionPort.getOrCreate("hive", "thread-1")).thenReturn(session);
+            org.mockito.Mockito.doNothing().when(sessionPort).save(any(AgentSession.class));
+
+            CountDownLatch started = new CountDownLatch(1);
+            org.mockito.Mockito.doAnswer(invocation -> {
+                started.countDown();
+                CountDownLatch blocked = new CountDownLatch(1);
+                blocked.await();
+                return null;
+            }).when(agentLoop).processMessage(any(Message.class));
+            doThrow(new IllegalStateException("Hive session is not available"))
+                    .when(hiveEventBatchPublisher)
+                    .publishRuntimeEvents(any(List.class), any(Map.class));
+
+            CompletableFuture<Void> completion = coordinator.submit(hiveMessage("Inspect the workspace"));
+            assertTrue(started.await(1, TimeUnit.SECONDS), "Hive run should have started");
+
+            coordinator.requestStop("hive", "thread-1", "run-1", "cmd-1");
+
+            ExecutionException failure = assertThrows(ExecutionException.class, () -> completion.get(2,
+                    TimeUnit.SECONDS));
+            assertFalse("Hive session is not available".equals(failure.getCause().getMessage()));
+            verify(hiveEventBatchPublisher, timeout(1000)).publishRuntimeEvents(any(List.class), any(Map.class));
+        }
+    }
+
+    @Test
     void shouldProcessQueuedMessageAfterRunCompletes() throws Exception {
         SessionPort sessionPort = mock(SessionPort.class);
         AgentLoop agentLoop = mock(AgentLoop.class);
@@ -126,7 +348,7 @@ class SessionRunCoordinatorTest {
         RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
-            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
                     runtimeEventService, runtimeConfigService);
 
             Message a = user("A");
@@ -171,7 +393,7 @@ class SessionRunCoordinatorTest {
         RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
-            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
                     runtimeEventService, runtimeConfigService);
 
             Message a = user("A");
@@ -215,7 +437,7 @@ class SessionRunCoordinatorTest {
         RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "all", "all");
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
-            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
                     runtimeEventService, runtimeConfigService);
 
             Message a = user("A");
@@ -263,7 +485,7 @@ class SessionRunCoordinatorTest {
         RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "all");
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
-            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
                     runtimeEventService, runtimeConfigService);
 
             Message a = user("A");
@@ -314,7 +536,7 @@ class SessionRunCoordinatorTest {
         RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
-            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
                     runtimeEventService, runtimeConfigService);
 
             Message a = user("A");
@@ -367,7 +589,7 @@ class SessionRunCoordinatorTest {
         RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "all", "all");
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
-            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
                     runtimeEventService, runtimeConfigService);
 
             Message a = user("A");
@@ -426,7 +648,7 @@ class SessionRunCoordinatorTest {
         RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
-            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
                     runtimeEventService, runtimeConfigService);
 
             Message a = user("A");
@@ -485,7 +707,7 @@ class SessionRunCoordinatorTest {
         RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "all", "all");
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
-            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
                     runtimeEventService, runtimeConfigService);
 
             AgentSession session = AgentSession.builder()
@@ -566,7 +788,7 @@ class SessionRunCoordinatorTest {
         RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
-            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
                     runtimeEventService, runtimeConfigService);
 
             Message a = user("A");
@@ -591,7 +813,7 @@ class SessionRunCoordinatorTest {
         RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
-            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
                     runtimeEventService, runtimeConfigService);
 
             AgentSession session = AgentSession.builder()
@@ -646,7 +868,7 @@ class SessionRunCoordinatorTest {
         RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
-            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
                     runtimeEventService, runtimeConfigService);
 
             CountDownLatch processed = new CountDownLatch(1);
@@ -670,7 +892,7 @@ class SessionRunCoordinatorTest {
         RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "all");
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
-            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
                     runtimeEventService, runtimeConfigService);
 
             AgentSession session = AgentSession.builder()
@@ -720,7 +942,7 @@ class SessionRunCoordinatorTest {
         RuntimeConfigService runtimeConfigService = runtimeConfigService(false, "one-at-a-time", "all");
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
-            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
                     runtimeEventService, runtimeConfigService);
 
             Message a = user("A");
@@ -771,7 +993,7 @@ class SessionRunCoordinatorTest {
         RuntimeConfigService runtimeConfigService = runtimeConfigService(false, "one-at-a-time", "one-at-a-time");
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
-            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
                     runtimeEventService, runtimeConfigService);
 
             Message a = user("A");
@@ -821,7 +1043,7 @@ class SessionRunCoordinatorTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService);
+                    runtimeEventService, runtimeConfigService, mock(HiveEventBatchPublisher.class));
 
             Message a = user("A");
             Message retry = internalRetry("retry");
@@ -872,7 +1094,7 @@ class SessionRunCoordinatorTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService);
+                    runtimeEventService, runtimeConfigService, mock(HiveEventBatchPublisher.class));
 
             Message a = user("A");
             Message retry = internalRetry("retry");
@@ -929,6 +1151,16 @@ class SessionRunCoordinatorTest {
         return runtimeConfigService;
     }
 
+    private static SessionRunCoordinator newCoordinator(
+            SessionPort sessionPort,
+            AgentLoop agentLoop,
+            ExecutorService executor,
+            RuntimeEventService runtimeEventService,
+            RuntimeConfigService runtimeConfigService) {
+        return new SessionRunCoordinator(sessionPort, agentLoop, executor, runtimeEventService,
+                runtimeConfigService, mock(HiveEventBatchPublisher.class));
+    }
+
     private static Message steering(String content) {
         return steeringAt(content, Instant.EPOCH);
     }
@@ -978,6 +1210,28 @@ class SessionRunCoordinatorTest {
                 .build();
     }
 
+    private static Message hiveMessage(String content) {
+        return hiveMessage(content, "cmd-1", "run-1");
+    }
+
+    private static Message hiveMessage(String content, String commandId, String runId) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put(ContextAttributes.HIVE_THREAD_ID, "thread-1");
+        metadata.put(ContextAttributes.HIVE_CARD_ID, "card-1");
+        metadata.put(ContextAttributes.HIVE_COMMAND_ID, commandId);
+        metadata.put(ContextAttributes.HIVE_RUN_ID, runId);
+        metadata.put(ContextAttributes.HIVE_GOLEM_ID, "golem-1");
+        return Message.builder()
+                .role("user")
+                .content(content)
+                .channelType("hive")
+                .chatId("thread-1")
+                .senderId("hive")
+                .timestamp(Instant.EPOCH)
+                .metadata(metadata)
+                .build();
+    }
+
     private static Message user(String content, Map<String, Object> metadata, Instant timestamp) {
         return Message.builder()
                 .role("user")
@@ -1001,6 +1255,17 @@ class SessionRunCoordinatorTest {
             Thread.sleep(10);
         }
         return coordinator.runnerCount() == expected;
+    }
+
+    private static boolean isUserInterruptFinishEvent(List<RuntimeEvent> events) {
+        if (events == null || events.size() != 1) {
+            return false;
+        }
+        RuntimeEvent event = events.get(0);
+        return event != null
+                && event.type() == RuntimeEventType.TURN_FINISHED
+                && event.payload() != null
+                && "user_interrupt".equals(event.payload().get("reason"));
     }
 
     private static final class Gate {

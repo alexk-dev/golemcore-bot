@@ -22,6 +22,7 @@ import SkillsTab from './settings/SkillsTab';
 import TurnTab from './settings/TurnTab';
 import UsageTab from './settings/UsageTab';
 import McpTab from './settings/McpTab';
+import HiveTab from './settings/HiveTab';
 import AutoModeTab from './settings/AutoModeTab';
 import PlanModeTab from './settings/PlanModeTab';
 import { UpdatesTab } from './settings/UpdatesTab';
@@ -319,6 +320,7 @@ export default function SettingsPage(): ReactElement {
       {staticSection === 'turn' && rc != null && <TurnTab config={rc.turn} />}
       {staticSection === 'usage' && rc != null && <UsageTab config={rc.usage} />}
       {staticSection === 'mcp' && rc != null && <McpTab config={rc.mcp} />}
+      {staticSection === 'hive' && rc != null && <HiveTab config={rc.hive} />}
       {staticSection === 'plan' && rc != null && <PlanModeTab config={rc.plan} />}
       {staticSection === 'auto' && rc != null && <AutoModeTab config={rc.autoMode} />}
       {staticSection === 'updates' && <UpdatesTab />}

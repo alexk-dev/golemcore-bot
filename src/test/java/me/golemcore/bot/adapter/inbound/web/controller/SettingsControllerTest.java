@@ -65,6 +65,7 @@ class SettingsControllerTest {
         controller = new SettingsController(preferencesService, modelSelectionService, runtimeConfigService,
                 memoryPresetService, sttProviderRegistry, ttsProviderRegistry);
         when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(RuntimeConfig.builder().build());
+        when(runtimeConfigService.isHiveManagedByProperties()).thenReturn(false);
     }
 
     @Test
@@ -227,6 +228,72 @@ class SettingsControllerTest {
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> controller.updateRuntimeConfig(incoming));
         assertTrue(error.getMessage().contains("supports only one invited user"));
+    }
+
+    @Test
+    void shouldUpdateHiveConfigWhenWritable() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder().build();
+        RuntimeConfig responseConfig = RuntimeConfig.builder()
+                .hive(RuntimeConfig.HiveConfig.builder()
+                        .enabled(true)
+                        .serverUrl("https://hive.example.com")
+                        .displayName("Builder")
+                        .hostLabel("lab-a")
+                        .autoConnect(true)
+                        .managedByProperties(false)
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(responseConfig);
+
+        RuntimeConfig.HiveConfig update = RuntimeConfig.HiveConfig.builder()
+                .enabled(true)
+                .serverUrl("https://hive.example.com")
+                .displayName("Builder")
+                .hostLabel("lab-a")
+                .autoConnect(true)
+                .managedByProperties(false)
+                .build();
+
+        StepVerifier.create(controller.updateHiveConfig(update))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    RuntimeConfig body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals("https://hive.example.com", body.getHive().getServerUrl());
+                })
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        assertEquals("https://hive.example.com", captor.getValue().getHive().getServerUrl());
+        assertTrue(captor.getValue().getHive().getAutoConnect());
+    }
+
+    @Test
+    void shouldRejectHiveUpdatesWhenManagedByProperties() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .hive(RuntimeConfig.HiveConfig.builder()
+                        .enabled(true)
+                        .serverUrl("https://managed.example.com")
+                        .managedByProperties(true)
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+        when(runtimeConfigService.isHiveManagedByProperties()).thenReturn(true);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .hive(RuntimeConfig.HiveConfig.builder()
+                        .enabled(false)
+                        .serverUrl("https://other.example.com")
+                        .managedByProperties(false)
+                        .build())
+                .build();
+
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> controller.updateRuntimeConfig(incoming).block());
+        assertEquals(HttpStatus.CONFLICT, error.getStatusCode());
+        assertTrue(error.getReason().contains("Hive settings are managed"));
     }
 
     @Test

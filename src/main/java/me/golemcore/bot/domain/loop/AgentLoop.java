@@ -309,6 +309,11 @@ public class AgentLoop {
         copyStringMetadataAttribute(message, context, ContextAttributes.ACTIVE_SKILL_NAME);
         copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_RUN_ACTIVE_SKILL);
         copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_REFLECTION_TIER);
+        copyStringMetadataAttribute(message, context, ContextAttributes.HIVE_CARD_ID);
+        copyStringMetadataAttribute(message, context, ContextAttributes.HIVE_THREAD_ID);
+        copyStringMetadataAttribute(message, context, ContextAttributes.HIVE_COMMAND_ID);
+        copyStringMetadataAttribute(message, context, ContextAttributes.HIVE_RUN_ID);
+        copyStringMetadataAttribute(message, context, ContextAttributes.HIVE_GOLEM_ID);
 
         boolean reflectionActive = readMetadataBoolean(message, ContextAttributes.AUTO_REFLECTION_ACTIVE);
         if (reflectionActive) {

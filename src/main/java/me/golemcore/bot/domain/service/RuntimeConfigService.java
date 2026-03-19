@@ -141,6 +141,9 @@ public class RuntimeConfigService {
     private static final int DEFAULT_PLAN_MAX_PLANS = 5;
     private static final int DEFAULT_PLAN_MAX_STEPS_PER_PLAN = 50;
     private static final boolean DEFAULT_PLAN_STOP_ON_FAILURE = true;
+    private static final boolean DEFAULT_HIVE_ENABLED = false;
+    private static final boolean DEFAULT_HIVE_AUTO_CONNECT = false;
+    private static final boolean DEFAULT_HIVE_MANAGED_BY_PROPERTIES = false;
     private final StoragePort storagePort;
     private final ObjectMapper objectMapper;
 
@@ -214,6 +217,16 @@ public class RuntimeConfigService {
             this.configRef.set(oldConfig);
             throw e;
         }
+    }
+
+    public RuntimeConfig.HiveConfig getHiveConfig() {
+        RuntimeConfig.HiveConfig hiveConfig = getRuntimeConfig().getHive();
+        return hiveConfig != null ? hiveConfig : RuntimeConfig.HiveConfig.builder().build();
+    }
+
+    public boolean isHiveManagedByProperties() {
+        Boolean managedByProperties = getHiveConfig().getManagedByProperties();
+        return managedByProperties != null && managedByProperties;
     }
 
     // ==================== Telegram ====================
@@ -1195,6 +1208,8 @@ public class RuntimeConfigService {
                 RuntimeConfig.McpConfig::new);
         persistSection(RuntimeConfig.ConfigSection.PLAN, cfg.getPlan(),
                 RuntimeConfig.PlanConfig::new);
+        persistSection(RuntimeConfig.ConfigSection.HIVE, cfg.getHive(),
+                RuntimeConfig.HiveConfig::new);
 
         log.debug("[RuntimeConfig] Persisted all config sections");
     }
@@ -1263,6 +1278,8 @@ public class RuntimeConfigService {
                 RuntimeConfig.McpConfig.class, RuntimeConfig.McpConfig::new);
         RuntimeConfig.PlanConfig plan = loadSection(RuntimeConfig.ConfigSection.PLAN,
                 RuntimeConfig.PlanConfig.class, RuntimeConfig.PlanConfig::new);
+        RuntimeConfig.HiveConfig hive = loadSection(RuntimeConfig.ConfigSection.HIVE,
+                RuntimeConfig.HiveConfig.class, RuntimeConfig.HiveConfig::new);
 
         RuntimeConfig config = RuntimeConfig.builder()
                 .telegram(telegram)
@@ -1280,6 +1297,7 @@ public class RuntimeConfigService {
                 .usage(usage)
                 .mcp(mcp)
                 .plan(plan)
+                .hive(hive)
                 .build();
 
         log.info("[RuntimeConfig] Loaded runtime config from {} section files",
@@ -1386,6 +1404,18 @@ public class RuntimeConfigService {
         }
         if (cfg.getPlan().getStopOnFailure() == null) {
             cfg.getPlan().setStopOnFailure(DEFAULT_PLAN_STOP_ON_FAILURE);
+        }
+        if (cfg.getHive() == null) {
+            cfg.setHive(new RuntimeConfig.HiveConfig());
+        }
+        if (cfg.getHive().getEnabled() == null) {
+            cfg.getHive().setEnabled(DEFAULT_HIVE_ENABLED);
+        }
+        if (cfg.getHive().getAutoConnect() == null) {
+            cfg.getHive().setAutoConnect(DEFAULT_HIVE_AUTO_CONNECT);
+        }
+        if (cfg.getHive().getManagedByProperties() == null) {
+            cfg.getHive().setManagedByProperties(DEFAULT_HIVE_MANAGED_BY_PROPERTIES);
         }
         if (!Integer.valueOf(DEFAULT_MEMORY_VERSION).equals(cfg.getMemory().getVersion())) {
             cfg.getMemory().setVersion(DEFAULT_MEMORY_VERSION);

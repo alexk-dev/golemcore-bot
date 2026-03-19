@@ -18,6 +18,7 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
+import me.golemcore.bot.adapter.outbound.hive.HiveEventBatchPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.loop.AgentLoop;
@@ -27,6 +28,7 @@ import me.golemcore.bot.domain.model.FailureEvent;
 import me.golemcore.bot.domain.model.FailureKind;
 import me.golemcore.bot.domain.model.FailureSource;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.port.outbound.SessionPort;
 import org.springframework.stereotype.Service;
@@ -77,9 +79,12 @@ public class SessionRunCoordinator {
     private final ExecutorService sessionRunExecutor;
     private final RuntimeEventService runtimeEventService;
     private final RuntimeConfigService runtimeConfigService;
+    private final HiveEventBatchPublisher hiveEventBatchPublisher;
 
     private final Map<SessionKey, SessionRunner> runners = new ConcurrentHashMap<>();
     private final Map<Message, List<CompletableFuture<Void>>> pendingCompletions = Collections
+            .synchronizedMap(new IdentityHashMap<>());
+    private final Map<Message, List<Runnable>> pendingStartCallbacks = Collections
             .synchronizedMap(new IdentityHashMap<>());
 
     public void enqueue(Message inbound) {
@@ -94,22 +99,37 @@ public class SessionRunCoordinator {
      * processed or discarded.
      */
     public CompletableFuture<Void> submit(Message inbound) {
+        return submit(inbound, null);
+    }
+
+    public CompletableFuture<Void> submit(Message inbound, Runnable onStart) {
         Objects.requireNonNull(inbound, "inbound");
 
         CompletableFuture<Void> completion = new CompletableFuture<>();
         registerPendingCompletion(inbound, completion);
+        registerPendingStartCallback(inbound, onStart);
         enqueue(inbound);
         return completion;
     }
 
     public void requestStop(String channelType, String chatId) {
+        requestStop(channelType, chatId, null, null);
+    }
+
+    public void requestStop(String channelType, String chatId, String expectedRunId, String expectedCommandId) {
         SessionKey key = new SessionKey(channelType, chatId);
         SessionRunner runner = runners.get(key);
         if (runner != null) {
-            runner.requestStop();
+            runner.requestStop(expectedRunId, expectedCommandId);
             return;
         }
 
+        if (isHiveTargetedStop(expectedRunId, expectedCommandId)) {
+            log.info(
+                    "[Stop] targeted hive stop ignored without active runner: channel={}, chatId={}, runId={}, commandId={}",
+                    channelType, chatId, expectedRunId, expectedCommandId);
+            return;
+        }
         markInterruptRequested(key);
         publishStopRequestedEvent(key);
         log.info("[Stop] stop requested while no active runner: channel={}, chatId={}", channelType, chatId);
@@ -128,6 +148,7 @@ public class SessionRunCoordinator {
 
         private boolean pausedAfterStop = false;
         private Optional<Future<?>> runningTask = Optional.empty();
+        private Message runningInbound;
 
         private SessionRunner(SessionKey key) {
             this.key = key;
@@ -157,13 +178,37 @@ public class SessionRunCoordinator {
             startRun(inbound, new ArrayDeque<>());
         }
 
-        void requestStop() {
+        void requestStop(String expectedRunId, String expectedCommandId) {
             Future<?> taskToCancel;
             boolean shouldPause;
+            Message cancelledQueuedMessage = null;
+            boolean targetedHiveStop = isHiveTargetedStop(expectedRunId, expectedCommandId);
             synchronized (lock) {
-                shouldPause = isRunning() || !queuedSteeringMessages.isEmpty() || !queuedFollowUpMessages.isEmpty();
+                if (targetedHiveStop) {
+                    cancelledQueuedMessage = removeQueuedHiveMessage(expectedRunId, expectedCommandId);
+                    if (cancelledQueuedMessage == null
+                            && !matchesHiveTarget(runningInbound, expectedRunId, expectedCommandId)) {
+                        log.info(
+                                "[Stop] targeted hive stop ignored for non-matching runner: channel={}, chatId={}, runId={}, commandId={}",
+                                key.channelType(), key.chatId(), expectedRunId, expectedCommandId);
+                        return;
+                    }
+                }
+                shouldPause = !targetedHiveStop
+                        && (isRunning() || !queuedSteeringMessages.isEmpty() || !queuedFollowUpMessages.isEmpty());
                 pausedAfterStop = shouldPause;
                 taskToCancel = runningTask.orElse(null);
+            }
+
+            if (cancelledQueuedMessage != null) {
+                rejectPendingCompletion(cancelledQueuedMessage, "Cancelled by Hive control command");
+                publishHiveInterruptedFallback(cancelledQueuedMessage);
+                log.info("[Stop] removed queued hive command: channel={}, chatId={}, runId={}, commandId={}",
+                        key.channelType(), key.chatId(), expectedRunId, expectedCommandId);
+                if (!shouldPause) {
+                    evictIfIdle();
+                }
+                return;
             }
 
             markInterruptRequested(key);
@@ -223,12 +268,16 @@ public class SessionRunCoordinator {
 
         private void startRun(Message inbound, Deque<Message> prefix) {
             SessionKey runKey = new SessionKey(inbound.getChannelType(), inbound.getChatId());
+            synchronized (lock) {
+                runningInbound = inbound;
+            }
             runningTask = Optional.of(sessionRunExecutor.submit(() -> {
                 try {
                     clearInterruptRequested(runKey);
                     if (!prefix.isEmpty()) {
                         flushQueuedMessages(runKey, prefix);
                     }
+                    runPendingStartCallbacks(inbound);
                     agentLoop.processMessage(inbound);
                     completePendingCompletion(inbound);
                 } catch (Exception e) { // NOSONAR - must not kill executor thread
@@ -242,15 +291,21 @@ public class SessionRunCoordinator {
 
         private void handleRunFailure(Message inbound, Exception e) {
             if (e instanceof InterruptedException || Thread.currentThread().isInterrupted()) {
-                Thread.currentThread().interrupt();
+                boolean stopRequested = isInterruptRequested(key);
+                clearInterruptRequested(key);
+                if (stopRequested) {
+                    publishHiveInterruptedFallback(inbound);
+                }
                 log.info("[SessionRunCoordinator] run interrupted: channel={}, chatId={}",
                         inbound.getChannelType(), inbound.getChatId());
-                annotateRunFailure(inbound, new FailureEvent(
-                        FailureSource.SYSTEM,
-                        "SessionRunCoordinator",
-                        FailureKind.TIMEOUT,
-                        "Run interrupted",
-                        Instant.now()));
+                if (!stopRequested) {
+                    annotateRunFailure(inbound, new FailureEvent(
+                            FailureSource.SYSTEM,
+                            "SessionRunCoordinator",
+                            FailureKind.TIMEOUT,
+                            "Run interrupted",
+                            Instant.now()));
+                }
                 return;
             }
 
@@ -268,6 +323,7 @@ public class SessionRunCoordinator {
             Message next;
             synchronized (lock) {
                 runningTask = Optional.empty();
+                runningInbound = null;
                 if (pausedAfterStop) {
                     return;
                 }
@@ -505,8 +561,32 @@ public class SessionRunCoordinator {
         private boolean isEvictable() {
             synchronized (lock) {
                 return !pausedAfterStop && !isRunning() && queuedSteeringMessages.isEmpty()
-                        && queuedFollowUpMessages.isEmpty();
+                        && queuedFollowUpMessages.isEmpty() && runningInbound == null;
             }
+        }
+
+        private Message removeQueuedHiveMessage(String expectedRunId, String expectedCommandId) {
+            Message removed = removeQueuedHiveMessage(queuedSteeringMessages, expectedRunId, expectedCommandId);
+            if (removed != null) {
+                return removed;
+            }
+            return removeQueuedHiveMessage(queuedFollowUpMessages, expectedRunId, expectedCommandId);
+        }
+
+        private Message removeQueuedHiveMessage(
+                Deque<Message> queue,
+                String expectedRunId,
+                String expectedCommandId) {
+            java.util.Iterator<Message> iterator = queue.iterator();
+            while (iterator.hasNext()) {
+                Message queuedMessage = iterator.next();
+                if (!matchesHiveTarget(queuedMessage, expectedRunId, expectedCommandId)) {
+                    continue;
+                }
+                iterator.remove();
+                return queuedMessage;
+            }
+            return null;
         }
 
         private void flushQueuedMessages(SessionKey runKey, Deque<Message> prefix) {
@@ -539,8 +619,24 @@ public class SessionRunCoordinator {
         }
     }
 
+    private void registerPendingStartCallback(Message message, Runnable onStart) {
+        if (message == null || onStart == null) {
+            return;
+        }
+        synchronized (pendingStartCallbacks) {
+            pendingStartCallbacks.computeIfAbsent(message, ignored -> new ArrayList<>()).add(onStart);
+        }
+    }
+
+    private void runPendingStartCallbacks(Message message) {
+        for (Runnable callback : removePendingStartCallbacks(message)) {
+            callback.run();
+        }
+    }
+
     private void transferPendingCompletions(Message source, Message target) {
         List<CompletableFuture<Void>> completions = removePendingCompletions(source);
+        removePendingStartCallbacks(source);
         if (completions.isEmpty()) {
             return;
         }
@@ -551,12 +647,14 @@ public class SessionRunCoordinator {
     }
 
     private void completePendingCompletion(Message message) {
+        removePendingStartCallbacks(message);
         for (CompletableFuture<Void> completion : removePendingCompletions(message)) {
             completion.complete(null);
         }
     }
 
     private void failPendingCompletion(Message message, Throwable failure) {
+        removePendingStartCallbacks(message);
         for (CompletableFuture<Void> completion : removePendingCompletions(message)) {
             completion.completeExceptionally(failure);
         }
@@ -573,6 +671,16 @@ public class SessionRunCoordinator {
                 return List.of();
             }
             return new ArrayList<>(completions);
+        }
+    }
+
+    private List<Runnable> removePendingStartCallbacks(Message message) {
+        synchronized (pendingStartCallbacks) {
+            List<Runnable> callbacks = pendingStartCallbacks.remove(message);
+            if (callbacks == null || callbacks.isEmpty()) {
+                return List.of();
+            }
+            return new ArrayList<>(callbacks);
         }
     }
 
@@ -639,6 +747,73 @@ public class SessionRunCoordinator {
                 Map.of("source", "command.stop"));
     }
 
+    private boolean isInterruptRequested(SessionKey key) {
+        AgentSession session = sessionPort.getOrCreate(key.channelType(), key.chatId());
+        if (session == null) {
+            return false;
+        }
+        Map<String, Object> metadata = session.getMetadata();
+        return metadata != null && Boolean.TRUE.equals(metadata.get(ContextAttributes.TURN_INTERRUPT_REQUESTED));
+    }
+
+    private void publishHiveInterruptedFallback(Message inbound) {
+        if (inbound == null || inbound.getChannelType() == null
+                || !"hive".equalsIgnoreCase(inbound.getChannelType())) {
+            return;
+        }
+
+        Map<String, Object> metadata = buildHiveMetadata(inbound);
+        if (!metadata.containsKey(ContextAttributes.HIVE_THREAD_ID)) {
+            return;
+        }
+
+        AgentSession session = sessionPort.getOrCreate(inbound.getChannelType(), inbound.getChatId());
+        RuntimeEvent runtimeEvent = runtimeEventService.emitForSession(session, RuntimeEventType.TURN_FINISHED,
+                Map.of("reason", "user_interrupt"));
+        try {
+            hiveEventBatchPublisher.publishRuntimeEvents(List.of(runtimeEvent), metadata);
+        } catch (RuntimeException exception) {
+            log.warn("[Hive] Failed to publish interruption fallback: {}", exception.getMessage());
+        }
+    }
+
+    private Map<String, Object> buildHiveMetadata(Message inbound) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        Map<String, Object> inboundMetadata = inbound.getMetadata();
+        putHiveMetadata(metadata, ContextAttributes.HIVE_CARD_ID,
+                readMetadataString(inboundMetadata, ContextAttributes.HIVE_CARD_ID));
+        putHiveMetadata(metadata, ContextAttributes.HIVE_COMMAND_ID,
+                readMetadataString(inboundMetadata, ContextAttributes.HIVE_COMMAND_ID));
+        putHiveMetadata(metadata, ContextAttributes.HIVE_RUN_ID,
+                readMetadataString(inboundMetadata, ContextAttributes.HIVE_RUN_ID));
+        putHiveMetadata(metadata, ContextAttributes.HIVE_GOLEM_ID,
+                readMetadataString(inboundMetadata, ContextAttributes.HIVE_GOLEM_ID));
+        String threadId = readMetadataString(inboundMetadata, ContextAttributes.HIVE_THREAD_ID);
+        if (threadId == null || threadId.isBlank()) {
+            threadId = inbound.getChatId();
+        }
+        putHiveMetadata(metadata, ContextAttributes.HIVE_THREAD_ID, threadId);
+        return metadata;
+    }
+
+    private void putHiveMetadata(Map<String, Object> metadata, String key, String value) {
+        if (value != null && !value.isBlank()) {
+            metadata.put(key, value);
+        }
+    }
+
+    private String readMetadataString(Map<String, Object> metadata, String key) {
+        if (metadata == null || key == null || key.isBlank()) {
+            return null;
+        }
+        Object value = metadata.get(key);
+        if (value instanceof String stringValue) {
+            String normalized = stringValue.trim();
+            return normalized.isEmpty() ? null : normalized;
+        }
+        return null;
+    }
+
     private void annotateRunFailure(Message inbound, FailureEvent failureEvent) {
         if (inbound == null || failureEvent == null) {
             return;
@@ -655,6 +830,26 @@ public class SessionRunCoordinator {
             metadata.put(ContextAttributes.AUTO_RUN_FAILURE_FINGERPRINT,
                     failureEvent.message().trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT));
         }
+    }
+
+    private boolean isHiveTargetedStop(String expectedRunId, String expectedCommandId) {
+        return !isBlank(expectedRunId) || !isBlank(expectedCommandId);
+    }
+
+    private boolean matchesHiveTarget(Message message, String expectedRunId, String expectedCommandId) {
+        if (message == null || message.getMetadata() == null || !isHiveTargetedStop(expectedRunId, expectedCommandId)) {
+            return false;
+        }
+        String messageRunId = readMetadataString(message.getMetadata(), ContextAttributes.HIVE_RUN_ID);
+        String messageCommandId = readMetadataString(message.getMetadata(), ContextAttributes.HIVE_COMMAND_ID);
+        if (!isBlank(expectedRunId)) {
+            return expectedRunId.equals(messageRunId);
+        }
+        return !isBlank(expectedCommandId) && expectedCommandId.equals(messageCommandId);
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     private record SessionKey(String channelType, String chatId) {
