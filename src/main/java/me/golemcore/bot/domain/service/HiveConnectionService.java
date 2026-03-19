@@ -20,6 +20,7 @@ import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.adapter.outbound.hive.HiveApiClient;
 import me.golemcore.bot.adapter.outbound.hive.HiveControlChannelClient;
 import me.golemcore.bot.adapter.outbound.hive.HiveControlChannelStatus;
+import me.golemcore.bot.adapter.outbound.hive.HiveEventOutboxService;
 import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
 import me.golemcore.bot.domain.model.HiveSessionState;
 import me.golemcore.bot.domain.model.RuntimeConfig;
@@ -46,6 +47,7 @@ public class HiveConnectionService {
     private final HiveControlInboxService hiveControlInboxService;
     private final HiveControlCommandDispatcher hiveControlCommandDispatcher;
     private final HiveApiClient hiveApiClient;
+    private final HiveEventOutboxService hiveEventOutboxService;
     private final HiveControlChannelClient hiveControlChannelClient;
     private final ChannelRegistry channelRegistry;
     private final ObjectProvider<BuildProperties> buildPropertiesProvider;
@@ -73,6 +75,7 @@ public class HiveConnectionService {
             HiveControlInboxService hiveControlInboxService,
             HiveControlCommandDispatcher hiveControlCommandDispatcher,
             HiveApiClient hiveApiClient,
+            HiveEventOutboxService hiveEventOutboxService,
             HiveControlChannelClient hiveControlChannelClient,
             ChannelRegistry channelRegistry,
             ObjectProvider<BuildProperties> buildPropertiesProvider,
@@ -85,6 +88,7 @@ public class HiveConnectionService {
         this.hiveControlInboxService = hiveControlInboxService;
         this.hiveControlCommandDispatcher = hiveControlCommandDispatcher;
         this.hiveApiClient = hiveApiClient;
+        this.hiveEventOutboxService = hiveEventOutboxService;
         this.hiveControlChannelClient = hiveControlChannelClient;
         this.channelRegistry = channelRegistry;
         this.buildPropertiesProvider = buildPropertiesProvider;
@@ -118,6 +122,7 @@ public class HiveConnectionService {
         HiveSessionState sessionState = hiveSessionStateStore.load().orElse(null);
         HiveControlChannelStatus controlChannelStatus = hiveControlChannelClient.getStatus();
         HiveControlInboxService.InboxSummary inboxSummary = hiveControlInboxService.getSummary();
+        HiveEventOutboxService.OutboxSummary outboxSummary = hiveEventOutboxService.getSummary();
         String lastError = lastErrorRef.get();
         if (lastError == null && sessionState != null) {
             lastError = sessionState.getLastError();
@@ -146,6 +151,10 @@ public class HiveConnectionService {
                 inboxSummary.lastReceivedAt(),
                 inboxSummary.receivedCommandCount(),
                 inboxSummary.bufferedCommandCount(),
+                inboxSummary.pendingCommandCount(),
+                outboxSummary.pendingBatchCount(),
+                outboxSummary.pendingEventCount(),
+                outboxSummary.lastError(),
                 lastError);
     }
 
@@ -213,6 +222,8 @@ public class HiveConnectionService {
         synchronized (lock) {
             stopRuntimeTransport();
             hiveSessionStateStore.clear();
+            hiveControlInboxService.clear();
+            hiveEventOutboxService.clear();
             stateRef.set(HiveConnectionState.DISCONNECTED);
             lastErrorRef.set(null);
             return getStatus();
@@ -229,6 +240,8 @@ public class HiveConnectionService {
             try {
                 refreshSessionTokensIfNeeded(sessionState);
                 sendHeartbeat(sessionState, buildHealthSummary());
+                flushPendingEventBatches(sessionState);
+                drainPendingControlCommands();
                 sessionState.setLastError(null);
                 hiveSessionStateStore.save(sessionState);
                 updateStateFromRuntimeHealth();
@@ -247,6 +260,8 @@ public class HiveConnectionService {
             HiveSessionState sessionState = sessionStateOptional.get();
             try {
                 ensureControlChannelConnected(sessionState);
+                flushPendingEventBatches(sessionState);
+                drainPendingControlCommands();
                 updateStateFromRuntimeHealth();
             } catch (RuntimeException exception) {
                 handleBackgroundFailure(sessionState, exception);
@@ -257,6 +272,8 @@ public class HiveConnectionService {
     private void activateConnectedSession(HiveSessionState sessionState, String heartbeatSummary) {
         ensureControlChannelConnected(sessionState);
         sendHeartbeat(sessionState, heartbeatSummary);
+        flushPendingEventBatches(sessionState);
+        drainPendingControlCommands();
         sessionState.setLastConnectedAt(Instant.now(clock));
         sessionState.setLastError(null);
         hiveSessionStateStore.save(sessionState);
@@ -438,15 +455,30 @@ public class HiveConnectionService {
         hiveControlChannelClient.connect(sessionState, this::recordControlCommand);
     }
 
+    private void flushPendingEventBatches(HiveSessionState sessionState) {
+        hiveEventOutboxService.flush(
+                sessionState,
+                (serverUrl, golemId, accessToken, events) -> hiveApiClient.publishEventsBatch(
+                        serverUrl,
+                        golemId,
+                        accessToken,
+                        events));
+    }
+
     private void recordControlCommand(HiveControlCommandEnvelope envelope) {
-        HiveControlInboxService.InboxSummary inboxSummary = hiveControlInboxService.recordReceived(envelope);
-        try {
-            hiveControlCommandDispatcher.dispatch(envelope);
-            log.info("[Hive] Received control command: commandId={}, threadId={}, buffered={}",
-                    envelope.getCommandId(), envelope.getThreadId(), inboxSummary.bufferedCommandCount());
-        } catch (RuntimeException exception) {
-            log.warn("[Hive] Failed to dispatch control command {}: {}",
-                    envelope.getCommandId(), exception.getMessage());
+        HiveControlInboxService.RecordResult result = hiveControlInboxService.recordReceived(envelope);
+        drainPendingControlCommands();
+        log.info("[Hive] Received control command: commandId={}, threadId={}, buffered={}, duplicate={}",
+                envelope.getCommandId(),
+                envelope.getThreadId(),
+                result.summary().bufferedCommandCount(),
+                result.duplicate());
+    }
+
+    private void drainPendingControlCommands() {
+        int replayedCount = hiveControlInboxService.drainPending(hiveControlCommandDispatcher::dispatch);
+        if (replayedCount > 0) {
+            log.info("[Hive] Replayed {} pending control command(s) from inbox", replayedCount);
         }
     }
 
@@ -588,6 +620,10 @@ public class HiveConnectionService {
             String lastReceivedCommandAt,
             int receivedCommandCount,
             int bufferedCommandCount,
+            int pendingCommandCount,
+            int pendingEventBatchCount,
+            int pendingEventCount,
+            String outboxLastError,
             String lastError) {
     }
 

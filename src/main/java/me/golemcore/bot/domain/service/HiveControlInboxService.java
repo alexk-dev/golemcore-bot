@@ -22,33 +22,206 @@ public class HiveControlInboxService {
 
     private static final String PREFERENCES_DIR = "preferences";
     private static final String INBOX_FILE = "hive-control-inbox.json";
-    private static final int MAX_BUFFERED_COMMANDS = 100;
+    private static final int MAX_TRACKED_COMMANDS = 100;
 
     private final StoragePort storagePort;
     private final ObjectMapper objectMapper;
 
     private final Object lock = new Object();
+    private InboxState cachedState;
+    private boolean loaded;
 
-    public InboxSummary recordReceived(HiveControlCommandEnvelope envelope) {
+    public RecordResult recordReceived(HiveControlCommandEnvelope envelope) {
+        validateEnvelope(envelope);
         synchronized (lock) {
-            InboxState state = loadState();
-            state.getCommands().add(0, envelope);
-            if (state.getCommands().size() > MAX_BUFFERED_COMMANDS) {
-                state.setCommands(new ArrayList<>(state.getCommands().subList(0, MAX_BUFFERED_COMMANDS)));
+            InboxState state = getLoadedStateLocked();
+            StoredCommand existing = findByCommandId(state, envelope.getCommandId());
+            if (existing != null) {
+                state.setLastReceivedCommandId(envelope.getCommandId());
+                state.setLastReceivedAt(Instant.now().toString());
+                touch(state);
+                saveStateLocked(state);
+                return new RecordResult(true, toSummary(state));
             }
+
+            state.getCommands().add(new StoredCommand(
+                    envelope,
+                    CommandStatus.RECEIVED.name(),
+                    Instant.now().toString(),
+                    null,
+                    null,
+                    0,
+                    null));
             state.setUpdatedAt(Instant.now().toString());
             state.setReceivedCommandCount(state.getReceivedCommandCount() + 1);
             state.setLastReceivedCommandId(envelope.getCommandId());
             state.setLastReceivedAt(Instant.now().toString());
-            saveState(state);
-            return toSummary(state);
+            trimProcessedCommandsLocked(state);
+            saveStateLocked(state);
+            return new RecordResult(false, toSummary(state));
+        }
+    }
+
+    public int drainPending(CommandHandler commandHandler) {
+        if (commandHandler == null) {
+            throw new IllegalArgumentException("Hive command handler is required");
+        }
+        int processedCount = 0;
+        while (true) {
+            StoredCommand command = claimNextPending();
+            if (command == null) {
+                return processedCount;
+            }
+            try {
+                commandHandler.handle(command.getEnvelope());
+                markProcessed(command.getEnvelope().getCommandId());
+                processedCount++;
+            } catch (RuntimeException exception) {
+                markFailed(command.getEnvelope().getCommandId(), exception);
+                return processedCount;
+            }
         }
     }
 
     public InboxSummary getSummary() {
         synchronized (lock) {
-            return toSummary(loadState());
+            return toSummary(getLoadedStateLocked());
         }
+    }
+
+    public void clear() {
+        synchronized (lock) {
+            try {
+                storagePort.deleteObject(PREFERENCES_DIR, INBOX_FILE).join();
+            } catch (RuntimeException exception) {
+                log.warn("[Hive] Failed to delete control inbox: {}", exception.getMessage());
+            }
+            cachedState = new InboxState();
+            loaded = true;
+        }
+    }
+
+    private StoredCommand claimNextPending() {
+        synchronized (lock) {
+            InboxState state = getLoadedStateLocked();
+            for (StoredCommand command : state.getCommands()) {
+                if (!isPending(command)) {
+                    continue;
+                }
+                command.setStatus(CommandStatus.PROCESSING.name());
+                command.setDispatchAttemptCount(command.getDispatchAttemptCount() + 1);
+                command.setLastDispatchAt(Instant.now().toString());
+                command.setLastError(null);
+                touch(state);
+                saveStateLocked(state);
+                return copyCommand(command);
+            }
+            return null;
+        }
+    }
+
+    private void markProcessed(String commandId) {
+        synchronized (lock) {
+            InboxState state = getLoadedStateLocked();
+            StoredCommand command = findByCommandId(state, commandId);
+            if (command == null) {
+                return;
+            }
+            command.setStatus(CommandStatus.PROCESSED.name());
+            command.setProcessedAt(Instant.now().toString());
+            command.setLastError(null);
+            trimProcessedCommandsLocked(state);
+            touch(state);
+            saveStateLocked(state);
+        }
+    }
+
+    private void markFailed(String commandId, RuntimeException exception) {
+        synchronized (lock) {
+            InboxState state = getLoadedStateLocked();
+            StoredCommand command = findByCommandId(state, commandId);
+            if (command == null) {
+                return;
+            }
+            command.setStatus(CommandStatus.FAILED.name());
+            command.setLastError(exception.getMessage());
+            touch(state);
+            saveStateLocked(state);
+        }
+    }
+
+    private boolean isPending(StoredCommand command) {
+        CommandStatus status = parseStatus(command.getStatus());
+        return status == CommandStatus.RECEIVED
+                || status == CommandStatus.FAILED
+                || status == CommandStatus.PROCESSING;
+    }
+
+    private CommandStatus parseStatus(String status) {
+        if (status == null || status.isBlank()) {
+            return CommandStatus.RECEIVED;
+        }
+        try {
+            return CommandStatus.valueOf(status);
+        } catch (IllegalArgumentException exception) {
+            return CommandStatus.RECEIVED;
+        }
+    }
+
+    private void trimProcessedCommandsLocked(InboxState state) {
+        if (state.getCommands().size() <= MAX_TRACKED_COMMANDS) {
+            return;
+        }
+        List<StoredCommand> pending = new ArrayList<>();
+        List<StoredCommand> processed = new ArrayList<>();
+        for (StoredCommand command : state.getCommands()) {
+            if (isPending(command)) {
+                pending.add(command);
+            } else {
+                processed.add(command);
+            }
+        }
+        if (pending.size() >= MAX_TRACKED_COMMANDS) {
+            state.setCommands(pending);
+            return;
+        }
+        int processedToKeep = MAX_TRACKED_COMMANDS - pending.size();
+        int processedStartIndex = Math.max(processed.size() - processedToKeep, 0);
+        List<StoredCommand> trimmed = new ArrayList<>(pending);
+        trimmed.addAll(processed.subList(processedStartIndex, processed.size()));
+        state.setCommands(trimmed);
+    }
+
+    private void validateEnvelope(HiveControlCommandEnvelope envelope) {
+        if (envelope == null) {
+            throw new IllegalArgumentException("Hive control command is required");
+        }
+        if (envelope.getCommandId() == null || envelope.getCommandId().isBlank()) {
+            throw new IllegalArgumentException("Hive control command commandId is required");
+        }
+    }
+
+    private StoredCommand findByCommandId(InboxState state, String commandId) {
+        if (commandId == null || commandId.isBlank()) {
+            return null;
+        }
+        for (StoredCommand command : state.getCommands()) {
+            if (command.getEnvelope() != null && commandId.equals(command.getEnvelope().getCommandId())) {
+                return command;
+            }
+        }
+        return null;
+    }
+
+    private InboxState getLoadedStateLocked() {
+        if (!loaded) {
+            cachedState = loadState();
+            loaded = true;
+        }
+        if (cachedState == null) {
+            cachedState = new InboxState();
+        }
+        return cachedState;
     }
 
     private InboxState loadState() {
@@ -57,35 +230,77 @@ public class HiveControlInboxService {
             if (json == null || json.isBlank()) {
                 return new InboxState();
             }
-            return objectMapper.readValue(json, InboxState.class);
+            InboxState state = objectMapper.readValue(json, InboxState.class);
+            return state != null ? state : new InboxState();
         } catch (IOException | RuntimeException exception) { // NOSONAR - startup should degrade gracefully
             log.warn("[Hive] Failed to load control inbox: {}", exception.getMessage());
             return new InboxState();
         }
     }
 
-    private void saveState(InboxState state) {
+    private void saveStateLocked(InboxState state) {
         try {
             String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(state);
             storagePort.putTextAtomic(PREFERENCES_DIR, INBOX_FILE, json, true).join();
+            cachedState = state;
+            loaded = true;
         } catch (Exception exception) {
             throw new IllegalStateException("Failed to persist Hive control inbox", exception);
         }
     }
 
+    private void touch(InboxState state) {
+        state.setUpdatedAt(Instant.now().toString());
+    }
+
     private InboxSummary toSummary(InboxState state) {
+        int bufferedCommandCount = state.getCommands().size();
+        int pendingCommandCount = 0;
+        for (StoredCommand command : state.getCommands()) {
+            if (isPending(command)) {
+                pendingCommandCount++;
+            }
+        }
         return new InboxSummary(
                 state.getReceivedCommandCount(),
-                state.getCommands().size(),
+                bufferedCommandCount,
+                pendingCommandCount,
                 state.getLastReceivedCommandId(),
                 state.getLastReceivedAt());
+    }
+
+    private StoredCommand copyCommand(StoredCommand source) {
+        return new StoredCommand(
+                source.getEnvelope(),
+                source.getStatus(),
+                source.getReceivedAt(),
+                source.getProcessedAt(),
+                source.getLastDispatchAt(),
+                source.getDispatchAttemptCount(),
+                source.getLastError());
+    }
+
+    @FunctionalInterface
+    public interface CommandHandler {
+
+        void handle(HiveControlCommandEnvelope envelope);
+    }
+
+    public record RecordResult(
+            boolean duplicate,
+            InboxSummary summary) {
     }
 
     public record InboxSummary(
             int receivedCommandCount,
             int bufferedCommandCount,
+            int pendingCommandCount,
             String lastReceivedCommandId,
             String lastReceivedAt) {
+    }
+
+    private enum CommandStatus {
+        RECEIVED, PROCESSING, FAILED, PROCESSED
     }
 
     @Data
@@ -99,6 +314,21 @@ public class HiveControlInboxService {
         private int receivedCommandCount;
         private String lastReceivedCommandId;
         private String lastReceivedAt;
-        private List<HiveControlCommandEnvelope> commands = new ArrayList<>();
+        private List<StoredCommand> commands = new ArrayList<>();
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private static class StoredCommand {
+
+        private HiveControlCommandEnvelope envelope;
+        private String status = CommandStatus.RECEIVED.name();
+        private String receivedAt = Instant.now().toString();
+        private String processedAt;
+        private String lastDispatchAt;
+        private int dispatchAttemptCount;
+        private String lastError;
     }
 }

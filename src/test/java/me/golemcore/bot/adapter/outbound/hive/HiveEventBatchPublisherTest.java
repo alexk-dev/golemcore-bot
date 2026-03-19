@@ -1,6 +1,7 @@
 package me.golemcore.bot.adapter.outbound.hive;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
@@ -15,6 +16,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -26,20 +29,36 @@ import me.golemcore.bot.domain.model.ProgressUpdateType;
 import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.domain.service.HiveSessionStateStore;
+import me.golemcore.bot.port.outbound.StoragePort;
 
 class HiveEventBatchPublisherTest {
 
     private HiveSessionStateStore hiveSessionStateStore;
     private HiveApiClient hiveApiClient;
     private HiveEventBatchPublisher publisher;
+    private StoragePort storagePort;
+    private Map<String, String> persistedFiles;
 
     @BeforeEach
     void setUp() {
         hiveSessionStateStore = mock(HiveSessionStateStore.class);
         hiveApiClient = mock(HiveApiClient.class);
+        storagePort = mock(StoragePort.class);
+        persistedFiles = new ConcurrentHashMap<>();
+        when(storagePort.putTextAtomic(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyBoolean()))
+                .thenAnswer(invocation -> {
+                    persistedFiles.put(invocation.getArgument(1), invocation.getArgument(2));
+                    return CompletableFuture.completedFuture(null);
+                });
+        when(storagePort.getText(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+                .thenAnswer(
+                        invocation -> CompletableFuture.completedFuture(persistedFiles.get(invocation.getArgument(1))));
         publisher = new HiveEventBatchPublisher(
                 hiveSessionStateStore,
                 hiveApiClient,
+                new HiveEventOutboxService(storagePort, new ObjectMapper().registerModule(new JavaTimeModule())),
                 new ObjectMapper().registerModule(new JavaTimeModule()));
         when(hiveSessionStateStore.load()).thenReturn(Optional.of(HiveSessionState.builder()
                 .golemId("golem-1")
@@ -148,11 +167,12 @@ class HiveEventBatchPublisherTest {
     void shouldSkipPublishWithoutActiveHiveSession() {
         when(hiveSessionStateStore.load()).thenReturn(Optional.empty());
 
-        publisher.publishCommandAcknowledged(HiveControlCommandEnvelope.builder()
-                .commandId("cmd-1")
-                .threadId("thread-1")
-                .body("Do work")
-                .build());
+        assertThrows(IllegalStateException.class,
+                () -> publisher.publishCommandAcknowledged(HiveControlCommandEnvelope.builder()
+                        .commandId("cmd-1")
+                        .threadId("thread-1")
+                        .body("Do work")
+                        .build()));
 
         verify(hiveApiClient, never()).publishEventsBatch(eq("https://hive.example.com"), eq("golem-1"), eq("access"),
                 anyList());

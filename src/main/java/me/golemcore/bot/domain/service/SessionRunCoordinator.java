@@ -106,13 +106,23 @@ public class SessionRunCoordinator {
     }
 
     public void requestStop(String channelType, String chatId) {
+        requestStop(channelType, chatId, null, null);
+    }
+
+    public void requestStop(String channelType, String chatId, String expectedRunId, String expectedCommandId) {
         SessionKey key = new SessionKey(channelType, chatId);
         SessionRunner runner = runners.get(key);
         if (runner != null) {
-            runner.requestStop();
+            runner.requestStop(expectedRunId, expectedCommandId);
             return;
         }
 
+        if (isHiveTargetedStop(expectedRunId, expectedCommandId)) {
+            log.info(
+                    "[Stop] targeted hive stop ignored without active runner: channel={}, chatId={}, runId={}, commandId={}",
+                    channelType, chatId, expectedRunId, expectedCommandId);
+            return;
+        }
         markInterruptRequested(key);
         publishStopRequestedEvent(key);
         log.info("[Stop] stop requested while no active runner: channel={}, chatId={}", channelType, chatId);
@@ -131,6 +141,7 @@ public class SessionRunCoordinator {
 
         private boolean pausedAfterStop = false;
         private Optional<Future<?>> runningTask = Optional.empty();
+        private Message runningInbound;
 
         private SessionRunner(SessionKey key) {
             this.key = key;
@@ -160,13 +171,35 @@ public class SessionRunCoordinator {
             startRun(inbound, new ArrayDeque<>());
         }
 
-        void requestStop() {
+        void requestStop(String expectedRunId, String expectedCommandId) {
             Future<?> taskToCancel;
             boolean shouldPause;
+            Message cancelledQueuedMessage = null;
             synchronized (lock) {
+                if (isHiveTargetedStop(expectedRunId, expectedCommandId)) {
+                    cancelledQueuedMessage = removeQueuedHiveMessage(expectedRunId, expectedCommandId);
+                    if (cancelledQueuedMessage == null
+                            && !matchesHiveTarget(runningInbound, expectedRunId, expectedCommandId)) {
+                        log.info(
+                                "[Stop] targeted hive stop ignored for non-matching runner: channel={}, chatId={}, runId={}, commandId={}",
+                                key.channelType(), key.chatId(), expectedRunId, expectedCommandId);
+                        return;
+                    }
+                }
                 shouldPause = isRunning() || !queuedSteeringMessages.isEmpty() || !queuedFollowUpMessages.isEmpty();
                 pausedAfterStop = shouldPause;
                 taskToCancel = runningTask.orElse(null);
+            }
+
+            if (cancelledQueuedMessage != null) {
+                rejectPendingCompletion(cancelledQueuedMessage, "Cancelled by Hive control command");
+                publishHiveInterruptedFallback(cancelledQueuedMessage);
+                log.info("[Stop] removed queued hive command: channel={}, chatId={}, runId={}, commandId={}",
+                        key.channelType(), key.chatId(), expectedRunId, expectedCommandId);
+                if (!shouldPause) {
+                    evictIfIdle();
+                }
+                return;
             }
 
             markInterruptRequested(key);
@@ -226,6 +259,9 @@ public class SessionRunCoordinator {
 
         private void startRun(Message inbound, Deque<Message> prefix) {
             SessionKey runKey = new SessionKey(inbound.getChannelType(), inbound.getChatId());
+            synchronized (lock) {
+                runningInbound = inbound;
+            }
             runningTask = Optional.of(sessionRunExecutor.submit(() -> {
                 try {
                     clearInterruptRequested(runKey);
@@ -277,6 +313,7 @@ public class SessionRunCoordinator {
             Message next;
             synchronized (lock) {
                 runningTask = Optional.empty();
+                runningInbound = null;
                 if (pausedAfterStop) {
                     return;
                 }
@@ -485,8 +522,32 @@ public class SessionRunCoordinator {
         private boolean isEvictable() {
             synchronized (lock) {
                 return !pausedAfterStop && !isRunning() && queuedSteeringMessages.isEmpty()
-                        && queuedFollowUpMessages.isEmpty();
+                        && queuedFollowUpMessages.isEmpty() && runningInbound == null;
             }
+        }
+
+        private Message removeQueuedHiveMessage(String expectedRunId, String expectedCommandId) {
+            Message removed = removeQueuedHiveMessage(queuedSteeringMessages, expectedRunId, expectedCommandId);
+            if (removed != null) {
+                return removed;
+            }
+            return removeQueuedHiveMessage(queuedFollowUpMessages, expectedRunId, expectedCommandId);
+        }
+
+        private Message removeQueuedHiveMessage(
+                Deque<Message> queue,
+                String expectedRunId,
+                String expectedCommandId) {
+            java.util.Iterator<Message> iterator = queue.iterator();
+            while (iterator.hasNext()) {
+                Message queuedMessage = iterator.next();
+                if (!matchesHiveTarget(queuedMessage, expectedRunId, expectedCommandId)) {
+                    continue;
+                }
+                iterator.remove();
+                return queuedMessage;
+            }
+            return null;
         }
 
         private void flushQueuedMessages(SessionKey runKey, Deque<Message> prefix) {
@@ -698,6 +759,26 @@ public class SessionRunCoordinator {
             metadata.put(ContextAttributes.AUTO_RUN_FAILURE_FINGERPRINT,
                     failureEvent.message().trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT));
         }
+    }
+
+    private boolean isHiveTargetedStop(String expectedRunId, String expectedCommandId) {
+        return !isBlank(expectedRunId) || !isBlank(expectedCommandId);
+    }
+
+    private boolean matchesHiveTarget(Message message, String expectedRunId, String expectedCommandId) {
+        if (message == null || message.getMetadata() == null || !isHiveTargetedStop(expectedRunId, expectedCommandId)) {
+            return false;
+        }
+        String messageRunId = readMetadataString(message.getMetadata(), ContextAttributes.HIVE_RUN_ID);
+        String messageCommandId = readMetadataString(message.getMetadata(), ContextAttributes.HIVE_COMMAND_ID);
+        if (!isBlank(expectedRunId)) {
+            return expectedRunId.equals(messageRunId);
+        }
+        return !isBlank(expectedCommandId) && expectedCommandId.equals(messageCommandId);
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     private record SessionKey(String channelType, String chatId) {

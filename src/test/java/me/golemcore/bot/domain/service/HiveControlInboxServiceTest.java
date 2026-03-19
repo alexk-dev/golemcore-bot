@@ -1,6 +1,8 @@
 package me.golemcore.bot.domain.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.anyBoolean;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.mock;
@@ -9,6 +11,8 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -43,15 +47,59 @@ class HiveControlInboxServiceTest {
 
     @Test
     void shouldPersistReceivedCommandsAndExposeSummary() {
-        HiveControlInboxService.InboxSummary summary = service.recordReceived(HiveControlCommandEnvelope.builder()
-                .commandId("cmd-1")
-                .threadId("thread-1")
-                .createdAt(Instant.parse("2026-03-18T00:00:00Z"))
-                .build());
+        HiveControlInboxService.RecordResult result = service.recordReceived(command("cmd-1", "thread-1", "run-1"));
 
-        assertEquals(1, summary.receivedCommandCount());
-        assertEquals(1, summary.bufferedCommandCount());
-        assertEquals("cmd-1", summary.lastReceivedCommandId());
+        assertFalse(result.duplicate());
+        assertEquals(1, result.summary().receivedCommandCount());
+        assertEquals(1, result.summary().bufferedCommandCount());
+        assertEquals(1, result.summary().pendingCommandCount());
+        assertEquals("cmd-1", result.summary().lastReceivedCommandId());
         assertEquals("cmd-1", service.getSummary().lastReceivedCommandId());
+    }
+
+    @Test
+    void shouldDeduplicateRepeatedCommandId() {
+        service.recordReceived(command("cmd-1", "thread-1", "run-1"));
+
+        HiveControlInboxService.RecordResult duplicate = service.recordReceived(command("cmd-1", "thread-1", "run-1"));
+
+        assertEquals(1, duplicate.summary().receivedCommandCount());
+        assertEquals(1, duplicate.summary().bufferedCommandCount());
+        assertEquals(1, duplicate.summary().pendingCommandCount());
+        assertEquals("cmd-1", duplicate.summary().lastReceivedCommandId());
+    }
+
+    @Test
+    void shouldReplayFailedCommandOnNextDrain() {
+        service.recordReceived(command("cmd-1", "thread-1", "run-1"));
+        List<String> dispatched = new ArrayList<>();
+
+        int firstDrainCount = service.drainPending(envelope -> {
+            throw new IllegalStateException("temporary failure");
+        });
+        int secondDrainCount = service.drainPending(envelope -> dispatched.add(envelope.getCommandId()));
+
+        assertEquals(0, firstDrainCount);
+        assertEquals(1, secondDrainCount);
+        assertEquals(List.of("cmd-1"), dispatched);
+        assertEquals(0, service.getSummary().pendingCommandCount());
+    }
+
+    @Test
+    void shouldRequireCommandId() {
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class,
+                () -> service.recordReceived(HiveControlCommandEnvelope.builder().threadId("thread-1").build()));
+
+        assertEquals("Hive control command commandId is required", error.getMessage());
+    }
+
+    private HiveControlCommandEnvelope command(String commandId, String threadId, String runId) {
+        return HiveControlCommandEnvelope.builder()
+                .commandId(commandId)
+                .threadId(threadId)
+                .runId(runId)
+                .createdAt(Instant.parse("2026-03-18T00:00:00Z"))
+                .build();
     }
 }

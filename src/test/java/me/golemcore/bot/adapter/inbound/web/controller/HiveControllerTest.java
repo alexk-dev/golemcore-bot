@@ -50,6 +50,10 @@ class HiveControllerTest {
                 null,
                 0,
                 0,
+                0,
+                0,
+                0,
+                null,
                 null));
 
         StepVerifier.create(controller.getStatus())
@@ -87,6 +91,10 @@ class HiveControllerTest {
                 null,
                 0,
                 0,
+                0,
+                0,
+                0,
+                null,
                 null);
         when(hiveConnectionService.join("token:https://hive.example.com")).thenReturn(snapshot);
 

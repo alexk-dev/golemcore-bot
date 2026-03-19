@@ -22,7 +22,6 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ProgressUpdate;
 import me.golemcore.bot.domain.model.RuntimeEvent;
@@ -31,7 +30,6 @@ import org.springframework.stereotype.Component;
 
 @Component
 @RequiredArgsConstructor
-@Slf4j
 public class HiveChannelAdapter implements ChannelPort {
 
     private final HiveEventBatchPublisher hiveEventBatchPublisher;
@@ -67,10 +65,10 @@ public class HiveChannelAdapter implements ChannelPort {
     public CompletableFuture<Void> sendMessage(String chatId, String content, Map<String, Object> hints) {
         try {
             hiveEventBatchPublisher.publishThreadMessage(chatId, content, hints);
+            return CompletableFuture.completedFuture(null);
         } catch (RuntimeException exception) {
-            log.warn("[Hive] Failed to publish thread message: {}", exception.getMessage());
+            return CompletableFuture.failedFuture(exception);
         }
-        return CompletableFuture.completedFuture(null);
     }
 
     @Override
@@ -81,10 +79,10 @@ public class HiveChannelAdapter implements ChannelPort {
         try {
             hiveEventBatchPublisher.publishThreadMessage(message.getChatId(), message.getContent(),
                     message.getMetadata());
+            return CompletableFuture.completedFuture(null);
         } catch (RuntimeException exception) {
-            log.warn("[Hive] Failed to publish structured message: {}", exception.getMessage());
+            return CompletableFuture.failedFuture(exception);
         }
-        return CompletableFuture.completedFuture(null);
     }
 
     @Override
@@ -98,20 +96,20 @@ public class HiveChannelAdapter implements ChannelPort {
             hiveEventBatchPublisher.publishRuntimeEvents(
                     event != null ? java.util.List.of(event) : java.util.List.of(),
                     event != null ? event.payload() : Map.of());
+            return CompletableFuture.completedFuture(null);
         } catch (RuntimeException exception) {
-            log.warn("[Hive] Failed to publish runtime event: {}", exception.getMessage());
+            return CompletableFuture.failedFuture(exception);
         }
-        return CompletableFuture.completedFuture(null);
     }
 
     @Override
     public CompletableFuture<Void> sendProgressUpdate(String chatId, ProgressUpdate update) {
         try {
             hiveEventBatchPublisher.publishProgressUpdate(chatId, update);
+            return CompletableFuture.completedFuture(null);
         } catch (RuntimeException exception) {
-            log.warn("[Hive] Failed to publish progress update: {}", exception.getMessage());
+            return CompletableFuture.failedFuture(exception);
         }
-        return CompletableFuture.completedFuture(null);
     }
 
     @Override

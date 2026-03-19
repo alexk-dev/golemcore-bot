@@ -73,7 +73,7 @@ class HiveControlCommandDispatcherTest {
 
         dispatcher.dispatch(envelope);
 
-        verify(coordinator).requestStop("hive", "thread-1");
+        verify(coordinator).requestStop("hive", "thread-1", "run-1", "cmd-2");
         verify(publisher).publishCommandAcknowledged(envelope);
     }
 }

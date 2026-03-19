@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import me.golemcore.bot.adapter.outbound.hive.HiveApiClient;
 import me.golemcore.bot.adapter.outbound.hive.HiveControlChannelClient;
 import me.golemcore.bot.adapter.outbound.hive.HiveControlChannelStatus;
+import me.golemcore.bot.adapter.outbound.hive.HiveEventOutboxService;
 import me.golemcore.bot.domain.model.HiveSessionState;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.infrastructure.config.BotProperties;
@@ -40,6 +41,7 @@ class HiveConnectionServiceTest {
     private HiveControlInboxService hiveControlInboxService;
     private HiveControlCommandDispatcher hiveControlCommandDispatcher;
     private HiveApiClient hiveApiClient;
+    private HiveEventOutboxService hiveEventOutboxService;
     private HiveControlChannelClient hiveControlChannelClient;
     private ChannelPort webPort;
     private AtomicReference<Optional<HiveSessionState>> storedSession;
@@ -55,6 +57,7 @@ class HiveConnectionServiceTest {
         hiveControlInboxService = mock(HiveControlInboxService.class);
         hiveControlCommandDispatcher = mock(HiveControlCommandDispatcher.class);
         hiveApiClient = mock(HiveApiClient.class);
+        hiveEventOutboxService = mock(HiveEventOutboxService.class);
         hiveControlChannelClient = mock(HiveControlChannelClient.class);
         webPort = mock(ChannelPort.class);
         storedSession = new AtomicReference<>(Optional.empty());
@@ -82,7 +85,9 @@ class HiveConnectionServiceTest {
             return null;
         }).when(hiveSessionStateStore).save(any(HiveSessionState.class));
         when(hiveControlInboxService.getSummary())
-                .thenReturn(new HiveControlInboxService.InboxSummary(0, 0, null, null));
+                .thenReturn(new HiveControlInboxService.InboxSummary(0, 0, 0, null, null));
+        when(hiveEventOutboxService.getSummary())
+                .thenReturn(new HiveEventOutboxService.OutboxSummary(0, 0, null));
         when(hiveControlChannelClient.getStatus()).thenAnswer(invocation -> controlChannelStatus.get());
         doAnswer(invocation -> {
             controlChannelStatus.set(new HiveControlChannelStatus(
@@ -108,6 +113,7 @@ class HiveConnectionServiceTest {
                 hiveControlInboxService,
                 hiveControlCommandDispatcher,
                 hiveApiClient,
+                hiveEventOutboxService,
                 hiveControlChannelClient,
                 new ChannelRegistry(List.of(webPort)),
                 objectProvider(null),

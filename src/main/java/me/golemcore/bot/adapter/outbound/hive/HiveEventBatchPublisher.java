@@ -52,6 +52,7 @@ public class HiveEventBatchPublisher {
 
     private final HiveSessionStateStore hiveSessionStateStore;
     private final HiveApiClient hiveApiClient;
+    private final HiveEventOutboxService hiveEventOutboxService;
     private final ObjectMapper objectMapper;
 
     public void publishCommandAcknowledged(HiveControlCommandEnvelope envelope) {
@@ -293,24 +294,23 @@ public class HiveEventBatchPublisher {
         }
         Optional<HiveSessionState> sessionStateOptional = hiveSessionStateStore.load();
         if (sessionStateOptional.isEmpty()) {
-            log.debug("[Hive] Skip event publish without active session");
-            return;
+            throw new IllegalStateException("Hive session is not available");
         }
         HiveSessionState sessionState = sessionStateOptional.get();
         if (isBlank(sessionState.getServerUrl()) || isBlank(sessionState.getGolemId())
                 || isBlank(sessionState.getAccessToken())) {
-            log.debug("[Hive] Skip event publish without complete machine auth state");
-            return;
+            throw new IllegalStateException("Hive session is incomplete");
         }
-        try {
-            hiveApiClient.publishEventsBatch(
-                    sessionState.getServerUrl(),
-                    sessionState.getGolemId(),
-                    sessionState.getAccessToken(),
-                    events);
-        } catch (RuntimeException exception) {
-            log.warn("[Hive] Failed to publish {} event(s): {}", events.size(), exception.getMessage());
-        }
+        hiveEventOutboxService.enqueue(sessionState, events);
+        hiveEventOutboxService.flush(sessionState, hiveApiClientSender());
+    }
+
+    private HiveEventOutboxService.BatchSender hiveApiClientSender() {
+        return (serverUrl, golemId, accessToken, events) -> hiveApiClient.publishEventsBatch(
+                serverUrl,
+                golemId,
+                accessToken,
+                events);
     }
 
     private String mapRuntimeEventType(RuntimeEvent runtimeEvent) {

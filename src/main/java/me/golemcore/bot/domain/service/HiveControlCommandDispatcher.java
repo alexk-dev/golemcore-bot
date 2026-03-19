@@ -46,7 +46,8 @@ public class HiveControlCommandDispatcher {
     public void dispatch(HiveControlCommandEnvelope envelope) {
         String eventType = validateEnvelope(envelope);
         if (EVENT_TYPE_COMMAND_STOP.equals(eventType) || EVENT_TYPE_COMMAND_CANCEL.equals(eventType)) {
-            sessionRunCoordinator.requestStop("hive", envelope.getThreadId());
+            sessionRunCoordinator.requestStop("hive", envelope.getThreadId(), envelope.getRunId(),
+                    envelope.getCommandId());
             hiveEventBatchPublisher.publishCommandAcknowledged(envelope);
             log.info("[Hive] Requested stop for control command: commandId={}, threadId={}, runId={}, eventType={}",
                     envelope.getCommandId(), envelope.getThreadId(), envelope.getRunId(), eventType);
