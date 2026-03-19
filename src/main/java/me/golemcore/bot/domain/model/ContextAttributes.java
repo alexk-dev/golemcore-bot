@@ -158,6 +158,12 @@ public final class ContextAttributes {
      */
     public static final String MESSAGE_INTERNAL_KIND_AUTO_CONTINUE = "auto_continue";
 
+    /**
+     * String value for {@link #MESSAGE_INTERNAL_KIND}: delayed session wake-up or
+     * follow-up.
+     */
+    public static final String MESSAGE_INTERNAL_KIND_DELAYED_ACTION = "delayed_action";
+
     /** Boolean ? current inbound message is an internal runtime-only message. */
     public static final String TURN_INPUT_INTERNAL = "turn.input.internal";
 
@@ -228,6 +234,15 @@ public final class ContextAttributes {
 
     /** String ? active skill name used during the completed auto run. */
     public static final String AUTO_RUN_ACTIVE_SKILL = "auto.run.active.skill";
+
+    /** String ? delayed action identifier for the current turn/message. */
+    public static final String DELAYED_ACTION_ID = "delayed.action.id";
+
+    /** String ? delayed action kind for the current turn/message. */
+    public static final String DELAYED_ACTION_KIND = "delayed.action.kind";
+
+    /** String ? scheduled run timestamp for the delayed action. */
+    public static final String DELAYED_ACTION_RUN_AT = "delayed.action.run_at";
 
     /** Map<String,Object> ? latest structured compaction details. */
     public static final String COMPACTION_LAST_DETAILS = "compaction.last.details";

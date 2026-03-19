@@ -193,6 +193,14 @@ public class WebChannelAdapter implements ChannelPort {
         sessions.put(chatId, wsSession);
     }
 
+    public boolean hasActiveSession(String chatId) {
+        if (StringValueSupport.isBlank(chatId)) {
+            return false;
+        }
+        WebSocketSession session = sessions.get(chatId);
+        return session != null && session.isOpen();
+    }
+
     public void handleIncomingMessage(Message message, String connectionId) {
         bindConnectionToChatId(connectionId, message.getChatId());
         eventPublisher.publishEvent(new AgentLoop.InboundMessageEvent(message));

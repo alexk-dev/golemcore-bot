@@ -18,7 +18,6 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AgentSession;
@@ -29,6 +28,7 @@ import me.golemcore.bot.domain.model.FailureSource;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.port.outbound.SessionPort;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -66,7 +66,6 @@ import java.util.concurrent.Future;
  * </ul>
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class SessionRunCoordinator {
 
@@ -77,12 +76,36 @@ public class SessionRunCoordinator {
     private final ExecutorService sessionRunExecutor;
     private final RuntimeEventService runtimeEventService;
     private final RuntimeConfigService runtimeConfigService;
+    private final DelayedSessionActionService delayedSessionActionService;
 
     private final Map<SessionKey, SessionRunner> runners = new ConcurrentHashMap<>();
     private final Map<Message, List<CompletableFuture<Void>>> pendingCompletions = Collections
             .synchronizedMap(new IdentityHashMap<>());
 
+    @Autowired
+    public SessionRunCoordinator(SessionPort sessionPort, AgentLoop agentLoop, ExecutorService sessionRunExecutor,
+            RuntimeEventService runtimeEventService, RuntimeConfigService runtimeConfigService,
+            DelayedSessionActionService delayedSessionActionService) {
+        this.sessionPort = sessionPort;
+        this.agentLoop = agentLoop;
+        this.sessionRunExecutor = sessionRunExecutor;
+        this.runtimeEventService = runtimeEventService;
+        this.runtimeConfigService = runtimeConfigService;
+        this.delayedSessionActionService = delayedSessionActionService;
+    }
+
+    SessionRunCoordinator(SessionPort sessionPort, AgentLoop agentLoop, ExecutorService sessionRunExecutor,
+            RuntimeEventService runtimeEventService, RuntimeConfigService runtimeConfigService) {
+        this(sessionPort, agentLoop, sessionRunExecutor, runtimeEventService, runtimeConfigService, null);
+    }
+
     public void enqueue(Message inbound) {
+        if (delayedSessionActionService != null
+                && inbound != null
+                && !inbound.isInternalMessage()
+                && !AutoRunContextSupport.isAutoMessage(inbound)) {
+            delayedSessionActionService.cancelOnUserActivity(inbound);
+        }
         SessionKey key = new SessionKey(inbound.getChannelType(), inbound.getChatId());
         SessionRunner runner = runners.computeIfAbsent(key, SessionRunner::new);
         runner.enqueue(inbound);
