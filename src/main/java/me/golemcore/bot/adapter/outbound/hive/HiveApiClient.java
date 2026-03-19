@@ -110,7 +110,7 @@ public class HiveApiClient {
                 requestBuilder.header("Authorization", "Bearer " + bearerToken);
             }
             try (Response response = okHttpClient.newCall(requestBuilder.build()).execute()) {
-                String responseBody = response.body() != null ? response.body().string() : "";
+                String responseBody = response.body().string();
                 if (!response.isSuccessful()) {
                     throw new HiveApiException(response.code(), extractMessage(responseBody));
                 }
