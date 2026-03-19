@@ -812,6 +812,114 @@ class SessionRunCoordinatorTest {
         }
     }
 
+    @Test
+    void shouldPreserveInternalRetryWhenLatestFollowUpReplacesOlderFollowUp() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(false, "one-at-a-time", "one-at-a-time");
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService);
+
+            Message a = user("A");
+            Message retry = internalRetry("retry");
+            Message followUpOne = user("follow-up-1");
+            Message followUpTwo = user("follow-up-2");
+
+            Gate gateA = new Gate();
+            List<String> processedAfterA = new ArrayList<>();
+            CountDownLatch queuedProcessed = new CountDownLatch(2);
+
+            org.mockito.Mockito.doAnswer(invocation -> {
+                Message inbound = invocation.getArgument(0);
+                if ("A".equals(inbound.getContent())) {
+                    gateA.await();
+                } else {
+                    synchronized (processedAfterA) {
+                        processedAfterA.add(inbound.getContent());
+                    }
+                    queuedProcessed.countDown();
+                }
+                return null;
+            }).when(agentLoop).processMessage(any(Message.class));
+
+            coordinator.enqueue(a);
+            gateA.awaitStarted();
+            coordinator.enqueue(retry);
+            coordinator.enqueue(followUpOne);
+            coordinator.enqueue(followUpTwo);
+            gateA.release();
+
+            assertTrue(queuedProcessed.await(2, TimeUnit.SECONDS));
+            assertTrue(waitForRunnerCount(coordinator, 0, 2, TimeUnit.SECONDS));
+
+            List<String> processedSnapshot;
+            synchronized (processedAfterA) {
+                processedSnapshot = new ArrayList<>(processedAfterA);
+            }
+            assertEquals(List.of("retry", "follow-up-2"), processedSnapshot);
+        }
+    }
+
+    @Test
+    void shouldPreserveInternalRetryWhenFollowUpQueueLimitIsReached() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(false, "one-at-a-time", "all");
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService);
+
+            Message a = user("A");
+            Message retry = internalRetry("retry");
+
+            Gate gateA = new Gate();
+            List<String> processedAfterA = new ArrayList<>();
+            CountDownLatch queuedProcessed = new CountDownLatch(2);
+
+            org.mockito.Mockito.doAnswer(invocation -> {
+                Message inbound = invocation.getArgument(0);
+                if ("A".equals(inbound.getContent())) {
+                    gateA.await();
+                } else {
+                    synchronized (processedAfterA) {
+                        processedAfterA.add(inbound.getContent());
+                    }
+                    queuedProcessed.countDown();
+                }
+                return null;
+            }).when(agentLoop).processMessage(any(Message.class));
+
+            coordinator.enqueue(a);
+            gateA.awaitStarted();
+            coordinator.enqueue(retry);
+            for (int i = 1; i <= 101; i++) {
+                coordinator.enqueue(user("follow-up-" + i));
+            }
+            gateA.release();
+
+            assertTrue(queuedProcessed.await(2, TimeUnit.SECONDS));
+            assertTrue(waitForRunnerCount(coordinator, 0, 2, TimeUnit.SECONDS));
+
+            List<String> processedSnapshot;
+            synchronized (processedAfterA) {
+                processedSnapshot = new ArrayList<>(processedAfterA);
+            }
+            assertEquals(2, processedSnapshot.size());
+            assertEquals("retry", processedSnapshot.get(0));
+            List<String> mergedFollowUps = List.of(processedSnapshot.get(1).split("\\n\\n"));
+            assertFalse(mergedFollowUps.contains("follow-up-1"));
+            assertFalse(mergedFollowUps.contains("follow-up-2"));
+            assertEquals("follow-up-3", mergedFollowUps.get(0));
+            assertTrue(mergedFollowUps.contains("follow-up-50"));
+            assertEquals("follow-up-101", mergedFollowUps.get(mergedFollowUps.size() - 1));
+        }
+    }
+
     private static RuntimeConfigService runtimeConfigService(boolean steeringEnabled, String steeringMode,
             String followUpMode) {
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);

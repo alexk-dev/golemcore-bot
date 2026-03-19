@@ -5,6 +5,7 @@ import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.loop.AgentContextHolder;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Attachment;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolArtifact;
 import me.golemcore.bot.domain.model.ToolFailureKind;
@@ -19,6 +20,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -71,7 +73,7 @@ public class ToolCallExecutionService {
                 }
             }
 
-            ToolResult rawResult = executeToolCall(toolCall);
+            ToolResult rawResult = executeToolCall(context, toolCall);
             Attachment attachment = extractAttachment(context, rawResult, toolCall.getName());
             ToolResult result = enrichToolResult(context, rawResult, toolCall.getName(), attachment);
             context.addToolResult(toolCall.getId(), result);
@@ -126,12 +128,12 @@ public class ToolCallExecutionService {
         }
     }
 
-    private ToolResult executeToolCall(Message.ToolCall toolCall) {
+    private ToolResult executeToolCall(AgentContext context, Message.ToolCall toolCall) {
         String toolName = sanitizeToolName(toolCall.getName());
-        ToolComponent tool = toolRegistry.get(toolName);
+        ToolComponent tool = resolveTool(context, toolName);
 
         if (tool == null) {
-            String available = String.join(", ", toolRegistry.keySet());
+            String available = String.join(", ", resolveAvailableToolNames(context));
             return ToolResult.failure(ToolFailureKind.POLICY_DENIED,
                     "Unknown tool: " + toolName + ". Available tools: " + available);
         }
@@ -148,6 +150,36 @@ public class ToolCallExecutionService {
             return ToolResult.failure(ToolFailureKind.EXECUTION_FAILED,
                     "Tool execution failed: " + safeCauseMessage(e));
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private ToolComponent resolveTool(AgentContext context, String toolName) {
+        if (context != null) {
+            Object scopedTools = context.getAttribute(ContextAttributes.CONTEXT_SCOPED_TOOLS);
+            if (scopedTools instanceof Map<?, ?> map) {
+                Object candidate = map.get(toolName);
+                if (candidate instanceof ToolComponent tool) {
+                    return tool;
+                }
+            }
+        }
+        return toolRegistry.get(toolName);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> resolveAvailableToolNames(AgentContext context) {
+        TreeSet<String> names = new TreeSet<>(toolRegistry.keySet());
+        if (context != null) {
+            Object scopedTools = context.getAttribute(ContextAttributes.CONTEXT_SCOPED_TOOLS);
+            if (scopedTools instanceof Map<?, ?> map) {
+                for (Object key : map.keySet()) {
+                    if (key instanceof String name && !name.isBlank()) {
+                        names.add(name);
+                    }
+                }
+            }
+        }
+        return List.copyOf(names);
     }
 
     private static String safeCauseMessage(Throwable error) {
