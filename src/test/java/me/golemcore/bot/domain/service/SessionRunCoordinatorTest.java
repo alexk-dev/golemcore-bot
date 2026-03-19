@@ -1043,7 +1043,7 @@ class SessionRunCoordinatorTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService);
+                    runtimeEventService, runtimeConfigService, mock(HiveEventBatchPublisher.class));
 
             Message a = user("A");
             Message retry = internalRetry("retry");
@@ -1094,7 +1094,7 @@ class SessionRunCoordinatorTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService);
+                    runtimeEventService, runtimeConfigService, mock(HiveEventBatchPublisher.class));
 
             Message a = user("A");
             Message retry = internalRetry("retry");
