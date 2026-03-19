@@ -392,7 +392,8 @@ public class ContextBuildingSystem implements AgentSystem {
         return true;
     }
 
-    private void putToolDefinition(Map<String, ToolDefinition> toolsByName, ToolDefinition tool, boolean replaceExisting) {
+    private void putToolDefinition(Map<String, ToolDefinition> toolsByName, ToolDefinition tool,
+            boolean replaceExisting) {
         if (tool == null || tool.getName() == null || tool.getName().isBlank()) {
             return;
         }
