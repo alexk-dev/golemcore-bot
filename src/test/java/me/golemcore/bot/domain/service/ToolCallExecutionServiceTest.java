@@ -5,6 +5,7 @@ import me.golemcore.bot.domain.loop.AgentContextHolder;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Attachment;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolArtifact;
 import me.golemcore.bot.domain.model.ToolFailureKind;
@@ -282,6 +283,24 @@ class ToolCallExecutionServiceTest {
 
         assertNotNull(result);
         assertTrue(result.toolResult().isSuccess());
+    }
+
+    @Test
+    void shouldExecuteContextScopedToolWithoutGlobalRegistration() {
+        ToolComponent scopedTool = mock(ToolComponent.class);
+        when(scopedTool.getToolName()).thenReturn("scoped_tool");
+        when(scopedTool.isEnabled()).thenReturn(true);
+        when(scopedTool.execute(any())).thenReturn(CompletableFuture.completedFuture(ToolResult.success("scoped ok")));
+
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.CONTEXT_SCOPED_TOOLS, Map.of("scoped_tool", scopedTool));
+
+        ToolCallExecutionResult result = service.execute(context, buildToolCall("scoped_tool", Map.of("q", "1")));
+
+        assertNotNull(result);
+        assertTrue(result.toolResult().isSuccess());
+        assertEquals("scoped ok", result.toolMessageContent());
+        verify(scopedTool).execute(Map.of("q", "1"));
     }
 
     // ==================== extractAttachment: screenshot base64

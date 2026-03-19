@@ -166,7 +166,19 @@ class SessionServiceTest {
                 .chatId(CHAT_ID)
                 .build();
 
-        assertDoesNotThrow(() -> service.save(session));
+        IllegalStateException error = assertThrows(IllegalStateException.class, () -> service.save(session));
+        assertTrue(error.getMessage().contains(SESSION_ID));
+    }
+
+    @Test
+    void getOrCreateThrowsWhenStoredSessionIsCorrupted() {
+        when(storagePort.getObject(SESSIONS_DIR, SESSION_FILE))
+                .thenReturn(CompletableFuture.completedFuture(new byte[] { 1, 2, 3, 4 }));
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> service.getOrCreate(CHANNEL_TELEGRAM, CHAT_ID));
+
+        assertTrue(error.getMessage().contains(SESSION_ID));
     }
 
     // ==================== delete ====================

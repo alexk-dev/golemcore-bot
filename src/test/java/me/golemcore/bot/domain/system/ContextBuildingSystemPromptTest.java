@@ -424,9 +424,12 @@ class ContextBuildingSystemPromptTest {
         ctx.setActiveSkill(skill);
         system.process(ctx);
 
-        verify(toolCallExecutionService).registerTool(mcpAdapter);
+        verify(toolCallExecutionService, never()).registerTool(any());
         assertTrue(ctx.getAvailableTools().contains(mcpTool));
         assertTrue(ctx.getSystemPrompt().contains("github_search"));
+        Object scopedTools = ctx.getAttribute(ContextAttributes.CONTEXT_SCOPED_TOOLS);
+        assertTrue(scopedTools instanceof Map<?, ?>);
+        assertEquals(mcpAdapter, ((Map<?, ?>) scopedTools).get("github_search"));
     }
 
     // ===== Skill transition =====

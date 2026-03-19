@@ -51,6 +51,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -169,27 +170,40 @@ public class ContextBuildingSystem implements AgentSystem {
                 skillsSummary != null ? skillsSummary.length() : 0);
 
         // Collect tool definitions (native + MCP)
-        List<ToolDefinition> tools = new ArrayList<>(toolCallExecutionService.listTools().stream()
+        Map<String, ToolDefinition> toolsByName = new LinkedHashMap<>();
+        toolCallExecutionService.listTools().stream()
                 .filter(ToolComponent::isEnabled)
                 .filter(tool -> isToolAdvertised(tool, planModeActive))
                 .map(ToolComponent::getDefinition)
-                .toList());
+                .forEach(tool -> putToolDefinition(toolsByName, tool, false));
 
-        // Start MCP server and register tools if active skill has MCP config
+        // Start MCP server and attach skill-scoped tools if active skill has MCP config
+        Map<String, ToolComponent> contextScopedTools = new LinkedHashMap<>();
         if (context.getActiveSkill() != null && context.getActiveSkill().hasMcp()) {
             List<ToolDefinition> mcpTools = mcpPort.getOrStartClient(context.getActiveSkill());
             if (!mcpTools.isEmpty()) {
                 for (ToolDefinition mcpTool : mcpTools) {
+                    if (mcpTool == null || mcpTool.getName() == null || mcpTool.getName().isBlank()) {
+                        continue;
+                    }
                     ToolComponent adapter = mcpPort.createToolAdapter(
                             context.getActiveSkill().getName(), mcpTool);
-                    toolCallExecutionService.registerTool(adapter);
-                    tools.add(mcpTool);
+                    if (adapter == null) {
+                        log.warn("[Context] Skipping MCP tool '{}' because adapter creation returned null",
+                                mcpTool.getName());
+                        continue;
+                    }
+                    contextScopedTools.put(mcpTool.getName(), adapter);
+                    putToolDefinition(toolsByName, mcpTool, true);
                 }
-                log.info("[Context] Registered {} MCP tools from skill '{}'",
+                log.info("[Context] Loaded {} MCP tools for skill '{}' into current turn context",
                         mcpTools.size(), context.getActiveSkill().getName());
             }
         }
 
+        context.setAttribute(ContextAttributes.CONTEXT_SCOPED_TOOLS,
+                contextScopedTools.isEmpty() ? null : contextScopedTools);
+        List<ToolDefinition> tools = new ArrayList<>(toolsByName.values());
         context.setAvailableTools(tools);
         log.trace("[Context] Available tools: {}", tools.stream().map(ToolDefinition::getName).toList());
 
@@ -376,6 +390,19 @@ public class ContextBuildingSystem implements AgentSystem {
             return planModeActive;
         }
         return true;
+    }
+
+    private void putToolDefinition(Map<String, ToolDefinition> toolsByName, ToolDefinition tool, boolean replaceExisting) {
+        if (tool == null || tool.getName() == null || tool.getName().isBlank()) {
+            return;
+        }
+        if (!replaceExisting && toolsByName.containsKey(tool.getName())) {
+            return;
+        }
+        ToolDefinition previous = toolsByName.put(tool.getName(), tool);
+        if (replaceExisting && previous != null) {
+            log.warn("[Context] Replaced tool definition '{}' with active MCP tool for current turn", tool.getName());
+        }
     }
 
     private void resolveTier(AgentContext context, UserPreferences prefs) {

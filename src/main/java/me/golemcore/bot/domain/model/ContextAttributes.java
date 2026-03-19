@@ -54,6 +54,9 @@ public final class ContextAttributes {
     /** Boolean ? compatibility fallback flattened tool history for this turn. */
     public static final String LLM_COMPAT_FLATTEN_FALLBACK_USED = "llm.compat.flatten.fallback.used";
 
+    /** Map<String, ToolComponent> ? context-scoped tools available only in the current turn. */
+    public static final String CONTEXT_SCOPED_TOOLS = "context.scoped.tools";
+
     /** Boolean — tools were executed in this iteration. */
 
     /**

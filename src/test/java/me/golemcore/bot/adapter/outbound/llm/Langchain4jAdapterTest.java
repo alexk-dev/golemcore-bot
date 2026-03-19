@@ -316,6 +316,45 @@ class Langchain4jAdapterTest {
         assertEquals(1, result.size());
     }
 
+    @Test
+    void shouldDropDuplicateToolDefinitionsByName() {
+        ToolDefinition first = ToolDefinition.builder()
+                .name(TEST_TOOL)
+                .description("first")
+                .inputSchema(Map.of(TYPE, OBJECT, PROPERTIES, Map.of()))
+                .build();
+        ToolDefinition duplicate = ToolDefinition.builder()
+                .name(TEST_TOOL)
+                .description("duplicate")
+                .inputSchema(Map.of(TYPE, OBJECT, PROPERTIES, Map.of()))
+                .build();
+
+        LlmRequest request = LlmRequest.builder().tools(List.of(first, duplicate)).build();
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<Object> result = (List<Object>) ReflectionTestUtils.invokeMethod(adapter, CONVERT_TOOLS, request);
+
+        assertEquals(1, result.size());
+    }
+
+    @Test
+    void shouldIgnoreInvalidToolSchemaShapesWithoutThrowing() {
+        ToolDefinition tool = ToolDefinition.builder()
+                .name(TEST_TOOL)
+                .description("A test tool")
+                .inputSchema(Map.of(
+                        TYPE, OBJECT,
+                        PROPERTIES, Map.of(
+                                "param1", "not-a-schema-map"),
+                        "required", List.of("param1")))
+                .build();
+
+        LlmRequest request = LlmRequest.builder().tools(List.of(tool)).build();
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<Object> result = (List<Object>) ReflectionTestUtils.invokeMethod(adapter, CONVERT_TOOLS, request);
+
+        assertEquals(1, result.size());
+    }
+
     // ===== convertToolDefinition with enum and array =====
 
     @Test
