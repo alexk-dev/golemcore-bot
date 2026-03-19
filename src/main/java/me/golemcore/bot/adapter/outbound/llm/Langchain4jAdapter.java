@@ -846,10 +846,9 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         return builder.build();
     }
 
-    @SuppressWarnings("unchecked")
     private JsonSchemaElement toJsonSchemaElement(String toolName, String path, Map<String, Object> paramSchema) {
-        String type = (String) paramSchema.get("type");
-        String description = (String) paramSchema.get("description");
+        String type = stringValue(paramSchema.get("type"), toolName, path + ".type");
+        String description = stringValue(paramSchema.get("description"), toolName, path + ".description");
         List<String> enumValues = stringList(paramSchema.get("enum"), toolName, path + ".enum");
 
         // Enum values take priority
@@ -979,6 +978,18 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             }
         }
         return values;
+    }
+
+    private String stringValue(Object rawValue, String toolName, String path) {
+        if (rawValue == null) {
+            return null;
+        }
+        if (rawValue instanceof String stringValue) {
+            return stringValue;
+        }
+        log.warn("[LLM] Invalid schema string for tool '{}' at {}: {}", toolName, path,
+                rawValue.getClass().getSimpleName());
+        return null;
     }
 
     private LlmResponse convertResponse(ChatResponse response, boolean compatibilityFlatteningApplied,

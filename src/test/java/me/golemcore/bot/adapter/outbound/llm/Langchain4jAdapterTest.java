@@ -355,6 +355,26 @@ class Langchain4jAdapterTest {
         assertEquals(1, result.size());
     }
 
+    @Test
+    void shouldIgnoreNonStringSchemaTypeAndDescriptionWithoutThrowing() {
+        ToolDefinition tool = ToolDefinition.builder()
+                .name(TEST_TOOL)
+                .description("A test tool")
+                .inputSchema(Map.of(
+                        TYPE, OBJECT,
+                        PROPERTIES, Map.of(
+                                "param1", Map.of(
+                                        TYPE, List.of("not-a-string"),
+                                        "description", List.of("also-not-a-string")))))
+                .build();
+
+        LlmRequest request = LlmRequest.builder().tools(List.of(tool)).build();
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<Object> result = (List<Object>) ReflectionTestUtils.invokeMethod(adapter, CONVERT_TOOLS, request);
+
+        assertEquals(1, result.size());
+    }
+
     // ===== convertToolDefinition with enum and array =====
 
     @Test

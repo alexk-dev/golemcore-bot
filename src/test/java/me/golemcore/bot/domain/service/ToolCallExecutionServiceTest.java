@@ -303,6 +303,26 @@ class ToolCallExecutionServiceTest {
         verify(scopedTool).execute(Map.of("q", "1"));
     }
 
+    @Test
+    void shouldPreferContextScopedToolOverGlobalToolWithSameName() {
+        ToolComponent scopedTool = mock(ToolComponent.class);
+        when(scopedTool.getToolName()).thenReturn(TOOL_NAME);
+        when(scopedTool.isEnabled()).thenReturn(true);
+        when(scopedTool.execute(any())).thenReturn(CompletableFuture.completedFuture(ToolResult.success("scoped ok")));
+        when(toolComponent.execute(any())).thenReturn(CompletableFuture.completedFuture(ToolResult.success("global ok")));
+
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.CONTEXT_SCOPED_TOOLS, Map.of(TOOL_NAME, scopedTool));
+
+        ToolCallExecutionResult result = service.execute(context, buildToolCall(TOOL_NAME, Map.of("q", "1")));
+
+        assertNotNull(result);
+        assertTrue(result.toolResult().isSuccess());
+        assertEquals("scoped ok", result.toolMessageContent());
+        verify(scopedTool).execute(Map.of("q", "1"));
+        verify(toolComponent, never()).execute(any());
+    }
+
     // ==================== extractAttachment: screenshot base64
     // ====================
 
