@@ -18,6 +18,7 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
+import me.golemcore.bot.adapter.outbound.hive.HiveEventBatchPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.loop.AgentLoop;
@@ -27,6 +28,7 @@ import me.golemcore.bot.domain.model.FailureEvent;
 import me.golemcore.bot.domain.model.FailureKind;
 import me.golemcore.bot.domain.model.FailureSource;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.port.outbound.SessionPort;
 import org.springframework.stereotype.Service;
@@ -77,6 +79,7 @@ public class SessionRunCoordinator {
     private final ExecutorService sessionRunExecutor;
     private final RuntimeEventService runtimeEventService;
     private final RuntimeConfigService runtimeConfigService;
+    private final HiveEventBatchPublisher hiveEventBatchPublisher;
 
     private final Map<SessionKey, SessionRunner> runners = new ConcurrentHashMap<>();
     private final Map<Message, List<CompletableFuture<Void>>> pendingCompletions = Collections
@@ -242,15 +245,21 @@ public class SessionRunCoordinator {
 
         private void handleRunFailure(Message inbound, Exception e) {
             if (e instanceof InterruptedException || Thread.currentThread().isInterrupted()) {
-                Thread.currentThread().interrupt();
+                boolean stopRequested = isInterruptRequested(key);
+                clearInterruptRequested(key);
+                if (stopRequested) {
+                    publishHiveInterruptedFallback(inbound);
+                }
                 log.info("[SessionRunCoordinator] run interrupted: channel={}, chatId={}",
                         inbound.getChannelType(), inbound.getChatId());
-                annotateRunFailure(inbound, new FailureEvent(
-                        FailureSource.SYSTEM,
-                        "SessionRunCoordinator",
-                        FailureKind.TIMEOUT,
-                        "Run interrupted",
-                        Instant.now()));
+                if (!stopRequested) {
+                    annotateRunFailure(inbound, new FailureEvent(
+                            FailureSource.SYSTEM,
+                            "SessionRunCoordinator",
+                            FailureKind.TIMEOUT,
+                            "Run interrupted",
+                            Instant.now()));
+                }
                 return;
             }
 
@@ -608,6 +617,69 @@ public class SessionRunCoordinator {
         }
         runtimeEventService.emitForSession(session, RuntimeEventType.TURN_INTERRUPT_REQUESTED,
                 Map.of("source", "command.stop"));
+    }
+
+    private boolean isInterruptRequested(SessionKey key) {
+        AgentSession session = sessionPort.getOrCreate(key.channelType(), key.chatId());
+        if (session == null) {
+            return false;
+        }
+        Map<String, Object> metadata = session.getMetadata();
+        return metadata != null && Boolean.TRUE.equals(metadata.get(ContextAttributes.TURN_INTERRUPT_REQUESTED));
+    }
+
+    private void publishHiveInterruptedFallback(Message inbound) {
+        if (inbound == null || inbound.getChannelType() == null
+                || !"hive".equalsIgnoreCase(inbound.getChannelType())) {
+            return;
+        }
+
+        Map<String, Object> metadata = buildHiveMetadata(inbound);
+        if (!metadata.containsKey(ContextAttributes.HIVE_THREAD_ID)) {
+            return;
+        }
+
+        AgentSession session = sessionPort.getOrCreate(inbound.getChannelType(), inbound.getChatId());
+        RuntimeEvent runtimeEvent = runtimeEventService.emitForSession(session, RuntimeEventType.TURN_FINISHED,
+                Map.of("reason", "user_interrupt"));
+        hiveEventBatchPublisher.publishRuntimeEvents(List.of(runtimeEvent), metadata);
+    }
+
+    private Map<String, Object> buildHiveMetadata(Message inbound) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        Map<String, Object> inboundMetadata = inbound.getMetadata();
+        putHiveMetadata(metadata, ContextAttributes.HIVE_CARD_ID,
+                readMetadataString(inboundMetadata, ContextAttributes.HIVE_CARD_ID));
+        putHiveMetadata(metadata, ContextAttributes.HIVE_COMMAND_ID,
+                readMetadataString(inboundMetadata, ContextAttributes.HIVE_COMMAND_ID));
+        putHiveMetadata(metadata, ContextAttributes.HIVE_RUN_ID,
+                readMetadataString(inboundMetadata, ContextAttributes.HIVE_RUN_ID));
+        putHiveMetadata(metadata, ContextAttributes.HIVE_GOLEM_ID,
+                readMetadataString(inboundMetadata, ContextAttributes.HIVE_GOLEM_ID));
+        String threadId = readMetadataString(inboundMetadata, ContextAttributes.HIVE_THREAD_ID);
+        if (threadId == null || threadId.isBlank()) {
+            threadId = inbound.getChatId();
+        }
+        putHiveMetadata(metadata, ContextAttributes.HIVE_THREAD_ID, threadId);
+        return metadata;
+    }
+
+    private void putHiveMetadata(Map<String, Object> metadata, String key, String value) {
+        if (value != null && !value.isBlank()) {
+            metadata.put(key, value);
+        }
+    }
+
+    private String readMetadataString(Map<String, Object> metadata, String key) {
+        if (metadata == null || key == null || key.isBlank()) {
+            return null;
+        }
+        Object value = metadata.get(key);
+        if (value instanceof String stringValue) {
+            String normalized = stringValue.trim();
+            return normalized.isEmpty() ? null : normalized;
+        }
+        return null;
     }
 
     private void annotateRunFailure(Message inbound, FailureEvent failureEvent) {
