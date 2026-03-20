@@ -53,6 +53,13 @@ public class LlmRequest {
     @Builder.Default
     private boolean stream = false;
 
+    /**
+     * Internal adapter hint: do not inline binary tool attachment data into the
+     * request. Text placeholders may still be preserved.
+     */
+    @Builder.Default
+    private boolean disableToolAttachmentHydration = false;
+
     private String sessionId;
 
     /**
