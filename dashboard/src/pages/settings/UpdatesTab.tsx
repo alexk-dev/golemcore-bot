@@ -339,7 +339,7 @@ function UpdateSettingsCard({
           <Button type="button" size="sm" variant="primary" disabled={!canSave || !isDirty} onClick={onSave}>
             {isSaving ? 'Saving...' : 'Save settings'}
           </Button>
-          {status.enabled === false && (
+          {!status.enabled && (
             <span className="small text-body-secondary align-self-center">
               Backend update feature is disabled, so settings are read-only.
             </span>
@@ -542,7 +542,7 @@ export function UpdatesTab(): ReactElement {
   const isWorkflowBusy = checkMutation.isPending || updateNowMutation.isPending || UPDATE_BUSY_STATES.has(status.state);
   const isBusy = isWorkflowBusy || Boolean(status.busy);
   const canCheck = status.enabled && !isWorkflowBusy;
-  const canUpdate = status.enabled && !isWorkflowBusy && !Boolean(status.busy) && hasPendingUpdate(status);
+  const canUpdate = status.enabled && !isWorkflowBusy && !status.busy && hasPendingUpdate(status);
 
   const handleCheck = (): void => {
     void runUpdateAction(async () => {

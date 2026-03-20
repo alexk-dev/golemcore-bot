@@ -73,6 +73,9 @@ public class RuntimeConfig {
     private PlanConfig plan = new PlanConfig();
 
     @Builder.Default
+    private DelayedActionsConfig delayedActions = new DelayedActionsConfig();
+
+    @Builder.Default
     private HiveConfig hive = new HiveConfig();
 
     @Data
@@ -413,6 +416,29 @@ public class RuntimeConfig {
         private Boolean stopOnFailure = true;
     }
 
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class DelayedActionsConfig {
+        @Builder.Default
+        private Boolean enabled = true;
+        @Builder.Default
+        private Integer tickSeconds = 1;
+        @Builder.Default
+        private Integer maxPendingPerSession = 50;
+        @Builder.Default
+        private String maxDelay = "P30D";
+        @Builder.Default
+        private Integer defaultMaxAttempts = 4;
+        @Builder.Default
+        private String leaseDuration = "PT2M";
+        @Builder.Default
+        private String retentionAfterCompletion = "P7D";
+        @Builder.Default
+        private Boolean allowRunLater = true;
+    }
+
     /**
      * Whitelist of valid configuration sections. Each section corresponds to a
      * separate JSON file in the preferences directory.
@@ -423,19 +449,17 @@ public class RuntimeConfig {
     public enum ConfigSection {
         TELEGRAM("telegram", TelegramConfig.class), MODEL_ROUTER("model-router", ModelRouterConfig.class), LLM("llm",
                 LlmConfig.class), TOOLS("tools", ToolsConfig.class), VOICE("voice", VoiceConfig.class), AUTO_MODE(
-                        "auto-mode",
-                        AutoModeConfig.class), UPDATE("update",
-                                UpdateConfig.class), RATE_LIMIT("rate-limit", RateLimitConfig.class), SECURITY(
-                                        "security",
-                                        SecurityConfig.class), COMPACTION("compaction", CompactionConfig.class), TURN(
-                                                "turn",
-                                                TurnConfig.class), MEMORY("memory", MemoryConfig.class), SKILLS(
-                                                        "skills",
-                                                        SkillsConfig.class), USAGE("usage", UsageConfig.class), MCP(
-                                                                "mcp",
-                                                                McpConfig.class), PLAN("plan", PlanConfig.class), HIVE(
-                                                                        "hive",
-                                                                        HiveConfig.class);
+                        "auto-mode", AutoModeConfig.class), UPDATE("update", UpdateConfig.class), RATE_LIMIT(
+                                "rate-limit",
+                                RateLimitConfig.class), SECURITY("security", SecurityConfig.class), COMPACTION(
+                                        "compaction",
+                                        CompactionConfig.class), TURN("turn", TurnConfig.class), MEMORY("memory",
+                                                MemoryConfig.class), SKILLS("skills", SkillsConfig.class), USAGE(
+                                                        "usage",
+                                                        UsageConfig.class), MCP("mcp", McpConfig.class), PLAN("plan",
+                                                                PlanConfig.class), DELAYED_ACTIONS("delayed-actions",
+                                                                        DelayedActionsConfig.class), HIVE("hive",
+                                                                                HiveConfig.class);
 
         private final String fileId;
         private final Class<?> configClass;

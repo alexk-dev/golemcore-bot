@@ -31,10 +31,13 @@ import me.golemcore.bot.domain.model.PlanStep;
 import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.model.Skill;
+import me.golemcore.bot.domain.model.DelayedSessionAction;
 import me.golemcore.bot.domain.model.UsageStats;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
+import me.golemcore.bot.domain.service.DelayedActionPolicyService;
+import me.golemcore.bot.domain.service.DelayedSessionActionService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanExecutionService;
 import me.golemcore.bot.domain.service.PlanService;
@@ -46,6 +49,7 @@ import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.port.inbound.CommandPort;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
+import me.golemcore.bot.tools.ScheduleSessionActionTool;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.info.BuildProperties;
@@ -107,6 +111,7 @@ public class CommandRouter implements CommandPort {
     private static final String CMD_GOAL = "goal";
     private static final String CMD_PLAN = "plan";
     private static final String CMD_PLANS = "plans";
+    private static final String CMD_LATER = "later";
     private static final String CMD_STATUS = "status";
     private static final int MIN_SCHEDULE_ARGS = 2;
     private static final int MIN_CRON_PARTS_FOR_REPEAT_CHECK = 1;
@@ -128,6 +133,8 @@ public class CommandRouter implements CommandPort {
     private final PlanService planService;
     private final PlanExecutionService planExecutionService;
     private final ScheduleService scheduleService;
+    private final DelayedActionPolicyService delayedActionPolicyService;
+    private final DelayedSessionActionService delayedSessionActionService;
     private final SessionRunCoordinator runCoordinator;
     private final ApplicationEventPublisher eventPublisher;
     private final RuntimeConfigService runtimeConfigService;
@@ -135,7 +142,7 @@ public class CommandRouter implements CommandPort {
 
     private static final List<String> KNOWN_COMMANDS = List.of(
             "skills", "tools", CMD_STATUS, "new", SUBCMD_RESET, "compact", CMD_HELP,
-            "tier", "model", "sessions", "auto", "goals", CMD_GOAL, "diary", "tasks", "schedule",
+            "tier", "model", "sessions", "auto", "goals", CMD_GOAL, "diary", "tasks", "schedule", CMD_LATER,
             CMD_PLAN, CMD_PLANS, "stop");
 
     private static final java.util.Set<String> VALID_TIERS = java.util.Set.of(
@@ -153,6 +160,8 @@ public class CommandRouter implements CommandPort {
             PlanService planService,
             PlanExecutionService planExecutionService,
             ScheduleService scheduleService,
+            DelayedActionPolicyService delayedActionPolicyService,
+            DelayedSessionActionService delayedSessionActionService,
             SessionRunCoordinator runCoordinator,
             ApplicationEventPublisher eventPublisher,
             RuntimeConfigService runtimeConfigService,
@@ -168,6 +177,8 @@ public class CommandRouter implements CommandPort {
         this.planService = planService;
         this.planExecutionService = planExecutionService;
         this.scheduleService = scheduleService;
+        this.delayedActionPolicyService = delayedActionPolicyService;
+        this.delayedSessionActionService = delayedSessionActionService;
         this.runCoordinator = runCoordinator;
         this.eventPublisher = eventPublisher;
         this.runtimeConfigService = runtimeConfigService;
@@ -182,6 +193,7 @@ public class CommandRouter implements CommandPort {
             String channelType = (String) context.get("channelType");
             String chatId = (String) context.get("chatId");
             String sessionChatId = resolveContextString(context, "sessionChatId", chatId);
+            String conversationKey = resolveContextString(context, "conversationKey", sessionChatId);
             String transportChatId = resolveContextString(context, "transportChatId", chatId);
             boolean explicitSessionRouting = hasExplicitContextString(context, "sessionChatId")
                     || hasExplicitContextString(context, "conversationKey");
@@ -193,7 +205,7 @@ public class CommandRouter implements CommandPort {
 
             return switch (command) {
             case "skills" -> handleSkills();
-            case "tools" -> handleTools();
+            case "tools" -> handleTools(channelType);
             case CMD_STATUS -> handleStatus(sessionId);
             case "new" -> handleNew();
             case "reset" -> handleReset(sessionId, sessionIdentity);
@@ -208,6 +220,7 @@ public class CommandRouter implements CommandPort {
             case "diary" -> handleDiary(args);
             case "tasks" -> handleTasks();
             case "schedule" -> handleSchedule(args);
+            case CMD_LATER -> handleLater(args, channelType, conversationKey);
             case CMD_PLAN -> handlePlan(args, sessionIdentity, transportChatId);
             case CMD_PLANS -> handlePlans(sessionIdentity);
             case "stop" -> handleStop(channelType, sessionChatId);
@@ -249,6 +262,9 @@ public class CommandRouter implements CommandPort {
                         "/model [list|<tier> <model>|<tier> reasoning <level>|<tier> reset]"),
                 new CommandDefinition("sessions", "Open session switcher menu (Telegram)", "/sessions"),
                 new CommandDefinition("stop", "Stop current run", "/stop")));
+        if (runtimeConfigService.isDelayedActionsEnabled()) {
+            commands.add(new CommandDefinition(CMD_LATER, "Manage delayed actions", "/later [list|cancel|now|help]"));
+        }
         if (autoModeService.isFeatureEnabled()) {
             commands.add(new CommandDefinition("auto", "Toggle auto mode", "/auto [on|off]"));
             commands.add(new CommandDefinition("goals", "List goals", "/goals"));
@@ -297,9 +313,10 @@ public class CommandRouter implements CommandPort {
         return CommandResult.success(sb.toString());
     }
 
-    private CommandResult handleTools() {
+    private CommandResult handleTools(String channelType) {
         List<ToolComponent> enabledTools = toolComponents.stream()
                 .filter(ToolComponent::isEnabled)
+                .filter(tool -> isToolVisibleForChannel(tool, channelType))
                 .toList();
 
         StringBuilder sb = new StringBuilder();
@@ -321,6 +338,19 @@ public class CommandRouter implements CommandPort {
         }
 
         return CommandResult.success(sb.toString());
+    }
+
+    private boolean isToolVisibleForChannel(ToolComponent tool, String channelType) {
+        if (tool == null) {
+            return false;
+        }
+        if (!ScheduleSessionActionTool.TOOL_NAME.equals(tool.getToolName())) {
+            return true;
+        }
+        if (delayedActionPolicyService == null) {
+            return true;
+        }
+        return delayedActionPolicyService.canScheduleActions(channelType);
     }
 
     private CommandResult handleStatus(String sessionId) {
@@ -1206,6 +1236,81 @@ public class CommandRouter implements CommandPort {
         } catch (IllegalArgumentException e) {
             return CommandResult.failure(msg("command.schedule.not-found", scheduleId));
         }
+    }
+
+    private CommandResult handleLater(List<String> args, String channelType, String conversationKey) {
+        if (!runtimeConfigService.isDelayedActionsEnabled()) {
+            return CommandResult.success(msg("command.later.not-available"));
+        }
+        if (delayedSessionActionService == null) {
+            return CommandResult.success(msg("command.later.not-available"));
+        }
+        if ("webhook".equalsIgnoreCase(channelType)) {
+            return CommandResult.success(msg("command.later.not-available"));
+        }
+        if (channelType == null || conversationKey == null) {
+            return CommandResult.failure(msg("command.later.not-available"));
+        }
+        if (args.isEmpty()) {
+            return CommandResult.success(msg("command.later.usage"));
+        }
+
+        String subcommand = args.get(0).toLowerCase(Locale.ROOT);
+        return switch (subcommand) {
+        case SUBCMD_LIST -> handleLaterList(channelType, conversationKey);
+        case "cancel" -> handleLaterCancel(args.subList(1, args.size()), channelType, conversationKey);
+        case "now" -> handleLaterRunNow(args.subList(1, args.size()), channelType, conversationKey);
+        case CMD_HELP -> CommandResult.success(msg("command.later.help.text"));
+        default -> CommandResult.success(msg("command.later.usage"));
+        };
+    }
+
+    private CommandResult handleLaterList(String channelType, String conversationKey) {
+        List<DelayedSessionAction> actions = delayedSessionActionService.listActions(channelType, conversationKey);
+        if (actions.isEmpty()) {
+            return CommandResult.success(msg("command.later.list.empty"));
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(msg("command.later.list.title", actions.size())).append(DOUBLE_NEWLINE);
+        for (DelayedSessionAction action : actions) {
+            String runAt = action.getRunAt() != null
+                    ? DateTimeFormatter.ISO_INSTANT.format(action.getRunAt().atOffset(ZoneOffset.UTC))
+                    : "n/a";
+            sb.append("`").append(action.getId()).append("` ");
+            sb.append("[").append(action.getKind()).append("] ");
+            sb.append(action.getStatus()).append(" ");
+            sb.append(runAt);
+            if (action.isCancelOnUserActivity()) {
+                sb.append(" (cancel on activity)");
+            }
+            sb.append("\n");
+        }
+        return CommandResult.success(sb.toString().stripTrailing());
+    }
+
+    private CommandResult handleLaterCancel(List<String> args, String channelType, String conversationKey) {
+        if (args.isEmpty()) {
+            return CommandResult.success(msg("command.later.cancel.usage"));
+        }
+        String actionId = args.get(0);
+        boolean cancelled = delayedSessionActionService.cancelAction(actionId, channelType, conversationKey);
+        if (!cancelled) {
+            return CommandResult.failure(msg("command.later.not-found", actionId));
+        }
+        return CommandResult.success(msg("command.later.cancelled", actionId));
+    }
+
+    private CommandResult handleLaterRunNow(List<String> args, String channelType, String conversationKey) {
+        if (args.isEmpty()) {
+            return CommandResult.success(msg("command.later.now.usage"));
+        }
+        String actionId = args.get(0);
+        boolean updated = delayedSessionActionService.runNow(actionId, channelType, conversationKey);
+        if (!updated) {
+            return CommandResult.failure(msg("command.later.not-found", actionId));
+        }
+        return CommandResult.success(msg("command.later.now.done", actionId));
     }
 
     private String msg(String key, Object... args) {

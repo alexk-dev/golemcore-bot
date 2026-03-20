@@ -18,6 +18,7 @@ import me.golemcore.bot.domain.model.UsageStats;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
+import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanExecutionService;
 import me.golemcore.bot.domain.service.PlanService;
@@ -100,6 +101,7 @@ class CommandRouterTest {
     private PlanExecutionService planExecutionService;
     private RuntimeConfigService runtimeConfigService;
     private ScheduleService scheduleService;
+    private DelayedActionPolicyService delayedActionPolicyService;
     private SessionRunCoordinator runCoordinator;
     private ApplicationEventPublisher eventPublisher;
     private ObjectProvider<BuildProperties> buildPropertiesProvider;
@@ -146,6 +148,7 @@ class CommandRouterTest {
         planExecutionService = mock(PlanExecutionService.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
         scheduleService = mock(ScheduleService.class);
+        delayedActionPolicyService = mock(DelayedActionPolicyService.class);
         runCoordinator = mock(SessionRunCoordinator.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
 
@@ -170,6 +173,8 @@ class CommandRouterTest {
                 planService,
                 planExecutionService,
                 scheduleService,
+                delayedActionPolicyService,
+                null,
                 runCoordinator,
                 eventPublisher,
                 runtimeConfigService,

@@ -44,6 +44,21 @@ class SessionRunCoordinatorTest {
     private static final String CHAT_ID = "1";
 
     @Test
+    void shouldRejectNullInboundOnEnqueue() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(false, "one-at-a-time", "one-at-a-time");
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService);
+
+            assertThrows(NullPointerException.class, () -> coordinator.enqueue(null));
+        }
+    }
+
+    @Test
     void shouldPauseAfterStopAndResumeOnNextInboundFlushingQueuedMessages() throws Exception {
         SessionPort sessionPort = mock(SessionPort.class);
         AgentLoop agentLoop = mock(AgentLoop.class);
@@ -182,7 +197,7 @@ class SessionRunCoordinatorTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService, hiveEventBatchPublisher);
+                    runtimeEventService, runtimeConfigService, null, hiveEventBatchPublisher);
 
             AgentSession session = AgentSession.builder()
                     .id("hive:thread-1")
@@ -238,7 +253,7 @@ class SessionRunCoordinatorTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService, hiveEventBatchPublisher);
+                    runtimeEventService, runtimeConfigService, null, hiveEventBatchPublisher);
 
             AgentSession session = AgentSession.builder()
                     .id("hive:thread-1")
@@ -297,7 +312,7 @@ class SessionRunCoordinatorTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService, hiveEventBatchPublisher);
+                    runtimeEventService, runtimeConfigService, null, hiveEventBatchPublisher);
 
             AgentSession session = AgentSession.builder()
                     .id("hive:thread-1")
@@ -350,7 +365,7 @@ class SessionRunCoordinatorTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService, hiveEventBatchPublisher);
+                    runtimeEventService, runtimeConfigService, null, hiveEventBatchPublisher);
 
             AgentSession session = AgentSession.builder()
                     .id("hive:thread-1")
@@ -1088,7 +1103,7 @@ class SessionRunCoordinatorTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService, mock(HiveEventBatchPublisher.class));
+                    runtimeEventService, runtimeConfigService, null, mock(HiveEventBatchPublisher.class));
 
             Message a = user("A");
             Message retry = internalRetry("retry");
@@ -1139,7 +1154,7 @@ class SessionRunCoordinatorTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService, mock(HiveEventBatchPublisher.class));
+                    runtimeEventService, runtimeConfigService, null, mock(HiveEventBatchPublisher.class));
 
             Message a = user("A");
             Message retry = internalRetry("retry");
@@ -1203,7 +1218,7 @@ class SessionRunCoordinatorTest {
             RuntimeEventService runtimeEventService,
             RuntimeConfigService runtimeConfigService) {
         return new SessionRunCoordinator(sessionPort, agentLoop, executor, runtimeEventService,
-                runtimeConfigService, mock(HiveEventBatchPublisher.class));
+                runtimeConfigService, null, mock(HiveEventBatchPublisher.class));
     }
 
     private static Message steering(String content) {
