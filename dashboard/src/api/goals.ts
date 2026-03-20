@@ -9,6 +9,8 @@ export interface GoalTask {
   title: string;
   description: string | null;
   prompt: string | null;
+  reflectionModelTier: string | null;
+  reflectionTierPriority: boolean;
   status: GoalTaskStatus;
   order: number;
   standalone: boolean;
@@ -19,6 +21,8 @@ export interface Goal {
   title: string;
   description: string | null;
   prompt: string | null;
+  reflectionModelTier: string | null;
+  reflectionTierPriority: boolean;
   status: GoalStatus;
   completedTasks: number;
   totalTasks: number;
@@ -36,12 +40,16 @@ export interface CreateGoalRequest {
   title: string;
   description: string | null;
   prompt: string | null;
+  reflectionModelTier?: string | null;
+  reflectionTierPriority?: boolean | null;
 }
 
 export interface UpdateGoalRequest {
   title: string;
   description: string | null;
   prompt: string | null;
+  reflectionModelTier?: string | null;
+  reflectionTierPriority?: boolean | null;
   status: GoalStatus;
 }
 
@@ -54,6 +62,8 @@ export interface CreateTaskRequest {
   title: string;
   description: string | null;
   prompt: string | null;
+  reflectionModelTier?: string | null;
+  reflectionTierPriority?: boolean | null;
   status?: GoalTaskStatus | null;
 }
 
@@ -61,6 +71,8 @@ export interface UpdateTaskRequest {
   title: string;
   description: string | null;
   prompt: string | null;
+  reflectionModelTier?: string | null;
+  reflectionTierPriority?: boolean | null;
   status: GoalTaskStatus;
 }
 

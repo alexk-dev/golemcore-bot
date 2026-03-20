@@ -1,7 +1,19 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LlmConfig, ModelRouterConfig } from '../../api/settings';
 import ModelsTab from './ModelsTab';
+
+const availableModels = {
+  openai: [
+    {
+      id: 'openai/gpt-5.1',
+      displayName: 'GPT-5.1',
+      hasReasoning: true,
+      reasoningLevels: ['none', 'medium'],
+      supportsVision: true,
+    },
+  ],
+};
 
 vi.mock('../../hooks/useSettings', () => ({
   useUpdateModelRouter: () => ({
@@ -12,17 +24,7 @@ vi.mock('../../hooks/useSettings', () => ({
 
 vi.mock('../../hooks/useModels', () => ({
   useAvailableModels: () => ({
-    data: {
-      openai: [
-        {
-          id: 'openai/gpt-5.1',
-          displayName: 'GPT-5.1',
-          hasReasoning: true,
-          reasoningLevels: ['none', 'medium'],
-          supportsVision: true,
-        },
-      ],
-    },
+    data: availableModels,
   }),
 }));
 
@@ -34,6 +36,13 @@ const llmConfig: LlmConfig = {
       baseUrl: null,
       requestTimeoutSeconds: null,
       apiType: 'openai',
+    },
+    anthropic: {
+      apiKey: null,
+      apiKeyPresent: false,
+      baseUrl: null,
+      requestTimeoutSeconds: null,
+      apiType: 'anthropic',
     },
   },
 };
@@ -59,11 +68,26 @@ const modelRouterConfig: ModelRouterConfig = {
 };
 
 describe('ModelsTab', () => {
+  beforeEach(() => {
+    modelRouterConfig.tiers.special1 = { model: null, reasoning: null };
+  });
+
   it('renders optional special tiers with an explicit empty model option', () => {
     const html = renderToStaticMarkup(
       <ModelsTab config={modelRouterConfig} llmConfig={llmConfig} />,
     );
 
     expect(html.match(/Not configured/g)?.length ?? 0).toBe(5);
+  });
+
+  it('keeps unavailable configured special tiers visible instead of pretending they are empty', () => {
+    modelRouterConfig.tiers.special1 = { model: 'anthropic/claude-sonnet-4', reasoning: null };
+
+    const html = renderToStaticMarkup(
+      <ModelsTab config={modelRouterConfig} llmConfig={llmConfig} />,
+    );
+
+    expect(html).toContain('anthropic (unavailable)');
+    expect(html).toContain('anthropic/claude-sonnet-4 (unavailable)');
   });
 });

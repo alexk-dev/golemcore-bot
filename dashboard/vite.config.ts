@@ -7,6 +7,7 @@ export default defineConfig({
   base: '/dashboard/',
   resolve: {
     alias: {
+      'dom-helpers': fileURLToPath(new URL('./node_modules/dom-helpers', import.meta.url)),
       'react-bootstrap': fileURLToPath(new URL('./src/lib/react-bootstrap.tsx', import.meta.url)),
     },
   },

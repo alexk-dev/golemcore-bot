@@ -190,6 +190,9 @@ public class SettingsController {
         normalizeAndValidateShellEnvironmentVariables(merged.getTools());
         validateLlmConfig(merged.getLlm(), merged.getModelRouter());
         validateModelRouterConfig(merged.getModelRouter(), merged.getLlm());
+        if (merged.getAutoMode() != null) {
+            validateAndNormalizeAutoModeConfig(merged.getAutoMode());
+        }
         if (merged.getMemory() != null) {
             validateMemoryConfig(merged.getMemory());
         }
@@ -488,6 +491,7 @@ public class SettingsController {
     public Mono<ResponseEntity<RuntimeConfig>> updateAutoConfig(
             @RequestBody RuntimeConfig.AutoModeConfig autoConfig) {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        validateAndNormalizeAutoModeConfig(autoConfig);
         config.setAutoMode(autoConfig);
         runtimeConfigService.updateRuntimeConfig(config);
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
@@ -820,6 +824,15 @@ public class SettingsController {
         validateNullableInteger(planConfig.getMaxStepsPerPlan(), 1, 1000, "plan.maxStepsPerPlan");
     }
 
+    private void validateAndNormalizeAutoModeConfig(RuntimeConfig.AutoModeConfig autoConfig) {
+        if (autoConfig == null) {
+            throw new IllegalArgumentException("autoMode config is required");
+        }
+        autoConfig.setModelTier(normalizeOptionalSelectableTier(autoConfig.getModelTier(), "autoMode.modelTier"));
+        autoConfig.setReflectionModelTier(normalizeOptionalSelectableTier(autoConfig.getReflectionModelTier(),
+                "autoMode.reflectionModelTier"));
+    }
+
     private void validateHiveConfig(RuntimeConfig.HiveConfig hiveConfig) {
         if (hiveConfig == null) {
             throw new IllegalArgumentException("hive config is required");
@@ -1018,6 +1031,9 @@ public class SettingsController {
     private String normalizeOptionalSelectableTier(String tier, String fieldName) {
         String normalizedTier = ModelTierCatalog.normalizeTierId(tier);
         if (normalizedTier == null) {
+            return null;
+        }
+        if ("default".equals(normalizedTier)) {
             return null;
         }
         return normalizeRequiredSelectableTier(normalizedTier, fieldName);

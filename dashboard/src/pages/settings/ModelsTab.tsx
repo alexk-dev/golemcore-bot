@@ -61,17 +61,32 @@ function TierModelCard({
   onModelChange,
   onReasoningChange,
 }: TierModelCardProps): ReactElement {
-  const selectedProvider = useMemo(() => {
+  const configuredProvider = useMemo(() => {
     if (modelValue.length === 0) {
-      return providerNames[0] ?? '';
+      return '';
     }
     for (const [providerName, models] of Object.entries(providers)) {
       if (models.some((model) => model.id === modelValue)) {
         return providerName;
       }
     }
-    return providerNames[0] ?? '';
-  }, [modelValue, providers, providerNames]);
+    const delimiterIndex = modelValue.indexOf('/');
+    return delimiterIndex > 0 ? modelValue.slice(0, delimiterIndex) : '';
+  }, [modelValue, providers]);
+
+  const providerOptionValues = useMemo(() => {
+    if (configuredProvider.length === 0 || providerNames.includes(configuredProvider)) {
+      return providerNames;
+    }
+    return [configuredProvider, ...providerNames];
+  }, [configuredProvider, providerNames]);
+
+  const selectedProvider = useMemo(() => {
+    if (modelValue.length === 0) {
+      return allowEmptyModel ? '' : (providerNames[0] ?? '');
+    }
+    return configuredProvider.length > 0 ? configuredProvider : (providerNames[0] ?? '');
+  }, [allowEmptyModel, configuredProvider, modelValue, providerNames]);
 
   const [provider, setProvider] = useState(selectedProvider);
 
@@ -79,10 +94,26 @@ function TierModelCard({
     setProvider(selectedProvider);
   }, [selectedProvider]);
 
-  const modelsForProvider = useMemo(() => providers[provider] ?? [], [providers, provider]);
+  const modelsForProvider = useMemo(() => {
+    const providerModels = providers[provider] ?? [];
+    if (modelValue.length === 0 || providerModels.some((model) => model.id === modelValue)) {
+      return providerModels;
+    }
+    return [
+      {
+        id: modelValue,
+        displayName: `${modelValue} (unavailable)`,
+        hasReasoning: false,
+        reasoningLevels: [],
+        supportsVision: false,
+      },
+      ...providerModels,
+    ];
+  }, [modelValue, provider, providers]);
   const selectedModel = modelsForProvider.find((model) => model.id === modelValue);
   const reasoningLevels = selectedModel?.reasoningLevels ?? [];
-  const hasProviders = providerNames.length > 0;
+  const hasProviders = providerOptionValues.length > 0;
+  const providerUnavailable = configuredProvider.length > 0 && !providerNames.includes(configuredProvider);
 
   // Keep optional special tiers unconfigured until the user explicitly selects a model.
   useEffect(() => {
@@ -107,16 +138,25 @@ function TierModelCard({
               onModelChange('');
             }}
           >
+            {allowEmptyModel && <option value="">Select provider</option>}
             {!hasProviders && <option value="">No providers</option>}
-            {providerNames.map((providerName) => (
-              <option key={providerName} value={providerName}>{providerName}</option>
+            {providerOptionValues.map((providerName) => (
+              <option key={providerName || 'empty'} value={providerName}>
+                {providerName}
+                {providerUnavailable && providerName === configuredProvider ? ' (unavailable)' : ''}
+              </option>
             ))}
           </Form.Select>
         </Form.Group>
 
         <Form.Group className="mb-2">
           <Form.Label className="small fw-medium mb-1">Model</Form.Label>
-          <Form.Select size="sm" value={modelValue} disabled={!hasProviders} onChange={(e) => onModelChange(e.target.value)}>
+          <Form.Select
+            size="sm"
+            value={modelValue}
+            disabled={!hasProviders && modelsForProvider.length === 0}
+            onChange={(e) => onModelChange(e.target.value)}
+          >
             {allowEmptyModel && <option value="">Not configured</option>}
             {modelsForProvider.map((model) => (
               <option key={model.id} value={model.id}>{model.displayName ?? model.id}</option>

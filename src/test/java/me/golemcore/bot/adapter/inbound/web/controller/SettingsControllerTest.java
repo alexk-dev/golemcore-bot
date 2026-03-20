@@ -226,6 +226,49 @@ class SettingsControllerTest {
     }
 
     @Test
+    void shouldNormalizeAutoModeDefaultTierToNull() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .autoMode(RuntimeConfig.AutoModeConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.AutoModeConfig update = RuntimeConfig.AutoModeConfig.builder()
+                .enabled(true)
+                .modelTier("default")
+                .reflectionModelTier("special2")
+                .reflectionTierPriority(true)
+                .build();
+
+        StepVerifier.create(controller.updateAutoConfig(update))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        assertNull(captor.getValue().getAutoMode().getModelTier());
+        assertEquals("special2", captor.getValue().getAutoMode().getReflectionModelTier());
+        assertTrue(Boolean.TRUE.equals(captor.getValue().getAutoMode().getReflectionTierPriority()));
+    }
+
+    @Test
+    void shouldRejectAutoModeConfigWithUnknownReflectionTier() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .autoMode(RuntimeConfig.AutoModeConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.AutoModeConfig update = RuntimeConfig.AutoModeConfig.builder()
+                .enabled(true)
+                .reflectionModelTier("turbo")
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateAutoConfig(update));
+
+        assertTrue(error.getMessage().contains("autoMode.reflectionModelTier"));
+    }
+
+    @Test
     void shouldRejectRuntimeConfigWithMultipleTelegramAllowedUsers() {
         RuntimeConfig runtimeConfig = RuntimeConfig.builder().build();
         when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);

@@ -38,6 +38,8 @@ describe('schedulerFormUtils', () => {
       title: 'Review alerts',
       description: null,
       prompt: null,
+      reflectionModelTier: null,
+      reflectionTierPriority: false,
       status: 'PENDING',
       order: 1,
       standalone: true,

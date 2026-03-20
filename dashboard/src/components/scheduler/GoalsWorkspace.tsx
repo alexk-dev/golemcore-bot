@@ -1,6 +1,14 @@
 import type { ReactElement } from 'react';
 import { Card, Col, Row } from 'react-bootstrap';
-import type { Goal, GoalTask, GoalsResponse } from '../../api/goals';
+import type {
+  CreateGoalRequest,
+  CreateTaskRequest,
+  Goal,
+  GoalTask,
+  GoalsResponse,
+  UpdateGoalRequest,
+  UpdateTaskRequest,
+} from '../../api/goals';
 import { SchedulerAutomationCreateCard } from './SchedulerAutomationCreateCard';
 import {
   type AutomationEditorItem,
@@ -14,10 +22,10 @@ interface GoalsWorkspaceProps {
   isBusy: boolean;
   editorItem: AutomationEditorItem | null;
   editorBusy: boolean;
-  onCreateGoal: (title: string, description: string | null, prompt: string | null) => Promise<void>;
-  onCreateTask: (goalId: string | null, title: string, description: string | null, prompt: string | null) => Promise<void>;
-  onSaveEditorGoal: (goalId: string, request: { title: string; description: string | null; prompt: string | null; status: Goal['status'] }) => Promise<void>;
-  onSaveEditorTask: (taskId: string, request: { title: string; description: string | null; prompt: string | null; status: GoalTask['status'] }) => Promise<void>;
+  onCreateGoal: (request: CreateGoalRequest) => Promise<void>;
+  onCreateTask: (request: CreateTaskRequest) => Promise<void>;
+  onSaveEditorGoal: (goalId: string, request: UpdateGoalRequest) => Promise<void>;
+  onSaveEditorTask: (taskId: string, request: UpdateTaskRequest) => Promise<void>;
   onCloseEditor: () => void;
   onEditGoal: (goal: Goal) => void;
   onEditTask: (task: GoalTask) => void;
@@ -65,8 +73,8 @@ export function GoalsWorkspace({
             featureEnabled={data.featureEnabled}
             goals={data.goals}
             busy={isBusy}
-            onCreateGoal={(request) => onCreateGoal(request.title, request.description, request.prompt)}
-            onCreateTask={(request) => onCreateTask(request.goalId, request.title, request.description, request.prompt)}
+            onCreateGoal={onCreateGoal}
+            onCreateTask={onCreateTask}
           />
         </Col>
 

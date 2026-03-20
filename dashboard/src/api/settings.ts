@@ -357,6 +357,10 @@ export interface AutoModeConfig {
   autoStart: boolean | null;
   maxGoals: number | null;
   modelTier: string | null;
+  reflectionEnabled: boolean | null;
+  reflectionFailureThreshold: number | null;
+  reflectionModelTier: string | null;
+  reflectionTierPriority: boolean | null;
   notifyMilestones: boolean | null;
 }
 
