@@ -19,11 +19,14 @@ import me.golemcore.bot.domain.service.WorkspaceInstructionService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.McpPort;
 import me.golemcore.bot.port.outbound.RagPort;
+import me.golemcore.bot.tools.HiveLifecycleSignalTool;
 import me.golemcore.bot.tools.PlanSetContentTool;
 import me.golemcore.bot.tools.PlanGetTool;
 import me.golemcore.bot.tools.ScheduleSessionActionTool;
 import org.junit.jupiter.api.Test;
 
+import java.time.Clock;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -91,6 +94,79 @@ class ContextBuildingSystemTest {
                 .anyMatch(t -> PlanSetContentTool.TOOL_NAME.equals(t.getName())));
         assertTrue(context.getAvailableTools().stream()
                 .anyMatch(t -> PlanGetTool.TOOL_NAME.equals(t.getName())));
+    }
+
+    @Test
+    void shouldAdvertiseHiveLifecycleToolOnlyForHiveSessions() {
+        BotProperties properties = new BotProperties();
+
+        SkillTemplateEngine templateEngine = mock(SkillTemplateEngine.class);
+        PromptSectionService promptSectionService = mock(PromptSectionService.class);
+        UserPreferencesService userPreferencesService = mock(UserPreferencesService.class);
+        when(userPreferencesService.getPreferences()).thenReturn(UserPreferences.builder().build());
+
+        MemoryComponent memoryComponent = mock(MemoryComponent.class);
+        SkillComponent skillComponent = mock(SkillComponent.class);
+        ToolCallExecutionService toolCallExecutionService = mock(ToolCallExecutionService.class);
+        McpPort mcpPort = mock(McpPort.class);
+        RagPort ragPort = mock(RagPort.class);
+        AutoModeService autoModeService = mock(AutoModeService.class);
+        DelayedActionPolicyService delayedActionPolicyService = mock(DelayedActionPolicyService.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        WorkspaceInstructionService workspaceInstructionService = mock(WorkspaceInstructionService.class);
+        when(workspaceInstructionService.getWorkspaceInstructionsContext()).thenReturn("");
+
+        PlanService planService = mock(PlanService.class);
+        when(planService.isFeatureEnabled()).thenReturn(true);
+
+        HiveLifecycleSignalTool hiveLifecycleSignalTool = new HiveLifecycleSignalTool(
+                mock(me.golemcore.bot.adapter.outbound.hive.HiveEventBatchPublisher.class),
+                Clock.systemUTC());
+        when(toolCallExecutionService.listTools()).thenReturn(List.of(hiveLifecycleSignalTool));
+
+        ContextBuildingSystem system = new ContextBuildingSystem(
+                memoryComponent,
+                skillComponent,
+                templateEngine,
+                mcpPort,
+                toolCallExecutionService,
+                ragPort,
+                properties,
+                autoModeService,
+                delayedActionPolicyService,
+                planService,
+                promptSectionService,
+                runtimeConfigService,
+                userPreferencesService,
+                workspaceInstructionService);
+
+        AgentContext webContext = AgentContext.builder()
+                .session(AgentSession.builder()
+                        .channelType("web")
+                        .chatId("chat-1")
+                        .messages(new ArrayList<>())
+                        .build())
+                .messages(new ArrayList<>())
+                .build();
+
+        system.process(webContext);
+
+        assertTrue(webContext.getAvailableTools().stream()
+                .noneMatch(t -> HiveLifecycleSignalTool.TOOL_NAME.equals(t.getName())));
+
+        AgentContext hiveContext = AgentContext.builder()
+                .session(AgentSession.builder()
+                        .channelType("hive")
+                        .chatId("thread-1")
+                        .messages(new ArrayList<>())
+                        .build())
+                .messages(new ArrayList<>())
+                .build();
+
+        system.process(hiveContext);
+
+        assertTrue(hiveContext.getAvailableTools().stream()
+                .anyMatch(t -> HiveLifecycleSignalTool.TOOL_NAME.equals(t.getName())));
     }
 
     @Test

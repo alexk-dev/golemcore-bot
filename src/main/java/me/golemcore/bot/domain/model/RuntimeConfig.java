@@ -72,6 +72,9 @@ public class RuntimeConfig {
     @Builder.Default
     private DelayedActionsConfig delayedActions = new DelayedActionsConfig();
 
+    @Builder.Default
+    private HiveConfig hive = new HiveConfig();
+
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
@@ -364,6 +367,23 @@ public class RuntimeConfig {
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class HiveConfig {
+        @Builder.Default
+        private Boolean enabled = false;
+        private String serverUrl;
+        private String displayName;
+        private String hostLabel;
+        @Builder.Default
+        private Boolean autoConnect = false;
+        @Builder.Default
+        private Boolean managedByProperties = false;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
     public static class PlanConfig {
         @Builder.Default
         private Boolean enabled = false;
@@ -413,8 +433,8 @@ public class RuntimeConfig {
                                 SecurityConfig.class), COMPACTION("compaction", CompactionConfig.class), TURN("turn",
                                         TurnConfig.class), MEMORY("memory", MemoryConfig.class), SKILLS("skills",
                                                 SkillsConfig.class), USAGE("usage", UsageConfig.class), MCP("mcp",
-                                                        McpConfig.class), PLAN("plan",
-                                                                PlanConfig.class), DELAYED_ACTIONS("delayed-actions",
+                                                        McpConfig.class), PLAN("plan", PlanConfig.class), HIVE("hive",
+                                                                HiveConfig.class), DELAYED_ACTIONS("delayed-actions",
                                                                         DelayedActionsConfig.class);
 
         private final String fileId;

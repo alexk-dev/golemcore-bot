@@ -175,9 +175,10 @@ public class ResponseRoutingSystem implements AgentSystem {
         }
         String chatId = SessionIdentitySupport.resolveTransportChatId(session);
         CrossChannelDelivery crossChannelDelivery = resolveWebhookCrossChannelDelivery(context);
-        String errorMessage = sendText(channel, chatId, outgoing);
+        String errorMessage = sendText(context, channel, chatId, outgoing);
         if (crossChannelDelivery != null) {
-            String deliveryError = sendText(crossChannelDelivery.channel(), crossChannelDelivery.chatId(), outgoing);
+            String deliveryError = sendText(context, crossChannelDelivery.channel(), crossChannelDelivery.chatId(),
+                    outgoing);
             if (errorMessage == null) {
                 errorMessage = deliveryError;
             }
@@ -218,7 +219,7 @@ public class ResponseRoutingSystem implements AgentSystem {
         if (CHANNEL_WEB.equalsIgnoreCase(channel.getChannelType())) {
             errorMessage = sendStructuredMessage(channel, buildStructuredWebMessage(chatId, outgoing));
         } else if (outgoing.getText() != null && !outgoing.getText().isBlank()) {
-            errorMessage = sendText(channel, chatId, outgoing);
+            errorMessage = sendText(context, channel, chatId, outgoing);
         }
 
         if (crossChannelDelivery != null) {
@@ -228,7 +229,8 @@ public class ResponseRoutingSystem implements AgentSystem {
                         crossChannelDelivery.channel(),
                         buildStructuredWebMessage(crossChannelDelivery.chatId(), outgoing));
             } else if (outgoing.getText() != null && !outgoing.getText().isBlank()) {
-                deliveryError = sendText(crossChannelDelivery.channel(), crossChannelDelivery.chatId(), outgoing);
+                deliveryError = sendText(context, crossChannelDelivery.channel(), crossChannelDelivery.chatId(),
+                        outgoing);
             }
             if (errorMessage == null) {
                 errorMessage = deliveryError;
@@ -237,9 +239,10 @@ public class ResponseRoutingSystem implements AgentSystem {
         return errorMessage;
     }
 
-    private String sendText(ChannelPort channel, String chatId, OutgoingResponse outgoing) {
+    private String sendText(AgentContext context, ChannelPort channel, String chatId, OutgoingResponse outgoing) {
         try {
-            channel.sendMessage(chatId, outgoing.getText(), outgoing.getHints()).get(30, TimeUnit.SECONDS);
+            channel.sendMessage(chatId, outgoing.getText(), buildTransportHints(context, outgoing))
+                    .get(30, TimeUnit.SECONDS);
             return null;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -253,6 +256,29 @@ public class ResponseRoutingSystem implements AgentSystem {
             log.warn("[Response] FAILED to send (OutgoingResponse): {}", e.getMessage());
             log.debug("[Response] OutgoingResponse send failure", e);
             return e.getMessage();
+        }
+    }
+
+    private Map<String, Object> buildTransportHints(AgentContext context, OutgoingResponse outgoing) {
+        Map<String, Object> hints = new LinkedHashMap<>();
+        if (outgoing != null && outgoing.getHints() != null && !outgoing.getHints().isEmpty()) {
+            hints.putAll(outgoing.getHints());
+        }
+        copyHiveHint(context, hints, ContextAttributes.HIVE_CARD_ID);
+        copyHiveHint(context, hints, ContextAttributes.HIVE_THREAD_ID);
+        copyHiveHint(context, hints, ContextAttributes.HIVE_COMMAND_ID);
+        copyHiveHint(context, hints, ContextAttributes.HIVE_RUN_ID);
+        copyHiveHint(context, hints, ContextAttributes.HIVE_GOLEM_ID);
+        return hints;
+    }
+
+    private void copyHiveHint(AgentContext context, Map<String, Object> hints, String key) {
+        if (context == null || hints == null) {
+            return;
+        }
+        Object value = context.getAttribute(key);
+        if (value instanceof String stringValue && !stringValue.isBlank()) {
+            hints.put(key, stringValue);
         }
     }
 

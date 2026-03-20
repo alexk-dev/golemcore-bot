@@ -11,6 +11,7 @@ import {
   type TurnConfig,
   type UsageConfig,
   type McpConfig,
+  type HiveConfig,
   type PlanConfig,
   type AutoModeConfig,
   type RateLimitConfig,
@@ -33,6 +34,7 @@ import {
   updateTurnConfig,
   updateUsageConfig,
   updateMcpConfig,
+  updateHiveConfig,
   updatePlanConfig,
   updateAutoConfig,
   updateAdvancedConfig,
@@ -159,6 +161,14 @@ export function useUpdateMcp(): UseMutationResult<Awaited<ReturnType<typeof upda
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: McpConfig) => updateMcpConfig(config),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useUpdateHive(): UseMutationResult<Awaited<ReturnType<typeof updateHiveConfig>>, unknown, HiveConfig> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (config: HiveConfig) => updateHiveConfig(config),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
   });
 }

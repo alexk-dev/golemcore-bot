@@ -7,6 +7,7 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Attachment;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.LlmProviderMetadataKeys;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
@@ -396,6 +397,34 @@ class DefaultToolLoopSystemTest {
         assertTrue(result.finalAnswerReady());
         verify(turnProgressService).maybePublishIntent(eq(context), any(LlmResponse.class));
         verify(turnProgressService).recordToolExecution(eq(context), eq(tc), any(ToolExecutionOutcome.class), eq(0L));
+        verify(turnProgressService).flushBufferedTools(context, "final_answer");
+        verify(turnProgressService).clearProgress(context);
+    }
+
+    @Test
+    void shouldPublishProgressNoticeWhenToolAttachmentFallbackWasApplied() {
+        AgentContext context = buildContext();
+        DefaultToolLoopSystem progressSystem = buildSystemWithTurnProgress();
+        stubRuntimeConfigDefaults();
+
+        LlmResponse response = LlmResponse.builder()
+                .content("Recovered")
+                .providerMetadata(Map.of(
+                        LlmProviderMetadataKeys.TOOL_ATTACHMENT_FALLBACK_APPLIED, true,
+                        LlmProviderMetadataKeys.TOOL_ATTACHMENT_FALLBACK_REASON,
+                        LlmProviderMetadataKeys.TOOL_ATTACHMENT_FALLBACK_REASON_OVERSIZE_INVALID_JSON))
+                .build();
+        when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(response));
+
+        ToolLoopTurnResult result = progressSystem.processTurn(context);
+
+        assertTrue(result.finalAnswerReady());
+        verify(turnProgressService).publishSummary(
+                eq(context),
+                eq("Request was too large for inline tool images, so I retried without them."),
+                eq(Map.of(
+                        "kind", "tool_attachment_fallback",
+                        "reason", LlmProviderMetadataKeys.TOOL_ATTACHMENT_FALLBACK_REASON_OVERSIZE_INVALID_JSON)));
         verify(turnProgressService).flushBufferedTools(context, "final_answer");
         verify(turnProgressService).clearProgress(context);
     }

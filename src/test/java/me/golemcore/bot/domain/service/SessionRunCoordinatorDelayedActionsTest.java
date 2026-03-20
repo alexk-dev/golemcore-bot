@@ -41,7 +41,7 @@ class SessionRunCoordinatorDelayedActionsTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService, delayedActionService);
+                    runtimeEventService, runtimeConfigService, delayedActionService, null);
 
             Message regular = Message.builder()
                     .role("user")
@@ -85,7 +85,7 @@ class SessionRunCoordinatorDelayedActionsTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService, delayedActionService);
+                    runtimeEventService, runtimeConfigService, delayedActionService, null);
 
             CountDownLatch processed = new CountDownLatch(1);
             org.mockito.Mockito.doAnswer(invocation -> {
@@ -111,7 +111,7 @@ class SessionRunCoordinatorDelayedActionsTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService, null);
+                    runtimeEventService, runtimeConfigService, null, null);
 
             Message initial = user("A");
             Message followUpOne = user("F1");
@@ -162,7 +162,7 @@ class SessionRunCoordinatorDelayedActionsTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService, null);
+                    runtimeEventService, runtimeConfigService, null, null);
 
             Message initial = user("A");
             Message followUpOne = user("F1");

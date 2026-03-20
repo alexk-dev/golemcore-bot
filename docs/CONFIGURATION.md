@@ -35,14 +35,29 @@ The easiest way to configure the bot is via the dashboard:
 
 See: [Dashboard Guide](DASHBOARD.md)
 
-## Runtime Config (preferences/runtime-config.json)
+## Runtime Config (preferences/*.json)
 
 Runtime config is persisted to the workspace:
 
-- File: `preferences/runtime-config.json`
+- Files: `preferences/*.json` (one JSON file per section, for example `llm.json`, `turn.json`, `hive.json`)
 - Dashboard API: `GET /api/settings/runtime`, `PUT /api/settings/runtime`
 
 Secrets (API keys) can be provided as plain strings in JSON; they are wrapped as `Secret` internally.
+
+Notable runtime sections:
+
+- `telegram.json`
+- `model-router.json`
+- `llm.json`
+- `tools.json`
+- `voice.json`
+- `memory.json`
+- `skills.json`
+- `turn.json`
+- `usage.json`
+- `mcp.json`
+- `plan.json`
+- `hive.json`
 
 ### LLM Providers
 
@@ -241,6 +256,33 @@ Input and tool safety settings live in runtime config under `security`:
   }
 }
 ```
+
+### Hive
+
+Hive runtime settings live in `preferences/hive.json` and are also available in the dashboard under `Settings -> Hive`.
+
+```json
+{
+  "hive": {
+    "enabled": true,
+    "serverUrl": "https://hive.example.com",
+    "displayName": "Build Runner",
+    "hostLabel": "builder-lab-a",
+    "autoConnect": true,
+    "managedByProperties": false
+  }
+}
+```
+
+Rules:
+
+- `RuntimeConfig.HiveConfig` is the effective UI/runtime configuration.
+- `bot.hive.*` acts as a managed bootstrap override.
+- When managed bootstrap is active, the dashboard Hive tab becomes read-only and the backend rejects edits to the Hive section.
+- Rotating machine auth state does not belong in `hive.json`; it lives in `preferences/hive-session.json`.
+- Buffered control channel commands live in `preferences/hive-control-inbox.json`.
+
+See: [Hive Integration](HIVE_INTEGRATION.md)
 
 ### Rate Limiting
 
@@ -572,7 +614,7 @@ workspace/
 ├── auto/                    # auto mode + plan mode state
 ├── memory/                  # structured memory items (JSONL)
 ├── models/                  # models.json (capabilities)
-├── preferences/             # settings.json, runtime-config.json, admin.json
+├── preferences/             # settings.json, sectioned runtime config, admin.json, hive-session.json
 ├── sessions/                # conversation sessions
 ├── skills/                  # manual skills + marketplace-installed artifacts
 └── usage/                   # usage logs

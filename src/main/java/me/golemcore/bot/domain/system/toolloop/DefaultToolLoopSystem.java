@@ -8,6 +8,7 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.FailureEvent;
 import me.golemcore.bot.domain.model.FailureKind;
 import me.golemcore.bot.domain.model.FailureSource;
+import me.golemcore.bot.domain.model.LlmProviderMetadataKeys;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
@@ -268,6 +269,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             }
 
             context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+            maybePublishAttachmentFallback(context, response);
             boolean compatFlatteningUsed = response != null && response.isCompatibilityFlatteningApplied();
             context.setAttribute(ContextAttributes.LLM_COMPAT_FLATTEN_FALLBACK_USED, compatFlatteningUsed);
             if (compatFlatteningUsed) {
@@ -969,6 +971,30 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             return;
         }
         turnProgressService.maybePublishIntent(context, response);
+    }
+
+    private void maybePublishAttachmentFallback(AgentContext context, LlmResponse response) {
+        if (turnProgressService == null || context == null || response == null
+                || response.getProviderMetadata() == null) {
+            return;
+        }
+
+        Object applied = response.getProviderMetadata().get(LlmProviderMetadataKeys.TOOL_ATTACHMENT_FALLBACK_APPLIED);
+        if (!Boolean.TRUE.equals(applied)) {
+            return;
+        }
+
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("kind", "tool_attachment_fallback");
+        Object reason = response.getProviderMetadata().get(LlmProviderMetadataKeys.TOOL_ATTACHMENT_FALLBACK_REASON);
+        if (reason instanceof String stringReason && !stringReason.isBlank()) {
+            metadata.put("reason", stringReason);
+        }
+
+        turnProgressService.publishSummary(
+                context,
+                "Request was too large for inline tool images, so I retried without them.",
+                metadata);
     }
 
     private void recordToolProgress(AgentContext context, Message.ToolCall toolCall, ToolExecutionOutcome outcome,

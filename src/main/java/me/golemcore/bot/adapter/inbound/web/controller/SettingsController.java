@@ -178,6 +178,7 @@ public class SettingsController {
     @PutMapping("/runtime")
     public Mono<ResponseEntity<RuntimeConfig>> updateRuntimeConfig(@RequestBody RuntimeConfig config) {
         RuntimeConfig current = runtimeConfigService.getRuntimeConfig();
+        rejectManagedHiveMutation(current, config != null ? config.getHive() : null);
         RuntimeConfig merged = mergeRuntimeConfigSections(current, config);
         if (merged.getTelegram() == null) {
             merged.setTelegram(new RuntimeConfig.TelegramConfig());
@@ -191,6 +192,7 @@ public class SettingsController {
         }
         validateCompactionConfig(merged.getCompaction());
         validateVoiceConfig(merged.getVoice());
+        validateHiveConfig(merged.getHive());
         runtimeConfigService.updateRuntimeConfig(merged);
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
@@ -441,6 +443,17 @@ public class SettingsController {
             @RequestBody RuntimeConfig.McpConfig mcpConfig) {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         config.setMcp(mcpConfig);
+        runtimeConfigService.updateRuntimeConfig(config);
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    }
+
+    @PutMapping("/runtime/hive")
+    public Mono<ResponseEntity<RuntimeConfig>> updateHiveConfig(
+            @RequestBody RuntimeConfig.HiveConfig hiveConfig) {
+        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        rejectManagedHiveMutation(config, hiveConfig);
+        validateHiveConfig(hiveConfig);
+        config.setHive(hiveConfig);
         runtimeConfigService.updateRuntimeConfig(config);
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
@@ -762,6 +775,16 @@ public class SettingsController {
         validateNullableInteger(planConfig.getMaxStepsPerPlan(), 1, 1000, "plan.maxStepsPerPlan");
     }
 
+    private void validateHiveConfig(RuntimeConfig.HiveConfig hiveConfig) {
+        if (hiveConfig == null) {
+            throw new IllegalArgumentException("hive config is required");
+        }
+        String serverUrl = hiveConfig.getServerUrl();
+        if (serverUrl != null && !serverUrl.isBlank() && !isValidHttpUrl(serverUrl)) {
+            throw new IllegalArgumentException("hive.serverUrl must be a valid http(s) URL");
+        }
+    }
+
     private RuntimeConfig.ToolsConfig ensureToolsConfig(RuntimeConfig config) {
         RuntimeConfig.ToolsConfig toolsConfig = config.getTools();
         if (toolsConfig == null) {
@@ -793,6 +816,9 @@ public class SettingsController {
                 .usage(mergeSection(patch.getUsage(), baseline.getUsage(), RuntimeConfig.UsageConfig::new))
                 .mcp(mergeSection(patch.getMcp(), baseline.getMcp(), RuntimeConfig.McpConfig::new))
                 .plan(mergeSection(patch.getPlan(), baseline.getPlan(), RuntimeConfig.PlanConfig::new))
+                .delayedActions(mergeSection(patch.getDelayedActions(), baseline.getDelayedActions(),
+                        RuntimeConfig.DelayedActionsConfig::new))
+                .hive(mergeSection(patch.getHive(), baseline.getHive(), RuntimeConfig.HiveConfig::new))
                 .build();
     }
 
@@ -935,6 +961,23 @@ public class SettingsController {
                     mergeSecret(current.getVoice().getWhisperSttApiKey(), incoming.getVoice().getWhisperSttApiKey()));
         }
         mergeLlmSecrets(current.getLlm(), incoming.getLlm());
+    }
+
+    private void rejectManagedHiveMutation(RuntimeConfig current, RuntimeConfig.HiveConfig incomingHiveConfig) {
+        if (current == null || !runtimeConfigService.isHiveManagedByProperties()) {
+            return;
+        }
+        if (incomingHiveConfig == null) {
+            return;
+        }
+        RuntimeConfig.HiveConfig currentHiveConfig = current.getHive();
+        RuntimeConfig.HiveConfig normalizedCurrentHiveConfig = currentHiveConfig != null
+                ? currentHiveConfig
+                : RuntimeConfig.HiveConfig.builder().build();
+        if (!incomingHiveConfig.equals(normalizedCurrentHiveConfig)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Hive settings are managed by bot.hive.* and are read-only");
+        }
     }
 
     private void mergeLlmSecrets(RuntimeConfig.LlmConfig current, RuntimeConfig.LlmConfig incoming) {

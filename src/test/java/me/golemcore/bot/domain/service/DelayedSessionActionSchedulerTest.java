@@ -89,7 +89,8 @@ class DelayedSessionActionSchedulerTest {
             scheduler.tick();
 
             verify(delayedActionService, timeout(2000)).markDeadLetter(eq("delay-2"), eq("temporary"));
-            verify(delayedActionService, never()).rescheduleRetry(eq("delay-2"), eq(NOW.plusSeconds(30)), eq("temporary"));
+            verify(delayedActionService, never()).rescheduleRetry(eq("delay-2"), eq(NOW.plusSeconds(30)),
+                    eq("temporary"));
         } finally {
             scheduler.shutdown();
         }
