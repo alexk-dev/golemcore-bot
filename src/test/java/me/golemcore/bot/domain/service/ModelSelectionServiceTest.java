@@ -270,6 +270,20 @@ class ModelSelectionServiceTest {
     }
 
     @Test
+    void shouldResolveProviderForAliasOnlyModelName() {
+        String provider = service.resolveProviderForModel("gpt-5.1");
+
+        assertEquals("openai", provider);
+    }
+
+    @Test
+    void shouldReturnNullProviderForUnknownModelName() {
+        String provider = service.resolveProviderForModel("ghost-model");
+
+        assertNull(provider);
+    }
+
+    @Test
     void shouldSkipOverrideWhenOverrideModelIsNull() {
         // Arrange
         Map<String, UserPreferences.TierOverride> overrides = new HashMap<>();

@@ -165,29 +165,37 @@ public class ModelSelectionService {
      * allowed.
      */
     public ValidationResult validateModel(String modelSpec) {
+        return validateModel(modelSpec, runtimeConfigService.getConfiguredLlmProviders());
+    }
+
+    public ValidationResult validateModel(String modelSpec, List<String> configuredProviders) {
         if (modelSpec == null || modelSpec.isBlank()) {
             return new ValidationResult(false, "model.empty");
         }
 
-        ModelConfigService.ModelSettings settings = modelConfigService.getModelSettings(modelSpec);
-        // Check that we got an actual model match, not just defaults
-        Map<String, ModelConfigService.ModelSettings> allModels = modelConfigService.getAllModels();
-        String name = modelSpec.contains("/") ? modelSpec.substring(modelSpec.indexOf('/') + 1) : modelSpec;
-        boolean exactMatch = allModels.containsKey(modelSpec) || allModels.containsKey(name);
-        if (!exactMatch) {
-            // Check prefix match
-            boolean prefixMatch = allModels.keySet().stream().anyMatch(name::startsWith);
-            if (!prefixMatch) {
-                return new ValidationResult(false, "model.not.found");
-            }
+        String provider = resolveProviderForModel(modelSpec);
+        if (provider == null) {
+            return new ValidationResult(false, "model.not.found");
         }
 
-        List<String> configuredProviders = runtimeConfigService.getConfiguredLlmProviders();
-        if (!configuredProviders.contains(settings.getProvider())) {
+        List<String> allowedProviders = configuredProviders != null ? configuredProviders : List.of();
+        if (!allowedProviders.contains(provider)) {
             return new ValidationResult(false, "provider.not.configured");
         }
 
         return new ValidationResult(true, null);
+    }
+
+    public String resolveProviderForModel(String modelSpec) {
+        if (modelSpec == null || modelSpec.isBlank()) {
+            return null;
+        }
+
+        String normalizedSpec = modelSpec.trim();
+        if (!hasKnownModelMatch(normalizedSpec)) {
+            return null;
+        }
+        return modelConfigService.getModelSettings(normalizedSpec).getProvider();
     }
 
     /**
@@ -304,6 +312,24 @@ public class ModelSelectionService {
         log.debug("[ModelSelection] Resolved tier {}: model={}, reasoning={}",
                 tier, selection.model(), reasoning);
         return new ModelSelection(selection.model(), reasoning);
+    }
+
+    private boolean hasKnownModelMatch(String modelSpec) {
+        Map<String, ModelConfigService.ModelSettings> allModels = modelConfigService.getAllModels();
+        String name = normalizeModelName(modelSpec);
+        if (allModels.containsKey(modelSpec) || allModels.containsKey(name)) {
+            return true;
+        }
+        return allModels.keySet().stream()
+                .map(this::normalizeModelName)
+                .anyMatch(name::startsWith);
+    }
+
+    private String normalizeModelName(String modelSpec) {
+        if (modelSpec == null) {
+            return "";
+        }
+        return modelSpec.contains("/") ? modelSpec.substring(modelSpec.indexOf('/') + 1) : modelSpec;
     }
 
     /** Resolved model + reasoning for a tier. */

@@ -34,6 +34,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -66,6 +68,16 @@ class SettingsControllerTest {
                 memoryPresetService, sttProviderRegistry, ttsProviderRegistry);
         when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(RuntimeConfig.builder().build());
         when(runtimeConfigService.isHiveManagedByProperties()).thenReturn(false);
+        when(modelSelectionService.validateModel(anyString(), anyList()))
+                .thenReturn(new ModelSelectionService.ValidationResult(true, null));
+        when(modelSelectionService.resolveProviderForModel(anyString())).thenAnswer(invocation -> {
+            String model = invocation.getArgument(0);
+            if (model == null) {
+                return null;
+            }
+            int delimiterIndex = model.indexOf('/');
+            return delimiterIndex > 0 ? model.substring(0, delimiterIndex) : null;
+        });
     }
 
     @Test
@@ -384,6 +396,79 @@ class SettingsControllerTest {
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> controller.updateLlmConfig(update));
         assertTrue(error.getMessage().contains("Cannot remove provider 'openai'"));
+    }
+
+    @Test
+    void shouldRejectLlmProviderRemovalWhenAliasOnlyModelIsUsedByRouter() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .modelRouter(RuntimeConfig.ModelRouterConfig.builder()
+                        .balancedModel("gpt-5.1")
+                        .build())
+                .llm(RuntimeConfig.LlmConfig.builder()
+                        .providers(new LinkedHashMap<>(Map.of(
+                                "openai", RuntimeConfig.LlmProviderConfig.builder().apiKey(Secret.of("x")).build(),
+                                "anthropic", RuntimeConfig.LlmProviderConfig.builder().apiKey(Secret.of("y")).build())))
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+        when(modelSelectionService.resolveProviderForModel("gpt-5.1")).thenReturn("openai");
+
+        RuntimeConfig.LlmConfig update = RuntimeConfig.LlmConfig.builder()
+                .providers(new LinkedHashMap<>(Map.of(
+                        "anthropic", RuntimeConfig.LlmProviderConfig.builder().apiKey(Secret.of("y")).build())))
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateLlmConfig(update));
+        assertTrue(error.getMessage().contains("Cannot remove provider 'openai'"));
+    }
+
+    @Test
+    void shouldRejectModelRouterUpdateWhenTierModelIsUnknown() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder()
+                        .providers(new LinkedHashMap<>(Map.of(
+                                "openai", RuntimeConfig.LlmProviderConfig.builder().apiKey(Secret.of("x")).build())))
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.ModelRouterConfig modelRouter = RuntimeConfig.ModelRouterConfig.builder().build();
+        modelRouter.setTierBinding("special1", RuntimeConfig.TierBinding.builder()
+                .model("custom/ghost-model")
+                .reasoning("none")
+                .build());
+        when(modelSelectionService.validateModel("custom/ghost-model", List.of("openai")))
+                .thenReturn(new ModelSelectionService.ValidationResult(false, "model.not.found"));
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateModelRouterConfig(modelRouter));
+        assertTrue(error.getMessage().contains("special1"));
+        assertTrue(error.getMessage().contains("custom/ghost-model"));
+    }
+
+    @Test
+    void shouldRejectModelRouterUpdateWhenTierProviderIsNotConfigured() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder()
+                        .providers(new LinkedHashMap<>(Map.of(
+                                "openai", RuntimeConfig.LlmProviderConfig.builder().apiKey(Secret.of("x")).build())))
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.ModelRouterConfig modelRouter = RuntimeConfig.ModelRouterConfig.builder().build();
+        modelRouter.setTierBinding("special2", RuntimeConfig.TierBinding.builder()
+                .model("anthropic/claude-sonnet-4")
+                .reasoning("none")
+                .build());
+        when(modelSelectionService.validateModel("anthropic/claude-sonnet-4", List.of("openai")))
+                .thenReturn(new ModelSelectionService.ValidationResult(false, "provider.not.configured"));
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateModelRouterConfig(modelRouter));
+        assertTrue(error.getMessage().contains("special2"));
+        assertTrue(error.getMessage().contains("provider"));
     }
 
     @Test

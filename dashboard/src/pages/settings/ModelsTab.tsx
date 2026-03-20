@@ -7,7 +7,12 @@ import { useUpdateModelRouter } from '../../hooks/useSettings';
 import type { LlmConfig, ModelRouterConfig } from '../../api/settings';
 import { useAvailableModels } from '../../hooks/useModels';
 import { cloneModelRouterConfig, getTierBinding, updateTierBinding } from '../../lib/modelRouter';
-import { EXPLICIT_MODEL_TIER_ORDER, MODEL_TIER_META, type ExplicitModelTierId } from '../../lib/modelTiers';
+import {
+  allowsEmptyModelSelection,
+  EXPLICIT_MODEL_TIER_ORDER,
+  MODEL_TIER_META,
+  type ExplicitModelTierId,
+} from '../../lib/modelTiers';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 import { Badge, Button, Card, Col, Form, Row } from '../../lib/react-bootstrap';
 
@@ -20,6 +25,7 @@ interface TierCardConfig {
   key: ExplicitModelTierId;
   label: string;
   color: string;
+  allowEmptyModel: boolean;
 }
 
 interface TierModelCardProps {
@@ -29,6 +35,7 @@ interface TierModelCardProps {
   providerNames: string[];
   modelValue: string;
   reasoningValue: string;
+  allowEmptyModel: boolean;
   onModelChange: (value: string) => void;
   onReasoningChange: (value: string) => void;
 }
@@ -50,6 +57,7 @@ function TierModelCard({
   providerNames,
   modelValue,
   reasoningValue,
+  allowEmptyModel,
   onModelChange,
   onReasoningChange,
 }: TierModelCardProps): ReactElement {
@@ -76,12 +84,12 @@ function TierModelCard({
   const reasoningLevels = selectedModel?.reasoningLevels ?? [];
   const hasProviders = providerNames.length > 0;
 
-  // Auto-select minimum (last) model when no explicit model is configured
+  // Keep optional special tiers unconfigured until the user explicitly selects a model.
   useEffect(() => {
-    if (modelValue.length === 0 && modelsForProvider.length > 0) {
+    if (!allowEmptyModel && modelValue.length === 0 && modelsForProvider.length > 0) {
       onModelChange(modelsForProvider[modelsForProvider.length - 1].id);
     }
-  }, [modelValue, modelsForProvider, onModelChange]);
+  }, [allowEmptyModel, modelValue, modelsForProvider, onModelChange]);
 
   return (
     <Card className="tier-card h-100">
@@ -109,6 +117,7 @@ function TierModelCard({
         <Form.Group className="mb-2">
           <Form.Label className="small fw-medium mb-1">Model</Form.Label>
           <Form.Select size="sm" value={modelValue} disabled={!hasProviders} onChange={(e) => onModelChange(e.target.value)}>
+            {allowEmptyModel && <option value="">Not configured</option>}
             {modelsForProvider.map((model) => (
               <option key={model.id} value={model.id}>{model.displayName ?? model.id}</option>
             ))}
@@ -169,6 +178,7 @@ export default function ModelsTab({ config, llmConfig }: ModelsTabProps): ReactE
     key: tier,
     label: MODEL_TIER_META[tier].label,
     color: MODEL_TIER_META[tier].settingsCardColor,
+    allowEmptyModel: allowsEmptyModelSelection(tier),
   }));
 
   return (
@@ -225,6 +235,7 @@ export default function ModelsTab({ config, llmConfig }: ModelsTabProps): ReactE
             providerNames={providerNames}
             modelValue={form.routing.model ?? ''}
             reasoningValue={form.routing.reasoning ?? ''}
+            allowEmptyModel={false}
             onModelChange={(value) => setForm({
               ...form,
               routing: {
@@ -241,7 +252,7 @@ export default function ModelsTab({ config, llmConfig }: ModelsTabProps): ReactE
             })}
           />
         </Col>
-        {tierCards.map(({ key, label, color }) => (
+        {tierCards.map(({ key, label, color, allowEmptyModel }) => (
           <Col sm={6} lg={4} xl={3} key={key}>
             <TierModelCard
               label={label}
@@ -250,6 +261,7 @@ export default function ModelsTab({ config, llmConfig }: ModelsTabProps): ReactE
               providerNames={providerNames}
               modelValue={getTierBinding(form, key).model ?? ''}
               reasoningValue={getTierBinding(form, key).reasoning ?? ''}
+              allowEmptyModel={allowEmptyModel}
               onModelChange={(value) => setForm(updateTierBinding(form, key, {
                 model: toNullableString(value),
                 reasoning: null,

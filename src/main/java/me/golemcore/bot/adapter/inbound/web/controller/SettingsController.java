@@ -189,6 +189,7 @@ public class SettingsController {
         mergeRuntimeSecrets(current, merged);
         normalizeAndValidateShellEnvironmentVariables(merged.getTools());
         validateLlmConfig(merged.getLlm(), merged.getModelRouter());
+        validateModelRouterConfig(merged.getModelRouter(), merged.getLlm());
         if (merged.getMemory() != null) {
             validateMemoryConfig(merged.getMemory());
         }
@@ -203,6 +204,7 @@ public class SettingsController {
     public Mono<ResponseEntity<RuntimeConfig>> updateModelRouterConfig(
             @RequestBody RuntimeConfig.ModelRouterConfig modelRouterConfig) {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        validateModelRouterConfig(modelRouterConfig, config.getLlm());
         config.setModelRouter(modelRouterConfig);
         runtimeConfigService.updateRuntimeConfig(config);
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
@@ -217,6 +219,7 @@ public class SettingsController {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         mergeLlmSecrets(config.getLlm(), llmConfig);
         validateLlmConfig(llmConfig, config.getModelRouter());
+        validateModelRouterConfig(config.getModelRouter(), llmConfig);
         config.setLlm(llmConfig);
         runtimeConfigService.updateRuntimeConfig(config);
         log.info("[Settings] LLM config updated successfully");
@@ -608,6 +611,45 @@ public class SettingsController {
         }
     }
 
+    private void validateModelRouterConfig(RuntimeConfig.ModelRouterConfig modelRouterConfig,
+            RuntimeConfig.LlmConfig llmConfig) {
+        if (modelRouterConfig == null) {
+            return;
+        }
+        List<String> configuredProviders = llmConfig != null && llmConfig.getProviders() != null
+                ? new ArrayList<>(llmConfig.getProviders().keySet())
+                : List.of();
+        validateModelRouterBinding(modelRouterConfig.getRouting(), "routing", configuredProviders);
+        if (modelRouterConfig.getTiers() == null) {
+            return;
+        }
+        for (Map.Entry<String, RuntimeConfig.TierBinding> entry : modelRouterConfig.getTiers().entrySet()) {
+            validateModelRouterBinding(entry.getValue(), entry.getKey(), configuredProviders);
+        }
+    }
+
+    private void validateModelRouterBinding(RuntimeConfig.TierBinding binding, String tier,
+            List<String> configuredProviders) {
+        if (binding == null || binding.getModel() == null || binding.getModel().isBlank()) {
+            return;
+        }
+        ModelSelectionService.ValidationResult validation = modelSelectionService.validateModel(
+                binding.getModel(),
+                configuredProviders);
+        if (validation.valid()) {
+            return;
+        }
+        throw switch (validation.error()) {
+        case "model.not.found" -> new IllegalArgumentException(
+                "Model router tier '" + tier + "' points to unknown model '" + binding.getModel() + "'");
+        case "provider.not.configured" -> new IllegalArgumentException(
+                "Model router tier '" + tier + "' points to model '" + binding.getModel()
+                        + "' whose provider is not configured");
+        default -> new IllegalArgumentException(
+                "Model router tier '" + tier + "' is invalid: " + validation.error());
+        };
+    }
+
     private void validateTurnConfig(RuntimeConfig.TurnConfig turnConfig) {
         if (turnConfig == null) {
             throw new IllegalArgumentException("turn config is required");
@@ -959,6 +1001,11 @@ public class SettingsController {
 
     private void addProviderFromModel(Set<String> usedProviders, String model) {
         if (model == null || model.isBlank()) {
+            return;
+        }
+        String resolvedProvider = modelSelectionService.resolveProviderForModel(model);
+        if (resolvedProvider != null) {
+            usedProviders.add(resolvedProvider);
             return;
         }
         int delimiterIndex = model.indexOf('/');

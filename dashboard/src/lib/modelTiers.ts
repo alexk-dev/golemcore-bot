@@ -17,6 +17,7 @@ export interface ModelTierMeta {
   badgeBg: string;
   badgeClassName: string;
   settingsCardColor: string;
+  allowsEmptyModelSelection: boolean;
 }
 
 export const EXPLICIT_MODEL_TIER_ORDER: ExplicitModelTierId[] = [
@@ -32,16 +33,16 @@ export const EXPLICIT_MODEL_TIER_ORDER: ExplicitModelTierId[] = [
 ];
 
 export const MODEL_TIER_META: Record<DisplayModelTierId, ModelTierMeta> = {
-  routing: { value: 'routing', label: 'Routing', badgeBg: 'dark', badgeClassName: 'text-bg-dark', settingsCardColor: 'dark' },
-  balanced: { value: 'balanced', label: 'Balanced', badgeBg: 'primary', badgeClassName: 'text-bg-primary', settingsCardColor: 'primary' },
-  smart: { value: 'smart', label: 'Smart', badgeBg: 'success', badgeClassName: 'text-bg-success', settingsCardColor: 'success' },
-  deep: { value: 'deep', label: 'Deep', badgeBg: 'warning', badgeClassName: 'text-bg-warning', settingsCardColor: 'warning' },
-  coding: { value: 'coding', label: 'Coding', badgeBg: 'info', badgeClassName: 'text-bg-info', settingsCardColor: 'info' },
-  special1: { value: 'special1', label: 'Special 1', badgeBg: 'secondary', badgeClassName: 'text-bg-secondary', settingsCardColor: 'secondary' },
-  special2: { value: 'special2', label: 'Special 2', badgeBg: 'dark', badgeClassName: 'text-bg-dark', settingsCardColor: 'dark' },
-  special3: { value: 'special3', label: 'Special 3', badgeBg: 'danger', badgeClassName: 'text-bg-danger', settingsCardColor: 'danger' },
-  special4: { value: 'special4', label: 'Special 4', badgeBg: 'primary', badgeClassName: 'text-bg-primary', settingsCardColor: 'primary' },
-  special5: { value: 'special5', label: 'Special 5', badgeBg: 'success', badgeClassName: 'text-bg-success', settingsCardColor: 'success' },
+  routing: { value: 'routing', label: 'Routing', badgeBg: 'dark', badgeClassName: 'text-bg-dark', settingsCardColor: 'dark', allowsEmptyModelSelection: false },
+  balanced: { value: 'balanced', label: 'Balanced', badgeBg: 'primary', badgeClassName: 'text-bg-primary', settingsCardColor: 'primary', allowsEmptyModelSelection: false },
+  smart: { value: 'smart', label: 'Smart', badgeBg: 'success', badgeClassName: 'text-bg-success', settingsCardColor: 'success', allowsEmptyModelSelection: false },
+  deep: { value: 'deep', label: 'Deep', badgeBg: 'warning', badgeClassName: 'text-bg-warning', settingsCardColor: 'warning', allowsEmptyModelSelection: false },
+  coding: { value: 'coding', label: 'Coding', badgeBg: 'info', badgeClassName: 'text-bg-info', settingsCardColor: 'info', allowsEmptyModelSelection: false },
+  special1: { value: 'special1', label: 'Special 1', badgeBg: 'secondary', badgeClassName: 'text-bg-secondary', settingsCardColor: 'secondary', allowsEmptyModelSelection: true },
+  special2: { value: 'special2', label: 'Special 2', badgeBg: 'dark', badgeClassName: 'text-bg-dark', settingsCardColor: 'dark', allowsEmptyModelSelection: true },
+  special3: { value: 'special3', label: 'Special 3', badgeBg: 'danger', badgeClassName: 'text-bg-danger', settingsCardColor: 'danger', allowsEmptyModelSelection: true },
+  special4: { value: 'special4', label: 'Special 4', badgeBg: 'primary', badgeClassName: 'text-bg-primary', settingsCardColor: 'primary', allowsEmptyModelSelection: true },
+  special5: { value: 'special5', label: 'Special 5', badgeBg: 'success', badgeClassName: 'text-bg-success', settingsCardColor: 'success', allowsEmptyModelSelection: true },
 };
 
 export interface TierSelectOption {
@@ -86,4 +87,8 @@ export function getExplicitModelTierOptions(includeDefault = false): TierSelectO
     label: MODEL_TIER_META[tier].label,
   }));
   return includeDefault ? [DEFAULT_ROUTING_TIER_OPTION, ...options] : options;
+}
+
+export function allowsEmptyModelSelection(value: DisplayModelTierId): boolean {
+  return MODEL_TIER_META[value].allowsEmptyModelSelection;
 }
