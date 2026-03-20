@@ -787,15 +787,17 @@ class DefaultToolLoopSystemTest {
     }
 
     @Test
-    void shouldFallbackToBalancedForUnknownTier() {
+    void shouldFailWhenExplicitTierIsUnknown() {
         AgentContext context = buildContext();
         context.setModelTier("nonexistent");
-        LlmResponse response = finalResponse("Balanced answer");
-        when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(response));
+        when(modelSelectionService.resolveForTier("nonexistent"))
+                .thenThrow(new IllegalArgumentException("Unknown model tier: nonexistent"));
 
         ToolLoopTurnResult result = system.processTurn(context);
 
-        assertTrue(result.finalAnswerReady());
+        assertFalse(result.finalAnswerReady());
+        assertNotNull(context.getAttribute(ContextAttributes.LLM_ERROR));
+        verify(llmPort, never()).chat(any());
     }
 
     // ==================== Null outcome from tool executor ====================

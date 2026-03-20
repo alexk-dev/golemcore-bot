@@ -212,6 +212,39 @@ class WebhookControllerTest {
     }
 
     @Test
+    void agentShouldAcceptSpecialTier() {
+        AgentRequest request = AgentRequest.builder()
+                .message("Test msg")
+                .callbackUrl("https://example.com/callback")
+                .model("special4")
+                .build();
+        when(deliveryTracker.registerPendingDelivery(anyString(), anyString(), anyString(), anyString()))
+                .thenReturn("delivery-special");
+
+        ResponseEntity<WebhookResponse> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
+
+        assertNotNull(response);
+        assertEquals(HttpStatus.ACCEPTED, response.getStatusCode());
+        verify(channelAdapter).registerPendingRun(anyString(), anyString(),
+                eq("https://example.com/callback"), eq("special4"), eq("delivery-special"));
+    }
+
+    @Test
+    void agentShouldRejectUnknownTier() {
+        AgentRequest request = AgentRequest.builder()
+                .message("Test msg")
+                .model("turbo")
+                .build();
+
+        ResponseEntity<WebhookResponse> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
+
+        assertNotNull(response);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertEquals("'model' must be a known tier id", response.getBody().getErrorMessage());
+        verify(channelAdapter, never()).registerPendingRun(anyString(), anyString(), any(), any(), any());
+    }
+
+    @Test
     void agentShouldReturnBadRequestWhenCallbackUrlIsInvalid() {
         AgentRequest request = AgentRequest.builder()
                 .message("Test msg")
@@ -324,6 +357,27 @@ class WebhookControllerTest {
         assertNotNull(response);
         assertEquals(HttpStatus.ACCEPTED, response.getStatusCode());
         assertNotNull(response.getBody().getRunId());
+    }
+
+    @Test
+    void customHookAgentActionShouldRejectUnknownTier() {
+        UserPreferences.HookMapping mapping = UserPreferences.HookMapping.builder()
+                .name("agent-hook")
+                .action("agent")
+                .messageTemplate("Process: {event}")
+                .model("turbo")
+                .build();
+        when(preferencesService.getPreferences()).thenReturn(buildPrefsWithMapping(mapping));
+        when(authenticator.authenticate(any(), any(), any())).thenReturn(true);
+        when(transformer.transform(any(), any())).thenReturn("Process: deploy");
+
+        byte[] body = "{\"event\":\"deploy\"}".getBytes();
+        ResponseEntity<WebhookResponse> response = controller.customHook("agent-hook", body, new HttpHeaders())
+                .block();
+
+        assertNotNull(response);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertEquals("Webhook mapping model must be a known tier id", response.getBody().getErrorMessage());
     }
 
     private UserPreferences buildEnabledPrefs() {

@@ -114,6 +114,18 @@ class PlansControllerTest {
     }
 
     @Test
+    void enablePlanModeShouldRejectUnknownTier() {
+        when(planService.isFeatureEnabled()).thenReturn(true);
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.enablePlanMode(new PlansController.PlanModeOnRequest("chat-1", "turbo")));
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertEquals("modelTier must be a known tier id", ex.getReason());
+
+        verify(planService, never()).activatePlanMode(any(SessionIdentity.class), any(), any());
+    }
+
+    @Test
     void disablePlanModeShouldDeactivateWhenActive() {
         when(planService.isFeatureEnabled()).thenReturn(true);
         when(planService.isPlanModeActive()).thenReturn(true, false);

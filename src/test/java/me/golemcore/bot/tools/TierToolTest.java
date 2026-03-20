@@ -61,7 +61,8 @@ class TierToolTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = { "balanced", "smart", "coding", "deep" })
+    @ValueSource(strings = { "balanced", "smart", "deep", "coding", "special1", "special2", "special3", "special4",
+            "special5" })
     void shouldAcceptValidTiers(String tier) {
         ToolResult result = tool.execute(Map.of(PARAM_TIER, tier)).join();
 

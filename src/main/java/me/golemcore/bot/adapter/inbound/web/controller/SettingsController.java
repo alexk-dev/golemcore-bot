@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.adapter.inbound.web.dto.PreferencesUpdateRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.SettingsResponse;
 import me.golemcore.bot.domain.model.MemoryPreset;
+import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.UserPreferences;
@@ -135,7 +136,7 @@ public class SettingsController {
             prefs.setNotificationsEnabled(request.getNotificationsEnabled());
         }
         if (request.getModelTier() != null) {
-            prefs.setModelTier(request.getModelTier());
+            prefs.setModelTier(normalizeOptionalSelectableTier(request.getModelTier(), "modelTier"));
         }
         if (request.getTierForce() != null) {
             prefs.setTierForce(request.getTierForce());
@@ -161,7 +162,8 @@ public class SettingsController {
             @RequestBody Map<String, SettingsResponse.TierOverrideDto> overrides) {
         UserPreferences prefs = preferencesService.getPreferences();
         Map<String, UserPreferences.TierOverride> tierOverrides = new LinkedHashMap<>();
-        overrides.forEach((tier, dto) -> tierOverrides.put(tier,
+        overrides.forEach((tier, dto) -> tierOverrides.put(
+                normalizeRequiredSelectableTier(tier, "tierOverrides key"),
                 new UserPreferences.TierOverride(dto.getModel(), dto.getReasoning())));
         prefs.setTierOverrides(tierOverrides);
         preferencesService.savePreferences(prefs);
@@ -473,6 +475,7 @@ public class SettingsController {
             @RequestBody UserPreferences.WebhookConfig webhookConfig) {
         UserPreferences prefs = preferencesService.getPreferences();
         mergeWebhookSecrets(prefs.getWebhooks(), webhookConfig);
+        validateWebhookConfig(webhookConfig);
         prefs.setWebhooks(webhookConfig);
         preferencesService.savePreferences(prefs);
         return Mono.just(ResponseEntity.ok().build());
@@ -785,6 +788,18 @@ public class SettingsController {
         }
     }
 
+    private void validateWebhookConfig(UserPreferences.WebhookConfig webhookConfig) {
+        if (webhookConfig == null || webhookConfig.getMappings() == null) {
+            return;
+        }
+        for (UserPreferences.HookMapping mapping : webhookConfig.getMappings()) {
+            if (mapping == null) {
+                continue;
+            }
+            mapping.setModel(normalizeOptionalSelectableTier(mapping.getModel(), "webhooks.mapping.model"));
+        }
+    }
+
     private RuntimeConfig.ToolsConfig ensureToolsConfig(RuntimeConfig config) {
         RuntimeConfig.ToolsConfig toolsConfig = config.getTools();
         if (toolsConfig == null) {
@@ -928,11 +943,17 @@ public class SettingsController {
         if (modelRouterConfig == null) {
             return usedProviders;
         }
-        addProviderFromModel(usedProviders, modelRouterConfig.getRoutingModel());
-        addProviderFromModel(usedProviders, modelRouterConfig.getBalancedModel());
-        addProviderFromModel(usedProviders, modelRouterConfig.getSmartModel());
-        addProviderFromModel(usedProviders, modelRouterConfig.getCodingModel());
-        addProviderFromModel(usedProviders, modelRouterConfig.getDeepModel());
+        RuntimeConfig.TierBinding routingBinding = modelRouterConfig.getRouting();
+        if (routingBinding != null) {
+            addProviderFromModel(usedProviders, routingBinding.getModel());
+        }
+        if (modelRouterConfig.getTiers() != null) {
+            for (RuntimeConfig.TierBinding tierBinding : modelRouterConfig.getTiers().values()) {
+                if (tierBinding != null) {
+                    addProviderFromModel(usedProviders, tierBinding.getModel());
+                }
+            }
+        }
         return usedProviders;
     }
 
@@ -945,6 +966,22 @@ public class SettingsController {
             return;
         }
         usedProviders.add(model.substring(0, delimiterIndex));
+    }
+
+    private String normalizeOptionalSelectableTier(String tier, String fieldName) {
+        String normalizedTier = ModelTierCatalog.normalizeTierId(tier);
+        if (normalizedTier == null) {
+            return null;
+        }
+        return normalizeRequiredSelectableTier(normalizedTier, fieldName);
+    }
+
+    private String normalizeRequiredSelectableTier(String tier, String fieldName) {
+        String normalizedTier = ModelTierCatalog.normalizeTierId(tier);
+        if (!ModelTierCatalog.isExplicitSelectableTier(normalizedTier)) {
+            throw new IllegalArgumentException(fieldName + " must be a known tier id");
+        }
+        return normalizedTier;
     }
 
     private void mergeRuntimeSecrets(RuntimeConfig current, RuntimeConfig incoming) {

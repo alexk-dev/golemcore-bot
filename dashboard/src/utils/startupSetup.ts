@@ -1,4 +1,5 @@
-import type { ModelRouterConfig, RuntimeConfig } from '../api/settings';
+import type { RuntimeConfig } from '../api/settings';
+import { listConfiguredModelSpecs } from '../lib/modelRouter';
 
 const STARTUP_SETUP_DISMISSED_COOKIE = 'golemcore_startup_setup_dismissed';
 
@@ -12,16 +13,6 @@ function extractProviderName(modelSpec: string): string | null {
     return null;
   }
   return modelSpec.slice(0, separatorIndex);
-}
-
-function getConfiguredTierModels(modelRouter: ModelRouterConfig): string[] {
-  return [
-    modelRouter.routingModel,
-    modelRouter.balancedModel,
-    modelRouter.smartModel,
-    modelRouter.codingModel,
-    modelRouter.deepModel,
-  ].filter(hasText);
 }
 
 export function getReadyLlmProviders(config: RuntimeConfig): string[] {
@@ -40,7 +31,7 @@ export function hasCompatibleModelRouting(config: RuntimeConfig): boolean {
     return false;
   }
 
-  const tierModels = getConfiguredTierModels(config.modelRouter);
+  const tierModels = listConfiguredModelSpecs(config.modelRouter).filter(hasText);
   if (tierModels.length === 0) {
     return false;
   }

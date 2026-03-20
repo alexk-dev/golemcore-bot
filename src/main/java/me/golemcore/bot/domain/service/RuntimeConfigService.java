@@ -21,6 +21,7 @@ package me.golemcore.bot.domain.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.port.outbound.StoragePort;
@@ -401,6 +402,14 @@ public class RuntimeConfigService {
     public boolean isDynamicTierEnabled() {
         Boolean val = getRuntimeConfig().getModelRouter().getDynamicTierEnabled();
         return val != null ? val : true;
+    }
+
+    public RuntimeConfig.TierBinding getModelTierBinding(String tier) {
+        RuntimeConfig.ModelRouterConfig modelRouter = getRuntimeConfig().getModelRouter();
+        if (ModelTierCatalog.ROUTING_TIER.equals(tier)) {
+            return modelRouter.getRouting();
+        }
+        return modelRouter.getTierBinding(tier);
     }
 
     public boolean isFilesystemEnabled() {
@@ -1507,6 +1516,10 @@ public class RuntimeConfigService {
         if (cfg.getTools() == null) {
             cfg.setTools(RuntimeConfig.ToolsConfig.builder().build());
         }
+        if (cfg.getModelRouter() == null) {
+            cfg.setModelRouter(new RuntimeConfig.ModelRouterConfig());
+        }
+        normalizeModelRouterConfig(cfg.getModelRouter());
         if (cfg.getAutoMode() == null) {
             cfg.setAutoMode(new RuntimeConfig.AutoModeConfig());
         }
@@ -1691,6 +1704,72 @@ public class RuntimeConfigService {
             cfg.getTurn().setProgressSummaryTimeoutMs(DEFAULT_TURN_PROGRESS_SUMMARY_TIMEOUT_MS);
         }
         normalizeSecretFlags(cfg);
+    }
+
+    private void normalizeModelRouterConfig(RuntimeConfig.ModelRouterConfig modelRouter) {
+        if (modelRouter == null) {
+            return;
+        }
+        RuntimeConfig.TierBinding routingBinding = normalizeBinding(
+                modelRouter.getRouting(),
+                DEFAULT_ROUTING_MODEL,
+                DEFAULT_ROUTING_REASONING);
+        modelRouter.setRouting(routingBinding);
+
+        LinkedHashMap<String, RuntimeConfig.TierBinding> normalizedTiers = new LinkedHashMap<>();
+        for (String tier : ModelTierCatalog.orderedExplicitTiers()) {
+            normalizedTiers.put(tier, normalizeBinding(
+                    modelRouter.getTierBinding(tier),
+                    defaultModelForTier(tier),
+                    defaultReasoningForTier(tier)));
+        }
+        modelRouter.setTiers(normalizedTiers);
+
+        if (modelRouter.getDynamicTierEnabled() == null) {
+            modelRouter.setDynamicTierEnabled(true);
+        }
+    }
+
+    private RuntimeConfig.TierBinding normalizeBinding(RuntimeConfig.TierBinding binding, String defaultModel,
+            String defaultReasoning) {
+        RuntimeConfig.TierBinding normalized = binding != null
+                ? binding
+                : RuntimeConfig.TierBinding.builder().build();
+        if (normalized.getModel() != null) {
+            String trimmedModel = normalized.getModel().trim();
+            normalized.setModel(trimmedModel.isEmpty() ? null : trimmedModel);
+        }
+        if (normalized.getReasoning() != null) {
+            String trimmedReasoning = normalized.getReasoning().trim();
+            normalized.setReasoning(trimmedReasoning.isEmpty() ? null : trimmedReasoning);
+        }
+        if (normalized.getModel() == null && defaultModel != null) {
+            normalized.setModel(defaultModel);
+        }
+        if (normalized.getReasoning() == null) {
+            normalized.setReasoning(defaultReasoning);
+        }
+        return normalized;
+    }
+
+    private String defaultModelForTier(String tier) {
+        return switch (tier) {
+        case "balanced" -> DEFAULT_BALANCED_MODEL;
+        case "smart" -> DEFAULT_SMART_MODEL;
+        case "deep" -> DEFAULT_DEEP_MODEL;
+        case "coding" -> DEFAULT_CODING_MODEL;
+        default -> null;
+        };
+    }
+
+    private String defaultReasoningForTier(String tier) {
+        return switch (tier) {
+        case "balanced" -> DEFAULT_BALANCED_REASONING;
+        case "smart" -> DEFAULT_SMART_REASONING;
+        case "deep" -> DEFAULT_DEEP_REASONING;
+        case "coding" -> DEFAULT_CODING_REASONING;
+        default -> REASONING_NONE;
+        };
     }
 
     private String normalizeVoiceProvider(String value) {

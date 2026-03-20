@@ -84,6 +84,12 @@ class DynamicTierSystemTest {
     }
 
     @Test
+    void shouldNotProcessWhenAlreadySpecialTier() {
+        AgentContext context = buildContext(1, "special1", List.of());
+        assertFalse(system.shouldProcess(context));
+    }
+
+    @Test
     void shouldProcessIteration1WithDefaultTier() {
         AgentContext context = buildContext(1, TIER_DEFAULT, List.of());
         assertTrue(system.shouldProcess(context));
@@ -293,6 +299,24 @@ class DynamicTierSystemTest {
         AgentContext result = system.process(context);
 
         assertEquals(TIER_CODING, result.getModelTier());
+    }
+
+    @Test
+    void codingSignalsDoNotOverrideExplicitSpecialTier() {
+        List<Message> messages = new ArrayList<>();
+        messages.add(Message.builder().role(ROLE_USER).content("Write a script").build());
+
+        Message.ToolCall codingCall = Message.ToolCall.builder()
+                .id(TOOL_CALL_ID)
+                .name(TOOL_SHELL)
+                .arguments(Map.of(ARG_COMMAND, "cargo build"))
+                .build();
+        messages.add(Message.builder().role(ROLE_ASSISTANT).toolCalls(List.of(codingCall)).build());
+
+        AgentContext context = buildContext(1, "special3", messages);
+        AgentContext result = system.process(context);
+
+        assertEquals("special3", result.getModelTier());
     }
 
     @Test

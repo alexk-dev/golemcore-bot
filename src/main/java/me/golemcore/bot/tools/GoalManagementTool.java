@@ -22,6 +22,7 @@ import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.DiaryEntry;
 import me.golemcore.bot.domain.model.Goal;
+import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.AutoModeService;
@@ -210,7 +211,8 @@ public class GoalManagementTool implements ToolComponent {
     private ToolResult createGoal(Map<String, Object> params) {
         String title = (String) params.get(PARAM_TITLE);
         String description = (String) params.get(PARAM_DESCRIPTION);
-        String reflectionModelTier = (String) params.get(PARAM_REFLECTION_MODEL_TIER);
+        String reflectionModelTier = normalizeOptionalReflectionModelTier(
+                (String) params.get(PARAM_REFLECTION_MODEL_TIER));
         boolean reflectionTierPriority = Boolean.TRUE.equals(params.get(PARAM_REFLECTION_TIER_PRIORITY));
 
         if (title == null || title.isBlank()) {
@@ -225,6 +227,17 @@ public class GoalManagementTool implements ToolComponent {
         } catch (IllegalStateException e) {
             return ToolResult.failure(e.getMessage());
         }
+    }
+
+    private String normalizeOptionalReflectionModelTier(String reflectionModelTier) {
+        String normalizedTier = ModelTierCatalog.normalizeTierId(reflectionModelTier);
+        if (normalizedTier == null) {
+            return null;
+        }
+        if (!ModelTierCatalog.isExplicitSelectableTier(normalizedTier)) {
+            throw new IllegalArgumentException("reflection_model_tier must be a known tier id");
+        }
+        return normalizedTier;
     }
 
     private ToolResult listGoals() {

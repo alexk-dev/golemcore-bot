@@ -5,6 +5,7 @@ import HelpTip from '../../components/common/HelpTip';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useUpdateAuto } from '../../hooks/useSettings';
 import type { AutoModeConfig } from '../../api/settings';
+import { getExplicitModelTierOptions } from '../../lib/modelTiers';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 
 function hasDiff<T>(current: T, initial: T): boolean {
@@ -71,10 +72,9 @@ export default function AutoModeTab({ config }: AutoModeTabProps): ReactElement 
           </Form.Label>
           <Form.Select size="sm" value={form.modelTier ?? 'default'} onChange={(e) => setForm({ ...form, modelTier: e.target.value })}>
             <option value="default">Default</option>
-            <option value="balanced">Balanced</option>
-            <option value="smart">Smart</option>
-            <option value="coding">Coding</option>
-            <option value="deep">Deep</option>
+            {getExplicitModelTierOptions().map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
           </Form.Select>
         </Form.Group>
 

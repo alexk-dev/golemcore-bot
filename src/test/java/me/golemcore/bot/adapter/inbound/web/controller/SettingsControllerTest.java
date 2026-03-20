@@ -74,7 +74,7 @@ class SettingsControllerTest {
         prefs.setLanguage("en");
         prefs.setTimezone("UTC");
         prefs.setNotificationsEnabled(true);
-        prefs.setModelTier("standard");
+        prefs.setModelTier("balanced");
         when(preferencesService.getPreferences()).thenReturn(prefs);
 
         StepVerifier.create(controller.getSettings())
@@ -84,7 +84,7 @@ class SettingsControllerTest {
                     assertNotNull(body);
                     assertEquals("en", body.getLanguage());
                     assertEquals("UTC", body.getTimezone());
-                    assertEquals("standard", body.getModelTier());
+                    assertEquals("balanced", body.getModelTier());
                 })
                 .verifyComplete();
     }
@@ -94,7 +94,7 @@ class SettingsControllerTest {
         UserPreferences prefs = new UserPreferences();
         prefs.setLanguage("en");
         Map<String, UserPreferences.TierOverride> overrides = new LinkedHashMap<>();
-        overrides.put("standard", new UserPreferences.TierOverride("gpt-4o", "medium"));
+        overrides.put("special1", new UserPreferences.TierOverride("gpt-4o", "medium"));
         prefs.setTierOverrides(overrides);
         when(preferencesService.getPreferences()).thenReturn(prefs);
 
@@ -103,7 +103,7 @@ class SettingsControllerTest {
                     SettingsResponse body = response.getBody();
                     assertNotNull(body);
                     assertNotNull(body.getTierOverrides());
-                    assertEquals("gpt-4o", body.getTierOverrides().get("standard").getModel());
+                    assertEquals("gpt-4o", body.getTierOverrides().get("special1").getModel());
                 })
                 .verifyComplete();
     }
@@ -195,12 +195,12 @@ class SettingsControllerTest {
     void shouldUpdatePartialPreferences() {
         UserPreferences prefs = new UserPreferences();
         prefs.setLanguage("en");
-        prefs.setModelTier("standard");
+        prefs.setModelTier("balanced");
         when(preferencesService.getPreferences()).thenReturn(prefs);
 
         PreferencesUpdateRequest request = new PreferencesUpdateRequest();
         request.setNotificationsEnabled(true);
-        request.setModelTier("premium");
+        request.setModelTier("special3");
         request.setTierForce(true);
 
         StepVerifier.create(controller.updatePreferences(request))
@@ -208,7 +208,7 @@ class SettingsControllerTest {
                 .verifyComplete();
 
         assertEquals("en", prefs.getLanguage()); // unchanged
-        assertEquals("premium", prefs.getModelTier());
+        assertEquals("special3", prefs.getModelTier());
         assertTrue(prefs.isTierForce());
         assertTrue(prefs.isNotificationsEnabled());
     }
@@ -302,7 +302,7 @@ class SettingsControllerTest {
         when(preferencesService.getPreferences()).thenReturn(prefs);
 
         Map<String, SettingsResponse.TierOverrideDto> overrides = Map.of(
-                "standard", SettingsResponse.TierOverrideDto.builder()
+                "special2", SettingsResponse.TierOverrideDto.builder()
                         .model("gpt-4o")
                         .reasoning("medium")
                         .build());
@@ -313,7 +313,26 @@ class SettingsControllerTest {
 
         verify(preferencesService).savePreferences(prefs);
         assertNotNull(prefs.getTierOverrides());
-        assertEquals("gpt-4o", prefs.getTierOverrides().get("standard").getModel());
+        assertEquals("gpt-4o", prefs.getTierOverrides().get("special2").getModel());
+    }
+
+    @Test
+    void shouldRejectWebhookConfigWithUnknownModelTier() {
+        UserPreferences prefs = new UserPreferences();
+        when(preferencesService.getPreferences()).thenReturn(prefs);
+
+        UserPreferences.WebhookConfig webhookConfig = UserPreferences.WebhookConfig.builder()
+                .enabled(true)
+                .mappings(List.of(UserPreferences.HookMapping.builder()
+                        .name("deploy")
+                        .action("agent")
+                        .model("turbo")
+                        .build()))
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateWebhooksConfig(webhookConfig));
+        assertEquals("webhooks.mapping.model must be a known tier id", error.getMessage());
     }
 
     @Test
@@ -322,6 +341,33 @@ class SettingsControllerTest {
                 .modelRouter(RuntimeConfig.ModelRouterConfig.builder()
                         .balancedModel("openai/gpt-5.1")
                         .build())
+                .llm(RuntimeConfig.LlmConfig.builder()
+                        .providers(new LinkedHashMap<>(Map.of(
+                                "openai", RuntimeConfig.LlmProviderConfig.builder().apiKey(Secret.of("x")).build(),
+                                "anthropic", RuntimeConfig.LlmProviderConfig.builder().apiKey(Secret.of("y")).build())))
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.LlmConfig update = RuntimeConfig.LlmConfig.builder()
+                .providers(new LinkedHashMap<>(Map.of(
+                        "anthropic", RuntimeConfig.LlmProviderConfig.builder().apiKey(Secret.of("y")).build())))
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateLlmConfig(update));
+        assertTrue(error.getMessage().contains("Cannot remove provider 'openai'"));
+    }
+
+    @Test
+    void shouldRejectLlmProviderRemovalWhenUsedBySpecialTier() {
+        RuntimeConfig.ModelRouterConfig modelRouter = RuntimeConfig.ModelRouterConfig.builder().build();
+        modelRouter.setTierBinding("special2", RuntimeConfig.TierBinding.builder()
+                .model("openai/special2-model")
+                .reasoning("none")
+                .build());
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .modelRouter(modelRouter)
                 .llm(RuntimeConfig.LlmConfig.builder()
                         .providers(new LinkedHashMap<>(Map.of(
                                 "openai", RuntimeConfig.LlmProviderConfig.builder().apiKey(Secret.of("x")).build(),

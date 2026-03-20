@@ -58,7 +58,7 @@ public class AgentContext {
     private Skill activeSkill;
 
     /**
-     * Recommended model tier from skill routing: balanced, smart, coding, deep.
+     * Recommended model tier from explicit selection or skill routing.
      */
     private String modelTier;
 

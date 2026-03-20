@@ -1,6 +1,7 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
 import lombok.RequiredArgsConstructor;
+import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.service.ConversationKeyValidator;
@@ -52,8 +53,7 @@ public class PlansController {
 
         SessionIdentity sessionIdentity = resolveWebSessionIdentity(request.sessionId());
         try {
-            String modelTier = request.modelTier() != null && request.modelTier().isBlank() ? null
-                    : request.modelTier();
+            String modelTier = normalizeOptionalModelTier(request.modelTier(), "modelTier");
             if (!planService.isPlanModeActive(sessionIdentity)) {
                 planService.activatePlanMode(sessionIdentity, sessionIdentity.conversationKey(), modelTier);
             }
@@ -238,6 +238,17 @@ public class PlansController {
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid sessionId", e);
         }
+    }
+
+    private String normalizeOptionalModelTier(String modelTier, String fieldName) {
+        String normalizedTier = ModelTierCatalog.normalizeTierId(modelTier);
+        if (normalizedTier == null) {
+            return null;
+        }
+        if (!ModelTierCatalog.isExplicitSelectableTier(normalizedTier)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, fieldName + " must be a known tier id");
+        }
+        return normalizedTier;
     }
 
     private static Instant updatedAtSafe(Plan plan) {

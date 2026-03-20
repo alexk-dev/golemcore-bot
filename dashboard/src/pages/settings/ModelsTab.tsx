@@ -4,14 +4,22 @@ import HelpTip from '../../components/common/HelpTip';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import type { AvailableModel } from '../../api/models';
 import { useUpdateModelRouter } from '../../hooks/useSettings';
-import { useAvailableModels } from '../../hooks/useModels';
 import type { LlmConfig, ModelRouterConfig } from '../../api/settings';
+import { useAvailableModels } from '../../hooks/useModels';
+import { cloneModelRouterConfig, getTierBinding, updateTierBinding } from '../../lib/modelRouter';
+import { EXPLICIT_MODEL_TIER_ORDER, MODEL_TIER_META, type ExplicitModelTierId } from '../../lib/modelTiers';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 import { Badge, Button, Card, Col, Form, Row } from '../../lib/react-bootstrap';
 
 interface ModelsTabProps {
   config: ModelRouterConfig;
   llmConfig: LlmConfig;
+}
+
+interface TierCardConfig {
+  key: ExplicitModelTierId;
+  label: string;
+  color: string;
 }
 
 interface TierModelCardProps {
@@ -126,10 +134,10 @@ function TierModelCard({
 export default function ModelsTab({ config, llmConfig }: ModelsTabProps): ReactElement {
   const updateRouter = useUpdateModelRouter();
   const { data: available } = useAvailableModels();
-  const [form, setForm] = useState<ModelRouterConfig>({ ...config });
+  const [form, setForm] = useState<ModelRouterConfig>(cloneModelRouterConfig(config));
 
   useEffect(() => {
-    setForm({ ...config });
+    setForm(cloneModelRouterConfig(config));
   }, [config]);
 
   const readyProviderNames = useMemo(
@@ -157,12 +165,11 @@ export default function ModelsTab({ config, llmConfig }: ModelsTabProps): ReactE
     toast.success('Model router settings saved');
   };
 
-  const tierCards = [
-    { key: 'balanced', label: 'Balanced', color: 'primary', modelField: 'balancedModel' as const, reasoningField: 'balancedModelReasoning' as const },
-    { key: 'smart', label: 'Smart', color: 'success', modelField: 'smartModel' as const, reasoningField: 'smartModelReasoning' as const },
-    { key: 'coding', label: 'Coding', color: 'info', modelField: 'codingModel' as const, reasoningField: 'codingModelReasoning' as const },
-    { key: 'deep', label: 'Deep', color: 'warning', modelField: 'deepModel' as const, reasoningField: 'deepModelReasoning' as const },
-  ];
+  const tierCards: TierCardConfig[] = EXPLICIT_MODEL_TIER_ORDER.map((tier) => ({
+    key: tier,
+    label: MODEL_TIER_META[tier].label,
+    color: MODEL_TIER_META[tier].settingsCardColor,
+  }));
 
   return (
     <>
@@ -216,23 +223,41 @@ export default function ModelsTab({ config, llmConfig }: ModelsTabProps): ReactE
             color="dark"
             providers={providers}
             providerNames={providerNames}
-            modelValue={form.routingModel ?? ''}
-            reasoningValue={form.routingModelReasoning ?? ''}
-            onModelChange={(value) => setForm({ ...form, routingModel: toNullableString(value), routingModelReasoning: null })}
-            onReasoningChange={(value) => setForm({ ...form, routingModelReasoning: toNullableString(value) })}
+            modelValue={form.routing.model ?? ''}
+            reasoningValue={form.routing.reasoning ?? ''}
+            onModelChange={(value) => setForm({
+              ...form,
+              routing: {
+                model: toNullableString(value),
+                reasoning: null,
+              },
+            })}
+            onReasoningChange={(value) => setForm({
+              ...form,
+              routing: {
+                ...form.routing,
+                reasoning: toNullableString(value),
+              },
+            })}
           />
         </Col>
-        {tierCards.map(({ key, label, color, modelField, reasoningField }) => (
-          <Col sm={6} lg={3} key={key}>
+        {tierCards.map(({ key, label, color }) => (
+          <Col sm={6} lg={4} xl={3} key={key}>
             <TierModelCard
               label={label}
               color={color}
               providers={providers}
               providerNames={providerNames}
-              modelValue={form[modelField] ?? ''}
-              reasoningValue={form[reasoningField] ?? ''}
-              onModelChange={(value) => setForm({ ...form, [modelField]: toNullableString(value), [reasoningField]: null })}
-              onReasoningChange={(value) => setForm({ ...form, [reasoningField]: toNullableString(value) })}
+              modelValue={getTierBinding(form, key).model ?? ''}
+              reasoningValue={getTierBinding(form, key).reasoning ?? ''}
+              onModelChange={(value) => setForm(updateTierBinding(form, key, {
+                model: toNullableString(value),
+                reasoning: null,
+              }))}
+              onReasoningChange={(value) => setForm(updateTierBinding(form, key, {
+                ...getTierBinding(form, key),
+                reasoning: toNullableString(value),
+              }))}
             />
           </Col>
         ))}

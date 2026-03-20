@@ -121,6 +121,25 @@ class GoalsControllerTest {
     }
 
     @Test
+    void createGoalShouldRejectUnknownReflectionTier() {
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+
+        GoalsController.CreateGoalRequest request = new GoalsController.CreateGoalRequest(
+                "Release v2",
+                "Prepare release train",
+                "Ship version 2 with release checklist",
+                "turbo",
+                true);
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> controller.createGoal(request));
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+        assertEquals("reflectionModelTier must be a known tier id", exception.getReason());
+    }
+
+    @Test
     void createTaskShouldReturnStandaloneTaskWhenInboxGoalOwnsIt() {
         AutoTask task = AutoTask.builder()
                 .id("task-1")
@@ -189,6 +208,27 @@ class GoalsControllerTest {
 
         assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
         assertTrue(exception.getReason() != null && exception.getReason().contains("Unsupported task status"));
+    }
+
+    @Test
+    void createTaskShouldRejectUnknownReflectionTier() {
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+
+        GoalsController.CreateTaskRequest request = new GoalsController.CreateTaskRequest(
+                "goal-1",
+                "Review crash logs",
+                "Check prod errors",
+                null,
+                "turbo",
+                true,
+                null);
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> controller.createTask(request));
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+        assertEquals("reflectionModelTier must be a known tier id", exception.getReason());
     }
 
     @Test

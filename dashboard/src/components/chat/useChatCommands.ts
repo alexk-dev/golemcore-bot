@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { AvailableModel } from '../../api/models';
+import { EXPLICIT_MODEL_TIER_ORDER } from '../../lib/modelTiers';
 import type { CommandDefinition, CommandSuggestion, ParsedCommandInput } from './chatInputTypes';
 
 const CHAT_COMMANDS: CommandDefinition[] = [
@@ -23,7 +24,7 @@ const CHAT_COMMANDS: CommandDefinition[] = [
   { name: 'plans', description: 'List plans' },
 ];
 
-const TIER_VALUES = ['balanced', 'smart', 'coding', 'deep'];
+const TIER_VALUES = EXPLICIT_MODEL_TIER_ORDER;
 
 interface SuggestionOption {
   value: string;
@@ -118,7 +119,7 @@ function resolveModelSubcommands(
   }
 
   const selectedTier = tokens[1] ?? '';
-  const isTierSelection = TIER_VALUES.includes(selectedTier);
+  const isTierSelection = TIER_VALUES.some((tier) => tier === selectedTier);
   if (isTierSelection && activeTokenIndex === 2) {
     const controlOptions: SuggestionOption[] = [
       { value: 'reasoning', description: 'Set reasoning level for tier model' },

@@ -100,6 +100,40 @@ class GoalManagementToolTest {
     }
 
     @Test
+    void createGoalShouldAcceptSpecialReflectionTier() throws Exception {
+        Goal goal = Goal.builder()
+                .id(GOAL_ID_G1)
+                .title(LEARN_JAVA)
+                .status(Goal.GoalStatus.ACTIVE)
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .build();
+        when(autoModeService.createGoal(LEARN_JAVA, null, null, "special2", true))
+                .thenReturn(goal);
+
+        ToolResult result = tool.execute(Map.of(
+                OPERATION, CREATE_GOAL,
+                TITLE, LEARN_JAVA,
+                "reflection_model_tier", "special2",
+                "reflection_tier_priority", true)).get();
+
+        assertTrue(result.isSuccess());
+        verify(autoModeService).createGoal(LEARN_JAVA, null, null, "special2", true);
+    }
+
+    @Test
+    void createGoalShouldRejectUnknownReflectionTier() throws Exception {
+        ToolResult result = tool.execute(Map.of(
+                OPERATION, CREATE_GOAL,
+                TITLE, LEARN_JAVA,
+                "reflection_model_tier", "turbo")).get();
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains("reflection_model_tier must be a known tier id"));
+        verifyNoInteractions(autoModeService);
+    }
+
+    @Test
     void listGoalsWithGoals() throws Exception {
         AutoTask task1 = AutoTask.builder()
                 .id(TASK_ID_T1).goalId(GOAL_ID_G1).title("Task 1")

@@ -26,6 +26,7 @@ import me.golemcore.bot.domain.model.CompactionReason;
 import me.golemcore.bot.domain.model.CompactionResult;
 import me.golemcore.bot.domain.model.DiaryEntry;
 import me.golemcore.bot.domain.model.Goal;
+import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.PlanStep;
 import me.golemcore.bot.domain.model.ScheduleEntry;
@@ -145,9 +146,6 @@ public class CommandRouter implements CommandPort {
             "tier", "model", "sessions", "auto", "goals", CMD_GOAL, "diary", "tasks", "schedule", CMD_LATER,
             CMD_PLAN, CMD_PLANS, "stop");
 
-    private static final java.util.Set<String> VALID_TIERS = java.util.Set.of(
-            "balanced", "smart", "coding", "deep");
-
     public CommandRouter(
             SkillComponent skillComponent,
             List<ToolComponent> toolComponents,
@@ -257,7 +255,8 @@ public class CommandRouter implements CommandPort {
                 new CommandDefinition(SUBCMD_RESET, "Reset conversation", "/reset"),
                 new CommandDefinition("compact", "Compact conversation history", "/compact [keep]"),
                 new CommandDefinition(CMD_HELP, "Show available commands", "/help"),
-                new CommandDefinition("tier", "Set model tier", "/tier [balanced|smart|coding|deep] [force]"),
+                new CommandDefinition("tier", "Set model tier",
+                        "/tier [" + String.join("|", ModelTierCatalog.orderedExplicitTiers()) + "] [force]"),
                 new CommandDefinition("model", "Per-tier model selection",
                         "/model [list|<tier> <model>|<tier> reasoning <level>|<tier> reset]"),
                 new CommandDefinition("sessions", "Open session switcher menu (Telegram)", "/sessions"),
@@ -522,8 +521,8 @@ public class CommandRouter implements CommandPort {
             return CommandResult.success(msg("command.tier.current", tier, force));
         }
 
-        String tierArg = args.get(0).toLowerCase(Locale.ROOT);
-        if (!VALID_TIERS.contains(tierArg)) {
+        String tierArg = ModelTierCatalog.normalizeTierId(args.get(0));
+        if (!ModelTierCatalog.isExplicitSelectableTier(tierArg)) {
             return CommandResult.success(msg("command.tier.invalid"));
         }
 
@@ -546,13 +545,13 @@ public class CommandRouter implements CommandPort {
             return handleModelShow();
         }
 
-        String subcommand = args.get(0).toLowerCase(Locale.ROOT);
+        String subcommand = ModelTierCatalog.normalizeTierId(args.get(0));
         if (SUBCMD_LIST.equals(subcommand)) {
             return handleModelList();
         }
 
         // Tier-based subcommands: /model <tier> ...
-        if (!VALID_TIERS.contains(subcommand)) {
+        if (!ModelTierCatalog.isExplicitSelectableTier(subcommand)) {
             return CommandResult.success(msg("command.model.invalid.tier"));
         }
 
@@ -584,7 +583,7 @@ public class CommandRouter implements CommandPort {
         StringBuilder sb = new StringBuilder();
         sb.append("**").append(msg("command.model.show.title")).append("**\n\n");
 
-        for (String tier : List.of("balanced", "smart", "coding", "deep")) {
+        for (String tier : ModelTierCatalog.orderedExplicitTiers()) {
             ModelSelectionService.ModelSelection selection = modelSelectionService.resolveForTier(tier);
             String model = selection.model() != null ? selection.model() : "—";
             String reasoning = selection.reasoning() != null ? selection.reasoning() : "—";
