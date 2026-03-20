@@ -101,8 +101,8 @@ public class SessionRunCoordinator {
     }
 
     public void enqueue(Message inbound) {
+        Objects.requireNonNull(inbound, "inbound");
         if (delayedSessionActionService != null
-                && inbound != null
                 && !inbound.isInternalMessage()
                 && !AutoRunContextSupport.isAutoMessage(inbound)) {
             try {

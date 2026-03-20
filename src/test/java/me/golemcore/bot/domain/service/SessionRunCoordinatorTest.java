@@ -44,6 +44,21 @@ class SessionRunCoordinatorTest {
     private static final String CHAT_ID = "1";
 
     @Test
+    void shouldRejectNullInboundOnEnqueue() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(false, "one-at-a-time", "one-at-a-time");
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService);
+
+            assertThrows(NullPointerException.class, () -> coordinator.enqueue(null));
+        }
+    }
+
+    @Test
     void shouldPauseAfterStopAndResumeOnNextInboundFlushingQueuedMessages() throws Exception {
         SessionPort sessionPort = mock(SessionPort.class);
         AgentLoop agentLoop = mock(AgentLoop.class);
