@@ -49,7 +49,7 @@ function buildInitialFormState(item: AutomationEditorItem | null): AutomationEdi
     description: item.value.description ?? '',
     prompt: item.value.prompt ?? '',
     reflectionModelTier: item.value.reflectionModelTier ?? '',
-    reflectionTierPriority: item.value.reflectionTierPriority === true,
+    reflectionTierPriority: item.value.reflectionTierPriority,
     status: item.value.status,
   };
 }
