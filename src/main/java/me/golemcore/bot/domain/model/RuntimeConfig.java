@@ -43,6 +43,9 @@ public class RuntimeConfig {
     private AutoModeConfig autoMode = new AutoModeConfig();
 
     @Builder.Default
+    private UpdateConfig update = new UpdateConfig();
+
+    @Builder.Default
     private RateLimitConfig rateLimit = new RateLimitConfig();
 
     @Builder.Default
@@ -204,6 +207,24 @@ public class RuntimeConfig {
         private String reflectionModelTier;
         private Boolean reflectionTierPriority;
         private Boolean notifyMilestones;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class UpdateConfig {
+        @Builder.Default
+        private Boolean autoEnabled = true;
+        @Builder.Default
+        private Integer checkIntervalMinutes = 60;
+        @Builder.Default
+        private Boolean maintenanceWindowEnabled = false;
+        @Builder.Default
+        private String maintenanceWindowStartUtc = "00:00";
+        @Builder.Default
+        private String maintenanceWindowEndUtc = "00:00";
     }
 
     @Data
@@ -403,12 +424,18 @@ public class RuntimeConfig {
         TELEGRAM("telegram", TelegramConfig.class), MODEL_ROUTER("model-router", ModelRouterConfig.class), LLM("llm",
                 LlmConfig.class), TOOLS("tools", ToolsConfig.class), VOICE("voice", VoiceConfig.class), AUTO_MODE(
                         "auto-mode",
-                        AutoModeConfig.class), RATE_LIMIT("rate-limit", RateLimitConfig.class), SECURITY("security",
-                                SecurityConfig.class), COMPACTION("compaction", CompactionConfig.class), TURN("turn",
-                                        TurnConfig.class), MEMORY("memory", MemoryConfig.class), SKILLS("skills",
-                                                SkillsConfig.class), USAGE("usage", UsageConfig.class), MCP("mcp",
-                                                        McpConfig.class), PLAN("plan", PlanConfig.class), HIVE("hive",
-                                                                HiveConfig.class);
+                        AutoModeConfig.class), UPDATE("update",
+                                UpdateConfig.class), RATE_LIMIT("rate-limit", RateLimitConfig.class), SECURITY(
+                                        "security",
+                                        SecurityConfig.class), COMPACTION("compaction", CompactionConfig.class), TURN(
+                                                "turn",
+                                                TurnConfig.class), MEMORY("memory", MemoryConfig.class), SKILLS(
+                                                        "skills",
+                                                        SkillsConfig.class), USAGE("usage", UsageConfig.class), MCP(
+                                                                "mcp",
+                                                                McpConfig.class), PLAN("plan", PlanConfig.class), HIVE(
+                                                                        "hive",
+                                                                        HiveConfig.class);
 
         private final String fileId;
         private final Class<?> configClass;

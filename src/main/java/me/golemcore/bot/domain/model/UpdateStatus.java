@@ -14,6 +14,15 @@ import java.time.Instant;
 public class UpdateStatus {
     private UpdateState state;
     private boolean enabled;
+    private boolean autoEnabled;
+    private boolean maintenanceWindowEnabled;
+    private String maintenanceWindowStartUtc;
+    private String maintenanceWindowEndUtc;
+    private String serverTimezone;
+    private boolean windowOpen;
+    private boolean busy;
+    private UpdateBlockedReason blockedReason;
+    private Instant nextEligibleAt;
     private UpdateVersionInfo current;
     private UpdateVersionInfo target;
     private UpdateVersionInfo staged;

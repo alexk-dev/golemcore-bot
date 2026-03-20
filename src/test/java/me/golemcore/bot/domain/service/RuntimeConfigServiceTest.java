@@ -97,8 +97,7 @@ class RuntimeConfigServiceTest {
         RuntimeConfig second = service.getRuntimeConfig();
 
         assertEquals(first, second);
-        // First call loads all 16 sections, second call returns cached
-        verify(storagePort, atLeast(16)).getText(anyString(), anyString());
+        verify(storagePort, atLeast(RuntimeConfig.ConfigSection.values().length)).getText(anyString(), anyString());
     }
 
     @Test
@@ -178,6 +177,62 @@ class RuntimeConfigServiceTest {
         assertEquals(10, service.getAutoTaskTimeLimitMinutes());
         assertEquals(3, service.getAutoMaxGoals());
         assertEquals("default", service.getAutoModelTier());
+    }
+
+    @Test
+    void shouldReturnDefaultUpdateSettings() {
+        assertTrue(service.isAutoUpdateEnabled());
+        assertEquals(60, service.getUpdateCheckIntervalMinutes());
+        assertFalse(service.isUpdateMaintenanceWindowEnabled());
+        assertEquals("00:00", service.getUpdateMaintenanceWindowStartUtc());
+        assertEquals("00:00", service.getUpdateMaintenanceWindowEndUtc());
+    }
+
+    @Test
+    void shouldReturnConfiguredUpdateSettings() throws Exception {
+        RuntimeConfig.UpdateConfig update = RuntimeConfig.UpdateConfig.builder()
+                .autoEnabled(false)
+                .checkIntervalMinutes(180)
+                .maintenanceWindowEnabled(true)
+                .maintenanceWindowStartUtc("01:15")
+                .maintenanceWindowEndUtc("03:45")
+                .build();
+        persistedSections.put("update.json", objectMapper.writeValueAsString(update));
+
+        assertFalse(service.isAutoUpdateEnabled());
+        assertEquals(180, service.getUpdateCheckIntervalMinutes());
+        assertTrue(service.isUpdateMaintenanceWindowEnabled());
+        assertEquals("01:15", service.getUpdateMaintenanceWindowStartUtc());
+        assertEquals("03:45", service.getUpdateMaintenanceWindowEndUtc());
+    }
+
+    @Test
+    void shouldNormalizeInvalidUpdateSettings() throws Exception {
+        RuntimeConfig.UpdateConfig update = RuntimeConfig.UpdateConfig.builder()
+                .autoEnabled(null)
+                .checkIntervalMinutes(0)
+                .maintenanceWindowEnabled(null)
+                .maintenanceWindowStartUtc("25:99")
+                .maintenanceWindowEndUtc("")
+                .build();
+        persistedSections.put("update.json", objectMapper.writeValueAsString(update));
+
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        assertNotNull(config.getUpdate());
+        assertTrue(config.getUpdate().getAutoEnabled());
+        assertEquals(60, config.getUpdate().getCheckIntervalMinutes());
+        assertFalse(config.getUpdate().getMaintenanceWindowEnabled());
+        assertEquals("00:00", config.getUpdate().getMaintenanceWindowStartUtc());
+        assertEquals("00:00", config.getUpdate().getMaintenanceWindowEndUtc());
+    }
+
+    @Test
+    void shouldExposeUpdateConfigSectionMetadata() {
+        assertTrue(RuntimeConfig.ConfigSection.isValidSection("update"));
+        assertEquals(RuntimeConfig.ConfigSection.UPDATE,
+                RuntimeConfig.ConfigSection.fromFileId("update").orElseThrow());
+        assertEquals("update.json", RuntimeConfig.ConfigSection.UPDATE.getFileName());
     }
 
     @Test
@@ -694,7 +749,8 @@ class RuntimeConfigServiceTest {
 
         service.updateRuntimeConfig(newConfig);
 
-        verify(storagePort, times(16)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
+        verify(storagePort, times(RuntimeConfig.ConfigSection.values().length))
+                .putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
 
         RuntimeConfig updated = service.getRuntimeConfig();
         assertEquals("custom/model", updated.getModelRouter().getBalancedModel());
@@ -787,7 +843,9 @@ class RuntimeConfigServiceTest {
         assertEquals(20, code.getCode().length());
         assertFalse(code.isUsed());
         assertNotNull(code.getCreatedAt());
-        verify(storagePort, atLeast(16)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
+        verify(storagePort, atLeast(RuntimeConfig.ConfigSection.values().length)).putTextAtomic(anyString(),
+                anyString(),
+                anyString(), anyBoolean());
     }
 
     @Test

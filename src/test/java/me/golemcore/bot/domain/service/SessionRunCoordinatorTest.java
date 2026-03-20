@@ -127,6 +127,51 @@ class SessionRunCoordinatorTest {
     }
 
     @Test
+    void shouldExposeActiveOrQueuedWork() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService);
+
+            AgentSession session = AgentSession.builder()
+                    .id("s-busy")
+                    .channelType(CHANNEL_TYPE)
+                    .chatId(CHAT_ID)
+                    .messages(new ArrayList<>())
+                    .build();
+            when(sessionPort.getOrCreate(CHANNEL_TYPE, CHAT_ID)).thenReturn(session);
+
+            Message first = user("first");
+            Message second = user("second");
+
+            Gate gate = new Gate();
+            org.mockito.Mockito.doAnswer(invocation -> {
+                gate.await();
+                return null;
+            }).when(agentLoop).processMessage(first);
+
+            assertFalse(coordinator.hasActiveOrQueuedWork());
+
+            coordinator.enqueue(first);
+            gate.awaitStarted();
+            assertTrue(coordinator.hasActiveOrQueuedWork());
+
+            coordinator.enqueue(second);
+            assertTrue(coordinator.hasActiveOrQueuedWork());
+
+            gate.release();
+            executor.shutdown();
+            assertTrue(executor.awaitTermination(2, TimeUnit.SECONDS));
+
+            assertFalse(coordinator.hasActiveOrQueuedWork());
+        }
+    }
+
+    @Test
     void shouldPublishHiveCancellationFallbackWhenInterruptedOutsideGracefulTurnHandling() throws Exception {
         SessionPort sessionPort = mock(SessionPort.class);
         AgentLoop agentLoop = mock(AgentLoop.class);

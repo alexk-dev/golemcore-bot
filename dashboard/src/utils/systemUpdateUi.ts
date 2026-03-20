@@ -11,6 +11,8 @@ const UPDATE_STATE_LABELS: Record<string, string> = {
   AVAILABLE: 'Available',
   PREPARING: 'Preparing',
   STAGED: 'Staged',
+  WAITING_FOR_WINDOW: 'Waiting for window',
+  WAITING_FOR_IDLE: 'Waiting for idle',
   APPLYING: 'Restarting',
   VERIFYING: 'Reconnecting',
   FAILED: 'Failed',
@@ -23,6 +25,8 @@ const UPDATE_STATE_DESCRIPTIONS: Record<string, string> = {
   AVAILABLE: 'A compatible update is available.',
   PREPARING: 'Downloading and verifying the release package.',
   STAGED: 'The release is staged locally and ready to apply.',
+  WAITING_FOR_WINDOW: 'The update is staged and waiting for the configured maintenance window.',
+  WAITING_FOR_IDLE: 'The update is staged and waiting for active runtime work to finish.',
   APPLYING: 'The backend is switching to the new package and restarting.',
   VERIFYING: 'Waiting for the backend to come back after restart.',
   FAILED: 'The last update attempt failed.',
@@ -45,6 +49,8 @@ const ACTIVE_STEP_BY_STATE: Record<string, (typeof WORKFLOW_STEPS)[number] | nul
   AVAILABLE: 'check',
   PREPARING: 'download',
   STAGED: 'stage',
+  WAITING_FOR_WINDOW: 'stage',
+  WAITING_FOR_IDLE: 'stage',
   APPLYING: 'restart',
   VERIFYING: 'verify',
   FAILED: null,
@@ -57,6 +63,8 @@ const DERIVED_PROGRESS_BY_STATE: Record<string, number> = {
   AVAILABLE: 25,
   PREPARING: 52,
   STAGED: 72,
+  WAITING_FOR_WINDOW: 76,
+  WAITING_FOR_IDLE: 80,
   APPLYING: 88,
   VERIFYING: 96,
   FAILED: 20,
@@ -139,6 +147,12 @@ export function getUpdateActionLabel(status: SystemUpdateStatusResponse): string
   if (status.state === 'STAGED') {
     return version == null ? 'Restart to apply update' : `Restart to apply ${version}`;
   }
+  if (status.state === 'WAITING_FOR_WINDOW') {
+    return version == null ? 'Apply now' : `Apply ${version} now`;
+  }
+  if (status.state === 'WAITING_FOR_IDLE') {
+    return 'Waiting for runtime to go idle';
+  }
   if (status.state === 'APPLYING' || status.state === 'VERIFYING') {
     return 'Restarting...';
   }
@@ -150,6 +164,9 @@ export function getUpdateStateVariant(state: string): UpdateBadgeVariant {
     return 'danger';
   }
   if (state === 'AVAILABLE' || state === 'STAGED') {
+    return 'warning';
+  }
+  if (state === 'WAITING_FOR_WINDOW' || state === 'WAITING_FOR_IDLE') {
     return 'warning';
   }
   if (state === 'CHECKING' || state === 'PREPARING' || state === 'APPLYING' || state === 'VERIFYING') {

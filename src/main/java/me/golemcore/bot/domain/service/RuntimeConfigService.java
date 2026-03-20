@@ -93,6 +93,11 @@ public class RuntimeConfigService {
     private static final String DEFAULT_AUTO_MODEL_TIER = "default";
     private static final boolean DEFAULT_AUTO_REFLECTION_ENABLED = true;
     private static final int DEFAULT_AUTO_REFLECTION_FAILURE_THRESHOLD = 2;
+    private static final boolean DEFAULT_UPDATE_AUTO_ENABLED = true;
+    private static final int DEFAULT_UPDATE_CHECK_INTERVAL_MINUTES = 60;
+    private static final boolean DEFAULT_UPDATE_MAINTENANCE_WINDOW_ENABLED = false;
+    private static final String DEFAULT_UPDATE_MAINTENANCE_WINDOW_START_UTC = "00:00";
+    private static final String DEFAULT_UPDATE_MAINTENANCE_WINDOW_END_UTC = "00:00";
     private static final int DEFAULT_AUTO_COMPACT_MAX_TOKENS = 50000;
     private static final int DEFAULT_AUTO_COMPACT_KEEP_LAST = 20;
     private static final String DEFAULT_COMPACTION_TRIGGER_MODE = "model_ratio";
@@ -614,6 +619,53 @@ public class RuntimeConfigService {
     public boolean isAutoNotifyMilestonesEnabled() {
         Boolean val = getRuntimeConfig().getAutoMode().getNotifyMilestones();
         return val != null ? val : true;
+    }
+
+    // ==================== Update ====================
+
+    public boolean isAutoUpdateEnabled() {
+        RuntimeConfig.UpdateConfig updateConfig = getRuntimeConfig().getUpdate();
+        if (updateConfig == null) {
+            return DEFAULT_UPDATE_AUTO_ENABLED;
+        }
+        Boolean val = updateConfig.getAutoEnabled();
+        return val != null ? val : DEFAULT_UPDATE_AUTO_ENABLED;
+    }
+
+    public int getUpdateCheckIntervalMinutes() {
+        RuntimeConfig.UpdateConfig updateConfig = getRuntimeConfig().getUpdate();
+        if (updateConfig == null) {
+            return DEFAULT_UPDATE_CHECK_INTERVAL_MINUTES;
+        }
+        Integer val = updateConfig.getCheckIntervalMinutes();
+        return val != null ? val : DEFAULT_UPDATE_CHECK_INTERVAL_MINUTES;
+    }
+
+    public boolean isUpdateMaintenanceWindowEnabled() {
+        RuntimeConfig.UpdateConfig updateConfig = getRuntimeConfig().getUpdate();
+        if (updateConfig == null) {
+            return DEFAULT_UPDATE_MAINTENANCE_WINDOW_ENABLED;
+        }
+        Boolean val = updateConfig.getMaintenanceWindowEnabled();
+        return val != null ? val : DEFAULT_UPDATE_MAINTENANCE_WINDOW_ENABLED;
+    }
+
+    public String getUpdateMaintenanceWindowStartUtc() {
+        RuntimeConfig.UpdateConfig updateConfig = getRuntimeConfig().getUpdate();
+        if (updateConfig == null) {
+            return DEFAULT_UPDATE_MAINTENANCE_WINDOW_START_UTC;
+        }
+        return normalizeUtcTimeValue(updateConfig.getMaintenanceWindowStartUtc(),
+                DEFAULT_UPDATE_MAINTENANCE_WINDOW_START_UTC);
+    }
+
+    public String getUpdateMaintenanceWindowEndUtc() {
+        RuntimeConfig.UpdateConfig updateConfig = getRuntimeConfig().getUpdate();
+        if (updateConfig == null) {
+            return DEFAULT_UPDATE_MAINTENANCE_WINDOW_END_UTC;
+        }
+        return normalizeUtcTimeValue(updateConfig.getMaintenanceWindowEndUtc(),
+                DEFAULT_UPDATE_MAINTENANCE_WINDOW_END_UTC);
     }
 
     // ==================== Rate Limit ====================
@@ -1190,6 +1242,8 @@ public class RuntimeConfigService {
                 RuntimeConfig.VoiceConfig::new);
         persistSection(RuntimeConfig.ConfigSection.AUTO_MODE, cfg.getAutoMode(),
                 RuntimeConfig.AutoModeConfig::new);
+        persistSection(RuntimeConfig.ConfigSection.UPDATE, cfg.getUpdate(),
+                RuntimeConfig.UpdateConfig::new);
         persistSection(RuntimeConfig.ConfigSection.RATE_LIMIT, cfg.getRateLimit(),
                 RuntimeConfig.RateLimitConfig::new);
         persistSection(RuntimeConfig.ConfigSection.SECURITY, cfg.getSecurity(),
@@ -1260,6 +1314,8 @@ public class RuntimeConfigService {
                 RuntimeConfig.VoiceConfig.class, RuntimeConfig.VoiceConfig::new);
         RuntimeConfig.AutoModeConfig autoMode = loadSection(RuntimeConfig.ConfigSection.AUTO_MODE,
                 RuntimeConfig.AutoModeConfig.class, RuntimeConfig.AutoModeConfig::new);
+        RuntimeConfig.UpdateConfig update = loadSection(RuntimeConfig.ConfigSection.UPDATE,
+                RuntimeConfig.UpdateConfig.class, RuntimeConfig.UpdateConfig::new);
         RuntimeConfig.RateLimitConfig rateLimit = loadSection(RuntimeConfig.ConfigSection.RATE_LIMIT,
                 RuntimeConfig.RateLimitConfig.class, RuntimeConfig.RateLimitConfig::new);
         RuntimeConfig.SecurityConfig security = loadSection(RuntimeConfig.ConfigSection.SECURITY,
@@ -1288,6 +1344,7 @@ public class RuntimeConfigService {
                 .tools(tools)
                 .voice(voice)
                 .autoMode(autoMode)
+                .update(update)
                 .rateLimit(rateLimit)
                 .security(security)
                 .compaction(compaction)
@@ -1356,6 +1413,25 @@ public class RuntimeConfigService {
         if (cfg.getAutoMode().getReflectionFailureThreshold() == null) {
             cfg.getAutoMode().setReflectionFailureThreshold(DEFAULT_AUTO_REFLECTION_FAILURE_THRESHOLD);
         }
+        if (cfg.getUpdate() == null) {
+            cfg.setUpdate(new RuntimeConfig.UpdateConfig());
+        }
+        if (cfg.getUpdate().getAutoEnabled() == null) {
+            cfg.getUpdate().setAutoEnabled(DEFAULT_UPDATE_AUTO_ENABLED);
+        }
+        Integer updateCheckIntervalMinutes = cfg.getUpdate().getCheckIntervalMinutes();
+        if (updateCheckIntervalMinutes == null || updateCheckIntervalMinutes < 1) {
+            cfg.getUpdate().setCheckIntervalMinutes(DEFAULT_UPDATE_CHECK_INTERVAL_MINUTES);
+        }
+        if (cfg.getUpdate().getMaintenanceWindowEnabled() == null) {
+            cfg.getUpdate().setMaintenanceWindowEnabled(DEFAULT_UPDATE_MAINTENANCE_WINDOW_ENABLED);
+        }
+        cfg.getUpdate().setMaintenanceWindowStartUtc(normalizeUtcTimeValue(
+                cfg.getUpdate().getMaintenanceWindowStartUtc(),
+                DEFAULT_UPDATE_MAINTENANCE_WINDOW_START_UTC));
+        cfg.getUpdate().setMaintenanceWindowEndUtc(normalizeUtcTimeValue(
+                cfg.getUpdate().getMaintenanceWindowEndUtc(),
+                DEFAULT_UPDATE_MAINTENANCE_WINDOW_END_UTC));
         cfg.getTools().setShellEnvironmentVariables(
                 normalizeShellEnvironmentVariables(cfg.getTools().getShellEnvironmentVariables()));
         if (cfg.getLlm() == null) {
@@ -1486,6 +1562,18 @@ public class RuntimeConfigService {
         case DEFAULT_COMPACTION_TRIGGER_MODE, COMPACTION_TRIGGER_MODE_TOKEN_THRESHOLD -> normalized;
         default -> DEFAULT_COMPACTION_TRIGGER_MODE;
         };
+    }
+
+    private String normalizeUtcTimeValue(String value, String defaultValue) {
+        if (value == null || value.isBlank()) {
+            return defaultValue;
+        }
+        try {
+            java.time.LocalTime parsed = java.time.LocalTime.parse(value.trim());
+            return parsed.withSecond(0).withNano(0).toString();
+        } catch (java.time.format.DateTimeParseException e) {
+            return defaultValue;
+        }
     }
 
     private List<RuntimeConfig.ShellEnvironmentVariable> normalizeShellEnvironmentVariables(

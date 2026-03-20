@@ -1,6 +1,7 @@
 package me.golemcore.bot.domain.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import me.golemcore.bot.domain.model.UpdateBlockedReason;
 import me.golemcore.bot.domain.model.UpdateState;
 import me.golemcore.bot.domain.model.UpdateStatus;
 import me.golemcore.bot.infrastructure.config.BotProperties;
@@ -69,6 +70,9 @@ class UpdateServiceTest {
     private ApplicationContext applicationContext;
     private JvmExitService jvmExitService;
     private MutableClock clock;
+    private RuntimeConfigService runtimeConfigService;
+    private UpdateActivityGate updateActivityGate;
+    private UpdateMaintenanceWindow updateMaintenanceWindow;
 
     @BeforeEach
     void setUp() {
@@ -77,10 +81,19 @@ class UpdateServiceTest {
         applicationContext = mock(ApplicationContext.class);
         jvmExitService = mock(JvmExitService.class);
         clock = new MutableClock(BASE_TIME, ZoneOffset.UTC);
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        updateActivityGate = mock(UpdateActivityGate.class);
+        updateMaintenanceWindow = new UpdateMaintenanceWindow();
 
         Properties props = new Properties();
         props.setProperty("version", VERSION_CURRENT);
         when(buildPropertiesProvider.getIfAvailable()).thenReturn(new BuildProperties(props));
+        when(runtimeConfigService.isAutoUpdateEnabled()).thenReturn(true);
+        when(runtimeConfigService.getUpdateCheckIntervalMinutes()).thenReturn(60);
+        when(runtimeConfigService.isUpdateMaintenanceWindowEnabled()).thenReturn(false);
+        when(runtimeConfigService.getUpdateMaintenanceWindowStartUtc()).thenReturn("00:00");
+        when(runtimeConfigService.getUpdateMaintenanceWindowEndUtc()).thenReturn("00:00");
+        when(updateActivityGate.getStatus()).thenReturn(UpdateActivityGate.Result.idle());
     }
 
     @Test
@@ -470,6 +483,89 @@ class UpdateServiceTest {
     }
 
     @Test
+    void shouldRejectUpdateNowWhenRuntimeWorkIsActive(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+        when(updateActivityGate.getStatus()).thenReturn(
+                UpdateActivityGate.Result.busy(UpdateBlockedReason.SESSION_WORK_RUNNING));
+
+        UpdateService service = createService();
+
+        IllegalStateException error = assertThrows(IllegalStateException.class, service::updateNow);
+
+        assertEquals("Update is blocked while runtime work is still running", error.getMessage());
+    }
+
+    @Test
+    void shouldAutoPrepareAndWaitForMaintenanceWindowWhenClosed(@TempDir Path tempDir) throws Exception {
+        enableUpdates(tempDir);
+        when(runtimeConfigService.isUpdateMaintenanceWindowEnabled()).thenReturn(true);
+        when(runtimeConfigService.getUpdateMaintenanceWindowStartUtc()).thenReturn("01:00");
+        when(runtimeConfigService.getUpdateMaintenanceWindowEndUtc()).thenReturn("02:00");
+
+        byte[] jarBytes = "new-binary".getBytes(StandardCharsets.UTF_8);
+        String checksum = sha256Hex(jarBytes);
+
+        StubHttpClient httpClient = new StubHttpClient();
+        httpClient.enqueueStringResponse(200, releaseJson(
+                "v0.4.2",
+                "bot-0.4.2.jar",
+                "2026-02-22T10:00:00Z"));
+        httpClient.enqueueBinaryResponse(200, jarBytes);
+        httpClient.enqueueStringResponse(200, checksum + "  bot-0.4.2.jar\n");
+        TestableUpdateService service = createTestableService(httpClient);
+
+        service.runAutoUpdateCycle();
+
+        assertEquals(UpdateState.WAITING_FOR_WINDOW, service.getStatus().getState());
+        assertTrue(Files.exists(tempDir.resolve("jars").resolve("bot-0.4.2.jar")));
+        assertTrue(Files.exists(tempDir.resolve("staged.txt")));
+        assertFalse(service.isRestartRequested());
+    }
+
+    @Test
+    void shouldAutoPrepareAndWaitForIdleWhenRuntimeWorkIsActive(@TempDir Path tempDir) throws Exception {
+        enableUpdates(tempDir);
+        when(updateActivityGate.getStatus()).thenReturn(
+                UpdateActivityGate.Result.busy(UpdateBlockedReason.SESSION_WORK_RUNNING));
+
+        byte[] jarBytes = "new-binary".getBytes(StandardCharsets.UTF_8);
+        String checksum = sha256Hex(jarBytes);
+
+        StubHttpClient httpClient = new StubHttpClient();
+        httpClient.enqueueStringResponse(200, releaseJson(
+                "v0.4.2",
+                "bot-0.4.2.jar",
+                "2026-02-22T10:00:00Z"));
+        httpClient.enqueueBinaryResponse(200, jarBytes);
+        httpClient.enqueueStringResponse(200, checksum + "  bot-0.4.2.jar\n");
+        TestableUpdateService service = createTestableService(httpClient);
+
+        service.runAutoUpdateCycle();
+
+        assertEquals(UpdateState.WAITING_FOR_IDLE, service.getStatus().getState());
+        assertTrue(Files.exists(tempDir.resolve("jars").resolve("bot-0.4.2.jar")));
+        assertTrue(Files.exists(tempDir.resolve("staged.txt")));
+        assertFalse(service.isRestartRequested());
+    }
+
+    @Test
+    void shouldAutoApplyStagedUpdateWhenWindowIsOpenAndRuntimeIsIdle(@TempDir Path tempDir) throws Exception {
+        enableUpdates(tempDir);
+        Files.createDirectories(tempDir.resolve("jars"));
+        Files.writeString(tempDir.resolve("jars").resolve("bot-0.4.2.jar"), "staged", StandardCharsets.UTF_8);
+        Files.writeString(tempDir.resolve("staged.txt"), "bot-0.4.2.jar\n", StandardCharsets.UTF_8);
+
+        TestableUpdateService service = createTestableService(new StubHttpClient());
+
+        service.runAutoUpdateCycle();
+
+        assertTrue(service.isRestartRequested());
+        assertFalse(Files.exists(tempDir.resolve("staged.txt")));
+        assertEquals("bot-0.4.2.jar", Files.readString(tempDir.resolve("current.txt"), StandardCharsets.UTF_8).trim());
+        assertEquals(UpdateState.APPLYING, service.getStatus().getState());
+    }
+
+    @Test
     void shouldCoverVersionComparisonAndChecksumHelpersViaReflection(@TempDir Path tempDir) throws Exception {
         enableUpdates(tempDir);
         UpdateService service = createService();
@@ -505,7 +601,10 @@ class UpdateServiceTest {
                 new ObjectMapper(),
                 applicationContext,
                 clock,
-                jvmExitService);
+                jvmExitService,
+                runtimeConfigService,
+                updateActivityGate,
+                updateMaintenanceWindow);
     }
 
     private TestableUpdateService createTestableService(StubHttpClient stubHttpClient) {
@@ -516,6 +615,9 @@ class UpdateServiceTest {
                 applicationContext,
                 clock,
                 jvmExitService,
+                runtimeConfigService,
+                updateActivityGate,
+                updateMaintenanceWindow,
                 stubHttpClient);
     }
 
@@ -527,6 +629,9 @@ class UpdateServiceTest {
                 applicationContext,
                 clock,
                 jvmExitService,
+                runtimeConfigService,
+                updateActivityGate,
+                updateMaintenanceWindow,
                 stubHttpClient);
     }
 
@@ -640,8 +745,20 @@ class UpdateServiceTest {
                 ApplicationContext applicationContext,
                 Clock clock,
                 JvmExitService jvmExitService,
+                RuntimeConfigService runtimeConfigService,
+                UpdateActivityGate updateActivityGate,
+                UpdateMaintenanceWindow updateMaintenanceWindow,
                 StubHttpClient stubHttpClient) {
-            super(botProperties, buildPropertiesProvider, objectMapper, applicationContext, clock, jvmExitService);
+            super(
+                    botProperties,
+                    buildPropertiesProvider,
+                    objectMapper,
+                    applicationContext,
+                    clock,
+                    jvmExitService,
+                    runtimeConfigService,
+                    updateActivityGate,
+                    updateMaintenanceWindow);
             this.stubHttpClient = stubHttpClient;
         }
 
@@ -677,8 +794,20 @@ class UpdateServiceTest {
                 ApplicationContext applicationContext,
                 Clock clock,
                 JvmExitService jvmExitService,
+                RuntimeConfigService runtimeConfigService,
+                UpdateActivityGate updateActivityGate,
+                UpdateMaintenanceWindow updateMaintenanceWindow,
                 StubHttpClient stubHttpClient) {
-            super(botProperties, buildPropertiesProvider, objectMapper, applicationContext, clock, jvmExitService);
+            super(
+                    botProperties,
+                    buildPropertiesProvider,
+                    objectMapper,
+                    applicationContext,
+                    clock,
+                    jvmExitService,
+                    runtimeConfigService,
+                    updateActivityGate,
+                    updateMaintenanceWindow);
             this.stubHttpClient = stubHttpClient;
         }
 

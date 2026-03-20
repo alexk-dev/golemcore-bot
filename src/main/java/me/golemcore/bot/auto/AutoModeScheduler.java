@@ -178,6 +178,10 @@ public class AutoModeScheduler {
                 channelType, sessionChatId, transportChatId);
     }
 
+    public boolean isExecuting() {
+        return executing.get();
+    }
+
     @EventListener
     public void onChannelRegistered(AutoModeChannelRegisteredEvent event) {
         registerChannel(event.channelType(), event.sessionChatId(), event.transportChatId());
