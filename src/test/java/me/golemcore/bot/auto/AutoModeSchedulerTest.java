@@ -32,6 +32,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.any;
@@ -111,6 +112,45 @@ class AutoModeSchedulerTest {
         scheduler.tick();
 
         verify(sessionRunCoordinator, never()).submit(any(Message.class));
+    }
+
+    @Test
+    void shouldExposeExecutingStateWhileTickIsRunning() throws Exception {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>())
+                .createdAt(Instant.now())
+                .build();
+        when(autoModeService.getGoal(GOAL_ID)).thenReturn(Optional.of(goal));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-goal-busy")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId(GOAL_ID)
+                .cronExpression(TEST_CRON)
+                .enabled(true)
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        CountDownLatch submitted = new CountDownLatch(1);
+        CompletableFuture<Void> completion = new CompletableFuture<>();
+        when(sessionRunCoordinator.submit(any(Message.class))).thenAnswer(invocation -> {
+            submitted.countDown();
+            return completion;
+        });
+
+        CompletableFuture<Void> tickFuture = CompletableFuture.runAsync(scheduler::tick);
+        assertTrue(submitted.await(1, TimeUnit.SECONDS), "tick should reach coordinator submission");
+        assertTrue(scheduler.isExecuting());
+
+        completion.complete(null);
+        tickFuture.get(1, TimeUnit.SECONDS);
+
+        assertFalse(scheduler.isExecuting());
     }
 
     @Test

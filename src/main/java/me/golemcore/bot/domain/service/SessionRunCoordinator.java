@@ -163,6 +163,15 @@ public class SessionRunCoordinator {
         return runners.size();
     }
 
+    public boolean hasActiveOrQueuedWork() {
+        for (SessionRunner runner : runners.values()) {
+            if (runner.hasActiveOrQueuedWork()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private final class SessionRunner {
 
         private final SessionKey key;
@@ -288,6 +297,15 @@ public class SessionRunCoordinator {
 
         private boolean isRunning() {
             return runningTask.map(task -> !task.isDone()).orElse(false);
+        }
+
+        private boolean hasActiveOrQueuedWork() {
+            synchronized (lock) {
+                return isRunning()
+                        || !queuedSteeringMessages.isEmpty()
+                        || !queuedFollowUpMessages.isEmpty()
+                        || pausedAfterStop;
+            }
         }
 
         private void startRun(Message inbound, Deque<Message> prefix) {

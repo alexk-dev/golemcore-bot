@@ -2,9 +2,13 @@ package me.golemcore.bot.domain.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.UpdateActionResult;
+import me.golemcore.bot.domain.model.UpdateBlockedReason;
 import me.golemcore.bot.domain.model.UpdateState;
 import me.golemcore.bot.domain.model.UpdateStatus;
 import me.golemcore.bot.domain.model.UpdateVersionInfo;
@@ -41,6 +45,10 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @RequiredArgsConstructor
@@ -64,6 +72,7 @@ public class UpdateService {
     private static final int RESTART_EXIT_CODE = 42;
     private static final int DOWNLOAD_BUFFER_SIZE = 8192;
     private static final long RESTART_DELAY_MILLIS = 500L;
+    private static final int AUTO_UPDATE_TICK_INTERVAL_SECONDS = 60;
     private static final Pattern SEMVER_PATTERN = Pattern
             .compile("^(\\d++)\\.(\\d++)\\.(\\d++)(?:-([0-9A-Za-z.-]++))?$");
     private static final Pattern SAFE_RELEASE_SEGMENT_PATTERN = Pattern.compile("^[0-9A-Za-z._-]+$");
@@ -74,14 +83,47 @@ public class UpdateService {
     private final ApplicationContext applicationContext;
     private final Clock clock;
     private final JvmExitService jvmExitService;
+    private final RuntimeConfigService runtimeConfigService;
+    private final UpdateActivityGate updateActivityGate;
+    private final UpdateMaintenanceWindow updateMaintenanceWindow;
 
     private final Object lock = new Object();
+    private ScheduledExecutorService autoUpdateScheduler;
+    private ScheduledFuture<?> autoUpdateTask;
 
     private UpdateState transientState = UpdateState.IDLE;
     private Instant lastCheckAt;
     private String lastCheckError = "";
     private Optional<AvailableRelease> availableRelease = Optional.empty();
     private Optional<UpdateVersionInfo> activeTarget = Optional.empty();
+
+    @PostConstruct
+    void initAutoUpdateScheduler() {
+        if (!isEnabled()) {
+            return;
+        }
+
+        autoUpdateScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread thread = new Thread(r, "update-auto-scheduler");
+            thread.setDaemon(true);
+            return thread;
+        });
+        autoUpdateTask = autoUpdateScheduler.scheduleWithFixedDelay(
+                this::runAutoUpdateCycleSafely,
+                AUTO_UPDATE_TICK_INTERVAL_SECONDS,
+                AUTO_UPDATE_TICK_INTERVAL_SECONDS,
+                TimeUnit.SECONDS);
+    }
+
+    @PreDestroy
+    void shutdownAutoUpdateScheduler() {
+        if (autoUpdateTask != null) {
+            autoUpdateTask.cancel(false);
+        }
+        if (autoUpdateScheduler != null) {
+            autoUpdateScheduler.shutdownNow();
+        }
+    }
 
     public UpdateStatus getStatus() {
         synchronized (lock) {
@@ -92,10 +134,21 @@ public class UpdateService {
             UpdateState effectiveState = resolveState(enabled, staged, available);
             UpdateVersionInfo target = resolveTargetInfo(effectiveState, staged, available);
             StagePresentation stagePresentation = buildStagePresentation(effectiveState, current, target);
+            UpdateActivityGate.Result activityStatus = updateActivityGate.getStatus();
+            UpdateMaintenanceWindow.Status windowStatus = evaluateMaintenanceWindow();
 
             return UpdateStatus.builder()
                     .state(effectiveState)
                     .enabled(enabled)
+                    .autoEnabled(runtimeConfigService.isAutoUpdateEnabled())
+                    .maintenanceWindowEnabled(runtimeConfigService.isUpdateMaintenanceWindowEnabled())
+                    .maintenanceWindowStartUtc(runtimeConfigService.getUpdateMaintenanceWindowStartUtc())
+                    .maintenanceWindowEndUtc(runtimeConfigService.getUpdateMaintenanceWindowEndUtc())
+                    .serverTimezone("UTC")
+                    .windowOpen(windowStatus.open())
+                    .busy(activityStatus.busy())
+                    .blockedReason(activityStatus.blockedReason())
+                    .nextEligibleAt(windowStatus.nextEligibleAt())
                     .current(current)
                     .target(target)
                     .staged(staged)
@@ -132,6 +185,19 @@ public class UpdateService {
         }
     }
 
+    public RuntimeConfig.UpdateConfig getConfig() {
+        RuntimeConfig.UpdateConfig config = runtimeConfigService.getRuntimeConfigForApi().getUpdate();
+        return config != null ? config : new RuntimeConfig.UpdateConfig();
+    }
+
+    public RuntimeConfig.UpdateConfig updateConfig(RuntimeConfig.UpdateConfig updateConfig) {
+        RuntimeConfig current = runtimeConfigService.getRuntimeConfig();
+        RuntimeConfig copy = copyRuntimeConfig(current);
+        copy.setUpdate(updateConfig != null ? updateConfig : new RuntimeConfig.UpdateConfig());
+        runtimeConfigService.updateRuntimeConfig(copy);
+        return getConfig();
+    }
+
     private UpdateActionResult prepare() {
         AvailableRelease release;
         synchronized (lock) {
@@ -163,7 +229,6 @@ public class UpdateService {
 
             moveAtomically(tempJar, targetJar);
             writeMarker(getStagedMarkerPath(), release.assetName());
-            cleanupOldJars();
 
             synchronized (lock) {
                 availableRelease = Optional.empty();
@@ -195,6 +260,7 @@ public class UpdateService {
         synchronized (lock) {
             ensureEnabled();
             ensureNoBusyOperation();
+            ensureNoRuntimeWorkInProgress();
             lastCheckError = "";
 
             UpdateVersionInfo staged = resolveStagedInfo();
@@ -267,6 +333,10 @@ public class UpdateService {
                 || transientState == UpdateState.PREPARING
                 || transientState == UpdateState.APPLYING
                 || transientState == UpdateState.VERIFYING) {
+            return transientState;
+        }
+        if ((transientState == UpdateState.WAITING_FOR_WINDOW || transientState == UpdateState.WAITING_FOR_IDLE)
+                && (staged != null || activeTarget.isPresent())) {
             return transientState;
         }
         if (staged != null) {
@@ -355,6 +425,12 @@ public class UpdateService {
                 || transientState == UpdateState.APPLYING
                 || transientState == UpdateState.VERIFYING) {
             throw new IllegalStateException("Another update operation is already in progress");
+        }
+    }
+
+    private void ensureNoRuntimeWorkInProgress() {
+        if (updateActivityGate.getStatus().busy()) {
+            throw new IllegalStateException("Update is blocked while runtime work is still running");
         }
     }
 
@@ -1179,7 +1255,7 @@ public class UpdateService {
             }
 
             if (staged != null) {
-                applyStagedUpdate();
+                tryApplyStagedUpdate(true);
                 return;
             }
 
@@ -1192,7 +1268,7 @@ public class UpdateService {
             }
 
             prepare();
-            applyStagedUpdate();
+            tryApplyStagedUpdate(true);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             UpdateState state = transientState;
@@ -1225,11 +1301,140 @@ public class UpdateService {
         }
     }
 
+    void runAutoUpdateCycle() {
+        if (!isEnabled() || !runtimeConfigService.isAutoUpdateEnabled()) {
+            return;
+        }
+        synchronized (lock) {
+            if (transientState == UpdateState.CHECKING
+                    || transientState == UpdateState.PREPARING
+                    || transientState == UpdateState.APPLYING
+                    || transientState == UpdateState.VERIFYING) {
+                return;
+            }
+        }
+
+        try {
+            UpdateVersionInfo staged = resolveStagedInfo();
+            if (staged != null) {
+                synchronized (lock) {
+                    activeTarget = Optional.of(copyVersionInfo(staged));
+                }
+                tryApplyStagedUpdate(false);
+                return;
+            }
+
+            AvailableRelease release;
+            synchronized (lock) {
+                release = availableRelease.orElse(null);
+            }
+            if (release != null) {
+                prepare();
+                tryApplyStagedUpdate(false);
+                return;
+            }
+
+            if (!shouldPerformAutoCheck()) {
+                return;
+            }
+
+            CheckResolution resolution = resolveCheck();
+            if (resolution.release() == null) {
+                return;
+            }
+            prepare();
+            tryApplyStagedUpdate(false);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            handleAutoWorkflowFailure(e);
+        } catch (IOException | RuntimeException e) {
+            handleAutoWorkflowFailure(e);
+        }
+    }
+
+    private void runAutoUpdateCycleSafely() {
+        try {
+            runAutoUpdateCycle();
+        } catch (RuntimeException e) {
+            log.warn("[update] auto update cycle failed: {}", safeMessage(e));
+        }
+    }
+
+    private boolean shouldPerformAutoCheck() {
+        Integer intervalMinutes = runtimeConfigService.getUpdateCheckIntervalMinutes();
+        if (intervalMinutes == null || intervalMinutes < 1) {
+            intervalMinutes = 60;
+        }
+        Instant previousCheck = lastCheckAt;
+        if (previousCheck == null) {
+            return true;
+        }
+        return !previousCheck.plus(Duration.ofMinutes(intervalMinutes)).isAfter(Instant.now(clock));
+    }
+
+    private UpdateMaintenanceWindow.Status evaluateMaintenanceWindow() {
+        return updateMaintenanceWindow.evaluate(
+                runtimeConfigService.isUpdateMaintenanceWindowEnabled(),
+                runtimeConfigService.getUpdateMaintenanceWindowStartUtc(),
+                runtimeConfigService.getUpdateMaintenanceWindowEndUtc(),
+                Instant.now(clock));
+    }
+
+    private boolean tryApplyStagedUpdate(boolean bypassMaintenanceWindow) {
+        UpdateVersionInfo staged = resolveStagedInfo();
+        if (staged == null) {
+            return false;
+        }
+
+        synchronized (lock) {
+            activeTarget = Optional.of(copyVersionInfo(staged));
+        }
+
+        if (!bypassMaintenanceWindow) {
+            UpdateMaintenanceWindow.Status windowStatus = evaluateMaintenanceWindow();
+            if (!windowStatus.open()) {
+                synchronized (lock) {
+                    transientState = UpdateState.WAITING_FOR_WINDOW;
+                }
+                return false;
+            }
+        }
+
+        UpdateActivityGate.Result activityStatus = updateActivityGate.getStatus();
+        if (activityStatus.busy()) {
+            synchronized (lock) {
+                transientState = UpdateState.WAITING_FOR_IDLE;
+            }
+            return false;
+        }
+
+        applyStagedUpdate();
+        return true;
+    }
+
+    private void handleAutoWorkflowFailure(Throwable throwable) {
+        UpdateState state = transientState;
+        if (state == UpdateState.FAILED) {
+            return;
+        }
+        if (state == UpdateState.CHECKING) {
+            handleCheckFailure(throwable);
+            return;
+        }
+        if (state == UpdateState.APPLYING || state == UpdateState.VERIFYING) {
+            handleApplyFailure(throwable);
+            return;
+        }
+        handlePrepareFailure(null, throwable);
+    }
+
     private UpdateVersionInfo resolveTargetInfo(UpdateState effectiveState, UpdateVersionInfo staged,
             UpdateVersionInfo available) {
         if (effectiveState == UpdateState.APPLYING
                 || effectiveState == UpdateState.VERIFYING
                 || effectiveState == UpdateState.PREPARING
+                || effectiveState == UpdateState.WAITING_FOR_WINDOW
+                || effectiveState == UpdateState.WAITING_FOR_IDLE
                 || effectiveState == UpdateState.FAILED) {
             if (activeTarget.isPresent()) {
                 return copyVersionInfo(activeTarget.orElseThrow());
@@ -1274,6 +1479,14 @@ public class UpdateService {
                 72,
                 buildVersionTitle("Update staged", targetVersion),
                 "The release is ready locally. Restart the service to switch to the new version.");
+        case WAITING_FOR_WINDOW -> new StagePresentation(
+                76,
+                buildVersionTitle("Waiting for maintenance window", targetVersion),
+                "The release is staged and will be applied when the configured UTC maintenance window opens.");
+        case WAITING_FOR_IDLE -> new StagePresentation(
+                80,
+                buildVersionTitle("Waiting for running work", targetVersion),
+                "The release is staged and will be applied once active session or auto-mode work finishes.");
         case APPLYING -> new StagePresentation(
                 88,
                 buildVersionTitle("Scheduling restart", targetVersion),
@@ -1300,6 +1513,15 @@ public class UpdateService {
             return prefix;
         }
         return prefix + " " + version;
+    }
+
+    private RuntimeConfig copyRuntimeConfig(RuntimeConfig source) {
+        try {
+            String json = objectMapper.writeValueAsString(source);
+            return objectMapper.readValue(json, RuntimeConfig.class);
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to copy runtime config", e);
+        }
     }
 
     private UpdateVersionInfo toVersionInfo(AvailableRelease release) {
