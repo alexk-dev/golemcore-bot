@@ -5,6 +5,13 @@ import com.google.protobuf.Timestamp;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.AudioFormat;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.trace.TraceEventRecord;
+import me.golemcore.bot.domain.model.trace.TraceRecord;
+import me.golemcore.bot.domain.model.trace.TraceSnapshot;
+import me.golemcore.bot.domain.model.trace.TraceSpanKind;
+import me.golemcore.bot.domain.model.trace.TraceSpanRecord;
+import me.golemcore.bot.domain.model.trace.TraceStatusCode;
+import me.golemcore.bot.domain.model.trace.TraceStorageStats;
 import me.golemcore.bot.proto.session.v1.AgentSessionRecord;
 import me.golemcore.bot.proto.session.v1.JsonArray;
 import me.golemcore.bot.proto.session.v1.JsonObject;
@@ -46,6 +53,16 @@ public class SessionProtoMapper {
                 }
             }
         }
+        if (session.getTraces() != null) {
+            for (TraceRecord traceRecord : session.getTraces()) {
+                if (traceRecord != null) {
+                    builder.addTraces(toProtoTrace(traceRecord));
+                }
+            }
+        }
+        if (session.getTraceStorageStats() != null) {
+            builder.setTraceStats(toProtoTraceStorageStats(session.getTraceStorageStats()));
+        }
         if (session.getState() != null) {
             builder.setState(toProtoSessionState(session.getState()));
         }
@@ -65,6 +82,10 @@ public class SessionProtoMapper {
                 .chatId(blankToNull(record.getChatId()))
                 .messages(fromProtoMessages(record.getMessagesList()))
                 .metadata(fromProtoMap(record.getMetadataMap()))
+                .traces(fromProtoTraces(record.getTracesList()))
+                .traceStorageStats(record.hasTraceStats()
+                        ? fromProtoTraceStorageStats(record.getTraceStats())
+                        : new TraceStorageStats())
                 .state(fromProtoSessionState(record.getState()));
 
         if (record.hasCreatedAt()) {
@@ -74,6 +95,200 @@ public class SessionProtoMapper {
             builder.updatedAt(fromTimestamp(record.getUpdatedAt()));
         }
         return builder.build();
+    }
+
+    private me.golemcore.bot.proto.session.v1.TraceStorageStats toProtoTraceStorageStats(TraceStorageStats stats) {
+        return me.golemcore.bot.proto.session.v1.TraceStorageStats.newBuilder()
+                .setCompressedSnapshotBytes(safeLong(stats.getCompressedSnapshotBytes()))
+                .setUncompressedSnapshotBytes(safeLong(stats.getUncompressedSnapshotBytes()))
+                .setEvictedSnapshots(safeInt(stats.getEvictedSnapshots()))
+                .setEvictedTraces(safeInt(stats.getEvictedTraces()))
+                .setTruncatedTraces(safeInt(stats.getTruncatedTraces()))
+                .build();
+    }
+
+    private TraceStorageStats fromProtoTraceStorageStats(me.golemcore.bot.proto.session.v1.TraceStorageStats stats) {
+        return TraceStorageStats.builder()
+                .compressedSnapshotBytes(stats.getCompressedSnapshotBytes())
+                .uncompressedSnapshotBytes(stats.getUncompressedSnapshotBytes())
+                .evictedSnapshots((int) stats.getEvictedSnapshots())
+                .evictedTraces((int) stats.getEvictedTraces())
+                .truncatedTraces((int) stats.getTruncatedTraces())
+                .build();
+    }
+
+    private me.golemcore.bot.proto.session.v1.TraceRecord toProtoTrace(TraceRecord traceRecord) {
+        me.golemcore.bot.proto.session.v1.TraceRecord.Builder builder = me.golemcore.bot.proto.session.v1.TraceRecord
+                .newBuilder()
+                .setTruncated(traceRecord.isTruncated())
+                .setCompressedSnapshotBytes(safeLong(traceRecord.getCompressedSnapshotBytes()))
+                .setUncompressedSnapshotBytes(safeLong(traceRecord.getUncompressedSnapshotBytes()));
+        putIfNotBlank(traceRecord.getTraceId(), builder::setTraceId);
+        putIfNotBlank(traceRecord.getRootSpanId(), builder::setRootSpanId);
+        putIfNotBlank(traceRecord.getTraceName(), builder::setTraceName);
+        if (traceRecord.getStartedAt() != null) {
+            builder.setStartedAt(toTimestamp(traceRecord.getStartedAt()));
+        }
+        if (traceRecord.getEndedAt() != null) {
+            builder.setEndedAt(toTimestamp(traceRecord.getEndedAt()));
+        }
+        if (traceRecord.getSpans() != null) {
+            for (TraceSpanRecord spanRecord : traceRecord.getSpans()) {
+                if (spanRecord != null) {
+                    builder.addSpans(toProtoSpan(spanRecord));
+                }
+            }
+        }
+        return builder.build();
+    }
+
+    private List<TraceRecord> fromProtoTraces(List<me.golemcore.bot.proto.session.v1.TraceRecord> traces) {
+        List<TraceRecord> results = new ArrayList<>();
+        for (me.golemcore.bot.proto.session.v1.TraceRecord trace : traces) {
+            results.add(fromProtoTrace(trace));
+        }
+        return results;
+    }
+
+    private TraceRecord fromProtoTrace(me.golemcore.bot.proto.session.v1.TraceRecord traceRecord) {
+        return TraceRecord.builder()
+                .traceId(blankToNull(traceRecord.getTraceId()))
+                .rootSpanId(blankToNull(traceRecord.getRootSpanId()))
+                .traceName(blankToNull(traceRecord.getTraceName()))
+                .startedAt(traceRecord.hasStartedAt() ? fromTimestamp(traceRecord.getStartedAt()) : null)
+                .endedAt(traceRecord.hasEndedAt() ? fromTimestamp(traceRecord.getEndedAt()) : null)
+                .spans(fromProtoSpans(traceRecord.getSpansList()))
+                .truncated(traceRecord.getTruncated())
+                .compressedSnapshotBytes(traceRecord.getCompressedSnapshotBytes())
+                .uncompressedSnapshotBytes(traceRecord.getUncompressedSnapshotBytes())
+                .build();
+    }
+
+    private me.golemcore.bot.proto.session.v1.SpanRecord toProtoSpan(TraceSpanRecord spanRecord) {
+        me.golemcore.bot.proto.session.v1.SpanRecord.Builder builder = me.golemcore.bot.proto.session.v1.SpanRecord
+                .newBuilder()
+                .setKind(toProtoTraceSpanKind(spanRecord.getKind()))
+                .setStatusCode(toProtoTraceStatusCode(spanRecord.getStatusCode()));
+        putIfNotBlank(spanRecord.getSpanId(), builder::setSpanId);
+        putIfNotBlank(spanRecord.getParentSpanId(), builder::setParentSpanId);
+        putIfNotBlank(spanRecord.getName(), builder::setName);
+        putIfNotBlank(spanRecord.getStatusMessage(), builder::setStatusMessage);
+        if (spanRecord.getStartedAt() != null) {
+            builder.setStartedAt(toTimestamp(spanRecord.getStartedAt()));
+        }
+        if (spanRecord.getEndedAt() != null) {
+            builder.setEndedAt(toTimestamp(spanRecord.getEndedAt()));
+        }
+        if (spanRecord.getAttributes() != null) {
+            for (Map.Entry<String, Object> entry : spanRecord.getAttributes().entrySet()) {
+                if (entry.getKey() != null) {
+                    builder.putAttributes(entry.getKey(), toJsonValue(entry.getValue()));
+                }
+            }
+        }
+        if (spanRecord.getEvents() != null) {
+            for (TraceEventRecord eventRecord : spanRecord.getEvents()) {
+                if (eventRecord != null) {
+                    builder.addEvents(toProtoTraceEvent(eventRecord));
+                }
+            }
+        }
+        if (spanRecord.getSnapshots() != null) {
+            for (TraceSnapshot snapshot : spanRecord.getSnapshots()) {
+                if (snapshot != null) {
+                    builder.addSnapshots(toProtoTraceSnapshot(snapshot));
+                }
+            }
+        }
+        return builder.build();
+    }
+
+    private List<TraceSpanRecord> fromProtoSpans(List<me.golemcore.bot.proto.session.v1.SpanRecord> spans) {
+        List<TraceSpanRecord> results = new ArrayList<>();
+        for (me.golemcore.bot.proto.session.v1.SpanRecord span : spans) {
+            results.add(fromProtoSpan(span));
+        }
+        return results;
+    }
+
+    private TraceSpanRecord fromProtoSpan(me.golemcore.bot.proto.session.v1.SpanRecord spanRecord) {
+        return TraceSpanRecord.builder()
+                .spanId(blankToNull(spanRecord.getSpanId()))
+                .parentSpanId(blankToNull(spanRecord.getParentSpanId()))
+                .name(blankToNull(spanRecord.getName()))
+                .kind(fromProtoTraceSpanKind(spanRecord.getKind()))
+                .statusCode(fromProtoTraceStatusCode(spanRecord.getStatusCode()))
+                .statusMessage(blankToNull(spanRecord.getStatusMessage()))
+                .startedAt(spanRecord.hasStartedAt() ? fromTimestamp(spanRecord.getStartedAt()) : null)
+                .endedAt(spanRecord.hasEndedAt() ? fromTimestamp(spanRecord.getEndedAt()) : null)
+                .attributes(fromProtoMap(spanRecord.getAttributesMap()))
+                .events(fromProtoTraceEvents(spanRecord.getEventsList()))
+                .snapshots(fromProtoTraceSnapshots(spanRecord.getSnapshotsList()))
+                .build();
+    }
+
+    private me.golemcore.bot.proto.session.v1.SpanEventRecord toProtoTraceEvent(TraceEventRecord eventRecord) {
+        me.golemcore.bot.proto.session.v1.SpanEventRecord.Builder builder = me.golemcore.bot.proto.session.v1.SpanEventRecord
+                .newBuilder();
+        putIfNotBlank(eventRecord.getName(), builder::setName);
+        if (eventRecord.getTimestamp() != null) {
+            builder.setTimestamp(toTimestamp(eventRecord.getTimestamp()));
+        }
+        if (eventRecord.getAttributes() != null) {
+            for (Map.Entry<String, Object> entry : eventRecord.getAttributes().entrySet()) {
+                if (entry.getKey() != null) {
+                    builder.putAttributes(entry.getKey(), toJsonValue(entry.getValue()));
+                }
+            }
+        }
+        return builder.build();
+    }
+
+    private List<TraceEventRecord> fromProtoTraceEvents(
+            List<me.golemcore.bot.proto.session.v1.SpanEventRecord> events) {
+        List<TraceEventRecord> results = new ArrayList<>();
+        for (me.golemcore.bot.proto.session.v1.SpanEventRecord event : events) {
+            results.add(TraceEventRecord.builder()
+                    .name(blankToNull(event.getName()))
+                    .timestamp(event.hasTimestamp() ? fromTimestamp(event.getTimestamp()) : null)
+                    .attributes(fromProtoMap(event.getAttributesMap()))
+                    .build());
+        }
+        return results;
+    }
+
+    private me.golemcore.bot.proto.session.v1.SnapshotRecord toProtoTraceSnapshot(TraceSnapshot snapshot) {
+        me.golemcore.bot.proto.session.v1.SnapshotRecord.Builder builder = me.golemcore.bot.proto.session.v1.SnapshotRecord
+                .newBuilder()
+                .setTruncated(snapshot.isTruncated())
+                .setOriginalSize(safeLong(snapshot.getOriginalSize()))
+                .setCompressedSize(safeLong(snapshot.getCompressedSize()));
+        putIfNotBlank(snapshot.getSnapshotId(), builder::setSnapshotId);
+        putIfNotBlank(snapshot.getRole(), builder::setRole);
+        putIfNotBlank(snapshot.getContentType(), builder::setContentType);
+        putIfNotBlank(snapshot.getEncoding(), builder::setEncoding);
+        if (snapshot.getCompressedPayload() != null && snapshot.getCompressedPayload().length > 0) {
+            builder.setCompressedPayload(ByteString.copyFrom(snapshot.getCompressedPayload()));
+        }
+        return builder.build();
+    }
+
+    private List<TraceSnapshot> fromProtoTraceSnapshots(
+            List<me.golemcore.bot.proto.session.v1.SnapshotRecord> snapshots) {
+        List<TraceSnapshot> results = new ArrayList<>();
+        for (me.golemcore.bot.proto.session.v1.SnapshotRecord snapshot : snapshots) {
+            results.add(TraceSnapshot.builder()
+                    .snapshotId(blankToNull(snapshot.getSnapshotId()))
+                    .role(blankToNull(snapshot.getRole()))
+                    .contentType(blankToNull(snapshot.getContentType()))
+                    .encoding(blankToNull(snapshot.getEncoding()))
+                    .compressedPayload(snapshot.getCompressedPayload().toByteArray())
+                    .originalSize(snapshot.getOriginalSize())
+                    .compressedSize(snapshot.getCompressedSize())
+                    .truncated(snapshot.getTruncated())
+                    .build());
+        }
+        return results;
     }
 
     private List<Message> fromProtoMessages(List<MessageRecord> records) {
@@ -285,6 +500,50 @@ public class SessionProtoMapper {
         };
     }
 
+    private me.golemcore.bot.proto.session.v1.TraceSpanKind toProtoTraceSpanKind(TraceSpanKind kind) {
+        if (kind == null) {
+            return me.golemcore.bot.proto.session.v1.TraceSpanKind.TRACE_SPAN_KIND_UNSPECIFIED;
+        }
+        return switch (kind) {
+        case INGRESS -> me.golemcore.bot.proto.session.v1.TraceSpanKind.TRACE_SPAN_KIND_INGRESS;
+        case INTERNAL -> me.golemcore.bot.proto.session.v1.TraceSpanKind.TRACE_SPAN_KIND_INTERNAL;
+        case LLM -> me.golemcore.bot.proto.session.v1.TraceSpanKind.TRACE_SPAN_KIND_LLM;
+        case TOOL -> me.golemcore.bot.proto.session.v1.TraceSpanKind.TRACE_SPAN_KIND_TOOL;
+        case STORAGE -> me.golemcore.bot.proto.session.v1.TraceSpanKind.TRACE_SPAN_KIND_STORAGE;
+        case OUTBOUND -> me.golemcore.bot.proto.session.v1.TraceSpanKind.TRACE_SPAN_KIND_OUTBOUND;
+        };
+    }
+
+    private TraceSpanKind fromProtoTraceSpanKind(me.golemcore.bot.proto.session.v1.TraceSpanKind kind) {
+        return switch (kind) {
+        case TRACE_SPAN_KIND_INGRESS -> TraceSpanKind.INGRESS;
+        case TRACE_SPAN_KIND_INTERNAL -> TraceSpanKind.INTERNAL;
+        case TRACE_SPAN_KIND_LLM -> TraceSpanKind.LLM;
+        case TRACE_SPAN_KIND_TOOL -> TraceSpanKind.TOOL;
+        case TRACE_SPAN_KIND_STORAGE -> TraceSpanKind.STORAGE;
+        case TRACE_SPAN_KIND_OUTBOUND -> TraceSpanKind.OUTBOUND;
+        case TRACE_SPAN_KIND_UNSPECIFIED, UNRECOGNIZED -> null;
+        };
+    }
+
+    private me.golemcore.bot.proto.session.v1.TraceStatusCode toProtoTraceStatusCode(TraceStatusCode statusCode) {
+        if (statusCode == null) {
+            return me.golemcore.bot.proto.session.v1.TraceStatusCode.TRACE_STATUS_CODE_UNSPECIFIED;
+        }
+        return switch (statusCode) {
+        case OK -> me.golemcore.bot.proto.session.v1.TraceStatusCode.TRACE_STATUS_CODE_OK;
+        case ERROR -> me.golemcore.bot.proto.session.v1.TraceStatusCode.TRACE_STATUS_CODE_ERROR;
+        };
+    }
+
+    private TraceStatusCode fromProtoTraceStatusCode(me.golemcore.bot.proto.session.v1.TraceStatusCode statusCode) {
+        return switch (statusCode) {
+        case TRACE_STATUS_CODE_OK -> TraceStatusCode.OK;
+        case TRACE_STATUS_CODE_ERROR -> TraceStatusCode.ERROR;
+        case TRACE_STATUS_CODE_UNSPECIFIED, UNRECOGNIZED -> null;
+        };
+    }
+
     private Timestamp toTimestamp(Instant instant) {
         return Timestamp.newBuilder()
                 .setSeconds(instant.getEpochSecond())
@@ -307,5 +566,13 @@ public class SessionProtoMapper {
             return null;
         }
         return value;
+    }
+
+    private long safeLong(Long value) {
+        return value != null ? value : 0L;
+    }
+
+    private int safeInt(Integer value) {
+        return value != null ? value : 0;
     }
 }

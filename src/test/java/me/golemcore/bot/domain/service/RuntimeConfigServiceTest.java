@@ -76,6 +76,10 @@ class RuntimeConfigServiceTest {
         assertNotNull(config.getTools());
         assertNotNull(config.getTools().getShellEnvironmentVariables());
         assertTrue(config.getTools().getShellEnvironmentVariables().isEmpty());
+        assertNotNull(config.getTracing());
+        assertTrue(config.getTracing().getEnabled());
+        assertFalse(config.getTracing().getPayloadSnapshotsEnabled());
+        assertEquals(128, config.getTracing().getSessionTraceBudgetMb());
     }
 
     @Test
@@ -1432,6 +1436,7 @@ class RuntimeConfigServiceTest {
         assertTrue(persistedSections.containsKey("model-router.json"));
         assertTrue(persistedSections.containsKey("llm.json"));
         assertTrue(persistedSections.containsKey("tools.json"));
+        assertTrue(persistedSections.containsKey("tracing.json"));
         assertTrue(persistedSections.containsKey("plan.json"));
         assertTrue(persistedSections.containsKey("hive.json"));
     }
