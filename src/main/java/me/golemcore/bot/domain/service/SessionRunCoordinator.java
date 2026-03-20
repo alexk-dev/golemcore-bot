@@ -19,7 +19,6 @@ package me.golemcore.bot.domain.service;
  */
 
 import me.golemcore.bot.adapter.outbound.hive.HiveEventBatchPublisher;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AgentSession;
@@ -68,7 +67,6 @@ import java.util.concurrent.Future;
  * </ul>
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class SessionRunCoordinator {
 
@@ -79,6 +77,8 @@ public class SessionRunCoordinator {
     private final ExecutorService sessionRunExecutor;
     private final RuntimeEventService runtimeEventService;
     private final RuntimeConfigService runtimeConfigService;
+    private final DelayedSessionActionService delayedSessionActionService;
+
     private final HiveEventBatchPublisher hiveEventBatchPublisher;
 
     private final Map<SessionKey, SessionRunner> runners = new ConcurrentHashMap<>();
@@ -87,7 +87,31 @@ public class SessionRunCoordinator {
     private final Map<Message, List<Runnable>> pendingStartCallbacks = Collections
             .synchronizedMap(new IdentityHashMap<>());
 
+    public SessionRunCoordinator(SessionPort sessionPort, AgentLoop agentLoop, ExecutorService sessionRunExecutor,
+            RuntimeEventService runtimeEventService, RuntimeConfigService runtimeConfigService,
+            DelayedSessionActionService delayedSessionActionService,
+            HiveEventBatchPublisher hiveEventBatchPublisher) {
+        this.sessionPort = sessionPort;
+        this.agentLoop = agentLoop;
+        this.sessionRunExecutor = sessionRunExecutor;
+        this.runtimeEventService = runtimeEventService;
+        this.runtimeConfigService = runtimeConfigService;
+        this.delayedSessionActionService = delayedSessionActionService;
+        this.hiveEventBatchPublisher = hiveEventBatchPublisher;
+    }
+
     public void enqueue(Message inbound) {
+        Objects.requireNonNull(inbound, "inbound");
+        if (delayedSessionActionService != null
+                && !inbound.isInternalMessage()
+                && !AutoRunContextSupport.isAutoMessage(inbound)) {
+            try {
+                delayedSessionActionService.cancelOnUserActivity(inbound);
+            } catch (RuntimeException e) { // NOSONAR - inbound delivery must remain available
+                log.warn("[SessionRunCoordinator] Failed to cancel delayed actions on user activity: {}",
+                        e.getMessage());
+            }
+        }
         SessionKey key = new SessionKey(inbound.getChannelType(), inbound.getChatId());
         SessionRunner runner = runners.computeIfAbsent(key, SessionRunner::new);
         runner.enqueue(inbound);
@@ -356,11 +380,11 @@ public class SessionRunCoordinator {
             if (!queuedFollowUpMessages.isEmpty()) {
                 if (isQueueModeAll(runtimeConfigService.getTurnQueueFollowUpMode())) {
                     Message mergedFollowUp = mergeQueuedFollowUpMessagesLocked();
-                    markQueueKind(mergedFollowUp, ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP);
+                    markQueueKind(mergedFollowUp, resolveQueueKind(mergedFollowUp));
                     return mergedFollowUp;
                 }
                 Message nextFollowUp = queuedFollowUpMessages.removeFirst();
-                markQueueKind(nextFollowUp, ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP);
+                markQueueKind(nextFollowUp, resolveQueueKind(nextFollowUp));
                 return nextFollowUp;
             }
             return null;
@@ -381,7 +405,8 @@ public class SessionRunCoordinator {
         }
 
         private void enqueueFollowUp(Message inbound) {
-            if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(resolveQueueKind(inbound))) {
+            String queueKind = resolveQueueKind(inbound);
+            if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(queueKind)) {
                 java.util.Iterator<Message> iterator = queuedFollowUpMessages.iterator();
                 while (iterator.hasNext()) {
                     Message queued = iterator.next();
@@ -392,6 +417,10 @@ public class SessionRunCoordinator {
                     rejectPendingCompletion(queued, "Replaced by a newer internal retry message");
                 }
                 enqueueWithBound(queuedFollowUpMessages, inbound, "internal-retry");
+                return;
+            }
+            if (ContextAttributes.TURN_QUEUE_KIND_DELAYED_ACTION.equals(queueKind)) {
+                enqueueFollowUpWithBound(inbound, "delayed-action");
                 return;
             }
 
@@ -434,6 +463,9 @@ public class SessionRunCoordinator {
                 if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(resolveQueueKind(queued))) {
                     continue;
                 }
+                if (ContextAttributes.TURN_QUEUE_KIND_DELAYED_ACTION.equals(resolveQueueKind(queued))) {
+                    continue;
+                }
                 iterator.remove();
                 return queued;
             }
@@ -471,6 +503,11 @@ public class SessionRunCoordinator {
 
         private Message mergeQueuedFollowUpMessagesLocked() {
             Message first = queuedFollowUpMessages.removeFirst();
+            String firstQueueKind = resolveQueueKind(first);
+            if (ContextAttributes.TURN_QUEUE_KIND_DELAYED_ACTION.equals(firstQueueKind)) {
+                markQueueKind(first, ContextAttributes.TURN_QUEUE_KIND_DELAYED_ACTION);
+                return first;
+            }
             StringBuilder builder = new StringBuilder();
             appendMergedChunk(builder, first.getContent());
             Message merged = Message.builder()
@@ -486,7 +523,12 @@ public class SessionRunCoordinator {
             transferPendingCompletions(first, merged);
             while (!queuedFollowUpMessages.isEmpty()) {
                 Message next = queuedFollowUpMessages.peekFirst();
-                if (next == null || ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(resolveQueueKind(next))) {
+                if (next == null) {
+                    break;
+                }
+                String nextQueueKind = resolveQueueKind(next);
+                if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(nextQueueKind)
+                        || ContextAttributes.TURN_QUEUE_KIND_DELAYED_ACTION.equals(nextQueueKind)) {
                     break;
                 }
                 next = queuedFollowUpMessages.removeFirst();
@@ -697,6 +739,9 @@ public class SessionRunCoordinator {
             }
             if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(normalized)) {
                 return ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY;
+            }
+            if (ContextAttributes.TURN_QUEUE_KIND_DELAYED_ACTION.equals(normalized)) {
+                return ContextAttributes.TURN_QUEUE_KIND_DELAYED_ACTION;
             }
             if (ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP.equals(normalized)) {
                 return ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP;

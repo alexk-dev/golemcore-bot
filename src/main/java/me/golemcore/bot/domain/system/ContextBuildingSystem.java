@@ -34,6 +34,7 @@ import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.AutoRunContextSupport;
+import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.MemoryScopeSupport;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
@@ -46,6 +47,8 @@ import me.golemcore.bot.domain.service.WorkspaceInstructionService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.McpPort;
 import me.golemcore.bot.port.outbound.RagPort;
+import me.golemcore.bot.tools.ScheduleSessionActionTool;
+
 import me.golemcore.bot.tools.HiveLifecycleSignalTool;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -83,6 +86,7 @@ public class ContextBuildingSystem implements AgentSystem {
     private final RagPort ragPort;
     private final BotProperties properties;
     private final AutoModeService autoModeService;
+    private final DelayedActionPolicyService delayedActionPolicyService;
     private final PlanService planService;
     private final PromptSectionService promptSectionService;
     private final RuntimeConfigService runtimeConfigService;
@@ -176,7 +180,7 @@ public class ContextBuildingSystem implements AgentSystem {
         Map<String, ToolDefinition> toolsByName = new LinkedHashMap<>();
         toolCallExecutionService.listTools().stream()
                 .filter(ToolComponent::isEnabled)
-                .filter(tool -> isToolAdvertised(tool, planModeActive, hiveSessionActive))
+                .filter(tool -> isToolAdvertised(tool, context, planModeActive, hiveSessionActive))
                 .map(ToolComponent::getDefinition)
                 .forEach(tool -> putToolDefinition(toolsByName, tool, false));
 
@@ -395,10 +399,17 @@ public class ContextBuildingSystem implements AgentSystem {
         return sb.toString().trim();
     }
 
-    private boolean isToolAdvertised(ToolComponent tool, boolean planModeActive, boolean hiveSessionActive) {
+    private boolean isToolAdvertised(ToolComponent tool, AgentContext context, boolean planModeActive,
+            boolean hiveSessionActive) {
         String toolName = tool.getToolName();
         if (TOOL_PLAN_SET_CONTENT.equals(toolName) || TOOL_PLAN_GET.equals(toolName)) {
             return planModeActive;
+        }
+        if (ScheduleSessionActionTool.TOOL_NAME.equals(toolName)) {
+            String channelType = context != null && context.getSession() != null
+                    ? context.getSession().getChannelType()
+                    : null;
+            return delayedActionPolicyService.canScheduleActions(channelType);
         }
         if (TOOL_HIVE_LIFECYCLE_SIGNAL.equals(toolName)) {
             return hiveSessionActive;

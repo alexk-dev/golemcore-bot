@@ -335,6 +335,97 @@ class RuntimeConfigServiceTest {
     }
 
     @Test
+    void shouldReturnDefaultDelayedActionSettingsWhenCachedSectionMissing() throws Exception {
+        RuntimeConfig config = RuntimeConfig.builder().build();
+        config.setDelayedActions(null);
+        setCachedConfig(config);
+
+        assertTrue(service.isDelayedActionsEnabled());
+        assertEquals(1, service.getDelayedActionsTickSeconds());
+        assertEquals(50, service.getDelayedActionsMaxPendingPerSession());
+        assertEquals(java.time.Duration.ofDays(30), service.getDelayedActionsMaxDelay());
+        assertEquals(4, service.getDelayedActionsDefaultMaxAttempts());
+        assertEquals(java.time.Duration.ofMinutes(2), service.getDelayedActionsLeaseDuration());
+        assertEquals(java.time.Duration.ofDays(7), service.getDelayedActionsRetentionAfterCompletion());
+        assertTrue(service.isDelayedActionsRunLaterEnabled());
+    }
+
+    @Test
+    void shouldReturnConfiguredDelayedActionSettings() throws Exception {
+        RuntimeConfig.DelayedActionsConfig delayedActions = RuntimeConfig.DelayedActionsConfig.builder()
+                .enabled(false)
+                .tickSeconds(9)
+                .maxPendingPerSession(12)
+                .maxDelay("PT6H")
+                .defaultMaxAttempts(7)
+                .leaseDuration("PT5M")
+                .retentionAfterCompletion("P10D")
+                .allowRunLater(false)
+                .build();
+        persistedSections.put("delayed-actions.json", objectMapper.writeValueAsString(delayedActions));
+
+        assertFalse(service.isDelayedActionsEnabled());
+        assertEquals(9, service.getDelayedActionsTickSeconds());
+        assertEquals(12, service.getDelayedActionsMaxPendingPerSession());
+        assertEquals(java.time.Duration.ofHours(6), service.getDelayedActionsMaxDelay());
+        assertEquals(7, service.getDelayedActionsDefaultMaxAttempts());
+        assertEquals(java.time.Duration.ofMinutes(5), service.getDelayedActionsLeaseDuration());
+        assertEquals(java.time.Duration.ofDays(10), service.getDelayedActionsRetentionAfterCompletion());
+        assertFalse(service.isDelayedActionsRunLaterEnabled());
+    }
+
+    @Test
+    void shouldFallbackInvalidDelayedActionSettingsToDefaults() throws Exception {
+        RuntimeConfig.DelayedActionsConfig delayedActions = RuntimeConfig.DelayedActionsConfig.builder()
+                .enabled(true)
+                .tickSeconds(0)
+                .maxPendingPerSession(-1)
+                .maxDelay("not-a-duration")
+                .defaultMaxAttempts(0)
+                .leaseDuration("nope")
+                .retentionAfterCompletion("bad")
+                .allowRunLater(null)
+                .build();
+        persistedSections.put("delayed-actions.json", objectMapper.writeValueAsString(delayedActions));
+
+        assertTrue(service.isDelayedActionsEnabled());
+        assertEquals(1, service.getDelayedActionsTickSeconds());
+        assertEquals(50, service.getDelayedActionsMaxPendingPerSession());
+        assertEquals(java.time.Duration.ofDays(30), service.getDelayedActionsMaxDelay());
+        assertEquals(4, service.getDelayedActionsDefaultMaxAttempts());
+        assertEquals(java.time.Duration.ofMinutes(2), service.getDelayedActionsLeaseDuration());
+        assertEquals(java.time.Duration.ofDays(7), service.getDelayedActionsRetentionAfterCompletion());
+        assertTrue(service.isDelayedActionsRunLaterEnabled());
+    }
+
+    @Test
+    void shouldNormalizeInvalidDelayedActionSettingsDuringRuntimeConfigUpdate() {
+        RuntimeConfig newConfig = RuntimeConfig.builder().build();
+        RuntimeConfig.DelayedActionsConfig delayedActions = new RuntimeConfig.DelayedActionsConfig();
+        delayedActions.setEnabled(null);
+        delayedActions.setTickSeconds(0);
+        delayedActions.setMaxPendingPerSession(0);
+        delayedActions.setMaxDelay("not-a-duration");
+        delayedActions.setDefaultMaxAttempts(0);
+        delayedActions.setLeaseDuration("bad");
+        delayedActions.setRetentionAfterCompletion("bad");
+        delayedActions.setAllowRunLater(null);
+        newConfig.setDelayedActions(delayedActions);
+
+        service.updateRuntimeConfig(newConfig);
+
+        RuntimeConfig updated = service.getRuntimeConfig();
+        assertTrue(updated.getDelayedActions().getEnabled());
+        assertEquals(1, updated.getDelayedActions().getTickSeconds());
+        assertEquals(50, updated.getDelayedActions().getMaxPendingPerSession());
+        assertEquals("PT720H", updated.getDelayedActions().getMaxDelay());
+        assertEquals(4, updated.getDelayedActions().getDefaultMaxAttempts());
+        assertEquals("PT2M", updated.getDelayedActions().getLeaseDuration());
+        assertEquals("PT168H", updated.getDelayedActions().getRetentionAfterCompletion());
+        assertTrue(updated.getDelayedActions().getAllowRunLater());
+    }
+
+    @Test
     void shouldReturnConfiguredTurnAutoRetrySettings() throws Exception {
         RuntimeConfig.TurnConfig turn = RuntimeConfig.TurnConfig.builder()
                 .autoRetryEnabled(false)
@@ -694,7 +785,8 @@ class RuntimeConfigServiceTest {
 
         service.updateRuntimeConfig(newConfig);
 
-        verify(storagePort, times(16)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
+        verify(storagePort, times(RuntimeConfig.ConfigSection.values().length))
+                .putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
 
         RuntimeConfig updated = service.getRuntimeConfig();
         assertEquals("custom/model", updated.getModelRouter().getBalancedModel());
@@ -787,7 +879,8 @@ class RuntimeConfigServiceTest {
         assertEquals(20, code.getCode().length());
         assertFalse(code.isUsed());
         assertNotNull(code.getCreatedAt());
-        verify(storagePort, atLeast(16)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
+        verify(storagePort, atLeast(RuntimeConfig.ConfigSection.values().length))
+                .putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
     }
 
     @Test
@@ -1168,5 +1261,14 @@ class RuntimeConfigServiceTest {
         assertTrue(persistedSections.containsKey("tools.json"));
         assertTrue(persistedSections.containsKey("plan.json"));
         assertTrue(persistedSections.containsKey("hive.json"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private void setCachedConfig(RuntimeConfig config) throws Exception {
+        java.lang.reflect.Field field = RuntimeConfigService.class.getDeclaredField("configRef");
+        field.setAccessible(true);
+        java.util.concurrent.atomic.AtomicReference<RuntimeConfig> ref = (java.util.concurrent.atomic.AtomicReference<RuntimeConfig>) field
+                .get(service);
+        ref.set(config);
     }
 }

@@ -373,4 +373,21 @@ class WebChannelAdapterTest {
         adapter.sendMessage("chat-b", "after-disconnect").join();
         verify(session, times(2)).send(any());
     }
+
+    @Test
+    void shouldReportOnlyOpenSessionsAsActive() {
+        assertFalse(adapter.hasActiveSession(null));
+        assertFalse(adapter.hasActiveSession(" "));
+        assertFalse(adapter.hasActiveSession("chat-missing"));
+
+        WebSocketSession closedSession = mock(WebSocketSession.class);
+        when(closedSession.isOpen()).thenReturn(false);
+        adapter.registerSession("chat-closed", closedSession);
+        assertFalse(adapter.hasActiveSession("chat-closed"));
+
+        WebSocketSession openSession = mock(WebSocketSession.class);
+        when(openSession.isOpen()).thenReturn(true);
+        adapter.registerSession("chat-open", openSession);
+        assertTrue(adapter.hasActiveSession("chat-open"));
+    }
 }

@@ -70,6 +70,9 @@ public class RuntimeConfig {
     private PlanConfig plan = new PlanConfig();
 
     @Builder.Default
+    private DelayedActionsConfig delayedActions = new DelayedActionsConfig();
+
+    @Builder.Default
     private HiveConfig hive = new HiveConfig();
 
     @Data
@@ -392,6 +395,29 @@ public class RuntimeConfig {
         private Boolean stopOnFailure = true;
     }
 
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class DelayedActionsConfig {
+        @Builder.Default
+        private Boolean enabled = true;
+        @Builder.Default
+        private Integer tickSeconds = 1;
+        @Builder.Default
+        private Integer maxPendingPerSession = 50;
+        @Builder.Default
+        private String maxDelay = "P30D";
+        @Builder.Default
+        private Integer defaultMaxAttempts = 4;
+        @Builder.Default
+        private String leaseDuration = "PT2M";
+        @Builder.Default
+        private String retentionAfterCompletion = "P7D";
+        @Builder.Default
+        private Boolean allowRunLater = true;
+    }
+
     /**
      * Whitelist of valid configuration sections. Each section corresponds to a
      * separate JSON file in the preferences directory.
@@ -408,7 +434,8 @@ public class RuntimeConfig {
                                         TurnConfig.class), MEMORY("memory", MemoryConfig.class), SKILLS("skills",
                                                 SkillsConfig.class), USAGE("usage", UsageConfig.class), MCP("mcp",
                                                         McpConfig.class), PLAN("plan", PlanConfig.class), HIVE("hive",
-                                                                HiveConfig.class);
+                                                                HiveConfig.class), DELAYED_ACTIONS("delayed-actions",
+                                                                        DelayedActionsConfig.class);
 
         private final String fileId;
         private final Class<?> configClass;

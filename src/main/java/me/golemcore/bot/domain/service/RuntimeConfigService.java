@@ -141,6 +141,15 @@ public class RuntimeConfigService {
     private static final int DEFAULT_PLAN_MAX_PLANS = 5;
     private static final int DEFAULT_PLAN_MAX_STEPS_PER_PLAN = 50;
     private static final boolean DEFAULT_PLAN_STOP_ON_FAILURE = true;
+    private static final boolean DEFAULT_DELAYED_ACTIONS_ENABLED = true;
+    private static final int DEFAULT_DELAYED_ACTIONS_TICK_SECONDS = 1;
+    private static final int DEFAULT_DELAYED_ACTIONS_MAX_PENDING_PER_SESSION = 50;
+    private static final java.time.Duration DEFAULT_DELAYED_ACTIONS_MAX_DELAY = java.time.Duration.ofDays(30);
+    private static final int DEFAULT_DELAYED_ACTIONS_MAX_ATTEMPTS = 4;
+    private static final java.time.Duration DEFAULT_DELAYED_ACTIONS_LEASE_DURATION = java.time.Duration.ofMinutes(2);
+    private static final java.time.Duration DEFAULT_DELAYED_ACTIONS_RETENTION = java.time.Duration.ofDays(7);
+    private static final boolean DEFAULT_DELAYED_ACTIONS_ALLOW_RUN_LATER = true;
+
     private static final boolean DEFAULT_HIVE_ENABLED = false;
     private static final boolean DEFAULT_HIVE_AUTO_CONNECT = false;
     private static final boolean DEFAULT_HIVE_MANAGED_BY_PROPERTIES = false;
@@ -503,6 +512,91 @@ public class RuntimeConfigService {
         }
         Boolean val = planConfig.getStopOnFailure();
         return val != null ? val : DEFAULT_PLAN_STOP_ON_FAILURE;
+    }
+
+    // ==================== Delayed Actions ====================
+
+    public boolean isDelayedActionsEnabled() {
+        RuntimeConfig.DelayedActionsConfig delayedConfig = getRuntimeConfig().getDelayedActions();
+        if (delayedConfig == null) {
+            return DEFAULT_DELAYED_ACTIONS_ENABLED;
+        }
+        Boolean val = delayedConfig.getEnabled();
+        return val != null ? val : DEFAULT_DELAYED_ACTIONS_ENABLED;
+    }
+
+    public int getDelayedActionsTickSeconds() {
+        RuntimeConfig.DelayedActionsConfig delayedConfig = getRuntimeConfig().getDelayedActions();
+        if (delayedConfig == null) {
+            return DEFAULT_DELAYED_ACTIONS_TICK_SECONDS;
+        }
+        Integer val = delayedConfig.getTickSeconds();
+        return val != null && val > 0 ? val : DEFAULT_DELAYED_ACTIONS_TICK_SECONDS;
+    }
+
+    public int getDelayedActionsMaxPendingPerSession() {
+        RuntimeConfig.DelayedActionsConfig delayedConfig = getRuntimeConfig().getDelayedActions();
+        if (delayedConfig == null) {
+            return DEFAULT_DELAYED_ACTIONS_MAX_PENDING_PER_SESSION;
+        }
+        Integer val = delayedConfig.getMaxPendingPerSession();
+        return val != null && val > 0 ? val : DEFAULT_DELAYED_ACTIONS_MAX_PENDING_PER_SESSION;
+    }
+
+    public java.time.Duration getDelayedActionsMaxDelay() {
+        RuntimeConfig.DelayedActionsConfig delayedConfig = getRuntimeConfig().getDelayedActions();
+        if (delayedConfig == null || delayedConfig.getMaxDelay() == null || delayedConfig.getMaxDelay().isBlank()) {
+            return DEFAULT_DELAYED_ACTIONS_MAX_DELAY;
+        }
+        try {
+            return java.time.Duration.parse(delayedConfig.getMaxDelay());
+        } catch (java.time.format.DateTimeParseException e) {
+            return DEFAULT_DELAYED_ACTIONS_MAX_DELAY;
+        }
+    }
+
+    public int getDelayedActionsDefaultMaxAttempts() {
+        RuntimeConfig.DelayedActionsConfig delayedConfig = getRuntimeConfig().getDelayedActions();
+        if (delayedConfig == null) {
+            return DEFAULT_DELAYED_ACTIONS_MAX_ATTEMPTS;
+        }
+        Integer val = delayedConfig.getDefaultMaxAttempts();
+        return val != null && val > 0 ? val : DEFAULT_DELAYED_ACTIONS_MAX_ATTEMPTS;
+    }
+
+    public java.time.Duration getDelayedActionsLeaseDuration() {
+        RuntimeConfig.DelayedActionsConfig delayedConfig = getRuntimeConfig().getDelayedActions();
+        if (delayedConfig == null || delayedConfig.getLeaseDuration() == null
+                || delayedConfig.getLeaseDuration().isBlank()) {
+            return DEFAULT_DELAYED_ACTIONS_LEASE_DURATION;
+        }
+        try {
+            return java.time.Duration.parse(delayedConfig.getLeaseDuration());
+        } catch (java.time.format.DateTimeParseException e) {
+            return DEFAULT_DELAYED_ACTIONS_LEASE_DURATION;
+        }
+    }
+
+    public java.time.Duration getDelayedActionsRetentionAfterCompletion() {
+        RuntimeConfig.DelayedActionsConfig delayedConfig = getRuntimeConfig().getDelayedActions();
+        if (delayedConfig == null || delayedConfig.getRetentionAfterCompletion() == null
+                || delayedConfig.getRetentionAfterCompletion().isBlank()) {
+            return DEFAULT_DELAYED_ACTIONS_RETENTION;
+        }
+        try {
+            return java.time.Duration.parse(delayedConfig.getRetentionAfterCompletion());
+        } catch (java.time.format.DateTimeParseException e) {
+            return DEFAULT_DELAYED_ACTIONS_RETENTION;
+        }
+    }
+
+    public boolean isDelayedActionsRunLaterEnabled() {
+        RuntimeConfig.DelayedActionsConfig delayedConfig = getRuntimeConfig().getDelayedActions();
+        if (delayedConfig == null) {
+            return DEFAULT_DELAYED_ACTIONS_ALLOW_RUN_LATER;
+        }
+        Boolean val = delayedConfig.getAllowRunLater();
+        return val != null ? val : DEFAULT_DELAYED_ACTIONS_ALLOW_RUN_LATER;
     }
 
     public String getVoiceApiKey() {
@@ -1208,6 +1302,9 @@ public class RuntimeConfigService {
                 RuntimeConfig.McpConfig::new);
         persistSection(RuntimeConfig.ConfigSection.PLAN, cfg.getPlan(),
                 RuntimeConfig.PlanConfig::new);
+        persistSection(RuntimeConfig.ConfigSection.DELAYED_ACTIONS, cfg.getDelayedActions(),
+                RuntimeConfig.DelayedActionsConfig::new);
+
         persistSection(RuntimeConfig.ConfigSection.HIVE, cfg.getHive(),
                 RuntimeConfig.HiveConfig::new);
 
@@ -1278,6 +1375,9 @@ public class RuntimeConfigService {
                 RuntimeConfig.McpConfig.class, RuntimeConfig.McpConfig::new);
         RuntimeConfig.PlanConfig plan = loadSection(RuntimeConfig.ConfigSection.PLAN,
                 RuntimeConfig.PlanConfig.class, RuntimeConfig.PlanConfig::new);
+        RuntimeConfig.DelayedActionsConfig delayedActions = loadSection(RuntimeConfig.ConfigSection.DELAYED_ACTIONS,
+                RuntimeConfig.DelayedActionsConfig.class, RuntimeConfig.DelayedActionsConfig::new);
+
         RuntimeConfig.HiveConfig hive = loadSection(RuntimeConfig.ConfigSection.HIVE,
                 RuntimeConfig.HiveConfig.class, RuntimeConfig.HiveConfig::new);
 
@@ -1297,7 +1397,10 @@ public class RuntimeConfigService {
                 .usage(usage)
                 .mcp(mcp)
                 .plan(plan)
+                .delayedActions(delayedActions)
+
                 .hive(hive)
+                .delayedActions(delayedActions)
                 .build();
 
         log.info("[RuntimeConfig] Loaded runtime config from {} section files",
@@ -1393,6 +1496,9 @@ public class RuntimeConfigService {
         if (cfg.getPlan() == null) {
             cfg.setPlan(new RuntimeConfig.PlanConfig());
         }
+        if (cfg.getDelayedActions() == null) {
+            cfg.setDelayedActions(new RuntimeConfig.DelayedActionsConfig());
+        }
         if (cfg.getPlan().getEnabled() == null) {
             cfg.getPlan().setEnabled(DEFAULT_PLAN_ENABLED);
         }
@@ -1404,6 +1510,54 @@ public class RuntimeConfigService {
         }
         if (cfg.getPlan().getStopOnFailure() == null) {
             cfg.getPlan().setStopOnFailure(DEFAULT_PLAN_STOP_ON_FAILURE);
+        }
+        if (cfg.getDelayedActions().getEnabled() == null) {
+            cfg.getDelayedActions().setEnabled(DEFAULT_DELAYED_ACTIONS_ENABLED);
+        }
+        Integer delayedTickSeconds = cfg.getDelayedActions().getTickSeconds();
+        if (delayedTickSeconds == null || delayedTickSeconds < 1) {
+            cfg.getDelayedActions().setTickSeconds(DEFAULT_DELAYED_ACTIONS_TICK_SECONDS);
+        }
+        Integer delayedMaxPending = cfg.getDelayedActions().getMaxPendingPerSession();
+        if (delayedMaxPending == null || delayedMaxPending < 1) {
+            cfg.getDelayedActions().setMaxPendingPerSession(DEFAULT_DELAYED_ACTIONS_MAX_PENDING_PER_SESSION);
+        }
+        if (cfg.getDelayedActions().getMaxDelay() == null || cfg.getDelayedActions().getMaxDelay().isBlank()) {
+            cfg.getDelayedActions().setMaxDelay(DEFAULT_DELAYED_ACTIONS_MAX_DELAY.toString());
+        } else {
+            try {
+                java.time.Duration.parse(cfg.getDelayedActions().getMaxDelay());
+            } catch (java.time.format.DateTimeParseException e) {
+                cfg.getDelayedActions().setMaxDelay(DEFAULT_DELAYED_ACTIONS_MAX_DELAY.toString());
+            }
+        }
+        Integer delayedMaxAttempts = cfg.getDelayedActions().getDefaultMaxAttempts();
+        if (delayedMaxAttempts == null || delayedMaxAttempts < 1) {
+            cfg.getDelayedActions().setDefaultMaxAttempts(DEFAULT_DELAYED_ACTIONS_MAX_ATTEMPTS);
+        }
+        if (cfg.getDelayedActions().getLeaseDuration() == null
+                || cfg.getDelayedActions().getLeaseDuration().isBlank()) {
+            cfg.getDelayedActions().setLeaseDuration(DEFAULT_DELAYED_ACTIONS_LEASE_DURATION.toString());
+        } else {
+            try {
+                java.time.Duration.parse(cfg.getDelayedActions().getLeaseDuration());
+            } catch (java.time.format.DateTimeParseException e) {
+                cfg.getDelayedActions().setLeaseDuration(DEFAULT_DELAYED_ACTIONS_LEASE_DURATION.toString());
+            }
+        }
+        if (cfg.getDelayedActions().getRetentionAfterCompletion() == null
+                || cfg.getDelayedActions().getRetentionAfterCompletion().isBlank()) {
+            cfg.getDelayedActions().setRetentionAfterCompletion(DEFAULT_DELAYED_ACTIONS_RETENTION.toString());
+        } else {
+            try {
+                java.time.Duration.parse(cfg.getDelayedActions().getRetentionAfterCompletion());
+            } catch (java.time.format.DateTimeParseException e) {
+                cfg.getDelayedActions()
+                        .setRetentionAfterCompletion(DEFAULT_DELAYED_ACTIONS_RETENTION.toString());
+            }
+        }
+        if (cfg.getDelayedActions().getAllowRunLater() == null) {
+            cfg.getDelayedActions().setAllowRunLater(DEFAULT_DELAYED_ACTIONS_ALLOW_RUN_LATER);
         }
         if (cfg.getHive() == null) {
             cfg.setHive(new RuntimeConfig.HiveConfig());
