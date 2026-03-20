@@ -1,6 +1,7 @@
 package me.golemcore.bot.domain.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.UpdateBlockedReason;
 import me.golemcore.bot.domain.model.UpdateState;
 import me.golemcore.bot.domain.model.UpdateStatus;
@@ -16,6 +17,7 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSession;
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.Authenticator;
@@ -46,6 +48,9 @@ import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Flow;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -53,6 +58,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -496,6 +503,102 @@ class UpdateServiceTest {
     }
 
     @Test
+    void shouldNotInitializeAutoUpdateSchedulerWhenFeatureIsDisabled() {
+        botProperties.getUpdate().setEnabled(false);
+        UpdateService service = createService();
+
+        service.initAutoUpdateScheduler();
+
+        assertNull(readPrivateField(service, "autoUpdateScheduler", ScheduledExecutorService.class));
+        assertNull(readPrivateField(service, "autoUpdateTask", ScheduledFuture.class));
+    }
+
+    @Test
+    void shouldInitializeAndShutdownAutoUpdateScheduler(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+        UpdateService service = createService();
+
+        service.initAutoUpdateScheduler();
+        ScheduledExecutorService scheduler = readPrivateField(service, "autoUpdateScheduler",
+                ScheduledExecutorService.class);
+        ScheduledFuture<?> task = readPrivateField(service, "autoUpdateTask", ScheduledFuture.class);
+
+        assertNotNull(scheduler);
+        assertNotNull(task);
+        assertFalse(scheduler.isShutdown());
+
+        service.shutdownAutoUpdateScheduler();
+
+        assertTrue(task.isCancelled());
+        assertTrue(scheduler.isShutdown());
+    }
+
+    @Test
+    void shouldReturnDefaultUpdateConfigWhenApiConfigIsMissing() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder().build();
+        runtimeConfig.setUpdate(null);
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(runtimeConfig);
+
+        UpdateService service = createService();
+        RuntimeConfig.UpdateConfig config = service.getConfig();
+
+        assertTrue(config.getAutoEnabled());
+        assertEquals(60, config.getCheckIntervalMinutes());
+        assertFalse(config.getMaintenanceWindowEnabled());
+        assertEquals("00:00", config.getMaintenanceWindowStartUtc());
+        assertEquals("00:00", config.getMaintenanceWindowEndUtc());
+    }
+
+    @Test
+    void shouldPersistUpdatedConfigAndReturnSavedValue() {
+        AtomicReference<RuntimeConfig> storedConfig = new AtomicReference<>(RuntimeConfig.builder().build());
+        when(runtimeConfigService.getRuntimeConfig()).thenAnswer(invocation -> storedConfig.get());
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenAnswer(invocation -> storedConfig.get());
+        doAnswer(invocation -> {
+            storedConfig.set(invocation.getArgument(0));
+            return null;
+        }).when(runtimeConfigService).updateRuntimeConfig(any(RuntimeConfig.class));
+
+        UpdateService service = createService();
+        RuntimeConfig.UpdateConfig request = RuntimeConfig.UpdateConfig.builder()
+                .autoEnabled(false)
+                .checkIntervalMinutes(15)
+                .maintenanceWindowEnabled(true)
+                .maintenanceWindowStartUtc("01:30")
+                .maintenanceWindowEndUtc("03:00")
+                .build();
+
+        RuntimeConfig.UpdateConfig saved = service.updateConfig(request);
+
+        assertFalse(saved.getAutoEnabled());
+        assertEquals(15, saved.getCheckIntervalMinutes());
+        assertTrue(saved.getMaintenanceWindowEnabled());
+        assertEquals("01:30", saved.getMaintenanceWindowStartUtc());
+        assertEquals("03:00", saved.getMaintenanceWindowEndUtc());
+    }
+
+    @Test
+    void shouldPersistDefaultUpdateConfigWhenNullConfigIsProvided() {
+        AtomicReference<RuntimeConfig> storedConfig = new AtomicReference<>(RuntimeConfig.builder().build());
+        when(runtimeConfigService.getRuntimeConfig()).thenAnswer(invocation -> storedConfig.get());
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenAnswer(invocation -> storedConfig.get());
+        doAnswer(invocation -> {
+            storedConfig.set(invocation.getArgument(0));
+            return null;
+        }).when(runtimeConfigService).updateRuntimeConfig(any(RuntimeConfig.class));
+
+        UpdateService service = createService();
+
+        RuntimeConfig.UpdateConfig saved = service.updateConfig(null);
+
+        assertTrue(saved.getAutoEnabled());
+        assertEquals(60, saved.getCheckIntervalMinutes());
+        assertFalse(saved.getMaintenanceWindowEnabled());
+        assertEquals("00:00", saved.getMaintenanceWindowStartUtc());
+        assertEquals("00:00", saved.getMaintenanceWindowEndUtc());
+    }
+
+    @Test
     void shouldAutoPrepareAndWaitForMaintenanceWindowWhenClosed(@TempDir Path tempDir) throws Exception {
         enableUpdates(tempDir);
         when(runtimeConfigService.isUpdateMaintenanceWindowEnabled()).thenReturn(true);
@@ -729,6 +832,17 @@ class UpdateServiceTest {
                 throw error;
             }
             throw new IllegalStateException("Reflective invocation failed: " + method.getName(), cause);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> T readPrivateField(UpdateService service, String fieldName, Class<T> fieldType) {
+        try {
+            Field field = UpdateService.class.getDeclaredField(fieldName);
+            field.setAccessible(true);
+            return (T) field.get(service);
+        } catch (NoSuchFieldException | IllegalAccessException e) {
+            throw new IllegalStateException("Failed to read field: " + fieldName, e);
         }
     }
 

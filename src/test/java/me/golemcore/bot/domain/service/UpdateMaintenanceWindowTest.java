@@ -62,4 +62,16 @@ class UpdateMaintenanceWindowTest {
         assertFalse(closed.open());
         assertEquals(Instant.parse("2026-03-20T23:00:00Z"), closed.nextEligibleAt());
     }
+
+    @Test
+    void shouldTreatEqualWindowBoundsAsAlwaysOpen() {
+        UpdateMaintenanceWindow.Status status = window.evaluate(
+                true,
+                "01:00",
+                "01:00",
+                Instant.parse("2026-03-20T12:00:00Z"));
+
+        assertTrue(status.open());
+        assertNull(status.nextEligibleAt());
+    }
 }

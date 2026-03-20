@@ -207,6 +207,17 @@ class RuntimeConfigServiceTest {
     }
 
     @Test
+    void shouldReturnDefaultUpdateSettingsWhenStoredSectionIsNull() {
+        persistedSections.put("update.json", "null");
+
+        assertTrue(service.isAutoUpdateEnabled());
+        assertEquals(60, service.getUpdateCheckIntervalMinutes());
+        assertFalse(service.isUpdateMaintenanceWindowEnabled());
+        assertEquals("00:00", service.getUpdateMaintenanceWindowStartUtc());
+        assertEquals("00:00", service.getUpdateMaintenanceWindowEndUtc());
+    }
+
+    @Test
     void shouldNormalizeInvalidUpdateSettings() throws Exception {
         RuntimeConfig.UpdateConfig update = RuntimeConfig.UpdateConfig.builder()
                 .autoEnabled(null)
@@ -233,6 +244,22 @@ class RuntimeConfigServiceTest {
         assertEquals(RuntimeConfig.ConfigSection.UPDATE,
                 RuntimeConfig.ConfigSection.fromFileId("update").orElseThrow());
         assertEquals("update.json", RuntimeConfig.ConfigSection.UPDATE.getFileName());
+    }
+
+    @Test
+    void shouldInitializeUpdateDefaultsWhenNullDuringRuntimeConfigUpdate() {
+        RuntimeConfig newConfig = RuntimeConfig.builder().build();
+        newConfig.setUpdate(null);
+
+        service.updateRuntimeConfig(newConfig);
+
+        RuntimeConfig updated = service.getRuntimeConfig();
+        assertNotNull(updated.getUpdate());
+        assertTrue(updated.getUpdate().getAutoEnabled());
+        assertEquals(60, updated.getUpdate().getCheckIntervalMinutes());
+        assertFalse(updated.getUpdate().getMaintenanceWindowEnabled());
+        assertEquals("00:00", updated.getUpdate().getMaintenanceWindowStartUtc());
+        assertEquals("00:00", updated.getUpdate().getMaintenanceWindowEndUtc());
     }
 
     @Test

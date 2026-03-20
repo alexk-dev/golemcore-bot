@@ -55,4 +55,51 @@ class UpdateRuntimeCleanupServiceTest {
         assertFalse(Files.exists(jarsDir.resolve("bot-0.4.1.jar")));
         assertTrue(Files.exists(jarsDir.resolve("bot-0.4.2.jar")));
     }
+
+    @Test
+    void shouldSkipCleanupWhenUpdateFeatureIsDisabled(@TempDir Path tempDir) throws Exception {
+        BotProperties botProperties = new BotProperties();
+        botProperties.getUpdate().setEnabled(false);
+        botProperties.getUpdate().setUpdatesPath(tempDir.toString());
+
+        Path jarsDir = tempDir.resolve("jars");
+        Files.createDirectories(jarsDir);
+        Files.writeString(jarsDir.resolve("bot-0.4.2.jar"), "current", StandardCharsets.UTF_8);
+
+        UpdateRuntimeCleanupService service = new UpdateRuntimeCleanupService(botProperties);
+        service.onApplicationReady();
+
+        assertTrue(Files.exists(jarsDir.resolve("bot-0.4.2.jar")));
+    }
+
+    @Test
+    void shouldReturnWhenJarsDirectoryIsMissing(@TempDir Path tempDir) {
+        BotProperties botProperties = new BotProperties();
+        botProperties.getUpdate().setEnabled(true);
+        botProperties.getUpdate().setUpdatesPath(tempDir.toString());
+
+        UpdateRuntimeCleanupService service = new UpdateRuntimeCleanupService(botProperties);
+
+        service.onApplicationReady();
+
+        assertFalse(Files.exists(tempDir.resolve("jars")));
+    }
+
+    @Test
+    void shouldIgnoreUnreadableMarkerDirectories(@TempDir Path tempDir) throws Exception {
+        BotProperties botProperties = new BotProperties();
+        botProperties.getUpdate().setEnabled(true);
+        botProperties.getUpdate().setUpdatesPath(tempDir.toString());
+
+        Path jarsDir = tempDir.resolve("jars");
+        Files.createDirectories(jarsDir);
+        Files.writeString(jarsDir.resolve("bot-0.4.1.jar"), "old", StandardCharsets.UTF_8);
+        Files.createDirectories(tempDir.resolve("current.txt"));
+        Files.createDirectories(tempDir.resolve("staged.txt"));
+
+        UpdateRuntimeCleanupService service = new UpdateRuntimeCleanupService(botProperties);
+        service.cleanupAfterSuccessfulStartup();
+
+        assertFalse(Files.exists(jarsDir.resolve("bot-0.4.1.jar")));
+    }
 }
