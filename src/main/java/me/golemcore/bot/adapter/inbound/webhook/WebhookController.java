@@ -24,6 +24,7 @@ import me.golemcore.bot.adapter.inbound.webhook.dto.WakeRequest;
 import me.golemcore.bot.adapter.inbound.webhook.dto.WebhookResponse;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.security.InputSanitizer;
@@ -172,6 +173,12 @@ public class WebhookController {
             int timeout = request.getTimeoutSeconds() > 0
                     ? request.getTimeoutSeconds()
                     : config.getDefaultTimeoutSeconds();
+            String modelTier;
+            try {
+                modelTier = normalizeOptionalModelTier(request.getModel(), "'model'");
+            } catch (IllegalArgumentException e) {
+                return badRequest(e.getMessage());
+            }
 
             String sanitizedMessage = inputSanitizer.sanitize(request.getMessage());
             String safeMessage = wrapExternal(sanitizedMessage);
@@ -180,8 +187,8 @@ public class WebhookController {
                     request.getMetadata() != null ? request.getMetadata() : Map.of());
             metadata.put("webhook.runId", runId);
             metadata.put("webhook.timeoutSeconds", timeout);
-            if (request.getModel() != null) {
-                metadata.put("webhook.modelTier", request.getModel());
+            if (modelTier != null) {
+                metadata.put("webhook.modelTier", modelTier);
             }
             if (request.isDeliver()) {
                 metadata.put("webhook.deliver", true);
@@ -200,10 +207,10 @@ public class WebhookController {
                         runId,
                         chatId,
                         request.getCallbackUrl(),
-                        request.getModel());
+                        modelTier);
             }
 
-            channelAdapter.registerPendingRun(chatId, runId, request.getCallbackUrl(), request.getModel(), deliveryId);
+            channelAdapter.registerPendingRun(chatId, runId, request.getCallbackUrl(), modelTier, deliveryId);
 
             Message message = buildMessage(chatId, safeMessage, metadata);
             eventPublisher.publishEvent(new AgentLoop.InboundMessageEvent(message));
@@ -255,7 +262,11 @@ public class WebhookController {
             String safeText = wrapExternal(sanitizedText);
 
             if (ACTION_AGENT.equals(mapping.getAction())) {
-                return dispatchAsAgent(mapping, safeText, config);
+                try {
+                    return dispatchAsAgent(mapping, safeText, config);
+                } catch (IllegalArgumentException e) {
+                    return badRequest(e.getMessage());
+                }
             }
 
             return dispatchAsWake(mapping, safeText);
@@ -280,13 +291,14 @@ public class WebhookController {
 
         String runId = UUID.randomUUID().toString();
         String chatId = "hook:" + mapping.getName() + ":" + UUID.randomUUID();
+        String modelTier = normalizeOptionalModelTier(mapping.getModel(), "Webhook mapping model");
 
         Map<String, Object> metadata = new HashMap<>();
         metadata.put("webhook.runId", runId);
         metadata.put("webhook.mapping", mapping.getName());
         metadata.put("webhook.timeoutSeconds", config.getDefaultTimeoutSeconds());
-        if (mapping.getModel() != null) {
-            metadata.put("webhook.modelTier", mapping.getModel());
+        if (modelTier != null) {
+            metadata.put("webhook.modelTier", modelTier);
         }
         if (mapping.isDeliver()) {
             metadata.put("webhook.deliver", true);
@@ -294,7 +306,7 @@ public class WebhookController {
             metadata.put("webhook.deliver.to", mapping.getTo());
         }
 
-        channelAdapter.registerPendingRun(chatId, runId, null, mapping.getModel(), null);
+        channelAdapter.registerPendingRun(chatId, runId, null, modelTier, null);
 
         Message message = buildMessage(chatId, text, metadata);
         eventPublisher.publishEvent(new AgentLoop.InboundMessageEvent(message));
@@ -316,6 +328,17 @@ public class WebhookController {
                 .metadata(metadata)
                 .timestamp(Instant.now())
                 .build();
+    }
+
+    private String normalizeOptionalModelTier(String modelTier, String fieldName) {
+        String normalizedTier = ModelTierCatalog.normalizeTierId(modelTier);
+        if (normalizedTier == null) {
+            return null;
+        }
+        if (!ModelTierCatalog.isExplicitSelectableTier(normalizedTier)) {
+            throw new IllegalArgumentException(fieldName + " must be a known tier id");
+        }
+        return normalizedTier;
     }
 
     private <T> T parseBody(byte[] body, Class<T> type) {

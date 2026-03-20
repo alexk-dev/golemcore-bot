@@ -1,3 +1,4 @@
+import type { ExplicitModelTierId } from '../lib/modelTiers';
 import client from './client';
 
 interface SecretPayload {
@@ -71,6 +72,7 @@ function toShellEnvironmentVariables(value: unknown): ShellEnvironmentVariable[]
 
 interface RuntimeConfigUiRecord extends UnknownRecord {
   telegram?: UnknownRecord;
+  modelRouter?: unknown;
   llm?: {
     providers?: Record<string, UnknownRecord>;
   } & UnknownRecord;
@@ -122,6 +124,7 @@ function toUiRuntimeConfig(data: RuntimeConfigUiRecord): RuntimeConfig {
       whisperSttApiKeyPresent: hasSecretValue(cfg.voice.whisperSttApiKey),
     };
   }
+  cfg.modelRouter = toModelRouterConfig(cfg.modelRouter);
   return cfg as unknown as RuntimeConfig;
 }
 
@@ -285,17 +288,14 @@ export interface InviteCode {
 
 export interface ModelRouterConfig {
   temperature: number | null;
-  routingModel: string | null;
-  routingModelReasoning: string | null;
-  balancedModel: string | null;
-  balancedModelReasoning: string | null;
-  smartModel: string | null;
-  smartModelReasoning: string | null;
-  codingModel: string | null;
-  codingModelReasoning: string | null;
-  deepModel: string | null;
-  deepModelReasoning: string | null;
+  routing: TierBinding;
+  tiers: Record<ExplicitModelTierId, TierBinding>;
   dynamicTierEnabled: boolean | null;
+}
+
+export interface TierBinding {
+  model: string | null;
+  reasoning: string | null;
 }
 
 export interface ToolsConfig {
@@ -357,6 +357,10 @@ export interface AutoModeConfig {
   autoStart: boolean | null;
   maxGoals: number | null;
   modelTier: string | null;
+  reflectionEnabled: boolean | null;
+  reflectionFailureThreshold: number | null;
+  reflectionModelTier: string | null;
+  reflectionTierPriority: boolean | null;
   notifyMilestones: boolean | null;
 }
 
@@ -519,4 +523,50 @@ export async function updateAdvancedConfig(config: {
 }): Promise<RuntimeConfig> {
   const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/advanced', config);
   return toUiRuntimeConfig(data);
+}
+
+function toNullableString(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function toTierBinding(value: unknown): TierBinding {
+  if (value == null || typeof value !== 'object') {
+    return {
+      model: null,
+      reasoning: null,
+    };
+  }
+  const record = value as UnknownRecord;
+  return {
+    model: toNullableString(record.model),
+    reasoning: toNullableString(record.reasoning),
+  };
+}
+
+function toModelRouterConfig(value: unknown): ModelRouterConfig {
+  const record = value != null && typeof value === 'object' ? value as UnknownRecord : {};
+  const rawTiers = record.tiers != null && typeof record.tiers === 'object'
+    ? record.tiers as Record<string, unknown>
+    : {};
+
+  return {
+    temperature: typeof record.temperature === 'number' ? record.temperature : null,
+    routing: toTierBinding(record.routing),
+    tiers: {
+      balanced: toTierBinding(rawTiers.balanced),
+      smart: toTierBinding(rawTiers.smart),
+      deep: toTierBinding(rawTiers.deep),
+      coding: toTierBinding(rawTiers.coding),
+      special1: toTierBinding(rawTiers.special1),
+      special2: toTierBinding(rawTiers.special2),
+      special3: toTierBinding(rawTiers.special3),
+      special4: toTierBinding(rawTiers.special4),
+      special5: toTierBinding(rawTiers.special5),
+    },
+    dynamicTierEnabled: typeof record.dynamicTierEnabled === 'boolean' ? record.dynamicTierEnabled : null,
+  };
 }

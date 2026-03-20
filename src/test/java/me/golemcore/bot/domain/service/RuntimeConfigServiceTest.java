@@ -92,6 +92,97 @@ class RuntimeConfigServiceTest {
     }
 
     @Test
+    void shouldNormalizeModelRouterToCanonicalTierBindingsInFixedOrder() throws Exception {
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        service.updateRuntimeConfig(config);
+
+        Map<?, ?> persistedModelRouter = readPersistedJsonMap("model-router.json");
+        assertTrue(persistedModelRouter.containsKey("routing"));
+        assertTrue(persistedModelRouter.containsKey("tiers"));
+
+        Map<?, ?> tiers = castMap(persistedModelRouter.get("tiers"));
+        assertEquals(List.of(
+                "balanced",
+                "smart",
+                "deep",
+                "coding",
+                "special1",
+                "special2",
+                "special3",
+                "special4",
+                "special5"), List.copyOf(tiers.keySet()));
+
+        Map<?, ?> routing = castMap(persistedModelRouter.get("routing"));
+        assertEquals("openai/gpt-5.2-codex", routing.get("model"));
+        assertEquals("none", routing.get("reasoning"));
+    }
+
+    @Test
+    void shouldMigrateLegacyFlatModelRouterSectionToCanonicalTierBindings() throws Exception {
+        Map<String, Object> legacyModelRouter = new LinkedHashMap<>();
+        legacyModelRouter.put("routingModel", "openai/gpt-5.2-codex");
+        legacyModelRouter.put("routingModelReasoning", "none");
+        legacyModelRouter.put("balancedModel", "legacy/balanced");
+        legacyModelRouter.put("balancedModelReasoning", "low");
+        legacyModelRouter.put("smartModel", "legacy/smart");
+        legacyModelRouter.put("smartModelReasoning", "medium");
+        legacyModelRouter.put("deepModel", "legacy/deep");
+        legacyModelRouter.put("deepModelReasoning", "high");
+        legacyModelRouter.put("codingModel", "legacy/coding");
+        legacyModelRouter.put("codingModelReasoning", "xhigh");
+        legacyModelRouter.put("dynamicTierEnabled", true);
+        persistedSections.put("model-router.json", objectMapper.writeValueAsString(legacyModelRouter));
+
+        RuntimeConfig config = service.getRuntimeConfig();
+        service.updateRuntimeConfig(config);
+
+        Map<?, ?> persistedModelRouter = readPersistedJsonMap("model-router.json");
+        Map<?, ?> routing = castMap(persistedModelRouter.get("routing"));
+        Map<?, ?> tiers = castMap(persistedModelRouter.get("tiers"));
+
+        assertEquals("openai/gpt-5.2-codex", routing.get("model"));
+        assertEquals("legacy/balanced", castMap(tiers.get("balanced")).get("model"));
+        assertEquals("low", castMap(tiers.get("balanced")).get("reasoning"));
+        assertEquals("legacy/smart", castMap(tiers.get("smart")).get("model"));
+        assertEquals("medium", castMap(tiers.get("smart")).get("reasoning"));
+        assertEquals("legacy/deep", castMap(tiers.get("deep")).get("model"));
+        assertEquals("high", castMap(tiers.get("deep")).get("reasoning"));
+        assertEquals("legacy/coding", castMap(tiers.get("coding")).get("model"));
+        assertEquals("xhigh", castMap(tiers.get("coding")).get("reasoning"));
+    }
+
+    @Test
+    void shouldPreserveCanonicalModelRouterBindingsWhenPersisting() throws Exception {
+        Map<String, Object> canonicalRouter = new LinkedHashMap<>();
+        canonicalRouter.put("temperature", 0.4d);
+        canonicalRouter.put("dynamicTierEnabled", false);
+        canonicalRouter.put("routing", Map.of("model", "router/model", "reasoning", "none"));
+        LinkedHashMap<String, Object> tiers = new LinkedHashMap<>();
+        tiers.put("balanced", Map.of("model", "model/balanced", "reasoning", "low"));
+        tiers.put("smart", Map.of("model", "model/smart", "reasoning", "medium"));
+        tiers.put("deep", Map.of("model", "model/deep", "reasoning", "high"));
+        tiers.put("coding", Map.of("model", "model/coding", "reasoning", "xhigh"));
+        tiers.put("special1", Map.of("model", "model/special1", "reasoning", "none"));
+        tiers.put("special2", Map.of("model", "model/special2", "reasoning", "none"));
+        tiers.put("special3", Map.of("model", "model/special3", "reasoning", "none"));
+        tiers.put("special4", Map.of("model", "model/special4", "reasoning", "none"));
+        tiers.put("special5", Map.of("model", "model/special5", "reasoning", "none"));
+        canonicalRouter.put("tiers", tiers);
+        persistedSections.put("model-router.json", objectMapper.writeValueAsString(canonicalRouter));
+
+        RuntimeConfig config = service.getRuntimeConfig();
+        service.updateRuntimeConfig(config);
+
+        Map<?, ?> persistedModelRouter = readPersistedJsonMap("model-router.json");
+        Map<?, ?> persistedTiers = castMap(persistedModelRouter.get("tiers"));
+        assertEquals(List.copyOf(tiers.keySet()), List.copyOf(persistedTiers.keySet()));
+        assertEquals("router/model", castMap(persistedModelRouter.get("routing")).get("model"));
+        assertEquals("model/special5", castMap(persistedTiers.get("special5")).get("model"));
+        assertEquals("none", castMap(persistedTiers.get("special5")).get("reasoning"));
+    }
+
+    @Test
     void shouldCacheConfigAfterFirstLoad() {
         RuntimeConfig first = service.getRuntimeConfig();
         RuntimeConfig second = service.getRuntimeConfig();
@@ -1352,5 +1443,17 @@ class RuntimeConfigServiceTest {
         java.util.concurrent.atomic.AtomicReference<RuntimeConfig> ref = (java.util.concurrent.atomic.AtomicReference<RuntimeConfig>) field
                 .get(service);
         ref.set(config);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<?, ?> readPersistedJsonMap(String fileName) throws Exception {
+        return objectMapper.readValue(persistedSections.get(fileName), Map.class);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<?, ?> castMap(Object value) {
+        assertNotNull(value);
+        assertTrue(value instanceof Map<?, ?>);
+        return (Map<?, ?>) value;
     }
 }

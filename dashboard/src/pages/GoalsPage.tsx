@@ -95,11 +95,11 @@ export default function GoalsPage(): ReactElement {
       isBusy={isBusy}
       editorItem={editorItem}
       editorBusy={updateGoalMutation.isPending || updateTaskMutation.isPending}
-      onCreateGoal={async (title, description, prompt) => {
-        await createGoalMutation.mutateAsync({ title, description, prompt });
+      onCreateGoal={async (request) => {
+        await createGoalMutation.mutateAsync(request);
       }}
-      onCreateTask={async (goalId, title, description, prompt) => {
-        await createTaskMutation.mutateAsync({ goalId, title, description, prompt, status: null });
+      onCreateTask={async (request) => {
+        await createTaskMutation.mutateAsync(request);
       }}
       onSaveEditorGoal={async (goalId, request) => {
         await updateGoalMutation.mutateAsync({ goalId, request });

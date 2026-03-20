@@ -34,6 +34,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -66,6 +68,16 @@ class SettingsControllerTest {
                 memoryPresetService, sttProviderRegistry, ttsProviderRegistry);
         when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(RuntimeConfig.builder().build());
         when(runtimeConfigService.isHiveManagedByProperties()).thenReturn(false);
+        when(modelSelectionService.validateModel(anyString(), anyList()))
+                .thenReturn(new ModelSelectionService.ValidationResult(true, null));
+        when(modelSelectionService.resolveProviderForModel(anyString())).thenAnswer(invocation -> {
+            String model = invocation.getArgument(0);
+            if (model == null) {
+                return null;
+            }
+            int delimiterIndex = model.indexOf('/');
+            return delimiterIndex > 0 ? model.substring(0, delimiterIndex) : null;
+        });
     }
 
     @Test
@@ -74,7 +86,7 @@ class SettingsControllerTest {
         prefs.setLanguage("en");
         prefs.setTimezone("UTC");
         prefs.setNotificationsEnabled(true);
-        prefs.setModelTier("standard");
+        prefs.setModelTier("balanced");
         when(preferencesService.getPreferences()).thenReturn(prefs);
 
         StepVerifier.create(controller.getSettings())
@@ -84,7 +96,7 @@ class SettingsControllerTest {
                     assertNotNull(body);
                     assertEquals("en", body.getLanguage());
                     assertEquals("UTC", body.getTimezone());
-                    assertEquals("standard", body.getModelTier());
+                    assertEquals("balanced", body.getModelTier());
                 })
                 .verifyComplete();
     }
@@ -94,7 +106,7 @@ class SettingsControllerTest {
         UserPreferences prefs = new UserPreferences();
         prefs.setLanguage("en");
         Map<String, UserPreferences.TierOverride> overrides = new LinkedHashMap<>();
-        overrides.put("standard", new UserPreferences.TierOverride("gpt-4o", "medium"));
+        overrides.put("special1", new UserPreferences.TierOverride("gpt-4o", "medium"));
         prefs.setTierOverrides(overrides);
         when(preferencesService.getPreferences()).thenReturn(prefs);
 
@@ -103,7 +115,7 @@ class SettingsControllerTest {
                     SettingsResponse body = response.getBody();
                     assertNotNull(body);
                     assertNotNull(body.getTierOverrides());
-                    assertEquals("gpt-4o", body.getTierOverrides().get("standard").getModel());
+                    assertEquals("gpt-4o", body.getTierOverrides().get("special1").getModel());
                 })
                 .verifyComplete();
     }
@@ -195,12 +207,12 @@ class SettingsControllerTest {
     void shouldUpdatePartialPreferences() {
         UserPreferences prefs = new UserPreferences();
         prefs.setLanguage("en");
-        prefs.setModelTier("standard");
+        prefs.setModelTier("balanced");
         when(preferencesService.getPreferences()).thenReturn(prefs);
 
         PreferencesUpdateRequest request = new PreferencesUpdateRequest();
         request.setNotificationsEnabled(true);
-        request.setModelTier("premium");
+        request.setModelTier("special3");
         request.setTierForce(true);
 
         StepVerifier.create(controller.updatePreferences(request))
@@ -208,9 +220,52 @@ class SettingsControllerTest {
                 .verifyComplete();
 
         assertEquals("en", prefs.getLanguage()); // unchanged
-        assertEquals("premium", prefs.getModelTier());
+        assertEquals("special3", prefs.getModelTier());
         assertTrue(prefs.isTierForce());
         assertTrue(prefs.isNotificationsEnabled());
+    }
+
+    @Test
+    void shouldNormalizeAutoModeDefaultTierToNull() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .autoMode(RuntimeConfig.AutoModeConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.AutoModeConfig update = RuntimeConfig.AutoModeConfig.builder()
+                .enabled(true)
+                .modelTier("default")
+                .reflectionModelTier("special2")
+                .reflectionTierPriority(true)
+                .build();
+
+        StepVerifier.create(controller.updateAutoConfig(update))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        assertNull(captor.getValue().getAutoMode().getModelTier());
+        assertEquals("special2", captor.getValue().getAutoMode().getReflectionModelTier());
+        assertTrue(Boolean.TRUE.equals(captor.getValue().getAutoMode().getReflectionTierPriority()));
+    }
+
+    @Test
+    void shouldRejectAutoModeConfigWithUnknownReflectionTier() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .autoMode(RuntimeConfig.AutoModeConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.AutoModeConfig update = RuntimeConfig.AutoModeConfig.builder()
+                .enabled(true)
+                .reflectionModelTier("turbo")
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateAutoConfig(update));
+
+        assertTrue(error.getMessage().contains("autoMode.reflectionModelTier"));
     }
 
     @Test
@@ -302,7 +357,7 @@ class SettingsControllerTest {
         when(preferencesService.getPreferences()).thenReturn(prefs);
 
         Map<String, SettingsResponse.TierOverrideDto> overrides = Map.of(
-                "standard", SettingsResponse.TierOverrideDto.builder()
+                "special2", SettingsResponse.TierOverrideDto.builder()
                         .model("gpt-4o")
                         .reasoning("medium")
                         .build());
@@ -313,7 +368,26 @@ class SettingsControllerTest {
 
         verify(preferencesService).savePreferences(prefs);
         assertNotNull(prefs.getTierOverrides());
-        assertEquals("gpt-4o", prefs.getTierOverrides().get("standard").getModel());
+        assertEquals("gpt-4o", prefs.getTierOverrides().get("special2").getModel());
+    }
+
+    @Test
+    void shouldRejectWebhookConfigWithUnknownModelTier() {
+        UserPreferences prefs = new UserPreferences();
+        when(preferencesService.getPreferences()).thenReturn(prefs);
+
+        UserPreferences.WebhookConfig webhookConfig = UserPreferences.WebhookConfig.builder()
+                .enabled(true)
+                .mappings(List.of(UserPreferences.HookMapping.builder()
+                        .name("deploy")
+                        .action("agent")
+                        .model("turbo")
+                        .build()))
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateWebhooksConfig(webhookConfig));
+        assertEquals("webhooks.mapping.model must be a known tier id", error.getMessage());
     }
 
     @Test
@@ -338,6 +412,106 @@ class SettingsControllerTest {
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> controller.updateLlmConfig(update));
         assertTrue(error.getMessage().contains("Cannot remove provider 'openai'"));
+    }
+
+    @Test
+    void shouldRejectLlmProviderRemovalWhenUsedBySpecialTier() {
+        RuntimeConfig.ModelRouterConfig modelRouter = RuntimeConfig.ModelRouterConfig.builder().build();
+        modelRouter.setTierBinding("special2", RuntimeConfig.TierBinding.builder()
+                .model("openai/special2-model")
+                .reasoning("none")
+                .build());
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .modelRouter(modelRouter)
+                .llm(RuntimeConfig.LlmConfig.builder()
+                        .providers(new LinkedHashMap<>(Map.of(
+                                "openai", RuntimeConfig.LlmProviderConfig.builder().apiKey(Secret.of("x")).build(),
+                                "anthropic", RuntimeConfig.LlmProviderConfig.builder().apiKey(Secret.of("y")).build())))
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.LlmConfig update = RuntimeConfig.LlmConfig.builder()
+                .providers(new LinkedHashMap<>(Map.of(
+                        "anthropic", RuntimeConfig.LlmProviderConfig.builder().apiKey(Secret.of("y")).build())))
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateLlmConfig(update));
+        assertTrue(error.getMessage().contains("Cannot remove provider 'openai'"));
+    }
+
+    @Test
+    void shouldRejectLlmProviderRemovalWhenAliasOnlyModelIsUsedByRouter() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .modelRouter(RuntimeConfig.ModelRouterConfig.builder()
+                        .balancedModel("gpt-5.1")
+                        .build())
+                .llm(RuntimeConfig.LlmConfig.builder()
+                        .providers(new LinkedHashMap<>(Map.of(
+                                "openai", RuntimeConfig.LlmProviderConfig.builder().apiKey(Secret.of("x")).build(),
+                                "anthropic", RuntimeConfig.LlmProviderConfig.builder().apiKey(Secret.of("y")).build())))
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+        when(modelSelectionService.resolveProviderForModel("gpt-5.1")).thenReturn("openai");
+
+        RuntimeConfig.LlmConfig update = RuntimeConfig.LlmConfig.builder()
+                .providers(new LinkedHashMap<>(Map.of(
+                        "anthropic", RuntimeConfig.LlmProviderConfig.builder().apiKey(Secret.of("y")).build())))
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateLlmConfig(update));
+        assertTrue(error.getMessage().contains("Cannot remove provider 'openai'"));
+    }
+
+    @Test
+    void shouldRejectModelRouterUpdateWhenTierModelIsUnknown() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder()
+                        .providers(new LinkedHashMap<>(Map.of(
+                                "openai", RuntimeConfig.LlmProviderConfig.builder().apiKey(Secret.of("x")).build())))
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.ModelRouterConfig modelRouter = RuntimeConfig.ModelRouterConfig.builder().build();
+        modelRouter.setTierBinding("special1", RuntimeConfig.TierBinding.builder()
+                .model("custom/ghost-model")
+                .reasoning("none")
+                .build());
+        when(modelSelectionService.validateModel("custom/ghost-model", List.of("openai")))
+                .thenReturn(new ModelSelectionService.ValidationResult(false, "model.not.found"));
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateModelRouterConfig(modelRouter));
+        assertTrue(error.getMessage().contains("special1"));
+        assertTrue(error.getMessage().contains("custom/ghost-model"));
+    }
+
+    @Test
+    void shouldRejectModelRouterUpdateWhenTierProviderIsNotConfigured() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder()
+                        .providers(new LinkedHashMap<>(Map.of(
+                                "openai", RuntimeConfig.LlmProviderConfig.builder().apiKey(Secret.of("x")).build())))
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.ModelRouterConfig modelRouter = RuntimeConfig.ModelRouterConfig.builder().build();
+        modelRouter.setTierBinding("special2", RuntimeConfig.TierBinding.builder()
+                .model("anthropic/claude-sonnet-4")
+                .reasoning("none")
+                .build());
+        when(modelSelectionService.validateModel("anthropic/claude-sonnet-4", List.of("openai")))
+                .thenReturn(new ModelSelectionService.ValidationResult(false, "provider.not.configured"));
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateModelRouterConfig(modelRouter));
+        assertTrue(error.getMessage().contains("special2"));
+        assertTrue(error.getMessage().contains("provider"));
     }
 
     @Test

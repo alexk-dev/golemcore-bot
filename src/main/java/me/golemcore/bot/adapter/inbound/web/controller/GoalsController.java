@@ -3,6 +3,7 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.Goal;
+import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.StringValueSupport;
 import org.springframework.http.HttpStatus;
@@ -51,7 +52,7 @@ public class GoalsController {
                     request.title(),
                     request.description(),
                     request.prompt(),
-                    request.reflectionModelTier(),
+                    normalizeOptionalReflectionModelTier(request.reflectionModelTier()),
                     Boolean.TRUE.equals(request.reflectionTierPriority()));
             return Mono.just(ResponseEntity.status(HttpStatus.CREATED).body(toGoalDto(goal)));
         } catch (IllegalArgumentException | IllegalStateException e) {
@@ -73,7 +74,7 @@ public class GoalsController {
                     request.title(),
                     request.description(),
                     request.prompt(),
-                    request.reflectionModelTier(),
+                    normalizeOptionalReflectionModelTier(request.reflectionModelTier()),
                     request.reflectionTierPriority(),
                     parseGoalStatus(request.status()));
             return Mono.just(ResponseEntity.ok(toGoalDto(goal)));
@@ -107,7 +108,7 @@ public class GoalsController {
                     request.title(),
                     request.description(),
                     request.prompt(),
-                    request.reflectionModelTier(),
+                    normalizeOptionalReflectionModelTier(request.reflectionModelTier()),
                     request.reflectionTierPriority(),
                     parseTaskStatus(request.status(), AutoTask.TaskStatus.PENDING));
             return Mono.just(ResponseEntity.status(HttpStatus.CREATED).body(toTaskDto(task, autoModeService.isInboxGoal(
@@ -131,7 +132,7 @@ public class GoalsController {
                     request.title(),
                     request.description(),
                     request.prompt(),
-                    request.reflectionModelTier(),
+                    normalizeOptionalReflectionModelTier(request.reflectionModelTier()),
                     request.reflectionTierPriority(),
                     parseTaskStatus(request.status(), null));
             boolean standalone = autoModeService.findGoalForTask(task.getId())
@@ -258,6 +259,17 @@ public class GoalsController {
             return null;
         }
         return value.trim();
+    }
+
+    private static String normalizeOptionalReflectionModelTier(String value) {
+        String normalizedTier = ModelTierCatalog.normalizeTierId(value);
+        if (normalizedTier == null) {
+            return null;
+        }
+        if (!ModelTierCatalog.isExplicitSelectableTier(normalizedTier)) {
+            throw badRequest("reflectionModelTier must be a known tier id");
+        }
+        return normalizedTier;
     }
 
     private static ResponseStatusException badRequest(String reason) {

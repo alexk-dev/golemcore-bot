@@ -5,6 +5,7 @@ import HelpTip from '../../components/common/HelpTip';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useUpdateAuto } from '../../hooks/useSettings';
 import type { AutoModeConfig } from '../../api/settings';
+import { getExplicitModelTierOptions } from '../../lib/modelTiers';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 
 function hasDiff<T>(current: T, initial: T): boolean {
@@ -14,6 +15,11 @@ function hasDiff<T>(current: T, initial: T): boolean {
 function toNullableInt(value: string): number | null {
   const parsed = parseInt(value, 10);
   return Number.isNaN(parsed) ? null : parsed;
+}
+
+function toNullableString(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 interface AutoModeTabProps {
@@ -69,14 +75,70 @@ export default function AutoModeTab({ config }: AutoModeTabProps): ReactElement 
           <Form.Label className="small fw-medium">
             Model Tier <HelpTip text="Which model tier to use for autonomous tasks" />
           </Form.Label>
-          <Form.Select size="sm" value={form.modelTier ?? 'default'} onChange={(e) => setForm({ ...form, modelTier: e.target.value })}>
-            <option value="default">Default</option>
-            <option value="balanced">Balanced</option>
-            <option value="smart">Smart</option>
-            <option value="coding">Coding</option>
-            <option value="deep">Deep</option>
+          <Form.Select
+            size="sm"
+            value={form.modelTier ?? ''}
+            onChange={(e) => setForm({ ...form, modelTier: toNullableString(e.target.value) })}
+          >
+            <option value="">Default routing</option>
+            {getExplicitModelTierOptions().map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
           </Form.Select>
         </Form.Group>
+
+        <Form.Check
+          type="switch"
+          label={<>Enable reflections <HelpTip text="Run reflection after repeated auto-mode failures to recover or adjust execution." /></>}
+          checked={form.reflectionEnabled ?? true}
+          onChange={(e) => setForm({ ...form, reflectionEnabled: e.target.checked })}
+          className="mb-3"
+        />
+
+        <Row className="g-3 mb-3">
+          <Col md={6}>
+            <Form.Group>
+              <Form.Label className="small fw-medium">
+                Reflection tier <HelpTip text="Optional explicit tier for auto-mode reflections. Leave empty to inherit the active task tier." />
+              </Form.Label>
+              <Form.Select
+                size="sm"
+                value={form.reflectionModelTier ?? ''}
+                disabled={form.reflectionEnabled === false}
+                onChange={(e) => setForm({ ...form, reflectionModelTier: toNullableString(e.target.value) })}
+              >
+                <option value="">Use task tier</option>
+                {getExplicitModelTierOptions().map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </Form.Select>
+            </Form.Group>
+          </Col>
+          <Col md={6}>
+            <Form.Group>
+              <Form.Label className="small fw-medium">
+                Reflection after failures <HelpTip text="How many consecutive failures should happen before reflection is triggered." />
+              </Form.Label>
+              <Form.Control
+                size="sm"
+                type="number"
+                min={1}
+                value={form.reflectionFailureThreshold ?? 2}
+                disabled={form.reflectionEnabled === false}
+                onChange={(e) => setForm({ ...form, reflectionFailureThreshold: toNullableInt(e.target.value) })}
+              />
+            </Form.Group>
+          </Col>
+        </Row>
+
+        <Form.Check
+          type="switch"
+          label={<>Prefer reflection tier over active skill tier <HelpTip text="When enabled, the reflection tier override wins even if the active skill also declares a model tier." /></>}
+          checked={form.reflectionTierPriority ?? false}
+          disabled={form.reflectionEnabled === false || form.reflectionModelTier == null}
+          onChange={(e) => setForm({ ...form, reflectionTierPriority: e.target.checked })}
+          className="mb-3"
+        />
 
         <Form.Check type="switch"
           label={<>Auto-start on startup <HelpTip text="Start autonomous mode automatically when the application boots" /></>}

@@ -4,14 +4,28 @@ import HelpTip from '../../components/common/HelpTip';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import type { AvailableModel } from '../../api/models';
 import { useUpdateModelRouter } from '../../hooks/useSettings';
-import { useAvailableModels } from '../../hooks/useModels';
 import type { LlmConfig, ModelRouterConfig } from '../../api/settings';
+import { useAvailableModels } from '../../hooks/useModels';
+import { cloneModelRouterConfig, getTierBinding, updateTierBinding } from '../../lib/modelRouter';
+import {
+  allowsEmptyModelSelection,
+  EXPLICIT_MODEL_TIER_ORDER,
+  MODEL_TIER_META,
+  type ExplicitModelTierId,
+} from '../../lib/modelTiers';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 import { Badge, Button, Card, Col, Form, Row } from '../../lib/react-bootstrap';
 
 interface ModelsTabProps {
   config: ModelRouterConfig;
   llmConfig: LlmConfig;
+}
+
+interface TierCardConfig {
+  key: ExplicitModelTierId;
+  label: string;
+  color: string;
+  allowEmptyModel: boolean;
 }
 
 interface TierModelCardProps {
@@ -21,6 +35,7 @@ interface TierModelCardProps {
   providerNames: string[];
   modelValue: string;
   reasoningValue: string;
+  allowEmptyModel: boolean;
   onModelChange: (value: string) => void;
   onReasoningChange: (value: string) => void;
 }
@@ -42,20 +57,36 @@ function TierModelCard({
   providerNames,
   modelValue,
   reasoningValue,
+  allowEmptyModel,
   onModelChange,
   onReasoningChange,
 }: TierModelCardProps): ReactElement {
-  const selectedProvider = useMemo(() => {
+  const configuredProvider = useMemo(() => {
     if (modelValue.length === 0) {
-      return providerNames[0] ?? '';
+      return '';
     }
     for (const [providerName, models] of Object.entries(providers)) {
       if (models.some((model) => model.id === modelValue)) {
         return providerName;
       }
     }
-    return providerNames[0] ?? '';
-  }, [modelValue, providers, providerNames]);
+    const delimiterIndex = modelValue.indexOf('/');
+    return delimiterIndex > 0 ? modelValue.slice(0, delimiterIndex) : '';
+  }, [modelValue, providers]);
+
+  const providerOptionValues = useMemo(() => {
+    if (configuredProvider.length === 0 || providerNames.includes(configuredProvider)) {
+      return providerNames;
+    }
+    return [configuredProvider, ...providerNames];
+  }, [configuredProvider, providerNames]);
+
+  const selectedProvider = useMemo(() => {
+    if (modelValue.length === 0) {
+      return allowEmptyModel ? '' : (providerNames[0] ?? '');
+    }
+    return configuredProvider.length > 0 ? configuredProvider : (providerNames[0] ?? '');
+  }, [allowEmptyModel, configuredProvider, modelValue, providerNames]);
 
   const [provider, setProvider] = useState(selectedProvider);
 
@@ -63,17 +94,33 @@ function TierModelCard({
     setProvider(selectedProvider);
   }, [selectedProvider]);
 
-  const modelsForProvider = useMemo(() => providers[provider] ?? [], [providers, provider]);
+  const modelsForProvider = useMemo(() => {
+    const providerModels = providers[provider] ?? [];
+    if (modelValue.length === 0 || providerModels.some((model) => model.id === modelValue)) {
+      return providerModels;
+    }
+    return [
+      {
+        id: modelValue,
+        displayName: `${modelValue} (unavailable)`,
+        hasReasoning: false,
+        reasoningLevels: [],
+        supportsVision: false,
+      },
+      ...providerModels,
+    ];
+  }, [modelValue, provider, providers]);
   const selectedModel = modelsForProvider.find((model) => model.id === modelValue);
   const reasoningLevels = selectedModel?.reasoningLevels ?? [];
-  const hasProviders = providerNames.length > 0;
+  const hasProviders = providerOptionValues.length > 0;
+  const providerUnavailable = configuredProvider.length > 0 && !providerNames.includes(configuredProvider);
 
-  // Auto-select minimum (last) model when no explicit model is configured
+  // Keep optional special tiers unconfigured until the user explicitly selects a model.
   useEffect(() => {
-    if (modelValue.length === 0 && modelsForProvider.length > 0) {
+    if (!allowEmptyModel && modelValue.length === 0 && modelsForProvider.length > 0) {
       onModelChange(modelsForProvider[modelsForProvider.length - 1].id);
     }
-  }, [modelValue, modelsForProvider, onModelChange]);
+  }, [allowEmptyModel, modelValue, modelsForProvider, onModelChange]);
 
   return (
     <Card className="tier-card h-100">
@@ -91,16 +138,26 @@ function TierModelCard({
               onModelChange('');
             }}
           >
+            {allowEmptyModel && <option value="">Select provider</option>}
             {!hasProviders && <option value="">No providers</option>}
-            {providerNames.map((providerName) => (
-              <option key={providerName} value={providerName}>{providerName}</option>
+            {providerOptionValues.map((providerName) => (
+              <option key={providerName || 'empty'} value={providerName}>
+                {providerName}
+                {providerUnavailable && providerName === configuredProvider ? ' (unavailable)' : ''}
+              </option>
             ))}
           </Form.Select>
         </Form.Group>
 
         <Form.Group className="mb-2">
           <Form.Label className="small fw-medium mb-1">Model</Form.Label>
-          <Form.Select size="sm" value={modelValue} disabled={!hasProviders} onChange={(e) => onModelChange(e.target.value)}>
+          <Form.Select
+            size="sm"
+            value={modelValue}
+            disabled={!hasProviders && modelsForProvider.length === 0}
+            onChange={(e) => onModelChange(e.target.value)}
+          >
+            {allowEmptyModel && <option value="">Not configured</option>}
             {modelsForProvider.map((model) => (
               <option key={model.id} value={model.id}>{model.displayName ?? model.id}</option>
             ))}
@@ -126,10 +183,10 @@ function TierModelCard({
 export default function ModelsTab({ config, llmConfig }: ModelsTabProps): ReactElement {
   const updateRouter = useUpdateModelRouter();
   const { data: available } = useAvailableModels();
-  const [form, setForm] = useState<ModelRouterConfig>({ ...config });
+  const [form, setForm] = useState<ModelRouterConfig>(cloneModelRouterConfig(config));
 
   useEffect(() => {
-    setForm({ ...config });
+    setForm(cloneModelRouterConfig(config));
   }, [config]);
 
   const readyProviderNames = useMemo(
@@ -157,12 +214,12 @@ export default function ModelsTab({ config, llmConfig }: ModelsTabProps): ReactE
     toast.success('Model router settings saved');
   };
 
-  const tierCards = [
-    { key: 'balanced', label: 'Balanced', color: 'primary', modelField: 'balancedModel' as const, reasoningField: 'balancedModelReasoning' as const },
-    { key: 'smart', label: 'Smart', color: 'success', modelField: 'smartModel' as const, reasoningField: 'smartModelReasoning' as const },
-    { key: 'coding', label: 'Coding', color: 'info', modelField: 'codingModel' as const, reasoningField: 'codingModelReasoning' as const },
-    { key: 'deep', label: 'Deep', color: 'warning', modelField: 'deepModel' as const, reasoningField: 'deepModelReasoning' as const },
-  ];
+  const tierCards: TierCardConfig[] = EXPLICIT_MODEL_TIER_ORDER.map((tier) => ({
+    key: tier,
+    label: MODEL_TIER_META[tier].label,
+    color: MODEL_TIER_META[tier].settingsCardColor,
+    allowEmptyModel: allowsEmptyModelSelection(tier),
+  }));
 
   return (
     <>
@@ -216,23 +273,43 @@ export default function ModelsTab({ config, llmConfig }: ModelsTabProps): ReactE
             color="dark"
             providers={providers}
             providerNames={providerNames}
-            modelValue={form.routingModel ?? ''}
-            reasoningValue={form.routingModelReasoning ?? ''}
-            onModelChange={(value) => setForm({ ...form, routingModel: toNullableString(value), routingModelReasoning: null })}
-            onReasoningChange={(value) => setForm({ ...form, routingModelReasoning: toNullableString(value) })}
+            modelValue={form.routing.model ?? ''}
+            reasoningValue={form.routing.reasoning ?? ''}
+            allowEmptyModel={false}
+            onModelChange={(value) => setForm({
+              ...form,
+              routing: {
+                model: toNullableString(value),
+                reasoning: null,
+              },
+            })}
+            onReasoningChange={(value) => setForm({
+              ...form,
+              routing: {
+                ...form.routing,
+                reasoning: toNullableString(value),
+              },
+            })}
           />
         </Col>
-        {tierCards.map(({ key, label, color, modelField, reasoningField }) => (
-          <Col sm={6} lg={3} key={key}>
+        {tierCards.map(({ key, label, color, allowEmptyModel }) => (
+          <Col sm={6} lg={4} xl={3} key={key}>
             <TierModelCard
               label={label}
               color={color}
               providers={providers}
               providerNames={providerNames}
-              modelValue={form[modelField] ?? ''}
-              reasoningValue={form[reasoningField] ?? ''}
-              onModelChange={(value) => setForm({ ...form, [modelField]: toNullableString(value), [reasoningField]: null })}
-              onReasoningChange={(value) => setForm({ ...form, [reasoningField]: toNullableString(value) })}
+              modelValue={getTierBinding(form, key).model ?? ''}
+              reasoningValue={getTierBinding(form, key).reasoning ?? ''}
+              allowEmptyModel={allowEmptyModel}
+              onModelChange={(value) => setForm(updateTierBinding(form, key, {
+                model: toNullableString(value),
+                reasoning: null,
+              }))}
+              onReasoningChange={(value) => setForm(updateTierBinding(form, key, {
+                ...getTierBinding(form, key),
+                reasoning: toNullableString(value),
+              }))}
             />
           </Col>
         ))}

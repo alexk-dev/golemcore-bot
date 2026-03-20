@@ -1,10 +1,13 @@
 package me.golemcore.bot.domain.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
+import com.fasterxml.jackson.annotation.JsonSetter;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -108,19 +111,244 @@ public class RuntimeConfig {
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonPropertyOrder({ "temperature", "routing", "tiers", "dynamicTierEnabled" })
     public static class ModelRouterConfig {
         private Double temperature;
-        private String routingModel;
-        private String routingModelReasoning;
-        private String balancedModel;
-        private String balancedModelReasoning;
-        private String smartModel;
-        private String smartModelReasoning;
-        private String codingModel;
-        private String codingModelReasoning;
-        private String deepModel;
-        private String deepModelReasoning;
+        private TierBinding routing;
+        private LinkedHashMap<String, TierBinding> tiers = new LinkedHashMap<>();
         private Boolean dynamicTierEnabled;
+
+        public static class ModelRouterConfigBuilder {
+            private TierBinding routing;
+            private LinkedHashMap<String, TierBinding> tiers;
+
+            public ModelRouterConfigBuilder routingModel(String model) {
+                routingBinding().setModel(model);
+                return this;
+            }
+
+            public ModelRouterConfigBuilder routingModelReasoning(String reasoning) {
+                routingBinding().setReasoning(reasoning);
+                return this;
+            }
+
+            public ModelRouterConfigBuilder balancedModel(String model) {
+                tierBinding("balanced").setModel(model);
+                return this;
+            }
+
+            public ModelRouterConfigBuilder balancedModelReasoning(String reasoning) {
+                tierBinding("balanced").setReasoning(reasoning);
+                return this;
+            }
+
+            public ModelRouterConfigBuilder smartModel(String model) {
+                tierBinding("smart").setModel(model);
+                return this;
+            }
+
+            public ModelRouterConfigBuilder smartModelReasoning(String reasoning) {
+                tierBinding("smart").setReasoning(reasoning);
+                return this;
+            }
+
+            public ModelRouterConfigBuilder deepModel(String model) {
+                tierBinding("deep").setModel(model);
+                return this;
+            }
+
+            public ModelRouterConfigBuilder deepModelReasoning(String reasoning) {
+                tierBinding("deep").setReasoning(reasoning);
+                return this;
+            }
+
+            public ModelRouterConfigBuilder codingModel(String model) {
+                tierBinding("coding").setModel(model);
+                return this;
+            }
+
+            public ModelRouterConfigBuilder codingModelReasoning(String reasoning) {
+                tierBinding("coding").setReasoning(reasoning);
+                return this;
+            }
+
+            private TierBinding routingBinding() {
+                if (this.routing == null) {
+                    this.routing = new TierBinding();
+                }
+                return this.routing;
+            }
+
+            private TierBinding tierBinding(String tier) {
+                if (this.tiers == null) {
+                    this.tiers = new LinkedHashMap<>();
+                }
+                return this.tiers.computeIfAbsent(tier, ignored -> new TierBinding());
+            }
+        }
+
+        public TierBinding getTierBinding(String tier) {
+            if (tiers == null || tier == null) {
+                return null;
+            }
+            return tiers.get(tier);
+        }
+
+        public void setTierBinding(String tier, TierBinding binding) {
+            if (tier == null) {
+                return;
+            }
+            if (tiers == null) {
+                tiers = new LinkedHashMap<>();
+            }
+            tiers.put(tier, binding);
+        }
+
+        public String getTierModel(String tier) {
+            TierBinding binding = getTierBinding(tier);
+            return binding != null ? binding.getModel() : null;
+        }
+
+        public void setTierModel(String tier, String model) {
+            TierBinding binding = ensureTierBinding(tier);
+            binding.setModel(model);
+        }
+
+        public String getTierReasoning(String tier) {
+            TierBinding binding = getTierBinding(tier);
+            return binding != null ? binding.getReasoning() : null;
+        }
+
+        public void setTierReasoning(String tier, String reasoning) {
+            TierBinding binding = ensureTierBinding(tier);
+            binding.setReasoning(reasoning);
+        }
+
+        private TierBinding ensureTierBinding(String tier) {
+            if (tiers == null) {
+                tiers = new LinkedHashMap<>();
+            }
+            return tiers.computeIfAbsent(tier, ignored -> new TierBinding());
+        }
+
+        private TierBinding ensureRoutingBinding() {
+            if (routing == null) {
+                routing = new TierBinding();
+            }
+            return routing;
+        }
+
+        @JsonIgnore
+        public String getRoutingModel() {
+            return routing != null ? routing.getModel() : null;
+        }
+
+        @JsonSetter("routingModel")
+        public void setRoutingModel(String model) {
+            ensureRoutingBinding().setModel(model);
+        }
+
+        @JsonIgnore
+        public String getRoutingModelReasoning() {
+            return routing != null ? routing.getReasoning() : null;
+        }
+
+        @JsonSetter("routingModelReasoning")
+        public void setRoutingModelReasoning(String reasoning) {
+            ensureRoutingBinding().setReasoning(reasoning);
+        }
+
+        @JsonIgnore
+        public String getBalancedModel() {
+            return getTierModel("balanced");
+        }
+
+        @JsonSetter("balancedModel")
+        public void setBalancedModel(String model) {
+            setTierModel("balanced", model);
+        }
+
+        @JsonIgnore
+        public String getBalancedModelReasoning() {
+            return getTierReasoning("balanced");
+        }
+
+        @JsonSetter("balancedModelReasoning")
+        public void setBalancedModelReasoning(String reasoning) {
+            setTierReasoning("balanced", reasoning);
+        }
+
+        @JsonIgnore
+        public String getSmartModel() {
+            return getTierModel("smart");
+        }
+
+        @JsonSetter("smartModel")
+        public void setSmartModel(String model) {
+            setTierModel("smart", model);
+        }
+
+        @JsonIgnore
+        public String getSmartModelReasoning() {
+            return getTierReasoning("smart");
+        }
+
+        @JsonSetter("smartModelReasoning")
+        public void setSmartModelReasoning(String reasoning) {
+            setTierReasoning("smart", reasoning);
+        }
+
+        @JsonIgnore
+        public String getDeepModel() {
+            return getTierModel("deep");
+        }
+
+        @JsonSetter("deepModel")
+        public void setDeepModel(String model) {
+            setTierModel("deep", model);
+        }
+
+        @JsonIgnore
+        public String getDeepModelReasoning() {
+            return getTierReasoning("deep");
+        }
+
+        @JsonSetter("deepModelReasoning")
+        public void setDeepModelReasoning(String reasoning) {
+            setTierReasoning("deep", reasoning);
+        }
+
+        @JsonIgnore
+        public String getCodingModel() {
+            return getTierModel("coding");
+        }
+
+        @JsonSetter("codingModel")
+        public void setCodingModel(String model) {
+            setTierModel("coding", model);
+        }
+
+        @JsonIgnore
+        public String getCodingModelReasoning() {
+            return getTierReasoning("coding");
+        }
+
+        @JsonSetter("codingModelReasoning")
+        public void setCodingModelReasoning(String reasoning) {
+            setTierReasoning("coding", reasoning);
+        }
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonPropertyOrder({ "model", "reasoning" })
+    public static class TierBinding {
+        private String model;
+        private String reasoning;
     }
 
     @Data

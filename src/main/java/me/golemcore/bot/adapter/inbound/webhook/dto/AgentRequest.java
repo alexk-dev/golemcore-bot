@@ -47,8 +47,8 @@ public class AgentRequest {
     private String chatId;
 
     /**
-     * Model tier override ({@code balanced}, {@code smart}, {@code coding},
-     * {@code deep}).
+     * Model tier override ({@code balanced}, {@code smart}, {@code deep},
+     * {@code coding}, {@code special1}..{@code special5}).
      */
     private String model;
 

@@ -2,6 +2,7 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 
 import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.adapter.inbound.web.dto.SkillDto;
+import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.SkillInstallRequest;
 import me.golemcore.bot.domain.model.SkillInstallResult;
@@ -248,15 +249,30 @@ public class SkillsController {
 
     private void validateMetadata(Map<String, Object> metadata) {
         Object name = metadata.get("name");
-        if (name == null) {
+        if (name != null) {
+            String normalizedName = name.toString().trim();
+            if (!isValidMetadataName(normalizedName)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Skill metadata name must match [a-z0-9][a-z0-9-]*(/[a-z0-9][a-z0-9-]*)*");
+            }
+            metadata.put("name", normalizedName);
+        }
+
+        normalizeTierMetadata(metadata, "model_tier");
+        normalizeTierMetadata(metadata, "reflection_tier");
+    }
+
+    private void normalizeTierMetadata(Map<String, Object> metadata, String key) {
+        Object value = metadata.get(key);
+        if (value == null) {
             return;
         }
-        String normalizedName = name.toString().trim();
-        if (!isValidMetadataName(normalizedName)) {
+        String normalizedTier = ModelTierCatalog.normalizeTierId(value.toString());
+        if (!ModelTierCatalog.isExplicitSelectableTier(normalizedTier)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Skill metadata name must match [a-z0-9][a-z0-9-]*(/[a-z0-9][a-z0-9-]*)*");
+                    "Skill metadata " + key + " must be a known tier id");
         }
-        metadata.put("name", normalizedName);
+        metadata.put(key, normalizedTier);
     }
 
     private boolean isValidMetadataName(String value) {

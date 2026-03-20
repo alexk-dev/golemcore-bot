@@ -14,9 +14,9 @@ import { ChatConversation } from './ChatConversation';
 import { ChatToolbar } from './ChatToolbar';
 import type { OutboundChatPayload } from './chatInputTypes';
 import { useChatSessionHistory } from './useChatSessionHistory';
+import { normalizeExplicitModelTier } from '../../lib/modelTiers';
 
 const GOALS_POLL_INTERVAL = 30000;
-const SUPPORTED_TIERS = ['balanced', 'smart', 'coding', 'deep'] as const;
 const EMPTY_TURN_METADATA = {
   model: null,
   tier: null,
@@ -40,16 +40,8 @@ function getLocalCommand(text: string): 'new' | 'reset' | null {
   return null;
 }
 
-function isSupportedTier(value: string): value is (typeof SUPPORTED_TIERS)[number] {
-  return SUPPORTED_TIERS.some((tier) => tier === value);
-}
-
 function normalizeTier(value: string | null | undefined): string {
-  if (value == null) {
-    return 'balanced';
-  }
-  const normalized = value.toLowerCase();
-  return isSupportedTier(normalized) ? normalized : 'balanced';
+  return normalizeExplicitModelTier(value);
 }
 
 export default function ChatWindow(): ReactElement {

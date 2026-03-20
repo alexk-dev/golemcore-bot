@@ -19,6 +19,7 @@ package me.golemcore.bot.domain.system;
  */
 
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -88,13 +89,24 @@ public class DynamicTierSystem implements AgentSystem {
         if (userPreferencesService.getPreferences().isTierForce()) {
             return false;
         }
-        return context.getCurrentIteration() > 0
-                && !"coding".equals(context.getModelTier())
-                && !"deep".equals(context.getModelTier());
+        if (context.getCurrentIteration() <= 0) {
+            return false;
+        }
+        String currentTier = context.getModelTier();
+        if (currentTier == null || currentTier.isBlank() || "default".equalsIgnoreCase(currentTier)) {
+            return true;
+        }
+        if (!ModelTierCatalog.isImplicitRoutingTier(currentTier)) {
+            return false;
+        }
+        return !"coding".equals(currentTier) && !"deep".equals(currentTier);
     }
 
     @Override
     public AgentContext process(AgentContext context) {
+        if (!shouldProcess(context)) {
+            return context;
+        }
         List<Message> messages = context.getMessages();
         if (messages == null || messages.isEmpty()) {
             return context;

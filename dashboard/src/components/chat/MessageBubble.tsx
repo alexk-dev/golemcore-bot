@@ -3,6 +3,7 @@ import remarkGfm from 'remark-gfm';
 import { useId, useState } from 'react';
 import { FiArchive, FiCpu, FiFile, FiFileText, FiUser } from 'react-icons/fi';
 import { fetchProtectedFileObjectUrl } from '../../api/files';
+import { getModelTierMeta } from '../../lib/modelTiers';
 import type { ChatMessageAttachment } from './chatRuntimeTypes';
 
 interface Props {
@@ -38,14 +39,6 @@ interface AssistantBadgesProps {
   tier?: string | null;
   skill?: string | null;
 }
-
-const TIER_META: Record<string, { label: string; className: string }> = {
-  balanced: { label: 'Balanced', className: 'text-bg-primary' },
-  smart: { label: 'Smart', className: 'text-bg-success' },
-  coding: { label: 'Coding', className: 'text-bg-info' },
-  deep: { label: 'Deep', className: 'text-bg-warning' },
-  routing: { label: 'Routing', className: 'text-bg-dark' },
-};
 
 function ToolCallCard({ tool, result }: { tool: string; result: string }) {
   const [open, setOpen] = useState(false);
@@ -154,8 +147,7 @@ function UserDeliveryState({ clientStatus, onRetry }: UserDeliveryStateProps) {
 }
 
 function AssistantBadges({ tier, skill }: AssistantBadgesProps) {
-  const normalizedTier = (tier ?? '').toLowerCase();
-  const tierMeta = TIER_META[normalizedTier] ?? null;
+  const tierMeta = getModelTierMeta(tier);
   const hasKnownTier = tierMeta != null || hasContent(tier);
   const hasSkill = hasContent(skill);
 
@@ -171,7 +163,7 @@ function AssistantBadges({ tier, skill }: AssistantBadgesProps) {
         </span>
       )}
       {hasKnownTier && (
-        <span className={`badge assistant-tier-chip ${tierMeta?.className ?? 'text-bg-secondary'}`}>
+        <span className={`badge assistant-tier-chip ${tierMeta?.badgeClassName ?? 'text-bg-secondary'}`}>
           {tierMeta?.label ?? tier}
         </span>
       )}

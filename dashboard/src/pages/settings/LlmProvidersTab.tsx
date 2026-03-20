@@ -6,6 +6,7 @@ import ConfirmModal from '../../components/common/ConfirmModal';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useAddLlmProvider, useUpdateLlmProvider, useRemoveLlmProvider } from '../../hooks/useSettings';
 import type { ApiType, LlmConfig, LlmProviderConfig, ModelRouterConfig } from '../../api/settings';
+import { listConfiguredModelSpecs } from '../../lib/modelRouter';
 
 const KNOWN_BASE_URLS: Record<string, string> = {
   openai: 'https://api.openai.com/v1',
@@ -285,14 +286,7 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
 
   const usedProviders = useMemo(() => {
     const used = new Set<string>();
-    const models = [
-      modelRouter.routingModel,
-      modelRouter.balancedModel,
-      modelRouter.smartModel,
-      modelRouter.codingModel,
-      modelRouter.deepModel,
-    ].filter(Boolean) as string[];
-    models.forEach((modelName) => {
+    listConfiguredModelSpecs(modelRouter).forEach((modelName) => {
       const idx = modelName.indexOf('/');
       if (idx > 0) {
         used.add(modelName.substring(0, idx));

@@ -61,6 +61,17 @@ function renderTextBlock(label: string, value: string | null): ReactElement | nu
   );
 }
 
+function renderReflectionPriority(enabled: boolean): ReactElement | null {
+  if (!enabled) {
+    return null;
+  }
+  return (
+    <div className="small text-body-secondary">
+      <strong>Reflection priority:</strong> Enabled
+    </div>
+  );
+}
+
 function TaskRow({
   task,
   busy,
@@ -82,6 +93,8 @@ function TaskRow({
           </div>
           {renderTextBlock('Details', task.description)}
           {renderTextBlock('Prompt', task.prompt)}
+          {renderTextBlock('Reflection tier', task.reflectionModelTier)}
+          {renderReflectionPriority(task.reflectionTierPriority)}
         </div>
         <div className="d-flex gap-2 flex-wrap justify-content-end">
           <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => onScheduleTask(task.id)}>
@@ -123,6 +136,8 @@ function GoalCard({
           </div>
           {renderTextBlock('Details', goal.description)}
           {renderTextBlock('Prompt', goal.prompt)}
+          {renderTextBlock('Reflection tier', goal.reflectionModelTier)}
+          {renderReflectionPriority(goal.reflectionTierPriority)}
         </div>
         <div className="d-flex gap-2 flex-wrap justify-content-end">
           <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => onScheduleGoal(goal.id)}>

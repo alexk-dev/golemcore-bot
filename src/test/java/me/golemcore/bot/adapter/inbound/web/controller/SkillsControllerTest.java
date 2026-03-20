@@ -207,6 +207,30 @@ class SkillsControllerTest {
     }
 
     @Test
+    void shouldRejectUpdateWithInvalidModelTierMetadata() {
+        when(skillService.findByName("test")).thenReturn(Optional.of(Skill.builder().name("test").build()));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.updateSkill("test", Map.of(
+                        "content", "body",
+                        "metadata", Map.of("model_tier", "turbo"))));
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertEquals("Skill metadata model_tier must be a known tier id", ex.getReason());
+    }
+
+    @Test
+    void shouldRejectUpdateWithInvalidReflectionTierMetadata() {
+        when(skillService.findByName("test")).thenReturn(Optional.of(Skill.builder().name("test").build()));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.updateSkill("test", Map.of(
+                        "content", "body",
+                        "metadata", Map.of("reflection_tier", "turbo"))));
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertEquals("Skill metadata reflection_tier must be a known tier id", ex.getReason());
+    }
+
+    @Test
     void shouldRejectUpdateWithMetadataNameContainingEmptySegment() {
         when(skillService.findByName("test")).thenReturn(Optional.of(Skill.builder().name("test").build()));
 

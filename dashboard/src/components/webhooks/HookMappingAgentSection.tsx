@@ -2,6 +2,7 @@ import { type ReactElement, useEffect, useMemo, useRef } from 'react';
 import type { SystemChannelResponse } from '../../api/system';
 import type { HookMappingDraft } from '../../api/webhooks';
 import { cn } from '../../lib/utils';
+import { getExplicitModelTierOptions } from '../../lib/modelTiers';
 import HelpTip from '../common/HelpTip';
 import { Badge } from '../ui/badge';
 import { Input, Select } from '../ui/field';
@@ -66,7 +67,7 @@ export function HookAgentSection({
       <div className={surfaceClassName}>
         <HookMappingFieldHeading
           label="Model Tier"
-          help="Optional tier override for this hook: balanced, smart, coding, or deep."
+          help="Optional tier override for this hook. Special tiers are explicit-only custom slots."
         />
         <Select
           value={mapping.model ?? ''}
@@ -74,10 +75,9 @@ export function HookAgentSection({
           className={controlClassName}
         >
           <option value="">Default</option>
-          <option value="balanced">Balanced</option>
-          <option value="smart">Smart</option>
-          <option value="coding">Coding</option>
-          <option value="deep">Deep</option>
+          {getExplicitModelTierOptions().map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
         </Select>
         <p className={fieldHelpClassName}>
           Leave empty to inherit the default routing tier for agent webhook requests.

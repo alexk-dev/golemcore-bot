@@ -1153,7 +1153,16 @@ class CommandRouterTest {
 
     @Test
     void tierAcceptsAllValidTiers() throws Exception {
-        for (String tier : List.of(TIER_BALANCED, TIER_SMART, TIER_CODING, "deep")) {
+        for (String tier : List.of(
+                TIER_BALANCED,
+                TIER_SMART,
+                "deep",
+                TIER_CODING,
+                "special1",
+                "special2",
+                "special3",
+                "special4",
+                "special5")) {
             UserPreferences prefs = UserPreferences.builder().build();
             when(preferencesService.getPreferences()).thenReturn(prefs);
 
@@ -1416,7 +1425,16 @@ class CommandRouterTest {
     void modelShowCommand() throws Exception {
         when(preferencesService.getPreferences()).thenReturn(
                 UserPreferences.builder().tierOverrides(new HashMap<>()).build());
-        for (String tier : List.of(TIER_BALANCED, TIER_SMART, TIER_CODING, "deep")) {
+        for (String tier : List.of(
+                TIER_BALANCED,
+                TIER_SMART,
+                "deep",
+                TIER_CODING,
+                "special1",
+                "special2",
+                "special3",
+                "special4",
+                "special5")) {
             when(modelSelectionService.resolveForTier(tier))
                     .thenReturn(new ModelSelectionService.ModelSelection("some-model", "medium"));
         }
@@ -1427,13 +1445,47 @@ class CommandRouterTest {
     }
 
     @Test
+    void modelShowCommandIncludesSpecialTiers() throws Exception {
+        when(preferencesService.getPreferences()).thenReturn(
+                UserPreferences.builder().tierOverrides(new HashMap<>()).build());
+        for (String tier : List.of(
+                TIER_BALANCED,
+                TIER_SMART,
+                "deep",
+                TIER_CODING,
+                "special1",
+                "special2",
+                "special3",
+                "special4",
+                "special5")) {
+            when(modelSelectionService.resolveForTier(tier))
+                    .thenReturn(new ModelSelectionService.ModelSelection("model-for-" + tier, "medium"));
+        }
+
+        CommandPort.CommandResult result = router.execute(CMD_MODEL, List.of(), CTX).get();
+
+        assertTrue(result.success());
+        assertTrue(result.output().contains("special1"));
+        assertTrue(result.output().contains("special5"));
+    }
+
+    @Test
     void modelShowCommandWithOverride() throws Exception {
         when(preferencesService.getPreferences()).thenReturn(
                 UserPreferences.builder()
                         .tierOverrides(new HashMap<>(Map.of(TIER_CODING,
                                 new UserPreferences.TierOverride("openai/gpt-5.1", "high"))))
                         .build());
-        for (String tier : List.of(TIER_BALANCED, TIER_SMART, TIER_CODING, "deep")) {
+        for (String tier : List.of(
+                TIER_BALANCED,
+                TIER_SMART,
+                "deep",
+                TIER_CODING,
+                "special1",
+                "special2",
+                "special3",
+                "special4",
+                "special5")) {
             when(modelSelectionService.resolveForTier(tier))
                     .thenReturn(new ModelSelectionService.ModelSelection("some-model", "medium"));
         }
@@ -1478,6 +1530,14 @@ class CommandRouterTest {
     void modelTierNoSubcommand() throws Exception {
         CommandPort.CommandResult result = router.execute(CMD_MODEL,
                 List.of(TIER_CODING), CTX).get();
+        assertTrue(result.success());
+        assertTrue(result.output().contains("command.model.usage"));
+    }
+
+    @Test
+    void modelTierNoSubcommandAcceptsSpecialTier() throws Exception {
+        CommandPort.CommandResult result = router.execute(CMD_MODEL,
+                List.of("special3"), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.model.usage"));
     }

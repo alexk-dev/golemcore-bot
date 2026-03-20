@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.adapter.inbound.web.dto.PreferencesUpdateRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.SettingsResponse;
 import me.golemcore.bot.domain.model.MemoryPreset;
+import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.UserPreferences;
@@ -135,7 +136,7 @@ public class SettingsController {
             prefs.setNotificationsEnabled(request.getNotificationsEnabled());
         }
         if (request.getModelTier() != null) {
-            prefs.setModelTier(request.getModelTier());
+            prefs.setModelTier(normalizeOptionalSelectableTier(request.getModelTier(), "modelTier"));
         }
         if (request.getTierForce() != null) {
             prefs.setTierForce(request.getTierForce());
@@ -161,7 +162,8 @@ public class SettingsController {
             @RequestBody Map<String, SettingsResponse.TierOverrideDto> overrides) {
         UserPreferences prefs = preferencesService.getPreferences();
         Map<String, UserPreferences.TierOverride> tierOverrides = new LinkedHashMap<>();
-        overrides.forEach((tier, dto) -> tierOverrides.put(tier,
+        overrides.forEach((tier, dto) -> tierOverrides.put(
+                normalizeRequiredSelectableTier(tier, "tierOverrides key"),
                 new UserPreferences.TierOverride(dto.getModel(), dto.getReasoning())));
         prefs.setTierOverrides(tierOverrides);
         preferencesService.savePreferences(prefs);
@@ -187,6 +189,10 @@ public class SettingsController {
         mergeRuntimeSecrets(current, merged);
         normalizeAndValidateShellEnvironmentVariables(merged.getTools());
         validateLlmConfig(merged.getLlm(), merged.getModelRouter());
+        validateModelRouterConfig(merged.getModelRouter(), merged.getLlm());
+        if (merged.getAutoMode() != null) {
+            validateAndNormalizeAutoModeConfig(merged.getAutoMode());
+        }
         if (merged.getMemory() != null) {
             validateMemoryConfig(merged.getMemory());
         }
@@ -201,6 +207,7 @@ public class SettingsController {
     public Mono<ResponseEntity<RuntimeConfig>> updateModelRouterConfig(
             @RequestBody RuntimeConfig.ModelRouterConfig modelRouterConfig) {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        validateModelRouterConfig(modelRouterConfig, config.getLlm());
         config.setModelRouter(modelRouterConfig);
         runtimeConfigService.updateRuntimeConfig(config);
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
@@ -215,6 +222,7 @@ public class SettingsController {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         mergeLlmSecrets(config.getLlm(), llmConfig);
         validateLlmConfig(llmConfig, config.getModelRouter());
+        validateModelRouterConfig(config.getModelRouter(), llmConfig);
         config.setLlm(llmConfig);
         runtimeConfigService.updateRuntimeConfig(config);
         log.info("[Settings] LLM config updated successfully");
@@ -473,6 +481,7 @@ public class SettingsController {
             @RequestBody UserPreferences.WebhookConfig webhookConfig) {
         UserPreferences prefs = preferencesService.getPreferences();
         mergeWebhookSecrets(prefs.getWebhooks(), webhookConfig);
+        validateWebhookConfig(webhookConfig);
         prefs.setWebhooks(webhookConfig);
         preferencesService.savePreferences(prefs);
         return Mono.just(ResponseEntity.ok().build());
@@ -482,6 +491,7 @@ public class SettingsController {
     public Mono<ResponseEntity<RuntimeConfig>> updateAutoConfig(
             @RequestBody RuntimeConfig.AutoModeConfig autoConfig) {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        validateAndNormalizeAutoModeConfig(autoConfig);
         config.setAutoMode(autoConfig);
         runtimeConfigService.updateRuntimeConfig(config);
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
@@ -603,6 +613,45 @@ public class SettingsController {
                         "Cannot remove provider '" + usedProvider + "' because it is used by model router tiers");
             }
         }
+    }
+
+    private void validateModelRouterConfig(RuntimeConfig.ModelRouterConfig modelRouterConfig,
+            RuntimeConfig.LlmConfig llmConfig) {
+        if (modelRouterConfig == null) {
+            return;
+        }
+        List<String> configuredProviders = llmConfig != null && llmConfig.getProviders() != null
+                ? new ArrayList<>(llmConfig.getProviders().keySet())
+                : List.of();
+        validateModelRouterBinding(modelRouterConfig.getRouting(), "routing", configuredProviders);
+        if (modelRouterConfig.getTiers() == null) {
+            return;
+        }
+        for (Map.Entry<String, RuntimeConfig.TierBinding> entry : modelRouterConfig.getTiers().entrySet()) {
+            validateModelRouterBinding(entry.getValue(), entry.getKey(), configuredProviders);
+        }
+    }
+
+    private void validateModelRouterBinding(RuntimeConfig.TierBinding binding, String tier,
+            List<String> configuredProviders) {
+        if (binding == null || binding.getModel() == null || binding.getModel().isBlank()) {
+            return;
+        }
+        ModelSelectionService.ValidationResult validation = modelSelectionService.validateModel(
+                binding.getModel(),
+                configuredProviders);
+        if (validation.valid()) {
+            return;
+        }
+        throw switch (validation.error()) {
+        case "model.not.found" -> new IllegalArgumentException(
+                "Model router tier '" + tier + "' points to unknown model '" + binding.getModel() + "'");
+        case "provider.not.configured" -> new IllegalArgumentException(
+                "Model router tier '" + tier + "' points to model '" + binding.getModel()
+                        + "' whose provider is not configured");
+        default -> new IllegalArgumentException(
+                "Model router tier '" + tier + "' is invalid: " + validation.error());
+        };
     }
 
     private void validateTurnConfig(RuntimeConfig.TurnConfig turnConfig) {
@@ -775,6 +824,15 @@ public class SettingsController {
         validateNullableInteger(planConfig.getMaxStepsPerPlan(), 1, 1000, "plan.maxStepsPerPlan");
     }
 
+    private void validateAndNormalizeAutoModeConfig(RuntimeConfig.AutoModeConfig autoConfig) {
+        if (autoConfig == null) {
+            throw new IllegalArgumentException("autoMode config is required");
+        }
+        autoConfig.setModelTier(normalizeOptionalSelectableTier(autoConfig.getModelTier(), "autoMode.modelTier"));
+        autoConfig.setReflectionModelTier(normalizeOptionalSelectableTier(autoConfig.getReflectionModelTier(),
+                "autoMode.reflectionModelTier"));
+    }
+
     private void validateHiveConfig(RuntimeConfig.HiveConfig hiveConfig) {
         if (hiveConfig == null) {
             throw new IllegalArgumentException("hive config is required");
@@ -782,6 +840,18 @@ public class SettingsController {
         String serverUrl = hiveConfig.getServerUrl();
         if (serverUrl != null && !serverUrl.isBlank() && !isValidHttpUrl(serverUrl)) {
             throw new IllegalArgumentException("hive.serverUrl must be a valid http(s) URL");
+        }
+    }
+
+    private void validateWebhookConfig(UserPreferences.WebhookConfig webhookConfig) {
+        if (webhookConfig == null || webhookConfig.getMappings() == null) {
+            return;
+        }
+        for (UserPreferences.HookMapping mapping : webhookConfig.getMappings()) {
+            if (mapping == null) {
+                continue;
+            }
+            mapping.setModel(normalizeOptionalSelectableTier(mapping.getModel(), "webhooks.mapping.model"));
         }
     }
 
@@ -928,11 +998,17 @@ public class SettingsController {
         if (modelRouterConfig == null) {
             return usedProviders;
         }
-        addProviderFromModel(usedProviders, modelRouterConfig.getRoutingModel());
-        addProviderFromModel(usedProviders, modelRouterConfig.getBalancedModel());
-        addProviderFromModel(usedProviders, modelRouterConfig.getSmartModel());
-        addProviderFromModel(usedProviders, modelRouterConfig.getCodingModel());
-        addProviderFromModel(usedProviders, modelRouterConfig.getDeepModel());
+        RuntimeConfig.TierBinding routingBinding = modelRouterConfig.getRouting();
+        if (routingBinding != null) {
+            addProviderFromModel(usedProviders, routingBinding.getModel());
+        }
+        if (modelRouterConfig.getTiers() != null) {
+            for (RuntimeConfig.TierBinding tierBinding : modelRouterConfig.getTiers().values()) {
+                if (tierBinding != null) {
+                    addProviderFromModel(usedProviders, tierBinding.getModel());
+                }
+            }
+        }
         return usedProviders;
     }
 
@@ -940,11 +1016,35 @@ public class SettingsController {
         if (model == null || model.isBlank()) {
             return;
         }
+        String resolvedProvider = modelSelectionService.resolveProviderForModel(model);
+        if (resolvedProvider != null) {
+            usedProviders.add(resolvedProvider);
+            return;
+        }
         int delimiterIndex = model.indexOf('/');
         if (delimiterIndex <= 0) {
             return;
         }
         usedProviders.add(model.substring(0, delimiterIndex));
+    }
+
+    private String normalizeOptionalSelectableTier(String tier, String fieldName) {
+        String normalizedTier = ModelTierCatalog.normalizeTierId(tier);
+        if (normalizedTier == null) {
+            return null;
+        }
+        if ("default".equals(normalizedTier)) {
+            return null;
+        }
+        return normalizeRequiredSelectableTier(normalizedTier, fieldName);
+    }
+
+    private String normalizeRequiredSelectableTier(String tier, String fieldName) {
+        String normalizedTier = ModelTierCatalog.normalizeTierId(tier);
+        if (!ModelTierCatalog.isExplicitSelectableTier(normalizedTier)) {
+            throw new IllegalArgumentException(fieldName + " must be a known tier id");
+        }
+        return normalizedTier;
     }
 
     private void mergeRuntimeSecrets(RuntimeConfig current, RuntimeConfig incoming) {
