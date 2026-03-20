@@ -15,6 +15,7 @@ import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.model.trace.TraceContext;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -202,6 +203,28 @@ class DefaultToolLoopSystemTest {
         assertEquals(1, result.llmCalls());
         assertEquals(0, result.toolExecutions());
         verify(historyWriter).appendFinalAssistantAnswer(any(), any(), any());
+    }
+
+    @Test
+    void shouldCopyTraceContextIntoLlmRequest() {
+        AgentContext context = buildContext();
+        context.setTraceContext(TraceContext.builder()
+                .traceId("trace-1")
+                .spanId("span-1")
+                .rootKind("INGRESS")
+                .build());
+        LlmResponse response = finalResponse("Hello!");
+
+        when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(response));
+
+        system.processTurn(context);
+
+        org.mockito.ArgumentCaptor<me.golemcore.bot.domain.model.LlmRequest> captor = org.mockito.ArgumentCaptor
+                .forClass(me.golemcore.bot.domain.model.LlmRequest.class);
+        verify(llmPort).chat(captor.capture());
+        assertEquals("trace-1", captor.getValue().getTraceId());
+        assertEquals("span-1", captor.getValue().getTraceSpanId());
+        assertEquals("INGRESS", captor.getValue().getTraceRootKind());
     }
 
     @Test

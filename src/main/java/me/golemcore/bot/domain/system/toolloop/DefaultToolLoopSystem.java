@@ -938,6 +938,11 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 .tools(context.getAvailableTools())
                 .toolResults(context.getToolResults())
                 .sessionId(context.getSession() != null ? context.getSession().getId() : null)
+                .traceId(context.getTraceContext() != null ? context.getTraceContext().getTraceId() : null)
+                .traceSpanId(context.getTraceContext() != null ? context.getTraceContext().getSpanId() : null)
+                .traceParentSpanId(
+                        context.getTraceContext() != null ? context.getTraceContext().getParentSpanId() : null)
+                .traceRootKind(context.getTraceContext() != null ? context.getTraceContext().getRootKind() : null)
                 .build();
     }
 

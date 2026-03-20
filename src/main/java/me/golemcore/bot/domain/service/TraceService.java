@@ -33,9 +33,28 @@ public class TraceService {
 
     public TraceContext startRootTrace(AgentSession session, String traceName, TraceSpanKind kind, Instant startedAt,
             Map<String, Object> attributes) {
+        return startRootTrace(session, null, traceName, kind, startedAt, attributes);
+    }
+
+    public TraceContext startRootTrace(AgentSession session, TraceContext rootContext, String traceName,
+            TraceSpanKind kind,
+            Instant startedAt, Map<String, Object> attributes) {
         ensureSessionTraceState(session);
-        String traceId = UUID.randomUUID().toString();
-        String spanId = UUID.randomUUID().toString();
+        String traceId = rootContext != null && rootContext.getTraceId() != null
+                ? rootContext.getTraceId()
+                : UUID.randomUUID().toString();
+        String spanId = rootContext != null && rootContext.getSpanId() != null
+                ? rootContext.getSpanId()
+                : UUID.randomUUID().toString();
+        TraceRecord existingTrace = findTraceOrNull(session, traceId);
+        if (existingTrace != null) {
+            return TraceContext.builder()
+                    .traceId(traceId)
+                    .spanId(spanId)
+                    .parentSpanId(null)
+                    .rootKind(rootContext != null ? rootContext.getRootKind() : (kind != null ? kind.name() : null))
+                    .build();
+        }
         TraceSpanRecord rootSpan = TraceSpanRecord.builder()
                 .spanId(spanId)
                 .name(traceName)
@@ -62,7 +81,7 @@ public class TraceService {
                 .traceId(traceId)
                 .spanId(spanId)
                 .parentSpanId(null)
-                .rootKind(kind != null ? kind.name() : null)
+                .rootKind(rootContext != null ? rootContext.getRootKind() : (kind != null ? kind.name() : null))
                 .build();
     }
 
@@ -158,6 +177,16 @@ public class TraceService {
                 .filter(traceRecord -> traceRecord != null && traceId.equals(traceRecord.getTraceId()))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Trace not found: " + traceId));
+    }
+
+    private TraceRecord findTraceOrNull(AgentSession session, String traceId) {
+        if (session == null || session.getTraces() == null || traceId == null) {
+            return null;
+        }
+        return session.getTraces().stream()
+                .filter(traceRecord -> traceRecord != null && traceId.equals(traceRecord.getTraceId()))
+                .findFirst()
+                .orElse(null);
     }
 
     private TraceSpanRecord findSpan(TraceRecord trace, String spanId) {

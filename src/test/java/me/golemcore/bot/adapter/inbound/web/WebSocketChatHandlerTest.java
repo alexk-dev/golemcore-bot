@@ -155,6 +155,36 @@ class WebSocketChatHandlerTest {
     }
 
     @Test
+    void shouldAttachTraceMetadataToInboundWebsocketMessage() {
+        String token = tokenProvider.generateAccessToken("admin");
+
+        WebSocketSession session = mock(WebSocketSession.class);
+        HandshakeInfo handshakeInfo = mock(HandshakeInfo.class);
+        when(session.getHandshakeInfo()).thenReturn(handshakeInfo);
+        when(handshakeInfo.getUri()).thenReturn(URI.create("ws://localhost/ws/chat?token=" + token));
+        when(session.getId()).thenReturn("session-trace");
+
+        WebSocketMessage wsMessage = mock(WebSocketMessage.class);
+        when(wsMessage.getPayloadAsText()).thenReturn("{\"text\":\"hello\",\"sessionId\":\"chat-1\"}");
+        when(session.receive()).thenReturn(Flux.just(wsMessage));
+
+        StepVerifier.create(handler.handle(session))
+                .verifyComplete();
+
+        ArgumentCaptor<AgentLoop.InboundMessageEvent> captor = ArgumentCaptor
+                .forClass(AgentLoop.InboundMessageEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+
+        Map<String, Object> metadata = captor.getValue().message().getMetadata();
+        assertNotNull(metadata);
+        assertNotNull(metadata.get("trace.id"));
+        assertNotNull(metadata.get("trace.span.id"));
+        assertEquals("INGRESS", metadata.get("trace.root.kind"));
+        assertEquals("websocket.message", metadata.get("trace.name"));
+        assertNull(metadata.get("trace.parent.span.id"));
+    }
+
+    @Test
     void shouldBindWebActivePointerFromSocketPayload() {
         String token = tokenProvider.generateAccessToken("admin");
 
@@ -589,6 +619,11 @@ class WebSocketChatHandlerTest {
                 .forClass(AgentLoop.InboundMessageEvent.class);
         verify(eventPublisher).publishEvent(captor.capture());
 
-        assertNull(captor.getValue().message().getMetadata());
+        Map<String, Object> metadata = captor.getValue().message().getMetadata();
+        assertNotNull(metadata);
+        assertEquals("websocket.message", metadata.get("trace.name"));
+        assertEquals("INGRESS", metadata.get("trace.root.kind"));
+        assertNotNull(metadata.get("trace.id"));
+        assertNotNull(metadata.get("trace.span.id"));
     }
 }

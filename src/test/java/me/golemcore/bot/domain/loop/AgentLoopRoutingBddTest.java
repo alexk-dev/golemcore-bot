@@ -24,6 +24,9 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.RateLimitResult;
 import me.golemcore.bot.domain.model.SkillTransitionRequest;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.TraceBudgetService;
+import me.golemcore.bot.domain.service.TraceService;
+import me.golemcore.bot.domain.service.TraceSnapshotCompressionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.system.AgentSystem;
@@ -174,7 +177,8 @@ class AgentLoopRoutingBddTest {
                 runtimeConfigService,
                 preferencesService,
                 llmPort,
-                clock);
+                clock,
+                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()));
     }
 
     private static RuntimeConfigService mockRuntimeConfigService(int maxLlmCalls) {
@@ -182,6 +186,7 @@ class AgentLoopRoutingBddTest {
         when(rcs.getTurnMaxLlmCalls()).thenReturn(maxLlmCalls);
         when(rcs.getRoutingModel()).thenReturn("test-model");
         when(rcs.getRoutingModelReasoning()).thenReturn("none");
+        when(rcs.isTracingEnabled()).thenReturn(true);
         return rcs;
     }
 }

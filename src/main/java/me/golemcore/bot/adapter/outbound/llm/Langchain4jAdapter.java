@@ -459,6 +459,10 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 .stream(request.isStream())
                 .disableToolAttachmentHydration(true)
                 .sessionId(request.getSessionId())
+                .traceId(request.getTraceId())
+                .traceSpanId(request.getTraceSpanId())
+                .traceParentSpanId(request.getTraceParentSpanId())
+                .traceRootKind(request.getTraceRootKind())
                 .reasoningEffort(request.getReasoningEffort())
                 .build();
     }

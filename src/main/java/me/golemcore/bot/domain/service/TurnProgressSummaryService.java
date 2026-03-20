@@ -60,6 +60,19 @@ public class TurnProgressSummaryService {
                         .build()))
                 .maxTokens(MAX_SUMMARY_TOKENS)
                 .temperature(0.2)
+                .sessionId(context != null && context.getSession() != null ? context.getSession().getId() : null)
+                .traceId(context != null && context.getTraceContext() != null ? context.getTraceContext().getTraceId()
+                        : null)
+                .traceSpanId(
+                        context != null && context.getTraceContext() != null ? context.getTraceContext().getSpanId()
+                                : null)
+                .traceParentSpanId(
+                        context != null && context.getTraceContext() != null
+                                ? context.getTraceContext().getParentSpanId()
+                                : null)
+                .traceRootKind(
+                        context != null && context.getTraceContext() != null ? context.getTraceContext().getRootKind()
+                                : null)
                 .build();
 
         try {

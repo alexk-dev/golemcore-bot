@@ -34,10 +34,15 @@ import me.golemcore.bot.domain.model.SkillTransitionRequest;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.model.TurnOutcome;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.TraceBudgetService;
+import me.golemcore.bot.domain.service.TraceService;
+import me.golemcore.bot.domain.service.TraceSnapshotCompressionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.system.AgentSystem;
 import me.golemcore.bot.domain.system.ResponseRoutingSystem;
+import me.golemcore.bot.domain.model.trace.TraceContext;
+import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.LlmPort;
@@ -259,6 +264,91 @@ class AgentLoopTest {
     }
 
     @Test
+    void shouldStartRootTraceAndPropagateTraceContextIntoAgentContext() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType(CHANNEL_TYPE)
+                .chatId("conv-1")
+                .messages(new ArrayList<>())
+                .build();
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "conv-1")).thenReturn(session);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+
+        AgentSystem verifier = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "trace-verifier";
+            }
+
+            @Override
+            public int getOrder() {
+                return 1;
+            }
+
+            @Override
+            public boolean shouldProcess(AgentContext context) {
+                return true;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                TraceContext traceContext = context.getTraceContext();
+                assertNotNull(traceContext);
+                assertEquals("trace-1", traceContext.getTraceId());
+                assertEquals("span-1", traceContext.getSpanId());
+                assertEquals(TraceSpanKind.INGRESS.name(), traceContext.getRootKind());
+                assertEquals("trace-1", context.getAttribute(ContextAttributes.TRACE_ID));
+                assertEquals("span-1", context.getAttribute(ContextAttributes.TRACE_SPAN_ID));
+                assertEquals(TraceSpanKind.INGRESS.name(), context.getAttribute(ContextAttributes.TRACE_ROOT_KIND));
+                return context;
+            }
+        };
+
+        AgentLoop loop = createLoop(
+                sessionPort,
+                rateLimitPort,
+                List.of(verifier),
+                List.of(channel),
+                mockRuntimeConfigService(1),
+                preferencesService,
+                llmPort,
+                clock);
+
+        Message inbound = Message.builder()
+                .role(ROLE_USER)
+                .content("trace me")
+                .channelType(CHANNEL_TYPE)
+                .chatId("conv-1")
+                .senderId("u1")
+                .metadata(Map.of(
+                        ContextAttributes.TRACE_ID, "trace-1",
+                        ContextAttributes.TRACE_SPAN_ID, "span-1",
+                        ContextAttributes.TRACE_ROOT_KIND, TraceSpanKind.INGRESS.name(),
+                        ContextAttributes.TRACE_NAME, "telegram.message"))
+                .timestamp(clock.instant())
+                .build();
+
+        loop.processMessage(inbound);
+
+        assertEquals(1, session.getTraces().size());
+        assertEquals("trace-1", session.getTraces().get(0).getTraceId());
+        assertEquals("span-1", session.getTraces().get(0).getRootSpanId());
+        assertEquals("telegram.message", session.getTraces().get(0).getTraceName());
+    }
+
+    @Test
     void shouldNotSendGenericFallbackDuringSkillTransition() {
         SessionPort sessionPort = mock(SessionPort.class);
         RateLimitPort rateLimitPort = mock(RateLimitPort.class);
@@ -320,7 +410,8 @@ class AgentLoopTest {
                 mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
-                clock);
+                clock,
+                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()));
 
         Message inbound = Message.builder()
                 .role(ROLE_USER)
@@ -1028,7 +1119,8 @@ class AgentLoopTest {
                 mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
-                clock);
+                clock,
+                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()));
 
         Message inbound = Message.builder()
                 .role(ROLE_USER)
@@ -1115,7 +1207,8 @@ class AgentLoopTest {
                 mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
-                clock);
+                clock,
+                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()));
 
         Message inbound = Message.builder()
                 .role(ROLE_USER)
@@ -1548,7 +1641,8 @@ class AgentLoopTest {
                 mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
-                clock);
+                clock,
+                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()));
 
         Message inbound = Message.builder()
                 .role(ROLE_USER)
@@ -1820,7 +1914,8 @@ class AgentLoopTest {
                 runtimeConfigService,
                 preferencesService,
                 llmPort,
-                clock);
+                clock,
+                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()));
     }
 
     private static RuntimeConfigService mockRuntimeConfigService(int maxLlmCalls) {
@@ -1828,6 +1923,7 @@ class AgentLoopTest {
         when(rcs.getTurnMaxLlmCalls()).thenReturn(maxLlmCalls);
         when(rcs.getRoutingModel()).thenReturn("test-model");
         when(rcs.getRoutingModelReasoning()).thenReturn("none");
+        when(rcs.isTracingEnabled()).thenReturn(true);
         return rcs;
     }
 }

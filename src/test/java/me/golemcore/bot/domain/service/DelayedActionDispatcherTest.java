@@ -228,6 +228,43 @@ class DelayedActionDispatcherTest {
     }
 
     @Test
+    void shouldAttachTraceMetadataToInternalTurnDispatch() throws Exception {
+        SessionRunCoordinator coordinator = mock(SessionRunCoordinator.class);
+        when(coordinator.submit(any(Message.class))).thenReturn(CompletableFuture.completedFuture(null));
+
+        DelayedActionPolicyService policyService = mock(DelayedActionPolicyService.class);
+        when(policyService.supportsDelayedExecution("telegram", "chat-1")).thenReturn(true);
+
+        DelayedActionDispatcher dispatcher = new DelayedActionDispatcher(
+                coordinator,
+                new ChannelRegistry(List.of()),
+                mock(ToolArtifactService.class),
+                policyService,
+                Clock.fixed(Instant.parse("2026-03-19T18:30:00Z"), ZoneOffset.UTC));
+
+        DelayedSessionAction action = DelayedSessionAction.builder()
+                .id("delay-trace")
+                .channelType("telegram")
+                .conversationKey("conv-1")
+                .transportChatId("chat-1")
+                .kind(DelayedActionKind.RUN_LATER)
+                .deliveryMode(DelayedActionDeliveryMode.INTERNAL_TURN)
+                .payload(Map.of("instruction", "Continue"))
+                .build();
+
+        DelayedActionDispatcher.DispatchResult result = dispatcher.dispatch(action).get();
+
+        assertTrue(result.success());
+        ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
+        verify(coordinator).submit(captor.capture());
+        Map<String, Object> metadata = captor.getValue().getMetadata();
+        assertTrue(metadata.get("trace.id") instanceof String);
+        assertTrue(metadata.get("trace.span.id") instanceof String);
+        assertEquals("INTERNAL", metadata.get("trace.root.kind"));
+        assertEquals("delayed.action", metadata.get("trace.name"));
+    }
+
+    @Test
     void shouldRejectDirectFileWithoutArtifactPath() throws Exception {
         DelayedActionPolicyService policyService = mock(DelayedActionPolicyService.class);
         when(policyService.supportsProactiveDocument("telegram", "chat-1")).thenReturn(true);

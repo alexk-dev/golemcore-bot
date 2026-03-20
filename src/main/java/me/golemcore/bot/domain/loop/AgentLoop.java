@@ -31,10 +31,16 @@ import me.golemcore.bot.domain.model.RoutingOutcome;
 import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.model.SkillTransitionRequest;
 import me.golemcore.bot.domain.model.TurnOutcome;
+import me.golemcore.bot.domain.model.trace.TraceContext;
+import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.domain.service.AutoRunContextSupport;
 import me.golemcore.bot.domain.service.MdcSupport;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.SessionIdentitySupport;
+import me.golemcore.bot.domain.service.TraceContextSupport;
+import me.golemcore.bot.domain.service.TraceMdcSupport;
+import me.golemcore.bot.domain.service.TraceNamingSupport;
+import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.outbound.SessionPort;
@@ -85,6 +91,7 @@ public class AgentLoop {
     private final UserPreferencesService preferencesService;
     private final LlmPort llmPort;
     private final Clock clock;
+    private final TraceService traceService;
     private final ChannelRegistry channelRegistry;
     private final ScheduledExecutorService typingExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "typing-indicator");
@@ -111,7 +118,7 @@ public class AgentLoop {
             List<AgentSystem> systems,
             ChannelRegistry channelRegistry, RuntimeConfigService runtimeConfigService,
             UserPreferencesService preferencesService,
-            LlmPort llmPort, Clock clock) {
+            LlmPort llmPort, Clock clock, TraceService traceService) {
         this.sessionService = sessionService;
         this.rateLimiter = rateLimiter;
         this.systems = systems;
@@ -120,11 +127,20 @@ public class AgentLoop {
         this.preferencesService = preferencesService;
         this.llmPort = llmPort;
         this.clock = clock;
+        this.traceService = traceService;
     }
 
     public void processMessage(Message message) {
         Objects.requireNonNull(message, "message must not be null");
-        try (MdcSupport.Scope ignored = MdcSupport.withContext(AutoRunContextSupport.buildMdcContext(message))) {
+        message.setMetadata(TraceContextSupport.ensureRootMetadata(
+                message.getMetadata(),
+                message.isInternalMessage() || AutoRunContextSupport.isAutoMessage(message)
+                        ? TraceSpanKind.INTERNAL
+                        : TraceSpanKind.INGRESS,
+                TraceNamingSupport.inboundMessage(message)));
+        Map<String, String> mdcContext = new LinkedHashMap<>(AutoRunContextSupport.buildMdcContext(message));
+        mdcContext.putAll(TraceMdcSupport.buildMdcContext(message));
+        try (MdcSupport.Scope ignored = MdcSupport.withContext(mdcContext)) {
             log.info("=== INCOMING MESSAGE ===");
             log.info("Channel: {}, Chat: {}, Sender: {}",
                     message.getChannelType(), message.getChatId(), message.getSenderId());
@@ -146,6 +162,7 @@ public class AgentLoop {
                     message.getChatId());
             log.debug("Session: {}, messages in history: {}", session.getId(), session.getMessages().size());
 
+            TraceContext rootTraceContext = initializeRootTrace(session, message);
             applySessionIdentityMetadata(session, message);
             if (!message.isInternalMessage()) {
                 session.addMessage(message);
@@ -157,6 +174,7 @@ public class AgentLoop {
                     .maxIterations(runtimeConfigService.getTurnMaxLlmCalls())
                     .currentIteration(0)
                     .build();
+            context.setTraceContext(rootTraceContext);
             applyRuntimeAttributes(context, message, session);
 
             // Initialize sorted systems + routingSystem (used by feedback guarantee).
@@ -314,6 +332,16 @@ public class AgentLoop {
         copyStringMetadataAttribute(message, context, ContextAttributes.HIVE_COMMAND_ID);
         copyStringMetadataAttribute(message, context, ContextAttributes.HIVE_RUN_ID);
         copyStringMetadataAttribute(message, context, ContextAttributes.HIVE_GOLEM_ID);
+        copyStringMetadataAttribute(message, context, ContextAttributes.TRACE_ID);
+        copyStringMetadataAttribute(message, context, ContextAttributes.TRACE_SPAN_ID);
+        copyStringMetadataAttribute(message, context, ContextAttributes.TRACE_PARENT_SPAN_ID);
+        copyStringMetadataAttribute(message, context, ContextAttributes.TRACE_ROOT_KIND);
+        copyStringMetadataAttribute(message, context, ContextAttributes.TRACE_NAME);
+        TraceContext traceContext = TraceContextSupport
+                .readTraceContext(message != null ? message.getMetadata() : null);
+        if (traceContext != null) {
+            context.setTraceContext(traceContext);
+        }
 
         boolean reflectionActive = readMetadataBoolean(message, ContextAttributes.AUTO_REFLECTION_ACTIVE);
         if (reflectionActive) {
@@ -366,6 +394,38 @@ public class AgentLoop {
             return Boolean.parseBoolean(stringValue.trim());
         }
         return false;
+    }
+
+    private TraceContext initializeRootTrace(AgentSession session, Message message) {
+        if (!runtimeConfigService.isTracingEnabled() || session == null || message == null) {
+            return TraceContextSupport.readTraceContext(message != null ? message.getMetadata() : null);
+        }
+        TraceContext seededContext = TraceContextSupport.readTraceContext(message.getMetadata());
+        TraceSpanKind spanKind = message.isInternalMessage() || AutoRunContextSupport.isAutoMessage(message)
+                ? TraceSpanKind.INTERNAL
+                : TraceSpanKind.INGRESS;
+        String traceName = TraceContextSupport.readTraceName(message.getMetadata());
+        if (traceName == null || traceName.isBlank()) {
+            traceName = TraceNamingSupport.inboundMessage(message);
+        }
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("session.id", session.getId());
+        if (message.getChannelType() != null) {
+            attributes.put("channel.type", message.getChannelType());
+        }
+        if (message.getChatId() != null) {
+            attributes.put("chat.id", message.getChatId());
+        }
+        if (message.getSenderId() != null) {
+            attributes.put("sender.id", message.getSenderId());
+        }
+        return traceService.startRootTrace(
+                session,
+                seededContext,
+                traceName,
+                spanKind,
+                message.getTimestamp() != null ? message.getTimestamp() : clock.instant(),
+                attributes);
     }
 
     private void recordAutoRunOutcome(Message inbound, AgentContext context) {
@@ -586,7 +646,7 @@ public class AgentLoop {
             return false;
         }
 
-        String interpretation = tryInterpretErrors(errors);
+        String interpretation = tryInterpretErrors(context, errors);
         if (interpretation != null) {
             String message = preferencesService.getMessage("system.error.feedback", interpretation);
             log.info("[AgentLoop] Feedback guarantee: routing interpreted error");
@@ -618,7 +678,7 @@ public class AgentLoop {
         return errors;
     }
 
-    private String tryInterpretErrors(List<String> errors) {
+    private String tryInterpretErrors(AgentContext context, List<String> errors) {
         try {
             String errorSummary = String.join("\n", errors);
             LlmRequest request = LlmRequest.builder()
@@ -631,6 +691,12 @@ public class AgentLoop {
                             .content(errorSummary)
                             .timestamp(clock.instant())
                             .build()))
+                    .sessionId(context.getSession() != null ? context.getSession().getId() : null)
+                    .traceId(context.getTraceContext() != null ? context.getTraceContext().getTraceId() : null)
+                    .traceSpanId(context.getTraceContext() != null ? context.getTraceContext().getSpanId() : null)
+                    .traceParentSpanId(
+                            context.getTraceContext() != null ? context.getTraceContext().getParentSpanId() : null)
+                    .traceRootKind(context.getTraceContext() != null ? context.getTraceContext().getRootKind() : null)
                     .build();
             LlmResponse response = llmPort.chat(request).get(10, TimeUnit.SECONDS);
             if (response != null && response.getContent() != null && !response.getContent().isBlank()) {

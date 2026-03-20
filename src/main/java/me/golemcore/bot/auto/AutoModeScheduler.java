@@ -26,11 +26,14 @@ import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.ScheduleEntry;
+import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.domain.service.SessionRunCoordinator;
 import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.service.TraceContextSupport;
+import me.golemcore.bot.domain.service.TraceNamingSupport;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.SessionPort;
@@ -402,6 +405,10 @@ public class AutoModeScheduler {
             metadata.put(ContextAttributes.AUTO_REFLECTION_TIER, scheduleMessage.reflectionTier());
         }
         metadata.put(ContextAttributes.AUTO_REFLECTION_TIER_PRIORITY, scheduleMessage.reflectionTierPriority());
+        metadata = TraceContextSupport.ensureRootMetadata(
+                metadata,
+                TraceSpanKind.INTERNAL,
+                TraceNamingSupport.autoSchedule(schedule));
 
         return Message.builder()
                 .role("user")

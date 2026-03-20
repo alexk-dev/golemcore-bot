@@ -22,6 +22,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.any;
@@ -150,6 +151,22 @@ class WebhookControllerTest {
         assertTrue(content.endsWith("[END EXTERNAL DATA]"));
     }
 
+    @Test
+    void wakeShouldAttachTraceMetadata() {
+        WakeRequest request = WakeRequest.builder().text("External event").build();
+
+        controller.wake(toJsonBytes(request), new HttpHeaders()).block();
+
+        ArgumentCaptor<AgentLoop.InboundMessageEvent> captor = ArgumentCaptor
+                .forClass(AgentLoop.InboundMessageEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertEquals("INGRESS", captor.getValue().message().getMetadata().get("trace.root.kind"));
+        assertEquals("webhook.wake", captor.getValue().message().getMetadata().get("trace.name"));
+        assertNotNull(captor.getValue().message().getMetadata().get("trace.id"));
+        assertNotNull(captor.getValue().message().getMetadata().get("trace.span.id"));
+        assertNull(captor.getValue().message().getMetadata().get("trace.parent.span.id"));
+    }
+
     // ==================== /agent ====================
 
     @Test
@@ -209,6 +226,25 @@ class WebhookControllerTest {
                 eq("https://example.com/callback"), eq("coding"));
         verify(channelAdapter).registerPendingRun(anyString(), anyString(),
                 eq("https://example.com/callback"), eq("coding"), eq("delivery-1"));
+    }
+
+    @Test
+    void agentShouldAttachTraceMetadata() {
+        AgentRequest request = AgentRequest.builder()
+                .message("Summarize issues")
+                .name("Daily Digest")
+                .build();
+
+        controller.agent(toJsonBytes(request), new HttpHeaders()).block();
+
+        ArgumentCaptor<AgentLoop.InboundMessageEvent> captor = ArgumentCaptor
+                .forClass(AgentLoop.InboundMessageEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertEquals("INGRESS", captor.getValue().message().getMetadata().get("trace.root.kind"));
+        assertEquals("webhook.agent", captor.getValue().message().getMetadata().get("trace.name"));
+        assertNotNull(captor.getValue().message().getMetadata().get("trace.id"));
+        assertNotNull(captor.getValue().message().getMetadata().get("trace.span.id"));
+        assertNull(captor.getValue().message().getMetadata().get("trace.parent.span.id"));
     }
 
     @Test
