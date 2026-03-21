@@ -5,6 +5,8 @@ import me.golemcore.bot.adapter.inbound.web.dto.ActiveSessionResponse;
 import me.golemcore.bot.adapter.inbound.web.dto.CreateSessionRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionDetailDto;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionSummaryDto;
+import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSnapshotDto;
+import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSummaryDto;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
@@ -24,9 +26,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.test.StepVerifier;
 
+import java.lang.reflect.Method;
 import java.security.Principal;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -210,6 +214,204 @@ class SessionsControllerTest {
                     assertEquals(26L, response.getBody().getStorageStats().getCompressedSnapshotBytes());
                 })
                 .verifyComplete();
+    }
+
+    @Test
+    void shouldExposeSessionTraceSummaryForSparseTraceData() {
+        TraceSpanRecord timedSpan = TraceSpanRecord.builder()
+                .spanId("span-timed")
+                .name("tool.run")
+                .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                .endedAt(Instant.parse("2026-03-20T10:00:05Z"))
+                .build();
+        TraceRecord timedTrace = TraceRecord.builder()
+                .traceId("trace-early")
+                .rootSpanId("missing-root")
+                .traceName("tool.trace")
+                .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                .endedAt(Instant.parse("2026-03-20T10:00:05Z"))
+                .spans(List.of(timedSpan))
+                .build();
+        TraceRecord sparseTrace = TraceRecord.builder()
+                .traceId("trace-late")
+                .rootSpanId("missing-root")
+                .traceName("sparse.trace")
+                .startedAt(null)
+                .endedAt(null)
+                .truncated(true)
+                .spans(Arrays.asList((TraceSpanRecord) null))
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("s-summary")
+                .channelType("web")
+                .chatId("chat-summary")
+                .traces(Arrays.asList(sparseTrace, null, timedTrace))
+                .messages(List.of())
+                .build();
+        when(sessionPort.get("s-summary")).thenReturn(Optional.of(session));
+
+        StepVerifier.create(controller.getSessionTraceSummary("s-summary"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    SessionTraceSummaryDto body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals("s-summary", body.getSessionId());
+                    assertEquals(2, body.getTraceCount());
+                    assertEquals(2, body.getSpanCount());
+                    assertEquals(0, body.getSnapshotCount());
+                    assertEquals("trace-early", body.getTraces().get(0).getTraceId());
+                    assertEquals("trace-late", body.getTraces().get(1).getTraceId());
+                    assertEquals("missing-root", body.getTraces().get(0).getRootSpanId());
+                    assertEquals(5000L, body.getTraces().get(0).getDurationMs());
+                    assertNull(body.getTraces().get(1).getRootKind());
+                    assertNull(body.getTraces().get(1).getRootStatusCode());
+                    assertNull(body.getTraces().get(1).getStartedAt());
+                    assertNull(body.getTraces().get(1).getEndedAt());
+                    assertNull(body.getTraces().get(1).getDurationMs());
+                    assertTrue(body.getTraces().get(1).isTruncated());
+                    assertEquals(0L, body.getStorageStats().getCompressedSnapshotBytes());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldThrowNotFoundWhenTraceSummarySessionMissing() {
+        when(sessionPort.get("missing")).thenReturn(Optional.empty());
+
+        ResponseStatusException error = assertThrows(
+                ResponseStatusException.class,
+                () -> controller.getSessionTraceSummary("missing"));
+
+        assertEquals(HttpStatus.NOT_FOUND, error.getStatusCode());
+    }
+
+    @Test
+    void shouldExposeTraceDetailAndExportForSparseSnapshots() {
+        String longPayload = "x".repeat(5000);
+        byte[] compressedPayload = compressionService.compress(longPayload.getBytes(StandardCharsets.UTF_8));
+        TraceSnapshot previewableSnapshot = TraceSnapshot.builder()
+                .snapshotId("snap-preview")
+                .role("request")
+                .contentType("text/plain")
+                .encoding("zstd")
+                .compressedPayload(compressedPayload)
+                .originalSize((long) longPayload.length())
+                .compressedSize((long) compressedPayload.length)
+                .build();
+        TraceSnapshot missingPayloadSnapshot = TraceSnapshot.builder()
+                .snapshotId("snap-empty")
+                .role("response")
+                .contentType("application/json")
+                .encoding("zstd")
+                .compressedPayload(null)
+                .originalSize(0L)
+                .compressedSize(0L)
+                .build();
+        TraceSpanRecord rootSpan = TraceSpanRecord.builder()
+                .spanId("span-root")
+                .name("web.request")
+                .kind(TraceSpanKind.INGRESS)
+                .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                .endedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                .events(List.of(me.golemcore.bot.domain.model.trace.TraceEventRecord.builder()
+                        .name("request.received")
+                        .timestamp(Instant.parse("2026-03-20T10:00:00.500Z"))
+                        .attributes(Map.of("channel", "web"))
+                        .build()))
+                .snapshots(List.of(previewableSnapshot))
+                .build();
+        TraceSpanRecord childSpan = TraceSpanRecord.builder()
+                .spanId("span-child")
+                .parentSpanId("span-root")
+                .name("response.route")
+                .kind(null)
+                .statusCode(null)
+                .startedAt(Instant.parse("2026-03-20T10:00:02Z"))
+                .endedAt(Instant.parse("2026-03-20T10:00:02.500Z"))
+                .events(null)
+                .snapshots(List.of(missingPayloadSnapshot))
+                .build();
+        TraceRecord trace = TraceRecord.builder()
+                .traceId("trace-detail")
+                .rootSpanId("missing-root")
+                .traceName("web.message")
+                .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                .endedAt(Instant.parse("2026-03-20T10:00:03Z"))
+                .spans(Arrays.asList(childSpan, null, rootSpan))
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("s-detail")
+                .channelType("web")
+                .chatId("chat-detail")
+                .traces(List.of(trace))
+                .messages(List.of())
+                .build();
+        when(sessionPort.get("s-detail")).thenReturn(Optional.of(session));
+
+        StepVerifier.create(controller.getSessionTrace("s-detail"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertNotNull(response.getBody());
+                    assertEquals(2, response.getBody().getTraces().get(0).getSpans().size());
+                    assertEquals("span-root", response.getBody().getTraces().get(0).getSpans().get(0).getSpanId());
+                    assertEquals("span-child", response.getBody().getTraces().get(0).getSpans().get(1).getSpanId());
+                    assertEquals("request.received", response.getBody().getTraces().get(0).getSpans().get(0)
+                            .getEvents().get(0).getName());
+                    assertTrue(response.getBody().getTraces().get(0).getSpans().get(0)
+                            .getSnapshots().get(0).isPayloadAvailable());
+                    assertTrue(response.getBody().getTraces().get(0).getSpans().get(0)
+                            .getSnapshots().get(0).isPayloadPreviewTruncated());
+                    assertFalse(response.getBody().getTraces().get(0).getSpans().get(1)
+                            .getSnapshots().get(0).isPayloadAvailable());
+                    assertNull(response.getBody().getTraces().get(0).getSpans().get(1)
+                            .getSnapshots().get(0).getPayloadPreview());
+                })
+                .verifyComplete();
+
+        StepVerifier.create(controller.exportSessionTrace("s-detail"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> traces = (List<Map<String, Object>>) response.getBody().get("traces");
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> spans = (List<Map<String, Object>>) traces.get(0).get("spans");
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> firstSnapshots = (List<Map<String, Object>>) spans.get(0)
+                            .get("snapshots");
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> secondSnapshots = (List<Map<String, Object>>) spans.get(1)
+                            .get("snapshots");
+                    assertEquals(longPayload, firstSnapshots.get(0).get("payloadText"));
+                    assertNotNull(firstSnapshots.get(0).get("payloadBase64"));
+                    assertNull(secondSnapshots.get(0).get("payloadText"));
+                    assertNull(secondSnapshots.get(0).get("payloadBase64"));
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> events = (List<Map<String, Object>>) spans.get(0).get("events");
+                    assertEquals("request.received", events.get(0).get("name"));
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldHideSnapshotPreviewWhenPreviewDisabled() throws Exception {
+        TraceSnapshot snapshot = TraceSnapshot.builder()
+                .snapshotId("snap-hidden")
+                .role("request")
+                .contentType("text/plain")
+                .encoding("zstd")
+                .compressedPayload(compressionService.compress("hidden".getBytes(StandardCharsets.UTF_8)))
+                .originalSize(6L)
+                .compressedSize(18L)
+                .build();
+
+        Method method = SessionsController.class.getDeclaredMethod(
+                "toTraceSnapshotDto", TraceSnapshot.class, boolean.class);
+        method.setAccessible(true);
+        SessionTraceSnapshotDto dto = (SessionTraceSnapshotDto) method.invoke(controller, snapshot, false);
+
+        assertFalse(dto.isPayloadAvailable());
+        assertNull(dto.getPayloadPreview());
+        assertFalse(dto.isPayloadPreviewTruncated());
     }
 
     @Test

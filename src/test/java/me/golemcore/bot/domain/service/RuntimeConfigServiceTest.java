@@ -255,6 +255,82 @@ class RuntimeConfigServiceTest {
     }
 
     @Test
+    void shouldReturnDefaultTracingSettingsWhenTracingConfigMissing() throws Exception {
+        RuntimeConfig config = service.getRuntimeConfig();
+        config.setTracing(null);
+        setCachedConfig(config);
+
+        assertTrue(service.isTracingEnabled());
+        assertFalse(service.isPayloadSnapshotsEnabled());
+        assertEquals(128, service.getSessionTraceBudgetMb());
+        assertEquals(256, service.getTraceMaxSnapshotSizeKb());
+        assertEquals(10, service.getTraceMaxSnapshotsPerSpan());
+        assertEquals(100, service.getTraceMaxTracesPerSession());
+        assertFalse(service.isTraceInboundPayloadCaptureEnabled());
+        assertFalse(service.isTraceOutboundPayloadCaptureEnabled());
+        assertFalse(service.isTraceToolPayloadCaptureEnabled());
+        assertFalse(service.isTraceLlmPayloadCaptureEnabled());
+    }
+
+    @Test
+    void shouldReturnDefaultTracingSettingsWhenTracingFieldsAreNull() throws Exception {
+        RuntimeConfig config = service.getRuntimeConfig();
+        RuntimeConfig.TracingConfig tracing = RuntimeConfig.TracingConfig.builder().build();
+        tracing.setEnabled(null);
+        tracing.setPayloadSnapshotsEnabled(null);
+        tracing.setSessionTraceBudgetMb(null);
+        tracing.setMaxSnapshotSizeKb(null);
+        tracing.setMaxSnapshotsPerSpan(null);
+        tracing.setMaxTracesPerSession(null);
+        tracing.setCaptureInboundPayloads(null);
+        tracing.setCaptureOutboundPayloads(null);
+        tracing.setCaptureToolPayloads(null);
+        tracing.setCaptureLlmPayloads(null);
+        config.setTracing(tracing);
+        setCachedConfig(config);
+
+        assertTrue(service.isTracingEnabled());
+        assertFalse(service.isPayloadSnapshotsEnabled());
+        assertEquals(128, service.getSessionTraceBudgetMb());
+        assertEquals(256, service.getTraceMaxSnapshotSizeKb());
+        assertEquals(10, service.getTraceMaxSnapshotsPerSpan());
+        assertEquals(100, service.getTraceMaxTracesPerSession());
+        assertFalse(service.isTraceInboundPayloadCaptureEnabled());
+        assertFalse(service.isTraceOutboundPayloadCaptureEnabled());
+        assertFalse(service.isTraceToolPayloadCaptureEnabled());
+        assertFalse(service.isTraceLlmPayloadCaptureEnabled());
+    }
+
+    @Test
+    void shouldReturnConfiguredTracingSettings() throws Exception {
+        RuntimeConfig config = service.getRuntimeConfig();
+        RuntimeConfig.TracingConfig tracing = RuntimeConfig.TracingConfig.builder().build();
+        tracing.setEnabled(false);
+        tracing.setPayloadSnapshotsEnabled(true);
+        tracing.setSessionTraceBudgetMb(64);
+        tracing.setMaxSnapshotSizeKb(512);
+        tracing.setMaxSnapshotsPerSpan(4);
+        tracing.setMaxTracesPerSession(3);
+        tracing.setCaptureInboundPayloads(true);
+        tracing.setCaptureOutboundPayloads(true);
+        tracing.setCaptureToolPayloads(true);
+        tracing.setCaptureLlmPayloads(true);
+        config.setTracing(tracing);
+        setCachedConfig(config);
+
+        assertFalse(service.isTracingEnabled());
+        assertTrue(service.isPayloadSnapshotsEnabled());
+        assertEquals(64, service.getSessionTraceBudgetMb());
+        assertEquals(512, service.getTraceMaxSnapshotSizeKb());
+        assertEquals(4, service.getTraceMaxSnapshotsPerSpan());
+        assertEquals(3, service.getTraceMaxTracesPerSession());
+        assertTrue(service.isTraceInboundPayloadCaptureEnabled());
+        assertTrue(service.isTraceOutboundPayloadCaptureEnabled());
+        assertTrue(service.isTraceToolPayloadCaptureEnabled());
+        assertTrue(service.isTraceLlmPayloadCaptureEnabled());
+    }
+
+    @Test
     void shouldReturnDefaultSecuritySettings() {
         assertTrue(service.isSanitizeInputEnabled());
         assertTrue(service.isPromptInjectionDetectionEnabled());
