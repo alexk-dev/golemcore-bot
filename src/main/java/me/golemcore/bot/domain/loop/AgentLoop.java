@@ -18,6 +18,7 @@ package me.golemcore.bot.domain.loop;
  * Contact: alex@kuleshov.tech
  */
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
@@ -25,6 +26,7 @@ import me.golemcore.bot.domain.model.FailureEvent;
 import me.golemcore.bot.domain.model.FailureKind;
 import me.golemcore.bot.domain.model.FailureSource;
 import me.golemcore.bot.domain.model.FinishReason;
+import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.RoutingOutcome;
@@ -33,6 +35,7 @@ import me.golemcore.bot.domain.model.SkillTransitionRequest;
 import me.golemcore.bot.domain.model.TurnOutcome;
 import me.golemcore.bot.domain.model.trace.TraceContext;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
+import me.golemcore.bot.domain.model.trace.TraceStatusCode;
 import me.golemcore.bot.domain.service.AutoRunContextSupport;
 import me.golemcore.bot.domain.service.MdcSupport;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -40,6 +43,7 @@ import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import me.golemcore.bot.domain.service.TraceContextSupport;
 import me.golemcore.bot.domain.service.TraceMdcSupport;
 import me.golemcore.bot.domain.service.TraceNamingSupport;
+import me.golemcore.bot.domain.service.TraceRuntimeConfigSupport;
 import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
@@ -58,6 +62,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -93,6 +98,7 @@ public class AgentLoop {
     private final Clock clock;
     private final TraceService traceService;
     private final ChannelRegistry channelRegistry;
+    private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
     private final ScheduledExecutorService typingExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "typing-indicator");
         t.setDaemon(true);
@@ -168,6 +174,8 @@ public class AgentLoop {
                 session.addMessage(message);
             }
 
+            captureInboundSnapshot(session, rootTraceContext, message);
+
             AgentContext context = AgentContext.builder()
                     .session(session)
                     .messages(buildContextMessages(session, message))
@@ -210,7 +218,9 @@ public class AgentLoop {
                 // already applied)
                 // on restart/crash.
                 try {
-                    sessionService.save(session);
+                    saveSessionWithTracing(session, context.getTraceContext() != null
+                            ? context.getTraceContext()
+                            : rootTraceContext);
                 } catch (Exception e) { // NOSONAR - last resort, must not break finally
                     log.error("Failed to persist session in finally: {}", session.getId(), e);
                 }
@@ -425,7 +435,18 @@ public class AgentLoop {
                 traceName,
                 spanKind,
                 message.getTimestamp() != null ? message.getTimestamp() : clock.instant(),
-                attributes);
+                attributes,
+                runtimeConfigService.getTraceMaxTracesPerSession());
+    }
+
+    private void captureInboundSnapshot(AgentSession session, TraceContext rootTraceContext, Message message) {
+        RuntimeConfig.TracingConfig tracingConfig = TraceRuntimeConfigSupport.resolve(runtimeConfigService);
+        if (session == null || rootTraceContext == null || tracingConfig == null
+                || !Boolean.TRUE.equals(tracingConfig.getCaptureInboundPayloads())) {
+            return;
+        }
+        traceService.captureSnapshot(session, rootTraceContext, tracingConfig,
+                "request", "application/json", serializeSnapshotPayload(message));
     }
 
     private void recordAutoRunOutcome(Message inbound, AgentContext context) {
@@ -484,10 +505,21 @@ public class AgentLoop {
 
                 log.debug("Running system: {} (order={})", system.getName(), system.getOrder());
                 long startMs = clock.millis();
+                TraceContext systemSpan = startChildSpan(context,
+                        "system." + system.getName(),
+                        TraceSpanKind.INTERNAL,
+                        Map.of(
+                                "system.name", system.getName(),
+                                "system.order", system.getOrder(),
+                                "iteration", iteration));
                 try {
-                    context = system.process(context);
+                    try (MdcSupport.Scope ignored = MdcSupport.withContext(buildTraceMdcContext(systemSpan, context))) {
+                        context = system.process(context);
+                    }
+                    finishChildSpan(context, systemSpan, TraceStatusCode.OK, null);
                     log.debug("System '{}' completed in {}ms", system.getName(), clock.millis() - startMs);
                 } catch (Exception e) {
+                    finishChildSpan(context, systemSpan, TraceStatusCode.ERROR, e.getMessage());
                     log.error("System '{}' FAILED after {}ms: {}", system.getName(), clock.millis() - startMs,
                             e.getMessage(), e);
                     context.addFailure(new FailureEvent(
@@ -709,6 +741,71 @@ public class AgentLoop {
             log.debug("[AgentLoop] LLM error interpretation failed: {}", e.getMessage());
         }
         return null;
+    }
+
+    private void saveSessionWithTracing(AgentSession session, TraceContext parentTraceContext) {
+        TraceContext saveSpan = startSessionSaveSpan(session, parentTraceContext);
+        try {
+            sessionService.save(session);
+            finishSessionSaveSpan(session, saveSpan, TraceStatusCode.OK, null);
+        } catch (RuntimeException e) {
+            finishSessionSaveSpan(session, saveSpan, TraceStatusCode.ERROR, e.getMessage());
+            log.error("Failed to save session {} during traced persistence", session != null ? session.getId() : null,
+                    e);
+        }
+    }
+
+    private TraceContext startSessionSaveSpan(AgentSession session, TraceContext parentTraceContext) {
+        if (!runtimeConfigService.isTracingEnabled() || session == null || parentTraceContext == null) {
+            return null;
+        }
+        return traceService.startSpan(session, parentTraceContext, "session.save", TraceSpanKind.STORAGE,
+                clock.instant(), Map.of("session.id", session.getId()));
+    }
+
+    private void finishSessionSaveSpan(AgentSession session, TraceContext spanContext, TraceStatusCode statusCode,
+            String statusMessage) {
+        if (session == null || spanContext == null) {
+            return;
+        }
+        traceService.finishSpan(session, spanContext, statusCode, statusMessage, clock.instant());
+    }
+
+    private TraceContext startChildSpan(AgentContext context, String spanName, TraceSpanKind spanKind,
+            Map<String, Object> attributes) {
+        if (context == null || context.getSession() == null || context.getTraceContext() == null
+                || !runtimeConfigService.isTracingEnabled()) {
+            return null;
+        }
+        return traceService.startSpan(context.getSession(), context.getTraceContext(), spanName, spanKind,
+                clock.instant(), attributes);
+    }
+
+    private void finishChildSpan(AgentContext context, TraceContext spanContext, TraceStatusCode statusCode,
+            String statusMessage) {
+        if (context == null || context.getSession() == null || spanContext == null) {
+            return;
+        }
+        traceService.finishSpan(context.getSession(), spanContext, statusCode, statusMessage, clock.instant());
+    }
+
+    private Map<String, String> buildTraceMdcContext(TraceContext spanContext, AgentContext context) {
+        if (spanContext == null) {
+            return Map.of();
+        }
+        Map<String, Object> source = context != null ? context.getAttributes() : Map.of();
+        return TraceMdcSupport.buildMdcContext(spanContext, source);
+    }
+
+    private byte[] serializeSnapshotPayload(Object payload) {
+        if (payload == null) {
+            return new byte[0];
+        }
+        try {
+            return objectMapper.writeValueAsBytes(payload);
+        } catch (Exception e) { // NOSONAR - tracing must not break request handling
+            return String.valueOf(payload).getBytes(StandardCharsets.UTF_8);
+        }
     }
 
     private boolean isAutoModeContext(AgentContext context) {

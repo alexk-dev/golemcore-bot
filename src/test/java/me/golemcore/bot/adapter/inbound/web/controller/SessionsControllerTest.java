@@ -9,6 +9,13 @@ import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.ActiveSessionPointerService;
+import me.golemcore.bot.domain.service.TraceSnapshotCompressionService;
+import me.golemcore.bot.domain.model.trace.TraceRecord;
+import me.golemcore.bot.domain.model.trace.TraceSnapshot;
+import me.golemcore.bot.domain.model.trace.TraceSpanKind;
+import me.golemcore.bot.domain.model.trace.TraceSpanRecord;
+import me.golemcore.bot.domain.model.trace.TraceStatusCode;
+import me.golemcore.bot.domain.model.trace.TraceStorageStats;
 import me.golemcore.bot.port.outbound.SessionPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,6 +25,7 @@ import org.springframework.web.server.ResponseStatusException;
 import reactor.test.StepVerifier;
 
 import java.security.Principal;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -40,13 +48,15 @@ class SessionsControllerTest {
 
     private SessionPort sessionPort;
     private ActiveSessionPointerService pointerService;
+    private TraceSnapshotCompressionService compressionService;
     private SessionsController controller;
 
     @BeforeEach
     void setUp() {
         sessionPort = mock(SessionPort.class);
         pointerService = mock(ActiveSessionPointerService.class);
-        controller = new SessionsController(sessionPort, pointerService);
+        compressionService = new TraceSnapshotCompressionService();
+        controller = new SessionsController(sessionPort, pointerService, compressionService);
     }
 
     @Test
@@ -128,6 +138,131 @@ class SessionsControllerTest {
                     assertEquals("s1", body.getId());
                     assertEquals(1, body.getMessages().size());
                     assertEquals("hello", body.getMessages().get(0).getContent());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldExposeSessionTraceDetail() {
+        TraceSnapshot snapshot = TraceSnapshot.builder()
+                .snapshotId("snap-1")
+                .role("request")
+                .contentType("application/json")
+                .encoding("zstd")
+                .compressedPayload(
+                        compressionService.compress("{\"prompt\":\"hello\"}".getBytes(StandardCharsets.UTF_8)))
+                .originalSize(18L)
+                .compressedSize(26L)
+                .build();
+        TraceSpanRecord rootSpan = TraceSpanRecord.builder()
+                .spanId("span-root")
+                .name("web.request")
+                .kind(TraceSpanKind.INGRESS)
+                .statusCode(TraceStatusCode.OK)
+                .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                .endedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                .attributes(Map.of("channel", "web"))
+                .snapshots(List.of(snapshot))
+                .build();
+        TraceSpanRecord llmSpan = TraceSpanRecord.builder()
+                .spanId("span-llm")
+                .parentSpanId("span-root")
+                .name("llm.chat")
+                .kind(TraceSpanKind.LLM)
+                .statusCode(TraceStatusCode.OK)
+                .startedAt(Instant.parse("2026-03-20T10:00:00.200Z"))
+                .endedAt(Instant.parse("2026-03-20T10:00:00.900Z"))
+                .attributes(Map.of("attempt", 1))
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("s-trace")
+                .channelType("web")
+                .chatId("chat-1")
+                .createdAt(Instant.parse("2026-03-20T09:59:00Z"))
+                .updatedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                .traces(List.of(TraceRecord.builder()
+                        .traceId("trace-1")
+                        .rootSpanId("span-root")
+                        .traceName("web.message")
+                        .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                        .endedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                        .compressedSnapshotBytes(26L)
+                        .uncompressedSnapshotBytes(18L)
+                        .spans(List.of(rootSpan, llmSpan))
+                        .build()))
+                .traceStorageStats(TraceStorageStats.builder()
+                        .compressedSnapshotBytes(26L)
+                        .uncompressedSnapshotBytes(18L)
+                        .build())
+                .messages(List.of())
+                .build();
+        when(sessionPort.get("s-trace")).thenReturn(Optional.of(session));
+
+        StepVerifier.create(controller.getSessionTrace("s-trace"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertNotNull(response.getBody());
+                    assertEquals("s-trace", response.getBody().getSessionId());
+                    assertEquals(1, response.getBody().getTraces().size());
+                    assertEquals("trace-1", response.getBody().getTraces().get(0).getTraceId());
+                    assertEquals(2, response.getBody().getTraces().get(0).getSpans().size());
+                    assertEquals(1, response.getBody().getTraces().get(0).getSpans().get(0).getSnapshots().size());
+                    assertEquals(26L, response.getBody().getStorageStats().getCompressedSnapshotBytes());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldExportSessionTraceSnapshotPayloads() {
+        TraceSnapshot snapshot = TraceSnapshot.builder()
+                .snapshotId("snap-1")
+                .role("response")
+                .contentType("application/json")
+                .encoding("zstd")
+                .compressedPayload(compressionService.compress("{\"answer\":\"ok\"}".getBytes(StandardCharsets.UTF_8)))
+                .originalSize(15L)
+                .compressedSize(24L)
+                .build();
+        TraceSpanRecord span = TraceSpanRecord.builder()
+                .spanId("span-root")
+                .name("response.route")
+                .kind(TraceSpanKind.OUTBOUND)
+                .statusCode(TraceStatusCode.OK)
+                .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                .endedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                .snapshots(List.of(snapshot))
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("s-export")
+                .channelType("web")
+                .chatId("chat-2")
+                .createdAt(Instant.parse("2026-03-20T09:59:00Z"))
+                .updatedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                .traces(List.of(TraceRecord.builder()
+                        .traceId("trace-export")
+                        .rootSpanId("span-root")
+                        .traceName("web.message")
+                        .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                        .endedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                        .spans(List.of(span))
+                        .build()))
+                .messages(List.of())
+                .build();
+        when(sessionPort.get("s-export")).thenReturn(Optional.of(session));
+
+        StepVerifier.create(controller.exportSessionTrace("s-export"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertNotNull(response.getBody());
+                    assertEquals("s-export", response.getBody().get("sessionId"));
+                    assertTrue(response.getBody().containsKey("traces"));
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> traces = (List<Map<String, Object>>) response.getBody().get("traces");
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> spans = (List<Map<String, Object>>) traces.get(0).get("spans");
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> snapshots = (List<Map<String, Object>>) spans.get(0).get("snapshots");
+                    assertEquals("{\"answer\":\"ok\"}", snapshots.get(0).get("payloadText"));
                 })
                 .verifyComplete();
     }

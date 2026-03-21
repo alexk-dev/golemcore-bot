@@ -63,10 +63,31 @@ public class TraceBudgetService {
             }
         }
 
-        recalculateTraceSnapshotTotals(session);
-        stats.setCompressedSnapshotBytes(calculateCompressedBytes(session));
-        stats.setUncompressedSnapshotBytes(calculateUncompressedBytes(session));
-        stats.setTruncatedTraces(countTruncatedTraces(session));
+        refreshStats(session, stats);
+    }
+
+    public void enforceTraceCountLimit(AgentSession session, int maxTraces) {
+        if (session == null || session.getTraces() == null) {
+            return;
+        }
+        if (maxTraces < 1) {
+            throw new IllegalArgumentException("maxTraces must be positive");
+        }
+        TraceStorageStats stats = ensureStorageStats(session);
+        if (session.getTraces().size() <= maxTraces) {
+            refreshStats(session, stats);
+            return;
+        }
+
+        session.getTraces().sort(Comparator.comparing(
+                TraceRecord::getStartedAt,
+                Comparator.nullsLast(Comparator.naturalOrder())));
+        while (session.getTraces().size() > maxTraces) {
+            session.getTraces().remove(0);
+            stats.setEvictedTraces(stats.getEvictedTraces() + 1);
+        }
+
+        refreshStats(session, stats);
     }
 
     private void recalculateTraceSnapshotTotals(AgentSession session) {
@@ -91,6 +112,13 @@ public class TraceBudgetService {
             trace.setCompressedSnapshotBytes(compressed);
             trace.setUncompressedSnapshotBytes(uncompressed);
         }
+    }
+
+    private void refreshStats(AgentSession session, TraceStorageStats stats) {
+        recalculateTraceSnapshotTotals(session);
+        stats.setCompressedSnapshotBytes(calculateCompressedBytes(session));
+        stats.setUncompressedSnapshotBytes(calculateUncompressedBytes(session));
+        stats.setTruncatedTraces(countTruncatedTraces(session));
     }
 
     private long calculateCompressedBytes(AgentSession session) {

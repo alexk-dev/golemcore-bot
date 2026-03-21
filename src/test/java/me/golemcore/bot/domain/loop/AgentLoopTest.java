@@ -42,7 +42,10 @@ import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.system.AgentSystem;
 import me.golemcore.bot.domain.system.ResponseRoutingSystem;
 import me.golemcore.bot.domain.model.trace.TraceContext;
+import me.golemcore.bot.domain.model.trace.TraceRecord;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
+import me.golemcore.bot.domain.model.trace.TraceSpanRecord;
+import me.golemcore.bot.domain.model.trace.TraceStatusCode;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.LlmPort;
@@ -346,6 +349,89 @@ class AgentLoopTest {
         assertEquals("trace-1", session.getTraces().get(0).getTraceId());
         assertEquals("span-1", session.getTraces().get(0).getRootSpanId());
         assertEquals("telegram.message", session.getTraces().get(0).getTraceName());
+    }
+
+    @Test
+    void shouldRecordSystemAndSessionSaveChildSpans() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType(CHANNEL_TYPE)
+                .chatId("conv-1")
+                .messages(new ArrayList<>())
+                .build();
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "conv-1")).thenReturn(session);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+
+        AgentSystem tracedSystem = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "traceable";
+            }
+
+            @Override
+            public int getOrder() {
+                return 1;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly("done"));
+                return context;
+            }
+        };
+
+        AgentLoop loop = createLoop(
+                sessionPort,
+                rateLimitPort,
+                List.of(tracedSystem),
+                List.of(channel),
+                mockRuntimeConfigService(1),
+                preferencesService,
+                llmPort,
+                clock);
+
+        Message inbound = Message.builder()
+                .role(ROLE_USER)
+                .content("trace systems")
+                .channelType(CHANNEL_TYPE)
+                .chatId("conv-1")
+                .senderId("u1")
+                .metadata(Map.of(
+                        ContextAttributes.TRACE_ID, "trace-1",
+                        ContextAttributes.TRACE_SPAN_ID, "span-1",
+                        ContextAttributes.TRACE_ROOT_KIND, TraceSpanKind.INGRESS.name(),
+                        ContextAttributes.TRACE_NAME, "telegram.message"))
+                .timestamp(clock.instant())
+                .build();
+
+        loop.processMessage(inbound);
+
+        TraceRecord trace = session.getTraces().get(0);
+        TraceSpanRecord systemSpan = trace.getSpans().stream()
+                .filter(span -> "system.traceable".equals(span.getName()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("span-1", systemSpan.getParentSpanId());
+        assertEquals(TraceStatusCode.OK, systemSpan.getStatusCode());
+
+        TraceSpanRecord saveSpan = trace.getSpans().stream()
+                .filter(span -> "session.save".equals(span.getName()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("span-1", saveSpan.getParentSpanId());
+        assertEquals(TraceStatusCode.OK, saveSpan.getStatusCode());
     }
 
     @Test

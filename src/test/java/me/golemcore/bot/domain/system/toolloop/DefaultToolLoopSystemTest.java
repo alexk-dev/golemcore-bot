@@ -16,10 +16,15 @@ import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.model.trace.TraceContext;
+import me.golemcore.bot.domain.model.trace.TraceRecord;
+import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.RuntimeEventService;
+import me.golemcore.bot.domain.service.TraceBudgetService;
+import me.golemcore.bot.domain.service.TraceService;
+import me.golemcore.bot.domain.service.TraceSnapshotCompressionService;
 import me.golemcore.bot.domain.service.TurnProgressService;
 import me.golemcore.bot.domain.system.LlmErrorClassifier;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationView;
@@ -225,6 +230,62 @@ class DefaultToolLoopSystemTest {
         assertEquals("trace-1", captor.getValue().getTraceId());
         assertEquals("span-1", captor.getValue().getTraceSpanId());
         assertEquals("INGRESS", captor.getValue().getTraceRootKind());
+    }
+
+    @Test
+    void shouldRecordLlmAndToolChildSpansWithSnapshots() {
+        AgentContext context = buildContext();
+        TraceService traceService = new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService());
+        TraceContext rootTrace = traceService.startRootTrace(
+                context.getSession(),
+                TraceContext.builder()
+                        .traceId("trace-1")
+                        .spanId("root-span")
+                        .rootKind(TraceSpanKind.INGRESS.name())
+                        .build(),
+                "telegram.message",
+                TraceSpanKind.INGRESS,
+                Instant.now(clock),
+                Map.of("session.id", "sess-1"));
+        context.setTraceContext(rootTrace);
+
+        DefaultToolLoopSystem tracedSystem = new DefaultToolLoopSystem(
+                llmPort, toolExecutor, historyWriter, viewBuilder,
+                turnSettings, settings, modelSelectionService, planService,
+                runtimeConfigService, null, null, turnProgressService, traceService, clock);
+
+        stubRuntimeConfigDefaults();
+        when(runtimeConfigService.isTracingEnabled()).thenReturn(true);
+        when(runtimeConfigService.isPayloadSnapshotsEnabled()).thenReturn(true);
+        when(runtimeConfigService.isTraceLlmPayloadCaptureEnabled()).thenReturn(true);
+        when(runtimeConfigService.isTraceToolPayloadCaptureEnabled()).thenReturn(true);
+        when(runtimeConfigService.getSessionTraceBudgetMb()).thenReturn(8);
+        when(runtimeConfigService.getTraceMaxSnapshotSizeKb()).thenReturn(64);
+        when(runtimeConfigService.getTraceMaxSnapshotsPerSpan()).thenReturn(4);
+
+        Message.ToolCall toolCall = toolCall(TOOL_CALL_ID, TOOL_NAME);
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(toolCall))))
+                .thenReturn(CompletableFuture.completedFuture(finalResponse(CONTENT_DONE)));
+        when(toolExecutor.execute(any(), any())).thenReturn(new ToolExecutionOutcome(
+                TOOL_CALL_ID, TOOL_NAME, ToolResult.success("ok"), "ok", false, null));
+
+        ToolLoopTurnResult result = tracedSystem.processTurn(context);
+
+        assertTrue(result.finalAnswerReady());
+        TraceRecord trace = context.getSession().getTraces().get(0);
+        long llmSpanCount = trace.getSpans().stream()
+                .filter(span -> "llm.chat".equals(span.getName()))
+                .count();
+        assertEquals(2L, llmSpanCount);
+        assertTrue(trace.getSpans().stream()
+                .anyMatch(span -> ("tool." + TOOL_NAME).equals(span.getName())));
+        assertTrue(trace.getSpans().stream()
+                .filter(span -> "llm.chat".equals(span.getName()))
+                .allMatch(span -> !span.getSnapshots().isEmpty()));
+        assertTrue(trace.getSpans().stream()
+                .filter(span -> ("tool." + TOOL_NAME).equals(span.getName()))
+                .allMatch(span -> !span.getSnapshots().isEmpty()));
     }
 
     @Test

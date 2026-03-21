@@ -6,6 +6,9 @@ import {
   setActiveSession,
   createSession,
   getSession,
+  getSessionTrace,
+  getSessionTraceSummary,
+  exportSessionTrace,
   deleteSession,
   compactSession,
   clearSession,
@@ -49,6 +52,28 @@ export function useSession(id: string): UseQueryResult<Awaited<ReturnType<typeof
   });
 }
 
+export function useSessionTraceSummary(
+  id: string,
+  enabled = true,
+): UseQueryResult<Awaited<ReturnType<typeof getSessionTraceSummary>>, unknown> {
+  return useQuery({
+    queryKey: ['sessions', id, 'trace', 'summary'],
+    queryFn: () => getSessionTraceSummary(id),
+    enabled: enabled && id.length > 0,
+  });
+}
+
+export function useSessionTrace(
+  id: string,
+  enabled = true,
+): UseQueryResult<Awaited<ReturnType<typeof getSessionTrace>>, unknown> {
+  return useQuery({
+    queryKey: ['sessions', id, 'trace'],
+    queryFn: () => getSessionTrace(id),
+    enabled: enabled && id.length > 0,
+  });
+}
+
 export function useSetActiveSession(): UseMutationResult<Awaited<ReturnType<typeof setActiveSession>>, unknown, Parameters<typeof setActiveSession>[0]> {
   const qc = useQueryClient();
   return useMutation({
@@ -81,6 +106,12 @@ export function useDeleteSession(): UseMutationResult<Awaited<ReturnType<typeof 
       void qc.invalidateQueries({ queryKey: ['sessions', 'recent'] });
       void qc.invalidateQueries({ queryKey: ['sessions', 'active'] });
     },
+  });
+}
+
+export function useExportSessionTrace(): UseMutationResult<Awaited<ReturnType<typeof exportSessionTrace>>, unknown, string> {
+  return useMutation({
+    mutationFn: exportSessionTrace,
   });
 }
 

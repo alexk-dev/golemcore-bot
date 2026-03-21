@@ -807,6 +807,66 @@ public class RuntimeConfigService {
         return tracingConfig.getSessionTraceBudgetMb();
     }
 
+    public int getTraceMaxSnapshotSizeKb() {
+        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
+        if (tracingConfig == null || tracingConfig.getMaxSnapshotSizeKb() == null) {
+            return DEFAULT_TRACING_MAX_SNAPSHOT_SIZE_KB;
+        }
+        return tracingConfig.getMaxSnapshotSizeKb();
+    }
+
+    public int getTraceMaxSnapshotsPerSpan() {
+        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
+        if (tracingConfig == null || tracingConfig.getMaxSnapshotsPerSpan() == null) {
+            return DEFAULT_TRACING_MAX_SNAPSHOTS_PER_SPAN;
+        }
+        return tracingConfig.getMaxSnapshotsPerSpan();
+    }
+
+    public int getTraceMaxTracesPerSession() {
+        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
+        if (tracingConfig == null || tracingConfig.getMaxTracesPerSession() == null) {
+            return DEFAULT_TRACING_MAX_TRACES_PER_SESSION;
+        }
+        return tracingConfig.getMaxTracesPerSession();
+    }
+
+    public boolean isTraceInboundPayloadCaptureEnabled() {
+        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
+        if (tracingConfig == null) {
+            return DEFAULT_TRACING_CAPTURE_INBOUND_PAYLOADS;
+        }
+        Boolean value = tracingConfig.getCaptureInboundPayloads();
+        return value != null ? value : DEFAULT_TRACING_CAPTURE_INBOUND_PAYLOADS;
+    }
+
+    public boolean isTraceOutboundPayloadCaptureEnabled() {
+        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
+        if (tracingConfig == null) {
+            return DEFAULT_TRACING_CAPTURE_OUTBOUND_PAYLOADS;
+        }
+        Boolean value = tracingConfig.getCaptureOutboundPayloads();
+        return value != null ? value : DEFAULT_TRACING_CAPTURE_OUTBOUND_PAYLOADS;
+    }
+
+    public boolean isTraceToolPayloadCaptureEnabled() {
+        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
+        if (tracingConfig == null) {
+            return DEFAULT_TRACING_CAPTURE_TOOL_PAYLOADS;
+        }
+        Boolean value = tracingConfig.getCaptureToolPayloads();
+        return value != null ? value : DEFAULT_TRACING_CAPTURE_TOOL_PAYLOADS;
+    }
+
+    public boolean isTraceLlmPayloadCaptureEnabled() {
+        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
+        if (tracingConfig == null) {
+            return DEFAULT_TRACING_CAPTURE_LLM_PAYLOADS;
+        }
+        Boolean value = tracingConfig.getCaptureLlmPayloads();
+        return value != null ? value : DEFAULT_TRACING_CAPTURE_LLM_PAYLOADS;
+    }
+
     // ==================== Rate Limit ====================
 
     public boolean isRateLimitEnabled() {

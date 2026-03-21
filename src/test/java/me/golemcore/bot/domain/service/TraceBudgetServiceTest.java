@@ -41,6 +41,32 @@ class TraceBudgetServiceTest {
         assertEquals(1, session.getTraceStorageStats().getEvictedSnapshots());
     }
 
+    @Test
+    void shouldEvictOldestTracesWhenTraceCountLimitIsExceeded() {
+        TraceBudgetService service = new TraceBudgetService();
+        AgentSession session = AgentSession.builder()
+                .messages(new ArrayList<>())
+                .metadata(new java.util.LinkedHashMap<>())
+                .traces(new ArrayList<>(List.of(
+                        createTrace("trace-1", "span-1", Instant.parse("2026-03-20T10:00:00Z"), 40L),
+                        createTrace("trace-2", "span-2", Instant.parse("2026-03-20T10:01:00Z"), 30L),
+                        createTrace("trace-3", "span-3", Instant.parse("2026-03-20T10:02:00Z"), 20L))))
+                .traceStorageStats(TraceStorageStats.builder()
+                        .compressedSnapshotBytes(90L)
+                        .uncompressedSnapshotBytes(180L)
+                        .build())
+                .build();
+
+        service.enforceTraceCountLimit(session, 2);
+
+        assertEquals(2, session.getTraces().size());
+        assertEquals("trace-2", session.getTraces().get(0).getTraceId());
+        assertEquals("trace-3", session.getTraces().get(1).getTraceId());
+        assertEquals(1, session.getTraceStorageStats().getEvictedTraces());
+        assertEquals(50L, session.getTraceStorageStats().getCompressedSnapshotBytes());
+        assertEquals(100L, session.getTraceStorageStats().getUncompressedSnapshotBytes());
+    }
+
     private TraceRecord createTrace(String traceId, String spanId, Instant startedAt, long compressedSize) {
         TraceSnapshot snapshot = TraceSnapshot.builder()
                 .snapshotId(traceId + "-snapshot")

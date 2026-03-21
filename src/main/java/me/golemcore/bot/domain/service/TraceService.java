@@ -12,6 +12,7 @@ import me.golemcore.bot.domain.model.trace.TraceStorageStats;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -33,12 +34,23 @@ public class TraceService {
 
     public TraceContext startRootTrace(AgentSession session, String traceName, TraceSpanKind kind, Instant startedAt,
             Map<String, Object> attributes) {
-        return startRootTrace(session, null, traceName, kind, startedAt, attributes);
+        return startRootTrace(session, traceName, kind, startedAt, attributes, null);
+    }
+
+    public TraceContext startRootTrace(AgentSession session, String traceName, TraceSpanKind kind, Instant startedAt,
+            Map<String, Object> attributes, Integer maxTracesPerSession) {
+        return startRootTrace(session, null, traceName, kind, startedAt, attributes, maxTracesPerSession);
     }
 
     public TraceContext startRootTrace(AgentSession session, TraceContext rootContext, String traceName,
             TraceSpanKind kind,
             Instant startedAt, Map<String, Object> attributes) {
+        return startRootTrace(session, rootContext, traceName, kind, startedAt, attributes, null);
+    }
+
+    public TraceContext startRootTrace(AgentSession session, TraceContext rootContext, String traceName,
+            TraceSpanKind kind,
+            Instant startedAt, Map<String, Object> attributes, Integer maxTracesPerSession) {
         ensureSessionTraceState(session);
         String traceId = rootContext != null && rootContext.getTraceId() != null
                 ? rootContext.getTraceId()
@@ -77,6 +89,9 @@ public class TraceService {
                 .build();
         traceRecord.getSpans().add(rootSpan);
         session.getTraces().add(traceRecord);
+        if (maxTracesPerSession != null && maxTracesPerSession > 0) {
+            traceBudgetService.enforceTraceCountLimit(session, maxTracesPerSession);
+        }
         return TraceContext.builder()
                 .traceId(traceId)
                 .spanId(spanId)
@@ -118,7 +133,26 @@ public class TraceService {
                 || !Boolean.TRUE.equals(tracingConfig.getPayloadSnapshotsEnabled())) {
             return;
         }
+        TraceRecord trace = findTrace(session, spanContext.getTraceId());
+        TraceSpanRecord span = findSpan(trace, spanContext.getSpanId());
+        int maxSnapshotsPerSpan = tracingConfig.getMaxSnapshotsPerSpan() != null
+                ? tracingConfig.getMaxSnapshotsPerSpan()
+                : 10;
+        if (span.getSnapshots().size() >= maxSnapshotsPerSpan) {
+            trace.setTruncated(true);
+            return;
+        }
+
         byte[] rawPayload = payload != null ? payload : new byte[0];
+        int originalSize = rawPayload.length;
+        int maxSnapshotBytes = (tracingConfig.getMaxSnapshotSizeKb() != null
+                ? tracingConfig.getMaxSnapshotSizeKb()
+                : 256) * 1024;
+        boolean truncated = rawPayload.length > maxSnapshotBytes;
+        if (truncated) {
+            rawPayload = Arrays.copyOf(rawPayload, maxSnapshotBytes);
+            trace.setTruncated(true);
+        }
         byte[] compressedPayload = compressionService.compress(rawPayload);
         TraceSnapshot snapshot = TraceSnapshot.builder()
                 .snapshotId(UUID.randomUUID().toString())
@@ -126,20 +160,18 @@ public class TraceService {
                 .contentType(contentType)
                 .encoding(ZSTD)
                 .compressedPayload(compressedPayload)
-                .originalSize((long) rawPayload.length)
+                .originalSize((long) originalSize)
                 .compressedSize((long) compressedPayload.length)
-                .truncated(false)
+                .truncated(truncated)
                 .build();
 
-        TraceRecord trace = findTrace(session, spanContext.getTraceId());
-        TraceSpanRecord span = findSpan(trace, spanContext.getSpanId());
         span.getSnapshots().add(snapshot);
         trace.setCompressedSnapshotBytes(safeLong(trace.getCompressedSnapshotBytes()) + compressedPayload.length);
-        trace.setUncompressedSnapshotBytes(safeLong(trace.getUncompressedSnapshotBytes()) + rawPayload.length);
+        trace.setUncompressedSnapshotBytes(safeLong(trace.getUncompressedSnapshotBytes()) + originalSize);
 
         TraceStorageStats stats = session.getTraceStorageStats();
         stats.setCompressedSnapshotBytes(safeLong(stats.getCompressedSnapshotBytes()) + compressedPayload.length);
-        stats.setUncompressedSnapshotBytes(safeLong(stats.getUncompressedSnapshotBytes()) + rawPayload.length);
+        stats.setUncompressedSnapshotBytes(safeLong(stats.getUncompressedSnapshotBytes()) + originalSize);
 
         int budgetMb = tracingConfig.getSessionTraceBudgetMb() != null ? tracingConfig.getSessionTraceBudgetMb() : 128;
         traceBudgetService.enforceBudget(session, budgetMb * BYTES_PER_MB);

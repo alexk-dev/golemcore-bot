@@ -1,9 +1,25 @@
 import { type ReactElement, useState } from 'react';
-import { Table, Button, Badge, Modal, Spinner, Card, Placeholder } from 'react-bootstrap';
-import { useSessions, useSession, useDeleteSession, useCompactSession, useClearSession } from '../hooks/useSessions';
+import {
+  Table,
+  Button,
+  Badge,
+  Modal,
+  Spinner,
+  Card,
+  Placeholder,
+  ButtonGroup,
+} from 'react-bootstrap';
+import {
+  useSessions,
+  useSession,
+  useDeleteSession,
+  useCompactSession,
+  useClearSession,
+} from '../hooks/useSessions';
 import type { SessionSummary } from '../api/sessions';
 import toast from 'react-hot-toast';
 import ConfirmModal from '../components/common/ConfirmModal';
+import { SessionTraceTab } from '../components/sessions/SessionTraceTab';
 
 interface ConfirmAction {
   type: 'clear' | 'delete';
@@ -35,6 +51,13 @@ interface ConfirmCopy {
   confirmVariant: 'warning' | 'danger';
 }
 
+export interface SessionDetailModalProps {
+  viewId: string | null;
+  viewTab: 'messages' | 'trace';
+  onHide: () => void;
+  onSelectTab: (tab: 'messages' | 'trace') => void;
+}
+
 function formatUpdatedAt(value: string | null): string {
   if (value == null || value.length === 0) {
     return '-';
@@ -57,6 +80,57 @@ function getConfirmCopy(actionType: ConfirmAction['type']): ConfirmCopy {
     confirmLabel: 'Delete',
     confirmVariant: 'danger',
   };
+}
+
+export function SessionDetailModal({
+  viewId,
+  viewTab,
+  onHide,
+  onSelectTab,
+}: SessionDetailModalProps): ReactElement {
+  const { data: detail } = useSession(viewId ?? '');
+
+  return (
+    <Modal show={viewId != null && viewId.length > 0} onHide={onHide} size="lg">
+      <Modal.Header closeButton>
+        <Modal.Title>Session: {viewId}</Modal.Title>
+      </Modal.Header>
+      <Modal.Body className="sessions-modal-body">
+        <ButtonGroup className="mb-3">
+          <Button
+            type="button"
+            size="sm"
+            variant={viewTab === 'messages' ? 'primary' : 'secondary'}
+            onClick={() => onSelectTab('messages')}
+          >
+            Messages
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={viewTab === 'trace' ? 'primary' : 'secondary'}
+            onClick={() => onSelectTab('trace')}
+          >
+            Trace
+          </Button>
+        </ButtonGroup>
+
+        {viewTab === 'messages' ? (
+          <div>
+            {detail?.messages.map((msg, i) => (
+              <div key={i} className={`mb-2 p-2 rounded ${msg.role === 'user' ? 'bg-primary-subtle text-primary-emphasis' : 'bg-body-tertiary'}`}>
+                <div className="fw-bold small">{msg.role}</div>
+                <div className="sessions-message">{msg.content}</div>
+                {msg.timestamp != null && msg.timestamp.length > 0 && <div className="sessions-message-meta">{msg.timestamp}</div>}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <SessionTraceTab sessionId={viewId} />
+        )}
+      </Modal.Body>
+    </Modal>
+  );
 }
 
 function SessionRow({
@@ -167,8 +241,8 @@ export default function SessionsPage(): ReactElement {
   const compactMut = useCompactSession();
   const clearMut = useClearSession();
   const [viewId, setViewId] = useState<string | null>(null);
+  const [viewTab, setViewTab] = useState<'messages' | 'trace'>('messages');
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
-  const { data: detail } = useSession(viewId ?? '');
   const sessions = sessionsData ?? [];
   const confirmCopy = getConfirmCopy(confirmAction?.type ?? 'delete');
 
@@ -229,26 +303,21 @@ export default function SessionsPage(): ReactElement {
       <SessionsTable
         sessions={sessions}
         actionsDisabled={clearMut.isPending || deleteMut.isPending}
-        onOpen={(sessionId) => setViewId(sessionId)}
+        onOpen={(sessionId) => {
+          setViewId(sessionId);
+          setViewTab('messages');
+        }}
         onCompact={handleCompact}
         onClear={(sessionId) => setConfirmAction({ type: 'clear', sessionId })}
         onDelete={(sessionId) => setConfirmAction({ type: 'delete', sessionId })}
       />
 
-      <Modal show={viewId != null && viewId.length > 0} onHide={() => setViewId(null)} size="lg">
-        <Modal.Header closeButton>
-          <Modal.Title>Session: {viewId}</Modal.Title>
-        </Modal.Header>
-        <Modal.Body className="sessions-modal-body">
-          {detail?.messages.map((msg, i) => (
-            <div key={i} className={`mb-2 p-2 rounded ${msg.role === 'user' ? 'bg-primary-subtle text-primary-emphasis' : 'bg-body-tertiary'}`}>
-              <div className="fw-bold small">{msg.role}</div>
-              <div className="sessions-message">{msg.content}</div>
-              {msg.timestamp != null && msg.timestamp.length > 0 && <div className="sessions-message-meta">{msg.timestamp}</div>}
-            </div>
-          ))}
-        </Modal.Body>
-      </Modal>
+      <SessionDetailModal
+        viewId={viewId}
+        viewTab={viewTab}
+        onHide={() => setViewId(null)}
+        onSelectTab={setViewTab}
+      />
 
       <ConfirmModal
         show={confirmAction != null}
