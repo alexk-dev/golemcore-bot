@@ -44,6 +44,7 @@ import me.golemcore.bot.domain.service.VoiceResponseHandler.VoiceSendResult;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -86,6 +87,7 @@ public class ResponseRoutingSystem implements AgentSystem {
         this(channelRegistry, preferencesService, voiceHandler, null, null);
     }
 
+    @Autowired
     public ResponseRoutingSystem(ChannelRegistry channelRegistry, UserPreferencesService preferencesService,
             VoiceResponseHandler voiceHandler, RuntimeConfigService runtimeConfigService, TraceService traceService) {
         this.channelRegistry = channelRegistry;
