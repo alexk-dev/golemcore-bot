@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.41.0 - 2026-03-22
+#### Features
+- add OTel-compatible session tracing (#199) - (57f2250) - Alex Kuleshov
+#### Miscellaneous
+- (**deps-dev**) bump flatted from 3.3.3 to 3.4.2 in /dashboard (#200) - (7451f8d) - dependabot[bot]
+
+- - -
+
 ## v0.12.0 - 2026-02-25
 #### Features
 - (**browser**) fetch Playwright driver bundle from Maven at runtime (#117) - (2121f20) - Alex Kuleshov
