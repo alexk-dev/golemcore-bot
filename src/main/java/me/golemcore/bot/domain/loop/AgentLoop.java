@@ -26,6 +26,7 @@ import me.golemcore.bot.domain.model.FailureEvent;
 import me.golemcore.bot.domain.model.FailureKind;
 import me.golemcore.bot.domain.model.FailureSource;
 import me.golemcore.bot.domain.model.FinishReason;
+import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
@@ -505,6 +506,7 @@ public class AgentLoop {
 
                 log.debug("Running system: {} (order={})", system.getName(), system.getOrder());
                 long startMs = clock.millis();
+                TraceStateSnapshot beforeTraceState = captureTraceState(context);
                 TraceContext systemSpan = startChildSpan(context,
                         "system." + system.getName(),
                         TraceSpanKind.INTERNAL,
@@ -516,6 +518,7 @@ public class AgentLoop {
                     try (MdcSupport.Scope ignored = MdcSupport.withContext(buildTraceMdcContext(systemSpan, context))) {
                         context = system.process(context);
                     }
+                    emitTraceStateEvents(context, system.getName(), systemSpan, beforeTraceState);
                     finishChildSpan(context, systemSpan, TraceStatusCode.OK, null);
                     log.debug("System '{}' completed in {}ms", system.getName(), clock.millis() - startMs);
                 } catch (Exception e) {
@@ -789,6 +792,157 @@ public class AgentLoop {
         traceService.finishSpan(context.getSession(), spanContext, statusCode, statusMessage, clock.instant());
     }
 
+    private TraceStateSnapshot captureTraceState(AgentContext context) {
+        if (context == null) {
+            return new TraceStateSnapshot(null, "balanced", null, null, null, null);
+        }
+        String skillName = context.getActiveSkill() != null ? context.getActiveSkill().getName() : null;
+        if ((skillName == null || skillName.isBlank()) && context.getAttributes() != null) {
+            Object activeSkill = context.getAttributes().get(ContextAttributes.ACTIVE_SKILL_NAME);
+            if (activeSkill instanceof String activeSkillName && !activeSkillName.isBlank()) {
+                skillName = activeSkillName;
+            }
+        }
+        String tier = normalizeTierForTrace(context.getModelTier());
+        String modelId = stringAttribute(context, ContextAttributes.MODEL_TIER_MODEL_ID);
+        if (modelId == null || modelId.isBlank()) {
+            modelId = resolveRouterModelId(tier);
+        }
+        String reasoning = stringAttribute(context, ContextAttributes.MODEL_TIER_REASONING);
+        if (reasoning == null || reasoning.isBlank()) {
+            reasoning = resolveRouterReasoning(tier);
+        }
+        return new TraceStateSnapshot(
+                skillName,
+                tier,
+                modelId,
+                reasoning,
+                stringAttribute(context, ContextAttributes.MODEL_TIER_SOURCE),
+                context.getSkillTransitionRequest());
+    }
+
+    private void emitTraceStateEvents(AgentContext context, String systemName, TraceContext systemSpan,
+            TraceStateSnapshot beforeState) {
+        if (context == null || context.getSession() == null || systemSpan == null) {
+            return;
+        }
+        TraceStateSnapshot afterState = captureTraceState(context);
+
+        if (!Objects.equals(beforeState.transitionRequest(), afterState.transitionRequest())
+                && afterState.transitionRequest() != null) {
+            Map<String, Object> attributes = new LinkedHashMap<>();
+            String requesterSkill = beforeState.skillName() != null ? beforeState.skillName() : afterState.skillName();
+            putIfPresent(attributes, "from_skill", requesterSkill);
+            putIfPresent(attributes, "to_skill", afterState.transitionRequest().targetSkill());
+            putIfPresent(attributes, "source", formatTransitionReason(afterState.transitionRequest()));
+            putIfPresent(attributes, "reason", formatTransitionReason(afterState.transitionRequest()));
+            emitTraceEvent(context, systemSpan, "skill.transition.requested", attributes);
+        }
+
+        if (!Objects.equals(beforeState.skillName(), afterState.skillName()) && afterState.skillName() != null) {
+            Map<String, Object> attributes = new LinkedHashMap<>();
+            putIfPresent(attributes, "from_skill", beforeState.skillName());
+            putIfPresent(attributes, "to_skill", afterState.skillName());
+            putIfPresent(attributes, "source", formatTransitionReason(beforeState.transitionRequest()));
+            putIfPresent(attributes, "reason", formatTransitionReason(beforeState.transitionRequest()));
+            emitTraceEvent(context, systemSpan, "skill.transition.applied", attributes);
+        }
+
+        if ("ContextBuildingSystem".equals(systemName)) {
+            Map<String, Object> attributes = new LinkedHashMap<>();
+            putIfPresent(attributes, "skill", afterState.skillName());
+            putIfPresent(attributes, "tier", afterState.tier());
+            putIfPresent(attributes, "model_id", afterState.modelId());
+            putIfPresent(attributes, "reasoning", afterState.reasoning());
+            putIfPresent(attributes, "source", afterState.source());
+            emitTraceEvent(context, systemSpan, "tier.resolved", attributes);
+        }
+
+        if (!Objects.equals(beforeState.tier(), afterState.tier())
+                || !Objects.equals(beforeState.modelId(), afterState.modelId())) {
+            Map<String, Object> attributes = new LinkedHashMap<>();
+            putIfPresent(attributes, "from_tier", beforeState.tier());
+            putIfPresent(attributes, "to_tier", afterState.tier());
+            putIfPresent(attributes, "from_model_id", beforeState.modelId());
+            putIfPresent(attributes, "to_model_id", afterState.modelId());
+            putIfPresent(attributes, "skill", afterState.skillName());
+            putIfPresent(attributes, "source", afterState.source());
+            emitTraceEvent(context, systemSpan, "tier.transition", attributes);
+        }
+    }
+
+    private void emitTraceEvent(AgentContext context, TraceContext spanContext, String eventName,
+            Map<String, Object> attributes) {
+        if (traceService == null || context == null || context.getSession() == null || spanContext == null) {
+            return;
+        }
+        traceService.appendEvent(context.getSession(), spanContext, eventName, clock.instant(), attributes);
+    }
+
+    private String normalizeTierForTrace(String tier) {
+        if (tier == null || tier.isBlank() || "default".equalsIgnoreCase(tier)) {
+            return "balanced";
+        }
+        String normalized = ModelTierCatalog.normalizeTierId(tier);
+        return normalized != null ? normalized : tier;
+    }
+
+    private String stringAttribute(AgentContext context, String key) {
+        if (context == null || context.getAttributes() == null || key == null || key.isBlank()) {
+            return null;
+        }
+        Object value = context.getAttributes().get(key);
+        return value instanceof String stringValue && !stringValue.isBlank() ? stringValue : null;
+    }
+
+    private void putIfPresent(Map<String, Object> target, String key, String value) {
+        if (target == null || key == null || key.isBlank() || value == null || value.isBlank()) {
+            return;
+        }
+        target.put(key, value);
+    }
+
+    private String formatTransitionReason(SkillTransitionRequest request) {
+        if (request == null || request.reason() == null) {
+            return null;
+        }
+        return request.reason().name().toLowerCase(Locale.ROOT);
+    }
+
+    private String resolveRouterModelId(String tier) {
+        if (runtimeConfigService == null) {
+            return null;
+        }
+        return switch (tier) {
+        case "smart" -> runtimeConfigService.getSmartModel();
+        case "deep" -> runtimeConfigService.getDeepModel();
+        case "coding" -> runtimeConfigService.getCodingModel();
+        case "routing" -> runtimeConfigService.getRoutingModel();
+        case "balanced" -> runtimeConfigService.getBalancedModel();
+        default -> {
+            RuntimeConfig.TierBinding binding = runtimeConfigService.getModelTierBinding(tier);
+            yield binding != null ? binding.getModel() : null;
+        }
+        };
+    }
+
+    private String resolveRouterReasoning(String tier) {
+        if (runtimeConfigService == null) {
+            return null;
+        }
+        return switch (tier) {
+        case "smart" -> runtimeConfigService.getSmartModelReasoning();
+        case "deep" -> runtimeConfigService.getDeepModelReasoning();
+        case "coding" -> runtimeConfigService.getCodingModelReasoning();
+        case "routing" -> runtimeConfigService.getRoutingModelReasoning();
+        case "balanced" -> runtimeConfigService.getBalancedModelReasoning();
+        default -> {
+            RuntimeConfig.TierBinding binding = runtimeConfigService.getModelTierBinding(tier);
+            yield binding != null ? binding.getReasoning() : null;
+        }
+        };
+    }
+
     private Map<String, String> buildTraceMdcContext(TraceContext spanContext, AgentContext context) {
         if (spanContext == null) {
             return Map.of();
@@ -923,6 +1077,15 @@ public class AgentLoop {
         log.debug("[AgentLoop] routingSystem resolved: {}",
                 routingSystem != null ? routingSystem.getClass().getName() : "<null>");
         return sortedSystems;
+    }
+
+    private record TraceStateSnapshot(
+            String skillName,
+            String tier,
+            String modelId,
+            String reasoning,
+            String source,
+            SkillTransitionRequest transitionRequest) {
     }
 
     public record InboundMessageEvent(Message message, Instant timestamp) {

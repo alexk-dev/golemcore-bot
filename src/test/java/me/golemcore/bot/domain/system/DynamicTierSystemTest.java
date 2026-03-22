@@ -4,6 +4,7 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.UserPreferences;
+import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -33,6 +35,7 @@ class DynamicTierSystemTest {
 
     private RuntimeConfigService runtimeConfigService;
     private UserPreferencesService preferencesService;
+    private ModelSelectionService modelSelectionService;
     private DynamicTierSystem system;
 
     @BeforeEach
@@ -41,7 +44,10 @@ class DynamicTierSystemTest {
         when(runtimeConfigService.isDynamicTierEnabled()).thenReturn(true);
         preferencesService = mock(UserPreferencesService.class);
         when(preferencesService.getPreferences()).thenReturn(UserPreferences.builder().build());
-        system = new DynamicTierSystem(runtimeConfigService, preferencesService);
+        modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveForTier(any())).thenReturn(
+                new ModelSelectionService.ModelSelection("gpt-5-coding", "high"));
+        system = new DynamicTierSystem(runtimeConfigService, preferencesService, modelSelectionService);
     }
 
     @Test

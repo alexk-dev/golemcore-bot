@@ -42,6 +42,7 @@ import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.system.AgentSystem;
 import me.golemcore.bot.domain.system.ResponseRoutingSystem;
 import me.golemcore.bot.domain.model.trace.TraceContext;
+import me.golemcore.bot.domain.model.trace.TraceEventRecord;
 import me.golemcore.bot.domain.model.trace.TraceRecord;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.domain.model.trace.TraceSpanRecord;
@@ -1983,6 +1984,148 @@ class AgentLoopTest {
         assertEquals("planner timeout", inbound.getMetadata().get(ContextAttributes.AUTO_RUN_FAILURE_FINGERPRINT));
     }
 
+    @Test
+    void shouldRecordExplicitSkillAndTierEventsOnSystemSpans() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType(CHANNEL_TYPE)
+                .chatId("conv-1")
+                .messages(new ArrayList<>())
+                .build();
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "conv-1")).thenReturn(session);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+        when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        AgentSystem requestSystem = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "SkillPipelineSystem";
+            }
+
+            @Override
+            public int getOrder() {
+                return 1;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                context.setActiveSkill(me.golemcore.bot.domain.model.Skill.builder().name("analyzer").build());
+                context.setSkillTransitionRequest(SkillTransitionRequest.pipeline("executor"));
+                return context;
+            }
+        };
+
+        AgentSystem applySystem = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "ContextBuildingSystem";
+            }
+
+            @Override
+            public int getOrder() {
+                return 2;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                context.setActiveSkill(me.golemcore.bot.domain.model.Skill.builder()
+                        .name("executor")
+                        .modelTier("smart")
+                        .build());
+                context.setModelTier("smart");
+                context.setAttribute("model.tier.source", "skill");
+                context.clearSkillTransitionRequest();
+                return context;
+            }
+        };
+
+        AgentSystem dynamicTierSystem = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "DynamicTierSystem";
+            }
+
+            @Override
+            public int getOrder() {
+                return 3;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                context.setModelTier("coding");
+                context.setAttribute("model.tier.source", "dynamic_tier");
+                context.setOutgoingResponse(OutgoingResponse.textOnly("done"));
+                return context;
+            }
+        };
+
+        AgentLoop loop = createLoop(
+                sessionPort,
+                rateLimitPort,
+                List.of(requestSystem, applySystem, dynamicTierSystem),
+                List.of(channel),
+                mockRuntimeConfigService(1),
+                preferencesService,
+                llmPort,
+                clock);
+
+        Message inbound = Message.builder()
+                .role(ROLE_USER)
+                .content("trace transitions")
+                .channelType(CHANNEL_TYPE)
+                .chatId("conv-1")
+                .senderId("u1")
+                .metadata(Map.of(
+                        ContextAttributes.TRACE_ID, "trace-1",
+                        ContextAttributes.TRACE_SPAN_ID, "span-1",
+                        ContextAttributes.TRACE_ROOT_KIND, TraceSpanKind.INGRESS.name(),
+                        ContextAttributes.TRACE_NAME, "telegram.message"))
+                .timestamp(clock.instant())
+                .build();
+
+        loop.processMessage(inbound);
+
+        TraceRecord trace = session.getTraces().get(0);
+        TraceSpanRecord requestSpan = findSpan(trace, "system.SkillPipelineSystem");
+        TraceEventRecord requested = findEvent(requestSpan, "skill.transition.requested");
+        assertEquals("analyzer", requested.getAttributes().get("from_skill"));
+        assertEquals("executor", requested.getAttributes().get("to_skill"));
+        assertEquals("skill_pipeline", requested.getAttributes().get("source"));
+
+        TraceSpanRecord applySpan = findSpan(trace, "system.ContextBuildingSystem");
+        TraceEventRecord applied = findEvent(applySpan, "skill.transition.applied");
+        assertEquals("analyzer", applied.getAttributes().get("from_skill"));
+        assertEquals("executor", applied.getAttributes().get("to_skill"));
+        assertEquals("skill_pipeline", applied.getAttributes().get("source"));
+
+        TraceEventRecord tierResolved = findEvent(applySpan, "tier.resolved");
+        assertEquals("executor", tierResolved.getAttributes().get("skill"));
+        assertEquals("smart", tierResolved.getAttributes().get("tier"));
+        assertEquals("gpt-5-smart", tierResolved.getAttributes().get("model_id"));
+        assertEquals("skill", tierResolved.getAttributes().get("source"));
+
+        TraceSpanRecord dynamicSpan = findSpan(trace, "system.DynamicTierSystem");
+        TraceEventRecord tierTransition = findEvent(dynamicSpan, "tier.transition");
+        assertEquals("smart", tierTransition.getAttributes().get("from_tier"));
+        assertEquals("coding", tierTransition.getAttributes().get("to_tier"));
+        assertEquals("gpt-5-smart", tierTransition.getAttributes().get("from_model_id"));
+        assertEquals("gpt-5-coding", tierTransition.getAttributes().get("to_model_id"));
+        assertEquals("dynamic_tier", tierTransition.getAttributes().get("source"));
+    }
+
     private static AgentLoop createLoop(
             SessionPort sessionPort,
             RateLimitPort rateLimitPort,
@@ -2009,7 +2152,29 @@ class AgentLoopTest {
         when(rcs.getTurnMaxLlmCalls()).thenReturn(maxLlmCalls);
         when(rcs.getRoutingModel()).thenReturn("test-model");
         when(rcs.getRoutingModelReasoning()).thenReturn("none");
+        when(rcs.getBalancedModel()).thenReturn("gpt-5-balanced");
+        when(rcs.getBalancedModelReasoning()).thenReturn("medium");
+        when(rcs.getSmartModel()).thenReturn("gpt-5-smart");
+        when(rcs.getSmartModelReasoning()).thenReturn("high");
+        when(rcs.getCodingModel()).thenReturn("gpt-5-coding");
+        when(rcs.getCodingModelReasoning()).thenReturn("high");
+        when(rcs.getDeepModel()).thenReturn("gpt-5-deep");
+        when(rcs.getDeepModelReasoning()).thenReturn("high");
         when(rcs.isTracingEnabled()).thenReturn(true);
         return rcs;
+    }
+
+    private static TraceSpanRecord findSpan(TraceRecord trace, String name) {
+        return trace.getSpans().stream()
+                .filter(span -> name.equals(span.getName()))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private static TraceEventRecord findEvent(TraceSpanRecord span, String name) {
+        return span.getEvents().stream()
+                .filter(event -> name.equals(event.getName()))
+                .findFirst()
+                .orElseThrow();
     }
 }

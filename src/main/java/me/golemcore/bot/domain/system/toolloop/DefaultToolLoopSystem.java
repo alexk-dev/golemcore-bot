@@ -941,9 +941,11 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
 
     private LlmResponse executeLlmCall(AgentContext context, int attempt, RuntimeConfig.TracingConfig tracingConfig)
             throws InterruptedException, ExecutionException {
-        TraceContext llmSpan = startChildSpan(context, "llm.chat", TraceSpanKind.LLM,
-                Map.of("attempt", attempt));
-        LlmRequest request = buildRequest(context, llmSpan != null ? llmSpan : context.getTraceContext());
+        ModelSelectionService.ModelSelection selection = selectModel(context.getModelTier());
+        Map<String, Object> requestContextAttributes = buildRequestContextAttributes(context, selection, attempt);
+        TraceContext llmSpan = startChildSpan(context, "llm.chat", TraceSpanKind.LLM, requestContextAttributes);
+        appendRequestContextEvent(context, llmSpan, requestContextAttributes);
+        LlmRequest request = buildRequest(context, llmSpan != null ? llmSpan : context.getTraceContext(), selection);
         captureLlmSnapshot(context, llmSpan, tracingConfig, "request", request);
         try (MdcSupport.Scope ignored = MdcSupport.withContext(buildTraceMdcContext(llmSpan, context))) {
             LlmResponse response = llmPort.chat(request).get();
@@ -992,9 +994,8 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         }
     }
 
-    private LlmRequest buildRequest(AgentContext context, TraceContext traceContext) {
-        ModelSelectionService.ModelSelection selection = selectModel(context.getModelTier());
-
+    private LlmRequest buildRequest(AgentContext context, TraceContext traceContext,
+            ModelSelectionService.ModelSelection selection) {
         ConversationView view = viewBuilder.buildView(context, selection.model());
         if (!view.diagnostics().isEmpty()) {
             log.debug("[ToolLoop] conversation view diagnostics: {}", view.diagnostics());
@@ -1020,6 +1021,81 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                         traceContext != null ? traceContext.getParentSpanId() : null)
                 .traceRootKind(traceContext != null ? traceContext.getRootKind() : null)
                 .build();
+    }
+
+    private Map<String, Object> buildRequestContextAttributes(AgentContext context,
+            ModelSelectionService.ModelSelection selection, int attempt) {
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("attempt", attempt);
+        String skillName = null;
+        if (context != null && context.getActiveSkill() != null && context.getActiveSkill().getName() != null
+                && !context.getActiveSkill().getName().isBlank()) {
+            skillName = context.getActiveSkill().getName();
+        } else if (context != null) {
+            skillName = readContextAttribute(context, ContextAttributes.ACTIVE_SKILL_NAME);
+        }
+        if (skillName != null && !skillName.isBlank()) {
+            attributes.put("context.skill.name", skillName);
+        }
+        String tier = context != null ? normalizeTierForTrace(context.getModelTier()) : "balanced";
+        attributes.put("context.model.tier", tier);
+        if (selection != null && selection.model() != null && !selection.model().isBlank()) {
+            attributes.put("context.model.id", selection.model());
+        }
+        if (selection != null && selection.reasoning() != null && !selection.reasoning().isBlank()) {
+            attributes.put("context.model.reasoning", selection.reasoning());
+        }
+        if (context != null) {
+            String source = readContextAttribute(context, ContextAttributes.MODEL_TIER_SOURCE);
+            if (source != null && !source.isBlank()) {
+                attributes.put("context.model.source", source);
+            }
+        }
+        return attributes;
+    }
+
+    private void appendRequestContextEvent(AgentContext context, TraceContext llmSpan, Map<String, Object> attributes) {
+        if (traceService == null || context == null || context.getSession() == null || llmSpan == null) {
+            return;
+        }
+        Map<String, Object> eventAttributes = new LinkedHashMap<>();
+        copyAttribute(attributes, eventAttributes, "context.skill.name", "skill");
+        copyAttribute(attributes, eventAttributes, "context.model.tier", "tier");
+        copyAttribute(attributes, eventAttributes, "context.model.id", "model_id");
+        copyAttribute(attributes, eventAttributes, "context.model.reasoning", "reasoning");
+        copyAttribute(attributes, eventAttributes, "context.model.source", "source");
+        traceService.appendEvent(context.getSession(), llmSpan, "request.context", clock.instant(), eventAttributes);
+    }
+
+    private void copyAttribute(Map<String, Object> source, Map<String, Object> target, String sourceKey,
+            String targetKey) {
+        if (source == null || target == null || sourceKey == null || targetKey == null) {
+            return;
+        }
+        Object value = source.get(sourceKey);
+        if (value instanceof String stringValue && !stringValue.isBlank()) {
+            target.put(targetKey, stringValue);
+            return;
+        }
+        if (value != null) {
+            target.put(targetKey, value);
+        }
+    }
+
+    private String normalizeTierForTrace(String tier) {
+        if (tier == null || tier.isBlank() || "default".equalsIgnoreCase(tier)) {
+            return "balanced";
+        }
+        String normalized = me.golemcore.bot.domain.model.ModelTierCatalog.normalizeTierId(tier);
+        return normalized != null ? normalized : tier;
+    }
+
+    private String readContextAttribute(AgentContext context, String key) {
+        if (context == null || context.getAttributes() == null || key == null || key.isBlank()) {
+            return null;
+        }
+        Object value = context.getAttributes().get(key);
+        return value instanceof String stringValue && !stringValue.isBlank() ? stringValue : null;
     }
 
     private TraceContext startChildSpan(AgentContext context, String spanName, TraceSpanKind spanKind,

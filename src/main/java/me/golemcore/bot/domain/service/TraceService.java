@@ -4,6 +4,7 @@ import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.trace.TraceContext;
 import me.golemcore.bot.domain.model.trace.TraceRecord;
+import me.golemcore.bot.domain.model.trace.TraceEventRecord;
 import me.golemcore.bot.domain.model.trace.TraceSnapshot;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.domain.model.trace.TraceSpanRecord;
@@ -190,6 +191,23 @@ public class TraceService {
         if (traceContext.getParentSpanId() == null) {
             trace.setEndedAt(endedAt);
         }
+    }
+
+    public void appendEvent(AgentSession session, TraceContext spanContext, String eventName, Instant timestamp,
+            Map<String, Object> attributes) {
+        if (session == null || spanContext == null || eventName == null || eventName.isBlank()) {
+            return;
+        }
+        TraceRecord trace = findTrace(session, spanContext.getTraceId());
+        TraceSpanRecord span = findSpan(trace, spanContext.getSpanId());
+        if (span.getEvents() == null) {
+            span.setEvents(new ArrayList<>());
+        }
+        span.getEvents().add(TraceEventRecord.builder()
+                .name(eventName)
+                .timestamp(timestamp)
+                .attributes(copyAttributes(attributes))
+                .build());
     }
 
     private void ensureSessionTraceState(AgentSession session) {

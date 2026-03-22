@@ -17,6 +17,7 @@ import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
+import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -64,6 +65,7 @@ class ContextBuildingSystemPromptTest {
     private PlanService planService;
     private PromptSectionService promptSectionService;
     private RuntimeConfigService runtimeConfigService;
+    private ModelSelectionService modelSelectionService;
     private UserPreferencesService userPreferencesService;
     private WorkspaceInstructionService workspaceInstructionService;
     private ContextBuildingSystem system;
@@ -82,10 +84,13 @@ class ContextBuildingSystemPromptTest {
         planService = mock(PlanService.class);
         promptSectionService = mock(PromptSectionService.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
+        modelSelectionService = mock(ModelSelectionService.class);
         userPreferencesService = mock(UserPreferencesService.class);
         workspaceInstructionService = mock(WorkspaceInstructionService.class);
         when(runtimeConfigService.getAutoModelTier()).thenReturn(TIER_SMART);
         when(runtimeConfigService.getAutoReflectionModelTier()).thenReturn(TIER_DEEP);
+        when(modelSelectionService.resolveForTier(any()))
+                .thenReturn(new ModelSelectionService.ModelSelection("gpt-5-smart", "high"));
 
         when(memoryComponent.buildMemoryPack(any())).thenReturn(MemoryPack.builder()
                 .renderedContext("")
@@ -110,6 +115,7 @@ class ContextBuildingSystemPromptTest {
                 planService,
                 promptSectionService,
                 runtimeConfigService,
+                modelSelectionService,
                 userPreferencesService,
                 workspaceInstructionService);
     }
@@ -235,6 +241,7 @@ class ContextBuildingSystemPromptTest {
                 planService,
                 promptSectionService,
                 runtimeConfigService,
+                modelSelectionService,
                 userPreferencesService,
                 workspaceInstructionService);
 

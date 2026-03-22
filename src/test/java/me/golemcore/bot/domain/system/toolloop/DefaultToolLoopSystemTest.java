@@ -13,11 +13,13 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.RuntimeEventType;
+import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.model.trace.TraceContext;
 import me.golemcore.bot.domain.model.trace.TraceRecord;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
+import me.golemcore.bot.domain.model.trace.TraceSpanRecord;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -286,6 +288,58 @@ class DefaultToolLoopSystemTest {
         assertTrue(trace.getSpans().stream()
                 .filter(span -> ("tool." + TOOL_NAME).equals(span.getName()))
                 .allMatch(span -> !span.getSnapshots().isEmpty()));
+    }
+
+    @Test
+    void shouldRecordRequestContextEventAndAttributesOnLlmSpan() {
+        AgentContext context = buildContext();
+        context.setActiveSkill(Skill.builder().name("planner").build());
+        context.setModelTier("smart");
+        context.setAttribute("model.tier.source", "skill");
+
+        TraceService traceService = new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService());
+        TraceContext rootTrace = traceService.startRootTrace(
+                context.getSession(),
+                TraceContext.builder()
+                        .traceId("trace-1")
+                        .spanId("root-span")
+                        .rootKind(TraceSpanKind.INGRESS.name())
+                        .build(),
+                "telegram.message",
+                TraceSpanKind.INGRESS,
+                Instant.now(clock),
+                Map.of("session.id", "sess-1"));
+        context.setTraceContext(rootTrace);
+
+        DefaultToolLoopSystem tracedSystem = new DefaultToolLoopSystem(
+                llmPort, toolExecutor, historyWriter, viewBuilder,
+                turnSettings, settings, modelSelectionService, planService,
+                runtimeConfigService, null, null, turnProgressService, traceService, clock);
+
+        stubRuntimeConfigDefaults();
+        when(runtimeConfigService.isTracingEnabled()).thenReturn(true);
+        when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(finalResponse(CONTENT_DONE)));
+        when(modelSelectionService.resolveForTier("smart"))
+                .thenReturn(new ModelSelectionService.ModelSelection("gpt-5-smart", "high"));
+
+        ToolLoopTurnResult result = tracedSystem.processTurn(context);
+
+        assertTrue(result.finalAnswerReady());
+        TraceRecord trace = context.getSession().getTraces().get(0);
+        TraceSpanRecord llmSpan = trace.getSpans().stream()
+                .filter(span -> "llm.chat".equals(span.getName()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("planner", llmSpan.getAttributes().get("context.skill.name"));
+        assertEquals("smart", llmSpan.getAttributes().get("context.model.tier"));
+        assertEquals("gpt-5-smart", llmSpan.getAttributes().get("context.model.id"));
+        assertEquals("high", llmSpan.getAttributes().get("context.model.reasoning"));
+        assertEquals("skill", llmSpan.getAttributes().get("context.model.source"));
+        assertTrue(llmSpan.getEvents().stream()
+                .anyMatch(event -> "request.context".equals(event.getName())
+                        && "planner".equals(event.getAttributes().get("skill"))
+                        && "smart".equals(event.getAttributes().get("tier"))
+                        && "gpt-5-smart".equals(event.getAttributes().get("model_id"))));
     }
 
     @Test

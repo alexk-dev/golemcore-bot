@@ -92,6 +92,17 @@ public final class ContextAttributes {
      */
     public static final String LLM_REASONING = "llm.reasoning";
 
+    /** String ? source that selected the current model tier for this turn. */
+    public static final String MODEL_TIER_SOURCE = "model.tier.source";
+
+    /** String ? resolved model id currently backing the active model tier. */
+    public static final String MODEL_TIER_MODEL_ID = "model.tier.model.id";
+
+    /**
+     * String ? resolved reasoning level currently backing the active model tier.
+     */
+    public static final String MODEL_TIER_REASONING = "model.tier.reasoning";
+
     /** Boolean — plan mode is active for the current session. */
     public static final String PLAN_MODE_ACTIVE = "plan.mode.active";
 

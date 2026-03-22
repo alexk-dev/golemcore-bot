@@ -19,8 +19,10 @@ package me.golemcore.bot.domain.system;
  */
 
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import lombok.RequiredArgsConstructor;
@@ -48,6 +50,7 @@ public class DynamicTierSystem implements AgentSystem {
 
     private final RuntimeConfigService runtimeConfigService;
     private final UserPreferencesService userPreferencesService;
+    private final ModelSelectionService modelSelectionService;
 
     private static final String TOOL_NAME_SHELL = "shell";
     private static final Set<String> CODE_EXTENSIONS = Set.of(
@@ -124,6 +127,8 @@ public class DynamicTierSystem implements AgentSystem {
         if (hasCodingSignals(currentRunMessages)) {
             String previousTier = context.getModelTier();
             context.setModelTier("coding");
+            context.setAttribute(ContextAttributes.MODEL_TIER_SOURCE, "dynamic_tier");
+            updateResolvedTierMetadata(context);
             log.info("[DynamicTier] Detected coding activity, upgrading tier: {} -> coding", previousTier);
         }
 
@@ -235,5 +240,28 @@ public class DynamicTierSystem implements AgentSystem {
     private String stringArg(Map<String, Object> args, String key) {
         Object value = args.get(key);
         return value instanceof String ? (String) value : null;
+    }
+
+    private void updateResolvedTierMetadata(AgentContext context) {
+        if (context == null || modelSelectionService == null) {
+            return;
+        }
+        try {
+            ModelSelectionService.ModelSelection selection = modelSelectionService
+                    .resolveForTier(context.getModelTier());
+            if (selection.model() != null && !selection.model().isBlank()) {
+                context.setAttribute(ContextAttributes.MODEL_TIER_MODEL_ID, selection.model());
+            }
+            if (selection.reasoning() != null && !selection.reasoning().isBlank()) {
+                context.setAttribute(ContextAttributes.MODEL_TIER_REASONING, selection.reasoning());
+            } else if (context.getAttributes() != null) {
+                context.getAttributes().remove(ContextAttributes.MODEL_TIER_REASONING);
+            }
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            if (context.getAttributes() != null) {
+                context.getAttributes().remove(ContextAttributes.MODEL_TIER_MODEL_ID);
+                context.getAttributes().remove(ContextAttributes.MODEL_TIER_REASONING);
+            }
+        }
     }
 }

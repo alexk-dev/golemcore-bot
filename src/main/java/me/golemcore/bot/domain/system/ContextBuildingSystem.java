@@ -36,6 +36,7 @@ import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.AutoRunContextSupport;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.MemoryScopeSupport;
+import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -90,6 +91,7 @@ public class ContextBuildingSystem implements AgentSystem {
     private final PlanService planService;
     private final PromptSectionService promptSectionService;
     private final RuntimeConfigService runtimeConfigService;
+    private final ModelSelectionService modelSelectionService;
     private final UserPreferencesService userPreferencesService;
     private final WorkspaceInstructionService workspaceInstructionService;
 
@@ -113,6 +115,7 @@ public class ContextBuildingSystem implements AgentSystem {
         if (transitionTarget != null) {
             skillComponent.findByName(transitionTarget).ifPresent(skill -> {
                 context.setActiveSkill(skill);
+                context.setAttribute(ContextAttributes.ACTIVE_SKILL_NAME, skill.getName());
                 log.info("[Context] Skill transition: → {}", skill.getName());
             });
             context.clearSkillTransitionRequest();
@@ -241,7 +244,7 @@ public class ContextBuildingSystem implements AgentSystem {
 
         // Set model tier for auto-mode messages when nothing else resolved it.
         if (isAutoModeMessage(context) && context.getModelTier() == null) {
-            context.setModelTier(runtimeConfigService.getAutoModelTier());
+            applyModelTier(context, runtimeConfigService.getAutoModelTier(), "auto_mode_default");
         }
 
         String workspaceInstructions = workspaceInstructionService.getWorkspaceInstructionsContext();
@@ -251,6 +254,12 @@ public class ContextBuildingSystem implements AgentSystem {
         // Build system prompt
         String systemPrompt = buildSystemPrompt(context, prefs, workspaceInstructions, sessionIdentity, planModeActive);
         context.setSystemPrompt(systemPrompt);
+
+        if (context.getActiveSkill() != null && context.getActiveSkill().getName() != null
+                && !context.getActiveSkill().getName().isBlank()) {
+            context.setAttribute(ContextAttributes.ACTIVE_SKILL_NAME, context.getActiveSkill().getName());
+        }
+        ensureResolvedTierMetadata(context);
 
         log.info("[Context] Built context: {} tools, memory={}, skills={}, systemPrompt={} chars",
                 tools.size(),
@@ -383,7 +392,7 @@ public class ContextBuildingSystem implements AgentSystem {
                     : planService.getActivePlan();
             activePlan.ifPresent(plan -> {
                 if (plan.getModelTier() != null && context.getModelTier() == null) {
-                    context.setModelTier(plan.getModelTier());
+                    applyModelTier(context, plan.getModelTier(), "plan");
                 }
             });
         }
@@ -447,7 +456,7 @@ public class ContextBuildingSystem implements AgentSystem {
         String userTier = prefs.getModelTier();
 
         if (force && userTier != null) {
-            context.setModelTier(userTier);
+            applyModelTier(context, userTier, "user_pref_forced");
             return;
         }
 
@@ -458,9 +467,9 @@ public class ContextBuildingSystem implements AgentSystem {
 
         Skill activeSkill = context.getActiveSkill();
         if (activeSkill != null && activeSkill.getModelTier() != null) {
-            context.setModelTier(activeSkill.getModelTier());
+            applyModelTier(context, activeSkill.getModelTier(), "skill");
         } else if (userTier != null) {
-            context.setModelTier(userTier);
+            applyModelTier(context, userTier, "user_pref");
         }
         // else: keep null. Downstream LLM execution treats null as the default tier
         // (currently "balanced") and resolves model selection accordingly.
@@ -473,29 +482,73 @@ public class ContextBuildingSystem implements AgentSystem {
         String skillReflectionTier = activeSkill != null ? activeSkill.getReflectionTier() : null;
 
         if (priority && configuredReflectionTier != null && !configuredReflectionTier.isBlank()) {
-            context.setModelTier(configuredReflectionTier);
+            applyModelTier(context, configuredReflectionTier, "reflection_override");
             return;
         }
         if (skillReflectionTier != null && !skillReflectionTier.isBlank()) {
-            context.setModelTier(skillReflectionTier);
+            applyModelTier(context, skillReflectionTier, "skill_reflection");
             return;
         }
         if (configuredReflectionTier != null && !configuredReflectionTier.isBlank()) {
-            context.setModelTier(configuredReflectionTier);
+            applyModelTier(context, configuredReflectionTier, "reflection_override");
             return;
         }
 
         String runtimeReflectionTier = runtimeConfigService.getAutoReflectionModelTier();
         if (runtimeReflectionTier != null && !runtimeReflectionTier.isBlank()) {
-            context.setModelTier(runtimeReflectionTier);
+            applyModelTier(context, runtimeReflectionTier, "runtime_reflection");
             return;
         }
         if (activeSkill != null && activeSkill.getModelTier() != null) {
-            context.setModelTier(activeSkill.getModelTier());
+            applyModelTier(context, activeSkill.getModelTier(), "skill");
             return;
         }
         if (userTier != null) {
-            context.setModelTier(userTier);
+            applyModelTier(context, userTier, "user_pref");
+        }
+    }
+
+    private void applyModelTier(AgentContext context, String tier, String source) {
+        if (context == null) {
+            return;
+        }
+        context.setModelTier(tier);
+        if (source != null && !source.isBlank()) {
+            context.setAttribute(ContextAttributes.MODEL_TIER_SOURCE, source);
+        }
+        updateResolvedTierMetadata(context);
+    }
+
+    private void ensureResolvedTierMetadata(AgentContext context) {
+        if (context == null) {
+            return;
+        }
+        if (context.getAttribute(ContextAttributes.MODEL_TIER_SOURCE) == null) {
+            context.setAttribute(ContextAttributes.MODEL_TIER_SOURCE, "implicit_default");
+        }
+        updateResolvedTierMetadata(context);
+    }
+
+    private void updateResolvedTierMetadata(AgentContext context) {
+        if (context == null || modelSelectionService == null) {
+            return;
+        }
+        try {
+            ModelSelectionService.ModelSelection selection = modelSelectionService
+                    .resolveForTier(context.getModelTier());
+            if (selection.model() != null && !selection.model().isBlank()) {
+                context.setAttribute(ContextAttributes.MODEL_TIER_MODEL_ID, selection.model());
+            }
+            if (selection.reasoning() != null && !selection.reasoning().isBlank()) {
+                context.setAttribute(ContextAttributes.MODEL_TIER_REASONING, selection.reasoning());
+            } else if (context.getAttributes() != null) {
+                context.getAttributes().remove(ContextAttributes.MODEL_TIER_REASONING);
+            }
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            if (context.getAttributes() != null) {
+                context.getAttributes().remove(ContextAttributes.MODEL_TIER_MODEL_ID);
+                context.getAttributes().remove(ContextAttributes.MODEL_TIER_REASONING);
+            }
         }
     }
 
