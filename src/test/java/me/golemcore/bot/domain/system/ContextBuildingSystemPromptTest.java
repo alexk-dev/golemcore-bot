@@ -162,6 +162,34 @@ class ContextBuildingSystemPromptTest {
     }
 
     @Test
+    void process_setsImplicitDefaultTierTraceMetadataWhenNoTierResolvedExplicitly() {
+        when(runtimeConfigService.getAutoModelTier()).thenReturn(null);
+        when(userPreferencesService.getPreferences()).thenReturn(UserPreferences.builder().build());
+
+        AgentContext ctx = createContext();
+        system.process(ctx);
+
+        assertEquals("implicit_default", ctx.getAttribute(ContextAttributes.MODEL_TIER_SOURCE));
+        assertEquals("gpt-5-smart", ctx.getAttribute(ContextAttributes.MODEL_TIER_MODEL_ID));
+        assertEquals("high", ctx.getAttribute(ContextAttributes.MODEL_TIER_REASONING));
+    }
+
+    @Test
+    void process_setsActiveSkillNameAndSkillTierTraceMetadata() {
+        AgentContext ctx = createContext();
+        ctx.setActiveSkill(Skill.builder().name(SKILL_PROCESSING).modelTier(TIER_CODING).build());
+        when(modelSelectionService.resolveForTier(TIER_CODING))
+                .thenReturn(new ModelSelectionService.ModelSelection("gpt-5-coding", "medium"));
+
+        system.process(ctx);
+
+        assertEquals(SKILL_PROCESSING, ctx.getAttribute(ContextAttributes.ACTIVE_SKILL_NAME));
+        assertEquals("skill", ctx.getAttribute(ContextAttributes.MODEL_TIER_SOURCE));
+        assertEquals("gpt-5-coding", ctx.getAttribute(ContextAttributes.MODEL_TIER_MODEL_ID));
+        assertEquals("medium", ctx.getAttribute(ContextAttributes.MODEL_TIER_REASONING));
+    }
+
+    @Test
     void buildSystemPrompt_noSectionsFallback() {
         when(promptSectionService.isEnabled()).thenReturn(true);
         when(promptSectionService.buildTemplateVariables(any())).thenReturn(Map.of());
