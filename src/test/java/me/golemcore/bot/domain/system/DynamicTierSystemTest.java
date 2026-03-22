@@ -380,6 +380,59 @@ class DynamicTierSystemTest {
     }
 
     @Test
+    void codingSignalsClearReasoningWhenResolutionReturnsBlankReasoning() {
+        when(modelSelectionService.resolveForTier(any())).thenAnswer(invocation -> {
+            String tier = invocation.getArgument(0, String.class);
+            if (TIER_CODING.equals(tier)) {
+                return new ModelSelectionService.ModelSelection("gpt-5-coding", "");
+            }
+            return new ModelSelectionService.ModelSelection("gpt-5-balanced", "medium");
+        });
+
+        List<Message> messages = new ArrayList<>();
+        messages.add(Message.builder().role(ROLE_USER).content("Write a script").build());
+        messages.add(Message.builder().role(ROLE_ASSISTANT).toolCalls(List.of(
+                Message.ToolCall.builder()
+                        .id(TOOL_CALL_ID)
+                        .name(TOOL_SHELL)
+                        .arguments(Map.of(ARG_COMMAND, "cargo build"))
+                        .build()))
+                .build());
+
+        AgentContext context = buildContext(1, TIER_DEFAULT, messages);
+        context.setAttribute(ContextAttributes.MODEL_TIER_REASONING, "stale-reasoning");
+
+        AgentContext result = system.process(context);
+
+        assertEquals(TIER_CODING, result.getModelTier());
+        assertEquals("gpt-5-coding", result.getAttribute(ContextAttributes.MODEL_TIER_MODEL_ID));
+        assertNull(result.getAttribute(ContextAttributes.MODEL_TIER_REASONING));
+    }
+
+    @Test
+    void codingSignalsSkipResolvedMetadataWhenModelSelectionServiceIsMissing() {
+        DynamicTierSystem noSelectionSystem = new DynamicTierSystem(runtimeConfigService, preferencesService, null);
+        List<Message> messages = new ArrayList<>();
+        messages.add(Message.builder().role(ROLE_USER).content("Write a script").build());
+        messages.add(Message.builder().role(ROLE_ASSISTANT).toolCalls(List.of(
+                Message.ToolCall.builder()
+                        .id(TOOL_CALL_ID)
+                        .name(TOOL_SHELL)
+                        .arguments(Map.of(ARG_COMMAND, "cargo build"))
+                        .build()))
+                .build());
+
+        AgentContext context = buildContext(1, TIER_DEFAULT, messages);
+        context.setAttribute(ContextAttributes.MODEL_TIER_MODEL_ID, "stale-model");
+
+        AgentContext result = noSelectionSystem.process(context);
+
+        assertEquals(TIER_CODING, result.getModelTier());
+        assertEquals("dynamic_tier", result.getAttribute(ContextAttributes.MODEL_TIER_SOURCE));
+        assertEquals("stale-model", result.getAttribute(ContextAttributes.MODEL_TIER_MODEL_ID));
+    }
+
+    @Test
     void noUserMessageInHistory_noUpgrade() {
         // Only assistant/tool messages, no user message — nothing to scan
         List<Message> messages = List.of(
