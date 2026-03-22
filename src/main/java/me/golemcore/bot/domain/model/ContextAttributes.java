@@ -37,6 +37,24 @@ public final class ContextAttributes {
     /** String — machine-readable LLM error classification code. */
     public static final String LLM_ERROR_CODE = "llm.error.code";
 
+    /** String ? active request trace identifier. */
+    public static final String TRACE_ID = "trace.id";
+
+    /** String ? active span identifier. */
+    public static final String TRACE_SPAN_ID = "trace.span.id";
+
+    /** String ? parent span identifier for the active span. */
+    public static final String TRACE_PARENT_SPAN_ID = "trace.parent.span.id";
+
+    /** String ? root span kind for the current trace. */
+    public static final String TRACE_ROOT_KIND = "trace.root.kind";
+
+    /** String ? canonical trace/root span name. */
+    public static final String TRACE_NAME = "trace.name";
+
+    /** Boolean ? one or more trace payloads were evicted or truncated. */
+    public static final String TRACE_TRUNCATED = "trace.truncated";
+
     /** List<Message.ToolCall> ? last tool calls requested by the LLM. */
 
     /** Boolean ? final answer is ready and the turn can be finalized/routed. */
@@ -73,6 +91,17 @@ public final class ContextAttributes {
      * "medium", "high").
      */
     public static final String LLM_REASONING = "llm.reasoning";
+
+    /** String ? source that selected the current model tier for this turn. */
+    public static final String MODEL_TIER_SOURCE = "model.tier.source";
+
+    /** String ? resolved model id currently backing the active model tier. */
+    public static final String MODEL_TIER_MODEL_ID = "model.tier.model.id";
+
+    /**
+     * String ? resolved reasoning level currently backing the active model tier.
+     */
+    public static final String MODEL_TIER_REASONING = "model.tier.reasoning";
 
     /** Boolean — plan mode is active for the current session. */
     public static final String PLAN_MODE_ACTIVE = "plan.mode.active";

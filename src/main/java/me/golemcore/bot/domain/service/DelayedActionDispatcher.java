@@ -23,6 +23,7 @@ import me.golemcore.bot.domain.model.DelayedActionDeliveryMode;
 import me.golemcore.bot.domain.model.DelayedSessionAction;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolArtifactDownload;
+import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import org.springframework.stereotype.Service;
@@ -149,6 +150,10 @@ public class DelayedActionDispatcher {
         if (action.getRunAt() != null) {
             metadata.put(ContextAttributes.DELAYED_ACTION_RUN_AT, action.getRunAt().toString());
         }
+        metadata = TraceContextSupport.ensureRootMetadata(
+                metadata,
+                TraceSpanKind.INTERNAL,
+                TraceNamingSupport.DELAYED_ACTION);
         return Message.builder()
                 .id("delayed-" + action.getId())
                 .role("user")

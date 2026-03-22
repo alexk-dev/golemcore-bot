@@ -2,8 +2,10 @@ package me.golemcore.bot.domain.system;
 
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.UserPreferences;
+import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -33,6 +36,7 @@ class DynamicTierSystemTest {
 
     private RuntimeConfigService runtimeConfigService;
     private UserPreferencesService preferencesService;
+    private ModelSelectionService modelSelectionService;
     private DynamicTierSystem system;
 
     @BeforeEach
@@ -41,7 +45,10 @@ class DynamicTierSystemTest {
         when(runtimeConfigService.isDynamicTierEnabled()).thenReturn(true);
         preferencesService = mock(UserPreferencesService.class);
         when(preferencesService.getPreferences()).thenReturn(UserPreferences.builder().build());
-        system = new DynamicTierSystem(runtimeConfigService, preferencesService);
+        modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveForTier(any())).thenReturn(
+                new ModelSelectionService.ModelSelection("gpt-5-coding", "high"));
+        system = new DynamicTierSystem(runtimeConfigService, preferencesService, modelSelectionService);
     }
 
     @Test
@@ -317,6 +324,112 @@ class DynamicTierSystemTest {
         AgentContext result = system.process(context);
 
         assertEquals("special3", result.getModelTier());
+    }
+
+    @Test
+    void codingSignalsPopulateResolvedTierMetadata() {
+        List<Message> messages = new ArrayList<>();
+        messages.add(Message.builder().role(ROLE_USER).content("Write a script").build());
+        messages.add(Message.builder().role(ROLE_ASSISTANT).toolCalls(List.of(
+                Message.ToolCall.builder()
+                        .id(TOOL_CALL_ID)
+                        .name(TOOL_SHELL)
+                        .arguments(Map.of(ARG_COMMAND, "cargo build"))
+                        .build()))
+                .build());
+
+        AgentContext context = buildContext(1, TIER_DEFAULT, messages);
+        AgentContext result = system.process(context);
+
+        assertEquals(TIER_CODING, result.getModelTier());
+        assertEquals("dynamic_tier", result.getAttribute(ContextAttributes.MODEL_TIER_SOURCE));
+        assertEquals("gpt-5-coding", result.getAttribute(ContextAttributes.MODEL_TIER_MODEL_ID));
+        assertEquals("high", result.getAttribute(ContextAttributes.MODEL_TIER_REASONING));
+    }
+
+    @Test
+    void codingSignalsClearResolvedTierMetadataWhenResolutionFails() {
+        when(modelSelectionService.resolveForTier(any())).thenAnswer(invocation -> {
+            String tier = invocation.getArgument(0, String.class);
+            if (TIER_CODING.equals(tier)) {
+                throw new IllegalStateException("tier mapping missing");
+            }
+            return new ModelSelectionService.ModelSelection("gpt-5-coding", "high");
+        });
+
+        List<Message> messages = new ArrayList<>();
+        messages.add(Message.builder().role(ROLE_USER).content("Write a script").build());
+        messages.add(Message.builder().role(ROLE_ASSISTANT).toolCalls(List.of(
+                Message.ToolCall.builder()
+                        .id(TOOL_CALL_ID)
+                        .name(TOOL_SHELL)
+                        .arguments(Map.of(ARG_COMMAND, "cargo build"))
+                        .build()))
+                .build());
+
+        AgentContext context = buildContext(1, TIER_DEFAULT, messages);
+        context.setAttribute(ContextAttributes.MODEL_TIER_MODEL_ID, "old-model");
+        context.setAttribute(ContextAttributes.MODEL_TIER_REASONING, "old-reasoning");
+
+        AgentContext result = system.process(context);
+
+        assertEquals(TIER_CODING, result.getModelTier());
+        assertEquals("dynamic_tier", result.getAttribute(ContextAttributes.MODEL_TIER_SOURCE));
+        assertNull(result.getAttribute(ContextAttributes.MODEL_TIER_MODEL_ID));
+        assertNull(result.getAttribute(ContextAttributes.MODEL_TIER_REASONING));
+    }
+
+    @Test
+    void codingSignalsClearReasoningWhenResolutionReturnsBlankReasoning() {
+        when(modelSelectionService.resolveForTier(any())).thenAnswer(invocation -> {
+            String tier = invocation.getArgument(0, String.class);
+            if (TIER_CODING.equals(tier)) {
+                return new ModelSelectionService.ModelSelection("gpt-5-coding", "");
+            }
+            return new ModelSelectionService.ModelSelection("gpt-5-balanced", "medium");
+        });
+
+        List<Message> messages = new ArrayList<>();
+        messages.add(Message.builder().role(ROLE_USER).content("Write a script").build());
+        messages.add(Message.builder().role(ROLE_ASSISTANT).toolCalls(List.of(
+                Message.ToolCall.builder()
+                        .id(TOOL_CALL_ID)
+                        .name(TOOL_SHELL)
+                        .arguments(Map.of(ARG_COMMAND, "cargo build"))
+                        .build()))
+                .build());
+
+        AgentContext context = buildContext(1, TIER_DEFAULT, messages);
+        context.setAttribute(ContextAttributes.MODEL_TIER_REASONING, "stale-reasoning");
+
+        AgentContext result = system.process(context);
+
+        assertEquals(TIER_CODING, result.getModelTier());
+        assertEquals("gpt-5-coding", result.getAttribute(ContextAttributes.MODEL_TIER_MODEL_ID));
+        assertNull(result.getAttribute(ContextAttributes.MODEL_TIER_REASONING));
+    }
+
+    @Test
+    void codingSignalsSkipResolvedMetadataWhenModelSelectionServiceIsMissing() {
+        DynamicTierSystem noSelectionSystem = new DynamicTierSystem(runtimeConfigService, preferencesService, null);
+        List<Message> messages = new ArrayList<>();
+        messages.add(Message.builder().role(ROLE_USER).content("Write a script").build());
+        messages.add(Message.builder().role(ROLE_ASSISTANT).toolCalls(List.of(
+                Message.ToolCall.builder()
+                        .id(TOOL_CALL_ID)
+                        .name(TOOL_SHELL)
+                        .arguments(Map.of(ARG_COMMAND, "cargo build"))
+                        .build()))
+                .build());
+
+        AgentContext context = buildContext(1, TIER_DEFAULT, messages);
+        context.setAttribute(ContextAttributes.MODEL_TIER_MODEL_ID, "stale-model");
+
+        AgentContext result = noSelectionSystem.process(context);
+
+        assertEquals(TIER_CODING, result.getModelTier());
+        assertEquals("dynamic_tier", result.getAttribute(ContextAttributes.MODEL_TIER_SOURCE));
+        assertEquals("stale-model", result.getAttribute(ContextAttributes.MODEL_TIER_MODEL_ID));
     }
 
     @Test

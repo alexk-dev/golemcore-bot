@@ -49,6 +49,9 @@ public class RuntimeConfig {
     private UpdateConfig update = new UpdateConfig();
 
     @Builder.Default
+    private TracingConfig tracing = new TracingConfig();
+
+    @Builder.Default
     private RateLimitConfig rateLimit = new RateLimitConfig();
 
     @Builder.Default
@@ -462,6 +465,34 @@ public class RuntimeConfig {
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class TracingConfig {
+        @Builder.Default
+        private Boolean enabled = true;
+        @Builder.Default
+        private Boolean payloadSnapshotsEnabled = false;
+        @Builder.Default
+        private Integer sessionTraceBudgetMb = 128;
+        @Builder.Default
+        private Integer maxSnapshotSizeKb = 256;
+        @Builder.Default
+        private Integer maxSnapshotsPerSpan = 10;
+        @Builder.Default
+        private Integer maxTracesPerSession = 100;
+        @Builder.Default
+        private Boolean captureInboundPayloads = false;
+        @Builder.Default
+        private Boolean captureOutboundPayloads = false;
+        @Builder.Default
+        private Boolean captureToolPayloads = false;
+        @Builder.Default
+        private Boolean captureLlmPayloads = false;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
     public static class RateLimitConfig {
         private Boolean enabled;
         private Integer userRequestsPerMinute;
@@ -677,17 +708,23 @@ public class RuntimeConfig {
     public enum ConfigSection {
         TELEGRAM("telegram", TelegramConfig.class), MODEL_ROUTER("model-router", ModelRouterConfig.class), LLM("llm",
                 LlmConfig.class), TOOLS("tools", ToolsConfig.class), VOICE("voice", VoiceConfig.class), AUTO_MODE(
-                        "auto-mode", AutoModeConfig.class), UPDATE("update", UpdateConfig.class), RATE_LIMIT(
-                                "rate-limit",
-                                RateLimitConfig.class), SECURITY("security", SecurityConfig.class), COMPACTION(
-                                        "compaction",
-                                        CompactionConfig.class), TURN("turn", TurnConfig.class), MEMORY("memory",
-                                                MemoryConfig.class), SKILLS("skills", SkillsConfig.class), USAGE(
-                                                        "usage",
-                                                        UsageConfig.class), MCP("mcp", McpConfig.class), PLAN("plan",
-                                                                PlanConfig.class), DELAYED_ACTIONS("delayed-actions",
-                                                                        DelayedActionsConfig.class), HIVE("hive",
-                                                                                HiveConfig.class);
+                        "auto-mode", AutoModeConfig.class), UPDATE("update", UpdateConfig.class), TRACING("tracing",
+                                TracingConfig.class), RATE_LIMIT(
+                                        "rate-limit",
+                                        RateLimitConfig.class), SECURITY("security", SecurityConfig.class), COMPACTION(
+                                                "compaction",
+                                                CompactionConfig.class), TURN("turn", TurnConfig.class), MEMORY(
+                                                        "memory",
+                                                        MemoryConfig.class), SKILLS("skills",
+                                                                SkillsConfig.class), USAGE(
+                                                                        "usage",
+                                                                        UsageConfig.class), MCP("mcp",
+                                                                                McpConfig.class), PLAN("plan",
+                                                                                        PlanConfig.class), DELAYED_ACTIONS(
+                                                                                                "delayed-actions",
+                                                                                                DelayedActionsConfig.class), HIVE(
+                                                                                                        "hive",
+                                                                                                        HiveConfig.class);
 
         private final String fileId;
         private final Class<?> configClass;

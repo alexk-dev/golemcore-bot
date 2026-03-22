@@ -2,7 +2,7 @@ import type { IconType } from 'react-icons';
 import {
   FiSliders, FiCpu, FiTool, FiMic,
   FiPlayCircle, FiShield, FiHardDrive, FiBarChart2,
-  FiTerminal, FiShuffle, FiKey, FiRefreshCw, FiPackage, FiDatabase, FiLink,
+  FiTerminal, FiShuffle, FiKey, FiRefreshCw, FiPackage, FiDatabase, FiLink, FiActivity,
 } from 'react-icons/fi';
 
 export interface SettingsSectionMeta {
@@ -33,6 +33,7 @@ export const SETTINGS_SECTIONS = [
   { key: 'hive', title: 'Hive', description: 'Hive control-plane integration and managed join settings', icon: FiLink },
   { key: 'plan', title: 'Plan Mode', description: 'Review-before-execute plan workflow settings', icon: FiPlayCircle },
   { key: 'auto', title: 'Auto Mode', description: 'Autonomous run behavior and constraints', icon: FiPlayCircle },
+  { key: 'tracing', title: 'Tracing', description: 'Request traces, payload snapshots, and session budgets', icon: FiActivity },
   { key: 'updates', title: 'Updates', description: 'Check and install latest patch update', icon: FiRefreshCw },
   { key: 'advanced-rate-limit', title: 'Rate Limit', description: 'Request throttling configuration', icon: FiShield },
   { key: 'advanced-security', title: 'Security', description: 'Input sanitization and injection guards', icon: FiShield },
@@ -71,7 +72,7 @@ export const SETTINGS_BLOCKS: SettingsBlock[] = [
     key: 'runtime',
     title: 'Runtime',
     description: 'Agent execution, memory, usage, and autonomy',
-    sections: ['memory', 'skills', 'turn', 'usage', 'mcp', 'hive', 'plan', 'auto', 'updates'],
+    sections: ['memory', 'skills', 'turn', 'usage', 'mcp', 'hive', 'plan', 'auto', 'tracing', 'updates'],
   },
   {
     key: 'advanced',

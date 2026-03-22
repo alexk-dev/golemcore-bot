@@ -26,6 +26,9 @@ import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.UserPreferences;
+import me.golemcore.bot.domain.model.trace.TraceSpanKind;
+import me.golemcore.bot.domain.service.TraceContextSupport;
+import me.golemcore.bot.domain.service.TraceNamingSupport;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.security.InputSanitizer;
 import lombok.RequiredArgsConstructor;
@@ -125,7 +128,7 @@ public class WebhookController {
             String sanitizedText = inputSanitizer.sanitize(request.getText());
             String safeText = wrapExternal(sanitizedText);
 
-            Message message = buildMessage(chatId, safeText, request.getMetadata());
+            Message message = buildMessage(chatId, safeText, request.getMetadata(), TraceNamingSupport.WEBHOOK_WAKE);
             eventPublisher.publishEvent(new AgentLoop.InboundMessageEvent(message));
 
             log.info("[Webhook] Wake event accepted for chatId={}", chatId);
@@ -212,7 +215,7 @@ public class WebhookController {
 
             channelAdapter.registerPendingRun(chatId, runId, request.getCallbackUrl(), modelTier, deliveryId);
 
-            Message message = buildMessage(chatId, safeMessage, metadata);
+            Message message = buildMessage(chatId, safeMessage, metadata, TraceNamingSupport.WEBHOOK_AGENT);
             eventPublisher.publishEvent(new AgentLoop.InboundMessageEvent(message));
 
             log.info("[Webhook] Agent run accepted: runId={}, chatId={}, name={}",
@@ -279,7 +282,7 @@ public class WebhookController {
         String chatId = "hook:" + mapping.getName();
 
         Map<String, Object> metadata = Map.of("webhook.mapping", mapping.getName());
-        Message message = buildMessage(chatId, text, metadata);
+        Message message = buildMessage(chatId, text, metadata, TraceNamingSupport.WEBHOOK_WAKE);
         eventPublisher.publishEvent(new AgentLoop.InboundMessageEvent(message));
 
         log.info("[Webhook] Custom wake accepted: mapping={}, chatId={}", mapping.getName(), chatId);
@@ -308,7 +311,7 @@ public class WebhookController {
 
         channelAdapter.registerPendingRun(chatId, runId, null, modelTier, null);
 
-        Message message = buildMessage(chatId, text, metadata);
+        Message message = buildMessage(chatId, text, metadata, TraceNamingSupport.WEBHOOK_AGENT);
         eventPublisher.publishEvent(new AgentLoop.InboundMessageEvent(message));
 
         log.info("[Webhook] Custom agent accepted: mapping={}, runId={}, chatId={}",
@@ -317,7 +320,11 @@ public class WebhookController {
                 .body(WebhookResponse.accepted(runId, chatId));
     }
 
-    private Message buildMessage(String chatId, String content, Map<String, Object> metadata) {
+    private Message buildMessage(String chatId, String content, Map<String, Object> metadata, String traceName) {
+        Map<String, Object> tracedMetadata = TraceContextSupport.ensureRootMetadata(
+                metadata,
+                TraceSpanKind.INGRESS,
+                traceName);
         return Message.builder()
                 .id(UUID.randomUUID().toString())
                 .channelType(CHANNEL_TYPE)
@@ -325,7 +332,7 @@ public class WebhookController {
                 .senderId("webhook")
                 .role("user")
                 .content(content)
-                .metadata(metadata)
+                .metadata(tracedMetadata)
                 .timestamp(Instant.now())
                 .build();
     }

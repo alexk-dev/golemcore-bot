@@ -17,6 +17,7 @@ import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
+import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -64,6 +65,7 @@ class ContextBuildingSystemPromptTest {
     private PlanService planService;
     private PromptSectionService promptSectionService;
     private RuntimeConfigService runtimeConfigService;
+    private ModelSelectionService modelSelectionService;
     private UserPreferencesService userPreferencesService;
     private WorkspaceInstructionService workspaceInstructionService;
     private ContextBuildingSystem system;
@@ -82,10 +84,13 @@ class ContextBuildingSystemPromptTest {
         planService = mock(PlanService.class);
         promptSectionService = mock(PromptSectionService.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
+        modelSelectionService = mock(ModelSelectionService.class);
         userPreferencesService = mock(UserPreferencesService.class);
         workspaceInstructionService = mock(WorkspaceInstructionService.class);
         when(runtimeConfigService.getAutoModelTier()).thenReturn(TIER_SMART);
         when(runtimeConfigService.getAutoReflectionModelTier()).thenReturn(TIER_DEEP);
+        when(modelSelectionService.resolveForTier(any()))
+                .thenReturn(new ModelSelectionService.ModelSelection("gpt-5-smart", "high"));
 
         when(memoryComponent.buildMemoryPack(any())).thenReturn(MemoryPack.builder()
                 .renderedContext("")
@@ -110,6 +115,7 @@ class ContextBuildingSystemPromptTest {
                 planService,
                 promptSectionService,
                 runtimeConfigService,
+                modelSelectionService,
                 userPreferencesService,
                 workspaceInstructionService);
     }
@@ -153,6 +159,34 @@ class ContextBuildingSystemPromptTest {
         system.process(ctx);
 
         assertTrue(ctx.getSystemPrompt().contains("You are a helpful AI assistant."));
+    }
+
+    @Test
+    void process_setsImplicitDefaultTierTraceMetadataWhenNoTierResolvedExplicitly() {
+        when(runtimeConfigService.getAutoModelTier()).thenReturn(null);
+        when(userPreferencesService.getPreferences()).thenReturn(UserPreferences.builder().build());
+
+        AgentContext ctx = createContext();
+        system.process(ctx);
+
+        assertEquals("implicit_default", ctx.getAttribute(ContextAttributes.MODEL_TIER_SOURCE));
+        assertEquals("gpt-5-smart", ctx.getAttribute(ContextAttributes.MODEL_TIER_MODEL_ID));
+        assertEquals("high", ctx.getAttribute(ContextAttributes.MODEL_TIER_REASONING));
+    }
+
+    @Test
+    void process_setsActiveSkillNameAndSkillTierTraceMetadata() {
+        AgentContext ctx = createContext();
+        ctx.setActiveSkill(Skill.builder().name(SKILL_PROCESSING).modelTier(TIER_CODING).build());
+        when(modelSelectionService.resolveForTier(TIER_CODING))
+                .thenReturn(new ModelSelectionService.ModelSelection("gpt-5-coding", "medium"));
+
+        system.process(ctx);
+
+        assertEquals(SKILL_PROCESSING, ctx.getAttribute(ContextAttributes.ACTIVE_SKILL_NAME));
+        assertEquals("skill", ctx.getAttribute(ContextAttributes.MODEL_TIER_SOURCE));
+        assertEquals("gpt-5-coding", ctx.getAttribute(ContextAttributes.MODEL_TIER_MODEL_ID));
+        assertEquals("medium", ctx.getAttribute(ContextAttributes.MODEL_TIER_REASONING));
     }
 
     @Test
@@ -235,6 +269,7 @@ class ContextBuildingSystemPromptTest {
                 planService,
                 promptSectionService,
                 runtimeConfigService,
+                modelSelectionService,
                 userPreferencesService,
                 workspaceInstructionService);
 
@@ -621,6 +656,141 @@ class ContextBuildingSystemPromptTest {
         system.process(ctx);
 
         assertEquals(TIER_DEEP, ctx.getModelTier());
+    }
+
+    @Test
+    void shouldUseConfiguredReflectionOverrideWhenSkillHasNoReflectionTier() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(autoModeService.buildAutoContext()).thenReturn("# Goals\n- Recover");
+        when(modelSelectionService.resolveForTier(TIER_SMART))
+                .thenReturn(new ModelSelectionService.ModelSelection("gpt-5-smart", "high"));
+
+        AgentContext ctx = AgentContext.builder()
+                .session(AgentSession.builder().chatId("ch1").build())
+                .messages(new ArrayList<>(List.of(
+                        Message.builder().role("user").content("Auto task")
+                                .timestamp(Instant.now())
+                                .metadata(new HashMap<>(Map.of(
+                                        ContextAttributes.AUTO_MODE, true,
+                                        ContextAttributes.AUTO_REFLECTION_ACTIVE, true,
+                                        ContextAttributes.AUTO_REFLECTION_TIER, TIER_SMART,
+                                        ContextAttributes.AUTO_REFLECTION_TIER_PRIORITY, false)))
+                                .build())))
+                .build();
+
+        system.process(ctx);
+
+        assertEquals(TIER_SMART, ctx.getModelTier());
+        assertEquals("reflection_override", ctx.getAttribute(ContextAttributes.MODEL_TIER_SOURCE));
+        assertEquals("gpt-5-smart", ctx.getAttribute(ContextAttributes.MODEL_TIER_MODEL_ID));
+    }
+
+    @Test
+    void shouldFallbackToRuntimeReflectionTierWhenNoTaskOrSkillOverrideExists() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(autoModeService.buildAutoContext()).thenReturn("# Goals\n- Recover");
+        when(runtimeConfigService.getAutoReflectionModelTier()).thenReturn(TIER_DEEP);
+        when(modelSelectionService.resolveForTier(TIER_DEEP))
+                .thenReturn(new ModelSelectionService.ModelSelection("gpt-5-deep", "max"));
+
+        AgentContext ctx = AgentContext.builder()
+                .session(AgentSession.builder().chatId("ch1").build())
+                .messages(new ArrayList<>(List.of(
+                        Message.builder().role("user").content("Auto task")
+                                .timestamp(Instant.now())
+                                .metadata(new HashMap<>(Map.of(
+                                        ContextAttributes.AUTO_MODE, true,
+                                        ContextAttributes.AUTO_REFLECTION_ACTIVE, true)))
+                                .build())))
+                .build();
+
+        system.process(ctx);
+
+        assertEquals(TIER_DEEP, ctx.getModelTier());
+        assertEquals("runtime_reflection", ctx.getAttribute(ContextAttributes.MODEL_TIER_SOURCE));
+        assertEquals("gpt-5-deep", ctx.getAttribute(ContextAttributes.MODEL_TIER_MODEL_ID));
+        assertEquals("max", ctx.getAttribute(ContextAttributes.MODEL_TIER_REASONING));
+    }
+
+    @Test
+    void shouldFallbackToUserTierDuringReflectionWhenNothingElseIsConfigured() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(autoModeService.buildAutoContext()).thenReturn("# Goals\n- Recover");
+        when(runtimeConfigService.getAutoReflectionModelTier()).thenReturn(null);
+        when(userPreferencesService.getPreferences()).thenReturn(UserPreferences.builder()
+                .modelTier(TIER_SMART)
+                .build());
+
+        AgentContext ctx = AgentContext.builder()
+                .session(AgentSession.builder().chatId("ch1").build())
+                .messages(new ArrayList<>(List.of(
+                        Message.builder().role("user").content("Auto task")
+                                .timestamp(Instant.now())
+                                .metadata(new HashMap<>(Map.of(
+                                        ContextAttributes.AUTO_MODE, true,
+                                        ContextAttributes.AUTO_REFLECTION_ACTIVE, true)))
+                                .build())))
+                .build();
+
+        system.process(ctx);
+
+        assertEquals(TIER_SMART, ctx.getModelTier());
+        assertEquals("user_pref", ctx.getAttribute(ContextAttributes.MODEL_TIER_SOURCE));
+    }
+
+    @Test
+    void shouldClearResolvedTierMetadataWhenReflectionResolutionReturnsBlankReasoning() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(autoModeService.buildAutoContext()).thenReturn("# Goals\n- Recover");
+        when(modelSelectionService.resolveForTier(TIER_SMART))
+                .thenReturn(new ModelSelectionService.ModelSelection("gpt-5-smart", ""));
+
+        AgentContext ctx = AgentContext.builder()
+                .session(AgentSession.builder().chatId("ch1").build())
+                .messages(new ArrayList<>(List.of(
+                        Message.builder().role("user").content("Auto task")
+                                .timestamp(Instant.now())
+                                .metadata(new HashMap<>(Map.of(
+                                        ContextAttributes.AUTO_MODE, true,
+                                        ContextAttributes.AUTO_REFLECTION_ACTIVE, true,
+                                        ContextAttributes.AUTO_REFLECTION_TIER, TIER_SMART,
+                                        ContextAttributes.AUTO_REFLECTION_TIER_PRIORITY, false)))
+                                .build())))
+                .build();
+        ctx.setAttribute(ContextAttributes.MODEL_TIER_REASONING, "stale-reasoning");
+
+        system.process(ctx);
+
+        assertEquals("gpt-5-smart", ctx.getAttribute(ContextAttributes.MODEL_TIER_MODEL_ID));
+        assertNull(ctx.getAttribute(ContextAttributes.MODEL_TIER_REASONING));
+    }
+
+    @Test
+    void shouldClearResolvedTierMetadataWhenReflectionResolutionFails() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(autoModeService.buildAutoContext()).thenReturn("# Goals\n- Recover");
+        when(modelSelectionService.resolveForTier(TIER_SMART))
+                .thenThrow(new IllegalStateException("missing tier mapping"));
+
+        AgentContext ctx = AgentContext.builder()
+                .session(AgentSession.builder().chatId("ch1").build())
+                .messages(new ArrayList<>(List.of(
+                        Message.builder().role("user").content("Auto task")
+                                .timestamp(Instant.now())
+                                .metadata(new HashMap<>(Map.of(
+                                        ContextAttributes.AUTO_MODE, true,
+                                        ContextAttributes.AUTO_REFLECTION_ACTIVE, true,
+                                        ContextAttributes.AUTO_REFLECTION_TIER, TIER_SMART,
+                                        ContextAttributes.AUTO_REFLECTION_TIER_PRIORITY, false)))
+                                .build())))
+                .build();
+        ctx.setAttribute(ContextAttributes.MODEL_TIER_MODEL_ID, "stale-model");
+        ctx.setAttribute(ContextAttributes.MODEL_TIER_REASONING, "stale-reasoning");
+
+        system.process(ctx);
+
+        assertNull(ctx.getAttribute(ContextAttributes.MODEL_TIER_MODEL_ID));
+        assertNull(ctx.getAttribute(ContextAttributes.MODEL_TIER_REASONING));
     }
 
     // ===== Plan mode context =====

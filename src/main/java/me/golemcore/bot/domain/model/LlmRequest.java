@@ -61,6 +61,10 @@ public class LlmRequest {
     private boolean disableToolAttachmentHydration = false;
 
     private String sessionId;
+    private String traceId;
+    private String traceSpanId;
+    private String traceParentSpanId;
+    private String traceRootKind;
 
     /**
      * Reasoning effort for OpenAI o-series models (o1, o3, gpt-5.1, etc.) Values:
