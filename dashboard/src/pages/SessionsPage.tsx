@@ -1,25 +1,11 @@
 import { type ReactElement, useState } from 'react';
-import {
-  Table,
-  Button,
-  Badge,
-  Modal,
-  Spinner,
-  Card,
-  Placeholder,
-  ButtonGroup,
-} from 'react-bootstrap';
-import {
-  useSessions,
-  useSession,
-  useDeleteSession,
-  useCompactSession,
-  useClearSession,
-} from '../hooks/useSessions';
-import type { SessionSummary } from '../api/sessions';
+import { Badge, Button, Card, Placeholder, Spinner, Table } from 'react-bootstrap';
+import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
+
 import ConfirmModal from '../components/common/ConfirmModal';
-import { SessionTraceTab } from '../components/sessions/SessionTraceTab';
+import { useClearSession, useCompactSession, useDeleteSession, useSessions } from '../hooks/useSessions';
+import type { SessionSummary } from '../api/sessions';
 
 interface ConfirmAction {
   type: 'clear' | 'delete';
@@ -29,7 +15,6 @@ interface ConfirmAction {
 interface SessionRowProps {
   session: SessionSummary;
   actionsDisabled: boolean;
-  onOpen: (sessionId: string) => void;
   onCompact: (sessionId: string) => Promise<void>;
   onClear: (sessionId: string) => void;
   onDelete: (sessionId: string) => void;
@@ -38,7 +23,6 @@ interface SessionRowProps {
 interface SessionsTableProps {
   sessions: SessionSummary[];
   actionsDisabled: boolean;
-  onOpen: (sessionId: string) => void;
   onCompact: (sessionId: string) => Promise<void>;
   onClear: (sessionId: string) => void;
   onDelete: (sessionId: string) => void;
@@ -49,13 +33,6 @@ interface ConfirmCopy {
   message: string;
   confirmLabel: string;
   confirmVariant: 'warning' | 'danger';
-}
-
-export interface SessionDetailModalProps {
-  viewId: string | null;
-  viewTab: 'messages' | 'trace';
-  onHide: () => void;
-  onSelectTab: (tab: 'messages' | 'trace') => void;
 }
 
 function formatUpdatedAt(value: string | null): string {
@@ -82,61 +59,9 @@ function getConfirmCopy(actionType: ConfirmAction['type']): ConfirmCopy {
   };
 }
 
-export function SessionDetailModal({
-  viewId,
-  viewTab,
-  onHide,
-  onSelectTab,
-}: SessionDetailModalProps): ReactElement {
-  const { data: detail } = useSession(viewId ?? '');
-
-  return (
-    <Modal show={viewId != null && viewId.length > 0} onHide={onHide} size="lg">
-      <Modal.Header closeButton>
-        <Modal.Title>Session: {viewId}</Modal.Title>
-      </Modal.Header>
-      <Modal.Body className="sessions-modal-body">
-        <ButtonGroup className="mb-3">
-          <Button
-            type="button"
-            size="sm"
-            variant={viewTab === 'messages' ? 'primary' : 'secondary'}
-            onClick={() => onSelectTab('messages')}
-          >
-            Messages
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={viewTab === 'trace' ? 'primary' : 'secondary'}
-            onClick={() => onSelectTab('trace')}
-          >
-            Trace
-          </Button>
-        </ButtonGroup>
-
-        {viewTab === 'messages' ? (
-          <div>
-            {detail?.messages.map((msg, i) => (
-              <div key={i} className={`mb-2 p-2 rounded ${msg.role === 'user' ? 'bg-primary-subtle text-primary-emphasis' : 'bg-body-tertiary'}`}>
-                <div className="fw-bold small">{msg.role}</div>
-                <div className="sessions-message">{msg.content}</div>
-                {msg.timestamp != null && msg.timestamp.length > 0 && <div className="sessions-message-meta">{msg.timestamp}</div>}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <SessionTraceTab sessionId={viewId} messages={detail?.messages ?? []} />
-        )}
-      </Modal.Body>
-    </Modal>
-  );
-}
-
 function SessionRow({
   session,
   actionsDisabled,
-  onOpen,
   onCompact,
   onClear,
   onDelete,
@@ -144,15 +69,13 @@ function SessionRow({
   return (
     <tr>
       <td data-label="ID">
-        <Button type="button"
-          variant="secondary"
-          size="sm"
-          className="py-0 px-2 session-id-btn"
-          onClick={() => onOpen(session.id)}
+        <Link
+          to={`/sessions/${session.id}/messages`}
+          className="btn btn-sm btn-secondary py-0 px-2 session-id-btn"
           title={session.id}
         >
           {session.id.length > 8 ? `${session.id.slice(0, 8)}...` : session.id}
-        </Button>
+        </Link>
       </td>
       <td data-label="Channel"><Badge bg="secondary">{session.channelType}</Badge></td>
       <td data-label="Messages">{session.messageCount}</td>
@@ -160,7 +83,8 @@ function SessionRow({
       <td data-label="Updated" className="small">{formatUpdatedAt(session.updatedAt)}</td>
       <td data-label="Actions">
         <div className="d-flex flex-wrap gap-1 sessions-actions">
-          <Button type="button"
+          <Button
+            type="button"
             size="sm"
             variant="primary"
             className="sessions-action-btn"
@@ -168,7 +92,8 @@ function SessionRow({
           >
             Compact
           </Button>
-          <Button type="button"
+          <Button
+            type="button"
             size="sm"
             variant="warning"
             className="sessions-action-btn"
@@ -177,7 +102,8 @@ function SessionRow({
           >
             Clear
           </Button>
-          <Button type="button"
+          <Button
+            type="button"
             size="sm"
             variant="danger"
             className="sessions-action-btn"
@@ -195,7 +121,6 @@ function SessionRow({
 function SessionsTable({
   sessions,
   actionsDisabled,
-  onOpen,
   onCompact,
   onClear,
   onDelete,
@@ -218,7 +143,6 @@ function SessionsTable({
             key={session.id}
             session={session}
             actionsDisabled={actionsDisabled}
-            onOpen={onOpen}
             onCompact={onCompact}
             onClear={onClear}
             onDelete={onDelete}
@@ -240,8 +164,6 @@ export default function SessionsPage(): ReactElement {
   const deleteMut = useDeleteSession();
   const compactMut = useCompactSession();
   const clearMut = useClearSession();
-  const [viewId, setViewId] = useState<string | null>(null);
-  const [viewTab, setViewTab] = useState<'messages' | 'trace'>('messages');
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const sessions = sessionsData ?? [];
   const confirmCopy = getConfirmCopy(confirmAction?.type ?? 'delete');
@@ -303,20 +225,9 @@ export default function SessionsPage(): ReactElement {
       <SessionsTable
         sessions={sessions}
         actionsDisabled={clearMut.isPending || deleteMut.isPending}
-        onOpen={(sessionId) => {
-          setViewId(sessionId);
-          setViewTab('messages');
-        }}
         onCompact={handleCompact}
         onClear={(sessionId) => setConfirmAction({ type: 'clear', sessionId })}
         onDelete={(sessionId) => setConfirmAction({ type: 'delete', sessionId })}
-      />
-
-      <SessionDetailModal
-        viewId={viewId}
-        viewTab={viewTab}
-        onHide={() => setViewId(null)}
-        onSelectTab={setViewTab}
       />
 
       <ConfirmModal

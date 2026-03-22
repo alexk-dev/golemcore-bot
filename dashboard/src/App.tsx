@@ -11,6 +11,7 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const PromptsPage = lazy(() => import('./pages/PromptsPage'));
 const SkillsPage = lazy(() => import('./pages/SkillsPage'));
 const SessionsPage = lazy(() => import('./pages/SessionsPage'));
+const SessionDetailsPage = lazy(() => import('./pages/SessionDetailsPage'));
 const DiagnosticsPage = lazy(() => import('./pages/DiagnosticsPage'));
 const IdePage = lazy(() => import('./pages/IdePage'));
 const LogsPage = lazy(() => import('./pages/LogsPage'));
@@ -55,6 +56,8 @@ export default function App() {
                   <Route path="/prompts" element={<PromptsPage />} />
                   <Route path="/skills" element={<SkillsPage />} />
                   <Route path="/sessions" element={<SessionsPage />} />
+                  <Route path="/sessions/:sessionId" element={<SessionDetailsPage />} />
+                  <Route path="/sessions/:sessionId/:tab" element={<SessionDetailsPage />} />
                   <Route path="/goals" element={<GoalsPage />} />
                   <Route path="/diagnostics" element={<DiagnosticsPage />} />
                   <Route path="/ide" element={<IdePage />} />
