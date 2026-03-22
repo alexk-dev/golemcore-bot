@@ -1,8 +1,39 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { SessionTrace, SessionTraceSummary } from '../../api/sessions';
+import type { MessageInfo, SessionTrace, SessionTraceSummary } from '../../api/sessions';
 import { SessionTraceExplorer } from './SessionTraceExplorer';
+
+const messages: MessageInfo[] = [
+  {
+    id: 'message-user',
+    role: 'user',
+    content: 'Analyze the trace',
+    timestamp: '2026-03-20T10:00:00Z',
+    hasToolCalls: false,
+    hasVoice: false,
+    model: null,
+    modelTier: null,
+    skill: 'analyst',
+    reasoning: null,
+    clientMessageId: null,
+    attachments: [],
+  },
+  {
+    id: 'message-assistant',
+    role: 'assistant',
+    content: 'I found the issue.',
+    timestamp: '2026-03-20T10:00:02Z',
+    hasToolCalls: false,
+    hasVoice: false,
+    model: 'gpt-5-smart',
+    modelTier: 'smart',
+    skill: 'executor',
+    reasoning: 'high',
+    clientMessageId: null,
+    attachments: [],
+  },
+];
 
 const trace: SessionTrace = {
   sessionId: 'session-1',
@@ -61,9 +92,54 @@ const trace: SessionTrace = {
           startedAt: '2026-03-20T10:00:00.200Z',
           endedAt: '2026-03-20T10:00:01.500Z',
           durationMs: 1300,
-          attributes: { attempt: 1 },
-          events: [],
+          attributes: {
+            attempt: 1,
+            'context.skill.name': 'executor',
+            'context.model.tier': 'smart',
+            'context.model.id': 'gpt-5-smart',
+            'context.model.reasoning': 'high',
+            'context.model.source': 'skill',
+          },
+          events: [
+            {
+              name: 'request.context',
+              timestamp: '2026-03-20T10:00:00.300Z',
+              attributes: {
+                skill: 'executor',
+                tier: 'smart',
+                model_id: 'gpt-5-smart',
+                source: 'skill',
+              },
+            },
+          ],
           snapshots: [],
+        },
+        {
+          spanId: 'span-tool',
+          parentSpanId: 'span-root',
+          name: 'tool.run',
+          kind: 'TOOL',
+          statusCode: 'OK',
+          statusMessage: null,
+          startedAt: '2026-03-20T10:00:01.500Z',
+          endedAt: '2026-03-20T10:00:01.700Z',
+          durationMs: 200,
+          attributes: {},
+          events: [],
+          snapshots: [
+            {
+              snapshotId: 'snap-2',
+              role: 'result',
+              contentType: 'application/json',
+              encoding: 'zstd',
+              originalSize: 45,
+              compressedSize: 20,
+              truncated: false,
+              payloadAvailable: true,
+              payloadPreview: '{"tool":"done"}',
+              payloadPreviewTruncated: false,
+            },
+          ],
         },
       ],
     },
@@ -105,20 +181,23 @@ describe('SessionTraceExplorer', () => {
       <SessionTraceExplorer
         summary={summary}
         trace={trace}
+        messages={messages}
         isLoadingSummary={false}
         isLoadingTrace={false}
         errorMessage={null}
-        preferredTraceId={null}
         onLoadTrace={vi.fn()}
         onExport={vi.fn()}
       />,
     );
 
-    expect(html).toContain('Trace Explorer');
-    expect(html).toContain('web.message');
+    expect(html).toContain('Conversation + trace');
+    expect(html).toContain('Analyze the trace');
+    expect(html).toContain('I found the issue.');
     expect(html).toContain('llm.chat');
-    expect(html).toContain('Payload preview');
-    expect(html).toContain('request');
+    expect(html).toContain('Trace meta');
+    expect(html).toContain('Payload inspect');
+    expect(html).toContain('skill executor');
+    expect(html).toContain('model gpt-5-smart');
   });
 
   it('renders summary-only state before full trace details are loaded', () => {
@@ -126,10 +205,10 @@ describe('SessionTraceExplorer', () => {
       <SessionTraceExplorer
         summary={summary}
         trace={null}
+        messages={messages}
         isLoadingSummary={false}
         isLoadingTrace={false}
         errorMessage={null}
-        preferredTraceId={null}
         onLoadTrace={vi.fn()}
         onExport={vi.fn()}
       />,
@@ -145,10 +224,10 @@ describe('SessionTraceExplorer', () => {
       <SessionTraceExplorer
         summary={null}
         trace={null}
+        messages={messages}
         isLoadingSummary={false}
         isLoadingTrace={false}
         errorMessage="Failed to load trace details: boom"
-        preferredTraceId={null}
         onLoadTrace={vi.fn()}
         onExport={vi.fn()}
       />,

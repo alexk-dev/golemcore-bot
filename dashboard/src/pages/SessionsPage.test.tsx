@@ -47,7 +47,7 @@ describe('SessionsPage', () => {
     sessionHookMocks.useExportSessionTrace.mockReturnValue({ isPending: false, mutateAsync: vi.fn() });
 
     renderToStaticMarkup(
-      <SessionTraceTab sessionId={null} />,
+      <SessionTraceTab sessionId={null} messages={[]} />,
     );
 
     expect(sessionHookMocks.useSessionTraceSummary).toHaveBeenCalledWith('', false);
@@ -78,7 +78,7 @@ describe('SessionsPage', () => {
     sessionHookMocks.useExportSessionTrace.mockReturnValue({ isPending: false, mutateAsync: vi.fn() });
 
     renderToStaticMarkup(
-      <SessionTraceTab sessionId="session-1" />,
+      <SessionTraceTab sessionId="session-1" messages={[]} />,
     );
 
     expect(sessionHookMocks.useSessionTraceSummary).toHaveBeenCalledWith('session-1', true);

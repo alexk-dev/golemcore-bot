@@ -34,7 +34,7 @@ export function SessionTraceSnapshotViewer({ span }: SessionTraceSnapshotViewerP
                     {snapshot.payloadPreviewTruncated && <Badge bg="warning">Preview truncated</Badge>}
                   </div>
                   {snapshot.payloadAvailable && snapshot.payloadPreview != null ? (
-                    <pre className="logs-detail-pre small mb-0">{snapshot.payloadPreview}</pre>
+                    <pre className="logs-detail-pre small mb-0 session-trace-payload-pre">{snapshot.payloadPreview}</pre>
                   ) : (
                     <div className="small text-body-secondary">Payload preview unavailable for this snapshot.</div>
                   )}

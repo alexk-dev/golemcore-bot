@@ -1,12 +1,14 @@
 import { useEffect, useState, type ReactElement } from 'react';
 import toast from 'react-hot-toast';
 
+import type { MessageInfo } from '../../api/sessions';
 import { useExportSessionTrace, useSessionTrace, useSessionTraceSummary } from '../../hooks/useSessions';
 import { extractErrorMessage } from '../../utils/extractErrorMessage';
 import { SessionTraceExplorer } from './SessionTraceExplorer';
 
 export interface SessionTraceTabProps {
   sessionId: string | null;
+  messages: MessageInfo[];
 }
 
 function downloadTraceExport(payload: unknown, sessionId: string): void {
@@ -29,22 +31,22 @@ function buildTraceErrorMessage(summaryError: unknown, traceError: unknown): str
   return null;
 }
 
-export function SessionTraceTab({ sessionId }: SessionTraceTabProps): ReactElement {
+export function SessionTraceTab({ sessionId, messages }: SessionTraceTabProps): ReactElement {
   const traceEnabled = sessionId != null && sessionId.length > 0;
-  const [requestedTraceId, setRequestedTraceId] = useState<string | null>(null);
+  const [detailsRequested, setDetailsRequested] = useState(false);
   const { data: traceSummary, isLoading: traceSummaryLoading, error: traceSummaryError } = useSessionTraceSummary(
     sessionId ?? '',
     traceEnabled,
   );
   const { data: trace, isLoading: traceLoading, error: traceError } = useSessionTrace(
     sessionId ?? '',
-    traceEnabled && requestedTraceId != null,
+    traceEnabled && detailsRequested,
   );
   const exportTraceMut = useExportSessionTrace();
 
   useEffect(() => {
     // Reset detail loading state when the user switches to another session.
-    setRequestedTraceId(null);
+    setDetailsRequested(false);
   }, [sessionId]);
 
   const handleTraceExport = async (): Promise<void> => {
@@ -61,16 +63,16 @@ export function SessionTraceTab({ sessionId }: SessionTraceTabProps): ReactEleme
   };
 
   return (
-    <SessionTraceExplorer
-      summary={traceSummary ?? null}
-      trace={trace ?? null}
-      isLoadingSummary={traceSummaryLoading}
-      isLoadingTrace={traceLoading}
-      errorMessage={buildTraceErrorMessage(traceSummaryError, traceError)}
-      preferredTraceId={requestedTraceId}
-      onLoadTrace={setRequestedTraceId}
-      onExport={() => { void handleTraceExport(); }}
-      isExporting={exportTraceMut.isPending}
-    />
+      <SessionTraceExplorer
+        summary={traceSummary ?? null}
+        trace={trace ?? null}
+        messages={messages}
+        isLoadingSummary={traceSummaryLoading}
+        isLoadingTrace={traceLoading}
+        errorMessage={buildTraceErrorMessage(traceSummaryError, traceError)}
+        onLoadTrace={() => setDetailsRequested(true)}
+        onExport={() => { void handleTraceExport(); }}
+        isExporting={exportTraceMut.isPending}
+      />
   );
 }

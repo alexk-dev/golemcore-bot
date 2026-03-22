@@ -126,7 +126,7 @@ export function SessionDetailModal({
             ))}
           </div>
         ) : (
-          <SessionTraceTab sessionId={viewId} />
+          <SessionTraceTab sessionId={viewId} messages={detail?.messages ?? []} />
         )}
       </Modal.Body>
     </Modal>
