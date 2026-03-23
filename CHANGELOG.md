@@ -2,6 +2,17 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.42.0 - 2026-03-23
+#### Features
+- (**model-catalog**) resolve registry defaults during discovery (#206) - (3639522) - Alex Kuleshov
+#### Miscellaneous
+- (**deps**) bump com.github.luben:zstd-jni from 1.5.7-5 to 1.5.7-7 (#203) - (ba9a432) - dependabot[bot]
+- (**deps**) bump feign.version from 13.9.3 to 13.11 (#202) - (5f08865) - dependabot[bot]
+- (**deps**) bump the spring-boot group with 2 updates (#201) - (c7be834) - dependabot[bot]
+- (**deps**) bump com.google.protobuf:protobuf-java from 4.34.0 to 4.34.1 (#204) - (1d19d64) - dependabot[bot]
+
+- - -
+
 ## v0.12.0 - 2026-02-25
 #### Features
 - (**browser**) fetch Playwright driver bundle from Maven at runtime (#117) - (2121f20) - Alex Kuleshov
