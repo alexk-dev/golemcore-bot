@@ -44,6 +44,7 @@ import static org.mockito.Mockito.*;
 
 class ContextBuildingSystemPromptTest {
 
+    private static final String ATTR_ACTIVE_SKILL_SOURCE = "skill.active.source";
     private static final String SECTION_IDENTITY = "identity";
     private static final String SKILL_PROCESSING = "processing";
     private static final String SKILL_CODE_REVIEW = "code-review";
@@ -379,6 +380,47 @@ class ContextBuildingSystemPromptTest {
         String prompt = ctx.getSystemPrompt();
         assertTrue(prompt.contains("# Available Skills"));
         assertTrue(prompt.contains("greeting: Handle greetings"));
+    }
+
+    @Test
+    void injectsStrictSkillActivationInstructionWhenSkillsAreAvailable() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(skillComponent.getSkillsSummary()).thenReturn("- workflow: Handle multi-step workflows");
+
+        AgentContext ctx = createContext();
+        system.process(ctx);
+
+        String prompt = ctx.getSystemPrompt();
+        assertTrue(prompt.contains("If one of the available skills clearly matches the user's request"));
+        assertTrue(prompt.contains("call the skill_transition tool before doing the work"));
+    }
+
+    @Test
+    void restoresActiveSkillFromSessionMetadataAndPersistsTierMetadata() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        Skill restoredSkill = Skill.builder()
+                .name(SKILL_PROCESSING)
+                .content("Process the task carefully")
+                .modelTier(TIER_CODING)
+                .available(true)
+                .build();
+        when(skillComponent.findByName(SKILL_PROCESSING)).thenReturn(Optional.of(restoredSkill));
+        when(modelSelectionService.resolveForTier(TIER_CODING))
+                .thenReturn(new ModelSelectionService.ModelSelection("gpt-5-coding", "medium"));
+
+        AgentContext ctx = createContext();
+        ctx.getSession().getMetadata().put(ContextAttributes.ACTIVE_SKILL_NAME, SKILL_PROCESSING);
+
+        system.process(ctx);
+
+        assertNotNull(ctx.getActiveSkill());
+        assertEquals(SKILL_PROCESSING, ctx.getActiveSkill().getName());
+        assertEquals(SKILL_PROCESSING, ctx.getAttribute(ContextAttributes.ACTIVE_SKILL_NAME));
+        assertEquals("session_state", ctx.getAttribute(ATTR_ACTIVE_SKILL_SOURCE));
+        assertEquals(SKILL_PROCESSING, ctx.getSession().getMetadata().get(ContextAttributes.ACTIVE_SKILL_NAME));
+        assertEquals("skill", ctx.getAttribute(ContextAttributes.MODEL_TIER_SOURCE));
+        assertEquals("gpt-5-coding", ctx.getAttribute(ContextAttributes.MODEL_TIER_MODEL_ID));
+        assertTrue(ctx.getSystemPrompt().contains("# Active Skill: " + SKILL_PROCESSING));
     }
 
     // ===== Skill pipeline info =====

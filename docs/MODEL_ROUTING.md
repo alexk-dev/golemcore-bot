@@ -603,7 +603,7 @@ Layer 1: AutoCompactionSystem (order=18)
 
 ### Log messages
 
-The routing system produces detailed logs at INFO level:
+The runtime produces detailed tier-resolution logs at INFO level:
 
 ```
 [ContextBuilding] Resolved tier: coding (source: skill 'code-review')

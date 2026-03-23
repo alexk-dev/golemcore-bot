@@ -54,12 +54,12 @@ public class AgentContext {
     private List<Skill> activeSkills = new ArrayList<>();
 
     /**
-     * The skill selected by routing (if skill matcher is enabled).
+     * The active skill for the current turn.
      */
     private Skill activeSkill;
 
     /**
-     * Recommended model tier from explicit selection or skill routing.
+     * Recommended model tier from explicit selection or the active skill.
      */
     private String modelTier;
 

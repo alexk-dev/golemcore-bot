@@ -71,6 +71,7 @@ import static org.mockito.Mockito.*;
 class AgentLoopTest {
 
     private static final String CHANNEL_TYPE = "telegram";
+    private static final String ATTR_ACTIVE_SKILL_SOURCE = "skill.active.source";
     private static final String FIXED_INSTANT = "2026-02-01T00:00:00Z";
     private static final String ROLE_USER = "user";
     private static final String MSG_GENERIC = "generic";
@@ -2124,6 +2125,95 @@ class AgentLoopTest {
         assertEquals("gpt-5-smart", tierTransition.getAttributes().get("from_model_id"));
         assertEquals("gpt-5-coding", tierTransition.getAttributes().get("to_model_id"));
         assertEquals("dynamic_tier", tierTransition.getAttributes().get("source"));
+    }
+
+    @Test
+    void shouldRecordSessionStateSkillRestoreOnContextBuildingSpan() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+        AgentSession session = AgentSession.builder()
+                .id("s-restore")
+                .channelType(CHANNEL_TYPE)
+                .chatId("conv-restore")
+                .messages(new ArrayList<>())
+                .build();
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "conv-restore")).thenReturn(session);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+        when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        AgentSystem applySystem = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "ContextBuildingSystem";
+            }
+
+            @Override
+            public int getOrder() {
+                return 1;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                context.setActiveSkill(me.golemcore.bot.domain.model.Skill.builder()
+                        .name("reviewer")
+                        .modelTier("smart")
+                        .build());
+                context.setAttribute(ContextAttributes.ACTIVE_SKILL_NAME, "reviewer");
+                context.setAttribute(ATTR_ACTIVE_SKILL_SOURCE, "session_state");
+                context.setModelTier("smart");
+                context.setAttribute(ContextAttributes.MODEL_TIER_SOURCE, "skill");
+                context.setOutgoingResponse(OutgoingResponse.textOnly("done"));
+                return context;
+            }
+        };
+
+        AgentLoop loop = createLoop(
+                sessionPort,
+                rateLimitPort,
+                List.of(applySystem),
+                List.of(channel),
+                mockRuntimeConfigService(1),
+                preferencesService,
+                llmPort,
+                clock);
+
+        Message inbound = Message.builder()
+                .role(ROLE_USER)
+                .content("resume skill")
+                .channelType(CHANNEL_TYPE)
+                .chatId("conv-restore")
+                .senderId("u1")
+                .metadata(Map.of(
+                        ContextAttributes.TRACE_ID, "trace-restore",
+                        ContextAttributes.TRACE_SPAN_ID, "span-restore",
+                        ContextAttributes.TRACE_ROOT_KIND, TraceSpanKind.INGRESS.name(),
+                        ContextAttributes.TRACE_NAME, "telegram.message"))
+                .timestamp(clock.instant())
+                .build();
+
+        loop.processMessage(inbound);
+
+        TraceRecord trace = session.getTraces().get(0);
+        TraceSpanRecord applySpan = findSpan(trace, "system.ContextBuildingSystem");
+        TraceEventRecord applied = findEvent(applySpan, "skill.transition.applied");
+        assertEquals("reviewer", applied.getAttributes().get("to_skill"));
+        assertEquals("session_state", applied.getAttributes().get("source"));
+
+        TraceEventRecord tierResolved = findEvent(applySpan, "tier.resolved");
+        assertEquals("reviewer", tierResolved.getAttributes().get("skill"));
+        assertEquals("smart", tierResolved.getAttributes().get("tier"));
+        assertEquals("skill", tierResolved.getAttributes().get("source"));
     }
 
     private static AgentLoop createLoop(

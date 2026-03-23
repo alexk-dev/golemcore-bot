@@ -238,6 +238,9 @@ public final class ContextAttributes {
     /** String ? active skill name applied during the current turn or message. */
     public static final String ACTIVE_SKILL_NAME = "skill.active.name";
 
+    /** String ? source of the active skill for the current turn. */
+    public static final String ACTIVE_SKILL_SOURCE = "skill.active.source";
+
     /** Boolean ? current auto run is a reflection/recovery run. */
     public static final String AUTO_REFLECTION_ACTIVE = "auto.reflection.active";
 

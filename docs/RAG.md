@@ -103,7 +103,7 @@ User: Write a Python function for CSV parsing
 Assistant: Here's a function that handles CSV files with proper error handling...
 ```
 
-The `Skill:` line is included only when an active skill was selected by the routing system.
+The `Skill:` line is included only when an active skill was present for that turn.
 
 ### What Gets Filtered
 

@@ -794,7 +794,7 @@ public class AgentLoop {
 
     private TraceStateSnapshot captureTraceState(AgentContext context) {
         if (context == null) {
-            return new TraceStateSnapshot(null, "balanced", null, null, null, null);
+            return new TraceStateSnapshot(null, "balanced", null, null, null, null, null);
         }
         String skillName = context.getActiveSkill() != null ? context.getActiveSkill().getName() : null;
         if ((skillName == null || skillName.isBlank()) && context.getAttributes() != null) {
@@ -803,6 +803,7 @@ public class AgentLoop {
                 skillName = activeSkillName;
             }
         }
+        String skillSource = stringAttribute(context, ContextAttributes.ACTIVE_SKILL_SOURCE);
         String tier = normalizeTierForTrace(context.getModelTier());
         String modelId = stringAttribute(context, ContextAttributes.MODEL_TIER_MODEL_ID);
         if (modelId == null || modelId.isBlank()) {
@@ -818,6 +819,7 @@ public class AgentLoop {
                 modelId,
                 reasoning,
                 stringAttribute(context, ContextAttributes.MODEL_TIER_SOURCE),
+                skillSource,
                 context.getSkillTransitionRequest());
     }
 
@@ -843,8 +845,11 @@ public class AgentLoop {
             Map<String, Object> attributes = new LinkedHashMap<>();
             putIfPresent(attributes, "from_skill", beforeState.skillName());
             putIfPresent(attributes, "to_skill", afterState.skillName());
-            putIfPresent(attributes, "source", formatTransitionReason(beforeState.transitionRequest()));
-            putIfPresent(attributes, "reason", formatTransitionReason(beforeState.transitionRequest()));
+            String skillSource = afterState.skillSource() != null && !afterState.skillSource().isBlank()
+                    ? afterState.skillSource()
+                    : formatTransitionReason(beforeState.transitionRequest());
+            putIfPresent(attributes, "source", skillSource);
+            putIfPresent(attributes, "reason", skillSource);
             emitTraceEvent(context, systemSpan, "skill.transition.applied", attributes);
         }
 
@@ -1085,6 +1090,7 @@ public class AgentLoop {
             String modelId,
             String reasoning,
             String source,
+            String skillSource,
             SkillTransitionRequest transitionRequest) {
     }
 

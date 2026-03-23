@@ -113,13 +113,10 @@ public class ContextBuildingSystem implements AgentSystem {
         SkillTransitionRequest transition = context.getSkillTransitionRequest();
         String transitionTarget = transition != null ? transition.targetSkill() : null;
         if (transitionTarget != null) {
-            skillComponent.findByName(transitionTarget).ifPresent(skill -> {
-                context.setActiveSkill(skill);
-                context.setAttribute(ContextAttributes.ACTIVE_SKILL_NAME, skill.getName());
-                log.info("[Context] Skill transition: → {}", skill.getName());
-            });
+            applyActiveSkillByName(context, transitionTarget, formatActiveSkillSource(transition));
             context.clearSkillTransitionRequest();
         }
+        resolveStickyActiveSkill(context);
 
         // Resolve model tier from user preferences, active skill, and auto reflection
         // settings
@@ -217,7 +214,7 @@ public class ContextBuildingSystem implements AgentSystem {
         context.setAvailableTools(tools);
         log.trace("[Context] Available tools: {}", tools.stream().map(ToolDefinition::getName).toList());
 
-        // Check if skill was selected by routing
+        // Log the active skill resolved for this turn.
         if (context.getActiveSkill() != null) {
             log.debug("[Context] Active skill: {} ({} chars)",
                     context.getActiveSkill().getName(),
@@ -311,7 +308,7 @@ public class ContextBuildingSystem implements AgentSystem {
             sb.append(DOUBLE_NEWLINE);
         }
 
-        // If a specific skill was selected by routing, inject its full content
+        // If a specific skill is active, inject its full content.
         if (context.getActiveSkill() != null) {
             sb.append("# Active Skill: ").append(context.getActiveSkill().getName()).append("\n");
             String skillContent = context.getActiveSkill().getContent();
@@ -342,6 +339,9 @@ public class ContextBuildingSystem implements AgentSystem {
             // Otherwise show skills summary for progressive loading
             sb.append("# Available Skills\n");
             sb.append(context.getSkillsSummary());
+            sb.append("If one of the available skills clearly matches the user's request, ");
+            sb.append("call the skill_transition tool before doing the work.\n");
+            sb.append("Stay in the base prompt only when no listed skill is a better fit.\n");
             sb.append(DOUBLE_NEWLINE);
         }
 
@@ -517,6 +517,97 @@ public class ContextBuildingSystem implements AgentSystem {
             context.setAttribute(ContextAttributes.MODEL_TIER_SOURCE, source);
         }
         updateResolvedTierMetadata(context);
+    }
+
+    private void resolveStickyActiveSkill(AgentContext context) {
+        if (context == null || context.getActiveSkill() != null) {
+            persistActiveSkillState(context);
+            return;
+        }
+
+        String explicitSkillName = context.getAttribute(ContextAttributes.ACTIVE_SKILL_NAME);
+        if (explicitSkillName != null && !explicitSkillName.isBlank()) {
+            if (applyActiveSkillByName(context, explicitSkillName, resolveExplicitSkillSource(context))) {
+                return;
+            }
+        }
+
+        String sessionSkillName = readSessionActiveSkillName(context);
+        if (sessionSkillName != null && !sessionSkillName.isBlank()) {
+            if (applyActiveSkillByName(context, sessionSkillName, "session_state")) {
+                return;
+            }
+            clearPersistedActiveSkill(context);
+        }
+    }
+
+    private String resolveExplicitSkillSource(AgentContext context) {
+        String existing = context.getAttribute(ContextAttributes.ACTIVE_SKILL_SOURCE);
+        if (existing != null && !existing.isBlank()) {
+            return existing;
+        }
+        return "message_metadata";
+    }
+
+    private String readSessionActiveSkillName(AgentContext context) {
+        if (context == null || context.getSession() == null || context.getSession().getMetadata() == null) {
+            return null;
+        }
+        Object value = context.getSession().getMetadata().get(ContextAttributes.ACTIVE_SKILL_NAME);
+        if (value instanceof String skillName && !skillName.isBlank()) {
+            return skillName;
+        }
+        return null;
+    }
+
+    private boolean applyActiveSkillByName(AgentContext context, String skillName, String source) {
+        if (context == null || skillName == null || skillName.isBlank()) {
+            return false;
+        }
+
+        Optional<Skill> skill = skillComponent.findByName(skillName);
+        if (skill.isEmpty()) {
+            log.warn("[Context] Active skill '{}' not found", skillName);
+            return false;
+        }
+        if (!skill.get().isAvailable()) {
+            log.warn("[Context] Active skill '{}' is unavailable", skillName);
+            return false;
+        }
+
+        context.setActiveSkill(skill.get());
+        context.setAttribute(ContextAttributes.ACTIVE_SKILL_NAME, skill.get().getName());
+        if (source != null && !source.isBlank()) {
+            context.setAttribute(ContextAttributes.ACTIVE_SKILL_SOURCE, source);
+        }
+        persistActiveSkillState(context);
+        log.info("[Context] Skill transition: → {} ({})", skill.get().getName(), source);
+        return true;
+    }
+
+    private void persistActiveSkillState(AgentContext context) {
+        if (context == null || context.getSession() == null || context.getActiveSkill() == null
+                || context.getActiveSkill().getName() == null || context.getActiveSkill().getName().isBlank()) {
+            return;
+        }
+        if (context.getSession().getMetadata() == null) {
+            context.getSession().setMetadata(new LinkedHashMap<>());
+        }
+        context.getSession().getMetadata().put(ContextAttributes.ACTIVE_SKILL_NAME, context.getActiveSkill().getName());
+    }
+
+    private void clearPersistedActiveSkill(AgentContext context) {
+        if (context == null || context.getSession() == null || context.getSession().getMetadata() == null) {
+            return;
+        }
+        context.getSession().getMetadata().remove(ContextAttributes.ACTIVE_SKILL_NAME);
+    }
+
+    private String formatActiveSkillSource(SkillTransitionRequest transition) {
+        if (transition == null || transition.reason() == null) {
+            return null;
+        }
+        return transition.reason().name().toLowerCase(java.util.Locale.ROOT);
     }
 
     private void ensureResolvedTierMetadata(AgentContext context) {
