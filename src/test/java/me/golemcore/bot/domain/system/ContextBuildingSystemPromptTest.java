@@ -13,6 +13,7 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.PromptSection;
 import me.golemcore.bot.domain.model.Skill;
+import me.golemcore.bot.domain.model.SkillTransitionRequest;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
@@ -30,6 +31,7 @@ import me.golemcore.bot.port.outbound.McpPort;
 import me.golemcore.bot.port.outbound.RagPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -445,6 +447,26 @@ class ContextBuildingSystemPromptTest {
     }
 
     @Test
+    void restoresActiveSkillFromContextAttributesPreservingExistingSource() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        Skill restoredSkill = Skill.builder()
+                .name(SKILL_PROCESSING)
+                .content("Process the task carefully")
+                .available(true)
+                .build();
+        when(skillComponent.findByName(SKILL_PROCESSING)).thenReturn(Optional.of(restoredSkill));
+
+        AgentContext ctx = createContext();
+        ctx.setAttribute(ContextAttributes.ACTIVE_SKILL_NAME, SKILL_PROCESSING);
+        ctx.setAttribute(ContextAttributes.ACTIVE_SKILL_SOURCE, "message_metadata_override");
+
+        system.process(ctx);
+
+        assertNotNull(ctx.getActiveSkill());
+        assertEquals("message_metadata_override", ctx.getAttribute(ATTR_ACTIVE_SKILL_SOURCE));
+    }
+
+    @Test
     void persistsPreselectedActiveSkillIntoSessionMetadata() {
         when(promptSectionService.isEnabled()).thenReturn(false);
 
@@ -462,6 +484,41 @@ class ContextBuildingSystemPromptTest {
     }
 
     @Test
+    void createsSessionMetadataWhenPersistingPreselectedActiveSkill() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+
+        AgentContext ctx = createContext();
+        ctx.getSession().setMetadata(null);
+        ctx.setActiveSkill(Skill.builder()
+                .name(SKILL_PROCESSING)
+                .content("Process the task carefully")
+                .available(true)
+                .build());
+
+        system.process(ctx);
+
+        assertNotNull(ctx.getSession().getMetadata());
+        assertEquals(SKILL_PROCESSING, ctx.getSession().getMetadata().get(ContextAttributes.ACTIVE_SKILL_NAME));
+    }
+
+    @Test
+    void doesNotPersistPreselectedActiveSkillWhenNameIsBlank() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+
+        AgentContext ctx = createContext();
+        ctx.setActiveSkill(Skill.builder()
+                .name("   ")
+                .content("Process the task carefully")
+                .available(true)
+                .build());
+
+        system.process(ctx);
+
+        assertTrue(ctx.getSession().getMetadata() == null
+                || !ctx.getSession().getMetadata().containsKey(ContextAttributes.ACTIVE_SKILL_NAME));
+    }
+
+    @Test
     void clearsPersistedActiveSkillWhenSessionMetadataSkillIsMissing() {
         when(promptSectionService.isEnabled()).thenReturn(false);
         when(skillComponent.findByName("missing-skill")).thenReturn(Optional.empty());
@@ -474,6 +531,21 @@ class ContextBuildingSystemPromptTest {
 
         assertNull(ctx.getActiveSkill());
         assertFalse(ctx.getSession().getMetadata().containsKey(ContextAttributes.ACTIVE_SKILL_NAME));
+    }
+
+    @Test
+    void helperMethodsHandleInvalidStickySkillInputs() throws Exception {
+        AgentContext ctx = createContext();
+        ctx.getSession().setMetadata(null);
+
+        assertEquals(
+                Boolean.FALSE,
+                ReflectionTestUtils.invokeMethod(system, "applyActiveSkillByName", ctx, " ", "message_metadata"));
+
+        ReflectionTestUtils.invokeMethod(system, "clearPersistedActiveSkill", ctx);
+        assertTrue(ctx.getSession().getMetadata() == null || ctx.getSession().getMetadata().isEmpty());
+
+        assertNull(ReflectionTestUtils.invokeMethod(system, "formatActiveSkillSource", (SkillTransitionRequest) null));
     }
 
     @Test
@@ -645,7 +717,7 @@ class ContextBuildingSystemPromptTest {
         when(skillComponent.findByName(SKILL_PROCESSING)).thenReturn(Optional.of(targetSkill));
 
         AgentContext ctx = createContext();
-        ctx.setSkillTransitionRequest(me.golemcore.bot.domain.model.SkillTransitionRequest.explicit(SKILL_PROCESSING));
+        ctx.setSkillTransitionRequest(SkillTransitionRequest.explicit(SKILL_PROCESSING));
         system.process(ctx);
 
         assertEquals(targetSkill, ctx.getActiveSkill());

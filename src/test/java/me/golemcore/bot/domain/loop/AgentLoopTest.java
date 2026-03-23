@@ -53,6 +53,7 @@ import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.RateLimitPort;
 import me.golemcore.bot.port.outbound.SessionPort;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -2214,6 +2215,28 @@ class AgentLoopTest {
         assertEquals("reviewer", tierResolved.getAttributes().get("skill"));
         assertEquals("smart", tierResolved.getAttributes().get("tier"));
         assertEquals("skill", tierResolved.getAttributes().get("source"));
+    }
+
+    @Test
+    void shouldCaptureBalancedTraceDefaultsWhenContextIsNull() {
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+
+        AgentLoop loop = createLoop(
+                mock(SessionPort.class),
+                mock(RateLimitPort.class),
+                List.of(),
+                List.of(),
+                mockRuntimeConfigService(1),
+                preferencesService,
+                llmPort,
+                Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC));
+
+        Object snapshot = ReflectionTestUtils.invokeMethod(loop, "captureTraceState", (AgentContext) null);
+
+        assertEquals("balanced", ReflectionTestUtils.invokeMethod(snapshot, "tier"));
+        assertNull(ReflectionTestUtils.invokeMethod(snapshot, "skillSource"));
     }
 
     private static AgentLoop createLoop(
