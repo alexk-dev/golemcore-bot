@@ -214,6 +214,22 @@ jobs:
               --generate-notes
           fi
 
+      - name: Publish to Maven Central
+        if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
+        env:
+          MAVEN_GPG_PRIVATE_KEY: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+          MAVEN_GPG_KEY_ID: ${{ secrets.MAVEN_GPG_KEY_ID }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+        run: |
+          echo "${MAVEN_GPG_PRIVATE_KEY}" | gpg --batch --import
+          ./mvnw -B -ntp deploy -P central-publish -DskipTests -DskipGitHooks=true \
+            -Dgpg.keyname="${MAVEN_GPG_KEY_ID}" \
+            -Dgpg.passphrase="${MAVEN_GPG_PASSPHRASE}" \
+            -Dcentral.publishing.token.username="${CENTRAL_TOKEN_USERNAME}" \
+            -Dcentral.publishing.token.password="${CENTRAL_TOKEN_PASSWORD}"
+
       - name: Trigger Docker publish for release tag
         if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
         env:
@@ -227,6 +243,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Tag \`${{ steps.release.outputs.version }}\` pushed (main push intentionally disabled by branch rules)." >> $GITHUB_STEP_SUMMARY
           echo "GitHub Release with \`bot-*.jar\` and \`sha256sums.txt\` was published." >> $GITHUB_STEP_SUMMARY
+          echo "Artifacts published to Maven Central." >> $GITHUB_STEP_SUMMARY
 
       - name: Summary (no release)
         if: steps.release-flag.outputs.should-release != 'true' || steps.tag-push.outputs.should-release != 'true'
