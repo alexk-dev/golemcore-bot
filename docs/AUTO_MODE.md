@@ -287,7 +287,6 @@ Important pipeline effects:
 
 | Order | System | Auto mode behavior |
 |-------|--------|--------------------|
-| 15 | `SkillRoutingSystem` | Skips skill routing for auto messages |
 | 20 | `ContextBuildingSystem` | Injects goals, tasks, diary and sets tier from `autoMode.modelTier` |
 | 25 | `DynamicTierSystem` | Can still upgrade to `coding` if work becomes code-heavy |
 | 30 | `ToolLoopExecutionSystem` | Executes normally, including retries/runtime events |

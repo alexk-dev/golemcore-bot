@@ -13,6 +13,7 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.PromptSection;
 import me.golemcore.bot.domain.model.Skill;
+import me.golemcore.bot.domain.model.SkillTransitionRequest;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
@@ -30,6 +31,7 @@ import me.golemcore.bot.port.outbound.McpPort;
 import me.golemcore.bot.port.outbound.RagPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -44,6 +46,7 @@ import static org.mockito.Mockito.*;
 
 class ContextBuildingSystemPromptTest {
 
+    private static final String ATTR_ACTIVE_SKILL_SOURCE = "skill.active.source";
     private static final String SECTION_IDENTITY = "identity";
     private static final String SKILL_PROCESSING = "processing";
     private static final String SKILL_CODE_REVIEW = "code-review";
@@ -381,6 +384,190 @@ class ContextBuildingSystemPromptTest {
         assertTrue(prompt.contains("greeting: Handle greetings"));
     }
 
+    @Test
+    void injectsStrictSkillActivationInstructionWhenSkillsAreAvailable() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(skillComponent.getSkillsSummary()).thenReturn("- workflow: Handle multi-step workflows");
+
+        AgentContext ctx = createContext();
+        system.process(ctx);
+
+        String prompt = ctx.getSystemPrompt();
+        assertTrue(prompt.contains("If one of the available skills clearly matches the user's request"));
+        assertTrue(prompt.contains("call the skill_transition tool before doing the work"));
+    }
+
+    @Test
+    void restoresActiveSkillFromSessionMetadataAndPersistsTierMetadata() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        Skill restoredSkill = Skill.builder()
+                .name(SKILL_PROCESSING)
+                .content("Process the task carefully")
+                .modelTier(TIER_CODING)
+                .available(true)
+                .build();
+        when(skillComponent.findByName(SKILL_PROCESSING)).thenReturn(Optional.of(restoredSkill));
+        when(modelSelectionService.resolveForTier(TIER_CODING))
+                .thenReturn(new ModelSelectionService.ModelSelection("gpt-5-coding", "medium"));
+
+        AgentContext ctx = createContext();
+        ctx.getSession().getMetadata().put(ContextAttributes.ACTIVE_SKILL_NAME, SKILL_PROCESSING);
+
+        system.process(ctx);
+
+        assertNotNull(ctx.getActiveSkill());
+        assertEquals(SKILL_PROCESSING, ctx.getActiveSkill().getName());
+        assertEquals(SKILL_PROCESSING, ctx.getAttribute(ContextAttributes.ACTIVE_SKILL_NAME));
+        assertEquals("session_state", ctx.getAttribute(ATTR_ACTIVE_SKILL_SOURCE));
+        assertEquals(SKILL_PROCESSING, ctx.getSession().getMetadata().get(ContextAttributes.ACTIVE_SKILL_NAME));
+        assertEquals("skill", ctx.getAttribute(ContextAttributes.MODEL_TIER_SOURCE));
+        assertEquals("gpt-5-coding", ctx.getAttribute(ContextAttributes.MODEL_TIER_MODEL_ID));
+        assertTrue(ctx.getSystemPrompt().contains("# Active Skill: " + SKILL_PROCESSING));
+    }
+
+    @Test
+    void restoresActiveSkillFromContextAttributesUsingMessageMetadataSource() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        Skill restoredSkill = Skill.builder()
+                .name(SKILL_PROCESSING)
+                .content("Process the task carefully")
+                .available(true)
+                .build();
+        when(skillComponent.findByName(SKILL_PROCESSING)).thenReturn(Optional.of(restoredSkill));
+
+        AgentContext ctx = createContext();
+        ctx.setAttribute(ContextAttributes.ACTIVE_SKILL_NAME, SKILL_PROCESSING);
+
+        system.process(ctx);
+
+        assertNotNull(ctx.getActiveSkill());
+        assertEquals(SKILL_PROCESSING, ctx.getActiveSkill().getName());
+        assertEquals("message_metadata", ctx.getAttribute(ATTR_ACTIVE_SKILL_SOURCE));
+        assertEquals(SKILL_PROCESSING, ctx.getSession().getMetadata().get(ContextAttributes.ACTIVE_SKILL_NAME));
+    }
+
+    @Test
+    void restoresActiveSkillFromContextAttributesPreservingExistingSource() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        Skill restoredSkill = Skill.builder()
+                .name(SKILL_PROCESSING)
+                .content("Process the task carefully")
+                .available(true)
+                .build();
+        when(skillComponent.findByName(SKILL_PROCESSING)).thenReturn(Optional.of(restoredSkill));
+
+        AgentContext ctx = createContext();
+        ctx.setAttribute(ContextAttributes.ACTIVE_SKILL_NAME, SKILL_PROCESSING);
+        ctx.setAttribute(ContextAttributes.ACTIVE_SKILL_SOURCE, "message_metadata_override");
+
+        system.process(ctx);
+
+        assertNotNull(ctx.getActiveSkill());
+        assertEquals("message_metadata_override", ctx.getAttribute(ATTR_ACTIVE_SKILL_SOURCE));
+    }
+
+    @Test
+    void persistsPreselectedActiveSkillIntoSessionMetadata() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+
+        AgentContext ctx = createContext();
+        ctx.getSession().setMetadata(new HashMap<>());
+        ctx.setActiveSkill(Skill.builder()
+                .name(SKILL_PROCESSING)
+                .content("Process the task carefully")
+                .available(true)
+                .build());
+
+        system.process(ctx);
+
+        assertEquals(SKILL_PROCESSING, ctx.getSession().getMetadata().get(ContextAttributes.ACTIVE_SKILL_NAME));
+    }
+
+    @Test
+    void createsSessionMetadataWhenPersistingPreselectedActiveSkill() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+
+        AgentContext ctx = createContext();
+        ctx.getSession().setMetadata(null);
+        ctx.setActiveSkill(Skill.builder()
+                .name(SKILL_PROCESSING)
+                .content("Process the task carefully")
+                .available(true)
+                .build());
+
+        system.process(ctx);
+
+        assertNotNull(ctx.getSession().getMetadata());
+        assertEquals(SKILL_PROCESSING, ctx.getSession().getMetadata().get(ContextAttributes.ACTIVE_SKILL_NAME));
+    }
+
+    @Test
+    void doesNotPersistPreselectedActiveSkillWhenNameIsBlank() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+
+        AgentContext ctx = createContext();
+        ctx.setActiveSkill(Skill.builder()
+                .name("   ")
+                .content("Process the task carefully")
+                .available(true)
+                .build());
+
+        system.process(ctx);
+
+        assertTrue(ctx.getSession().getMetadata() == null
+                || !ctx.getSession().getMetadata().containsKey(ContextAttributes.ACTIVE_SKILL_NAME));
+    }
+
+    @Test
+    void clearsPersistedActiveSkillWhenSessionMetadataSkillIsMissing() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(skillComponent.findByName("missing-skill")).thenReturn(Optional.empty());
+
+        AgentContext ctx = createContext();
+        ctx.getSession().setMetadata(new HashMap<>(Map.of(
+                ContextAttributes.ACTIVE_SKILL_NAME, "missing-skill")));
+
+        system.process(ctx);
+
+        assertNull(ctx.getActiveSkill());
+        assertFalse(ctx.getSession().getMetadata().containsKey(ContextAttributes.ACTIVE_SKILL_NAME));
+    }
+
+    @Test
+    void helperMethodsHandleInvalidStickySkillInputs() throws Exception {
+        AgentContext ctx = createContext();
+        ctx.getSession().setMetadata(null);
+
+        assertEquals(
+                Boolean.FALSE,
+                ReflectionTestUtils.invokeMethod(system, "applyActiveSkillByName", ctx, " ", "message_metadata"));
+
+        ReflectionTestUtils.invokeMethod(system, "clearPersistedActiveSkill", ctx);
+        assertTrue(ctx.getSession().getMetadata() == null || ctx.getSession().getMetadata().isEmpty());
+
+        assertNull(ReflectionTestUtils.invokeMethod(system, "formatActiveSkillSource", (SkillTransitionRequest) null));
+    }
+
+    @Test
+    void clearsPersistedActiveSkillWhenSessionMetadataSkillIsUnavailable() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        Skill unavailableSkill = Skill.builder()
+                .name(SKILL_PROCESSING)
+                .content("Process the task carefully")
+                .available(false)
+                .build();
+        when(skillComponent.findByName(SKILL_PROCESSING)).thenReturn(Optional.of(unavailableSkill));
+
+        AgentContext ctx = createContext();
+        ctx.getSession().setMetadata(new HashMap<>(Map.of(
+                ContextAttributes.ACTIVE_SKILL_NAME, SKILL_PROCESSING)));
+
+        system.process(ctx);
+
+        assertNull(ctx.getActiveSkill());
+        assertFalse(ctx.getSession().getMetadata().containsKey(ContextAttributes.ACTIVE_SKILL_NAME));
+    }
+
     // ===== Skill pipeline info =====
 
     @Test
@@ -530,7 +717,7 @@ class ContextBuildingSystemPromptTest {
         when(skillComponent.findByName(SKILL_PROCESSING)).thenReturn(Optional.of(targetSkill));
 
         AgentContext ctx = createContext();
-        ctx.setSkillTransitionRequest(me.golemcore.bot.domain.model.SkillTransitionRequest.explicit(SKILL_PROCESSING));
+        ctx.setSkillTransitionRequest(SkillTransitionRequest.explicit(SKILL_PROCESSING));
         system.process(ctx);
 
         assertEquals(targetSkill, ctx.getActiveSkill());

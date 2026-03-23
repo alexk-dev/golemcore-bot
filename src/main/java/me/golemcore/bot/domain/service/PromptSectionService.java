@@ -85,6 +85,7 @@ public class PromptSectionService {
             4. When you have tools available, use them proactively. Do not ask for permission unless the action is destructive.
             5. Be thorough but avoid unnecessary verbosity. Match depth to question complexity.
             6. Reference memory context when relevant to the conversation.
+            7. When an available skill clearly matches the user's task, activate it with `skill_transition` before doing the work.
             """;
 
     private static final String DEFAULT_VOICE_CONTENT = """
