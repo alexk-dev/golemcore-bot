@@ -44,15 +44,14 @@ class SkillManagementToolTest {
         skillMarketplaceService = mock(SkillMarketplaceService.class);
         skillDocumentService = new SkillDocumentService();
         when(runtimeConfigService.isSkillManagementEnabled()).thenReturn(true);
+        when(storagePort.putText(anyString(), anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(null));
         tool = new SkillManagementTool(runtimeConfigService, storagePort, skillComponent, skillMarketplaceService,
                 skillDocumentService);
     }
 
     @Test
     void createSkill() throws Exception {
-        when(storagePort.putText(anyString(), anyString(), anyString()))
-                .thenReturn(CompletableFuture.completedFuture(null));
-
         ToolResult result = tool.execute(Map.of(
                 OPERATION, CREATE_SKILL,
                 NAME, GREETING,
@@ -67,9 +66,6 @@ class SkillManagementToolTest {
 
     @Test
     void createSkillShouldNormalizeFrontmatterAndStoreBodyWithoutNestedHeaders() throws Exception {
-        when(storagePort.putText(anyString(), anyString(), anyString()))
-                .thenReturn(CompletableFuture.completedFuture(null));
-
         ToolResult result = tool.execute(Map.of(
                 OPERATION, CREATE_SKILL,
                 NAME, GREETING,
@@ -85,9 +81,6 @@ class SkillManagementToolTest {
 
     @Test
     void createSkillWithHyphenatedName() throws Exception {
-        when(storagePort.putText(anyString(), anyString(), anyString()))
-                .thenReturn(CompletableFuture.completedFuture(null));
-
         ToolResult result = tool.execute(Map.of(
                 OPERATION, CREATE_SKILL,
                 NAME, "code-review",

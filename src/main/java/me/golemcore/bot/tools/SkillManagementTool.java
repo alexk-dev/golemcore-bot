@@ -212,47 +212,45 @@ public class SkillManagementTool implements ToolComponent {
     }
 
     private ToolResult getSkill(Map<String, Object> parameters) {
-        String name = (String) parameters.get(PARAM_NAME);
-        if (name == null || name.isBlank()) {
-            return ToolResult.failure("Missing required parameter: name");
-        }
-
-        Optional<Skill> skill = skillComponent.findByName(name);
-        if (skill.isEmpty()) {
-            return ToolResult.failure("Skill not found: " + name);
-        }
-
-        Skill resolvedSkill = skill.get();
-        String output = String.format("Skill: %s%nDescription: %s%nAvailable: %s%n%n%s",
-                resolvedSkill.getName(), resolvedSkill.getDescription(), resolvedSkill.isAvailable(),
-                resolvedSkill.getContent());
-
-        return ToolResult.success(output, Map.of(
-                PARAM_NAME, resolvedSkill.getName(),
-                PARAM_DESCRIPTION, resolvedSkill.getDescription(),
-                "available", resolvedSkill.isAvailable()));
+        return requireSkillByName(parameters).map(resolvedSkill -> {
+            String output = String.format("Skill: %s%nDescription: %s%nAvailable: %s%n%n%s",
+                    resolvedSkill.getName(), resolvedSkill.getDescription(), resolvedSkill.isAvailable(),
+                    resolvedSkill.getContent());
+            return ToolResult.success(output, Map.of(
+                    PARAM_NAME, resolvedSkill.getName(),
+                    PARAM_DESCRIPTION, resolvedSkill.getDescription(),
+                    "available", resolvedSkill.isAvailable()));
+        }).orElseGet(() -> lookupFailure(parameters));
     }
 
     private ToolResult deleteSkill(Map<String, Object> parameters) {
+        return requireSkillByName(parameters).map(skill -> {
+            try {
+                skillMarketplaceService.deleteManagedSkill(skill);
+                skillComponent.reload();
+                log.info("[SkillManagement] Deleted skill: {}", skill.getName());
+                return ToolResult.success("Skill '" + skill.getName() + "' deleted successfully.");
+            } catch (Exception ex) {
+                log.error("[SkillManagement] Failed to delete skill: {}", skill.getName(), ex);
+                return ToolResult.failure("Failed to delete skill: " + ex.getMessage());
+            }
+        }).orElseGet(() -> lookupFailure(parameters));
+    }
+
+    private Optional<Skill> requireSkillByName(Map<String, Object> parameters) {
+        String name = (String) parameters.get(PARAM_NAME);
+        if (name == null || name.isBlank()) {
+            return Optional.empty();
+        }
+        return skillComponent.findByName(name);
+    }
+
+    private ToolResult lookupFailure(Map<String, Object> parameters) {
         String name = (String) parameters.get(PARAM_NAME);
         if (name == null || name.isBlank()) {
             return ToolResult.failure("Missing required parameter: name");
         }
-
-        Optional<Skill> existing = skillComponent.findByName(name);
-        if (existing.isEmpty()) {
-            return ToolResult.failure("Skill not found: " + name);
-        }
-
-        try {
-            skillMarketplaceService.deleteManagedSkill(existing.get());
-            skillComponent.reload();
-            log.info("[SkillManagement] Deleted skill: {}", name);
-            return ToolResult.success("Skill '" + name + "' deleted successfully.");
-        } catch (Exception ex) {
-            log.error("[SkillManagement] Failed to delete skill: {}", name, ex);
-            return ToolResult.failure("Failed to delete skill: " + ex.getMessage());
-        }
+        return ToolResult.failure("Skill not found: " + name);
     }
 
 }

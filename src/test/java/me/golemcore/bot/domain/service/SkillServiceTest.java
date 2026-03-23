@@ -61,6 +61,14 @@ class SkillServiceTest {
                 .thenReturn(CompletableFuture.completedFuture(content));
     }
 
+    private Optional<Skill> loadSkillAndFind(String name, String content) {
+        String key = name + "/" + SKILL_FILE;
+        loadSkills(key);
+        stubSkillContent(key, content);
+        service.reload();
+        return service.findByName(name);
+    }
+
     // ==================== reload / init ====================
 
     @Test
@@ -178,18 +186,13 @@ class SkillServiceTest {
 
     @Test
     void parseSkillWithValidFrontmatter() {
-        loadSkills("summarize/" + SKILL_FILE);
-        stubSkillContent("summarize/" + SKILL_FILE, """
+        Optional<Skill> skill = loadSkillAndFind("summarize", """
                 ---
                 name: summarize
                 description: Summarize text
                 ---
                 You summarize text efficiently.
                 """);
-
-        service.reload();
-
-        Optional<Skill> skill = service.findByName("summarize");
         assertTrue(skill.isPresent());
         assertEquals("summarize", skill.get().getName());
         assertEquals("Summarize text", skill.get().getDescription());
@@ -198,48 +201,33 @@ class SkillServiceTest {
 
     @Test
     void parseSkillWithoutFrontmatter() {
-        loadSkills("simple/" + SKILL_FILE);
-        stubSkillContent("simple/" + SKILL_FILE, "Just plain content without frontmatter.");
-
-        service.reload();
-
         // Should extract name from path
-        Optional<Skill> skill = service.findByName("simple");
+        Optional<Skill> skill = loadSkillAndFind("simple", "Just plain content without frontmatter.");
         assertTrue(skill.isPresent());
         assertEquals("Just plain content without frontmatter.", skill.get().getContent());
     }
 
     @Test
     void parseSkillWithInvalidYaml() {
-        loadSkills(BAD_PREFIX + SKILL_FILE);
-        stubSkillContent(BAD_PREFIX + SKILL_FILE, """
+        // Should still load, but with name from path
+        Optional<Skill> skill = loadSkillAndFind("bad", """
                 ---
                 name: [invalid yaml here!!!
                 ---
                 Content body
                 """);
-
-        service.reload();
-
-        // Should still load, but with name from path
-        Optional<Skill> skill = service.findByName("bad");
         assertTrue(skill.isPresent());
     }
 
     @Test
     void parseSkillExtractsNameFromPath() {
-        loadSkills("my-skill/" + SKILL_FILE);
-        stubSkillContent("my-skill/" + SKILL_FILE, """
+        // Name should come from directory name
+        Optional<Skill> skill = loadSkillAndFind("my-skill", """
                 ---
                 description: No name in frontmatter
                 ---
                 Content
                 """);
-
-        service.reload();
-
-        // Name should come from directory name
-        Optional<Skill> skill = service.findByName("my-skill");
         assertTrue(skill.isPresent());
     }
 
@@ -264,8 +252,7 @@ class SkillServiceTest {
 
     @Test
     void parseSkillWithMcpConfig() {
-        loadSkills("github/" + SKILL_FILE);
-        stubSkillContent("github/" + SKILL_FILE, """
+        Optional<Skill> skill = loadSkillAndFind("github", """
                 ---
                 name: github
                 description: GitHub skill
@@ -278,10 +265,6 @@ class SkillServiceTest {
                 ---
                 GitHub integration skill.
                 """);
-
-        service.reload();
-
-        Optional<Skill> skill = service.findByName("github");
         assertTrue(skill.isPresent());
         assertNotNull(skill.get().getMcpConfig());
         assertEquals("npx -y @mcp/server-github", skill.get().getMcpConfig().getCommand());
@@ -292,8 +275,7 @@ class SkillServiceTest {
 
     @Test
     void parseSkillMcpConfigWithBlankCommand() {
-        loadSkills("nomcp/" + SKILL_FILE);
-        stubSkillContent("nomcp/" + SKILL_FILE, """
+        Optional<Skill> skill = loadSkillAndFind("nomcp", """
                 ---
                 name: nomcp
                 description: test
@@ -302,18 +284,13 @@ class SkillServiceTest {
                 ---
                 Content
                 """);
-
-        service.reload();
-
-        Optional<Skill> skill = service.findByName("nomcp");
         assertTrue(skill.isPresent());
         assertNull(skill.get().getMcpConfig());
     }
 
     @Test
     void parseSkillMcpConfigUsesDefaults() {
-        loadSkills("defaults/" + SKILL_FILE);
-        stubSkillContent("defaults/" + SKILL_FILE, """
+        Optional<Skill> skill = loadSkillAndFind("defaults", """
                 ---
                 name: defaults
                 description: test
@@ -322,10 +299,6 @@ class SkillServiceTest {
                 ---
                 Content
                 """);
-
-        service.reload();
-
-        Optional<Skill> skill = service.findByName("defaults");
         assertTrue(skill.isPresent());
         assertNotNull(skill.get().getMcpConfig());
         assertEquals(30, skill.get().getMcpConfig().getStartupTimeoutSeconds());
@@ -336,8 +309,7 @@ class SkillServiceTest {
 
     @Test
     void parseSkillWithNextSkill() {
-        loadSkills("step1/" + SKILL_FILE);
-        stubSkillContent("step1/" + SKILL_FILE, """
+        Optional<Skill> skill = loadSkillAndFind("step1", """
                 ---
                 name: step1
                 description: First step
@@ -345,18 +317,13 @@ class SkillServiceTest {
                 ---
                 Do step 1
                 """);
-
-        service.reload();
-
-        Optional<Skill> skill = service.findByName("step1");
         assertTrue(skill.isPresent());
         assertEquals("step2", skill.get().getNextSkill());
     }
 
     @Test
     void parseSkillWithConditionalNextSkills() {
-        loadSkills("router/" + SKILL_FILE);
-        stubSkillContent("router/" + SKILL_FILE, """
+        Optional<Skill> skill = loadSkillAndFind("router", """
                 ---
                 name: router
                 description: Route skill
@@ -366,10 +333,6 @@ class SkillServiceTest {
                 ---
                 Route based on condition
                 """);
-
-        service.reload();
-
-        Optional<Skill> skill = service.findByName("router");
         assertTrue(skill.isPresent());
         assertEquals("happy-path", skill.get().getConditionalNextSkills().get("success"));
         assertEquals("error-handler", skill.get().getConditionalNextSkills().get("error"));
@@ -377,8 +340,7 @@ class SkillServiceTest {
 
     @Test
     void parseSkillConditionalNextSkillsIgnoresNullValues() {
-        loadSkills("nullval/" + SKILL_FILE);
-        stubSkillContent("nullval/" + SKILL_FILE, """
+        Optional<Skill> skill = loadSkillAndFind("nullval", """
                 ---
                 name: nullval
                 description: test
@@ -388,10 +350,6 @@ class SkillServiceTest {
                 ---
                 Content
                 """);
-
-        service.reload();
-
-        Optional<Skill> skill = service.findByName("nullval");
         assertTrue(skill.isPresent());
         // null values should not be in the map
         assertFalse(skill.get().getConditionalNextSkills().containsKey("key2"));
@@ -401,8 +359,7 @@ class SkillServiceTest {
 
     @Test
     void parseSkillWithModelTier() {
-        loadSkills("coder/" + SKILL_FILE);
-        stubSkillContent("coder/" + SKILL_FILE, """
+        Optional<Skill> skill = loadSkillAndFind("coder", """
                 ---
                 name: coder
                 description: Coding skill
@@ -410,18 +367,13 @@ class SkillServiceTest {
                 ---
                 You are a coding assistant.
                 """);
-
-        service.reload();
-
-        Optional<Skill> skill = service.findByName("coder");
         assertTrue(skill.isPresent());
         assertEquals("coding", skill.get().getModelTier());
     }
 
     @Test
     void parseSkillWithReflectionTier() {
-        loadSkills("recover/" + SKILL_FILE);
-        stubSkillContent("recover/" + SKILL_FILE, """
+        Optional<Skill> skill = loadSkillAndFind("recover", """
                 ---
                 name: recover
                 description: Recovery skill
@@ -429,28 +381,19 @@ class SkillServiceTest {
                 ---
                 You are a recovery assistant.
                 """);
-
-        service.reload();
-
-        Optional<Skill> skill = service.findByName("recover");
         assertTrue(skill.isPresent());
         assertEquals("deep", skill.get().getReflectionTier());
     }
 
     @Test
     void parseSkillWithoutModelTierReturnsNull() {
-        loadSkills("plain/" + SKILL_FILE);
-        stubSkillContent("plain/" + SKILL_FILE, """
+        Optional<Skill> skill = loadSkillAndFind("plain", """
                 ---
                 name: plain
                 description: Plain skill
                 ---
                 Plain content.
                 """);
-
-        service.reload();
-
-        Optional<Skill> skill = service.findByName("plain");
         assertTrue(skill.isPresent());
         assertNull(skill.get().getModelTier());
     }
@@ -459,8 +402,7 @@ class SkillServiceTest {
 
     @Test
     void parseSkillWithMissingEnvRequirement() {
-        loadSkills("needsenv/" + SKILL_FILE);
-        stubSkillContent("needsenv/" + SKILL_FILE, """
+        Optional<Skill> skill = loadSkillAndFind("needsenv", """
                 ---
                 name: needsenv
                 description: Needs env
@@ -470,10 +412,6 @@ class SkillServiceTest {
                 ---
                 Content
                 """);
-
-        service.reload();
-
-        Optional<Skill> skill = service.findByName("needsenv");
         assertTrue(skill.isPresent());
         assertFalse(skill.get().isAvailable());
         assertNotNull(skill.get().getRequirements());
@@ -482,18 +420,13 @@ class SkillServiceTest {
 
     @Test
     void parseSkillAvailableWithNoRequirements() {
-        loadSkills("noreq/" + SKILL_FILE);
-        stubSkillContent("noreq/" + SKILL_FILE, """
+        Optional<Skill> skill = loadSkillAndFind("noreq", """
                 ---
                 name: noreq
                 description: No requirements
                 ---
                 Content
                 """);
-
-        service.reload();
-
-        Optional<Skill> skill = service.findByName("noreq");
         assertTrue(skill.isPresent());
         assertTrue(skill.get().isAvailable());
     }
@@ -502,8 +435,9 @@ class SkillServiceTest {
 
     @Test
     void parseSkillWithMissingRequiredVariables() {
-        loadSkills("needsvar/" + SKILL_FILE);
-        stubSkillContent("needsvar/" + SKILL_FILE, """
+        when(variableResolver.findMissingRequired(any(), any())).thenReturn(List.of("api_key"));
+
+        Optional<Skill> skill = loadSkillAndFind("needsvar", """
                 ---
                 name: needsvar
                 description: test
@@ -515,12 +449,6 @@ class SkillServiceTest {
                 ---
                 Content
                 """);
-
-        when(variableResolver.findMissingRequired(any(), any())).thenReturn(List.of("api_key"));
-
-        service.reload();
-
-        Optional<Skill> skill = service.findByName("needsvar");
         assertTrue(skill.isPresent());
         assertFalse(skill.get().isAvailable());
     }
@@ -573,8 +501,7 @@ class SkillServiceTest {
 
     @Test
     void getSkillContentReturnsContent() {
-        loadSkills("test/" + SKILL_FILE);
-        stubSkillContent("test/" + SKILL_FILE, """
+        loadSkillAndFind("test", """
                 ---
                 name: test
                 description: Test
@@ -582,15 +509,12 @@ class SkillServiceTest {
                 Test content here
                 """);
 
-        service.reload();
-
         assertEquals("Test content here", service.getSkillContent("test"));
     }
 
     @Test
     void findByLocationReturnsLoadedSkill() {
-        loadSkills("test/" + SKILL_FILE);
-        stubSkillContent("test/" + SKILL_FILE, """
+        loadSkillAndFind("test", """
                 ---
                 name: test
                 description: Test
@@ -602,8 +526,6 @@ class SkillServiceTest {
                 ---
                 Test content here
                 """);
-
-        service.reload();
 
         Optional<Skill> byLocation = service.findByLocation("test/SKILL.md");
         assertTrue(byLocation.isPresent());
@@ -663,8 +585,7 @@ class SkillServiceTest {
 
     @Test
     void parseSkillMcpConfigWithNoEnvSection() {
-        loadSkills("noenv/" + SKILL_FILE);
-        stubSkillContent("noenv/" + SKILL_FILE, """
+        Optional<Skill> skill = loadSkillAndFind("noenv", """
                 ---
                 name: noenv
                 description: MCP no env
@@ -673,10 +594,6 @@ class SkillServiceTest {
                 ---
                 Content
                 """);
-
-        service.reload();
-
-        Optional<Skill> skill = service.findByName("noenv");
         assertTrue(skill.isPresent());
         assertNotNull(skill.get().getMcpConfig());
         assertEquals("some-server", skill.get().getMcpConfig().getCommand());
@@ -685,25 +602,19 @@ class SkillServiceTest {
 
     @Test
     void parseSkillWithEmptyBody() {
-        loadSkills("empty-body/" + SKILL_FILE);
-        stubSkillContent("empty-body/" + SKILL_FILE, """
+        Optional<Skill> skill = loadSkillAndFind("empty-body", """
                 ---
                 name: empty-body
                 description: Empty body skill
                 ---
                 """);
-
-        service.reload();
-
-        Optional<Skill> skill = service.findByName("empty-body");
         assertTrue(skill.isPresent());
         assertEquals("", skill.get().getContent());
     }
 
     @Test
     void parseSkillMcpConfigWithNullCommand() {
-        loadSkills("nullcmd/" + SKILL_FILE);
-        stubSkillContent("nullcmd/" + SKILL_FILE, """
+        Optional<Skill> skill = loadSkillAndFind("nullcmd", """
                 ---
                 name: nullcmd
                 description: test
@@ -712,18 +623,13 @@ class SkillServiceTest {
                 ---
                 Content
                 """);
-
-        service.reload();
-
-        Optional<Skill> skill = service.findByName("nullcmd");
         assertTrue(skill.isPresent());
         assertNull(skill.get().getMcpConfig());
     }
 
     @Test
     void parseSkillConditionalNextSkillsWithNonMapType() {
-        loadSkills("badcns/" + SKILL_FILE);
-        stubSkillContent("badcns/" + SKILL_FILE, """
+        Optional<Skill> skill = loadSkillAndFind("badcns", """
                 ---
                 name: badcns
                 description: test
@@ -731,26 +637,19 @@ class SkillServiceTest {
                 ---
                 Content
                 """);
-
-        service.reload();
-
-        Optional<Skill> skill = service.findByName("badcns");
         assertTrue(skill.isPresent());
         assertTrue(skill.get().getConditionalNextSkills().isEmpty());
     }
 
     @Test
     void getSkillsSummaryIncludesAvailableSkills() {
-        loadSkills("s1/" + SKILL_FILE);
-        stubSkillContent("s1/" + SKILL_FILE, """
+        loadSkillAndFind("s1", """
                 ---
                 name: s1
                 description: First skill
                 ---
                 Content
                 """);
-
-        service.reload();
 
         String summary = service.getSkillsSummary();
         assertFalse(summary.isEmpty());
