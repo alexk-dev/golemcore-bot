@@ -98,6 +98,58 @@ class SkillDocumentServiceTest {
         assertEquals("Body", document.body());
     }
 
+    @SuppressWarnings("unchecked")
+    @Test
+    void shouldPreserveMcpAndVarsFieldsThroughRoundTrip() {
+        String input = """
+                ---
+                name: github
+                description: GitHub integration
+                mcp:
+                  command: npx -y @mcp/server-github
+                  env:
+                    GITHUB_TOKEN: ${GITHUB_TOKEN}
+                  startup_timeout: 45
+                  idle_timeout: 10
+                vars:
+                  api_key:
+                    source: env
+                    env_var: GITHUB_TOKEN
+                    required: true
+                next_skill: summary
+                conditional_next_skills:
+                  success: deploy
+                  error: rollback
+                ---
+                GitHub integration skill.
+                """;
+
+        SkillDocument parsed = service.parseDocument(input);
+        String rendered = service.renderDocument(parsed.metadata(), parsed.body());
+        SkillDocument reparsed = service.parseDocument(rendered);
+
+        assertEquals(parsed.metadata().get("name"), reparsed.metadata().get("name"));
+        assertEquals(parsed.metadata().get("description"), reparsed.metadata().get("description"));
+        assertEquals(parsed.metadata().get("next_skill"), reparsed.metadata().get("next_skill"));
+        assertEquals(parsed.body(), reparsed.body());
+
+        Map<String, Object> mcpOriginal = (Map<String, Object>) parsed.metadata().get("mcp");
+        Map<String, Object> mcpReparsed = (Map<String, Object>) reparsed.metadata().get("mcp");
+        assertEquals(mcpOriginal.get("command"), mcpReparsed.get("command"));
+        assertEquals(mcpOriginal.get("startup_timeout"), mcpReparsed.get("startup_timeout"));
+        assertEquals(mcpOriginal.get("idle_timeout"), mcpReparsed.get("idle_timeout"));
+
+        Map<String, Object> envOriginal = (Map<String, Object>) mcpOriginal.get("env");
+        Map<String, Object> envReparsed = (Map<String, Object>) mcpReparsed.get("env");
+        assertEquals(envOriginal.get("GITHUB_TOKEN"), envReparsed.get("GITHUB_TOKEN"));
+
+        Map<String, Object> conditionalOriginal = (Map<String, Object>) parsed.metadata()
+                .get("conditional_next_skills");
+        Map<String, Object> conditionalReparsed = (Map<String, Object>) reparsed.metadata()
+                .get("conditional_next_skills");
+        assertEquals(conditionalOriginal, conditionalReparsed);
+    }
+
     @Test
     void shouldRenderOrderedFrontmatterBeforeBody() {
         String rendered = service.renderDocument(Map.of(
