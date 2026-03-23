@@ -11,6 +11,21 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.SessionIdentity;
+import me.golemcore.bot.domain.context.ContextAssembler;
+import me.golemcore.bot.domain.context.ContextLayer;
+import me.golemcore.bot.domain.context.PromptComposer;
+import me.golemcore.bot.domain.context.layer.AutoModeLayer;
+import me.golemcore.bot.domain.context.layer.HiveLayer;
+import me.golemcore.bot.domain.context.layer.IdentityLayer;
+import me.golemcore.bot.domain.context.layer.MemoryLayer;
+import me.golemcore.bot.domain.context.layer.PlanModeLayer;
+import me.golemcore.bot.domain.context.layer.RagLayer;
+import me.golemcore.bot.domain.context.layer.SkillLayer;
+import me.golemcore.bot.domain.context.layer.TierAwarenessLayer;
+import me.golemcore.bot.domain.context.layer.ToolLayer;
+import me.golemcore.bot.domain.context.layer.WorkspaceInstructionsLayer;
+import me.golemcore.bot.domain.context.resolution.SkillResolver;
+import me.golemcore.bot.domain.context.resolution.TierResolver;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
@@ -216,21 +231,25 @@ class PlanWorkLifecycleBddTest {
         PlanGetTool planGetTool = new PlanGetTool(planService);
         when(toolCallExecutionService.listTools()).thenReturn(List.of(planSetContentTool, planGetTool));
 
-        return new ContextBuildingSystem(
-                memoryComponent,
-                skillComponent,
-                templateEngine,
-                mcpPort,
-                toolCallExecutionService,
-                ragPort,
-                new BotProperties(),
-                autoModeService,
-                delayedActionPolicyService,
-                planService,
-                promptSectionService,
-                runtimeConfigService,
-                modelSelectionService,
-                userPreferencesService,
-                workspaceInstructionService);
+        SkillResolver skillResolver = new SkillResolver(skillComponent);
+        TierResolver tierResolver = new TierResolver(
+                userPreferencesService, modelSelectionService, runtimeConfigService, skillComponent);
+
+        List<ContextLayer> layers = List.of(
+                new IdentityLayer(promptSectionService, userPreferencesService),
+                new WorkspaceInstructionsLayer(workspaceInstructionService),
+                new MemoryLayer(memoryComponent, runtimeConfigService),
+                new RagLayer(ragPort),
+                new SkillLayer(skillComponent, templateEngine),
+                new ToolLayer(toolCallExecutionService, mcpPort, planService, delayedActionPolicyService),
+                new TierAwarenessLayer(userPreferencesService),
+                new AutoModeLayer(autoModeService),
+                new PlanModeLayer(planService),
+                new HiveLayer());
+
+        ContextAssembler contextAssembler = new ContextAssembler(
+                skillResolver, tierResolver, layers, new PromptComposer());
+
+        return new ContextBuildingSystem(contextAssembler);
     }
 }
