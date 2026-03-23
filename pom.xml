@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.0.3</version>
+        <version>4.0.4</version>
         <relativePath/>
     </parent>
     <groupId>me.golemcore</groupId>
@@ -25,7 +25,7 @@
 
     <properties>
         <java.version>25</java.version>
-        <feign.version>13.9.3</feign.version>
+        <feign.version>13.11</feign.version>
         <okhttp.version>5.3.2</okhttp.version>
         <telegram.version>9.4.0</telegram.version>
         <langchain4j.version>1.12.2</langchain4j.version>
@@ -190,7 +190,7 @@
         <dependency>
             <groupId>com.github.luben</groupId>
             <artifactId>zstd-jni</artifactId>
-            <version>1.5.7-5</version>
+            <version>1.5.7-7</version>
         </dependency>
 
         <!-- Testing -->
