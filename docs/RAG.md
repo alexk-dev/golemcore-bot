@@ -113,7 +113,7 @@ Trivial exchanges are **not** indexed to avoid polluting the knowledge graph:
 
 ```
 hi, hello, hey, bye, thanks, thank you, ok, okay, yes, no,
-привет, пока, спасибо, да, нет
+privet, poka, spasibo, da, net
 ```
 
 **Length filter** — exchanges where `user.length + assistant.length < indexMinLength` (default 50 chars).
