@@ -116,8 +116,11 @@ public class ModelsController {
     @PostMapping("/registry/resolve")
     public Mono<ResponseEntity<ResolveRegistryResponse>> resolveModelRegistry(
             @RequestBody ResolveRegistryRequest request) {
-        String provider = requireValue(request != null ? request.provider() : null, "provider");
-        String modelId = requireValue(request != null ? request.modelId() : null, "modelId");
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "request body is required");
+        }
+        String provider = requireValue(request.provider(), "provider");
+        String modelId = requireValue(request.modelId(), "modelId");
         try {
             ModelRegistryService.ResolveResult result = modelRegistryService.resolveDefaults(provider, modelId);
             return Mono.just(ResponseEntity.ok(

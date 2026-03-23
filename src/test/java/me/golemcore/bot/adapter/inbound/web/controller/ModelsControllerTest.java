@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class ModelsControllerTest {
@@ -202,6 +203,16 @@ class ModelsControllerTest {
         assertNull(body.get("defaultSettings"));
         assertNull(body.get("configSource"));
         assertEquals("miss", body.get("cacheStatus"));
+    }
+
+    @Test
+    void shouldRejectNullModelRegistryResolveRequest() {
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.resolveModelRegistry(null).block());
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertEquals("request body is required", ex.getReason());
+        verifyNoInteractions(modelRegistryService);
     }
 
     @Test

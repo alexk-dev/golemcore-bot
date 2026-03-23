@@ -221,11 +221,14 @@ public class ModelRegistryService {
     private RegistrySource resolveSource() {
         RuntimeConfig runtimeConfig = runtimeConfigService.getRuntimeConfig();
         RuntimeConfig.ModelRegistryConfig config = runtimeConfig.getModelRegistry();
-        String repositoryUrl = trimToNull(config != null ? config.getRepositoryUrl() : null);
+        if (config == null) {
+            return new RegistrySource(DEFAULT_REPOSITORY_URL, DEFAULT_BRANCH);
+        }
+        String repositoryUrl = trimToNull(config.getRepositoryUrl());
         if (repositoryUrl == null) {
             return new RegistrySource(DEFAULT_REPOSITORY_URL, DEFAULT_BRANCH);
         }
-        String branch = trimToNull(config != null ? config.getBranch() : null);
+        String branch = trimToNull(config.getBranch());
         return new RegistrySource(repositoryUrl, branch != null ? branch : DEFAULT_BRANCH);
     }
 

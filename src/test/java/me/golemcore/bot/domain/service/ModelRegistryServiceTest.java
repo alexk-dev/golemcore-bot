@@ -134,6 +134,59 @@ class ModelRegistryServiceTest {
     }
 
     @Test
+    void shouldUseDefaultOfficialRegistrySourceWhenModelRegistrySectionIsNull() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .modelRegistry(null)
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+        service.putRemoteFile("models/gpt-5.1.json", """
+                {
+                  "displayName": "GPT-5.1",
+                  "supportsVision": true,
+                  "supportsTemperature": false,
+                  "maxInputTokens": 1000000
+                }
+                """);
+
+        ModelRegistryService.ResolveResult result = service.resolveDefaults("openai", "gpt-5.1");
+
+        assertNotNull(result.defaultSettings());
+        assertEquals("shared", result.configSource());
+        assertEquals("remote-hit", result.cacheStatus());
+        assertTrue(service.requestedUris().stream().anyMatch(
+                uri -> "https://raw.githubusercontent.com/alexk-dev/golemcore-models/main/models/gpt-5.1.json"
+                        .equals(uri)));
+    }
+
+    @Test
+    void shouldUseDefaultBranchWhenConfiguredBranchIsBlank() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .modelRegistry(RuntimeConfig.ModelRegistryConfig.builder()
+                        .repositoryUrl("https://github.com/example/custom-models")
+                        .branch("   ")
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+        service.putRemoteFile("models/gpt-5.1.json", """
+                {
+                  "displayName": "GPT-5.1",
+                  "supportsVision": true,
+                  "supportsTemperature": false,
+                  "maxInputTokens": 1000000
+                }
+                """);
+
+        ModelRegistryService.ResolveResult result = service.resolveDefaults("openai", "gpt-5.1");
+
+        assertNotNull(result.defaultSettings());
+        assertEquals("shared", result.configSource());
+        assertEquals("remote-hit", result.cacheStatus());
+        assertTrue(service.requestedUris().stream().anyMatch(
+                uri -> "https://raw.githubusercontent.com/example/custom-models/main/models/gpt-5.1.json"
+                        .equals(uri)));
+    }
+
+    @Test
     void shouldUseFreshCacheWithoutRefetchingRemoteConfig() {
         service.putRemoteFile("models/gpt-5.1.json", """
                 {
