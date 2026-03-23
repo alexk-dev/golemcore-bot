@@ -12,6 +12,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ReleaseWorkflowTest {
 
     private static final Path RELEASE_WORKFLOW = Path.of(".github/workflows/release.yml");
+    private static final String RELEASE_JOB_HEADER = "jobs:\n  release:\n";
+    private static final String RELEASE_STEPS_HEADER = "\n    steps:\n";
 
     @Test
     void shouldConfigureCentralServerCredentialsViaSetupJava() throws IOException {
@@ -28,5 +30,21 @@ class ReleaseWorkflowTest {
 
         assertFalse(workflow.contains("central.publishing.token.username"));
         assertFalse(workflow.contains("central.publishing.token.password"));
+    }
+
+    @Test
+    void shouldExposeCentralTokenEnvironmentToAllReleaseSteps() throws IOException {
+        String workflow = Files.readString(RELEASE_WORKFLOW);
+        String releaseJob = sectionBetween(workflow, RELEASE_JOB_HEADER, RELEASE_STEPS_HEADER);
+
+        assertTrue(releaseJob.contains("CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}"));
+        assertTrue(releaseJob.contains("CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}"));
+    }
+
+    private static String sectionBetween(String content, String startMarker, String endMarker) {
+        int start = content.indexOf(startMarker);
+        int end = content.indexOf(endMarker, start);
+
+        return content.substring(start, end);
     }
 }
