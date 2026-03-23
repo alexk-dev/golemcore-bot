@@ -5,7 +5,13 @@ import { Alert } from '../../../components/ui/alert';
 import { Card, CardContent } from '../../../components/ui/card';
 import { Skeleton } from '../../../components/ui/skeleton';
 import { extractErrorMessage } from '../../../utils/extractErrorMessage';
-import { useDeleteModel, useModelsConfig, useReloadModels, useSaveModel } from '../../../hooks/useModels';
+import {
+  useDeleteModel,
+  useModelsConfig,
+  useReloadModels,
+  useResolveModelRegistry,
+  useSaveModel,
+} from '../../../hooks/useModels';
 import { AvailableModelInsertModal } from './AvailableModelInsertModal';
 import { ModelCatalogForm } from './ModelCatalogForm';
 import { ModelCatalogSidebar } from './ModelCatalogSidebar';
@@ -130,6 +136,7 @@ export function ModelCatalogEditor({ providerProfiles }: ModelCatalogEditorProps
   const saveModel = useSaveModel();
   const deleteModel = useDeleteModel();
   const reloadModels = useReloadModels();
+  const resolveModelRegistry = useResolveModelRegistry();
   const [selectedProviderName, setSelectedProviderName] = useState('');
   const [selectedModelId, setSelectedModelId] = useState(NEW_MODEL_SELECTION);
   const [draft, setDraft] = useState(createEmptyModelDraft(''));
@@ -226,15 +233,27 @@ export function ModelCatalogEditor({ providerProfiles }: ModelCatalogEditorProps
     });
   }
 
-  function handleSuggestionSelect(suggestion: DiscoveredProviderModel): void {
-    const nextDraft = createDraftFromSuggestion(suggestion, modelsConfig);
-    const existingModel = modelsConfig?.models[nextDraft.id];
-    startTransition(() => {
-      setSelectedProviderName(suggestion.provider);
-      setSelectedModelId(existingModel != null ? nextDraft.id : NEW_MODEL_SELECTION);
-      setDraft(nextDraft);
-      setIsInsertModalOpen(false);
-    });
+  async function handleSuggestionSelect(suggestion: DiscoveredProviderModel): Promise<void> {
+    try {
+      const resolvedRegistry = await resolveModelRegistry.mutateAsync({
+        provider: suggestion.provider,
+        modelId: suggestion.id,
+      });
+      const nextDraft = createDraftFromSuggestion(
+        suggestion,
+        modelsConfig,
+        resolvedRegistry.defaultSettings,
+      );
+      const existingModel = modelsConfig?.models[nextDraft.id];
+      startTransition(() => {
+        setSelectedProviderName(suggestion.provider);
+        setSelectedModelId(existingModel != null ? nextDraft.id : NEW_MODEL_SELECTION);
+        setDraft(nextDraft);
+        setIsInsertModalOpen(false);
+      });
+    } catch (error) {
+      toast.error(extractErrorMessage(error));
+    }
   }
 
   function handleSelectProvider(providerName: string): void {
@@ -293,6 +312,7 @@ export function ModelCatalogEditor({ providerProfiles }: ModelCatalogEditorProps
         <AvailableModelInsertModal
           providerProfiles={providerProfiles}
           providerName={selectedProviderName}
+          isSelectingSuggestion={resolveModelRegistry.isPending}
           onHide={() => setIsInsertModalOpen(false)}
           onSelectSuggestion={handleSuggestionSelect}
         />

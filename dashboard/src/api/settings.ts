@@ -79,6 +79,7 @@ interface RuntimeConfigUiRecord extends UnknownRecord {
   tools?: UnknownRecord;
   voice?: UnknownRecord;
   hive?: UnknownRecord;
+  modelRegistry?: unknown;
 }
 
 function toUiRuntimeConfig(data: RuntimeConfigUiRecord): RuntimeConfig {
@@ -125,6 +126,7 @@ function toUiRuntimeConfig(data: RuntimeConfigUiRecord): RuntimeConfig {
     };
   }
   cfg.modelRouter = toModelRouterConfig(cfg.modelRouter);
+  cfg.modelRegistry = toModelRegistryConfig(cfg.modelRegistry);
   return cfg as unknown as RuntimeConfig;
 }
 
@@ -197,6 +199,7 @@ export async function updateTierOverrides(overrides: Record<string, { model: str
 export interface RuntimeConfig {
   telegram: TelegramConfig;
   modelRouter: ModelRouterConfig;
+  modelRegistry: ModelRegistryConfig;
   llm: LlmConfig;
   tools: ToolsConfig;
   voice: VoiceConfig;
@@ -211,6 +214,11 @@ export interface RuntimeConfig {
   rateLimit: RateLimitConfig;
   security: SecurityConfig;
   compaction: CompactionConfig;
+}
+
+export interface ModelRegistryConfig {
+  repositoryUrl: string | null;
+  branch: string | null;
 }
 
 export interface LlmConfig {
@@ -531,6 +539,14 @@ function toNullableString(value: unknown): string | null {
   }
   const normalized = value.trim();
   return normalized.length > 0 ? normalized : null;
+}
+
+function toModelRegistryConfig(value: unknown): ModelRegistryConfig {
+  const record = value != null && typeof value === 'object' ? value as UnknownRecord : {};
+  return {
+    repositoryUrl: toNullableString(record.repositoryUrl),
+    branch: toNullableString(record.branch) ?? 'main',
+  };
 }
 
 function toTierBinding(value: unknown): TierBinding {

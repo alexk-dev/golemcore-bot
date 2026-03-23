@@ -201,6 +201,7 @@ export function getGroupedCatalogModels(
 export function createDraftFromSuggestion(
   suggestion: DiscoveredProviderModel,
   modelsConfig: ModelsConfig | null | undefined,
+  resolvedSettings: ModelSettings | null = null,
 ): ModelDraft {
   const targetId = resolveSuggestedModelId(suggestion, modelsConfig?.models ?? {});
   const existing = modelsConfig?.models[targetId];
@@ -208,6 +209,14 @@ export function createDraftFromSuggestion(
     return {
       ...toModelDraft(targetId, existing),
     };
+  }
+
+  if (resolvedSettings != null) {
+    return toModelDraft(targetId, {
+      ...resolvedSettings,
+      provider: suggestion.provider,
+      displayName: resolvedSettings.displayName ?? suggestion.displayName,
+    });
   }
 
   const maxInputTokens = DEFAULT_MAX_INPUT_TOKENS;

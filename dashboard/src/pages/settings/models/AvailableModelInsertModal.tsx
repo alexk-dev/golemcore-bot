@@ -14,12 +14,15 @@ import type { ProviderProfileSummary } from './modelCatalogProviderProfiles';
 interface AvailableModelInsertModalProps {
   providerProfiles: ProviderProfileSummary[];
   providerName: string;
+  isSelectingSuggestion: boolean;
   onHide: () => void;
-  onSelectSuggestion: (suggestion: DiscoveredProviderModel) => void;
+  onSelectSuggestion: (suggestion: DiscoveredProviderModel) => Promise<void>;
 }
 
 interface DiscoveredModelListProps {
   models: DiscoveredProviderModel[];
+  isSelectingSuggestion: boolean;
+  pendingSuggestionKey: string | null;
   onSelect: (suggestion: DiscoveredProviderModel) => void;
 }
 
@@ -27,6 +30,8 @@ interface DiscoveryResultsProps {
   filteredModels: DiscoveredProviderModel[];
   isLoading: boolean;
   error: unknown;
+  isSelectingSuggestion: boolean;
+  pendingSuggestionKey: string | null;
   providerName: string;
   queryModelCount: number;
   search: string;
@@ -56,40 +61,50 @@ function filterDiscoveredModels(models: DiscoveredProviderModel[], query: string
 
 function DiscoveredModelList({
   models,
+  isSelectingSuggestion,
+  pendingSuggestionKey,
   onSelect,
 }: DiscoveredModelListProps): ReactElement {
   return (
     <div className="grid max-h-[24rem] gap-3 overflow-y-auto pr-1">
-      {models.map((model) => (
-        <button
-          key={`${model.provider}-${model.id}`}
-          type="button"
-          onClick={() => onSelect(model)}
-          className={cn(
-            'rounded-2xl border border-border/80 bg-card/70 px-4 py-4 text-left transition-all',
-            'hover:border-primary/35 hover:bg-primary/5'
-          )}
-        >
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0 space-y-1">
-              <div className="text-sm font-semibold text-foreground">{model.displayName}</div>
-              <div className="font-mono text-xs text-muted-foreground">{model.id}</div>
-            </div>
-
-            <div className="flex shrink-0 items-center gap-2 text-primary">
-              <span className="text-xs font-semibold uppercase tracking-[0.14em]">Insert</span>
-              <FiArrowRight size={14} />
-            </div>
-          </div>
-
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Badge variant="secondary">{model.provider}</Badge>
-            {model.ownedBy != null && model.ownedBy.length > 0 && (
-              <Badge variant="info">{model.ownedBy}</Badge>
+      {models.map((model) => {
+        const suggestionKey = `${model.provider}-${model.id}`;
+        const isPending = pendingSuggestionKey === suggestionKey;
+        return (
+          <button
+            key={suggestionKey}
+            type="button"
+            onClick={() => onSelect(model)}
+            disabled={isSelectingSuggestion}
+            className={cn(
+              'rounded-2xl border border-border/80 bg-card/70 px-4 py-4 text-left transition-all',
+              'hover:border-primary/35 hover:bg-primary/5',
+              isSelectingSuggestion && 'cursor-wait opacity-70'
             )}
-          </div>
-        </button>
-      ))}
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0 space-y-1">
+                <div className="text-sm font-semibold text-foreground">{model.displayName}</div>
+                <div className="font-mono text-xs text-muted-foreground">{model.id}</div>
+              </div>
+
+              <div className="flex shrink-0 items-center gap-2 text-primary">
+                <span className="text-xs font-semibold uppercase tracking-[0.14em]">
+                  {isPending ? 'Preparing...' : 'Insert'}
+                </span>
+                <FiArrowRight size={14} />
+              </div>
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Badge variant="secondary">{model.provider}</Badge>
+              {model.ownedBy != null && model.ownedBy.length > 0 && (
+                <Badge variant="info">{model.ownedBy}</Badge>
+              )}
+            </div>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -98,6 +113,8 @@ function DiscoveryResults({
   filteredModels,
   isLoading,
   error,
+  isSelectingSuggestion,
+  pendingSuggestionKey,
   providerName,
   queryModelCount,
   search,
@@ -119,6 +136,10 @@ function DiscoveryResults({
         <Alert variant="secondary">Loading live models for `{providerName}`...</Alert>
       )}
 
+      {isSelectingSuggestion && (
+        <Alert variant="secondary">Resolving registry defaults for the selected model...</Alert>
+      )}
+
       {error != null && (
         <Alert variant="danger">
           Failed to load models for `{providerName}`: {extractErrorMessage(error)}
@@ -136,6 +157,8 @@ function DiscoveryResults({
       {filteredModels.length > 0 && (
         <DiscoveredModelList
           models={filteredModels}
+          isSelectingSuggestion={isSelectingSuggestion}
+          pendingSuggestionKey={pendingSuggestionKey}
           onSelect={onSelectSuggestion}
         />
       )}
@@ -146,16 +169,28 @@ function DiscoveryResults({
 export function AvailableModelInsertModal({
   providerProfiles,
   providerName,
+  isSelectingSuggestion,
   onHide,
   onSelectSuggestion,
 }: AvailableModelInsertModalProps): ReactElement {
   const selectedProvider = getSelectedProviderProfile(providerProfiles, providerName);
   const isProviderReady = selectedProvider?.isReady ?? false;
   const [search, setSearch] = useState('');
+  const [pendingSuggestionKey, setPendingSuggestionKey] = useState<string | null>(null);
   const deferredSearch = useDeferredValue(search);
   const discoveryQuery = useDiscoveredProviderModels(providerName, isProviderReady);
   const filteredModels = filterDiscoveredModels(discoveryQuery.data ?? [], deferredSearch);
   const discoveredModelCount = discoveryQuery.data?.length ?? 0;
+
+  async function handleSelectSuggestion(suggestion: DiscoveredProviderModel): Promise<void> {
+    const suggestionKey = `${suggestion.provider}-${suggestion.id}`;
+    setPendingSuggestionKey(suggestionKey);
+    try {
+      await onSelectSuggestion(suggestion);
+    } finally {
+      setPendingSuggestionKey(null);
+    }
+  }
 
   return (
     <Modal show onHide={onHide} centered size="lg">
@@ -179,6 +214,7 @@ export function AvailableModelInsertModal({
               <Badge variant={isProviderReady ? 'success' : 'warning'}>
                 {isProviderReady ? 'API ready' : 'API unavailable'}
               </Badge>
+              <Badge variant="info">Registry defaults on insert</Badge>
             </div>
             <p className="mt-3 text-sm text-muted-foreground">
               New catalog entries created from this dialog will stay attached to `{providerName}`.
@@ -207,18 +243,22 @@ export function AvailableModelInsertModal({
               filteredModels={filteredModels}
               isLoading={discoveryQuery.isLoading}
               error={discoveryQuery.error}
+              isSelectingSuggestion={isSelectingSuggestion}
+              pendingSuggestionKey={pendingSuggestionKey}
               providerName={providerName}
               queryModelCount={discoveredModelCount}
               search={search}
               onSearchChange={setSearch}
-              onSelectSuggestion={onSelectSuggestion}
+              onSelectSuggestion={(suggestion) => {
+                void handleSelectSuggestion(suggestion);
+              }}
             />
           )}
         </section>
       </Modal.Body>
 
       <Modal.Footer>
-        <Button variant="secondary" onClick={onHide}>
+        <Button variant="secondary" onClick={onHide} disabled={isSelectingSuggestion}>
           Close
         </Button>
       </Modal.Footer>
