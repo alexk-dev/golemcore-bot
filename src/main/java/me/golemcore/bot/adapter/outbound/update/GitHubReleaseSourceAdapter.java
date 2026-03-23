@@ -231,22 +231,22 @@ public class GitHubReleaseSourceAdapter implements ReleaseSourcePort {
     }
 
     private String extractExpectedSha256(String checksumsText, String assetName) {
-        String[] lines = checksumsText.split("\\R");
-        for (String line : lines) {
+        for (String line : checksumsText.lines().toList()) {
             String trimmed = line.trim();
             if (trimmed.isBlank()) {
                 continue;
             }
-            String[] parts = trimmed.split("\\s+");
-            if (parts.length < 2) {
+            int spaceIndex = trimmed.indexOf(' ');
+            if (spaceIndex < 0) {
                 continue;
             }
-            String candidateFile = parts[1];
+            String hexDigest = trimmed.substring(0, spaceIndex);
+            String candidateFile = trimmed.substring(spaceIndex).stripLeading();
             if (candidateFile.startsWith("*")) {
                 candidateFile = candidateFile.substring(1);
             }
             if (assetName.equals(candidateFile)) {
-                return parts[0].toLowerCase(Locale.ROOT);
+                return hexDigest.toLowerCase(Locale.ROOT);
             }
         }
         throw new IllegalStateException("Unable to find checksum for asset: " + assetName);

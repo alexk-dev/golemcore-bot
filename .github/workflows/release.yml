@@ -220,13 +220,15 @@ jobs:
           MAVEN_GPG_PRIVATE_KEY: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
           MAVEN_GPG_KEY_ID: ${{ secrets.MAVEN_GPG_KEY_ID }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
         run: |
           echo "${MAVEN_GPG_PRIVATE_KEY}" | gpg --batch --import
           ./mvnw -B -ntp deploy -P central-publish -DskipTests -DskipGitHooks=true \
             -Dgpg.keyname="${MAVEN_GPG_KEY_ID}" \
             -Dgpg.passphrase="${MAVEN_GPG_PASSPHRASE}" \
-            -Dcentral.publishing.token.username="${{ secrets.CENTRAL_TOKEN_USERNAME }}" \
-            -Dcentral.publishing.token.password="${{ secrets.CENTRAL_TOKEN_PASSWORD }}"
+            -Dcentral.publishing.token.username="${CENTRAL_TOKEN_USERNAME}" \
+            -Dcentral.publishing.token.password="${CENTRAL_TOKEN_PASSWORD}"
 
       - name: Trigger Docker publish for release tag
         if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
