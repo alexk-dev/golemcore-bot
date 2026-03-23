@@ -2,6 +2,7 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.service.ModelRegistryService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.ProviderModelDiscoveryService;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
@@ -34,6 +35,7 @@ public class ModelsController {
     private final ModelConfigService modelConfigService;
     private final ModelSelectionService modelSelectionService;
     private final ProviderModelDiscoveryService providerModelDiscoveryService;
+    private final ModelRegistryService modelRegistryService;
 
     /**
      * Get full models config (all models + defaults).
@@ -111,6 +113,21 @@ public class ModelsController {
         }
     }
 
+    @PostMapping("/registry/resolve")
+    public Mono<ResponseEntity<ResolveRegistryResponse>> resolveModelRegistry(
+            @RequestBody ResolveRegistryRequest request) {
+        String provider = requireValue(request != null ? request.provider() : null, "provider");
+        String modelId = requireValue(request != null ? request.modelId() : null, "modelId");
+        try {
+            ModelRegistryService.ResolveResult result = modelRegistryService.resolveDefaults(provider, modelId);
+            return Mono.just(ResponseEntity.ok(
+                    new ResolveRegistryResponse(result.defaultSettings(), result.configSource(),
+                            result.cacheStatus())));
+        } catch (IllegalArgumentException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, ex.getMessage());
+        }
+    }
+
     /**
      * Force reload models from workspace.
      */
@@ -118,6 +135,20 @@ public class ModelsController {
     public Mono<ResponseEntity<Void>> reloadModels() {
         modelConfigService.reload();
         return Mono.just(ResponseEntity.ok().build());
+    }
+
+    private String requireValue(String value, String fieldName) {
+        if (value == null || value.trim().isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, fieldName + " is required");
+        }
+        return value.trim();
+    }
+
+    public record ResolveRegistryRequest(String provider, String modelId) {
+    }
+
+    public record ResolveRegistryResponse(ModelConfigService.ModelSettings defaultSettings, String configSource,
+            String cacheStatus) {
     }
 
     private record AvailableModelDto(String id, String displayName, boolean hasReasoning,
