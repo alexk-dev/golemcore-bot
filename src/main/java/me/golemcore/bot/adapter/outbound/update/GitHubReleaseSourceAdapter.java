@@ -127,7 +127,7 @@ public class GitHubReleaseSourceAdapter implements ReleaseSourcePort {
         String checksumUrl = GITHUB_API_BASE + RELEASE_ASSET_API_PATH + checksumAssetId;
 
         return Optional.of(AvailableRelease.builder()
-                .version(extractVersion(tagName, assetName))
+                .version(extractVersion(tagName))
                 .tagName(tagName)
                 .assetName(assetName)
                 .downloadUrl(downloadUrl)
@@ -222,65 +222,12 @@ public class GitHubReleaseSourceAdapter implements ReleaseSourcePort {
         }
     }
 
-    private String extractVersion(String tagName, String assetName) {
-        String normalized = normalizeOptionalVersion(tagName);
-        if (normalized != null) {
-            return normalized;
-        }
-        String fromAsset = extractVersionFromAssetName(assetName);
-        if (fromAsset != null) {
-            return fromAsset;
-        }
-        return tagName;
-    }
-
-    private String normalizeOptionalVersion(String version) {
-        if (version == null || version.isBlank()) {
-            return null;
-        }
-        String normalized = version.trim();
+    private String extractVersion(String tagName) {
+        String normalized = tagName.trim();
         if (normalized.startsWith("v") || normalized.startsWith("V")) {
             normalized = normalized.substring(1);
         }
         return normalized;
-    }
-
-    private String extractVersionFromAssetName(String assetName) {
-        if (assetName == null || assetName.isBlank()) {
-            return null;
-        }
-        int length = assetName.length();
-        for (int i = 0; i < length; i++) {
-            char current = assetName.charAt(i);
-            if (current < '0' || current > '9') {
-                continue;
-            }
-            if (i > 0 && assetName.charAt(i - 1) >= '0' && assetName.charAt(i - 1) <= '9') {
-                continue;
-            }
-            int dotCount = 0;
-            int end = i;
-            while (end < length) {
-                char c = assetName.charAt(end);
-                if (c == '.') {
-                    dotCount++;
-                } else if (c < '0' || c > '9') {
-                    break;
-                }
-                end++;
-            }
-            if (dotCount >= 2) {
-                String candidate = assetName.substring(i, end);
-                if (candidate.endsWith(".")) {
-                    candidate = candidate.substring(0, candidate.length() - 1);
-                }
-                if (candidate.endsWith(".jar")) {
-                    candidate = candidate.substring(0, candidate.length() - 4);
-                }
-                return candidate;
-            }
-        }
-        return null;
     }
 
     private String extractExpectedSha256(String checksumsText, String assetName) {

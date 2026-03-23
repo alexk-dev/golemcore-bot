@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.model.AvailableRelease;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.ReleaseSourcePort;
-import me.golemcore.bot.testsupport.http.OkHttpMockEngine;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -183,6 +182,121 @@ class MavenCentralReleaseSourceAdapterTest {
                 .build();
 
         assertThrows(IllegalStateException.class, () -> adapter.downloadAsset(release));
+    }
+
+    @Test
+    void shouldRejectHttpUri() {
+        adapter = new StubMavenCentralAdapter(objectMapper, botProperties, new StubHttpClient());
+
+        AvailableRelease release = AvailableRelease.builder()
+                .version("0.5.0")
+                .assetName("bot-0.5.0.jar")
+                .downloadUrl("http://repo1.maven.org/maven2/me/golemcore/bot/0.5.0/bot-0.5.0.jar")
+                .build();
+
+        assertThrows(IllegalStateException.class, () -> adapter.downloadAsset(release));
+    }
+
+    @Test
+    void shouldRejectNullDownloadUri() {
+        adapter = new StubMavenCentralAdapter(objectMapper, botProperties, new StubHttpClient());
+
+        AvailableRelease release = AvailableRelease.builder()
+                .version("0.5.0")
+                .assetName("bot-0.5.0.jar")
+                .downloadUrl(null)
+                .build();
+
+        assertThrows(Exception.class, () -> adapter.downloadAsset(release));
+    }
+
+    @Test
+    void shouldBuildFallbackUrlWhenDownloadUrlIsBlank() throws Exception {
+        byte[] jarContent = "fallback-jar".getBytes(StandardCharsets.UTF_8);
+        StubHttpClient httpClient = new StubHttpClient();
+        httpClient.enqueueBinaryResponse(200, jarContent);
+        adapter = new StubMavenCentralAdapter(objectMapper, botProperties, httpClient);
+
+        AvailableRelease release = AvailableRelease.builder()
+                .version("0.5.0")
+                .assetName("bot-0.5.0.jar")
+                .downloadUrl("")
+                .build();
+
+        try (InputStream stream = adapter.downloadAsset(release)) {
+            byte[] downloaded = stream.readAllBytes();
+            assertEquals("fallback-jar", new String(downloaded, StandardCharsets.UTF_8));
+        }
+    }
+
+    @Test
+    void shouldBuildFallbackChecksumUrlWhenBlank() throws Exception {
+        String sha1 = "da39a3ee5e6b4b0d3255bfef95601890afd80709";
+        StubHttpClient httpClient = new StubHttpClient();
+        httpClient.enqueueStringResponse(200, sha1);
+        adapter = new StubMavenCentralAdapter(objectMapper, botProperties, httpClient);
+
+        AvailableRelease release = AvailableRelease.builder()
+                .version("0.5.0")
+                .assetName("bot-0.5.0.jar")
+                .checksumUrl("")
+                .build();
+
+        ReleaseSourcePort.ChecksumInfo info = adapter.downloadChecksum(release);
+        assertEquals(sha1, info.hexDigest());
+    }
+
+    @Test
+    void shouldThrowWhenChecksumDownloadFails() {
+        StubHttpClient httpClient = new StubHttpClient();
+        httpClient.enqueueStringResponse(404, "Not Found");
+        adapter = new StubMavenCentralAdapter(objectMapper, botProperties, httpClient);
+
+        AvailableRelease release = AvailableRelease.builder()
+                .version("0.5.0")
+                .assetName("bot-0.5.0.jar")
+                .checksumUrl("https://repo1.maven.org/maven2/me/golemcore/bot/0.5.0/bot-0.5.0.jar.sha1")
+                .build();
+
+        assertThrows(IOException.class, () -> adapter.downloadChecksum(release));
+    }
+
+    @Test
+    void shouldReturnEmptyWhenVersionIsBlank() throws Exception {
+        String searchResponse = """
+                {
+                  "response": {
+                    "numFound": 1,
+                    "docs": [
+                      {
+                        "g": "me.golemcore",
+                        "a": "bot",
+                        "latestVersion": "  "
+                      }
+                    ]
+                  }
+                }
+                """;
+
+        StubHttpClient httpClient = new StubHttpClient();
+        httpClient.enqueueStringResponse(200, searchResponse);
+        adapter = new StubMavenCentralAdapter(objectMapper, botProperties, httpClient);
+
+        Optional<AvailableRelease> result = adapter.fetchLatestRelease();
+        assertFalse(result.isPresent());
+    }
+
+    @Test
+    void shouldRejectUntrustedChecksumUri() {
+        adapter = new StubMavenCentralAdapter(objectMapper, botProperties, new StubHttpClient());
+
+        AvailableRelease release = AvailableRelease.builder()
+                .version("0.5.0")
+                .assetName("bot-0.5.0.jar")
+                .checksumUrl("https://evil.com/bot-0.5.0.jar.sha1")
+                .build();
+
+        assertThrows(IllegalStateException.class, () -> adapter.downloadChecksum(release));
     }
 
     @SuppressWarnings("PMD.TestClassWithoutTestCases")
