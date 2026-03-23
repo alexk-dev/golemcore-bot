@@ -3,6 +3,21 @@ package me.golemcore.bot.domain.system;
 import me.golemcore.bot.domain.component.MemoryComponent;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
+import me.golemcore.bot.domain.context.ContextAssembler;
+import me.golemcore.bot.domain.context.ContextLayer;
+import me.golemcore.bot.domain.context.PromptComposer;
+import me.golemcore.bot.domain.context.layer.AutoModeLayer;
+import me.golemcore.bot.domain.context.layer.HiveLayer;
+import me.golemcore.bot.domain.context.layer.IdentityLayer;
+import me.golemcore.bot.domain.context.layer.MemoryLayer;
+import me.golemcore.bot.domain.context.layer.PlanModeLayer;
+import me.golemcore.bot.domain.context.layer.RagLayer;
+import me.golemcore.bot.domain.context.layer.SkillLayer;
+import me.golemcore.bot.domain.context.layer.TierAwarenessLayer;
+import me.golemcore.bot.domain.context.layer.ToolLayer;
+import me.golemcore.bot.domain.context.layer.WorkspaceInstructionsLayer;
+import me.golemcore.bot.domain.context.resolution.SkillResolver;
+import me.golemcore.bot.domain.context.resolution.TierResolver;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
@@ -26,7 +41,6 @@ import me.golemcore.bot.domain.service.SkillTemplateEngine;
 import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.WorkspaceInstructionService;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.McpPort;
 import me.golemcore.bot.port.outbound.RagPort;
 import org.junit.jupiter.api.BeforeEach;
@@ -62,7 +76,6 @@ class ContextBuildingSystemPromptTest {
     private McpPort mcpPort;
     private ToolCallExecutionService toolCallExecutionService;
     private RagPort ragPort;
-    private BotProperties properties;
     private AutoModeService autoModeService;
     private DelayedActionPolicyService delayedActionPolicyService;
     private PlanService planService;
@@ -71,6 +84,8 @@ class ContextBuildingSystemPromptTest {
     private ModelSelectionService modelSelectionService;
     private UserPreferencesService userPreferencesService;
     private WorkspaceInstructionService workspaceInstructionService;
+    private SkillResolver skillResolver;
+    private TierResolver tierResolver;
     private ContextBuildingSystem system;
 
     @BeforeEach
@@ -81,7 +96,6 @@ class ContextBuildingSystemPromptTest {
         mcpPort = mock(McpPort.class);
         toolCallExecutionService = mock(ToolCallExecutionService.class);
         ragPort = mock(RagPort.class);
-        properties = new BotProperties();
         autoModeService = mock(AutoModeService.class);
         delayedActionPolicyService = mock(DelayedActionPolicyService.class);
         planService = mock(PlanService.class);
@@ -105,22 +119,29 @@ class ContextBuildingSystemPromptTest {
         when(userPreferencesService.getPreferences())
                 .thenReturn(UserPreferences.builder().build());
 
-        system = new ContextBuildingSystem(
-                memoryComponent,
-                skillComponent,
-                templateEngine,
-                mcpPort,
-                toolCallExecutionService,
-                ragPort,
-                properties,
-                autoModeService,
-                delayedActionPolicyService,
-                planService,
-                promptSectionService,
-                runtimeConfigService,
-                modelSelectionService,
-                userPreferencesService,
-                workspaceInstructionService);
+        system = buildSystem();
+    }
+
+    private ContextBuildingSystem buildSystem() {
+        skillResolver = new SkillResolver(skillComponent);
+        tierResolver = new TierResolver(userPreferencesService, modelSelectionService, runtimeConfigService,
+                skillComponent);
+        PromptComposer promptComposer = new PromptComposer();
+
+        List<ContextLayer> layers = List.of(
+                new IdentityLayer(promptSectionService, userPreferencesService),
+                new WorkspaceInstructionsLayer(workspaceInstructionService),
+                new MemoryLayer(memoryComponent, runtimeConfigService),
+                new RagLayer(ragPort),
+                new SkillLayer(skillComponent, templateEngine),
+                new ToolLayer(toolCallExecutionService, mcpPort, planService, delayedActionPolicyService),
+                new TierAwarenessLayer(userPreferencesService),
+                new AutoModeLayer(autoModeService),
+                new PlanModeLayer(planService),
+                new HiveLayer());
+
+        ContextAssembler contextAssembler = new ContextAssembler(skillResolver, tierResolver, layers, promptComposer);
+        return new ContextBuildingSystem(contextAssembler);
     }
 
     private AgentContext createContext() {
@@ -280,22 +301,7 @@ class ContextBuildingSystemPromptTest {
                 .build());
         when(toolCallExecutionService.listTools()).thenReturn(List.of(tool));
 
-        system = new ContextBuildingSystem(
-                memoryComponent,
-                skillComponent,
-                templateEngine,
-                mcpPort,
-                toolCallExecutionService,
-                ragPort,
-                properties,
-                autoModeService,
-                delayedActionPolicyService,
-                planService,
-                promptSectionService,
-                runtimeConfigService,
-                modelSelectionService,
-                userPreferencesService,
-                workspaceInstructionService);
+        system = buildSystem();
 
         AgentContext ctx = createContext();
         system.process(ctx);
@@ -561,12 +567,14 @@ class ContextBuildingSystemPromptTest {
 
         assertEquals(
                 Boolean.FALSE,
-                ReflectionTestUtils.invokeMethod(system, "applyActiveSkillByName", ctx, " ", "message_metadata"));
+                ReflectionTestUtils.invokeMethod(skillResolver, "applyActiveSkillByName", ctx, " ",
+                        "message_metadata"));
 
-        ReflectionTestUtils.invokeMethod(system, "clearPersistedActiveSkill", ctx);
+        ReflectionTestUtils.invokeMethod(skillResolver, "clearPersistedActiveSkill", ctx);
         assertTrue(ctx.getSession().getMetadata() == null || ctx.getSession().getMetadata().isEmpty());
 
-        assertNull(ReflectionTestUtils.invokeMethod(system, "formatActiveSkillSource", (SkillTransitionRequest) null));
+        assertNull(ReflectionTestUtils.invokeMethod(skillResolver, "formatActiveSkillSource",
+                (SkillTransitionRequest) null));
     }
 
     @Test
@@ -1175,7 +1183,7 @@ class ContextBuildingSystemPromptTest {
         ctx.setActiveSkill(skill);
         system.process(ctx);
 
-        // force=true but userTier=null → falls through to skill tier
+        // force=true but userTier=null -> falls through to skill tier
         assertEquals(TIER_CODING, ctx.getModelTier());
     }
 
