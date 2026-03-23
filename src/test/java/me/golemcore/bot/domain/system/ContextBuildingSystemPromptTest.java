@@ -423,6 +423,79 @@ class ContextBuildingSystemPromptTest {
         assertTrue(ctx.getSystemPrompt().contains("# Active Skill: " + SKILL_PROCESSING));
     }
 
+    @Test
+    void restoresActiveSkillFromContextAttributesUsingMessageMetadataSource() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        Skill restoredSkill = Skill.builder()
+                .name(SKILL_PROCESSING)
+                .content("Process the task carefully")
+                .available(true)
+                .build();
+        when(skillComponent.findByName(SKILL_PROCESSING)).thenReturn(Optional.of(restoredSkill));
+
+        AgentContext ctx = createContext();
+        ctx.setAttribute(ContextAttributes.ACTIVE_SKILL_NAME, SKILL_PROCESSING);
+
+        system.process(ctx);
+
+        assertNotNull(ctx.getActiveSkill());
+        assertEquals(SKILL_PROCESSING, ctx.getActiveSkill().getName());
+        assertEquals("message_metadata", ctx.getAttribute(ATTR_ACTIVE_SKILL_SOURCE));
+        assertEquals(SKILL_PROCESSING, ctx.getSession().getMetadata().get(ContextAttributes.ACTIVE_SKILL_NAME));
+    }
+
+    @Test
+    void persistsPreselectedActiveSkillIntoSessionMetadata() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+
+        AgentContext ctx = createContext();
+        ctx.getSession().setMetadata(new HashMap<>());
+        ctx.setActiveSkill(Skill.builder()
+                .name(SKILL_PROCESSING)
+                .content("Process the task carefully")
+                .available(true)
+                .build());
+
+        system.process(ctx);
+
+        assertEquals(SKILL_PROCESSING, ctx.getSession().getMetadata().get(ContextAttributes.ACTIVE_SKILL_NAME));
+    }
+
+    @Test
+    void clearsPersistedActiveSkillWhenSessionMetadataSkillIsMissing() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        when(skillComponent.findByName("missing-skill")).thenReturn(Optional.empty());
+
+        AgentContext ctx = createContext();
+        ctx.getSession().setMetadata(new HashMap<>(Map.of(
+                ContextAttributes.ACTIVE_SKILL_NAME, "missing-skill")));
+
+        system.process(ctx);
+
+        assertNull(ctx.getActiveSkill());
+        assertFalse(ctx.getSession().getMetadata().containsKey(ContextAttributes.ACTIVE_SKILL_NAME));
+    }
+
+    @Test
+    void clearsPersistedActiveSkillWhenSessionMetadataSkillIsUnavailable() {
+        when(promptSectionService.isEnabled()).thenReturn(false);
+        Skill unavailableSkill = Skill.builder()
+                .name(SKILL_PROCESSING)
+                .content("Process the task carefully")
+                .available(false)
+                .build();
+        when(skillComponent.findByName(SKILL_PROCESSING)).thenReturn(Optional.of(unavailableSkill));
+
+        AgentContext ctx = createContext();
+        ctx.getSession().setMetadata(new HashMap<>(Map.of(
+                ContextAttributes.ACTIVE_SKILL_NAME, SKILL_PROCESSING)));
+
+        system.process(ctx);
+
+        assertNull(ctx.getActiveSkill());
+        assertFalse(ctx.getSession().getMetadata().containsKey(ContextAttributes.ACTIVE_SKILL_NAME));
+    }
+
     // ===== Skill pipeline info =====
 
     @Test

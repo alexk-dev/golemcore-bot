@@ -526,10 +526,9 @@ public class ContextBuildingSystem implements AgentSystem {
         }
 
         String explicitSkillName = context.getAttribute(ContextAttributes.ACTIVE_SKILL_NAME);
-        if (explicitSkillName != null && !explicitSkillName.isBlank()) {
-            if (applyActiveSkillByName(context, explicitSkillName, resolveExplicitSkillSource(context))) {
-                return;
-            }
+        if (explicitSkillName != null && !explicitSkillName.isBlank()
+                && applyActiveSkillByName(context, explicitSkillName, resolveExplicitSkillSource(context))) {
+            return;
         }
 
         String sessionSkillName = readSessionActiveSkillName(context);
