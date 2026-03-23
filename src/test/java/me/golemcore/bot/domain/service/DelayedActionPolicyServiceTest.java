@@ -41,12 +41,18 @@ class DelayedActionPolicyServiceTest {
         DelayedActionPolicyService disabled = createService(false, true, registry);
         assertFalse(disabled.canScheduleActions());
         assertFalse(disabled.canScheduleActions("telegram"));
+        assertFalse(disabled.canPersistDelayedIntent("telegram"));
+        assertFalse(disabled.canWakeSessionLater("telegram", "chat-1"));
         assertFalse(disabled.canScheduleRunLater("telegram", "chat-1"));
 
         DelayedActionPolicyService runLaterDisabled = createService(true, true, registry, false);
+        assertTrue(runLaterDisabled.canPersistDelayedIntent("telegram"));
+        assertFalse(runLaterDisabled.canWakeSessionLater("telegram", "chat-1"));
         assertFalse(runLaterDisabled.canScheduleRunLater("telegram", "chat-1"));
 
         DelayedActionPolicyService enabled = createService(true, true, registry, true);
+        assertTrue(enabled.canPersistDelayedIntent("telegram"));
+        assertTrue(enabled.canWakeSessionLater("telegram", "chat-1"));
         assertTrue(enabled.canScheduleRunLater("telegram", "chat-1"));
     }
 
@@ -72,6 +78,19 @@ class DelayedActionPolicyServiceTest {
     }
 
     @Test
+    void shouldAllowDelayedExecutionWithoutImmediateProactiveMessageSupport() {
+        ChannelPort runningTelegram = new BasicChannel("telegram", true);
+        DelayedActionPolicyService notificationsDisabled = createService(true, false,
+                new ChannelRegistry(List.of(runningTelegram)));
+
+        assertTrue(notificationsDisabled.canPersistDelayedIntent("telegram"));
+        assertTrue(notificationsDisabled.canWakeSessionLater("telegram", "chat-1"));
+        assertTrue(notificationsDisabled.canScheduleRunLater("telegram", "chat-1"));
+        assertFalse(notificationsDisabled.supportsProactiveMessage("telegram", "chat-1"));
+        assertTrue(notificationsDisabled.supportsDelayedExecution("telegram", "chat-1"));
+    }
+
+    @Test
     void shouldUseActiveWebSessionsAndRejectWebhookChannels() {
         WebChannelAdapter webChannel = mock(WebChannelAdapter.class);
         when(webChannel.getChannelType()).thenReturn("web");
@@ -81,8 +100,14 @@ class DelayedActionPolicyServiceTest {
 
         DelayedActionPolicyService webService = createService(true, true,
                 new ChannelRegistry(List.of(webChannel)));
+        assertTrue(webService.canPersistDelayedIntent("web"));
+        assertTrue(webService.canWakeSessionLater("web", "active-chat"));
         assertTrue(webService.supportsProactiveMessage("web", "active-chat"));
+        assertTrue(webService.supportsDelayedExecution("web", "active-chat"));
+
+        assertTrue(webService.canWakeSessionLater("web", "inactive-chat"));
         assertFalse(webService.supportsProactiveMessage("web", "inactive-chat"));
+        assertTrue(webService.supportsDelayedExecution("web", "inactive-chat"));
 
         WebhookChannelAdapter webhookChannel = mock(WebhookChannelAdapter.class);
         when(webhookChannel.getChannelType()).thenReturn("webhook");
@@ -90,6 +115,8 @@ class DelayedActionPolicyServiceTest {
 
         DelayedActionPolicyService webhookService = createService(true, true,
                 new ChannelRegistry(List.of(webhookChannel)));
+        assertFalse(webhookService.canPersistDelayedIntent("webhook"));
+        assertFalse(webhookService.canWakeSessionLater("webhook", "chat-1"));
         assertFalse(webhookService.supportsProactiveMessage("webhook", "chat-1"));
         assertFalse(webhookService.supportsDelayedExecution("webhook", "chat-1"));
     }

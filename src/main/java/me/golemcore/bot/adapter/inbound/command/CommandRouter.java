@@ -58,6 +58,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -118,6 +119,7 @@ public class CommandRouter implements CommandPort {
     private static final int MIN_CRON_PARTS_FOR_REPEAT_CHECK = 1;
     private static final int MIN_REASONING_ARGS = 2;
     private static final String SUBCMD_LIST = "list";
+    private static final DateTimeFormatter LATER_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm z");
     private static final String SUBCMD_RESET = "reset";
     private static final String SUBCMD_REASONING = "reasoning";
     private static final String ERR_PROVIDER_NOT_CONFIGURED = "provider.not.configured";
@@ -262,7 +264,7 @@ public class CommandRouter implements CommandPort {
                 new CommandDefinition("sessions", "Open session switcher menu (Telegram)", "/sessions"),
                 new CommandDefinition("stop", "Stop current run", "/stop")));
         if (runtimeConfigService.isDelayedActionsEnabled()) {
-            commands.add(new CommandDefinition(CMD_LATER, "Manage delayed actions", "/later [list|cancel|now|help]"));
+            commands.add(new CommandDefinition(CMD_LATER, "Reminders and follow-ups", "/later [list|cancel|now|help]"));
         }
         if (autoModeService.isFeatureEnabled()) {
             commands.add(new CommandDefinition("auto", "Toggle auto mode", "/auto [on|off]"));
@@ -1244,11 +1246,11 @@ public class CommandRouter implements CommandPort {
         if (delayedSessionActionService == null) {
             return CommandResult.success(msg("command.later.not-available"));
         }
-        if ("webhook".equalsIgnoreCase(channelType)) {
-            return CommandResult.success(msg("command.later.not-available"));
-        }
         if (channelType == null || conversationKey == null) {
             return CommandResult.failure(msg("command.later.not-available"));
+        }
+        if (delayedActionPolicyService != null && !delayedActionPolicyService.canScheduleActions(channelType)) {
+            return CommandResult.success(msg("command.later.not-available"));
         }
         if (args.isEmpty()) {
             return CommandResult.success(msg("command.later.usage"));
@@ -1273,17 +1275,16 @@ public class CommandRouter implements CommandPort {
         StringBuilder sb = new StringBuilder();
         sb.append(msg("command.later.list.title", actions.size())).append(DOUBLE_NEWLINE);
         for (DelayedSessionAction action : actions) {
-            String runAt = action.getRunAt() != null
-                    ? DateTimeFormatter.ISO_INSTANT.format(action.getRunAt().atOffset(ZoneOffset.UTC))
-                    : "n/a";
             sb.append("`").append(action.getId()).append("` ");
-            sb.append("[").append(action.getKind()).append("] ");
-            sb.append(action.getStatus()).append(" ");
-            sb.append(runAt);
+            sb.append(resolveLaterSummary(action)).append("\n");
+            sb.append(msg("command.later.list.status")).append(": ");
+            sb.append(resolveLaterStatus(action)).append("\n");
+            sb.append(msg("command.later.list.next-check")).append(": ");
+            sb.append(formatLaterRunAt(action));
             if (action.isCancelOnUserActivity()) {
-                sb.append(" (cancel on activity)");
+                sb.append("\n").append(msg("command.later.list.cancel-on-activity"));
             }
-            sb.append("\n");
+            sb.append(DOUBLE_NEWLINE);
         }
         return CommandResult.success(sb.toString().stripTrailing());
     }
@@ -1314,5 +1315,65 @@ public class CommandRouter implements CommandPort {
 
     private String msg(String key, Object... args) {
         return preferencesService.getMessage(key, args);
+    }
+
+    private String resolveLaterSummary(DelayedSessionAction action) {
+        String humanSummary = payloadString(action, "humanSummary");
+        if (humanSummary != null) {
+            return humanSummary;
+        }
+        String message = payloadString(action, "message");
+        String originalSummary = payloadString(action, "originalSummary");
+        if (action.getKind() == null) {
+            return msg("command.later.kind.default");
+        }
+        return switch (action.getKind()) {
+        case REMIND_LATER -> message != null ? msg("command.later.kind.reminder.with-message", message)
+                : msg("command.later.kind.reminder");
+        case RUN_LATER -> originalSummary != null ? msg("command.later.kind.check-back.with-summary", originalSummary)
+                : msg("command.later.kind.check-back");
+        case NOTIFY_JOB_READY -> message != null ? message : msg("command.later.kind.job-result");
+        };
+    }
+
+    private String resolveLaterStatus(DelayedSessionAction action) {
+        if (action == null || action.getStatus() == null) {
+            return msg("command.later.status.unknown");
+        }
+        return switch (action.getStatus()) {
+        case SCHEDULED -> msg("command.later.status.scheduled");
+        case LEASED -> msg("command.later.status.leased");
+        case COMPLETED -> msg("command.later.status.completed");
+        case CANCELLED -> msg("command.later.status.cancelled");
+        case DEAD_LETTER -> msg("command.later.status.dead-letter");
+        };
+    }
+
+    private String formatLaterRunAt(DelayedSessionAction action) {
+        if (action == null || action.getRunAt() == null) {
+            return msg("command.later.list.no-time");
+        }
+        ZoneId zoneId = resolveUserZoneId();
+        return LATER_TIME_FORMATTER.format(action.getRunAt().atZone(zoneId));
+    }
+
+    private ZoneId resolveUserZoneId() {
+        try {
+            UserPreferences preferences = preferencesService.getPreferences();
+            if (preferences != null && preferences.getTimezone() != null && !preferences.getTimezone().isBlank()) {
+                return ZoneId.of(preferences.getTimezone().trim());
+            }
+        } catch (RuntimeException e) {
+            log.debug("Falling back to UTC for delayed action time formatting: {}", e.getMessage());
+        }
+        return ZoneOffset.UTC;
+    }
+
+    private String payloadString(DelayedSessionAction action, String key) {
+        if (action == null || action.getPayload() == null) {
+            return null;
+        }
+        Object value = action.getPayload().get(key);
+        return value instanceof String stringValue && !stringValue.isBlank() ? stringValue.trim() : null;
     }
 }

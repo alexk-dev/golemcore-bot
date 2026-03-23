@@ -223,6 +223,12 @@ public class ScheduleSessionActionTool implements ToolComponent {
                 && !payload.containsKey("artifactPath")) {
             return ToolResult.failure("message or artifact_path is required for notify_job_ready");
         }
+        String humanSummary = resolveHumanSummary(kind, payload);
+        String userVisibleKind = resolveUserVisibleKind(kind);
+        String nextCheckLabel = runAt.toString();
+        payload.put("humanSummary", humanSummary);
+        payload.put("userVisibleKind", userVisibleKind);
+        payload.put("nextCheckLabel", nextCheckLabel);
         if (!supportsDeliveryNow(channelType, transportChatId, deliveryMode)) {
             return ToolResult.failure(ToolFailureKind.POLICY_DENIED,
                     unavailableMessageFor(deliveryMode));
@@ -241,7 +247,7 @@ public class ScheduleSessionActionTool implements ToolComponent {
                     .maxAttempts(intParam(parameters, "max_attempts",
                             runtimeConfigService.getDelayedActionsDefaultMaxAttempts()))
                     .dedupeKey(stringParam(parameters, "dedupe_key"))
-                    .cancelOnUserActivity(boolParam(parameters, "cancel_on_user_activity", false))
+                    .cancelOnUserActivity(resolveCancelOnUserActivity(parameters, kind))
                     .createdBy("tool:" + TOOL_NAME)
                     .payload(payload)
                     .build());
@@ -254,13 +260,16 @@ public class ScheduleSessionActionTool implements ToolComponent {
         case DIRECT_MESSAGE -> delayedActionPolicyService.supportsProactiveMessage(channelType, transportChatId);
         case INTERNAL_TURN -> delayedActionPolicyService.supportsDelayedExecution(channelType, transportChatId);
         };
-        Map<String, Object> data = Map.of(
-                "actionId", created.getId(),
-                "kind", kind.name().toLowerCase(java.util.Locale.ROOT),
-                "deliveryMode", created.getDeliveryMode().name(),
-                "resolvedRunAt", created.getRunAt().toString(),
-                "proactiveDeliverySupportedNow", proactiveSupportedNow,
-                "cancelOnUserActivity", created.isCancelOnUserActivity());
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("actionId", created.getId());
+        data.put("kind", kind.name().toLowerCase(java.util.Locale.ROOT));
+        data.put("deliveryMode", created.getDeliveryMode().name());
+        data.put("resolvedRunAt", created.getRunAt().toString());
+        data.put("proactiveDeliverySupportedNow", proactiveSupportedNow);
+        data.put("cancelOnUserActivity", created.isCancelOnUserActivity());
+        data.put("humanSummary", payloadString(created, "humanSummary"));
+        data.put("userVisibleKind", payloadString(created, "userVisibleKind"));
+        data.put("nextCheckLabel", payloadString(created, "nextCheckLabel"));
         return ToolResult.success("Delayed action scheduled for " + created.getRunAt(), data);
     }
 
@@ -293,6 +302,15 @@ public class ScheduleSessionActionTool implements ToolComponent {
                     item.put("deliveryMode", action.getDeliveryMode().name());
                     item.put("attempts", action.getAttempts());
                     item.put("cancelOnUserActivity", action.isCancelOnUserActivity());
+                    item.put("humanSummary", firstNonBlank(
+                            payloadString(action, "humanSummary"),
+                            resolveHumanSummary(action.getKind(), action.getPayload())));
+                    item.put("userVisibleKind", firstNonBlank(
+                            payloadString(action, "userVisibleKind"),
+                            resolveUserVisibleKind(action.getKind())));
+                    item.put("nextCheckLabel", firstNonBlank(
+                            payloadString(action, "nextCheckLabel"),
+                            action.getRunAt() != null ? action.getRunAt().toString() : null));
                     return item;
                 })
                 .toList();
@@ -354,10 +372,57 @@ public class ScheduleSessionActionTool implements ToolComponent {
         return value instanceof String stringValue && !stringValue.isBlank() ? stringValue.trim() : null;
     }
 
+    private String payloadString(DelayedSessionAction action, String key) {
+        if (action == null || action.getPayload() == null) {
+            return null;
+        }
+        Object value = action.getPayload().get(key);
+        return value instanceof String stringValue && !stringValue.isBlank() ? stringValue.trim() : null;
+    }
+
     private void putIfNotBlank(Map<String, Object> target, String key, String value) {
         if (!StringValueSupport.isBlank(value)) {
             target.put(key, value.trim());
         }
+    }
+
+    private boolean resolveCancelOnUserActivity(Map<String, Object> parameters, DelayedActionKind kind) {
+        boolean defaultValue = kind == DelayedActionKind.RUN_LATER;
+        return boolParam(parameters, "cancel_on_user_activity", defaultValue);
+    }
+
+    private String resolveHumanSummary(DelayedActionKind kind, Map<String, Object> payload) {
+        if (kind == null) {
+            return "Delayed action";
+        }
+        Map<String, Object> safePayload = payload != null ? payload : Map.of();
+        String message = stringValue(safePayload.get("message"));
+        String originalSummary = stringValue(safePayload.get("originalSummary"));
+        return switch (kind) {
+        case REMIND_LATER -> message != null ? "Reminder: " + message : "Reminder";
+        case RUN_LATER -> originalSummary != null
+                ? "Waiting for result: " + originalSummary
+                : "Check back later";
+        case NOTIFY_JOB_READY -> message != null
+                ? message
+                : originalSummary != null ? "Result ready: " + originalSummary : "Job result ready";
+        };
+    }
+
+    private String resolveUserVisibleKind(DelayedActionKind kind) {
+        return switch (kind) {
+        case REMIND_LATER -> "reminder";
+        case RUN_LATER -> "check_back";
+        case NOTIFY_JOB_READY -> "job_result";
+        };
+    }
+
+    private String stringValue(Object value) {
+        return value instanceof String stringValue && !stringValue.isBlank() ? stringValue.trim() : null;
+    }
+
+    private String firstNonBlank(String primary, String fallback) {
+        return !StringValueSupport.isBlank(primary) ? primary : fallback;
     }
 
     private boolean boolParam(Map<String, Object> parameters, String key, boolean defaultValue) {
