@@ -31,6 +31,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 /**
  * Skills management endpoints.
@@ -109,14 +110,8 @@ public class SkillsController {
 
         String path = normalizedName + "/SKILL.md";
         String document = skillDocumentService.renderDocument(metadata, parsedDocument.body());
-        return Mono.fromFuture(storagePort.putText(SKILLS_DIR, path, document))
-                .then(Mono.fromRunnable(skillService::reload))
-                .then(Mono.defer(() -> {
-                    Optional<Skill> created = skillService.findByName(normalizedName);
-                    return created
-                            .map(skill -> Mono.just(ResponseEntity.status(HttpStatus.CREATED).body(toDetailDto(skill))))
-                            .orElse(Mono.just(ResponseEntity.notFound().build()));
-                }));
+        return persistSkillAndReload(path, document,
+                () -> skillService.findByName(normalizedName), HttpStatus.CREATED);
     }
 
     @PutMapping("/detail")
@@ -146,14 +141,8 @@ public class SkillsController {
 
         String path = skillMarketplaceService.resolveManagedSkillStoragePath(skill);
         String document = skillDocumentService.renderDocument(metadata, parsedDocument.body());
-        return Mono.fromFuture(storagePort.putText(SKILLS_DIR, path, document))
-                .then(Mono.fromRunnable(skillService::reload))
-                .then(Mono.defer(() -> {
-                    Optional<Skill> updated = skillService.findByLocation(path);
-                    return updated
-                            .map(updatedSkill -> Mono.just(ResponseEntity.ok(toDetailDto(updatedSkill))))
-                            .orElse(Mono.just(ResponseEntity.notFound().build()));
-                }));
+        return persistSkillAndReload(path, document,
+                () -> skillService.findByLocation(path), HttpStatus.OK);
     }
 
     @PostMapping("/{name}/reload")
@@ -212,6 +201,21 @@ public class SkillsController {
                 "hasMcp", true,
                 "running", running,
                 "tools", tools)));
+    }
+
+    private Mono<ResponseEntity<SkillDto>> persistSkillAndReload(
+            String path,
+            String document,
+            Supplier<Optional<Skill>> skillLookup,
+            HttpStatus successStatus) {
+        return Mono.fromFuture(storagePort.putText(SKILLS_DIR, path, document))
+                .then(Mono.fromRunnable(skillService::reload))
+                .then(Mono.defer(() -> {
+                    Optional<Skill> saved = skillLookup.get();
+                    return saved
+                            .map(skill -> Mono.just(ResponseEntity.status(successStatus).body(toDetailDto(skill))))
+                            .orElse(Mono.just(ResponseEntity.notFound().build()));
+                }));
     }
 
     private Map<String, Object> resolveUpdatedMetadata(

@@ -13,10 +13,15 @@ import me.golemcore.bot.port.outbound.McpPort;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.test.StepVerifier;
+
+import java.util.stream.Stream;
 
 import java.util.List;
 import java.util.Map;
@@ -227,6 +232,14 @@ class SkillsControllerTest {
         assertFalse(savedDocument.contains("ignored"));
     }
 
+    private void stubUpdateMocks(Skill skill, Skill afterReload) {
+        when(skillService.findByName(skill.getName())).thenReturn(Optional.of(skill));
+        when(skillService.findByLocation(skill.getLocation().toString())).thenReturn(Optional.of(afterReload));
+        when(skillMarketplaceService.resolveManagedSkillStoragePath(skill)).thenReturn(skill.getLocation().toString());
+        when(storagePort.putText(anyString(), anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+    }
+
     @Test
     void shouldNormalizeFrontmatterIntoMetadataAndStripItFromBodyOnUpdateWithoutExplicitMetadata() {
         Skill skill = Skill.builder()
@@ -246,11 +259,7 @@ class SkillsControllerTest {
                         "model_tier", "smart"))
                 .content("Fresh body")
                 .build();
-        when(skillService.findByName("test-skill")).thenReturn(Optional.of(skill));
-        when(skillService.findByLocation("test-skill/SKILL.md")).thenReturn(Optional.of(updatedSkill));
-        when(skillMarketplaceService.resolveManagedSkillStoragePath(skill)).thenReturn("test-skill/SKILL.md");
-        when(storagePort.putText(anyString(), anyString(), anyString()))
-                .thenReturn(CompletableFuture.completedFuture(null));
+        stubUpdateMocks(skill, updatedSkill);
 
         StepVerifier.create(controller.updateSkillByQuery("test-skill", Map.of(
                 "content", "---\nmodel_tier: smart\n---\nFresh body")))
@@ -276,52 +285,29 @@ class SkillsControllerTest {
         assertEquals("Skill content is required", ex.getReason());
     }
 
-    @Test
-    void shouldRejectUpdateWithInvalidMetadataName() {
-        when(skillService.findByName("test")).thenReturn(Optional.of(Skill.builder().name("test").build()));
-
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> controller.updateSkill("test", Map.of(
-                        "content", "body",
-                        "metadata", Map.of("name", "BadName"))));
-        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
-        assertEquals("Skill metadata name must match [a-z0-9][a-z0-9-]*(/[a-z0-9][a-z0-9-]*)*", ex.getReason());
+    static Stream<Arguments> invalidMetadataProvider() {
+        return Stream.of(
+                Arguments.of(Map.of("name", "BadName"),
+                        "Skill metadata name must match [a-z0-9][a-z0-9-]*(/[a-z0-9][a-z0-9-]*)*"),
+                Arguments.of(Map.of("model_tier", "turbo"),
+                        "Skill metadata model_tier must be a known tier id"),
+                Arguments.of(Map.of("reflection_tier", "turbo"),
+                        "Skill metadata reflection_tier must be a known tier id"),
+                Arguments.of(Map.of("name", "golemcore//reviewer"),
+                        "Skill metadata name must match [a-z0-9][a-z0-9-]*(/[a-z0-9][a-z0-9-]*)*"));
     }
 
-    @Test
-    void shouldRejectUpdateWithInvalidModelTierMetadata() {
+    @ParameterizedTest
+    @MethodSource("invalidMetadataProvider")
+    void shouldRejectUpdateWithInvalidMetadata(Map<String, Object> metadata, String expectedReason) {
         when(skillService.findByName("test")).thenReturn(Optional.of(Skill.builder().name("test").build()));
 
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> controller.updateSkill("test", Map.of(
                         "content", "body",
-                        "metadata", Map.of("model_tier", "turbo"))));
+                        "metadata", metadata)));
         assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
-        assertEquals("Skill metadata model_tier must be a known tier id", ex.getReason());
-    }
-
-    @Test
-    void shouldRejectUpdateWithInvalidReflectionTierMetadata() {
-        when(skillService.findByName("test")).thenReturn(Optional.of(Skill.builder().name("test").build()));
-
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> controller.updateSkill("test", Map.of(
-                        "content", "body",
-                        "metadata", Map.of("reflection_tier", "turbo"))));
-        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
-        assertEquals("Skill metadata reflection_tier must be a known tier id", ex.getReason());
-    }
-
-    @Test
-    void shouldRejectUpdateWithMetadataNameContainingEmptySegment() {
-        when(skillService.findByName("test")).thenReturn(Optional.of(Skill.builder().name("test").build()));
-
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> controller.updateSkill("test", Map.of(
-                        "content", "body",
-                        "metadata", Map.of("name", "golemcore//reviewer"))));
-        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
-        assertEquals("Skill metadata name must match [a-z0-9][a-z0-9-]*(/[a-z0-9][a-z0-9-]*)*", ex.getReason());
+        assertEquals(expectedReason, ex.getReason());
     }
 
     @Test
@@ -352,14 +338,7 @@ class SkillsControllerTest {
                         "model_tier", "smart"))
                 .content("new")
                 .build();
-        when(skillService.findByName("golemcore/devops-pack/deploy-review"))
-                .thenReturn(Optional.of(skill));
-        when(skillService.findByLocation("marketplace/golemcore/devops-pack/skills/deploy-review/SKILL.md"))
-                .thenReturn(Optional.of(renamedSkill));
-        when(skillMarketplaceService.resolveManagedSkillStoragePath(skill))
-                .thenReturn("marketplace/golemcore/devops-pack/skills/deploy-review/SKILL.md");
-        when(storagePort.putText(anyString(), anyString(), anyString()))
-                .thenReturn(CompletableFuture.completedFuture(null));
+        stubUpdateMocks(skill, renamedSkill);
 
         StepVerifier
                 .create(controller.updateSkillByQuery("golemcore/devops-pack/deploy-review", Map.of(
@@ -393,11 +372,7 @@ class SkillsControllerTest {
                         "next_skill", "follow-up"))
                 .content("old body")
                 .build();
-        when(skillService.findByName("test-skill")).thenReturn(Optional.of(skill));
-        when(skillService.findByLocation("test-skill/SKILL.md")).thenReturn(Optional.of(skill));
-        when(skillMarketplaceService.resolveManagedSkillStoragePath(skill)).thenReturn("test-skill/SKILL.md");
-        when(storagePort.putText(anyString(), anyString(), anyString()))
-                .thenReturn(CompletableFuture.completedFuture(null));
+        stubUpdateMocks(skill, skill);
 
         StepVerifier.create(controller.updateSkillByQuery("test-skill", Map.of("content", "updated body")))
                 .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
@@ -428,11 +403,7 @@ class SkillsControllerTest {
                 .metadata(Map.of())
                 .content("updated body")
                 .build();
-        when(skillService.findByName("test-skill")).thenReturn(Optional.of(skill));
-        when(skillService.findByLocation("test-skill/SKILL.md")).thenReturn(Optional.of(updatedSkill));
-        when(skillMarketplaceService.resolveManagedSkillStoragePath(skill)).thenReturn("test-skill/SKILL.md");
-        when(storagePort.putText(anyString(), anyString(), anyString()))
-                .thenReturn(CompletableFuture.completedFuture(null));
+        stubUpdateMocks(skill, updatedSkill);
 
         StepVerifier.create(controller.updateSkillByQuery("test-skill", Map.of(
                 "content", "updated body",
@@ -482,12 +453,12 @@ class SkillsControllerTest {
                 .verifyComplete();
     }
 
-    @Test
-    void shouldReturnMcpStatusForNonMcpSkill() {
-        Skill skill = Skill.builder().name("test").build();
-        when(skillService.findByName("test")).thenReturn(Optional.of(skill));
+    @ParameterizedTest
+    @MethodSource("mcpStatusNoMcpProvider")
+    void shouldReturnHasMcpFalseWhenSkillMissingOrNonMcp(String name, Optional<Skill> stubResult) {
+        when(skillService.findByName(name)).thenReturn(stubResult);
 
-        StepVerifier.create(controller.getMcpStatus("test"))
+        StepVerifier.create(controller.getMcpStatus(name))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
                     assertEquals(false, response.getBody().get("hasMcp"));
@@ -495,16 +466,10 @@ class SkillsControllerTest {
                 .verifyComplete();
     }
 
-    @Test
-    void shouldReturnMcpStatusForMissingSkill() {
-        when(skillService.findByName("unknown")).thenReturn(Optional.empty());
-
-        StepVerifier.create(controller.getMcpStatus("unknown"))
-                .assertNext(response -> {
-                    assertEquals(HttpStatus.OK, response.getStatusCode());
-                    assertEquals(false, response.getBody().get("hasMcp"));
-                })
-                .verifyComplete();
+    static Stream<Arguments> mcpStatusNoMcpProvider() {
+        return Stream.of(
+                Arguments.of("test", Optional.of(Skill.builder().name("test").build())),
+                Arguments.of("unknown", Optional.empty()));
     }
 
 }

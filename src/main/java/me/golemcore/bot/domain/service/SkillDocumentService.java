@@ -86,6 +86,12 @@ public class SkillDocumentService {
         return new SkillDocument(metadata, body, true);
     }
 
+    public String normalizeAndRender(String content, Map<String, Object> overrides) {
+        SkillDocument parsedDocument = parseNormalizedDocument(content);
+        Map<String, Object> metadata = mergeMetadata(parsedDocument.metadata(), overrides);
+        return renderDocument(metadata, parsedDocument.body());
+    }
+
     public Map<String, Object> mergeMetadata(Map<String, Object> lowPriority, Map<String, Object> highPriority) {
         Map<String, Object> merged = new LinkedHashMap<>();
         if (lowPriority != null && !lowPriority.isEmpty()) {

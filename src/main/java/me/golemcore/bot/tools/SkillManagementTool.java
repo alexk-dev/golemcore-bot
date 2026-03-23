@@ -23,7 +23,6 @@ import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.Skill;
-import me.golemcore.bot.domain.model.SkillDocument;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -32,7 +31,6 @@ import me.golemcore.bot.domain.service.SkillMarketplaceService;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.stereotype.Component;
 
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -180,11 +178,8 @@ public class SkillManagementTool implements ToolComponent {
                     "Skill '" + normalizedName + "' already exists. Delete it first or choose a different name.");
         }
 
-        SkillDocument parsedDocument = skillDocumentService.parseNormalizedDocument(content);
-        Map<String, Object> metadata = new LinkedHashMap<>(parsedDocument.metadata());
-        metadata.put("name", normalizedName);
-        metadata.put("description", normalizedDescription);
-        String skillDocument = skillDocumentService.renderDocument(metadata, parsedDocument.body());
+        String skillDocument = skillDocumentService.normalizeAndRender(content,
+                Map.of("name", normalizedName, "description", normalizedDescription));
 
         String path = normalizedName + "/SKILL.md";
         try {

@@ -1,7 +1,6 @@
 package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.model.Skill;
-import me.golemcore.bot.domain.model.SkillDocument;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
@@ -63,25 +62,6 @@ class SkillServiceTest {
     }
 
     // ==================== reload / init ====================
-
-    @Test
-    void parseSkillDocumentShouldStripNestedFrontmatterFromBody() {
-        SkillDocument document = skillDocumentService.parseNormalizedDocument("""
-                ---
-                name: outer
-                description: Outer description
-                ---
-                ---
-                model_tier: coding
-                ---
-                Body instructions
-                """);
-
-        assertEquals("Body instructions", document.body());
-        assertEquals("outer", document.metadata().get("name"));
-        assertEquals("Outer description", document.metadata().get("description"));
-        assertEquals("coding", document.metadata().get("model_tier"));
-    }
 
     @Test
     void reloadLoadsSkillsFromStorage() {
