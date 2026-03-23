@@ -240,4 +240,71 @@ class ContextBuildingSystemTest {
         assertTrue(context.getAvailableTools().stream()
                 .noneMatch(t -> ScheduleSessionActionTool.TOOL_NAME.equals(t.getName())));
     }
+
+    @Test
+    void shouldAdvertiseDelayedActionToolWhenSchedulingIsPossibleWithoutProactivePush() {
+        BotProperties properties = new BotProperties();
+
+        SkillTemplateEngine templateEngine = mock(SkillTemplateEngine.class);
+        PromptSectionService promptSectionService = mock(PromptSectionService.class);
+        UserPreferencesService userPreferencesService = mock(UserPreferencesService.class);
+        when(userPreferencesService.getPreferences()).thenReturn(UserPreferences.builder().build());
+
+        MemoryComponent memoryComponent = mock(MemoryComponent.class);
+        SkillComponent skillComponent = mock(SkillComponent.class);
+        ToolCallExecutionService toolCallExecutionService = mock(ToolCallExecutionService.class);
+        McpPort mcpPort = mock(McpPort.class);
+        RagPort ragPort = mock(RagPort.class);
+        AutoModeService autoModeService = mock(AutoModeService.class);
+        DelayedActionPolicyService delayedActionPolicyService = mock(DelayedActionPolicyService.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveForTier(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new ModelSelectionService.ModelSelection("gpt-5-balanced", "medium"));
+        WorkspaceInstructionService workspaceInstructionService = mock(WorkspaceInstructionService.class);
+        when(workspaceInstructionService.getWorkspaceInstructionsContext()).thenReturn("");
+        PlanService planService = mock(PlanService.class);
+
+        ToolComponent delayedTool = mock(ToolComponent.class);
+        when(delayedTool.isEnabled()).thenReturn(true);
+        when(delayedTool.getToolName()).thenReturn(ScheduleSessionActionTool.TOOL_NAME);
+        when(delayedTool.getDefinition()).thenReturn(ToolDefinition.builder()
+                .name(ScheduleSessionActionTool.TOOL_NAME)
+                .description("Delayed actions")
+                .build());
+        when(toolCallExecutionService.listTools()).thenReturn(List.of(delayedTool));
+        when(delayedActionPolicyService.canScheduleActions("web")).thenReturn(true);
+        when(delayedActionPolicyService.supportsProactiveMessage("web", "chat-1")).thenReturn(false);
+
+        ContextBuildingSystem system = new ContextBuildingSystem(
+                memoryComponent,
+                skillComponent,
+                templateEngine,
+                mcpPort,
+                toolCallExecutionService,
+                ragPort,
+                properties,
+                autoModeService,
+                delayedActionPolicyService,
+                planService,
+                promptSectionService,
+                runtimeConfigService,
+                modelSelectionService,
+                userPreferencesService,
+                workspaceInstructionService);
+
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder()
+                        .channelType("web")
+                        .chatId("chat-1")
+                        .messages(new ArrayList<>())
+                        .build())
+                .messages(new ArrayList<>())
+                .build();
+
+        system.process(context);
+
+        assertTrue(context.getAvailableTools().stream()
+                .anyMatch(t -> ScheduleSessionActionTool.TOOL_NAME.equals(t.getName())));
+    }
 }

@@ -222,6 +222,27 @@ class ContextBuildingSystemPromptTest {
     }
 
     @Test
+    void buildSystemPrompt_includesWaitingAndFollowUpsSection() {
+        when(promptSectionService.isEnabled()).thenReturn(true);
+        when(promptSectionService.buildTemplateVariables(any())).thenReturn(Map.of());
+        when(promptSectionService.getEnabledSections()).thenReturn(List.of(
+                PromptSection.builder().name(SECTION_IDENTITY).content("Identity").order(10).build(),
+                PromptSection.builder()
+                        .name("waiting-and-followups")
+                        .content("Do not ask the user to come back manually. Confirm the next local check time.")
+                        .order(25)
+                        .build()));
+        when(promptSectionService.renderSection(any(), any()))
+                .thenAnswer(inv -> ((PromptSection) inv.getArgument(0)).getContent());
+
+        AgentContext ctx = createContext();
+        system.process(ctx);
+
+        assertTrue(ctx.getSystemPrompt().contains("Do not ask the user to come back manually."));
+        assertTrue(ctx.getSystemPrompt().contains("Confirm the next local check time."));
+    }
+
+    @Test
     void buildSystemPrompt_templateRendered() {
         when(promptSectionService.isEnabled()).thenReturn(true);
         when(promptSectionService.buildTemplateVariables(any()))

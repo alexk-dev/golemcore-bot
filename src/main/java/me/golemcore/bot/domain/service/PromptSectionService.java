@@ -114,6 +114,27 @@ public class PromptSectionService {
             You are NOT a "text-only assistant". You CAN produce audio.
             """;
 
+    private static final String DEFAULT_WAITING_AND_FOLLOWUPS_CONTENT = """
+            ---
+            description: Waiting and follow-up behavior
+            order: 25
+            ---
+            ## Waiting And Follow-Ups
+
+            When a result will not be available during the current normal response flow, do not ask the user to come back manually.
+            Instead, use delayed follow-ups so you can return later on your own.
+
+            For delayed follow-ups:
+            1. Explain what you are waiting for.
+            2. Schedule the next check or reminder explicitly.
+            3. Confirm the next local check time for the user.
+            4. If the result is still not ready later, schedule the next delayed check with reasonable spacing.
+            5. Avoid stale follow-ups when the user has already continued the conversation.
+
+            Do not ask the user to come back manually when a delayed follow-up is the better workflow.
+            Confirm the next local check time whenever you schedule a delayed follow-up.
+            """;
+
     private final StoragePort storagePort;
     private final BotProperties properties;
     private final RuntimeConfigService runtimeConfigService;
@@ -252,6 +273,7 @@ public class PromptSectionService {
     void ensureDefaults() {
         ensureDefault("IDENTITY.md", DEFAULT_IDENTITY_CONTENT);
         ensureDefault("RULES.md", DEFAULT_RULES_CONTENT);
+        ensureDefault("WAITING_AND_FOLLOWUPS.md", DEFAULT_WAITING_AND_FOLLOWUPS_CONTENT);
         if (runtimeConfigService.isVoiceEnabled()) {
             ensureDefault("VOICE.md", DEFAULT_VOICE_CONTENT);
         }
