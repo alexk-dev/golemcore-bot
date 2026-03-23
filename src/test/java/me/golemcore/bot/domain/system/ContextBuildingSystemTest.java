@@ -1,39 +1,24 @@
 package me.golemcore.bot.domain.system;
 
-import me.golemcore.bot.domain.component.MemoryComponent;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.context.ContextAssembler;
 import me.golemcore.bot.domain.context.ContextLayer;
 import me.golemcore.bot.domain.context.PromptComposer;
-import me.golemcore.bot.domain.context.layer.AutoModeLayer;
-import me.golemcore.bot.domain.context.layer.HiveLayer;
-import me.golemcore.bot.domain.context.layer.IdentityLayer;
-import me.golemcore.bot.domain.context.layer.MemoryLayer;
-import me.golemcore.bot.domain.context.layer.PlanModeLayer;
-import me.golemcore.bot.domain.context.layer.RagLayer;
-import me.golemcore.bot.domain.context.layer.SkillLayer;
-import me.golemcore.bot.domain.context.layer.TierAwarenessLayer;
 import me.golemcore.bot.domain.context.layer.ToolLayer;
-import me.golemcore.bot.domain.context.layer.WorkspaceInstructionsLayer;
 import me.golemcore.bot.domain.context.resolution.SkillResolver;
 import me.golemcore.bot.domain.context.resolution.TierResolver;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.UserPreferences;
-import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
-import me.golemcore.bot.domain.service.PromptSectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.SkillTemplateEngine;
 import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.domain.service.WorkspaceInstructionService;
 import me.golemcore.bot.port.outbound.McpPort;
-import me.golemcore.bot.port.outbound.RagPort;
 import me.golemcore.bot.tools.HiveLifecycleSignalTool;
 import me.golemcore.bot.tools.PlanSetContentTool;
 import me.golemcore.bot.tools.PlanGetTool;
@@ -168,6 +153,44 @@ class ContextBuildingSystemTest {
 
         assertTrue(context.getAvailableTools().stream()
                 .noneMatch(t -> ScheduleSessionActionTool.TOOL_NAME.equals(t.getName())));
+    }
+
+    @Test
+    void shouldAdvertiseDelayedActionToolWhenSchedulingIsPossibleWithoutProactivePush() {
+        SkillComponent skillComponent = mock(SkillComponent.class);
+        ToolCallExecutionService toolCallExecutionService = mock(ToolCallExecutionService.class);
+        McpPort mcpPort = mock(McpPort.class);
+        PlanService planService = mock(PlanService.class);
+        DelayedActionPolicyService delayedActionPolicyService = mock(DelayedActionPolicyService.class);
+
+        ToolComponent delayedTool = mock(ToolComponent.class);
+        when(delayedTool.isEnabled()).thenReturn(true);
+        when(delayedTool.getToolName()).thenReturn(ScheduleSessionActionTool.TOOL_NAME);
+        when(delayedTool.getDefinition()).thenReturn(ToolDefinition.builder()
+                .name(ScheduleSessionActionTool.TOOL_NAME)
+                .description("Delayed actions")
+                .build());
+        when(toolCallExecutionService.listTools()).thenReturn(List.of(delayedTool));
+        when(delayedActionPolicyService.canScheduleActions("web")).thenReturn(true);
+
+        ToolLayer toolLayer = new ToolLayer(toolCallExecutionService, mcpPort, planService, delayedActionPolicyService);
+        ContextAssembler assembler = buildAssembler(skillComponent, toolLayer);
+
+        ContextBuildingSystem system = new ContextBuildingSystem(assembler);
+
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder()
+                        .channelType("web")
+                        .chatId("chat-1")
+                        .messages(new ArrayList<>())
+                        .build())
+                .messages(new ArrayList<>())
+                .build();
+
+        system.process(context);
+
+        assertTrue(context.getAvailableTools().stream()
+                .anyMatch(t -> ScheduleSessionActionTool.TOOL_NAME.equals(t.getName())));
     }
 
     private ContextAssembler buildAssembler(SkillComponent skillComponent, ToolLayer toolLayer) {

@@ -52,13 +52,20 @@ public class DelayedActionPolicyService {
     }
 
     public boolean canScheduleActions(String channelType) {
+        return canPersistDelayedIntent(channelType);
+    }
+
+    public boolean canPersistDelayedIntent(String channelType) {
         return canScheduleActions() && isChannelSupported(channelType);
     }
 
+    public boolean canWakeSessionLater(String channelType, String transportChatId) {
+        return canPersistDelayedIntent(channelType)
+                && runtimeConfigService.isDelayedActionsRunLaterEnabled();
+    }
+
     public boolean canScheduleRunLater(String channelType, String transportChatId) {
-        return canScheduleActions(channelType)
-                && runtimeConfigService.isDelayedActionsRunLaterEnabled()
-                && supportsDelayedExecution(channelType, transportChatId);
+        return canWakeSessionLater(channelType, transportChatId);
     }
 
     public boolean notificationsEnabled() {
@@ -73,10 +80,10 @@ public class DelayedActionPolicyService {
     }
 
     public boolean supportsProactiveMessage(String channelType, String transportChatId) {
-        if (!canScheduleActions(channelType) || !notificationsEnabled()) {
+        if (!canPersistDelayedIntent(channelType) || !notificationsEnabled()) {
             return false;
         }
-        ChannelPort channel = channelRegistry.get(channelType).orElse(null);
+        ChannelPort channel = findRunningChannel(channelType);
         if (channel == null || !channel.isRunning()) {
             return false;
         }
@@ -90,14 +97,14 @@ public class DelayedActionPolicyService {
     }
 
     public boolean supportsDelayedExecution(String channelType, String transportChatId) {
-        return supportsProactiveMessage(channelType, transportChatId);
+        return canWakeSessionLater(channelType, transportChatId);
     }
 
     public boolean supportsProactiveDocument(String channelType, String transportChatId) {
         if (!supportsProactiveMessage(channelType, transportChatId)) {
             return false;
         }
-        ChannelPort channel = channelRegistry.get(channelType).orElse(null);
+        ChannelPort channel = findRunningChannel(channelType);
         if (channel == null) {
             return false;
         }
@@ -108,5 +115,12 @@ public class DelayedActionPolicyService {
         } catch (NoSuchMethodException e) {
             return false;
         }
+    }
+
+    private ChannelPort findRunningChannel(String channelType) {
+        if (StringValueSupport.isBlank(channelType)) {
+            return null;
+        }
+        return channelRegistry.get(channelType).orElse(null);
     }
 }

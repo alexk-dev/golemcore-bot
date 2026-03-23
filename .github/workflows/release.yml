@@ -162,10 +162,32 @@ jobs:
       - name: Set up JDK 25
         if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
         uses: actions/setup-java@v5
+        env:
+          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
         with:
           java-version: '25'
           distribution: 'temurin'
           cache: maven
+          server-id: central
+          server-username: CENTRAL_TOKEN_USERNAME
+          server-password: CENTRAL_TOKEN_PASSWORD
+
+      - name: Validate publishing secrets
+        if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
+        shell: bash
+        env:
+          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+          MAVEN_GPG_PRIVATE_KEY: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+          MAVEN_GPG_KEY_ID: ${{ secrets.MAVEN_GPG_KEY_ID }}
+        run: |
+          for secret_name in CENTRAL_TOKEN_USERNAME CENTRAL_TOKEN_PASSWORD MAVEN_GPG_PRIVATE_KEY MAVEN_GPG_KEY_ID; do
+            if [[ -z "${!secret_name}" ]]; then
+              echo "Missing required secret: ${secret_name}" >&2
+              exit 1
+            fi
+          done
 
       - name: Checkout plugin APIs
         if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
@@ -216,19 +238,20 @@ jobs:
 
       - name: Publish to Maven Central
         if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
+        shell: bash
         env:
           MAVEN_GPG_PRIVATE_KEY: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
           MAVEN_GPG_KEY_ID: ${{ secrets.MAVEN_GPG_KEY_ID }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
-          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
-          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
         run: |
-          echo "${MAVEN_GPG_PRIVATE_KEY}" | gpg --batch --import
+          mkdir -p ~/.gnupg
+          chmod 700 ~/.gnupg
+          printf '%s' "${MAVEN_GPG_PRIVATE_KEY}" | gpg --batch --import
+          gpg --batch --list-secret-keys --keyid-format LONG "${MAVEN_GPG_KEY_ID}"
+
           ./mvnw -B -ntp deploy -P central-publish -DskipTests -DskipGitHooks=true \
             -Dgpg.keyname="${MAVEN_GPG_KEY_ID}" \
-            -Dgpg.passphrase="${MAVEN_GPG_PASSPHRASE}" \
-            -Dcentral.publishing.token.username="${CENTRAL_TOKEN_USERNAME}" \
-            -Dcentral.publishing.token.password="${CENTRAL_TOKEN_PASSWORD}"
+            -Dgpg.passphrase="${MAVEN_GPG_PASSPHRASE}"
 
       - name: Trigger Docker publish for release tag
         if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'

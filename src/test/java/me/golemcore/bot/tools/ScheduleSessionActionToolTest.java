@@ -266,10 +266,14 @@ class ScheduleSessionActionToolTest {
         Map<String, Object> data = (Map<String, Object>) result.getData();
         assertEquals("DIRECT_FILE", data.get("deliveryMode"));
         assertEquals(Boolean.TRUE, data.get("proactiveDeliverySupportedNow"));
+        assertEquals("job_result", data.get("userVisibleKind"));
+        assertEquals("Report ready", data.get("humanSummary"));
+        assertEquals("2026-03-19T18:45:00Z", data.get("nextCheckLabel"));
     }
 
     @Test
     void shouldCreateRunLaterAction() throws Exception {
+        org.mockito.ArgumentCaptor<DelayedSessionAction> captor = forClass(DelayedSessionAction.class);
         when(delayedActionService.schedule(any())).thenAnswer(invocation -> {
             DelayedSessionAction action = invocation.getArgument(0);
             action.setId("delay-1");
@@ -280,12 +284,23 @@ class ScheduleSessionActionToolTest {
                 "operation", "create",
                 "action_kind", "run_later",
                 "delay_seconds", 300,
-                "instruction", "Start the report")).get();
+                "instruction", "Start the report",
+                "original_summary", "weekly report export")).get();
 
         assertTrue(result.isSuccess());
+        org.mockito.Mockito.verify(delayedActionService).schedule(captor.capture());
+        DelayedSessionAction scheduled = captor.getValue();
+        assertEquals(DelayedActionDeliveryMode.INTERNAL_TURN, scheduled.getDeliveryMode());
+        assertTrue(scheduled.isCancelOnUserActivity());
+        assertEquals("Waiting for result: weekly report export", scheduled.getPayload().get("humanSummary"));
+        assertEquals("check_back", scheduled.getPayload().get("userVisibleKind"));
         @SuppressWarnings("unchecked")
         Map<String, Object> data = (Map<String, Object>) result.getData();
         assertEquals("delay-1", data.get("actionId"));
+        assertEquals(Boolean.TRUE, data.get("cancelOnUserActivity"));
+        assertEquals("Waiting for result: weekly report export", data.get("humanSummary"));
+        assertEquals("check_back", data.get("userVisibleKind"));
+        assertEquals("2026-03-19T18:35:00Z", data.get("nextCheckLabel"));
     }
 
     @Test
@@ -306,11 +321,18 @@ class ScheduleSessionActionToolTest {
         assertTrue(result.isSuccess());
         org.mockito.Mockito.verify(delayedActionService).schedule(captor.capture());
         assertFalse(captor.getValue().isCancelOnUserActivity());
+        assertEquals("Reminder: Ping me", captor.getValue().getPayload().get("humanSummary"));
+        assertEquals("reminder", captor.getValue().getPayload().get("userVisibleKind"));
     }
 
     @Test
-    void shouldRejectRunLaterWhenProactiveDeliveryIsUnavailable() throws Exception {
-        when(delayedActionPolicyService.canScheduleRunLater("telegram", "transport-1")).thenReturn(false);
+    void shouldAllowRunLaterWhenOnlyDelayedExecutionIsAvailable() throws Exception {
+        when(delayedActionService.schedule(any())).thenAnswer(invocation -> {
+            DelayedSessionAction action = invocation.getArgument(0);
+            action.setId("delay-3");
+            return action;
+        });
+        when(delayedActionPolicyService.supportsProactiveMessage("telegram", "transport-1")).thenReturn(false);
 
         ToolResult result = tool.execute(Map.of(
                 "operation", "create",
@@ -318,8 +340,7 @@ class ScheduleSessionActionToolTest {
                 "delay_seconds", 300,
                 "instruction", "Start the report")).get();
 
-        assertFalse(result.isSuccess());
-        assertEquals("run_later is unavailable for this channel or session", result.getError());
+        assertTrue(result.isSuccess());
     }
 
     @Test
@@ -351,6 +372,20 @@ class ScheduleSessionActionToolTest {
     }
 
     @Test
+    void shouldRejectRunLaterWhenDelayedExecutionIsUnavailable() throws Exception {
+        when(delayedActionPolicyService.canScheduleRunLater("telegram", "transport-1")).thenReturn(false);
+
+        ToolResult result = tool.execute(Map.of(
+                "operation", "create",
+                "action_kind", "run_later",
+                "delay_seconds", 300,
+                "instruction", "Start the report")).get();
+
+        assertFalse(result.isSuccess());
+        assertEquals("run_later is unavailable for this channel or session", result.getError());
+    }
+
+    @Test
     void shouldListActionsForCurrentSession() throws Exception {
         when(delayedActionService.listActions("telegram", "conv-1")).thenReturn(java.util.List.of(
                 DelayedSessionAction.builder()
@@ -360,6 +395,9 @@ class ScheduleSessionActionToolTest {
                         .status(me.golemcore.bot.domain.model.DelayedActionStatus.SCHEDULED)
                         .attempts(2)
                         .cancelOnUserActivity(true)
+                        .payload(Map.of(
+                                "humanSummary", "Reminder: ping me",
+                                "userVisibleKind", "reminder"))
                         .build()));
 
         ToolResult result = tool.execute(Map.of("operation", "list")).get();
@@ -372,6 +410,8 @@ class ScheduleSessionActionToolTest {
         Map<String, Object> firstItem = (Map<String, Object>) ((java.util.List<?>) data.get("items")).get(0);
         assertEquals(Boolean.TRUE, firstItem.get("cancelOnUserActivity"));
         assertEquals(2, firstItem.get("attempts"));
+        assertEquals("Reminder: ping me", firstItem.get("humanSummary"));
+        assertEquals("reminder", firstItem.get("userVisibleKind"));
     }
 
     @Test
