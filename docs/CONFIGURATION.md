@@ -513,6 +513,7 @@ Some settings are still controlled via Spring properties (application config), t
 - Plugin marketplace source: `BOT_PLUGINS_MARKETPLACE_REPOSITORY_DIRECTORY`, `BOT_PLUGINS_MARKETPLACE_REPOSITORY_URL`, `BOT_PLUGINS_MARKETPLACE_BRANCH`
 - Plugin marketplace HTTP fallback: `BOT_PLUGINS_MARKETPLACE_API_BASE_URL`, `BOT_PLUGINS_MARKETPLACE_RAW_BASE_URL`, `BOT_PLUGINS_MARKETPLACE_REMOTE_CACHE_TTL`
 - Self-update controls: `BOT_UPDATE_ENABLED`, `UPDATE_PATH`, `BOT_UPDATE_MAX_KEPT_VERSIONS`, `BOT_UPDATE_CHECK_INTERVAL`
+- Local bundle runtime override: `GOLEMCORE_BUNDLED_JAR`, `golemcore.launcher.bundled-jar`
 - Allowed providers in model picker: `BOT_MODEL_SELECTION_ALLOWED_PROVIDERS`
 - Tool result truncation: `bot.auto-compact.max-tool-result-chars`
 - Plan mode feature flag: `bot.plan.enabled`
@@ -605,11 +606,30 @@ Configurable properties:
 - `bot.update.max-kept-versions` (`BOT_UPDATE_MAX_KEPT_VERSIONS`, default `3`)
 - `bot.update.check-interval` (`BOT_UPDATE_CHECK_INTERVAL`, default `PT1H`)
 
+### Local native bundle runtime resolution
+
+When the app starts through the native app-image launcher, `RuntimeLauncher` can also use:
+
+- `GOLEMCORE_BUNDLED_JAR`
+- `golemcore.launcher.bundled-jar`
+
+These point to the bundled runtime jar inside the local app-image.
+
+The launcher also forwards JVM system properties passed to the native launcher process, including `-Dserver.port=...`, to the spawned runtime jar.
+
+Launcher priority is:
+
+1. staged update selected by `updates/current.txt`
+2. bundled runtime jar
+3. legacy Jib classpath fallback
+
+This preserves the existing self-update model for local distributions.
+
 ## Storage Layout
 
 Default (macOS/Linux): `~/.golemcore/workspace`
 
-```
+```text
 workspace/
 ├── auto/                    # auto mode + plan mode state
 ├── memory/                  # structured memory items (JSONL)

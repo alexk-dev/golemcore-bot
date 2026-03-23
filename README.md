@@ -77,6 +77,65 @@ More options (Compose, production, systemd): **[Deployment](docs/DEPLOYMENT.md)*
 
 ---
 
+## Local native app-image bundle (experimental)
+
+Besides Docker and the plain executable JAR, the release workflow now also publishes a **local app-image bundle** for the current OS/architecture.
+
+### Build it locally
+
+```bash
+./mvnw clean package -DskipTests -DskipGitHooks=true
+npx golemcore-bot-local-build-native-dist
+```
+
+This produces an archive in:
+
+```text
+target/native-dist/golemcore-bot-<version>-<platform>-<arch>.tar.gz
+```
+
+### What is inside
+
+The app-image contains:
+
+- a small launcher application produced by `jpackage`
+- the regular self-updatable runtime jar under `lib/runtime/`
+- launcher wiring that points to that bundled runtime jar first
+
+So the startup order becomes:
+
+1. staged update from `updates/current.txt`
+2. bundled runtime jar from the app-image
+3. legacy Jib/classpath fallback
+
+### Override startup parameters
+
+The native launcher forwards JVM system properties to the actual runtime process, so you can override the server port and other Spring properties directly at launch time.
+
+Examples:
+
+```bash
+./golemcore-bot/bin/golemcore-bot -Dserver.port=9090
+./golemcore-bot/bin/golemcore-bot -Dserver.port=9090 --spring.profiles.active=prod
+```
+
+You can also still use Spring application arguments:
+
+```bash
+./golemcore-bot/bin/golemcore-bot --server.port=9090
+```
+
+### Why this matters
+
+This keeps the existing self-update model based on:
+
+- `updates/current.txt`
+- `updates/jars/`
+
+while also letting the bot start cleanly from a native local bundle.
+
+---
+
 ## Minimal configuration (README keeps only the essentials)
 
 ### Required
