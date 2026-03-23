@@ -9,6 +9,7 @@ import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
+import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -52,6 +53,9 @@ class ContextBuildingSystemTest {
         AutoModeService autoModeService = mock(AutoModeService.class);
         DelayedActionPolicyService delayedActionPolicyService = mock(DelayedActionPolicyService.class);
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveForTier(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new ModelSelectionService.ModelSelection("gpt-5-balanced", "medium"));
         WorkspaceInstructionService workspaceInstructionService = mock(WorkspaceInstructionService.class);
         when(workspaceInstructionService.getWorkspaceInstructionsContext()).thenReturn("");
 
@@ -75,6 +79,7 @@ class ContextBuildingSystemTest {
                 planService,
                 promptSectionService,
                 runtimeConfigService,
+                modelSelectionService,
                 userPreferencesService,
                 workspaceInstructionService);
 
@@ -113,6 +118,9 @@ class ContextBuildingSystemTest {
         AutoModeService autoModeService = mock(AutoModeService.class);
         DelayedActionPolicyService delayedActionPolicyService = mock(DelayedActionPolicyService.class);
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveForTier(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new ModelSelectionService.ModelSelection("gpt-5-balanced", "medium"));
         WorkspaceInstructionService workspaceInstructionService = mock(WorkspaceInstructionService.class);
         when(workspaceInstructionService.getWorkspaceInstructionsContext()).thenReturn("");
 
@@ -137,6 +145,7 @@ class ContextBuildingSystemTest {
                 planService,
                 promptSectionService,
                 runtimeConfigService,
+                modelSelectionService,
                 userPreferencesService,
                 workspaceInstructionService);
 
@@ -186,6 +195,9 @@ class ContextBuildingSystemTest {
         AutoModeService autoModeService = mock(AutoModeService.class);
         DelayedActionPolicyService delayedActionPolicyService = mock(DelayedActionPolicyService.class);
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveForTier(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new ModelSelectionService.ModelSelection("gpt-5-balanced", "medium"));
         WorkspaceInstructionService workspaceInstructionService = mock(WorkspaceInstructionService.class);
         PlanService planService = mock(PlanService.class);
         ToolComponent delayedTool = mock(ToolComponent.class);
@@ -212,6 +224,7 @@ class ContextBuildingSystemTest {
                 planService,
                 promptSectionService,
                 runtimeConfigService,
+                modelSelectionService,
                 userPreferencesService,
                 workspaceInstructionService);
 

@@ -3,6 +3,13 @@ package me.golemcore.bot.domain.service;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.AudioFormat;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.trace.TraceEventRecord;
+import me.golemcore.bot.domain.model.trace.TraceRecord;
+import me.golemcore.bot.domain.model.trace.TraceSnapshot;
+import me.golemcore.bot.domain.model.trace.TraceSpanKind;
+import me.golemcore.bot.domain.model.trace.TraceSpanRecord;
+import me.golemcore.bot.domain.model.trace.TraceStatusCode;
+import me.golemcore.bot.domain.model.trace.TraceStorageStats;
 import me.golemcore.bot.proto.session.v1.AgentSessionRecord;
 import me.golemcore.bot.proto.session.v1.JsonValue;
 import me.golemcore.bot.proto.session.v1.SessionState;
@@ -15,6 +22,7 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -598,6 +606,84 @@ class SessionProtoMapperTest {
 
         double restored_val = (Double) restored.getMetadata().get("temperature");
         assertEquals(0.7, restored_val, 0.01);
+    }
+
+    @Test
+    void shouldRoundTripTraceRecordsAndStorageStats() {
+        Instant now = Instant.parse("2026-03-20T12:00:00Z");
+        byte[] compressedPayload = new byte[] { 1, 2, 3, 4 };
+
+        TraceSnapshot snapshot = TraceSnapshot.builder()
+                .snapshotId("snapshot-1")
+                .role("request")
+                .contentType("application/json")
+                .encoding("zstd")
+                .compressedPayload(compressedPayload)
+                .originalSize(64L)
+                .compressedSize(4L)
+                .truncated(false)
+                .build();
+        TraceEventRecord event = TraceEventRecord.builder()
+                .name("provider.retry")
+                .timestamp(now.plusMillis(5))
+                .attributes(new LinkedHashMap<>(Map.of("attempt", 2)))
+                .build();
+        TraceSpanRecord span = TraceSpanRecord.builder()
+                .spanId("span-1")
+                .parentSpanId(null)
+                .name("web.request")
+                .kind(TraceSpanKind.INGRESS)
+                .statusCode(TraceStatusCode.OK)
+                .statusMessage(null)
+                .startedAt(now)
+                .endedAt(now.plusMillis(20))
+                .attributes(new LinkedHashMap<>(Map.of("http.method", "POST")))
+                .events(new ArrayList<>(List.of(event)))
+                .snapshots(new ArrayList<>(List.of(snapshot)))
+                .build();
+        TraceRecord trace = TraceRecord.builder()
+                .traceId("trace-1")
+                .rootSpanId("span-1")
+                .traceName("web.request")
+                .startedAt(now)
+                .endedAt(now.plusMillis(30))
+                .spans(new ArrayList<>(List.of(span)))
+                .truncated(false)
+                .compressedSnapshotBytes(4L)
+                .uncompressedSnapshotBytes(64L)
+                .build();
+        TraceStorageStats stats = TraceStorageStats.builder()
+                .compressedSnapshotBytes(4L)
+                .uncompressedSnapshotBytes(64L)
+                .evictedSnapshots(0)
+                .evictedTraces(0)
+                .truncatedTraces(0)
+                .build();
+
+        AgentSession session = AgentSession.builder()
+                .messages(new ArrayList<>())
+                .metadata(new LinkedHashMap<>())
+                .traces(new ArrayList<>(List.of(trace)))
+                .traceStorageStats(stats)
+                .build();
+
+        AgentSession restored = roundTrip(session);
+
+        assertEquals(1, restored.getTraces().size());
+        TraceRecord restoredTrace = restored.getTraces().get(0);
+        assertEquals("trace-1", restoredTrace.getTraceId());
+        assertEquals("span-1", restoredTrace.getRootSpanId());
+        assertEquals(1, restoredTrace.getSpans().size());
+        TraceSpanRecord restoredSpan = restoredTrace.getSpans().get(0);
+        assertEquals(TraceSpanKind.INGRESS, restoredSpan.getKind());
+        assertEquals(TraceStatusCode.OK, restoredSpan.getStatusCode());
+        assertEquals("POST", restoredSpan.getAttributes().get("http.method"));
+        assertEquals(1, restoredSpan.getEvents().size());
+        assertEquals("provider.retry", restoredSpan.getEvents().get(0).getName());
+        assertEquals(2L, restoredSpan.getEvents().get(0).getAttributes().get("attempt"));
+        assertEquals(1, restoredSpan.getSnapshots().size());
+        assertTrue(Arrays.equals(compressedPayload, restoredSpan.getSnapshots().get(0).getCompressedPayload()));
+        assertEquals(64L, restored.getTraceStorageStats().getUncompressedSnapshotBytes());
     }
 
     // ── Helper methods ────────────────────────────────────────────────

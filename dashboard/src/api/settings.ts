@@ -211,6 +211,7 @@ export interface RuntimeConfig {
   plan: PlanConfig;
   hive: HiveConfig;
   autoMode: AutoModeConfig;
+  tracing: TracingConfig;
   rateLimit: RateLimitConfig;
   security: SecurityConfig;
   compaction: CompactionConfig;
@@ -372,6 +373,19 @@ export interface AutoModeConfig {
   notifyMilestones: boolean | null;
 }
 
+export interface TracingConfig {
+  enabled: boolean | null;
+  payloadSnapshotsEnabled: boolean | null;
+  sessionTraceBudgetMb: number | null;
+  maxSnapshotSizeKb: number | null;
+  maxSnapshotsPerSpan: number | null;
+  maxTracesPerSession: number | null;
+  captureInboundPayloads: boolean | null;
+  captureOutboundPayloads: boolean | null;
+  captureToolPayloads: boolean | null;
+  captureLlmPayloads: boolean | null;
+}
+
 export interface RateLimitConfig {
   enabled: boolean | null;
   userRequestsPerMinute: number | null;
@@ -521,6 +535,11 @@ export async function updatePlanConfig(config: PlanConfig): Promise<RuntimeConfi
 
 export async function updateAutoConfig(config: AutoModeConfig): Promise<RuntimeConfig> {
   const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/auto', config);
+  return toUiRuntimeConfig(data);
+}
+
+export async function updateTracingConfig(config: TracingConfig): Promise<RuntimeConfig> {
+  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/tracing', config);
   return toUiRuntimeConfig(data);
 }
 

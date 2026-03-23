@@ -18,22 +18,33 @@ package me.golemcore.bot.domain.system;
  * Contact: alex@kuleshov.tech
  */
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Attachment;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
+import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.RoutingOutcome;
 import me.golemcore.bot.domain.model.SkillTransitionRequest;
 import me.golemcore.bot.domain.model.TurnOutcome;
+import me.golemcore.bot.domain.model.trace.TraceContext;
+import me.golemcore.bot.domain.model.trace.TraceSpanKind;
+import me.golemcore.bot.domain.model.trace.TraceStatusCode;
+import me.golemcore.bot.domain.service.MdcSupport;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.SessionIdentitySupport;
+import me.golemcore.bot.domain.service.TraceMdcSupport;
+import me.golemcore.bot.domain.service.TraceRuntimeConfigSupport;
+import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.service.VoiceResponseHandler.VoiceSendResult;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -41,6 +52,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -66,12 +78,23 @@ public class ResponseRoutingSystem implements AgentSystem {
     private final Map<String, ChannelPort> overrides = new ConcurrentHashMap<>();
     private final UserPreferencesService preferencesService;
     private final VoiceResponseHandler voiceHandler;
+    private final RuntimeConfigService runtimeConfigService;
+    private final TraceService traceService;
+    private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
 
     public ResponseRoutingSystem(ChannelRegistry channelRegistry, UserPreferencesService preferencesService,
             VoiceResponseHandler voiceHandler) {
+        this(channelRegistry, preferencesService, voiceHandler, null, null);
+    }
+
+    @Autowired
+    public ResponseRoutingSystem(ChannelRegistry channelRegistry, UserPreferencesService preferencesService,
+            VoiceResponseHandler voiceHandler, RuntimeConfigService runtimeConfigService, TraceService traceService) {
         this.channelRegistry = channelRegistry;
         this.preferencesService = preferencesService;
         this.voiceHandler = voiceHandler;
+        this.runtimeConfigService = runtimeConfigService;
+        this.traceService = traceService;
         log.info("Registered {} channels: {}", channelRegistry.getAll().size(),
                 channelRegistry.getAll().stream().map(ChannelPort::getChannelType).toList());
     }
@@ -105,29 +128,35 @@ public class ResponseRoutingSystem implements AgentSystem {
             return context;
         }
 
+        RuntimeConfig.TracingConfig tracingConfig = TraceRuntimeConfigSupport.resolve(runtimeConfigService);
+        TraceContext routingSpan = startRoutingSpan(context);
+        captureOutgoingSnapshot(context, routingSpan, tracingConfig, outgoing);
+
         // Track routing results for RoutingOutcome
         boolean sentText = false;
         boolean sentVoice = false;
         String errorMessage = null;
         int sentAttachments;
 
-        if (shouldSendCombinedWebMessage(context, outgoing)) {
-            errorMessage = sendCombinedWebMessage(context, outgoing);
-            sentText = errorMessage == null && outgoing.getText() != null && !outgoing.getText().isBlank();
-            sentAttachments = errorMessage == null ? toAttachmentMetadata(outgoing.getAttachments()).size() : 0;
-        } else {
-            if (outgoing.getText() != null && !outgoing.getText().isBlank()) {
-                String textError = sendOutgoingText(context, outgoing);
-                if (textError == null) {
-                    sentText = true;
-                } else {
-                    errorMessage = textError;
+        try (MdcSupport.Scope ignored = MdcSupport.withContext(buildTraceMdcContext(routingSpan, context))) {
+            if (shouldSendCombinedWebMessage(context, outgoing)) {
+                errorMessage = sendCombinedWebMessage(context, outgoing);
+                sentText = errorMessage == null && outgoing.getText() != null && !outgoing.getText().isBlank();
+                sentAttachments = errorMessage == null ? toAttachmentMetadata(outgoing.getAttachments()).size() : 0;
+            } else {
+                if (outgoing.getText() != null && !outgoing.getText().isBlank()) {
+                    String textError = sendOutgoingText(context, outgoing);
+                    if (textError == null) {
+                        sentText = true;
+                    } else {
+                        errorMessage = textError;
+                    }
                 }
+                sentAttachments = sendOutgoingAttachments(context, outgoing);
             }
-            sentAttachments = sendOutgoingAttachments(context, outgoing);
-        }
-        if (sendOutgoingVoiceIfRequested(context, outgoing)) {
-            sentVoice = true;
+            if (sendOutgoingVoiceIfRequested(context, outgoing)) {
+                sentVoice = true;
+            }
         }
 
         // Build and record RoutingOutcome
@@ -139,8 +168,61 @@ public class ResponseRoutingSystem implements AgentSystem {
                 .errorMessage(errorMessage)
                 .build();
         recordRoutingOutcome(context, routingOutcome);
+        finishRoutingSpan(context, routingSpan, errorMessage == null ? TraceStatusCode.OK : TraceStatusCode.ERROR,
+                errorMessage);
 
         return context;
+    }
+
+    private TraceContext startRoutingSpan(AgentContext context) {
+        if (traceService == null || runtimeConfigService == null || !runtimeConfigService.isTracingEnabled()
+                || context == null || context.getSession() == null || context.getTraceContext() == null) {
+            return null;
+        }
+        AgentSession session = context.getSession();
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("session.id", session.getId());
+        if (session.getChannelType() != null) {
+            attributes.put("channel.type", session.getChannelType());
+        }
+        return traceService.startSpan(session, context.getTraceContext(), "response.route", TraceSpanKind.OUTBOUND,
+                java.time.Instant.now(), attributes);
+    }
+
+    private void finishRoutingSpan(AgentContext context, TraceContext spanContext, TraceStatusCode statusCode,
+            String statusMessage) {
+        if (traceService == null || context == null || context.getSession() == null || spanContext == null) {
+            return;
+        }
+        traceService.finishSpan(context.getSession(), spanContext, statusCode, statusMessage, java.time.Instant.now());
+    }
+
+    private void captureOutgoingSnapshot(AgentContext context, TraceContext spanContext,
+            RuntimeConfig.TracingConfig tracingConfig, OutgoingResponse outgoing) {
+        if (traceService == null || context == null || context.getSession() == null || spanContext == null
+                || tracingConfig == null || !Boolean.TRUE.equals(tracingConfig.getCaptureOutboundPayloads())) {
+            return;
+        }
+        traceService.captureSnapshot(context.getSession(), spanContext, tracingConfig,
+                "response", "application/json", serializeSnapshotPayload(outgoing));
+    }
+
+    private Map<String, String> buildTraceMdcContext(TraceContext spanContext, AgentContext context) {
+        if (spanContext == null) {
+            return Map.of();
+        }
+        return TraceMdcSupport.buildMdcContext(spanContext, context != null ? context.getAttributes() : Map.of());
+    }
+
+    private byte[] serializeSnapshotPayload(Object payload) {
+        if (payload == null) {
+            return new byte[0];
+        }
+        try {
+            return objectMapper.writeValueAsBytes(payload);
+        } catch (Exception e) { // NOSONAR - tracing must not break routing
+            return String.valueOf(payload).getBytes(StandardCharsets.UTF_8);
+        }
     }
 
     private void recordRoutingOutcome(AgentContext context, RoutingOutcome routingOutcome) {

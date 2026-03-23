@@ -99,6 +99,16 @@ public class RuntimeConfigService {
     private static final boolean DEFAULT_UPDATE_MAINTENANCE_WINDOW_ENABLED = false;
     private static final String DEFAULT_UPDATE_MAINTENANCE_WINDOW_START_UTC = "00:00";
     private static final String DEFAULT_UPDATE_MAINTENANCE_WINDOW_END_UTC = "00:00";
+    private static final boolean DEFAULT_TRACING_ENABLED = true;
+    private static final boolean DEFAULT_TRACING_PAYLOAD_SNAPSHOTS_ENABLED = false;
+    private static final int DEFAULT_TRACING_SESSION_TRACE_BUDGET_MB = 128;
+    private static final int DEFAULT_TRACING_MAX_SNAPSHOT_SIZE_KB = 256;
+    private static final int DEFAULT_TRACING_MAX_SNAPSHOTS_PER_SPAN = 10;
+    private static final int DEFAULT_TRACING_MAX_TRACES_PER_SESSION = 100;
+    private static final boolean DEFAULT_TRACING_CAPTURE_INBOUND_PAYLOADS = false;
+    private static final boolean DEFAULT_TRACING_CAPTURE_OUTBOUND_PAYLOADS = false;
+    private static final boolean DEFAULT_TRACING_CAPTURE_TOOL_PAYLOADS = false;
+    private static final boolean DEFAULT_TRACING_CAPTURE_LLM_PAYLOADS = false;
     private static final int DEFAULT_AUTO_COMPACT_MAX_TOKENS = 50000;
     private static final int DEFAULT_AUTO_COMPACT_KEEP_LAST = 20;
     private static final String DEFAULT_COMPACTION_TRIGGER_MODE = "model_ratio";
@@ -772,6 +782,92 @@ public class RuntimeConfigService {
                 DEFAULT_UPDATE_MAINTENANCE_WINDOW_END_UTC);
     }
 
+    public boolean isTracingEnabled() {
+        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
+        if (tracingConfig == null) {
+            return DEFAULT_TRACING_ENABLED;
+        }
+        Boolean value = tracingConfig.getEnabled();
+        return value != null ? value : DEFAULT_TRACING_ENABLED;
+    }
+
+    public boolean isPayloadSnapshotsEnabled() {
+        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
+        if (tracingConfig == null) {
+            return DEFAULT_TRACING_PAYLOAD_SNAPSHOTS_ENABLED;
+        }
+        Boolean value = tracingConfig.getPayloadSnapshotsEnabled();
+        return value != null ? value : DEFAULT_TRACING_PAYLOAD_SNAPSHOTS_ENABLED;
+    }
+
+    public int getSessionTraceBudgetMb() {
+        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
+        if (tracingConfig == null || tracingConfig.getSessionTraceBudgetMb() == null) {
+            return DEFAULT_TRACING_SESSION_TRACE_BUDGET_MB;
+        }
+        return tracingConfig.getSessionTraceBudgetMb();
+    }
+
+    public int getTraceMaxSnapshotSizeKb() {
+        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
+        if (tracingConfig == null || tracingConfig.getMaxSnapshotSizeKb() == null) {
+            return DEFAULT_TRACING_MAX_SNAPSHOT_SIZE_KB;
+        }
+        return tracingConfig.getMaxSnapshotSizeKb();
+    }
+
+    public int getTraceMaxSnapshotsPerSpan() {
+        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
+        if (tracingConfig == null || tracingConfig.getMaxSnapshotsPerSpan() == null) {
+            return DEFAULT_TRACING_MAX_SNAPSHOTS_PER_SPAN;
+        }
+        return tracingConfig.getMaxSnapshotsPerSpan();
+    }
+
+    public int getTraceMaxTracesPerSession() {
+        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
+        if (tracingConfig == null || tracingConfig.getMaxTracesPerSession() == null) {
+            return DEFAULT_TRACING_MAX_TRACES_PER_SESSION;
+        }
+        return tracingConfig.getMaxTracesPerSession();
+    }
+
+    public boolean isTraceInboundPayloadCaptureEnabled() {
+        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
+        if (tracingConfig == null) {
+            return DEFAULT_TRACING_CAPTURE_INBOUND_PAYLOADS;
+        }
+        Boolean value = tracingConfig.getCaptureInboundPayloads();
+        return value != null ? value : DEFAULT_TRACING_CAPTURE_INBOUND_PAYLOADS;
+    }
+
+    public boolean isTraceOutboundPayloadCaptureEnabled() {
+        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
+        if (tracingConfig == null) {
+            return DEFAULT_TRACING_CAPTURE_OUTBOUND_PAYLOADS;
+        }
+        Boolean value = tracingConfig.getCaptureOutboundPayloads();
+        return value != null ? value : DEFAULT_TRACING_CAPTURE_OUTBOUND_PAYLOADS;
+    }
+
+    public boolean isTraceToolPayloadCaptureEnabled() {
+        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
+        if (tracingConfig == null) {
+            return DEFAULT_TRACING_CAPTURE_TOOL_PAYLOADS;
+        }
+        Boolean value = tracingConfig.getCaptureToolPayloads();
+        return value != null ? value : DEFAULT_TRACING_CAPTURE_TOOL_PAYLOADS;
+    }
+
+    public boolean isTraceLlmPayloadCaptureEnabled() {
+        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
+        if (tracingConfig == null) {
+            return DEFAULT_TRACING_CAPTURE_LLM_PAYLOADS;
+        }
+        Boolean value = tracingConfig.getCaptureLlmPayloads();
+        return value != null ? value : DEFAULT_TRACING_CAPTURE_LLM_PAYLOADS;
+    }
+
     // ==================== Rate Limit ====================
 
     public boolean isRateLimitEnabled() {
@@ -1348,6 +1444,8 @@ public class RuntimeConfigService {
                 RuntimeConfig.AutoModeConfig::new);
         persistSection(RuntimeConfig.ConfigSection.UPDATE, cfg.getUpdate(),
                 RuntimeConfig.UpdateConfig::new);
+        persistSection(RuntimeConfig.ConfigSection.TRACING, cfg.getTracing(),
+                RuntimeConfig.TracingConfig::new);
         persistSection(RuntimeConfig.ConfigSection.RATE_LIMIT, cfg.getRateLimit(),
                 RuntimeConfig.RateLimitConfig::new);
         persistSection(RuntimeConfig.ConfigSection.SECURITY, cfg.getSecurity(),
@@ -1425,6 +1523,8 @@ public class RuntimeConfigService {
                 RuntimeConfig.AutoModeConfig.class, RuntimeConfig.AutoModeConfig::new);
         RuntimeConfig.UpdateConfig update = loadSection(RuntimeConfig.ConfigSection.UPDATE,
                 RuntimeConfig.UpdateConfig.class, RuntimeConfig.UpdateConfig::new);
+        RuntimeConfig.TracingConfig tracing = loadSection(RuntimeConfig.ConfigSection.TRACING,
+                RuntimeConfig.TracingConfig.class, RuntimeConfig.TracingConfig::new);
         RuntimeConfig.RateLimitConfig rateLimit = loadSection(RuntimeConfig.ConfigSection.RATE_LIMIT,
                 RuntimeConfig.RateLimitConfig.class, RuntimeConfig.RateLimitConfig::new);
         RuntimeConfig.SecurityConfig security = loadSection(RuntimeConfig.ConfigSection.SECURITY,
@@ -1459,6 +1559,7 @@ public class RuntimeConfigService {
                 .voice(voice)
                 .autoMode(autoMode)
                 .update(update)
+                .tracing(tracing)
                 .rateLimit(rateLimit)
                 .security(security)
                 .compaction(compaction)
@@ -1554,6 +1655,43 @@ public class RuntimeConfigService {
         cfg.getUpdate().setMaintenanceWindowEndUtc(normalizeUtcTimeValue(
                 cfg.getUpdate().getMaintenanceWindowEndUtc(),
                 DEFAULT_UPDATE_MAINTENANCE_WINDOW_END_UTC));
+        if (cfg.getTracing() == null) {
+            cfg.setTracing(new RuntimeConfig.TracingConfig());
+        }
+        if (cfg.getTracing().getEnabled() == null) {
+            cfg.getTracing().setEnabled(DEFAULT_TRACING_ENABLED);
+        }
+        if (cfg.getTracing().getPayloadSnapshotsEnabled() == null) {
+            cfg.getTracing().setPayloadSnapshotsEnabled(DEFAULT_TRACING_PAYLOAD_SNAPSHOTS_ENABLED);
+        }
+        Integer sessionTraceBudgetMb = cfg.getTracing().getSessionTraceBudgetMb();
+        if (sessionTraceBudgetMb == null || sessionTraceBudgetMb < 1) {
+            cfg.getTracing().setSessionTraceBudgetMb(DEFAULT_TRACING_SESSION_TRACE_BUDGET_MB);
+        }
+        Integer maxSnapshotSizeKb = cfg.getTracing().getMaxSnapshotSizeKb();
+        if (maxSnapshotSizeKb == null || maxSnapshotSizeKb < 1) {
+            cfg.getTracing().setMaxSnapshotSizeKb(DEFAULT_TRACING_MAX_SNAPSHOT_SIZE_KB);
+        }
+        Integer maxSnapshotsPerSpan = cfg.getTracing().getMaxSnapshotsPerSpan();
+        if (maxSnapshotsPerSpan == null || maxSnapshotsPerSpan < 1) {
+            cfg.getTracing().setMaxSnapshotsPerSpan(DEFAULT_TRACING_MAX_SNAPSHOTS_PER_SPAN);
+        }
+        Integer maxTracesPerSession = cfg.getTracing().getMaxTracesPerSession();
+        if (maxTracesPerSession == null || maxTracesPerSession < 1) {
+            cfg.getTracing().setMaxTracesPerSession(DEFAULT_TRACING_MAX_TRACES_PER_SESSION);
+        }
+        if (cfg.getTracing().getCaptureInboundPayloads() == null) {
+            cfg.getTracing().setCaptureInboundPayloads(DEFAULT_TRACING_CAPTURE_INBOUND_PAYLOADS);
+        }
+        if (cfg.getTracing().getCaptureOutboundPayloads() == null) {
+            cfg.getTracing().setCaptureOutboundPayloads(DEFAULT_TRACING_CAPTURE_OUTBOUND_PAYLOADS);
+        }
+        if (cfg.getTracing().getCaptureToolPayloads() == null) {
+            cfg.getTracing().setCaptureToolPayloads(DEFAULT_TRACING_CAPTURE_TOOL_PAYLOADS);
+        }
+        if (cfg.getTracing().getCaptureLlmPayloads() == null) {
+            cfg.getTracing().setCaptureLlmPayloads(DEFAULT_TRACING_CAPTURE_LLM_PAYLOADS);
+        }
         cfg.getTools().setShellEnvironmentVariables(
                 normalizeShellEnvironmentVariables(cfg.getTools().getShellEnvironmentVariables()));
         if (cfg.getLlm() == null) {

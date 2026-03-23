@@ -9,6 +9,13 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.RoutingOutcome;
 import me.golemcore.bot.domain.model.TurnOutcome;
+import me.golemcore.bot.domain.model.trace.TraceContext;
+import me.golemcore.bot.domain.model.trace.TraceRecord;
+import me.golemcore.bot.domain.model.trace.TraceSpanKind;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.TraceBudgetService;
+import me.golemcore.bot.domain.service.TraceService;
+import me.golemcore.bot.domain.service.TraceSnapshotCompressionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.service.VoiceResponseHandler.VoiceSendResult;
@@ -49,6 +56,8 @@ class ResponseRoutingSystemTest {
     private ChannelPort channelPort;
     private UserPreferencesService preferencesService;
     private VoiceResponseHandler voiceHandler;
+    private RuntimeConfigService runtimeConfigService;
+    private TraceService traceService;
 
     @BeforeEach
     void setUp() {
@@ -70,7 +79,14 @@ class ResponseRoutingSystemTest {
         voiceHandler = mock(VoiceResponseHandler.class);
         when(voiceHandler.isAvailable()).thenReturn(false);
 
-        system = new ResponseRoutingSystem(new ChannelRegistry(List.of(channelPort)), preferencesService, voiceHandler);
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        traceService = new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService());
+        system = new ResponseRoutingSystem(
+                new ChannelRegistry(List.of(channelPort)),
+                preferencesService,
+                voiceHandler,
+                runtimeConfigService,
+                traceService);
     }
 
     private AgentContext createContext() {
@@ -109,6 +125,39 @@ class ResponseRoutingSystemTest {
         RoutingOutcome outcome = context.getAttribute(ATTR_ROUTING_OUTCOME);
         assertNotNull(outcome);
         assertTrue(outcome.isSentText());
+    }
+
+    @Test
+    void shouldRecordOutboundSpanWithSnapshot() {
+        AgentContext context = createContext();
+        TraceContext traceContext = traceService.startRootTrace(
+                context.getSession(),
+                TraceContext.builder()
+                        .traceId("trace-1")
+                        .spanId("root-span")
+                        .rootKind(TraceSpanKind.INGRESS.name())
+                        .build(),
+                "telegram.message",
+                TraceSpanKind.INGRESS,
+                Instant.now(),
+                Map.of("session.id", SESSION_ID));
+        context.setTraceContext(traceContext);
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly(CONTENT_RESPONSE));
+
+        when(runtimeConfigService.isTracingEnabled()).thenReturn(true);
+        when(runtimeConfigService.isPayloadSnapshotsEnabled()).thenReturn(true);
+        when(runtimeConfigService.isTraceOutboundPayloadCaptureEnabled()).thenReturn(true);
+        when(runtimeConfigService.getSessionTraceBudgetMb()).thenReturn(8);
+        when(runtimeConfigService.getTraceMaxSnapshotSizeKb()).thenReturn(64);
+        when(runtimeConfigService.getTraceMaxSnapshotsPerSpan()).thenReturn(4);
+
+        system.process(context);
+
+        TraceRecord trace = context.getSession().getTraces().get(0);
+        assertTrue(trace.getSpans().stream().anyMatch(span -> "response.route".equals(span.getName())));
+        assertTrue(trace.getSpans().stream()
+                .filter(span -> "response.route".equals(span.getName()))
+                .allMatch(span -> !span.getSnapshots().isEmpty()));
     }
 
     @Test

@@ -20,6 +20,8 @@ package me.golemcore.bot.domain.model;
 
 import lombok.Builder;
 import lombok.Data;
+import me.golemcore.bot.domain.model.trace.TraceRecord;
+import me.golemcore.bot.domain.model.trace.TraceStorageStats;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -45,6 +47,12 @@ public class AgentSession {
 
     @Builder.Default
     private Map<String, Object> metadata = new HashMap<>();
+
+    @Builder.Default
+    private List<TraceRecord> traces = new ArrayList<>();
+
+    @Builder.Default
+    private TraceStorageStats traceStorageStats = new TraceStorageStats();
 
     @Builder.Default
     private SessionState state = SessionState.ACTIVE;

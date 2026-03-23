@@ -15,6 +15,7 @@ import {
   type HiveConfig,
   type PlanConfig,
   type AutoModeConfig,
+  type TracingConfig,
   type RateLimitConfig,
   type SecurityConfig,
   type CompactionConfig,
@@ -39,6 +40,7 @@ import {
   updateHiveConfig,
   updatePlanConfig,
   updateAutoConfig,
+  updateTracingConfig,
   updateAdvancedConfig,
 } from '../api/settings';
 
@@ -195,6 +197,14 @@ export function useUpdateAuto(): UseMutationResult<Awaited<ReturnType<typeof upd
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: AutoModeConfig) => updateAutoConfig(config),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useUpdateTracing(): UseMutationResult<Awaited<ReturnType<typeof updateTracingConfig>>, unknown, TracingConfig> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (config: TracingConfig) => updateTracingConfig(config),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
   });
 }

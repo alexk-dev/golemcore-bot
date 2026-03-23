@@ -47,4 +47,27 @@ describe('filterCatalogBlocks', () => {
       },
     ]);
   });
+
+  it('can find the tracing section with a trace query', () => {
+    const blocks = [
+      {
+        key: 'runtime',
+        title: 'Runtime',
+        items: [
+          { key: 'tracing', title: 'Tracing' },
+          { key: 'auto', title: 'Auto Mode' },
+        ],
+      },
+    ];
+
+    expect(filterCatalogBlocks(blocks, 'trace')).toEqual([
+      {
+        key: 'runtime',
+        title: 'Runtime',
+        items: [
+          { key: 'tracing', title: 'Tracing' },
+        ],
+      },
+    ]);
+  });
 });

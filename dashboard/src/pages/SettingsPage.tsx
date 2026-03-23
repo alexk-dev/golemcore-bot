@@ -25,6 +25,7 @@ import McpTab from './settings/McpTab';
 import HiveTab from './settings/HiveTab';
 import AutoModeTab from './settings/AutoModeTab';
 import PlanModeTab from './settings/PlanModeTab';
+import TracingTab from './settings/TracingTab';
 import { UpdatesTab } from './settings/UpdatesTab';
 import PluginSettingsPanel from './settings/PluginSettingsPanel';
 import PluginsMarketplaceTab from './settings/PluginsMarketplaceTab';
@@ -336,6 +337,7 @@ export default function SettingsPage(): ReactElement {
       {staticSection === 'hive' && rc != null && <HiveTab config={rc.hive} />}
       {staticSection === 'plan' && rc != null && <PlanModeTab config={rc.plan} />}
       {staticSection === 'auto' && rc != null && <AutoModeTab config={rc.autoMode} />}
+      {staticSection === 'tracing' && rc != null && <TracingTab config={rc.tracing} />}
       {staticSection === 'updates' && <UpdatesTab />}
 
       {staticSection === 'advanced-rate-limit' && rc != null && (

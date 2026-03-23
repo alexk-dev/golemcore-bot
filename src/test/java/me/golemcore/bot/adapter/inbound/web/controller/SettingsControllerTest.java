@@ -30,6 +30,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -266,6 +267,62 @@ class SettingsControllerTest {
                 () -> controller.updateAutoConfig(update));
 
         assertTrue(error.getMessage().contains("autoMode.reflectionModelTier"));
+    }
+
+    @Test
+    void shouldUpdateTracingConfigWhenValid() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .tracing(RuntimeConfig.TracingConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.TracingConfig tracingConfig = RuntimeConfig.TracingConfig.builder()
+                .enabled(true)
+                .payloadSnapshotsEnabled(true)
+                .sessionTraceBudgetMb(256)
+                .maxSnapshotSizeKb(512)
+                .maxSnapshotsPerSpan(5)
+                .maxTracesPerSession(30)
+                .captureInboundPayloads(true)
+                .captureOutboundPayloads(false)
+                .captureToolPayloads(true)
+                .captureLlmPayloads(true)
+                .build();
+
+        StepVerifier.create(controller.updateTracingConfig(tracingConfig))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        RuntimeConfig.TracingConfig saved = captor.getValue().getTracing();
+        assertTrue(saved.getEnabled());
+        assertTrue(saved.getPayloadSnapshotsEnabled());
+        assertEquals(256, saved.getSessionTraceBudgetMb());
+        assertEquals(512, saved.getMaxSnapshotSizeKb());
+        assertEquals(5, saved.getMaxSnapshotsPerSpan());
+        assertEquals(30, saved.getMaxTracesPerSession());
+        assertTrue(saved.getCaptureInboundPayloads());
+        assertFalse(saved.getCaptureOutboundPayloads());
+        assertTrue(saved.getCaptureToolPayloads());
+        assertTrue(saved.getCaptureLlmPayloads());
+    }
+
+    @Test
+    void shouldRejectTracingBudgetBelowOneMegabyte() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .tracing(RuntimeConfig.TracingConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.TracingConfig tracingConfig = RuntimeConfig.TracingConfig.builder()
+                .enabled(true)
+                .sessionTraceBudgetMb(0)
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateTracingConfig(tracingConfig));
+        assertEquals("tracing.sessionTraceBudgetMb must be between 1 and 1024", error.getMessage());
     }
 
     @Test

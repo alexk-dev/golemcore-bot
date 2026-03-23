@@ -207,6 +207,9 @@ class PlanWorkLifecycleBddTest {
         AutoModeService autoModeService = mock(AutoModeService.class);
         DelayedActionPolicyService delayedActionPolicyService = mock(DelayedActionPolicyService.class);
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveForTier(any()))
+                .thenReturn(new ModelSelectionService.ModelSelection("gpt-5-balanced", "medium"));
         WorkspaceInstructionService workspaceInstructionService = mock(WorkspaceInstructionService.class);
         when(workspaceInstructionService.getWorkspaceInstructionsContext()).thenReturn("");
         PlanSetContentTool planSetContentTool = new PlanSetContentTool(planService);
@@ -226,6 +229,7 @@ class PlanWorkLifecycleBddTest {
                 planService,
                 promptSectionService,
                 runtimeConfigService,
+                modelSelectionService,
                 userPreferencesService,
                 workspaceInstructionService);
     }

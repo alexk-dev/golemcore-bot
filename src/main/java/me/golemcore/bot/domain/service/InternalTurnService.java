@@ -13,6 +13,7 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
@@ -57,6 +58,10 @@ public class InternalTurnService {
         metadata.put(ContextAttributes.TURN_QUEUE_KIND, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY);
         copyStringAttribute(context, metadata, ContextAttributes.TRANSPORT_CHAT_ID);
         copyStringAttribute(context, metadata, ContextAttributes.CONVERSATION_KEY);
+        metadata = TraceContextSupport.ensureRootMetadata(
+                metadata,
+                TraceSpanKind.INTERNAL,
+                TraceNamingSupport.INTERNAL_AUTO_CONTINUE);
 
         Message message = Message.builder()
                 .id(UUID.randomUUID().toString())

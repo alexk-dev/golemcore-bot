@@ -193,6 +193,9 @@ public class SettingsController {
         if (merged.getAutoMode() != null) {
             validateAndNormalizeAutoModeConfig(merged.getAutoMode());
         }
+        if (merged.getTracing() != null) {
+            validateAndNormalizeTracingConfig(merged.getTracing());
+        }
         if (merged.getMemory() != null) {
             validateMemoryConfig(merged.getMemory());
         }
@@ -494,6 +497,16 @@ public class SettingsController {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         validateAndNormalizeAutoModeConfig(autoConfig);
         config.setAutoMode(autoConfig);
+        runtimeConfigService.updateRuntimeConfig(config);
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    }
+
+    @PutMapping("/runtime/tracing")
+    public Mono<ResponseEntity<RuntimeConfig>> updateTracingConfig(
+            @RequestBody RuntimeConfig.TracingConfig tracingConfig) {
+        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        validateAndNormalizeTracingConfig(tracingConfig);
+        config.setTracing(tracingConfig);
         runtimeConfigService.updateRuntimeConfig(config);
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
@@ -834,6 +847,16 @@ public class SettingsController {
                 "autoMode.reflectionModelTier"));
     }
 
+    private void validateAndNormalizeTracingConfig(RuntimeConfig.TracingConfig tracingConfig) {
+        if (tracingConfig == null) {
+            throw new IllegalArgumentException("tracing config is required");
+        }
+        validateNullableInteger(tracingConfig.getSessionTraceBudgetMb(), 1, 1024, "tracing.sessionTraceBudgetMb");
+        validateNullableInteger(tracingConfig.getMaxSnapshotSizeKb(), 1, 10240, "tracing.maxSnapshotSizeKb");
+        validateNullableInteger(tracingConfig.getMaxSnapshotsPerSpan(), 1, 1000, "tracing.maxSnapshotsPerSpan");
+        validateNullableInteger(tracingConfig.getMaxTracesPerSession(), 1, 10000, "tracing.maxTracesPerSession");
+    }
+
     private void validateHiveConfig(RuntimeConfig.HiveConfig hiveConfig) {
         if (hiveConfig == null) {
             throw new IllegalArgumentException("hive config is required");
@@ -901,6 +924,7 @@ public class SettingsController {
                 .tools(mergeSection(patch.getTools(), baseline.getTools(), RuntimeConfig.ToolsConfig::new))
                 .voice(mergeSection(patch.getVoice(), baseline.getVoice(), RuntimeConfig.VoiceConfig::new))
                 .autoMode(mergeSection(patch.getAutoMode(), baseline.getAutoMode(), RuntimeConfig.AutoModeConfig::new))
+                .tracing(mergeSection(patch.getTracing(), baseline.getTracing(), RuntimeConfig.TracingConfig::new))
                 .rateLimit(mergeSection(patch.getRateLimit(), baseline.getRateLimit(),
                         RuntimeConfig.RateLimitConfig::new))
                 .security(mergeSection(patch.getSecurity(), baseline.getSecurity(), RuntimeConfig.SecurityConfig::new))

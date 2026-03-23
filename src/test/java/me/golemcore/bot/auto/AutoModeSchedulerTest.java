@@ -194,6 +194,10 @@ class AutoModeSchedulerTest {
         assertEquals(true, sent.getMetadata().get(ContextAttributes.AUTO_MODE));
         assertEquals("sched-goal-abc", sent.getMetadata().get(ContextAttributes.AUTO_SCHEDULE_ID));
         assertEquals(TASK_ID, sent.getMetadata().get(ContextAttributes.AUTO_TASK_ID));
+        assertEquals("INTERNAL", sent.getMetadata().get("trace.root.kind"));
+        assertEquals("auto.schedule.goal", sent.getMetadata().get("trace.name"));
+        assertTrue(sent.getMetadata().get("trace.id") instanceof String);
+        assertTrue(sent.getMetadata().get("trace.span.id") instanceof String);
         verify(scheduleService).recordExecution("sched-goal-abc");
     }
 

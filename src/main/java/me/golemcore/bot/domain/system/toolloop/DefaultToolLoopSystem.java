@@ -1,5 +1,6 @@
 package me.golemcore.bot.domain.system.toolloop;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Attachment;
 import me.golemcore.bot.domain.model.CompactionReason;
@@ -13,14 +14,22 @@ import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
+import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.TurnLimitReason;
+import me.golemcore.bot.domain.model.trace.TraceContext;
+import me.golemcore.bot.domain.model.trace.TraceSpanKind;
+import me.golemcore.bot.domain.model.trace.TraceStatusCode;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
+import me.golemcore.bot.domain.service.MdcSupport;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.RuntimeEventService;
+import me.golemcore.bot.domain.service.TraceMdcSupport;
+import me.golemcore.bot.domain.service.TraceRuntimeConfigSupport;
+import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.domain.service.TurnProgressService;
 import me.golemcore.bot.domain.system.LlmErrorClassifier;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationView;
@@ -37,6 +46,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.nio.charset.StandardCharsets;
 
 import me.golemcore.bot.infrastructure.config.BotProperties;
 
@@ -65,7 +75,9 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
     private final CompactionOrchestrationService compactionOrchestrationService;
     private final RuntimeEventService runtimeEventService;
     private final TurnProgressService turnProgressService;
+    private final TraceService traceService;
     private final Clock clock;
+    private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
 
     public DefaultToolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutor, HistoryWriter historyWriter,
             ConversationViewBuilder viewBuilder, BotProperties.ToolLoopProperties settings,
@@ -90,6 +102,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         this.compactionOrchestrationService = null;
         this.runtimeEventService = null;
         this.turnProgressService = null;
+        this.traceService = null;
         this.clock = clock;
     }
 
@@ -118,6 +131,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         this.compactionOrchestrationService = null;
         this.runtimeEventService = null;
         this.turnProgressService = null;
+        this.traceService = null;
         this.clock = clock;
 
     }
@@ -137,7 +151,8 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             CompactionOrchestrationService compactionOrchestrationService,
             RuntimeEventService runtimeEventService, Clock clock) {
         this(llmPort, toolExecutor, historyWriter, viewBuilder, turnSettings, settings, modelSelectionService,
-                planService, runtimeConfigService, compactionOrchestrationService, runtimeEventService, null, clock);
+                planService, runtimeConfigService, compactionOrchestrationService, runtimeEventService, null, null,
+                clock);
     }
 
     public DefaultToolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutor, HistoryWriter historyWriter,
@@ -146,6 +161,18 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             PlanService planService, RuntimeConfigService runtimeConfigService,
             CompactionOrchestrationService compactionOrchestrationService,
             RuntimeEventService runtimeEventService, TurnProgressService turnProgressService, Clock clock) {
+        this(llmPort, toolExecutor, historyWriter, viewBuilder, turnSettings, settings, modelSelectionService,
+                planService, runtimeConfigService, compactionOrchestrationService, runtimeEventService,
+                turnProgressService, null, clock);
+    }
+
+    public DefaultToolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutor, HistoryWriter historyWriter,
+            ConversationViewBuilder viewBuilder, BotProperties.TurnProperties turnSettings,
+            BotProperties.ToolLoopProperties settings, ModelSelectionService modelSelectionService,
+            PlanService planService, RuntimeConfigService runtimeConfigService,
+            CompactionOrchestrationService compactionOrchestrationService,
+            RuntimeEventService runtimeEventService, TurnProgressService turnProgressService, TraceService traceService,
+            Clock clock) {
         this.llmPort = llmPort;
         this.toolExecutor = toolExecutor;
         this.historyWriter = historyWriter;
@@ -158,6 +185,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         this.compactionOrchestrationService = compactionOrchestrationService;
         this.runtimeEventService = runtimeEventService;
         this.turnProgressService = turnProgressService;
+        this.traceService = traceService;
         this.clock = clock;
     }
 
@@ -165,6 +193,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
     public ToolLoopTurnResult processTurn(AgentContext context) {
         ensureMessageLists(context);
         emitRuntimeEvent(context, RuntimeEventType.TURN_STARTED, eventPayload());
+        RuntimeConfig.TracingConfig tracingConfig = TraceRuntimeConfigSupport.resolve(runtimeConfigService);
 
         int llmCalls = 0;
         int toolExecutions = 0;
@@ -193,7 +222,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             emitRuntimeEvent(context, RuntimeEventType.LLM_STARTED, eventPayload("attempt", llmCalls));
             LlmResponse response;
             try {
-                response = llmPort.chat(buildRequest(context)).get();
+                response = executeLlmCall(context, llmCalls, tracingConfig);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 try {
@@ -352,13 +381,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 emitRuntimeEvent(context, RuntimeEventType.TOOL_STARTED,
                         eventPayload("toolCallId", tc.getId(), "tool", tc.getName()));
                 Instant toolStarted = clock.instant();
-                ToolExecutionOutcome outcome;
-                try {
-                    outcome = toolExecutor.execute(context, tc);
-                } catch (Exception e) {
-                    outcome = ToolExecutionOutcome.synthetic(tc, ToolFailureKind.EXECUTION_FAILED,
-                            "Tool execution failed: " + e.getMessage());
-                }
+                ToolExecutionOutcome outcome = executeToolCall(context, tc, tracingConfig);
                 toolExecutions++;
                 long toolDuration = java.time.Duration.between(toolStarted, clock.instant()).toMillis();
                 emitRuntimeEvent(context, RuntimeEventType.TOOL_FINISHED,
@@ -916,9 +939,63 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         };
     }
 
-    private LlmRequest buildRequest(AgentContext context) {
+    private LlmResponse executeLlmCall(AgentContext context, int attempt, RuntimeConfig.TracingConfig tracingConfig)
+            throws InterruptedException, ExecutionException {
         ModelSelectionService.ModelSelection selection = selectModel(context.getModelTier());
+        Map<String, Object> requestContextAttributes = buildRequestContextAttributes(context, selection, attempt);
+        TraceContext llmSpan = startChildSpan(context, "llm.chat", TraceSpanKind.LLM, requestContextAttributes);
+        appendRequestContextEvent(context, llmSpan, requestContextAttributes);
+        LlmRequest request = buildRequest(context, llmSpan != null ? llmSpan : context.getTraceContext(), selection);
+        captureLlmSnapshot(context, llmSpan, tracingConfig, "request", request);
+        try (MdcSupport.Scope ignored = MdcSupport.withContext(buildTraceMdcContext(llmSpan, context))) {
+            LlmResponse response = llmPort.chat(request).get();
+            captureLlmSnapshot(context, llmSpan, tracingConfig, "response", response);
+            finishChildSpan(context, llmSpan, TraceStatusCode.OK, null);
+            return response;
+        } catch (InterruptedException e) {
+            finishChildSpan(context, llmSpan, TraceStatusCode.ERROR, e.getMessage());
+            throw e;
+        } catch (ExecutionException e) {
+            finishChildSpan(context, llmSpan, TraceStatusCode.ERROR, e.getMessage());
+            throw e;
+        } catch (RuntimeException e) {
+            finishChildSpan(context, llmSpan, TraceStatusCode.ERROR, e.getMessage());
+            throw e;
+        }
+    }
 
+    private ToolExecutionOutcome executeToolCall(AgentContext context, Message.ToolCall toolCall,
+            RuntimeConfig.TracingConfig tracingConfig) {
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        if (toolCall.getName() != null) {
+            attributes.put("tool.name", toolCall.getName());
+        }
+        if (toolCall.getId() != null) {
+            attributes.put("tool.callId", toolCall.getId());
+        }
+        TraceContext toolSpan = startChildSpan(context, "tool." + toolCall.getName(), TraceSpanKind.TOOL, attributes);
+        captureToolSnapshot(context, toolSpan, tracingConfig, "input", toolCall);
+        try (MdcSupport.Scope ignored = MdcSupport.withContext(buildTraceMdcContext(toolSpan, context))) {
+            ToolExecutionOutcome outcome = toolExecutor.execute(context, toolCall);
+            captureToolSnapshot(context, toolSpan, tracingConfig, "output", outcome);
+            TraceStatusCode statusCode = outcome != null && outcome.toolResult() != null
+                    && outcome.toolResult().isSuccess()
+                            ? TraceStatusCode.OK
+                            : TraceStatusCode.ERROR;
+            finishChildSpan(context, toolSpan, statusCode,
+                    outcome != null && outcome.toolResult() != null ? outcome.toolResult().getError() : null);
+            return outcome;
+        } catch (Exception e) {
+            ToolExecutionOutcome synthetic = ToolExecutionOutcome.synthetic(toolCall, ToolFailureKind.EXECUTION_FAILED,
+                    "Tool execution failed: " + e.getMessage());
+            captureToolSnapshot(context, toolSpan, tracingConfig, "output", synthetic);
+            finishChildSpan(context, toolSpan, TraceStatusCode.ERROR, e.getMessage());
+            return synthetic;
+        }
+    }
+
+    private LlmRequest buildRequest(AgentContext context, TraceContext traceContext,
+            ModelSelectionService.ModelSelection selection) {
         ConversationView view = viewBuilder.buildView(context, selection.model());
         if (!view.diagnostics().isEmpty()) {
             log.debug("[ToolLoop] conversation view diagnostics: {}", view.diagnostics());
@@ -938,7 +1015,143 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 .tools(context.getAvailableTools())
                 .toolResults(context.getToolResults())
                 .sessionId(context.getSession() != null ? context.getSession().getId() : null)
+                .traceId(traceContext != null ? traceContext.getTraceId() : null)
+                .traceSpanId(traceContext != null ? traceContext.getSpanId() : null)
+                .traceParentSpanId(
+                        traceContext != null ? traceContext.getParentSpanId() : null)
+                .traceRootKind(traceContext != null ? traceContext.getRootKind() : null)
                 .build();
+    }
+
+    private Map<String, Object> buildRequestContextAttributes(AgentContext context,
+            ModelSelectionService.ModelSelection selection, int attempt) {
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("attempt", attempt);
+        String skillName = null;
+        if (context != null && context.getActiveSkill() != null && context.getActiveSkill().getName() != null
+                && !context.getActiveSkill().getName().isBlank()) {
+            skillName = context.getActiveSkill().getName();
+        } else if (context != null) {
+            skillName = readContextAttribute(context, ContextAttributes.ACTIVE_SKILL_NAME);
+        }
+        if (skillName != null && !skillName.isBlank()) {
+            attributes.put("context.skill.name", skillName);
+        }
+        String tier = context != null ? normalizeTierForTrace(context.getModelTier()) : "balanced";
+        attributes.put("context.model.tier", tier);
+        if (selection != null && selection.model() != null && !selection.model().isBlank()) {
+            attributes.put("context.model.id", selection.model());
+        }
+        if (selection != null && selection.reasoning() != null && !selection.reasoning().isBlank()) {
+            attributes.put("context.model.reasoning", selection.reasoning());
+        }
+        if (context != null) {
+            String source = readContextAttribute(context, ContextAttributes.MODEL_TIER_SOURCE);
+            if (source != null && !source.isBlank()) {
+                attributes.put("context.model.source", source);
+            }
+        }
+        return attributes;
+    }
+
+    private void appendRequestContextEvent(AgentContext context, TraceContext llmSpan, Map<String, Object> attributes) {
+        if (traceService == null || context == null || context.getSession() == null || llmSpan == null) {
+            return;
+        }
+        Map<String, Object> eventAttributes = new LinkedHashMap<>();
+        copyAttribute(attributes, eventAttributes, "context.skill.name", "skill");
+        copyAttribute(attributes, eventAttributes, "context.model.tier", "tier");
+        copyAttribute(attributes, eventAttributes, "context.model.id", "model_id");
+        copyAttribute(attributes, eventAttributes, "context.model.reasoning", "reasoning");
+        copyAttribute(attributes, eventAttributes, "context.model.source", "source");
+        traceService.appendEvent(context.getSession(), llmSpan, "request.context", clock.instant(), eventAttributes);
+    }
+
+    private void copyAttribute(Map<String, Object> source, Map<String, Object> target, String sourceKey,
+            String targetKey) {
+        if (source == null || target == null || sourceKey == null || targetKey == null) {
+            return;
+        }
+        Object value = source.get(sourceKey);
+        if (value instanceof String stringValue && !stringValue.isBlank()) {
+            target.put(targetKey, stringValue);
+            return;
+        }
+        if (value != null) {
+            target.put(targetKey, value);
+        }
+    }
+
+    private String normalizeTierForTrace(String tier) {
+        if (tier == null || tier.isBlank() || "default".equalsIgnoreCase(tier)) {
+            return "balanced";
+        }
+        String normalized = me.golemcore.bot.domain.model.ModelTierCatalog.normalizeTierId(tier);
+        return normalized != null ? normalized : tier;
+    }
+
+    private String readContextAttribute(AgentContext context, String key) {
+        if (context == null || context.getAttributes() == null || key == null || key.isBlank()) {
+            return null;
+        }
+        Object value = context.getAttributes().get(key);
+        return value instanceof String stringValue && !stringValue.isBlank() ? stringValue : null;
+    }
+
+    private TraceContext startChildSpan(AgentContext context, String spanName, TraceSpanKind spanKind,
+            Map<String, Object> attributes) {
+        if (traceService == null || context == null || context.getSession() == null || context.getTraceContext() == null
+                || runtimeConfigService == null || !runtimeConfigService.isTracingEnabled()) {
+            return null;
+        }
+        return traceService.startSpan(context.getSession(), context.getTraceContext(), spanName, spanKind,
+                clock.instant(), attributes);
+    }
+
+    private void finishChildSpan(AgentContext context, TraceContext spanContext, TraceStatusCode statusCode,
+            String statusMessage) {
+        if (traceService == null || context == null || context.getSession() == null || spanContext == null) {
+            return;
+        }
+        traceService.finishSpan(context.getSession(), spanContext, statusCode, statusMessage, clock.instant());
+    }
+
+    private void captureLlmSnapshot(AgentContext context, TraceContext spanContext,
+            RuntimeConfig.TracingConfig tracingConfig, String role, Object payload) {
+        if (traceService == null || context == null || context.getSession() == null || spanContext == null
+                || tracingConfig == null || !Boolean.TRUE.equals(tracingConfig.getCaptureLlmPayloads())) {
+            return;
+        }
+        traceService.captureSnapshot(context.getSession(), spanContext, tracingConfig,
+                role, "application/json", serializeSnapshotPayload(payload));
+    }
+
+    private void captureToolSnapshot(AgentContext context, TraceContext spanContext,
+            RuntimeConfig.TracingConfig tracingConfig, String role, Object payload) {
+        if (traceService == null || context == null || context.getSession() == null || spanContext == null
+                || tracingConfig == null || !Boolean.TRUE.equals(tracingConfig.getCaptureToolPayloads())) {
+            return;
+        }
+        traceService.captureSnapshot(context.getSession(), spanContext, tracingConfig,
+                role, "application/json", serializeSnapshotPayload(payload));
+    }
+
+    private Map<String, String> buildTraceMdcContext(TraceContext spanContext, AgentContext context) {
+        if (spanContext == null) {
+            return Map.of();
+        }
+        return TraceMdcSupport.buildMdcContext(spanContext, context != null ? context.getAttributes() : Map.of());
+    }
+
+    private byte[] serializeSnapshotPayload(Object payload) {
+        if (payload == null) {
+            return new byte[0];
+        }
+        try {
+            return objectMapper.writeValueAsBytes(payload);
+        } catch (Exception e) { // NOSONAR - tracing must not break tool loop
+            return String.valueOf(payload).getBytes(StandardCharsets.UTF_8);
+        }
     }
 
     private void storeSelectedModel(AgentContext context, String model) {

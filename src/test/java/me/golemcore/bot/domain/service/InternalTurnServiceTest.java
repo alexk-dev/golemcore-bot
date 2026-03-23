@@ -67,12 +67,17 @@ class InternalTurnServiceTest {
         assertEquals("internal:auto-continue", message.getSenderId());
         assertEquals(FIXED_INSTANT, message.getTimestamp());
         assertTrue(message.isInternalMessage());
-        assertEquals(Map.of(
-                ContextAttributes.MESSAGE_INTERNAL, true,
-                ContextAttributes.MESSAGE_INTERNAL_KIND, ContextAttributes.MESSAGE_INTERNAL_KIND_AUTO_CONTINUE,
-                ContextAttributes.TURN_QUEUE_KIND, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY,
-                ContextAttributes.TRANSPORT_CHAT_ID, "transport-1",
-                ContextAttributes.CONVERSATION_KEY, "conversation-1"), message.getMetadata());
+        assertEquals(true, message.getMetadata().get(ContextAttributes.MESSAGE_INTERNAL));
+        assertEquals(ContextAttributes.MESSAGE_INTERNAL_KIND_AUTO_CONTINUE,
+                message.getMetadata().get(ContextAttributes.MESSAGE_INTERNAL_KIND));
+        assertEquals(ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY,
+                message.getMetadata().get(ContextAttributes.TURN_QUEUE_KIND));
+        assertEquals("transport-1", message.getMetadata().get(ContextAttributes.TRANSPORT_CHAT_ID));
+        assertEquals("conversation-1", message.getMetadata().get(ContextAttributes.CONVERSATION_KEY));
+        assertEquals("INTERNAL", message.getMetadata().get("trace.root.kind"));
+        assertEquals("internal.auto_continue", message.getMetadata().get("trace.name"));
+        assertNotNull(message.getMetadata().get("trace.id"));
+        assertNotNull(message.getMetadata().get("trace.span.id"));
     }
 
     @Test
@@ -126,5 +131,35 @@ class InternalTurnServiceTest {
         assertFalse(service.scheduleAutoContinueRetry(contextWithoutSession, "llm-timeout"));
 
         verifyNoInteractions(eventPublisher);
+    }
+
+    @Test
+    void shouldAttachTraceMetadataToInternalRetryMessage() {
+        ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
+        Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
+        InternalTurnService service = new InternalTurnService(eventPublisher, clock);
+
+        AgentSession session = AgentSession.builder()
+                .id("session-1")
+                .channelType("telegram")
+                .chatId("chat-1")
+                .messages(new ArrayList<>())
+                .build();
+        AgentContext context = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>())
+                .build();
+
+        assertTrue(service.scheduleAutoContinueRetry(context, "llm-timeout"));
+
+        ArgumentCaptor<AgentLoop.InboundMessageEvent> eventCaptor = ArgumentCaptor
+                .forClass(AgentLoop.InboundMessageEvent.class);
+        verify(eventPublisher).publishEvent(eventCaptor.capture());
+
+        Map<String, Object> metadata = eventCaptor.getValue().message().getMetadata();
+        assertNotNull(metadata.get("trace.id"));
+        assertNotNull(metadata.get("trace.span.id"));
+        assertEquals("INTERNAL", metadata.get("trace.root.kind"));
+        assertEquals("internal.auto_continue", metadata.get("trace.name"));
     }
 }

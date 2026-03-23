@@ -25,6 +25,14 @@ function allowedDistance(length: number): number {
   return 3;
 }
 
+function sharesStrongPrefix(left: string, right: string): boolean {
+  const prefixLength = Math.min(left.length, right.length, 4);
+  if (prefixLength < 3) {
+    return false;
+  }
+  return left.slice(0, prefixLength) === right.slice(0, prefixLength);
+}
+
 function levenshteinDistance(left: string, right: string): number {
   if (left === right) {
     return 0;
@@ -85,6 +93,7 @@ export function matchesSettingsTitle(title: string, query: string): boolean {
     return titleTokens.some((titleToken) => (
       titleToken.includes(queryToken)
       || queryToken.includes(titleToken)
+      || sharesStrongPrefix(titleToken, queryToken)
       || (Math.abs(titleToken.length - queryToken.length) <= tokenDistance
         && levenshteinDistance(titleToken, queryToken) <= tokenDistance)
     ));
