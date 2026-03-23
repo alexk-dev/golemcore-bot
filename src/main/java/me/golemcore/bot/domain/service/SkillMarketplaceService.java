@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Skill;
+import me.golemcore.bot.domain.model.SkillDocument;
 import me.golemcore.bot.domain.model.SkillInstallResult;
 import me.golemcore.bot.domain.model.SkillMarketplaceCatalog;
 import me.golemcore.bot.domain.model.SkillMarketplaceItem;
@@ -77,6 +78,7 @@ public class SkillMarketplaceService {
     private final SkillService skillService;
     private final RuntimeConfigService runtimeConfigService;
     private final WorkspacePathService workspacePathService;
+    private final SkillDocumentService skillDocumentService;
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .followRedirects(HttpClient.Redirect.NORMAL)
@@ -244,7 +246,7 @@ public class SkillMarketplaceService {
     }
 
     private String rewriteSkillContent(String content, String runtimeName, Map<String, String> aliasMap) {
-        FrontmatterDocument document = parseFrontmatterDocument(content);
+        SkillDocument document = skillDocumentService.parseDocument(content);
         Map<String, Object> metadata = new LinkedHashMap<>(document.metadata());
         metadata.put("name", runtimeName);
 
@@ -285,17 +287,7 @@ public class SkillMarketplaceService {
             metadata.put("requirements", rewrittenRequirements);
         }
 
-        String body = document.body();
-        String normalizedBody = body == null ? "" : body.stripTrailing();
-        try {
-            String yaml = YAML_MAPPER.writeValueAsString(metadata).stripTrailing();
-            if (normalizedBody.isEmpty()) {
-                return "---\n" + yaml + "\n---\n";
-            }
-            return "---\n" + yaml + "\n---\n\n" + normalizedBody + "\n";
-        } catch (IOException ex) {
-            throw new IllegalStateException("Failed to rewrite skill frontmatter for " + runtimeName, ex);
-        }
+        return skillDocumentService.renderDocument(metadata, document.body()) + "\n";
     }
 
     private void rewriteStringField(Map<String, Object> metadata, String key, Map<String, String> aliasMap) {
@@ -1080,117 +1072,11 @@ public class SkillMarketplaceService {
     }
 
     private SkillMetadata parseSkillMetadata(String content) {
-        FrontmatterDocument document = parseFrontmatterDocument(content);
-        Map<String, Object> metadata = document.metadata();
+        Map<String, Object> metadata = skillDocumentService.parseDocument(content).metadata();
         return new SkillMetadata(
                 trimToNull(asString(metadata.get("name"))),
                 trimToNull(asString(metadata.get("description"))),
                 trimToNull(asString(metadata.get("model_tier"))));
-    }
-
-    private FrontmatterDocument parseFrontmatterDocument(String content) {
-        if (content == null) {
-            return new FrontmatterDocument(Map.of(), "");
-        }
-        FrontmatterSections sections = splitFrontmatter(content);
-        if (sections == null) {
-            return new FrontmatterDocument(Map.of(), content);
-        }
-
-        String frontmatter = sections.frontmatter();
-        if (frontmatter.isBlank()) {
-            return new FrontmatterDocument(Map.of(), sections.body());
-        }
-        try {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> yaml = YAML_MAPPER.readValue(frontmatter, LinkedHashMap.class);
-            return new FrontmatterDocument(yaml != null ? yaml : Map.of(), sections.body());
-        } catch (IOException ex) {
-            throw new IllegalStateException("Failed to parse skill frontmatter", ex);
-        }
-    }
-
-    private FrontmatterSections splitFrontmatter(String content) {
-        int openingLineEnd = findLineEnd(content, 0);
-        if (!isFrontmatterDelimiterLine(content, 0, openingLineEnd)) {
-            return null;
-        }
-
-        int currentIndex = advancePastLineEnding(content, openingLineEnd);
-        if (currentIndex >= content.length()) {
-            return null;
-        }
-
-        int frontmatterStart = currentIndex;
-        while (currentIndex < content.length()) {
-            int lineEnd = findLineEnd(content, currentIndex);
-            if (isFrontmatterDelimiterLine(content, currentIndex, lineEnd)) {
-                String frontmatter = content.substring(frontmatterStart, currentIndex);
-                int bodyStart = skipBlankLines(content, advancePastLineEnding(content, lineEnd));
-                return new FrontmatterSections(frontmatter, content.substring(bodyStart));
-            }
-            currentIndex = advancePastLineEnding(content, lineEnd);
-        }
-        return null;
-    }
-
-    private boolean isFrontmatterDelimiterLine(String content, int start, int end) {
-        if (end - start < 3
-                || content.charAt(start) != '-'
-                || content.charAt(start + 1) != '-'
-                || content.charAt(start + 2) != '-') {
-            return false;
-        }
-        for (int index = start + 3; index < end; index++) {
-            if (!Character.isWhitespace(content.charAt(index))) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private int findLineEnd(String content, int start) {
-        int index = start;
-        while (index < content.length()) {
-            char ch = content.charAt(index);
-            if (ch == '\n' || ch == '\r') {
-                return index;
-            }
-            index++;
-        }
-        return index;
-    }
-
-    private int advancePastLineEnding(String content, int index) {
-        int currentIndex = index;
-        if (currentIndex < content.length() && content.charAt(currentIndex) == '\r') {
-            currentIndex++;
-        }
-        if (currentIndex < content.length() && content.charAt(currentIndex) == '\n') {
-            currentIndex++;
-        }
-        return currentIndex;
-    }
-
-    private int skipBlankLines(String content, int start) {
-        int currentIndex = start;
-        while (currentIndex < content.length()) {
-            int lineEnd = findLineEnd(content, currentIndex);
-            if (!isBlankLine(content, currentIndex, lineEnd)) {
-                return currentIndex;
-            }
-            currentIndex = advancePastLineEnding(content, lineEnd);
-        }
-        return currentIndex;
-    }
-
-    private boolean isBlankLine(String content, int start, int end) {
-        for (int index = start; index < end; index++) {
-            if (!Character.isWhitespace(content.charAt(index))) {
-                return false;
-            }
-        }
-        return true;
     }
 
     private boolean isRemoteArtifactManifestPath(String path) {
@@ -1420,12 +1306,6 @@ public class SkillMarketplaceService {
             String currentContentHash,
             List<String> installedSkillNames,
             Instant installedAt) {
-    }
-
-    private record FrontmatterDocument(Map<String, Object> metadata, String body) {
-    }
-
-    private record FrontmatterSections(String frontmatter, String body) {
     }
 
     private record SkillMetadata(String name, String description, String modelTier) {

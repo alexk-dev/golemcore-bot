@@ -4,9 +4,11 @@ import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.adapter.inbound.web.dto.SkillDto;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.Skill;
+import me.golemcore.bot.domain.model.SkillDocument;
 import me.golemcore.bot.domain.model.SkillInstallRequest;
 import me.golemcore.bot.domain.model.SkillInstallResult;
 import me.golemcore.bot.domain.model.SkillMarketplaceCatalog;
+import me.golemcore.bot.domain.service.SkillDocumentService;
 import me.golemcore.bot.domain.service.SkillMarketplaceService;
 import me.golemcore.bot.domain.service.SkillService;
 import me.golemcore.bot.port.outbound.McpPort;
@@ -19,16 +21,17 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 
-import java.util.List;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 /**
  * Skills management endpoints.
@@ -41,6 +44,7 @@ public class SkillsController {
     private static final String SKILLS_DIR = "skills";
 
     private final SkillService skillService;
+    private final SkillDocumentService skillDocumentService;
     private final SkillMarketplaceService skillMarketplaceService;
     private final McpPort mcpPort;
     private final StoragePort storagePort;
@@ -92,18 +96,22 @@ public class SkillsController {
         if (content == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill content is required");
         }
-        if (skillService.findByName(name).isPresent()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Skill '" + name + "' already exists");
+
+        String normalizedName = name.trim();
+        if (skillService.findByName(normalizedName).isPresent()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Skill '" + normalizedName + "' already exists");
         }
-        String path = name + "/SKILL.md";
-        return Mono.fromFuture(storagePort.putText(SKILLS_DIR, path, content))
-                .then(Mono.fromRunnable(skillService::reload))
-                .then(Mono.defer(() -> {
-                    Optional<Skill> created = skillService.findByName(name);
-                    return created
-                            .map(s -> Mono.just(ResponseEntity.status(HttpStatus.CREATED).body(toDetailDto(s))))
-                            .orElse(Mono.just(ResponseEntity.notFound().build()));
-                }));
+
+        SkillDocument parsedDocument = skillDocumentService.parseNormalizedDocument(content);
+        Map<String, Object> metadata = skillDocumentService.mergeMetadata(
+                parsedDocument.metadata(),
+                Map.of("name", normalizedName));
+        validateMetadata(metadata);
+
+        String path = normalizedName + "/SKILL.md";
+        String document = skillDocumentService.renderDocument(metadata, parsedDocument.body());
+        return persistSkillAndReload(path, document,
+                () -> skillService.findByName(normalizedName), HttpStatus.CREATED);
     }
 
     @PutMapping("/detail")
@@ -123,21 +131,18 @@ public class SkillsController {
         if (content == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill content is required");
         }
+
         Skill skill = skillService.findByName(name)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Skill '" + name + "' not found"));
-        Map<String, Object> metadata = extractMetadata(body)
-                .orElseGet(() -> copyMetadata(skill.getMetadata()));
+
+        SkillDocument parsedDocument = skillDocumentService.parseNormalizedDocument(content);
+        Map<String, Object> metadata = resolveUpdatedMetadata(skill, body, parsedDocument);
         validateMetadata(metadata);
+
         String path = skillMarketplaceService.resolveManagedSkillStoragePath(skill);
-        String document = skillService.renderSkillDocument(metadata, content);
-        return Mono.fromFuture(storagePort.putText(SKILLS_DIR, path, document))
-                .then(Mono.fromRunnable(skillService::reload))
-                .then(Mono.defer(() -> {
-                    Optional<Skill> updated = skillService.findByLocation(path);
-                    return updated
-                            .map(s -> Mono.just(ResponseEntity.ok(toDetailDto(s))))
-                            .orElse(Mono.just(ResponseEntity.notFound().build()));
-                }));
+        String document = skillDocumentService.renderDocument(metadata, parsedDocument.body());
+        return persistSkillAndReload(path, document,
+                () -> skillService.findByLocation(path), HttpStatus.OK);
     }
 
     @PostMapping("/{name}/reload")
@@ -196,6 +201,32 @@ public class SkillsController {
                 "hasMcp", true,
                 "running", running,
                 "tools", tools)));
+    }
+
+    private Mono<ResponseEntity<SkillDto>> persistSkillAndReload(
+            String path,
+            String document,
+            Supplier<Optional<Skill>> skillLookup,
+            HttpStatus successStatus) {
+        return Mono.fromFuture(storagePort.putText(SKILLS_DIR, path, document))
+                .then(Mono.fromRunnable(skillService::reload))
+                .then(Mono.defer(() -> {
+                    Optional<Skill> saved = skillLookup.get();
+                    return saved
+                            .map(skill -> Mono.just(ResponseEntity.status(successStatus).body(toDetailDto(skill))))
+                            .orElse(Mono.just(ResponseEntity.notFound().build()));
+                }));
+    }
+
+    private Map<String, Object> resolveUpdatedMetadata(
+            Skill skill,
+            Map<String, Object> body,
+            SkillDocument parsedDocument) {
+        Optional<Map<String, Object>> explicitMetadata = extractMetadata(body);
+        if (explicitMetadata.isPresent()) {
+            return explicitMetadata.get();
+        }
+        return skillDocumentService.mergeMetadata(copyMetadata(skill.getMetadata()), parsedDocument.metadata());
     }
 
     private SkillDto toDto(Skill skill) {

@@ -753,7 +753,7 @@ class SkillMarketplaceServiceTest {
             RuntimeConfigService runtimeConfigService,
             WorkspacePathService workspacePathService) {
         return new SkillMarketplaceService(properties, storagePort, skillService, runtimeConfigService,
-                workspacePathService);
+                workspacePathService, new SkillDocumentService());
     }
 
     private static String maintainerYaml() {
