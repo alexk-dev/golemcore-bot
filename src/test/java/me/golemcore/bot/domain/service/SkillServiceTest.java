@@ -1,6 +1,7 @@
 package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.model.Skill;
+import me.golemcore.bot.domain.model.SkillDocument;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,6 +26,7 @@ class SkillServiceTest {
     private BotProperties properties;
     private SkillVariableResolver variableResolver;
     private RuntimeConfigService runtimeConfigService;
+    private SkillDocumentService skillDocumentService;
     private SkillService service;
 
     @BeforeEach
@@ -33,6 +35,7 @@ class SkillServiceTest {
         properties = new BotProperties();
         variableResolver = mock(SkillVariableResolver.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
+        skillDocumentService = new SkillDocumentService();
 
         when(variableResolver.parseVariableDefinitions(any())).thenReturn(List.of());
         when(variableResolver.resolveVariables(any(), any())).thenReturn(Map.of());
@@ -44,7 +47,8 @@ class SkillServiceTest {
         when(runtimeConfigService.isSkillsEnabled()).thenReturn(true);
         when(runtimeConfigService.isSkillsProgressiveLoadingEnabled()).thenReturn(true);
 
-        service = new SkillService(storagePort, properties, variableResolver, runtimeConfigService);
+        service = new SkillService(storagePort, properties, variableResolver, runtimeConfigService,
+                skillDocumentService);
     }
 
     private void loadSkills(String... keys) {
@@ -59,6 +63,25 @@ class SkillServiceTest {
     }
 
     // ==================== reload / init ====================
+
+    @Test
+    void parseSkillDocumentShouldStripNestedFrontmatterFromBody() {
+        SkillDocument document = service.parseSkillDocument("""
+                ---
+                name: outer
+                description: Outer description
+                ---
+                ---
+                model_tier: coding
+                ---
+                Body instructions
+                """);
+
+        assertEquals("Body instructions", document.body());
+        assertEquals("outer", document.metadata().get("name"));
+        assertEquals("Outer description", document.metadata().get("description"));
+        assertEquals("coding", document.metadata().get("model_tier"));
+    }
 
     @Test
     void reloadLoadsSkillsFromStorage() {

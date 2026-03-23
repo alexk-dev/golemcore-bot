@@ -6,6 +6,7 @@ import me.golemcore.bot.domain.model.SkillInstallRequest;
 import me.golemcore.bot.domain.model.SkillInstallResult;
 import me.golemcore.bot.domain.model.SkillMarketplaceCatalog;
 import me.golemcore.bot.domain.model.SkillMarketplaceItem;
+import me.golemcore.bot.domain.service.SkillDocumentService;
 import me.golemcore.bot.domain.service.SkillMarketplaceService;
 import me.golemcore.bot.domain.service.SkillService;
 import me.golemcore.bot.port.outbound.McpPort;
@@ -23,9 +24,11 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -43,10 +46,19 @@ class SkillsControllerTest {
 
     @BeforeEach
     void setUp() {
+        SkillDocumentService skillDocumentService = new SkillDocumentService();
         skillService = mock(SkillService.class);
         skillMarketplaceService = mock(SkillMarketplaceService.class);
         mcpPort = mock(McpPort.class);
         storagePort = mock(StoragePort.class);
+        when(skillService.parseSkillDocument(anyString()))
+                .thenAnswer(invocation -> skillDocumentService.parseNormalizedDocument(invocation.getArgument(0)));
+        when(skillService.mergeSkillMetadata(anyMap(), anyMap()))
+                .thenAnswer(invocation -> skillDocumentService.mergeMetadata(invocation.getArgument(0),
+                        invocation.getArgument(1)));
+        when(skillService.renderSkillDocument(anyMap(), any()))
+                .thenAnswer(invocation -> skillDocumentService.renderDocument(invocation.getArgument(0),
+                        invocation.getArgument(1)));
         controller = new SkillsController(skillService, skillMarketplaceService, mcpPort, storagePort);
     }
 
@@ -184,6 +196,85 @@ class SkillsControllerTest {
                 () -> controller.getSkill("unknown"));
         assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
         assertEquals("Skill 'unknown' not found", ex.getReason());
+    }
+
+    @Test
+    void shouldNormalizeFrontmatterIntoMetadataAndStripItFromBodyOnCreate() {
+        Skill createdSkill = Skill.builder()
+                .name("test-skill")
+                .description("Created from prompt")
+                .content("Body instructions")
+                .available(true)
+                .metadata(Map.of(
+                        "name", "test-skill",
+                        "description", "Created from prompt",
+                        "model_tier", "coding"))
+                .build();
+        when(skillService.findByName("test-skill"))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(createdSkill));
+        when(storagePort.putText(anyString(), anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        StepVerifier.create(controller.createSkill(Map.of(
+                "name", "test-skill",
+                "content",
+                "---\nname: ignored\ndescription: Created from prompt\n---\n---\nmodel_tier: coding\n---\nBody instructions")))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.CREATED, response.getStatusCode());
+                    assertEquals("Body instructions", response.getBody().getContent());
+                })
+                .verifyComplete();
+
+        ArgumentCaptor<String> documentCaptor = ArgumentCaptor.forClass(String.class);
+        verify(storagePort).putText(eq("skills"), eq("test-skill/SKILL.md"), documentCaptor.capture());
+        String savedDocument = documentCaptor.getValue();
+        assertTrue(savedDocument.contains("name: test-skill"));
+        assertTrue(savedDocument.contains("description: Created from prompt"));
+        assertTrue(savedDocument.contains("model_tier: coding"));
+        assertTrue(savedDocument.contains("\n---\nBody instructions"));
+        assertFalse(savedDocument.contains("ignored"));
+    }
+
+    @Test
+    void shouldNormalizeFrontmatterIntoMetadataAndStripItFromBodyOnUpdateWithoutExplicitMetadata() {
+        Skill skill = Skill.builder()
+                .name("test-skill")
+                .location(java.nio.file.Path.of("test-skill/SKILL.md"))
+                .metadata(Map.of(
+                        "name", "test-skill",
+                        "description", "Keep me"))
+                .content("old body")
+                .build();
+        Skill updatedSkill = Skill.builder()
+                .name("test-skill")
+                .location(java.nio.file.Path.of("test-skill/SKILL.md"))
+                .metadata(Map.of(
+                        "name", "test-skill",
+                        "description", "Keep me",
+                        "model_tier", "smart"))
+                .content("Fresh body")
+                .build();
+        when(skillService.findByName("test-skill")).thenReturn(Optional.of(skill));
+        when(skillService.findByLocation("test-skill/SKILL.md")).thenReturn(Optional.of(updatedSkill));
+        when(skillMarketplaceService.resolveManagedSkillStoragePath(skill)).thenReturn("test-skill/SKILL.md");
+        when(storagePort.putText(anyString(), anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        StepVerifier.create(controller.updateSkillByQuery("test-skill", Map.of(
+                "content", "---\nmodel_tier: smart\n---\nFresh body")))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertEquals("Fresh body", response.getBody().getContent());
+                })
+                .verifyComplete();
+
+        ArgumentCaptor<String> documentCaptor = ArgumentCaptor.forClass(String.class);
+        verify(storagePort).putText(eq("skills"), eq("test-skill/SKILL.md"), documentCaptor.capture());
+        String savedDocument = documentCaptor.getValue();
+        assertTrue(savedDocument.contains("description: Keep me"));
+        assertTrue(savedDocument.contains("model_tier: smart"));
+        assertTrue(savedDocument.contains("\n---\nFresh body"));
     }
 
     @Test

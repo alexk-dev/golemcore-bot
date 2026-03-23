@@ -3,8 +3,9 @@ package me.golemcore.bot.tools;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.ToolResult;
-import me.golemcore.bot.domain.service.SkillMarketplaceService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.SkillDocumentService;
+import me.golemcore.bot.domain.service.SkillMarketplaceService;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -32,6 +33,7 @@ class SkillManagementToolTest {
     private SkillComponent skillComponent;
     private RuntimeConfigService runtimeConfigService;
     private SkillMarketplaceService skillMarketplaceService;
+    private SkillDocumentService skillDocumentService;
     private SkillManagementTool tool;
 
     @BeforeEach
@@ -40,8 +42,10 @@ class SkillManagementToolTest {
         skillComponent = mock(SkillComponent.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
         skillMarketplaceService = mock(SkillMarketplaceService.class);
+        skillDocumentService = new SkillDocumentService();
         when(runtimeConfigService.isSkillManagementEnabled()).thenReturn(true);
-        tool = new SkillManagementTool(runtimeConfigService, storagePort, skillComponent, skillMarketplaceService);
+        tool = new SkillManagementTool(runtimeConfigService, storagePort, skillComponent, skillMarketplaceService,
+                skillDocumentService);
     }
 
     @Test
@@ -59,6 +63,24 @@ class SkillManagementToolTest {
         assertTrue(result.getOutput().contains(GREETING));
         verify(storagePort).putText(eq("skills"), eq("greeting/SKILL.md"), contains("name: greeting"));
         verify(skillComponent).reload();
+    }
+
+    @Test
+    void createSkillShouldNormalizeFrontmatterAndStoreBodyWithoutNestedHeaders() throws Exception {
+        when(storagePort.putText(anyString(), anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        ToolResult result = tool.execute(Map.of(
+                OPERATION, CREATE_SKILL,
+                NAME, GREETING,
+                DESCRIPTION, "Responds with a greeting",
+                CONTENT,
+                "---\nname: ignored\nmodel_tier: coding\n---\n---\nnext_skill: follow-up\n---\nWhen the user says hello, respond warmly."))
+                .get();
+
+        assertTrue(result.isSuccess());
+        verify(storagePort).putText(eq("skills"), eq("greeting/SKILL.md"), eq(
+                "---\nname: greeting\ndescription: Responds with a greeting\nmodel_tier: coding\nnext_skill: follow-up\n---\nWhen the user says hello, respond warmly."));
     }
 
     @Test
@@ -229,7 +251,7 @@ class SkillManagementToolTest {
         RuntimeConfigService disabledRuntimeConfigService = mock(RuntimeConfigService.class);
         when(disabledRuntimeConfigService.isSkillManagementEnabled()).thenReturn(false);
         SkillManagementTool disabledTool = new SkillManagementTool(disabledRuntimeConfigService, storagePort,
-                skillComponent, skillMarketplaceService);
+                skillComponent, skillMarketplaceService, skillDocumentService);
 
         ToolResult result = disabledTool.execute(Map.of(OPERATION, "list_skills")).get();
         assertFalse(result.isSuccess());
