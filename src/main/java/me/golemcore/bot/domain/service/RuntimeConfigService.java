@@ -29,7 +29,9 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -133,7 +135,7 @@ public class RuntimeConfigService {
     private static final boolean DEFAULT_MEMORY_CODE_AWARE_EXTRACTION_ENABLED = true;
     private static final int DEFAULT_TURN_MAX_LLM_CALLS = 200;
     private static final int DEFAULT_TURN_MAX_TOOL_EXECUTIONS = 500;
-    private static final java.time.Duration DEFAULT_TURN_DEADLINE = java.time.Duration.ofHours(1);
+    private static final Duration DEFAULT_TURN_DEADLINE = Duration.ofHours(1);
     private static final String DEFAULT_STT_PROVIDER = "golemcore/elevenlabs";
     private static final String DEFAULT_TTS_PROVIDER = "golemcore/elevenlabs";
     private static final String DEFAULT_WHISPER_STT_PROVIDER = "golemcore/whisper";
@@ -160,10 +162,10 @@ public class RuntimeConfigService {
     private static final boolean DEFAULT_DELAYED_ACTIONS_ENABLED = true;
     private static final int DEFAULT_DELAYED_ACTIONS_TICK_SECONDS = 1;
     private static final int DEFAULT_DELAYED_ACTIONS_MAX_PENDING_PER_SESSION = 50;
-    private static final java.time.Duration DEFAULT_DELAYED_ACTIONS_MAX_DELAY = java.time.Duration.ofDays(30);
+    private static final Duration DEFAULT_DELAYED_ACTIONS_MAX_DELAY = Duration.ofDays(30);
     private static final int DEFAULT_DELAYED_ACTIONS_MAX_ATTEMPTS = 4;
-    private static final java.time.Duration DEFAULT_DELAYED_ACTIONS_LEASE_DURATION = java.time.Duration.ofMinutes(2);
-    private static final java.time.Duration DEFAULT_DELAYED_ACTIONS_RETENTION = java.time.Duration.ofDays(7);
+    private static final Duration DEFAULT_DELAYED_ACTIONS_LEASE_DURATION = Duration.ofMinutes(2);
+    private static final Duration DEFAULT_DELAYED_ACTIONS_RETENTION = Duration.ofDays(7);
     private static final boolean DEFAULT_DELAYED_ACTIONS_ALLOW_RUN_LATER = true;
     private static final String DEFAULT_MODEL_REGISTRY_BRANCH = "main";
 
@@ -568,14 +570,14 @@ public class RuntimeConfigService {
         return val != null && val > 0 ? val : DEFAULT_DELAYED_ACTIONS_MAX_PENDING_PER_SESSION;
     }
 
-    public java.time.Duration getDelayedActionsMaxDelay() {
+    public Duration getDelayedActionsMaxDelay() {
         RuntimeConfig.DelayedActionsConfig delayedConfig = getRuntimeConfig().getDelayedActions();
         if (delayedConfig == null || delayedConfig.getMaxDelay() == null || delayedConfig.getMaxDelay().isBlank()) {
             return DEFAULT_DELAYED_ACTIONS_MAX_DELAY;
         }
         try {
-            return java.time.Duration.parse(delayedConfig.getMaxDelay());
-        } catch (java.time.format.DateTimeParseException e) {
+            return Duration.parse(delayedConfig.getMaxDelay());
+        } catch (DateTimeParseException e) {
             return DEFAULT_DELAYED_ACTIONS_MAX_DELAY;
         }
     }
@@ -589,28 +591,28 @@ public class RuntimeConfigService {
         return val != null && val > 0 ? val : DEFAULT_DELAYED_ACTIONS_MAX_ATTEMPTS;
     }
 
-    public java.time.Duration getDelayedActionsLeaseDuration() {
+    public Duration getDelayedActionsLeaseDuration() {
         RuntimeConfig.DelayedActionsConfig delayedConfig = getRuntimeConfig().getDelayedActions();
         if (delayedConfig == null || delayedConfig.getLeaseDuration() == null
                 || delayedConfig.getLeaseDuration().isBlank()) {
             return DEFAULT_DELAYED_ACTIONS_LEASE_DURATION;
         }
         try {
-            return java.time.Duration.parse(delayedConfig.getLeaseDuration());
-        } catch (java.time.format.DateTimeParseException e) {
+            return Duration.parse(delayedConfig.getLeaseDuration());
+        } catch (DateTimeParseException e) {
             return DEFAULT_DELAYED_ACTIONS_LEASE_DURATION;
         }
     }
 
-    public java.time.Duration getDelayedActionsRetentionAfterCompletion() {
+    public Duration getDelayedActionsRetentionAfterCompletion() {
         RuntimeConfig.DelayedActionsConfig delayedConfig = getRuntimeConfig().getDelayedActions();
         if (delayedConfig == null || delayedConfig.getRetentionAfterCompletion() == null
                 || delayedConfig.getRetentionAfterCompletion().isBlank()) {
             return DEFAULT_DELAYED_ACTIONS_RETENTION;
         }
         try {
-            return java.time.Duration.parse(delayedConfig.getRetentionAfterCompletion());
-        } catch (java.time.format.DateTimeParseException e) {
+            return Duration.parse(delayedConfig.getRetentionAfterCompletion());
+        } catch (DateTimeParseException e) {
             return DEFAULT_DELAYED_ACTIONS_RETENTION;
         }
     }
@@ -1007,14 +1009,14 @@ public class RuntimeConfigService {
         return val != null ? val : DEFAULT_TURN_MAX_TOOL_EXECUTIONS;
     }
 
-    public java.time.Duration getTurnDeadline() {
+    public Duration getTurnDeadline() {
         RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
         if (turnConfig == null || turnConfig.getDeadline() == null || turnConfig.getDeadline().isBlank()) {
             return DEFAULT_TURN_DEADLINE;
         }
         try {
-            return java.time.Duration.parse(turnConfig.getDeadline());
-        } catch (java.time.format.DateTimeParseException e) {
+            return Duration.parse(turnConfig.getDeadline());
+        } catch (DateTimeParseException e) {
             return DEFAULT_TURN_DEADLINE;
         }
     }
@@ -1100,14 +1102,14 @@ public class RuntimeConfigService {
         return val != null ? val : DEFAULT_TURN_PROGRESS_BATCH_SIZE;
     }
 
-    public java.time.Duration getTurnProgressMaxSilence() {
+    public Duration getTurnProgressMaxSilence() {
         RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
         if (turnConfig == null) {
-            return java.time.Duration.ofSeconds(DEFAULT_TURN_PROGRESS_MAX_SILENCE_SECONDS);
+            return Duration.ofSeconds(DEFAULT_TURN_PROGRESS_MAX_SILENCE_SECONDS);
         }
         Integer seconds = turnConfig.getProgressMaxSilenceSeconds();
         int safeSeconds = seconds != null ? seconds : DEFAULT_TURN_PROGRESS_MAX_SILENCE_SECONDS;
-        return java.time.Duration.ofSeconds(safeSeconds);
+        return Duration.ofSeconds(safeSeconds);
     }
 
     public int getTurnProgressSummaryTimeoutMs() {
@@ -1765,12 +1767,8 @@ public class RuntimeConfigService {
         }
         if (cfg.getDelayedActions().getMaxDelay() == null || cfg.getDelayedActions().getMaxDelay().isBlank()) {
             cfg.getDelayedActions().setMaxDelay(DEFAULT_DELAYED_ACTIONS_MAX_DELAY.toString());
-        } else {
-            try {
-                java.time.Duration.parse(cfg.getDelayedActions().getMaxDelay());
-            } catch (java.time.format.DateTimeParseException e) {
-                cfg.getDelayedActions().setMaxDelay(DEFAULT_DELAYED_ACTIONS_MAX_DELAY.toString());
-            }
+        } else if (!isValidDuration(cfg.getDelayedActions().getMaxDelay())) {
+            cfg.getDelayedActions().setMaxDelay(DEFAULT_DELAYED_ACTIONS_MAX_DELAY.toString());
         }
         Integer delayedMaxAttempts = cfg.getDelayedActions().getDefaultMaxAttempts();
         if (delayedMaxAttempts == null || delayedMaxAttempts < 1) {
@@ -1779,23 +1777,15 @@ public class RuntimeConfigService {
         if (cfg.getDelayedActions().getLeaseDuration() == null
                 || cfg.getDelayedActions().getLeaseDuration().isBlank()) {
             cfg.getDelayedActions().setLeaseDuration(DEFAULT_DELAYED_ACTIONS_LEASE_DURATION.toString());
-        } else {
-            try {
-                java.time.Duration.parse(cfg.getDelayedActions().getLeaseDuration());
-            } catch (java.time.format.DateTimeParseException e) {
-                cfg.getDelayedActions().setLeaseDuration(DEFAULT_DELAYED_ACTIONS_LEASE_DURATION.toString());
-            }
+        } else if (!isValidDuration(cfg.getDelayedActions().getLeaseDuration())) {
+            cfg.getDelayedActions().setLeaseDuration(DEFAULT_DELAYED_ACTIONS_LEASE_DURATION.toString());
         }
         if (cfg.getDelayedActions().getRetentionAfterCompletion() == null
                 || cfg.getDelayedActions().getRetentionAfterCompletion().isBlank()) {
             cfg.getDelayedActions().setRetentionAfterCompletion(DEFAULT_DELAYED_ACTIONS_RETENTION.toString());
-        } else {
-            try {
-                java.time.Duration.parse(cfg.getDelayedActions().getRetentionAfterCompletion());
-            } catch (java.time.format.DateTimeParseException e) {
-                cfg.getDelayedActions()
-                        .setRetentionAfterCompletion(DEFAULT_DELAYED_ACTIONS_RETENTION.toString());
-            }
+        } else if (!isValidDuration(cfg.getDelayedActions().getRetentionAfterCompletion())) {
+            cfg.getDelayedActions()
+                    .setRetentionAfterCompletion(DEFAULT_DELAYED_ACTIONS_RETENTION.toString());
         }
         if (cfg.getDelayedActions().getAllowRunLater() == null) {
             cfg.getDelayedActions().setAllowRunLater(DEFAULT_DELAYED_ACTIONS_ALLOW_RUN_LATER);
@@ -1868,7 +1858,7 @@ public class RuntimeConfigService {
                 DEFAULT_ROUTING_REASONING);
         modelRouter.setRouting(routingBinding);
 
-        LinkedHashMap<String, RuntimeConfig.TierBinding> normalizedTiers = new LinkedHashMap<>();
+        Map<String, RuntimeConfig.TierBinding> normalizedTiers = new LinkedHashMap<>();
         for (String tier : ModelTierCatalog.orderedExplicitTiers()) {
             normalizedTiers.put(tier, normalizeBinding(
                     modelRouter.getTierBinding(tier),
@@ -1879,6 +1869,15 @@ public class RuntimeConfigService {
 
         if (modelRouter.getDynamicTierEnabled() == null) {
             modelRouter.setDynamicTierEnabled(true);
+        }
+    }
+
+    private boolean isValidDuration(String value) {
+        try {
+            Duration parsed = Duration.parse(value);
+            return parsed != null;
+        } catch (DateTimeParseException e) {
+            return false;
         }
     }
 
@@ -1956,7 +1955,7 @@ public class RuntimeConfigService {
         try {
             java.time.LocalTime parsed = java.time.LocalTime.parse(value.trim());
             return parsed.withSecond(0).withNano(0).toString();
-        } catch (java.time.format.DateTimeParseException e) {
+        } catch (DateTimeParseException e) {
             return defaultValue;
         }
     }

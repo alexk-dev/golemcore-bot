@@ -29,7 +29,7 @@ public final class ModelTierCatalog {
     private static final Set<String> KNOWN_TIERS;
 
     static {
-        LinkedHashSet<String> known = new LinkedHashSet<>();
+        Set<String> known = new LinkedHashSet<>();
         known.add(ROUTING_TIER);
         known.addAll(ORDERED_EXPLICIT_TIERS);
         KNOWN_TIERS = Set.copyOf(known);

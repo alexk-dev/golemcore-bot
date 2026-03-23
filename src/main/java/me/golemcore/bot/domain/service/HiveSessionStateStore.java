@@ -49,6 +49,7 @@ public class HiveSessionStateStore {
         }
     }
 
+    @SuppressWarnings("PMD.NullAssignment")
     public void clear() {
         synchronized (lock) {
             try {

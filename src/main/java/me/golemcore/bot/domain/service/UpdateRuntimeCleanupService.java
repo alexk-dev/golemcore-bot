@@ -30,6 +30,7 @@ public class UpdateRuntimeCleanupService {
         cleanupAfterSuccessfulStartup();
     }
 
+    @SuppressWarnings("PMD.NullAssignment")
     void cleanupAfterSuccessfulStartup() {
         if (!botProperties.getUpdate().isEnabled()) {
             return;
@@ -61,12 +62,21 @@ public class UpdateRuntimeCleanupService {
 
         try (java.util.stream.Stream<Path> stream = Files.list(jarsDir)) {
             stream.filter(Files::isRegularFile)
-                    .filter(path -> path.getFileName() != null && path.getFileName().toString().endsWith(".jar"))
-                    .filter(path -> !retainedAssets.contains(path.getFileName().toString()))
+                    .filter(path -> shouldDeleteJar(path, retainedAssets))
                     .forEach(this::deleteIfExists);
         } catch (IOException e) {
             log.warn("[update] failed to cleanup old runtime jars: {}", e.getMessage());
         }
+    }
+
+    private boolean shouldDeleteJar(Path path, Set<String> retainedAssets) {
+        String fileName = fileName(path);
+        return fileName != null && fileName.endsWith(".jar") && !retainedAssets.contains(fileName);
+    }
+
+    private String fileName(Path path) {
+        Path fileName = path.getFileName();
+        return fileName != null ? fileName.toString() : null;
     }
 
     private String readMarker(Path markerPath) {

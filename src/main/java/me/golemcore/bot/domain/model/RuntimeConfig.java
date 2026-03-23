@@ -122,12 +122,12 @@ public class RuntimeConfig {
     public static class ModelRouterConfig {
         private Double temperature;
         private TierBinding routing;
-        private LinkedHashMap<String, TierBinding> tiers = new LinkedHashMap<>();
+        private Map<String, TierBinding> tiers = new LinkedHashMap<>();
         private Boolean dynamicTierEnabled;
 
         public static class ModelRouterConfigBuilder {
             private TierBinding routing;
-            private LinkedHashMap<String, TierBinding> tiers;
+            private Map<String, TierBinding> tiers;
 
             public ModelRouterConfigBuilder routingModel(String model) {
                 routingBinding().setModel(model);
@@ -736,10 +736,10 @@ public class RuntimeConfig {
                                                                                 UsageConfig.class), MCP("mcp",
                                                                                         McpConfig.class), PLAN("plan",
                                                                                                 PlanConfig.class), DELAYED_ACTIONS(
-                                                                                                "delayed-actions",
-                                                                                                DelayedActionsConfig.class), HIVE(
-                                                                                                        "hive",
-                                                                                                        HiveConfig.class);
+                                                                                                        "delayed-actions",
+                                                                                                        DelayedActionsConfig.class), HIVE(
+                                                                                                                "hive",
+                                                                                                                HiveConfig.class);
 
         private final String fileId;
         private final Class<?> configClass;

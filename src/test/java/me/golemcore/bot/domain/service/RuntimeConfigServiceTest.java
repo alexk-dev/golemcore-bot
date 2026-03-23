@@ -207,7 +207,7 @@ class RuntimeConfigServiceTest {
         canonicalRouter.put("temperature", 0.4d);
         canonicalRouter.put("dynamicTierEnabled", false);
         canonicalRouter.put("routing", Map.of("model", "router/model", "reasoning", "none"));
-        LinkedHashMap<String, Object> tiers = new LinkedHashMap<>();
+        Map<String, Object> tiers = new LinkedHashMap<>();
         tiers.put("balanced", Map.of("model", "model/balanced", "reasoning", "low"));
         tiers.put("smart", Map.of("model", "model/smart", "reasoning", "medium"));
         tiers.put("deep", Map.of("model", "model/deep", "reasoning", "high"));
@@ -1562,7 +1562,7 @@ class RuntimeConfigServiceTest {
         assertTrue(persistedSections.containsKey("hive.json"));
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({ "PMD.AvoidAccessibilityAlteration", "unchecked" })
     private void setCachedConfig(RuntimeConfig config) throws Exception {
         java.lang.reflect.Field field = RuntimeConfigService.class.getDeclaredField("configRef");
         field.setAccessible(true);

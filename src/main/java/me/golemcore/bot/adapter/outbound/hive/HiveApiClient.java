@@ -179,6 +179,7 @@ public class HiveApiClient {
     }
 
     public static class HiveApiException extends IllegalStateException {
+        private static final long serialVersionUID = 1L;
 
         private final int statusCode;
 

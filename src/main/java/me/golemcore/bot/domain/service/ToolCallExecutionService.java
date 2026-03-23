@@ -20,6 +20,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -168,7 +169,7 @@ public class ToolCallExecutionService {
 
     @SuppressWarnings("unchecked")
     private List<String> resolveAvailableToolNames(AgentContext context) {
-        TreeSet<String> names = new TreeSet<>(toolRegistry.keySet());
+        Set<String> names = new TreeSet<>(toolRegistry.keySet());
         if (context != null) {
             Object scopedTools = context.getAttribute(ContextAttributes.CONTEXT_SCOPED_TOOLS);
             if (scopedTools instanceof Map<?, ?> map) {

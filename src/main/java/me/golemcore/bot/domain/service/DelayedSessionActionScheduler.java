@@ -104,7 +104,7 @@ public class DelayedSessionActionScheduler {
         try {
             List<DelayedSessionAction> dueActions = delayedActionService.leaseDueActions(MAX_LEASES_PER_TICK);
             for (DelayedSessionAction action : dueActions) {
-                dispatchExecutor.submit(() -> dispatch(action));
+                dispatchExecutor.execute(() -> dispatch(action));
             }
         } catch (RuntimeException e) {
             log.warn("[DelayedActions] Tick failed: {}", e.getMessage());

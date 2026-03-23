@@ -20,6 +20,7 @@ package me.golemcore.bot.domain.service;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.concurrent.CompletionException;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -137,7 +138,7 @@ public class HiveControlCommandDispatcher {
         if (eventType == null || eventType.isBlank()) {
             return EVENT_TYPE_COMMAND;
         }
-        return eventType.trim().toLowerCase();
+        return eventType.trim().toLowerCase(Locale.ROOT);
     }
 
     private Throwable unwrap(Throwable failure) {

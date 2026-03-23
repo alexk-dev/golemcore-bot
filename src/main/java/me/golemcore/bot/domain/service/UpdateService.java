@@ -8,7 +8,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.UpdateActionResult;
-import me.golemcore.bot.domain.model.UpdateBlockedReason;
 import me.golemcore.bot.domain.model.UpdateState;
 import me.golemcore.bot.domain.model.UpdateStatus;
 import me.golemcore.bot.domain.model.UpdateVersionInfo;
@@ -39,8 +38,6 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
-import java.util.Comparator;
-import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.regex.Matcher;
@@ -636,52 +633,6 @@ public class UpdateService {
         }
     }
 
-    private void cleanupOldJars() throws IOException {
-        int maxKeptVersions = botProperties.getUpdate().getMaxKeptVersions();
-        if (maxKeptVersions <= 0) {
-            return;
-        }
-
-        Path jarsDir = getJarsDir();
-        if (!Files.exists(jarsDir)) {
-            return;
-        }
-
-        String currentAsset = readMarker(getCurrentMarkerPath());
-        String stagedAsset = readMarker(getStagedMarkerPath());
-
-        List<Path> jarFiles;
-        try (java.util.stream.Stream<Path> stream = Files.list(jarsDir)) {
-            jarFiles = stream
-                    .filter(this::isJarFile)
-                    .sorted(Comparator.comparing(this::lastModified).reversed())
-                    .toList();
-        }
-
-        int kept = 0;
-        for (Path file : jarFiles) {
-            Path fileNamePath = file.getFileName();
-            if (fileNamePath == null) {
-                continue;
-            }
-            String fileName = fileNamePath.toString();
-            boolean isProtected = fileName.equals(currentAsset) || fileName.equals(stagedAsset);
-            if (isProtected || kept < maxKeptVersions) {
-                kept++;
-                continue;
-            }
-            Files.deleteIfExists(file);
-        }
-    }
-
-    private Instant lastModified(Path path) {
-        try {
-            return Files.getLastModifiedTime(path).toInstant();
-        } catch (IOException e) {
-            return Instant.EPOCH;
-        }
-    }
-
     private void moveAtomically(Path source, Path target) throws IOException {
         try {
             Files.move(source, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
@@ -1225,14 +1176,6 @@ public class UpdateService {
         } catch (IOException ignored) {
             // best effort cleanup
         }
-    }
-
-    private boolean isJarFile(Path path) {
-        if (!Files.isRegularFile(path)) {
-            return false;
-        }
-        Path fileName = path.getFileName();
-        return fileName != null && fileName.toString().endsWith(".jar");
     }
 
     private String safeMessage(Throwable throwable) {

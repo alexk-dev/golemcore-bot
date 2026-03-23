@@ -40,6 +40,7 @@ public class ModelRegistryService {
     private static final String CACHE_DIR = "cache";
     private static final String CACHE_PREFIX = "model-registry";
     private static final String DEFAULT_BRANCH = "main";
+    private static final String DEFAULT_REPOSITORY_URL = "https://github.com/alexk-dev/golemcore-models";
     private static final String DEFAULT_RAW_BASE_URL = "https://raw.githubusercontent.com";
     private static final String GITHUB_USER_AGENT = "golemcore-bot-model-registry";
 
@@ -58,6 +59,11 @@ public class ModelRegistryService {
                 new RegistryCandidate("provider",
                         "providers/" + normalizedProvider + "/" + normalizedModelId + ".json"),
                 new RegistryCandidate("shared", "models/" + normalizedModelId + ".json"));
+
+        ResolveResult freshCachedResult = findFreshCachedResult(source, candidates, normalizedProvider);
+        if (freshCachedResult != null) {
+            return freshCachedResult;
+        }
 
         for (RegistryCandidate candidate : candidates) {
             ResolveResult result = resolveCandidate(source, candidate, normalizedProvider);
@@ -97,6 +103,22 @@ public class ModelRegistryService {
         }
     }
 
+    private ResolveResult findFreshCachedResult(RegistrySource source, List<RegistryCandidate> candidates,
+            String provider) {
+        for (RegistryCandidate candidate : candidates) {
+            CacheEntry cacheEntry = readCacheEntry(source, candidate);
+            if (cacheEntry == null || !cacheEntry.isFound() || !isFresh(cacheEntry)) {
+                continue;
+            }
+            ModelConfigService.ModelSettings settings = tryParseSettings(cacheEntry.getContent(), provider,
+                    candidate.relativePath());
+            if (settings != null) {
+                return new ResolveResult(settings, candidate.configSource(), "fresh-hit");
+            }
+        }
+        return null;
+    }
+
     private ResolveResult resolveCandidate(RegistrySource source, RegistryCandidate candidate, String provider) {
         CacheEntry cacheEntry = readCacheEntry(source, candidate);
         ModelConfigService.ModelSettings cachedSettings = null;
@@ -106,8 +128,6 @@ public class ModelRegistryService {
             if (cachedSettings != null && isFresh(cacheEntry)) {
                 return new ResolveResult(cachedSettings, candidate.configSource(), "fresh-hit");
             }
-        } else if (cacheEntry != null && isFresh(cacheEntry)) {
-            return null;
         }
 
         if (source == null) {
@@ -200,10 +220,10 @@ public class ModelRegistryService {
 
     private RegistrySource resolveSource() {
         RuntimeConfig runtimeConfig = runtimeConfigService.getRuntimeConfig();
-        RuntimeConfig.ModelRegistryConfig config = runtimeConfig != null ? runtimeConfig.getModelRegistry() : null;
+        RuntimeConfig.ModelRegistryConfig config = runtimeConfig.getModelRegistry();
         String repositoryUrl = trimToNull(config != null ? config.getRepositoryUrl() : null);
         if (repositoryUrl == null) {
-            return null;
+            return new RegistrySource(DEFAULT_REPOSITORY_URL, DEFAULT_BRANCH);
         }
         String branch = trimToNull(config != null ? config.getBranch() : null);
         return new RegistrySource(repositoryUrl, branch != null ? branch : DEFAULT_BRANCH);
@@ -266,7 +286,112 @@ public class ModelRegistryService {
         while (normalized.endsWith("/")) {
             normalized = normalized.substring(0, normalized.length() - 1);
         }
+        normalized = stripDatedSuffix(normalized);
         return requireValue(normalized, "modelId");
+    }
+
+    private String stripDatedSuffix(String modelId) {
+        String monthYearStripped = stripMonthYearSuffix(modelId);
+        if (!monthYearStripped.equals(modelId)) {
+            return monthYearStripped;
+        }
+        String isoDateStripped = stripIsoDateSuffix(modelId);
+        if (!isoDateStripped.equals(modelId)) {
+            return isoDateStripped;
+        }
+        return stripCompactDateSuffix(modelId);
+    }
+
+    private String stripMonthYearSuffix(String modelId) {
+        int yearDash = modelId.lastIndexOf('-');
+        if (yearDash <= 0 || modelId.length() - yearDash - 1 != 4) {
+            return modelId;
+        }
+        String yearPart = modelId.substring(yearDash + 1);
+        if (!isDigits(yearPart)) {
+            return modelId;
+        }
+
+        int monthDash = modelId.lastIndexOf('-', yearDash - 1);
+        if (monthDash <= 0 || yearDash - monthDash - 1 != 2) {
+            return modelId;
+        }
+        String monthPart = modelId.substring(monthDash + 1, yearDash);
+        if (!isDigits(monthPart)) {
+            return modelId;
+        }
+
+        int month = Integer.parseInt(monthPart);
+        if (month < 1 || month > 12) {
+            return modelId;
+        }
+        return modelId.substring(0, monthDash);
+    }
+
+    private String stripIsoDateSuffix(String modelId) {
+        int dayDash = modelId.lastIndexOf('-');
+        if (dayDash <= 0 || modelId.length() - dayDash - 1 != 2) {
+            return modelId;
+        }
+        String dayPart = modelId.substring(dayDash + 1);
+        if (!isDigits(dayPart)) {
+            return modelId;
+        }
+
+        int monthDash = modelId.lastIndexOf('-', dayDash - 1);
+        if (monthDash <= 0 || dayDash - monthDash - 1 != 2) {
+            return modelId;
+        }
+        String monthPart = modelId.substring(monthDash + 1, dayDash);
+        if (!isDigits(monthPart)) {
+            return modelId;
+        }
+
+        int yearDash = modelId.lastIndexOf('-', monthDash - 1);
+        if (yearDash <= 0 || monthDash - yearDash - 1 != 4) {
+            return modelId;
+        }
+        String yearPart = modelId.substring(yearDash + 1, monthDash);
+        if (!isDigits(yearPart)) {
+            return modelId;
+        }
+
+        int month = Integer.parseInt(monthPart);
+        int day = Integer.parseInt(dayPart);
+        if (month < 1 || month > 12 || day < 1 || day > 31) {
+            return modelId;
+        }
+        return modelId.substring(0, yearDash);
+    }
+
+    private String stripCompactDateSuffix(String modelId) {
+        int dash = modelId.lastIndexOf('-');
+        if (dash <= 0 || modelId.length() - dash - 1 != 8) {
+            return modelId;
+        }
+        String compactDate = modelId.substring(dash + 1);
+        if (!isDigits(compactDate)) {
+            return modelId;
+        }
+
+        int month = Integer.parseInt(compactDate.substring(4, 6));
+        int day = Integer.parseInt(compactDate.substring(6, 8));
+        if (month < 1 || month > 12 || day < 1 || day > 31) {
+            return modelId;
+        }
+        return modelId.substring(0, dash);
+    }
+
+    private boolean isDigits(String value) {
+        if (value == null || value.isEmpty()) {
+            return false;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            if (!Character.isDigit(value.charAt(i))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private String requireValue(String value, String fieldName) {

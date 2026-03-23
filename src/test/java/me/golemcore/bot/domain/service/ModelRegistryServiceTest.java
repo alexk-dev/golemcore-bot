@@ -1,7 +1,6 @@
 package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.model.RuntimeConfig;
-import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -28,7 +27,7 @@ class ModelRegistryServiceTest {
     private RuntimeConfigService runtimeConfigService;
     private StoragePort storagePort;
     private Map<String, String> persistedText;
-    private TestableModelRegistryService service;
+    private StubModelRegistryService service;
 
     @BeforeEach
     void setUp() {
@@ -58,7 +57,7 @@ class ModelRegistryServiceTest {
                 .build();
         when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
 
-        service = new TestableModelRegistryService(runtimeConfigService, storagePort);
+        service = new StubModelRegistryService(runtimeConfigService, storagePort);
         service.setNow(Instant.parse("2026-03-23T12:00:00Z"));
     }
 
@@ -111,6 +110,30 @@ class ModelRegistryServiceTest {
     }
 
     @Test
+    void shouldUseDefaultOfficialRegistrySourceWhenConfigIsMissing() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder().build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+        service.putRemoteFile("models/gemini-3.1-pro-preview.json", """
+                {
+                  "displayName": "Gemini 3.1 Pro Preview",
+                  "supportsVision": true,
+                  "supportsTemperature": true,
+                  "maxInputTokens": 1048576
+                }
+                """);
+
+        ModelRegistryService.ResolveResult result = service.resolveDefaults("dev", "gemini-3.1-pro-preview");
+
+        assertNotNull(result.defaultSettings());
+        assertEquals("shared", result.configSource());
+        assertEquals("remote-hit", result.cacheStatus());
+        assertEquals("Gemini 3.1 Pro Preview", result.defaultSettings().getDisplayName());
+        assertTrue(service.requestedUris().stream().anyMatch(
+                uri -> "https://raw.githubusercontent.com/alexk-dev/golemcore-models/main/models/gemini-3.1-pro-preview.json"
+                        .equals(uri)));
+    }
+
+    @Test
     void shouldUseFreshCacheWithoutRefetchingRemoteConfig() {
         service.putRemoteFile("models/gpt-5.1.json", """
                 {
@@ -133,6 +156,51 @@ class ModelRegistryServiceTest {
         assertEquals("fresh-hit", cached.cacheStatus());
         assertEquals(requestsAfterInitialResolve, service.requestedUris().size());
         assertEquals("GPT-5.1", cached.defaultSettings().getDisplayName());
+    }
+
+    @Test
+    void shouldRefreshFreshMissWhenConfigAppearsInRegistry() {
+        ModelRegistryService.ResolveResult initial = service.resolveDefaults("google", "gemini-3.1-pro-preview");
+
+        assertNull(initial.defaultSettings());
+        assertEquals("miss", initial.cacheStatus());
+
+        service.putRemoteFile("models/gemini-3.1-pro-preview.json", """
+                {
+                  "displayName": "Gemini 3.1 Pro Preview",
+                  "supportsVision": true,
+                  "supportsTemperature": true,
+                  "maxInputTokens": 1048576
+                }
+                """);
+        service.setNow(Instant.parse("2026-03-23T12:30:00Z"));
+
+        ModelRegistryService.ResolveResult resolved = service.resolveDefaults("google", "gemini-3.1-pro-preview");
+
+        assertNotNull(resolved.defaultSettings());
+        assertEquals("shared", resolved.configSource());
+        assertEquals("remote-hit", resolved.cacheStatus());
+        assertEquals("Gemini 3.1 Pro Preview", resolved.defaultSettings().getDisplayName());
+    }
+
+    @Test
+    void shouldStripMonthYearSuffixFromModelIdWhenResolvingSharedConfig() {
+        service.putRemoteFile("models/gemini-3-preview.json", """
+                {
+                  "displayName": "Gemini 3 Preview",
+                  "supportsVision": true,
+                  "supportsTemperature": true,
+                  "maxInputTokens": 1048576
+                }
+                """);
+
+        ModelRegistryService.ResolveResult result = service.resolveDefaults("google", "gemini-3-preview-09-2025");
+
+        assertNotNull(result.defaultSettings());
+        assertEquals("shared", result.configSource());
+        assertEquals("remote-hit", result.cacheStatus());
+        assertEquals("Gemini 3 Preview", result.defaultSettings().getDisplayName());
+        assertTrue(service.requestedUris().stream().anyMatch(uri -> uri.endsWith("/models/gemini-3-preview.json")));
     }
 
     @Test
@@ -228,19 +296,20 @@ class ModelRegistryServiceTest {
         return directory + "/" + path;
     }
 
-    private static final class TestableModelRegistryService extends ModelRegistryService {
+    @SuppressWarnings("PMD.NullAssignment")
+    private static final class StubModelRegistryService extends ModelRegistryService {
 
         private final Map<String, String> remoteFiles = new ConcurrentHashMap<>();
-        private final List<String> requestedUris = new ArrayList<>();
-        private Instant now;
+        private final List<String> requestedUriHistory = new ArrayList<>();
+        private Instant currentTime;
         private RuntimeException remoteFailure;
 
-        private TestableModelRegistryService(RuntimeConfigService runtimeConfigService, StoragePort storagePort) {
+        private StubModelRegistryService(RuntimeConfigService runtimeConfigService, StoragePort storagePort) {
             super(runtimeConfigService, storagePort);
         }
 
         private void setNow(Instant now) {
-            this.now = now;
+            this.currentTime = now;
         }
 
         private void putRemoteFile(String relativePath, String content) {
@@ -257,17 +326,17 @@ class ModelRegistryServiceTest {
         }
 
         private List<String> requestedUris() {
-            return requestedUris;
+            return requestedUriHistory;
         }
 
         @Override
         protected Instant now() {
-            return now;
+            return currentTime;
         }
 
         @Override
         protected String fetchRemoteText(URI uri) {
-            requestedUris.add(uri.toString());
+            requestedUriHistory.add(uri.toString());
             if (remoteFailure != null) {
                 throw remoteFailure;
             }

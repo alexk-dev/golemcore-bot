@@ -852,7 +852,7 @@ class SessionRunCoordinatorTest {
                     runtimeEventService, runtimeConfigService);
 
             Message a = user("A");
-            org.mockito.Mockito.doThrow(new RuntimeException("boom"))
+            doThrow(new RuntimeException("boom"))
                     .when(agentLoop).processMessage(a);
 
             coordinator.enqueue(a);

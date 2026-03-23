@@ -393,6 +393,7 @@ class SessionsControllerTest {
     }
 
     @Test
+    @SuppressWarnings("PMD.AvoidAccessibilityAlteration")
     void shouldHideSnapshotPreviewWhenPreviewDisabled() throws Exception {
         TraceSnapshot snapshot = TraceSnapshot.builder()
                 .snapshotId("snap-hidden")
