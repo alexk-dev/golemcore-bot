@@ -223,7 +223,7 @@ class PlanWorkLifecycleBddTest {
                 mcpPort,
                 toolCallExecutionService,
                 ragPort,
-                new me.golemcore.bot.infrastructure.config.BotProperties(),
+                new BotProperties(),
                 autoModeService,
                 delayedActionPolicyService,
                 planService,

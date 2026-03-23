@@ -161,6 +161,7 @@ public class HiveControlInboxService {
         }
     }
 
+    @SuppressWarnings("PMD.AvoidBranchingStatementAsLastInLoop")
     private StoredCommand claimNextPending() {
         synchronized (lock) {
             InboxState state = getLoadedStateLocked();

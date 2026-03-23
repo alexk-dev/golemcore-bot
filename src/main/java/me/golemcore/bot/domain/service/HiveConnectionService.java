@@ -566,6 +566,7 @@ public class HiveConnectionService {
         hiveControlChannelClient.disconnect("stop");
     }
 
+    @SuppressWarnings("PMD.NullAssignment")
     private void cancelBackgroundTasks() {
         if (heartbeatFuture != null) {
             heartbeatFuture.cancel(true);

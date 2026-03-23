@@ -1,6 +1,7 @@
 package me.golemcore.bot.adapter.outbound.hive;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.IOException;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;
 import java.time.Duration;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Component;
 
 @Component
 @Slf4j
+@SuppressWarnings("PMD.NullAssignment")
 public class JdkHiveControlChannelClient implements HiveControlChannelClient {
 
     private final HttpClient httpClient;
@@ -140,6 +142,7 @@ public class JdkHiveControlChannelClient implements HiveControlChannelClient {
         }
     }
 
+    @SuppressWarnings("PMD.NullAssignment")
     private final class Listener implements WebSocket.Listener {
 
         private final Consumer<HiveControlCommandEnvelope> commandConsumer;
@@ -184,18 +187,9 @@ public class JdkHiveControlChannelClient implements HiveControlChannelClient {
                             status.receivedCommandCount() + 1);
                 }
                 commandConsumer.accept(envelope);
-            } catch (Exception exception) { // NOSONAR - must keep socket alive on malformed payload
-                textBuffer.setLength(0);
-                synchronized (lock) {
-                    status = new HiveControlChannelStatus(
-                            "ERROR",
-                            status.connectedAt(),
-                            status.lastMessageAt(),
-                            exception.getMessage(),
-                            status.lastReceivedCommandId(),
-                            status.receivedCommandCount());
-                }
-                log.warn("[Hive] Failed to parse control command: {}", exception.getMessage());
+            } catch (IOException | RuntimeException exception) { // NOSONAR - must keep socket alive on malformed
+                                                                 // payload
+                handleControlCommandFailure(exception);
             }
             webSocket.request(1);
             return null;
@@ -232,6 +226,20 @@ public class JdkHiveControlChannelClient implements HiveControlChannelClient {
                 connectedGolemId = null;
                 connectedUrl = null;
             }
+        }
+
+        private void handleControlCommandFailure(Exception exception) {
+            textBuffer.setLength(0);
+            synchronized (lock) {
+                status = new HiveControlChannelStatus(
+                        "ERROR",
+                        status.connectedAt(),
+                        status.lastMessageAt(),
+                        exception.getMessage(),
+                        status.lastReceivedCommandId(),
+                        status.receivedCommandCount());
+            }
+            log.warn("[Hive] Failed to parse control command: {}", exception.getMessage());
         }
     }
 }

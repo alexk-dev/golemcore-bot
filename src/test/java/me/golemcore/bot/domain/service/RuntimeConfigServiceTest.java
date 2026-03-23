@@ -70,6 +70,7 @@ class RuntimeConfigServiceTest {
         RuntimeConfig config = service.getRuntimeConfig();
 
         assertNotNull(config);
+        assertNotNull(config.getModelRegistry());
         assertNotNull(config.getTelegram());
         assertNotNull(config.getModelRouter());
         assertNotNull(config.getLlm());
@@ -80,6 +81,50 @@ class RuntimeConfigServiceTest {
         assertTrue(config.getTracing().getEnabled());
         assertFalse(config.getTracing().getPayloadSnapshotsEnabled());
         assertEquals(128, config.getTracing().getSessionTraceBudgetMb());
+    }
+
+    @Test
+    void shouldLoadModelRegistryConfigFromStorage() throws Exception {
+        RuntimeConfig.ModelRegistryConfig modelRegistry = RuntimeConfig.ModelRegistryConfig.builder()
+                .repositoryUrl("https://github.com/alexk-dev/golemcore-models")
+                .branch("develop")
+                .build();
+        persistedSections.put("model-registry.json", objectMapper.writeValueAsString(modelRegistry));
+
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        assertNotNull(config.getModelRegistry());
+        assertEquals("https://github.com/alexk-dev/golemcore-models", config.getModelRegistry().getRepositoryUrl());
+        assertEquals("develop", config.getModelRegistry().getBranch());
+    }
+
+    @Test
+    void shouldPersistModelRegistrySection() throws Exception {
+        RuntimeConfig config = service.getRuntimeConfig();
+        config.setModelRegistry(RuntimeConfig.ModelRegistryConfig.builder()
+                .repositoryUrl("https://github.com/alexk-dev/golemcore-models")
+                .branch("main")
+                .build());
+
+        service.updateRuntimeConfig(config);
+
+        assertTrue(persistedSections.containsKey("model-registry.json"));
+        Map<?, ?> persistedModelRegistry = readPersistedJsonMap("model-registry.json");
+        assertEquals("https://github.com/alexk-dev/golemcore-models", persistedModelRegistry.get("repositoryUrl"));
+        assertEquals("main", persistedModelRegistry.get("branch"));
+    }
+
+    @Test
+    void shouldNormalizeBlankModelRegistryBranchToMain() {
+        RuntimeConfig config = service.getRuntimeConfig();
+        config.setModelRegistry(RuntimeConfig.ModelRegistryConfig.builder()
+                .repositoryUrl("https://github.com/alexk-dev/golemcore-models")
+                .branch("  ")
+                .build());
+
+        service.updateRuntimeConfig(config);
+
+        assertEquals("main", config.getModelRegistry().getBranch());
     }
 
     @Test
@@ -162,7 +207,7 @@ class RuntimeConfigServiceTest {
         canonicalRouter.put("temperature", 0.4d);
         canonicalRouter.put("dynamicTierEnabled", false);
         canonicalRouter.put("routing", Map.of("model", "router/model", "reasoning", "none"));
-        LinkedHashMap<String, Object> tiers = new LinkedHashMap<>();
+        Map<String, Object> tiers = new LinkedHashMap<>();
         tiers.put("balanced", Map.of("model", "model/balanced", "reasoning", "low"));
         tiers.put("smart", Map.of("model", "model/smart", "reasoning", "medium"));
         tiers.put("deep", Map.of("model", "model/deep", "reasoning", "high"));
@@ -1517,7 +1562,7 @@ class RuntimeConfigServiceTest {
         assertTrue(persistedSections.containsKey("hive.json"));
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({ "PMD.AvoidAccessibilityAlteration", "unchecked" })
     private void setCachedConfig(RuntimeConfig config) throws Exception {
         java.lang.reflect.Field field = RuntimeConfigService.class.getDeclaredField("configRef");
         field.setAccessible(true);

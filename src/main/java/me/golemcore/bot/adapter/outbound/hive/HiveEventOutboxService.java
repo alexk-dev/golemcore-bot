@@ -118,6 +118,7 @@ public class HiveEventOutboxService {
         }
     }
 
+    @SuppressWarnings("PMD.AvoidBranchingStatementAsLastInLoop")
     private OutboxBatch claimNextBatch(HiveSessionState sessionState) {
         synchronized (lock) {
             OutboxState state = getLoadedStateLocked();
@@ -145,6 +146,7 @@ public class HiveEventOutboxService {
         }
     }
 
+    @SuppressWarnings("PMD.AvoidBranchingStatementAsLastInLoop")
     private void recordFailure(String batchId, RuntimeException exception) {
         synchronized (lock) {
             OutboxState state = getLoadedStateLocked();

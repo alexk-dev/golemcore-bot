@@ -26,7 +26,6 @@ import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.domain.service.SessionRunCoordinator;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.CommandPort;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
@@ -156,7 +155,6 @@ class CommandRouterTest {
         ToolComponent tool2 = mockTool(TOOL_SHELL, "Shell command execution", true);
         ToolComponent tool3 = mockTool("disabled-tool", "Disabled tool", false);
 
-        BotProperties properties = new BotProperties();
         when(runtimeConfigService.getPlanMaxPlans()).thenReturn(5);
 
         buildPropertiesProvider = mock(ObjectProvider.class);

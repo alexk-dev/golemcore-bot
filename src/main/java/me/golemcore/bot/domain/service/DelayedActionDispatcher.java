@@ -19,7 +19,6 @@ package me.golemcore.bot.domain.service;
  */
 
 import me.golemcore.bot.domain.model.ContextAttributes;
-import me.golemcore.bot.domain.model.DelayedActionDeliveryMode;
 import me.golemcore.bot.domain.model.DelayedSessionAction;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolArtifactDownload;

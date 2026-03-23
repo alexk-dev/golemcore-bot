@@ -34,6 +34,17 @@ export interface DiscoveredProviderModel {
   ownedBy: string | null;
 }
 
+export interface ResolveModelRegistryRequest {
+  provider: string;
+  modelId: string;
+}
+
+export interface ResolveModelRegistryResponse {
+  defaultSettings: ModelSettings | null;
+  configSource: 'provider' | 'shared' | null;
+  cacheStatus: 'fresh-hit' | 'stale-hit' | 'remote-hit' | 'miss';
+}
+
 export async function getModelsConfig(): Promise<ModelsConfig> {
   const { data } = await client.get<ModelsConfig>('/models');
   return data;
@@ -51,6 +62,13 @@ export async function getAvailableModels(): Promise<Record<string, AvailableMode
 
 export async function discoverProviderModels(provider: string): Promise<DiscoveredProviderModel[]> {
   const { data } = await client.get<DiscoveredProviderModel[]>(`/models/discover/${encodeURIComponent(provider)}`);
+  return data;
+}
+
+export async function resolveModelRegistryDefaults(
+  request: ResolveModelRegistryRequest,
+): Promise<ResolveModelRegistryResponse> {
+  const { data } = await client.post<ResolveModelRegistryResponse>('/models/registry/resolve', request);
   return data;
 }
 
