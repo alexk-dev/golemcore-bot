@@ -272,12 +272,4 @@ class SkillManagementToolTest {
         assertTrue(result.getError().contains("Unknown operation"));
     }
 
-    @Test
-    void formatSkillMd() {
-        String result = SkillManagementTool.formatSkillMd(GREETING, "Greets users", "Say hello.");
-        assertTrue(result.startsWith("---\n"));
-        assertTrue(result.contains("name: greeting"));
-        assertTrue(result.contains("description: Greets users"));
-        assertTrue(result.contains("Say hello."));
-    }
 }

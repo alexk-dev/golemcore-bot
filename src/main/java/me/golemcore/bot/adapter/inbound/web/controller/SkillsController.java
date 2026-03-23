@@ -8,6 +8,7 @@ import me.golemcore.bot.domain.model.SkillDocument;
 import me.golemcore.bot.domain.model.SkillInstallRequest;
 import me.golemcore.bot.domain.model.SkillInstallResult;
 import me.golemcore.bot.domain.model.SkillMarketplaceCatalog;
+import me.golemcore.bot.domain.service.SkillDocumentService;
 import me.golemcore.bot.domain.service.SkillMarketplaceService;
 import me.golemcore.bot.domain.service.SkillService;
 import me.golemcore.bot.port.outbound.McpPort;
@@ -42,6 +43,7 @@ public class SkillsController {
     private static final String SKILLS_DIR = "skills";
 
     private final SkillService skillService;
+    private final SkillDocumentService skillDocumentService;
     private final SkillMarketplaceService skillMarketplaceService;
     private final McpPort mcpPort;
     private final StoragePort storagePort;
@@ -99,14 +101,14 @@ public class SkillsController {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Skill '" + normalizedName + "' already exists");
         }
 
-        SkillDocument parsedDocument = skillService.parseSkillDocument(content);
-        Map<String, Object> metadata = skillService.mergeSkillMetadata(
+        SkillDocument parsedDocument = skillDocumentService.parseNormalizedDocument(content);
+        Map<String, Object> metadata = skillDocumentService.mergeMetadata(
                 parsedDocument.metadata(),
                 Map.of("name", normalizedName));
         validateMetadata(metadata);
 
         String path = normalizedName + "/SKILL.md";
-        String document = skillService.renderSkillDocument(metadata, parsedDocument.body());
+        String document = skillDocumentService.renderDocument(metadata, parsedDocument.body());
         return Mono.fromFuture(storagePort.putText(SKILLS_DIR, path, document))
                 .then(Mono.fromRunnable(skillService::reload))
                 .then(Mono.defer(() -> {
@@ -138,12 +140,12 @@ public class SkillsController {
         Skill skill = skillService.findByName(name)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Skill '" + name + "' not found"));
 
-        SkillDocument parsedDocument = skillService.parseSkillDocument(content);
+        SkillDocument parsedDocument = skillDocumentService.parseNormalizedDocument(content);
         Map<String, Object> metadata = resolveUpdatedMetadata(skill, body, parsedDocument);
         validateMetadata(metadata);
 
         String path = skillMarketplaceService.resolveManagedSkillStoragePath(skill);
-        String document = skillService.renderSkillDocument(metadata, parsedDocument.body());
+        String document = skillDocumentService.renderDocument(metadata, parsedDocument.body());
         return Mono.fromFuture(storagePort.putText(SKILLS_DIR, path, document))
                 .then(Mono.fromRunnable(skillService::reload))
                 .then(Mono.defer(() -> {
@@ -220,7 +222,7 @@ public class SkillsController {
         if (explicitMetadata.isPresent()) {
             return explicitMetadata.get();
         }
-        return skillService.mergeSkillMetadata(copyMetadata(skill.getMetadata()), parsedDocument.metadata());
+        return skillDocumentService.mergeMetadata(copyMetadata(skill.getMetadata()), parsedDocument.metadata());
     }
 
     private SkillDto toDto(Skill skill) {

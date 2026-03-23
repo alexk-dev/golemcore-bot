@@ -66,7 +66,7 @@ class SkillServiceTest {
 
     @Test
     void parseSkillDocumentShouldStripNestedFrontmatterFromBody() {
-        SkillDocument document = service.parseSkillDocument("""
+        SkillDocument document = skillDocumentService.parseNormalizedDocument("""
                 ---
                 name: outer
                 description: Outer description

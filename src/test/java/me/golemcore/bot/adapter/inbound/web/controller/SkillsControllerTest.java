@@ -28,8 +28,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.eq;
@@ -51,15 +49,8 @@ class SkillsControllerTest {
         skillMarketplaceService = mock(SkillMarketplaceService.class);
         mcpPort = mock(McpPort.class);
         storagePort = mock(StoragePort.class);
-        when(skillService.parseSkillDocument(anyString()))
-                .thenAnswer(invocation -> skillDocumentService.parseNormalizedDocument(invocation.getArgument(0)));
-        when(skillService.mergeSkillMetadata(anyMap(), anyMap()))
-                .thenAnswer(invocation -> skillDocumentService.mergeMetadata(invocation.getArgument(0),
-                        invocation.getArgument(1)));
-        when(skillService.renderSkillDocument(anyMap(), any()))
-                .thenAnswer(invocation -> skillDocumentService.renderDocument(invocation.getArgument(0),
-                        invocation.getArgument(1)));
-        controller = new SkillsController(skillService, skillMarketplaceService, mcpPort, storagePort);
+        controller = new SkillsController(skillService, skillDocumentService, skillMarketplaceService, mcpPort,
+                storagePort);
     }
 
     @Test
@@ -367,13 +358,6 @@ class SkillsControllerTest {
                 .thenReturn(Optional.of(renamedSkill));
         when(skillMarketplaceService.resolveManagedSkillStoragePath(skill))
                 .thenReturn("marketplace/golemcore/devops-pack/skills/deploy-review/SKILL.md");
-        when(skillService.renderSkillDocument(anyMap(), eq("new"))).thenReturn("""
-                ---
-                name: golemcore/devops-pack/deploy-review-v2
-                description: Deploy review v2
-                model_tier: smart
-                ---
-                new""");
         when(storagePort.putText(anyString(), anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
@@ -412,13 +396,6 @@ class SkillsControllerTest {
         when(skillService.findByName("test-skill")).thenReturn(Optional.of(skill));
         when(skillService.findByLocation("test-skill/SKILL.md")).thenReturn(Optional.of(skill));
         when(skillMarketplaceService.resolveManagedSkillStoragePath(skill)).thenReturn("test-skill/SKILL.md");
-        when(skillService.renderSkillDocument(anyMap(), eq("updated body"))).thenReturn("""
-                ---
-                description: Keep me
-                model_tier: coding
-                next_skill: follow-up
-                ---
-                updated body""");
         when(storagePort.putText(anyString(), anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
@@ -454,7 +431,6 @@ class SkillsControllerTest {
         when(skillService.findByName("test-skill")).thenReturn(Optional.of(skill));
         when(skillService.findByLocation("test-skill/SKILL.md")).thenReturn(Optional.of(updatedSkill));
         when(skillMarketplaceService.resolveManagedSkillStoragePath(skill)).thenReturn("test-skill/SKILL.md");
-        when(skillService.renderSkillDocument(anyMap(), eq("updated body"))).thenReturn("updated body");
         when(storagePort.putText(anyString(), anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
@@ -464,11 +440,9 @@ class SkillsControllerTest {
                 .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
                 .verifyComplete();
 
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<Map<String, Object>> metadataCaptor = ArgumentCaptor
-                .forClass((Class<Map<String, Object>>) (Class<?>) Map.class);
-        verify(skillService).renderSkillDocument(metadataCaptor.capture(), eq("updated body"));
-        assertTrue(metadataCaptor.getValue().isEmpty());
+        ArgumentCaptor<String> documentCaptor = ArgumentCaptor.forClass(String.class);
+        verify(storagePort).putText(eq("skills"), eq("test-skill/SKILL.md"), documentCaptor.capture());
+        assertEquals("updated body", documentCaptor.getValue());
     }
 
     @Test

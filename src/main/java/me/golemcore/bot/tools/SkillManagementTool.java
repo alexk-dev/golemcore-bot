@@ -18,6 +18,7 @@
 
 package me.golemcore.bot.tools;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
@@ -47,6 +48,7 @@ import java.util.stream.Collectors;
  * are stored as SKILL.md files with YAML frontmatter in the skills workspace.
  */
 @Component
+@RequiredArgsConstructor
 @Slf4j
 public class SkillManagementTool implements ToolComponent {
 
@@ -68,25 +70,11 @@ public class SkillManagementTool implements ToolComponent {
     private static final int MAX_DESCRIPTION_LENGTH = 200;
     private static final int MAX_CONTENT_LENGTH = 50_000;
 
+    private final RuntimeConfigService runtimeConfigService;
     private final StoragePort storagePort;
     private final SkillComponent skillComponent;
-    private final RuntimeConfigService runtimeConfigService;
     private final SkillMarketplaceService skillMarketplaceService;
     private final SkillDocumentService skillDocumentService;
-
-    public SkillManagementTool(
-            RuntimeConfigService runtimeConfigService,
-            StoragePort storagePort,
-            SkillComponent skillComponent,
-            SkillMarketplaceService skillMarketplaceService,
-            SkillDocumentService skillDocumentService) {
-        this.runtimeConfigService = runtimeConfigService;
-        this.storagePort = storagePort;
-        this.skillComponent = skillComponent;
-        this.skillMarketplaceService = skillMarketplaceService;
-        this.skillDocumentService = skillDocumentService;
-        log.info("SkillManagementTool initialized");
-    }
 
     @Override
     public boolean isEnabled() {
@@ -272,26 +260,4 @@ public class SkillManagementTool implements ToolComponent {
         }
     }
 
-    static String formatSkillMd(String name, String description, String content) {
-        String safeName = escapeYamlValue(name);
-        String safeDescription = escapeYamlValue(description);
-        return "---\n"
-                + "name: " + safeName + "\n"
-                + "description: " + safeDescription + "\n"
-                + "---\n\n"
-                + content + "\n";
-    }
-
-    private static String escapeYamlValue(String value) {
-        if (value == null) {
-            return "\"\"";
-        }
-        if (value.contains("\n") || value.contains(":") || value.contains("#")
-                || value.contains("\"") || value.contains("'")
-                || value.startsWith("{") || value.startsWith("[")
-                || value.startsWith("---")) {
-            return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n") + "\"";
-        }
-        return value;
-    }
 }

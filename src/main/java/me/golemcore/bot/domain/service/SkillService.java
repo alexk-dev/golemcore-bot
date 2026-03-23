@@ -160,18 +160,6 @@ public class SkillService implements SkillComponent {
         }
     }
 
-    public SkillDocument parseSkillDocument(String content) {
-        return skillDocumentService.parseNormalizedDocument(content);
-    }
-
-    public Map<String, Object> mergeSkillMetadata(Map<String, Object> lowPriority, Map<String, Object> highPriority) {
-        return skillDocumentService.mergeMetadata(lowPriority, highPriority);
-    }
-
-    public String renderSkillDocument(Map<String, Object> metadata, String body) {
-        return skillDocumentService.renderDocument(metadata, body);
-    }
-
     private void loadSkillInto(String key, Map<String, Skill> target) {
         try {
             String content = storagePort.getText(getSkillsDirectory(), key).join();
@@ -188,7 +176,7 @@ public class SkillService implements SkillComponent {
     }
 
     private Skill parseSkill(String content, String path) {
-        SkillDocument document = parseSkillDocument(content);
+        SkillDocument document = skillDocumentService.parseNormalizedDocument(content);
 
         String name = extractNameFromPath(path);
         String description = "";

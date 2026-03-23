@@ -3,6 +3,7 @@ package me.golemcore.bot.domain.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.fasterxml.jackson.dataformat.yaml.YAMLGenerator;
+import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.SkillDocument;
 import org.springframework.stereotype.Service;
 
@@ -17,7 +18,10 @@ import java.util.Map;
  * API clients, and the Web UI.
  */
 @Service
+@Slf4j
 public class SkillDocumentService {
+
+    private static final int MAX_NESTING_DEPTH = 5;
 
     private static final List<String> FRONTMATTER_KEY_ORDER = List.of(
             "name",
@@ -56,6 +60,7 @@ public class SkillDocumentService {
             Map<String, Object> metadata = yaml != null ? new LinkedHashMap<>(yaml) : new LinkedHashMap<>();
             return new SkillDocument(metadata, normalizeBody(sections.body()), true);
         } catch (IOException | RuntimeException ex) {
+            log.warn("Failed to parse skill frontmatter YAML, treating as body-only: {}", ex.getMessage());
             return new SkillDocument(Map.of(), normalizeBody(sections.body()), true);
         }
     }
@@ -69,7 +74,7 @@ public class SkillDocumentService {
         Map<String, Object> metadata = new LinkedHashMap<>(current.metadata());
         String body = current.body();
 
-        while (true) {
+        for (int depth = 0; depth < MAX_NESTING_DEPTH; depth++) {
             SkillDocument nested = parseDocument(body);
             if (!nested.hasFrontmatter()) {
                 break;
