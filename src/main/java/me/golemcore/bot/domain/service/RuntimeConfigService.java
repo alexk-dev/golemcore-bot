@@ -155,6 +155,7 @@ public class RuntimeConfigService {
     private static final java.time.Duration DEFAULT_DELAYED_ACTIONS_LEASE_DURATION = java.time.Duration.ofMinutes(2);
     private static final java.time.Duration DEFAULT_DELAYED_ACTIONS_RETENTION = java.time.Duration.ofDays(7);
     private static final boolean DEFAULT_DELAYED_ACTIONS_ALLOW_RUN_LATER = true;
+    private static final String DEFAULT_MODEL_REGISTRY_BRANCH = "main";
 
     private static final boolean DEFAULT_HIVE_ENABLED = false;
     private static final boolean DEFAULT_HIVE_AUTO_CONNECT = false;
@@ -1359,6 +1360,8 @@ public class RuntimeConfigService {
                 RuntimeConfig.MemoryConfig::new);
         persistSection(RuntimeConfig.ConfigSection.SKILLS, cfg.getSkills(),
                 RuntimeConfig.SkillsConfig::new);
+        persistSection(RuntimeConfig.ConfigSection.MODEL_REGISTRY, cfg.getModelRegistry(),
+                RuntimeConfig.ModelRegistryConfig::new);
         persistSection(RuntimeConfig.ConfigSection.USAGE, cfg.getUsage(),
                 RuntimeConfig.UsageConfig::new);
         persistSection(RuntimeConfig.ConfigSection.MCP, cfg.getMcp(),
@@ -1434,6 +1437,8 @@ public class RuntimeConfigService {
                 RuntimeConfig.MemoryConfig.class, RuntimeConfig.MemoryConfig::new);
         RuntimeConfig.SkillsConfig skills = loadSection(RuntimeConfig.ConfigSection.SKILLS,
                 RuntimeConfig.SkillsConfig.class, RuntimeConfig.SkillsConfig::new);
+        RuntimeConfig.ModelRegistryConfig modelRegistry = loadSection(RuntimeConfig.ConfigSection.MODEL_REGISTRY,
+                RuntimeConfig.ModelRegistryConfig.class, RuntimeConfig.ModelRegistryConfig::new);
         RuntimeConfig.UsageConfig usage = loadSection(RuntimeConfig.ConfigSection.USAGE,
                 RuntimeConfig.UsageConfig.class, RuntimeConfig.UsageConfig::new);
         RuntimeConfig.McpConfig mcp = loadSection(RuntimeConfig.ConfigSection.MCP,
@@ -1460,6 +1465,7 @@ public class RuntimeConfigService {
                 .turn(turn)
                 .memory(memory)
                 .skills(skills)
+                .modelRegistry(modelRegistry)
                 .usage(usage)
                 .mcp(mcp)
                 .plan(plan)
@@ -1581,6 +1587,14 @@ public class RuntimeConfigService {
         }
         if (cfg.getTurn() == null) {
             cfg.setTurn(new RuntimeConfig.TurnConfig());
+        }
+        if (cfg.getModelRegistry() == null) {
+            cfg.setModelRegistry(new RuntimeConfig.ModelRegistryConfig());
+        }
+        if (cfg.getModelRegistry().getBranch() == null || cfg.getModelRegistry().getBranch().isBlank()) {
+            cfg.getModelRegistry().setBranch(DEFAULT_MODEL_REGISTRY_BRANCH);
+        } else {
+            cfg.getModelRegistry().setBranch(cfg.getModelRegistry().getBranch().trim());
         }
         if (cfg.getPlan() == null) {
             cfg.setPlan(new RuntimeConfig.PlanConfig());

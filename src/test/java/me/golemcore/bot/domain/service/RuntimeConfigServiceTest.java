@@ -70,12 +70,57 @@ class RuntimeConfigServiceTest {
         RuntimeConfig config = service.getRuntimeConfig();
 
         assertNotNull(config);
+        assertNotNull(config.getModelRegistry());
         assertNotNull(config.getTelegram());
         assertNotNull(config.getModelRouter());
         assertNotNull(config.getLlm());
         assertNotNull(config.getTools());
         assertNotNull(config.getTools().getShellEnvironmentVariables());
         assertTrue(config.getTools().getShellEnvironmentVariables().isEmpty());
+    }
+
+    @Test
+    void shouldLoadModelRegistryConfigFromStorage() throws Exception {
+        RuntimeConfig.ModelRegistryConfig modelRegistry = RuntimeConfig.ModelRegistryConfig.builder()
+                .repositoryUrl("https://github.com/alexk-dev/golemcore-models")
+                .branch("develop")
+                .build();
+        persistedSections.put("model-registry.json", objectMapper.writeValueAsString(modelRegistry));
+
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        assertNotNull(config.getModelRegistry());
+        assertEquals("https://github.com/alexk-dev/golemcore-models", config.getModelRegistry().getRepositoryUrl());
+        assertEquals("develop", config.getModelRegistry().getBranch());
+    }
+
+    @Test
+    void shouldPersistModelRegistrySection() throws Exception {
+        RuntimeConfig config = service.getRuntimeConfig();
+        config.setModelRegistry(RuntimeConfig.ModelRegistryConfig.builder()
+                .repositoryUrl("https://github.com/alexk-dev/golemcore-models")
+                .branch("main")
+                .build());
+
+        service.updateRuntimeConfig(config);
+
+        assertTrue(persistedSections.containsKey("model-registry.json"));
+        Map<?, ?> persistedModelRegistry = readPersistedJsonMap("model-registry.json");
+        assertEquals("https://github.com/alexk-dev/golemcore-models", persistedModelRegistry.get("repositoryUrl"));
+        assertEquals("main", persistedModelRegistry.get("branch"));
+    }
+
+    @Test
+    void shouldNormalizeBlankModelRegistryBranchToMain() {
+        RuntimeConfig config = service.getRuntimeConfig();
+        config.setModelRegistry(RuntimeConfig.ModelRegistryConfig.builder()
+                .repositoryUrl("https://github.com/alexk-dev/golemcore-models")
+                .branch("  ")
+                .build());
+
+        service.updateRuntimeConfig(config);
+
+        assertEquals("main", config.getModelRegistry().getBranch());
     }
 
     @Test
