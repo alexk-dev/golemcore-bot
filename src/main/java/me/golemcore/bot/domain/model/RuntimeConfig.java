@@ -70,6 +70,9 @@ public class RuntimeConfig {
     private SkillsConfig skills = new SkillsConfig();
 
     @Builder.Default
+    private ModelRegistryConfig modelRegistry = new ModelRegistryConfig();
+
+    @Builder.Default
     private UsageConfig usage = new UsageConfig();
 
     @Builder.Default
@@ -119,12 +122,12 @@ public class RuntimeConfig {
     public static class ModelRouterConfig {
         private Double temperature;
         private TierBinding routing;
-        private LinkedHashMap<String, TierBinding> tiers = new LinkedHashMap<>();
+        private Map<String, TierBinding> tiers = new LinkedHashMap<>();
         private Boolean dynamicTierEnabled;
 
         public static class ModelRouterConfigBuilder {
             private TierBinding routing;
-            private LinkedHashMap<String, TierBinding> tiers;
+            private Map<String, TierBinding> tiers;
 
             public ModelRouterConfigBuilder routingModel(String model) {
                 routingBinding().setModel(model);
@@ -629,6 +632,16 @@ public class RuntimeConfig {
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
+    public static class ModelRegistryConfig {
+        private String repositoryUrl;
+        @Builder.Default
+        private String branch = "main";
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
     public static class UsageConfig {
         private Boolean enabled;
     }
@@ -716,15 +729,17 @@ public class RuntimeConfig {
                                                 CompactionConfig.class), TURN("turn", TurnConfig.class), MEMORY(
                                                         "memory",
                                                         MemoryConfig.class), SKILLS("skills",
-                                                                SkillsConfig.class), USAGE(
-                                                                        "usage",
-                                                                        UsageConfig.class), MCP("mcp",
-                                                                                McpConfig.class), PLAN("plan",
-                                                                                        PlanConfig.class), DELAYED_ACTIONS(
-                                                                                                "delayed-actions",
-                                                                                                DelayedActionsConfig.class), HIVE(
-                                                                                                        "hive",
-                                                                                                        HiveConfig.class);
+                                                                SkillsConfig.class), MODEL_REGISTRY(
+                                                                        "model-registry",
+                                                                        ModelRegistryConfig.class), USAGE(
+                                                                                "usage",
+                                                                                UsageConfig.class), MCP("mcp",
+                                                                                        McpConfig.class), PLAN("plan",
+                                                                                                PlanConfig.class), DELAYED_ACTIONS(
+                                                                                                        "delayed-actions",
+                                                                                                        DelayedActionsConfig.class), HIVE(
+                                                                                                                "hive",
+                                                                                                                HiveConfig.class);
 
         private final String fileId;
         private final Class<?> configClass;

@@ -239,6 +239,7 @@ public class AgentContext {
         this.routingOutcome = routingOutcome;
     }
 
+    @SuppressWarnings("PMD.NullAssignment")
     private void syncTraceContextFromAttributes() {
         if (attributes == null) {
             traceContext = null;

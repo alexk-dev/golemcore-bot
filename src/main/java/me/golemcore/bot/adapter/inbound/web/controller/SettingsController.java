@@ -201,6 +201,7 @@ public class SettingsController {
         }
         validateCompactionConfig(merged.getCompaction());
         validateVoiceConfig(merged.getVoice());
+        validateAndNormalizeModelRegistryConfig(merged.getModelRegistry());
         validateHiveConfig(merged.getHive());
         runtimeConfigService.updateRuntimeConfig(merged);
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
@@ -866,6 +867,31 @@ public class SettingsController {
         }
     }
 
+    private void validateAndNormalizeModelRegistryConfig(RuntimeConfig.ModelRegistryConfig modelRegistryConfig) {
+        if (modelRegistryConfig == null) {
+            return;
+        }
+        String repositoryUrl = modelRegistryConfig.getRepositoryUrl();
+        if (repositoryUrl != null) {
+            repositoryUrl = repositoryUrl.trim();
+        }
+        if (repositoryUrl == null || repositoryUrl.isBlank()) {
+            modelRegistryConfig.setRepositoryUrl(null);
+        } else {
+            if (!isValidHttpUrl(repositoryUrl)) {
+                throw new IllegalArgumentException("modelRegistry.repositoryUrl must be a valid http(s) URL");
+            }
+            modelRegistryConfig.setRepositoryUrl(repositoryUrl);
+        }
+
+        String branch = modelRegistryConfig.getBranch();
+        if (branch == null || branch.isBlank()) {
+            modelRegistryConfig.setBranch("main");
+        } else {
+            modelRegistryConfig.setBranch(branch.trim());
+        }
+    }
+
     private void validateWebhookConfig(UserPreferences.WebhookConfig webhookConfig) {
         if (webhookConfig == null || webhookConfig.getMappings() == null) {
             return;
@@ -907,6 +933,8 @@ public class SettingsController {
                 .turn(mergeSection(patch.getTurn(), baseline.getTurn(), RuntimeConfig.TurnConfig::new))
                 .memory(mergeSection(patch.getMemory(), baseline.getMemory(), RuntimeConfig.MemoryConfig::new))
                 .skills(mergeSection(patch.getSkills(), baseline.getSkills(), RuntimeConfig.SkillsConfig::new))
+                .modelRegistry(mergeSection(patch.getModelRegistry(), baseline.getModelRegistry(),
+                        RuntimeConfig.ModelRegistryConfig::new))
                 .usage(mergeSection(patch.getUsage(), baseline.getUsage(), RuntimeConfig.UsageConfig::new))
                 .mcp(mergeSection(patch.getMcp(), baseline.getMcp(), RuntimeConfig.McpConfig::new))
                 .plan(mergeSection(patch.getPlan(), baseline.getPlan(), RuntimeConfig.PlanConfig::new))

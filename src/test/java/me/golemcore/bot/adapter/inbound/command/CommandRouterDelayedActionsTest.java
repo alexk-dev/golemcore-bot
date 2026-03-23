@@ -23,7 +23,6 @@ import me.golemcore.bot.port.outbound.UsageTrackingPort;
 import me.golemcore.bot.tools.ScheduleSessionActionTool;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.boot.info.BuildProperties;
 import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Instant;

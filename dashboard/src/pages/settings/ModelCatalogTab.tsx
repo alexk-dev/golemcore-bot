@@ -4,15 +4,24 @@ import { Alert } from '../../components/ui/alert';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
-import type { LlmConfig } from '../../api/settings';
+import type { LlmConfig, ModelRegistryConfig } from '../../api/settings';
 import { ModelCatalogEditor } from './models/ModelCatalogEditor';
+import { ModelRegistrySourceCard } from './models/ModelRegistrySourceCard';
 import { getProviderProfileSummaries } from './models/modelCatalogProviderProfiles';
 
 interface ModelCatalogTabProps {
   llmConfig: LlmConfig;
+  modelRegistryConfig: ModelRegistryConfig;
+  isSavingModelRegistry: boolean;
+  onSaveModelRegistry: (config: ModelRegistryConfig) => Promise<void>;
 }
 
-export function ModelCatalogTab({ llmConfig }: ModelCatalogTabProps): ReactElement {
+export function ModelCatalogTab({
+  llmConfig,
+  modelRegistryConfig,
+  isSavingModelRegistry,
+  onSaveModelRegistry,
+}: ModelCatalogTabProps): ReactElement {
   const navigate = useNavigate();
   const providerProfiles = useMemo(() => getProviderProfileSummaries(llmConfig), [llmConfig]);
   const readyProfilesCount = providerProfiles.filter((profile) => profile.isReady).length;
@@ -80,6 +89,12 @@ export function ModelCatalogTab({ llmConfig }: ModelCatalogTabProps): ReactEleme
           )}
         </CardContent>
       </Card>
+
+      <ModelRegistrySourceCard
+        config={modelRegistryConfig}
+        isSaving={isSavingModelRegistry}
+        onSave={onSaveModelRegistry}
+      />
 
       <ModelCatalogEditor providerProfiles={providerProfiles} />
     </div>

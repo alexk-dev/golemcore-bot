@@ -5,7 +5,7 @@ import {
 import { FiPackage, FiSearch, FiX } from 'react-icons/fi';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  useSettings, useRuntimeConfig,
+  useSettings, useRuntimeConfig, useUpdateRuntimeConfig,
 } from '../hooks/useSettings';
 import { usePluginMarketplace, usePluginSettingsCatalog } from '../hooks/usePlugins';
 import { useMe } from '../hooks/useAuth';
@@ -104,6 +104,7 @@ export default function SettingsPage(): ReactElement {
   const deferredCatalogSearch = useDeferredValue(catalogSearch);
   const { data: settings, isLoading: settingsLoading } = useSettings();
   const { data: rc, isLoading: rcLoading } = useRuntimeConfig();
+  const updateRuntimeConfig = useUpdateRuntimeConfig();
   const { data: pluginCatalog = [], isLoading: pluginCatalogLoading } = usePluginSettingsCatalog();
   const { data: pluginMarketplace } = usePluginMarketplace();
   const { data: me } = useMe();
@@ -307,7 +308,19 @@ export default function SettingsPage(): ReactElement {
       {staticSection === 'general' && <GeneralTab settings={settings} me={me} qc={qc} />}
       {staticSection === 'models' && rc != null && <ModelsTab config={rc.modelRouter} llmConfig={rc.llm} />}
       {staticSection === 'llm-providers' && rc != null && <LlmProvidersTab config={rc.llm} modelRouter={rc.modelRouter} />}
-      {staticSection === 'model-catalog' && rc != null && <ModelCatalogTab llmConfig={rc.llm} />}
+      {staticSection === 'model-catalog' && rc != null && (
+        <ModelCatalogTab
+          llmConfig={rc.llm}
+          modelRegistryConfig={rc.modelRegistry}
+          isSavingModelRegistry={updateRuntimeConfig.isPending}
+          onSaveModelRegistry={async (modelRegistryConfig) => {
+            await updateRuntimeConfig.mutateAsync({
+              ...rc,
+              modelRegistry: modelRegistryConfig,
+            });
+          }}
+        />
+      )}
       {staticSection === 'plugins-marketplace' && <PluginsMarketplaceTab />}
 
       {staticSection === 'tool-filesystem' && rc != null && <ToolsTab config={rc.tools} mode="filesystem" />}

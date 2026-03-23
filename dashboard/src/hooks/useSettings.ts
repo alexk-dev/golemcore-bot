@@ -5,6 +5,7 @@ import {
   type LlmProviderConfig,
   type ToolsConfig,
   type VoiceConfig,
+  type RuntimeConfig,
   type MemoryConfig,
   type MemoryPreset,
   type SkillsConfig,
@@ -22,6 +23,7 @@ import {
   updatePreferences,
   getModels,
   getRuntimeConfig,
+  updateRuntimeConfig,
   updateModelRouterConfig,
   updateLlmConfig,
   addLlmProvider,
@@ -62,6 +64,14 @@ export function useUpdatePreferences(): UseMutationResult<Awaited<ReturnType<typ
 
 export function useRuntimeConfig(): UseQueryResult<Awaited<ReturnType<typeof getRuntimeConfig>>, unknown> {
   return useQuery({ queryKey: ['runtime-config'], queryFn: getRuntimeConfig });
+}
+
+export function useUpdateRuntimeConfig(): UseMutationResult<Awaited<ReturnType<typeof updateRuntimeConfig>>, unknown, RuntimeConfig> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (config: RuntimeConfig) => updateRuntimeConfig(config),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
 }
 
 export function useUpdateModelRouter(): UseMutationResult<Awaited<ReturnType<typeof updateModelRouterConfig>>, unknown, ModelRouterConfig> {

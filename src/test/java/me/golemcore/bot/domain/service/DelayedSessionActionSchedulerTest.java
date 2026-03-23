@@ -115,6 +115,7 @@ class DelayedSessionActionSchedulerTest {
     }
 
     @Test
+    @SuppressWarnings("PMD.AvoidAccessibilityAlteration")
     void shouldSkipTickWhenAnotherTickIsAlreadyRunning() throws Exception {
         DelayedSessionActionService delayedActionService = mock(DelayedSessionActionService.class);
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);

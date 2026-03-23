@@ -1,9 +1,11 @@
 import { type UseMutationResult, type UseQueryResult, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   type ModelSettings,
+  type ResolveModelRegistryRequest,
   discoverProviderModels,
   getModelsConfig,
   getAvailableModels,
+  resolveModelRegistryDefaults,
   saveModel,
   deleteModel,
   reloadModels,
@@ -36,6 +38,16 @@ export function useSaveModel(): UseMutationResult<Awaited<ReturnType<typeof save
       void qc.invalidateQueries({ queryKey: ['models-config'] });
       void qc.invalidateQueries({ queryKey: ['models-available'] });
     },
+  });
+}
+
+export function useResolveModelRegistry(): UseMutationResult<
+  Awaited<ReturnType<typeof resolveModelRegistryDefaults>>,
+  unknown,
+  ResolveModelRegistryRequest
+> {
+  return useMutation({
+    mutationFn: (request: ResolveModelRegistryRequest) => resolveModelRegistryDefaults(request),
   });
 }
 

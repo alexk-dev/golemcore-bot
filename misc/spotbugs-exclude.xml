@@ -76,6 +76,19 @@
         </Or>
     </Match>
     <!--
+        Hive join/reconnect intentionally persist failure state before bubbling the
+        same runtime exception to the web layer, so HTTP callers fail fast while
+        the stored Hive status reflects the failed attempt.
+    -->
+    <Match>
+        <Bug pattern="THROWS_METHOD_THROWS_RUNTIMEEXCEPTION" />
+        <Class name="me.golemcore.bot.domain.service.HiveConnectionService" />
+        <Or>
+            <Method name="join" />
+            <Method name="reconnect" />
+        </Or>
+    </Match>
+    <!--
         Methods that declare 'throws Exception' due to framework callback interfaces
         (OkHttp Callback, TelegramBots LongPollingBot, MCP lifecycle, etc.)
         or catch-all error handling in pipeline systems.

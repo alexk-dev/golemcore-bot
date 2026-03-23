@@ -383,6 +383,83 @@ class SettingsControllerTest {
     }
 
     @Test
+    void shouldMergeAndNormalizeModelRegistryConfigWhenUpdatingRuntimeConfig() {
+        RuntimeConfig current = RuntimeConfig.builder()
+                .modelRegistry(RuntimeConfig.ModelRegistryConfig.builder()
+                        .repositoryUrl("https://github.com/alexk-dev/golemcore-models")
+                        .branch("main")
+                        .build())
+                .build();
+        RuntimeConfig responseConfig = RuntimeConfig.builder()
+                .modelRegistry(RuntimeConfig.ModelRegistryConfig.builder()
+                        .repositoryUrl("https://github.com/alexk-dev/golemcore-models")
+                        .branch("main")
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(responseConfig);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .modelRegistry(RuntimeConfig.ModelRegistryConfig.builder()
+                        .repositoryUrl("https://github.com/alexk-dev/golemcore-models")
+                        .branch("  ")
+                        .build())
+                .build();
+
+        StepVerifier.create(controller.updateRuntimeConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        assertEquals("https://github.com/alexk-dev/golemcore-models",
+                captor.getValue().getModelRegistry().getRepositoryUrl());
+        assertEquals("main", captor.getValue().getModelRegistry().getBranch());
+    }
+
+    @Test
+    void shouldPreserveCurrentModelRegistryConfigWhenIncomingSectionIsEmpty() {
+        RuntimeConfig.ModelRegistryConfig currentModelRegistry = RuntimeConfig.ModelRegistryConfig.builder()
+                .repositoryUrl("https://github.com/alexk-dev/golemcore-models")
+                .branch("main")
+                .build();
+        RuntimeConfig current = RuntimeConfig.builder()
+                .modelRegistry(currentModelRegistry)
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .modelRegistry(new RuntimeConfig.ModelRegistryConfig())
+                .build();
+
+        StepVerifier.create(controller.updateRuntimeConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        assertEquals(currentModelRegistry, captor.getValue().getModelRegistry());
+    }
+
+    @Test
+    void shouldRejectRuntimeConfigWhenModelRegistryRepositoryUrlIsInvalid() {
+        RuntimeConfig current = RuntimeConfig.builder().build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .modelRegistry(RuntimeConfig.ModelRegistryConfig.builder()
+                        .repositoryUrl("not-a-url")
+                        .branch("main")
+                        .build())
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateRuntimeConfig(incoming));
+        assertEquals("modelRegistry.repositoryUrl must be a valid http(s) URL", error.getMessage());
+    }
+
+    @Test
     void shouldRejectHiveUpdatesWhenManagedByProperties() {
         RuntimeConfig runtimeConfig = RuntimeConfig.builder()
                 .hive(RuntimeConfig.HiveConfig.builder()

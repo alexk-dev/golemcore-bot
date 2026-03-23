@@ -835,7 +835,7 @@ class UpdateServiceTest {
         }
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({ "PMD.AvoidAccessibilityAlteration", "unchecked" })
     private static <T> T readPrivateField(UpdateService service, String fieldName, Class<T> fieldType) {
         try {
             Field field = UpdateService.class.getDeclaredField(fieldName);

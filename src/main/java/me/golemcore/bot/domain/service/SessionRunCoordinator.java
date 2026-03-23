@@ -361,6 +361,7 @@ public class SessionRunCoordinator {
                     inbound.getChannelType(), inbound.getChatId(), e.getMessage(), e);
         }
 
+        @SuppressWarnings("PMD.NullAssignment")
         private void onRunComplete() {
             Message next;
             synchronized (lock) {
@@ -474,6 +475,7 @@ public class SessionRunCoordinator {
             queuedFollowUpMessages.addLast(inbound);
         }
 
+        @SuppressWarnings("PMD.AvoidBranchingStatementAsLastInLoop")
         private Message removeOldestRegularFollowUpLocked() {
             java.util.Iterator<Message> iterator = queuedFollowUpMessages.iterator();
             while (iterator.hasNext()) {
@@ -633,6 +635,7 @@ public class SessionRunCoordinator {
             return removeQueuedHiveMessage(queuedFollowUpMessages, expectedRunId, expectedCommandId);
         }
 
+        @SuppressWarnings("PMD.AvoidBranchingStatementAsLastInLoop")
         private Message removeQueuedHiveMessage(
                 Deque<Message> queue,
                 String expectedRunId,
