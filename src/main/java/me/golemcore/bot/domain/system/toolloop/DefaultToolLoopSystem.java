@@ -34,21 +34,20 @@ import me.golemcore.bot.domain.service.TurnProgressService;
 import me.golemcore.bot.domain.system.LlmErrorClassifier;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationView;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
+import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.LlmPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.concurrent.ExecutionException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.nio.charset.StandardCharsets;
-
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import java.util.concurrent.ExecutionException;
 
 /**
  * Tool loop orchestrator (single-turn internal loop).
@@ -76,6 +75,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
     private final RuntimeEventService runtimeEventService;
     private final TurnProgressService turnProgressService;
     private final TraceService traceService;
+    private final ToolFailureRecoveryService toolFailureRecoveryService;
     private final Clock clock;
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
 
@@ -103,6 +103,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         this.runtimeEventService = null;
         this.turnProgressService = null;
         this.traceService = null;
+        this.toolFailureRecoveryService = null;
         this.clock = clock;
     }
 
@@ -132,8 +133,8 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         this.runtimeEventService = null;
         this.turnProgressService = null;
         this.traceService = null;
+        this.toolFailureRecoveryService = null;
         this.clock = clock;
-
     }
 
     public DefaultToolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutor, HistoryWriter historyWriter,
@@ -141,7 +142,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             BotProperties.ToolLoopProperties settings, ModelSelectionService modelSelectionService,
             PlanService planService, RuntimeConfigService runtimeConfigService, Clock clock) {
         this(llmPort, toolExecutor, historyWriter, viewBuilder, turnSettings, settings,
-                modelSelectionService, planService, runtimeConfigService, null, null, clock);
+                modelSelectionService, planService, runtimeConfigService, null, null, null, null, null, clock);
     }
 
     public DefaultToolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutor, HistoryWriter historyWriter,
@@ -152,7 +153,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             RuntimeEventService runtimeEventService, Clock clock) {
         this(llmPort, toolExecutor, historyWriter, viewBuilder, turnSettings, settings, modelSelectionService,
                 planService, runtimeConfigService, compactionOrchestrationService, runtimeEventService, null, null,
-                clock);
+                null, clock);
     }
 
     public DefaultToolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutor, HistoryWriter historyWriter,
@@ -163,7 +164,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             RuntimeEventService runtimeEventService, TurnProgressService turnProgressService, Clock clock) {
         this(llmPort, toolExecutor, historyWriter, viewBuilder, turnSettings, settings, modelSelectionService,
                 planService, runtimeConfigService, compactionOrchestrationService, runtimeEventService,
-                turnProgressService, null, clock);
+                turnProgressService, null, null, clock);
     }
 
     public DefaultToolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutor, HistoryWriter historyWriter,
@@ -173,6 +174,18 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             CompactionOrchestrationService compactionOrchestrationService,
             RuntimeEventService runtimeEventService, TurnProgressService turnProgressService, TraceService traceService,
             Clock clock) {
+        this(llmPort, toolExecutor, historyWriter, viewBuilder, turnSettings, settings, modelSelectionService,
+                planService, runtimeConfigService, compactionOrchestrationService, runtimeEventService,
+                turnProgressService, traceService, null, clock);
+    }
+
+    public DefaultToolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutor, HistoryWriter historyWriter,
+            ConversationViewBuilder viewBuilder, BotProperties.TurnProperties turnSettings,
+            BotProperties.ToolLoopProperties settings, ModelSelectionService modelSelectionService,
+            PlanService planService, RuntimeConfigService runtimeConfigService,
+            CompactionOrchestrationService compactionOrchestrationService,
+            RuntimeEventService runtimeEventService, TurnProgressService turnProgressService, TraceService traceService,
+            ToolFailureRecoveryService toolFailureRecoveryService, Clock clock) {
         this.llmPort = llmPort;
         this.toolExecutor = toolExecutor;
         this.historyWriter = historyWriter;
@@ -186,6 +199,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         this.runtimeEventService = runtimeEventService;
         this.turnProgressService = turnProgressService;
         this.traceService = traceService;
+        this.toolFailureRecoveryService = toolFailureRecoveryService;
         this.clock = clock;
     }
 
@@ -206,6 +220,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         List<Attachment> accumulatedAttachments = new ArrayList<>();
         List<Map<String, Object>> turnFileChanges = new ArrayList<>();
         Map<String, Integer> toolFailureCounts = new LinkedHashMap<>();
+        Map<String, Integer> toolRecoveryCounts = new LinkedHashMap<>();
 
         int maxLlmCalls = resolveMaxLlmCalls();
         int maxToolExecutions = resolveMaxToolExecutions();
@@ -217,7 +232,6 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         Instant deadline = clock.instant().plus(turnDeadline);
 
         while (llmCalls < maxLlmCalls && toolExecutions < maxToolExecutions && clock.instant().isBefore(deadline)) {
-            // 1) LLM call
             llmCalls++;
             emitRuntimeEvent(context, RuntimeEventType.LLM_STARTED, eventPayload("attempt", llmCalls));
             LlmResponse response;
@@ -308,7 +322,6 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                     eventPayload("attempt", llmCalls, "success", true,
                             "hasToolCalls", response != null && response.hasToolCalls()));
 
-            // 2) Final answer (no tool calls)
             boolean hasToolCalls = response != null && response.hasToolCalls();
             if (!hasToolCalls) {
                 String emptyReasonCode = getEmptyFinalResponseCode(response, context);
@@ -323,8 +336,6 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                     return failEmptyFinalResponse(context, response, emptyReasonCode, llmCalls, toolExecutions);
                 }
 
-                // History append of final answer is currently owned by ResponseRoutingSystem
-                // in legacy flow. For ToolLoop flow we append here to preserve raw history.
                 if (response != null) {
                     historyWriter.appendFinalAssistantAnswer(context, response, response.getContent());
                 }
@@ -339,12 +350,9 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             }
 
             maybePublishIntent(context, response);
-
-            // 3) Append assistant message with tool calls
             historyWriter.appendAssistantToolCalls(context, response, response.getToolCalls());
 
-            // 4) Execute tools and append results
-            for (Message.ToolCall tc : response.getToolCalls()) {
+            for (Message.ToolCall toolCall : response.getToolCalls()) {
                 if (isInterruptRequested(context)) {
                     clearInterruptFlag(context);
                     applyAttachments(context, accumulatedAttachments);
@@ -355,41 +363,44 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                             response.getToolCalls(), "interrupted by user", llmCalls, toolExecutions);
                 }
 
-                if (me.golemcore.bot.tools.PlanSetContentTool.TOOL_NAME.equals(tc.getName())) {
-                    // Control tool: do not execute; let PlanFinalizationSystem handle it.
+                if (me.golemcore.bot.tools.PlanSetContentTool.TOOL_NAME.equals(toolCall.getName())) {
                     context.setAttribute(ContextAttributes.PLAN_SET_CONTENT_REQUESTED, true);
 
-                    String md = null;
-                    if (tc.getArguments() != null && tc.getArguments().get("plan_markdown") instanceof String) {
-                        md = (String) tc.getArguments().get("plan_markdown");
+                    String markdown = null;
+                    if (toolCall.getArguments() != null
+                            && toolCall.getArguments().get("plan_markdown") instanceof String) {
+                        markdown = (String) toolCall.getArguments().get("plan_markdown");
                     }
-                    if (md == null || md.isBlank()) {
-                        md = "[Plan draft received]";
+                    if (markdown == null || markdown.isBlank()) {
+                        markdown = "[Plan draft received]";
                     }
 
                     ToolExecutionOutcome synthetic = new ToolExecutionOutcome(
-                            tc.getId(), tc.getName(),
-                            me.golemcore.bot.domain.model.ToolResult.success(md),
-                            md, true, null);
+                            toolCall.getId(),
+                            toolCall.getName(),
+                            me.golemcore.bot.domain.model.ToolResult.success(markdown),
+                            markdown,
+                            true,
+                            null);
                     historyWriter.appendToolResult(context, synthetic);
-                    context.addToolResult(tc.getId(), me.golemcore.bot.domain.model.ToolResult.success(md));
-                    recordToolProgress(context, tc, synthetic, 0L);
+                    context.addToolResult(toolCall.getId(), me.golemcore.bot.domain.model.ToolResult.success(markdown));
+                    recordToolProgress(context, toolCall, synthetic, 0L);
                     toolExecutions++;
                     continue;
                 }
 
                 emitRuntimeEvent(context, RuntimeEventType.TOOL_STARTED,
-                        eventPayload("toolCallId", tc.getId(), "tool", tc.getName()));
+                        eventPayload("toolCallId", toolCall.getId(), "tool", toolCall.getName()));
                 Instant toolStarted = clock.instant();
-                ToolExecutionOutcome outcome = executeToolCall(context, tc, tracingConfig);
+                ToolExecutionOutcome outcome = executeToolCall(context, toolCall, tracingConfig);
                 toolExecutions++;
                 long toolDuration = java.time.Duration.between(toolStarted, clock.instant()).toMillis();
                 emitRuntimeEvent(context, RuntimeEventType.TOOL_FINISHED,
-                        eventPayload("toolCallId", tc.getId(), "tool", tc.getName(),
+                        eventPayload("toolCallId", toolCall.getId(), "tool", toolCall.getName(),
                                 "success", outcome != null && outcome.toolResult() != null
                                         && outcome.toolResult().isSuccess(),
                                 "durationMs", toolDuration));
-                captureFileChanges(tc, turnFileChanges);
+                captureFileChanges(toolCall, turnFileChanges);
                 if (!turnFileChanges.isEmpty()) {
                     context.setAttribute(ContextAttributes.TURN_FILE_CHANGES, new ArrayList<>(turnFileChanges));
                 }
@@ -402,7 +413,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                     context.addToolResult(outcome.toolCallId(), outcome.toolResult());
                 }
                 if (outcome != null) {
-                    recordToolProgress(context, tc, outcome, toolDuration);
+                    recordToolProgress(context, toolCall, outcome, toolDuration);
                     historyWriter.appendToolResult(context, outcome);
                     if (outcome.toolResult() != null && !outcome.toolResult().isSuccess()) {
                         ToolFailureKind kind = outcome.toolResult().getFailureKind();
@@ -422,14 +433,31 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                                     response.getToolCalls(), "tool denied by policy", llmCalls, toolExecutions);
                         }
                     }
-                    if (outcome.toolResult() != null && !outcome.toolResult().isSuccess()
-                            && shouldStopForRepeatedToolFailure(context, outcome, toolFailureCounts)) {
-                        applyAttachments(context, accumulatedAttachments);
-                        emitRuntimeEvent(context, RuntimeEventType.TURN_FINISHED,
-                                eventPayload("reason", "repeated_tool_failure", "tool", outcome.toolName()));
-                        return stopTurn(context, context.getAttribute(ContextAttributes.LLM_RESPONSE),
-                                response.getToolCalls(),
-                                "repeated tool failure (" + outcome.toolName() + ")", llmCalls, toolExecutions);
+                    if (outcome.toolResult() != null && !outcome.toolResult().isSuccess()) {
+                        ToolFailureRecoveryDecision recoveryDecision = handleRepeatedToolFailure(
+                                context,
+                                toolCall,
+                                outcome,
+                                toolFailureCounts,
+                                toolRecoveryCounts);
+                        if (recoveryDecision != null && recoveryDecision.shouldInjectRecoveryHint()) {
+                            flushProgress(context, "tool_recovery");
+                            historyWriter.appendInternalRecoveryHint(context, recoveryDecision.recoveryHint());
+                            emitRuntimeEvent(context, RuntimeEventType.TURN_FINISHED,
+                                    eventPayload("reason", "tool_recovery", "tool", outcome.toolName(),
+                                            "recoverability", recoveryDecision.recoverability().name(),
+                                            "fingerprint", recoveryDecision.fingerprint()));
+                            break;
+                        }
+                        if (recoveryDecision != null && recoveryDecision.shouldStop()) {
+                            applyAttachments(context, accumulatedAttachments);
+                            emitRuntimeEvent(context, RuntimeEventType.TURN_FINISHED,
+                                    eventPayload("reason", "repeated_tool_failure", "tool", outcome.toolName()));
+                            return stopTurn(context, context.getAttribute(ContextAttributes.LLM_RESPONSE),
+                                    response.getToolCalls(),
+                                    "repeated tool failure (" + outcome.toolName() + ")", llmCalls,
+                                    toolExecutions);
+                        }
                     }
                     if (stopOnToolFailure && outcome.toolResult() != null && !outcome.toolResult().isSuccess()) {
                         applyAttachments(context, accumulatedAttachments);
@@ -446,16 +474,15 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         TurnLimitReason stopReason = buildStopReason(llmCalls, maxLlmCalls, toolExecutions, maxToolExecutions,
                 deadline);
 
-        LlmResponse last = context.getAttribute(ContextAttributes.LLM_RESPONSE);
-        List<Message.ToolCall> pending = last != null ? last.getToolCalls() : null;
+        LlmResponse lastResponse = context.getAttribute(ContextAttributes.LLM_RESPONSE);
+        List<Message.ToolCall> pendingToolCalls = lastResponse != null ? lastResponse.getToolCalls() : null;
         applyAttachments(context, accumulatedAttachments);
         context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REACHED, true);
         context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REASON, stopReason);
         emitRuntimeEvent(context, RuntimeEventType.TURN_FINISHED,
                 eventPayload("reason", "limit", "limit", stopReason.name()));
-        return stopTurn(context, last, pending,
+        return stopTurn(context, lastResponse, pendingToolCalls,
                 buildStopReasonMessage(stopReason, maxLlmCalls, maxToolExecutions), llmCalls, toolExecutions);
-
     }
 
     private boolean isInterruptRequested(AgentContext context) {
@@ -667,35 +694,54 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         return 0;
     }
 
-    private boolean shouldStopForRepeatedToolFailure(AgentContext context, ToolExecutionOutcome outcome,
-            Map<String, Integer> toolFailureCounts) {
+    private ToolFailureRecoveryDecision handleRepeatedToolFailure(AgentContext context, Message.ToolCall toolCall,
+            ToolExecutionOutcome outcome, Map<String, Integer> toolFailureCounts,
+            Map<String, Integer> toolRecoveryCounts) {
         if (outcome == null || outcome.toolResult() == null || outcome.toolResult().isSuccess()) {
-            return false;
+            return null;
+        }
+        if (toolFailureRecoveryService == null) {
+            String fallbackFingerprint = buildFallbackToolFailureFingerprint(outcome);
+            int attempts = toolFailureCounts.merge(fallbackFingerprint, 1, Integer::sum);
+            if (attempts < 2) {
+                return null;
+            }
+            context.addFailure(new FailureEvent(
+                    FailureSource.TOOL,
+                    "DefaultToolLoopSystem",
+                    FailureKind.EXCEPTION,
+                    "Repeated tool failure: " + fallbackFingerprint,
+                    clock.instant()));
+            return new ToolFailureRecoveryDecision(true, false, null, fallbackFingerprint, null);
         }
 
-        String fingerprint = buildToolFailureFingerprint(outcome);
+        String fingerprint = toolFailureRecoveryService.buildFingerprint(toolCall, outcome);
         int attempts = toolFailureCounts.merge(fingerprint, 1, Integer::sum);
         if (attempts < 2) {
-            return false;
+            return null;
         }
 
+        ToolFailureRecoveryDecision decision = toolFailureRecoveryService.evaluate(toolCall, outcome,
+                toolRecoveryCounts);
         context.addFailure(new FailureEvent(
                 FailureSource.TOOL,
                 "DefaultToolLoopSystem",
-                FailureKind.EXCEPTION,
-                "Repeated tool failure: " + fingerprint,
+                decision.shouldInjectRecoveryHint() ? FailureKind.VALIDATION : FailureKind.EXCEPTION,
+                (decision.shouldInjectRecoveryHint() ? "Tool recovery requested: " : "Repeated tool failure: ")
+                        + fingerprint,
                 clock.instant()));
-        return true;
+        return decision;
     }
 
-    private String buildToolFailureFingerprint(ToolExecutionOutcome outcome) {
+    private String buildFallbackToolFailureFingerprint(ToolExecutionOutcome outcome) {
         String toolName = outcome.toolName() != null ? outcome.toolName() : "unknown";
         String failureKind = outcome.toolResult().getFailureKind() != null
                 ? outcome.toolResult().getFailureKind().name()
                 : ToolFailureKind.EXECUTION_FAILED.name();
         String error = outcome.toolResult().getError() != null ? outcome.toolResult().getError()
                 : outcome.messageContent();
-        String normalized = error != null ? error.trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT) : "unknown";
+        String normalized = error != null ? error.trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT)
+                : "unknown";
         return toolName + ":" + failureKind + ":" + normalized;
     }
 
@@ -830,13 +876,12 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             List<Message.ToolCall> pendingToolCalls, String reason, int llmCalls, int toolExecutions) {
         flushProgress(context, "turn_stop");
         if (pendingToolCalls != null) {
-            for (Message.ToolCall tc : pendingToolCalls) {
-                // Avoid writing duplicate synthetic results for the same tool_call_id if a real
-                // outcome was already recorded.
-                if (context.getToolResults() != null && context.getToolResults().containsKey(tc.getId())) {
+            for (Message.ToolCall toolCall : pendingToolCalls) {
+                if (context.getToolResults() != null && context.getToolResults().containsKey(toolCall.getId())) {
                     continue;
                 }
-                ToolExecutionOutcome synthetic = ToolExecutionOutcome.synthetic(tc, ToolFailureKind.EXECUTION_FAILED,
+                ToolExecutionOutcome synthetic = ToolExecutionOutcome.synthetic(toolCall,
+                        ToolFailureKind.EXECUTION_FAILED,
                         "Tool loop stopped: " + reason);
                 context.addToolResult(synthetic.toolCallId(), synthetic.toolResult());
                 historyWriter.appendToolResult(context, synthetic);
@@ -844,11 +889,8 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         }
 
         String stopMessage = "Tool loop stopped: " + reason + ".";
-
         historyWriter.appendFinalAssistantAnswer(context, lastResponse, stopMessage);
 
-        // Replace LLM_RESPONSE with a clean response (no tool calls) so that
-        // OutgoingResponsePreparationSystem can produce an OutgoingResponse.
         LlmResponse cleanResponse = LlmResponse.builder()
                 .content(stopMessage)
                 .build();
@@ -867,12 +909,6 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         return new RuntimeException(cause.getMessage(), cause);
     }
 
-    /**
-     * Merge accumulated attachments into the {@link OutgoingResponse} on the
-     * context. If an OutgoingResponse already exists, a new instance is built with
-     * the attachments appended; otherwise a minimal response carrying only
-     * attachments is created.
-     */
     private void applyAttachments(AgentContext context, List<Attachment> attachments) {
         if (attachments.isEmpty()) {
             return;
@@ -887,19 +923,18 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                     .voiceRequested(existing.isVoiceRequested())
                     .voiceText(existing.getVoiceText())
                     .skipAssistantHistory(existing.isSkipAssistantHistory());
-            for (Attachment a : existing.getAttachments()) {
-                builder.attachment(a);
+            for (Attachment attachment : existing.getAttachments()) {
+                builder.attachment(attachment);
             }
         } else {
             builder = OutgoingResponse.builder();
         }
 
-        for (Attachment a : attachments) {
-            builder.attachment(a);
+        for (Attachment attachment : attachments) {
+            builder.attachment(attachment);
         }
 
         OutgoingResponse updated = builder.build();
-
         context.setOutgoingResponse(updated);
         context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, updated);
     }
@@ -1001,8 +1036,6 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             log.debug("[ToolLoop] conversation view diagnostics: {}", view.diagnostics());
         }
 
-        // Track current model for next request (persisted in session metadata + context
-        // attributes)
         storeSelectedModel(context, selection.model());
         context.setAttribute(ContextAttributes.LLM_MODEL, selection.model());
         context.setAttribute(ContextAttributes.LLM_REASONING, selection.reasoning());
@@ -1017,8 +1050,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 .sessionId(context.getSession() != null ? context.getSession().getId() : null)
                 .traceId(traceContext != null ? traceContext.getTraceId() : null)
                 .traceSpanId(traceContext != null ? traceContext.getSpanId() : null)
-                .traceParentSpanId(
-                        traceContext != null ? traceContext.getParentSpanId() : null)
+                .traceParentSpanId(traceContext != null ? traceContext.getParentSpanId() : null)
                 .traceRootKind(traceContext != null ? traceContext.getRootKind() : null)
                 .build();
     }

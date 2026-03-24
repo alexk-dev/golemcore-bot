@@ -20,4 +20,6 @@ public interface HistoryWriter {
     void appendToolResult(AgentContext context, ToolExecutionOutcome outcome);
 
     void appendFinalAssistantAnswer(AgentContext context, LlmResponse llmResponse, String finalText);
+
+    void appendInternalRecoveryHint(AgentContext context, String hint);
 }

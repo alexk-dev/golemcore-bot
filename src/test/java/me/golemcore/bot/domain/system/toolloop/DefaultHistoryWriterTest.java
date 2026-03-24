@@ -179,6 +179,22 @@ class DefaultHistoryWriterTest {
     // ==================== appendFinalAssistantAnswer ====================
 
     @Test
+    void shouldAppendInternalRecoveryHint() {
+        AgentContext context = buildContext(true);
+
+        writer.appendInternalRecoveryHint(context, "Shell recovery note");
+
+        assertEquals(1, context.getMessages().size());
+        Message message = context.getMessages().get(0);
+        assertEquals(ROLE_ASSISTANT, message.getRole());
+        assertEquals("Shell recovery note", message.getContent());
+        assertEquals(Boolean.TRUE, message.getMetadata().get(ContextAttributes.MESSAGE_INTERNAL));
+        assertEquals(ContextAttributes.MESSAGE_INTERNAL_KIND_TOOL_RECOVERY,
+                message.getMetadata().get(ContextAttributes.MESSAGE_INTERNAL_KIND));
+        assertEquals(1, context.getSession().getMessages().size());
+    }
+
+    @Test
     void shouldAppendFinalAnswerWithLlmResponse() {
         AgentContext context = buildContext(true);
         LlmResponse response = LlmResponse.builder()

@@ -75,6 +75,27 @@ public class DefaultHistoryWriter implements HistoryWriter {
     }
 
     @Override
+    public void appendInternalRecoveryHint(AgentContext context, String hint) {
+        Map<String, Object> metadata = buildAssistantMetadata(context);
+        metadata.put(ContextAttributes.MESSAGE_INTERNAL, true);
+        metadata.put(ContextAttributes.MESSAGE_INTERNAL_KIND,
+                ContextAttributes.MESSAGE_INTERNAL_KIND_TOOL_RECOVERY);
+
+        Message assistant = Message.builder()
+                .id(UUID.randomUUID().toString())
+                .role("assistant")
+                .content(hint)
+                .metadata(metadata)
+                .timestamp(now())
+                .build();
+
+        context.getMessages().add(assistant);
+        if (context.getSession() != null) {
+            context.getSession().addMessage(assistant);
+        }
+    }
+
+    @Override
     public void appendFinalAssistantAnswer(AgentContext context, LlmResponse llmResponse, String finalText) {
         Map<String, Object> metadata = buildAssistantMetadata(context, llmResponse);
         List<Map<String, Object>> attachments = context.getAttribute(ContextAttributes.TURN_OUTPUT_ATTACHMENTS);
