@@ -776,6 +776,82 @@ class Langchain4jAdapterTest {
     }
 
     @Test
+    void shouldHandleChatWithPartiallyNullTokenUsage() throws Exception {
+        ChatModel mockModel = mock(ChatModel.class);
+        injectChatModel(mockModel, TEST_MODEL);
+
+        AiMessage aiMessage = AiMessage.from("Partial usage info");
+        TokenUsage tokenUsage = new TokenUsage(10, null, null);
+        ChatResponse chatResponse = ChatResponse.builder()
+                .aiMessage(aiMessage)
+                .tokenUsage(tokenUsage)
+                .finishReason(FinishReason.STOP)
+                .build();
+
+        when(mockModel.chat((List<ChatMessage>) any())).thenReturn(chatResponse);
+
+        LlmRequest request = LlmRequest.builder()
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
+                .build();
+
+        LlmResponse response = adapter.chat(request).get();
+        assertNotNull(response.getUsage());
+        assertEquals(10, response.getUsage().getInputTokens());
+        assertEquals(0, response.getUsage().getOutputTokens());
+        assertEquals(10, response.getUsage().getTotalTokens());
+    }
+
+    @Test
+    void shouldHandleChatWithOnlyTotalTokenUsage() throws Exception {
+        ChatModel mockModel = mock(ChatModel.class);
+        injectChatModel(mockModel, TEST_MODEL);
+
+        AiMessage aiMessage = AiMessage.from("Total-only usage info");
+        TokenUsage tokenUsage = new TokenUsage(null, null, 17);
+        ChatResponse chatResponse = ChatResponse.builder()
+                .aiMessage(aiMessage)
+                .tokenUsage(tokenUsage)
+                .finishReason(FinishReason.STOP)
+                .build();
+
+        when(mockModel.chat((List<ChatMessage>) any())).thenReturn(chatResponse);
+
+        LlmRequest request = LlmRequest.builder()
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
+                .build();
+
+        LlmResponse response = adapter.chat(request).get();
+        assertNotNull(response.getUsage());
+        assertEquals(0, response.getUsage().getInputTokens());
+        assertEquals(0, response.getUsage().getOutputTokens());
+        assertEquals(17, response.getUsage().getTotalTokens());
+    }
+
+    @Test
+    void shouldReturnNullUsageWhenAllTokenUsageFieldsAreNull() throws Exception {
+        ChatModel mockModel = mock(ChatModel.class);
+        injectChatModel(mockModel, TEST_MODEL);
+
+        AiMessage aiMessage = AiMessage.from("All usage fields null");
+        TokenUsage tokenUsage = new TokenUsage(null, null, null);
+        ChatResponse chatResponse = ChatResponse.builder()
+                .aiMessage(aiMessage)
+                .tokenUsage(tokenUsage)
+                .finishReason(FinishReason.STOP)
+                .build();
+
+        when(mockModel.chat((List<ChatMessage>) any())).thenReturn(chatResponse);
+
+        LlmRequest request = LlmRequest.builder()
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
+                .build();
+
+        LlmResponse response = adapter.chat(request).get();
+        assertNull(response.getUsage());
+        assertEquals("All usage fields null", response.getContent());
+    }
+
+    @Test
     void shouldHandleNullFinishReason() throws Exception {
         ChatModel mockModel = mock(ChatModel.class);
         injectChatModel(mockModel, TEST_MODEL);
