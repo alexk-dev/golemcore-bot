@@ -56,11 +56,25 @@ public class ToolLoopConfiguration {
             CompactionOrchestrationService compactionOrchestrationService,
             RuntimeEventService runtimeEventService,
             TurnProgressService turnProgressService,
-            TraceService traceService) {
+            TraceService traceService,
+            ToolFailureRecoveryService toolFailureRecoveryService) {
         LlmPort tracked = new UsageTrackingLlmPortDecorator(llmPort, usageTracker);
-        return new DefaultToolLoopSystem(tracked, toolExecutorPort, historyWriter, viewBuilder,
-                botProperties.getTurn(), botProperties.getToolLoop(), modelSelectionService, planService,
-                runtimeConfigService, compactionOrchestrationService, runtimeEventService, turnProgressService,
-                traceService, Clock.systemUTC());
+        return DefaultToolLoopSystem.builder()
+                .llmPort(tracked)
+                .toolExecutor(toolExecutorPort)
+                .historyWriter(historyWriter)
+                .viewBuilder(viewBuilder)
+                .turnSettings(botProperties.getTurn())
+                .settings(botProperties.getToolLoop())
+                .modelSelectionService(modelSelectionService)
+                .planService(planService)
+                .runtimeConfigService(runtimeConfigService)
+                .compactionOrchestrationService(compactionOrchestrationService)
+                .runtimeEventService(runtimeEventService)
+                .turnProgressService(turnProgressService)
+                .traceService(traceService)
+                .toolFailureRecoveryService(toolFailureRecoveryService)
+                .clock(Clock.systemUTC())
+                .build();
     }
 }
