@@ -128,7 +128,7 @@ public class MemoryCandidateScorer {
         if (text == null || text.isBlank()) {
             return tokens;
         }
-        String[] raw = text.toLowerCase(Locale.ROOT).split("[^a-zа-я0-9_./#-]+");
+        String[] raw = text.toLowerCase(Locale.ROOT).split("[^\\p{L}0-9_./#-]+");
         for (String token : raw) {
             if (token.length() >= 3) {
                 tokens.add(token);

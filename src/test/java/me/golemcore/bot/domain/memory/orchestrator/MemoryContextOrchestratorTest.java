@@ -121,7 +121,7 @@ class MemoryContextOrchestratorTest {
         assertEquals("## Relevant Facts\n- [PROJECT_FACT] Project uses Spring", pack.getRenderedContext());
         assertEquals(diagnostics, pack.getDiagnostics());
         verify(memoryQueryFactory, times(2))
-                .createForPrompt(argThat(request -> request != null && request.getQuery() == incoming));
+                .createForPrompt(argThat(request -> request != null && incoming.equals(request.getQuery())));
     }
 
     @Test
